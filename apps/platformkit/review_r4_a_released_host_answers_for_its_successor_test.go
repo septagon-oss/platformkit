@@ -92,9 +92,10 @@ func r4page(t *testing.T, cfg config.Config, host string) (int, string) {
 //
 // The name, not the other tenant's `lang` attribute, is the negative: ui/document
 // emits a `lang="en"` element on a page whose tenant speaks only Portuguese (the
-// anonymous-session banner is a literal no catalogue carries — the pseudo-locale gate
-// ui/page/README.md names as unshipped), so a missing-`lang` assertion would be a
-// test of that open item rather than of this resolution. A tenant's display name
+// anonymous-session banner is a literal no catalogue carries, which the pseudo-locale
+// gate (apps/platformkit/i18n_gate_test.go) reports as an untranslated string on that
+// page), so a missing-`lang` assertion would be a test of that open copy item rather
+// than of this resolution. A tenant's display name
 // comes out of the same cached resolution the language does, and belongs to exactly
 // one tenant.
 func r4expectPage(t *testing.T, cfg config.Config, host, wantLang, wantName, notName, whose string) {

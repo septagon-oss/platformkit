@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -75,6 +77,10 @@ const (
 	filesPath   = "/api/v1/file/files"
 	adminEmail  = "root@acme.localhost"
 	adminPass   = "correct horse battery staple"
+	// acmeName is the tenant's own name, which the bootstrap's operator typed. It is
+	// a value and not copy: no catalogue can hold it, and the frame puts it in the
+	// tab title and the chrome, so the pseudo-locale gate reads it back as data.
+	acmeName = "Acme Corporation"
 )
 
 // quiet keeps a passing test's output to the test's own lines.
@@ -83,6 +89,11 @@ func quiet() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // configure writes the configuration the reference app would have read from
 // config.yaml, against a schema of this test's own, and returns the path and
 // the loaded value. The database is empty: no tables, no ledger, nothing.
+// webhookKey is the composition's webhook secret key: thirty-two bytes, the width
+// AES-256-GCM asks for. A fixture's value, not a secret — no receiver on this
+// planet verifies a delivery signed with it.
+const webhookKey = "0123456789abcdef0123456789abcdef"
+
 func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
 	// The seed command's operator proves themselves the way every deployment
@@ -106,6 +117,9 @@ func configure(t *testing.T) (string, config.Config) {
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
 		"log:\n  level: \"error\"\n" +
 		"files:\n  dir: \"" + t.TempDir() + "\"\n" +
+		// Outbound webhooks are composed, so the composition needs the key that
+		// wraps an endpoint's signing secret. The fixture's own thirty-two bytes.
+		"webhook:\n  secret_key: \"" + webhookKey + "\"\n" +
 		"auth:\n  oidc:\n    issuer: \"\"\n    client_id: \"\"\n    client_secret: \"\"\n    redirect_path: \"\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
@@ -119,6 +133,18 @@ func configure(t *testing.T) (string, config.Config) {
 
 // install runs the bootstrap subcommand exactly as the README's third command
 // does: an empty database in, a tenant and an administrator out.
+//
+// A run the database declined for contention is run again, because that is what db.ErrContended
+// says instead of failing: it may be run again, with the files it applied already there to be read.
+// The decline is ordinary in this package's own database, which holds nothing but the compositions
+// this suite installs, each of them taking the composition's advisory lock and every catalog write
+// that comes with it; under -race the queue behind that lock passes the five seconds a deployment
+// chose for itself, and CI job 57346 reported one case's bootstrap as a failing test over exactly
+// that sentence. Running it again is the operator's door (apps/platformkit/migrate.go) standing in
+// the place the operator occupies here, and the production budget stays the five seconds it is, which
+// is why the configuration above names no longer patience. A migration refused for any other reason
+// ends the case as it always did, and the waiting is bounded: a decline that outlasts it is reported
+// with the count of runs it took.
 func install(t *testing.T, path string) {
 	t.Helper()
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
@@ -128,15 +154,35 @@ func install(t *testing.T, path string) {
 	// and a bootstrap that says nothing leaves the tenant in the one language its
 	// copy is written in — which is what apps/platformkit/locale_test.go and
 	// e2e/localization.spec.ts then check the other language against.
-	err := bootstrap([]string{
+	args := []string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
-		"--name", "Acme Corporation", "--admin-email", adminEmail,
+		"--name", acmeName, "--admin-email", adminEmail,
 		"--language", "pt-PT",
-	})
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
+	}
+	until := time.Now().Add(installContentionWait)
+	for runs := 1; ; runs++ {
+		err := bootstrap(args)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, db.ErrContended) {
+			t.Fatalf("bootstrap: %v", err)
+		}
+		if time.Now().Add(installContentionPause).After(until) {
+			t.Fatalf("bootstrap: %v (after %d runs the database declined for contention)", err, runs)
+		}
+		t.Logf("bootstrap run %d was declined for contention, so it is run again: %v", runs, err)
+		time.Sleep(installContentionPause)
 	}
 }
+
+// The two waits install's retry keeps. A declined run left what it applied behind, so the pause only
+// waits for the queue in front of it to move; the bound is what stops a suite waiting on a database
+// that has stopped answering.
+const (
+	installContentionPause = 250 * time.Millisecond
+	installContentionWait  = 2 * time.Minute
+)
 
 // start runs the application in the background and returns when it is listening.
 //
@@ -500,10 +546,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	}
 	// No password crossed the control plane: the operator chose none, and this
 	// is where one is chosen.
-	if code, body = do(t, cfg, nil, http.MethodPost, initechHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, first)+`","new":"a chosen passphrase for initech"}`); code != http.StatusOK {
-		t.Fatalf("the first administrator's reset = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, initechHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, first)+`","new":"a chosen passphrase for initech"}`)
 	boss := signIn(t, cfg, initechHost, "root@initech.localhost", "a chosen passphrase for initech")
 	// They administer their own tenant: listing its people needs user:read,
 	// which needs the admin role the invitation granted.
@@ -546,11 +590,11 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	token := tokenIn(t, link)
 
 	// The link works, once, and it is what turns an invitation into somebody
-	// who can sign in.
-	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+token+`","new":"a chosen passphrase for grace"}`); code != http.StatusOK {
-		t.Fatalf("the reset = %d %s, want 200", code, body)
-	}
+	// who can sign in — asked again until the row behind it is there to be spent,
+	// because the mailbox has held the message since before the transaction that
+	// minted the credential committed.
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+token+`","new":"a chosen passphrase for grace"}`)
 	signIn(t, cfg, acmeHost, "grace@acme.localhost", "a chosen passphrase for grace")
 	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
 		`{"token":"`+token+`","new":"another passphrase entirely"}`); code != http.StatusUnauthorized {
@@ -991,6 +1035,44 @@ func eventually(t *testing.T, what string, done func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
+// confirmMailboxLink redeems a confirmation link the composed mailbox is already
+// holding, and is how every case here spends a mailed credential.
+//
+// Waiting for the message is not waiting for the link. The in-memory mailbox has
+// it from the moment the transport takes the message, and the credential row
+// commits only when the delivery transaction does — a real SMTP server answers
+// first, and so does a test double. On a loaded machine that gap is wide enough to
+// read "that verification link is invalid or has expired" about a link mailed an
+// instant earlier, which is a refusal about the reader's timing rather than the
+// account. A 401 consumes nothing — the row is not there to spend — so the answer
+// is to ask again until the row is there or the tries are spent, and to fail with
+// the last answer when they are.
+func confirmMailboxLink(t *testing.T, cfg config.Config, host, link string) {
+	t.Helper()
+	redeemMailedLink(t, cfg, nil, host, "/api/v1/public/auth/verify-email", `{"token":"`+link+`"}`)
+}
+
+// redeemMailedLink is confirmMailboxLink for any route that spends a credential a
+// mail carried — the verification route and the set-password route mint their
+// tokens in different tables and are mailed by different sends, and both are read
+// out of the same mailbox by these cases.
+func redeemMailedLink(t *testing.T, cfg config.Config, client *http.Client, host, path, body string) {
+	t.Helper()
+	code, out := 0, ""
+	for attempt := 1; attempt <= 20; attempt++ {
+		code, out = do(t, cfg, client, http.MethodPost, host, path, body)
+		if code == http.StatusOK || code == http.StatusAccepted {
+			return
+		}
+		if code != http.StatusUnauthorized {
+			t.Fatalf("redeeming the mailed link at %s = %d %s", path, code, out)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("redeeming the mailed link at %s = %d %s after twenty attempts, so the credential "+
+		"the mailbox was holding never became a row the server would spend", path, code, out)
+}
+
 // provision gives a tenant its own administrator, the way the bootstrap gives
 // the first one theirs.
 func provision(t *testing.T, cfg config.Config, tenantID uuid.UUID, email string) {
@@ -1377,10 +1459,16 @@ func blobs(t *testing.T, cfg config.Config) int {
 // The transaction half is measured from outside, through pg_stat_activity,
 // because the claim is about a server-side connection and not about a Go value.
 // dbtest names this installation's pool after the test's schema, so the count is
-// this application's backends and nobody else's. The question it asks is the age
-// of the oldest open transaction rather than how many there are: the application
-// is running its periodic jobs too, and a job's transaction is milliseconds old,
-// while a pinned one keeps getting older for as long as the body trickles.
+// this application's backends and nobody else's.
+//
+// It asks the age of the oldest open transaction of an installation started as the
+// serving half, because that is the only installation this question has an answer
+// for. The worker half runs the outbox relay, the outbox purge and every module's
+// periodic jobs over this same pool, and a transaction of that work stays open for
+// as long as its goroutine keeps a CPU: on a host carrying several suites at once
+// it is seconds old, and no bound separates it from one a client pinned. On role
+// web nothing but a request opens a transaction, so a transaction still open and
+// old at the last sample is the trickling request's own.
 func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	const timeout = 3 * time.Second
 	path, cfg := configure(t)
@@ -1392,7 +1480,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: memory.New(), Log: quiet(),
+		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 
@@ -1401,14 +1489,28 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// asking dbtest for the URLs again would give this test a fresh schema and
 	// take the tables out from under the application that is serving.
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)
-	longest := func() float64 {
+	// longest answers the age of the oldest open transaction of this installation and
+	// names the backend holding it. The name belongs in the refusal: a bare number says
+	// the claim failed and nothing about which pool to go and look at, and the reader is
+	// left to work out by hand what this one line already knows.
+	longest := func() (float64, string) {
 		var age float64
-		const q = `SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)), 0) FROM pg_stat_activity
-			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`
-		if err := owner.QueryRowContext(t.Context(), q).Scan(&age); err != nil {
-			t.Errorf("read pg_stat_activity: %v", err)
+		var backend string
+		const q = `SELECT EXTRACT(EPOCH FROM now() - xact_start),
+				coalesce(usename::text, '?') || ' at pid ' || pid::text || ': '
+				|| coalesce(left(regexp_replace(query, '\s+', ' ', 'g'), 120), '(no statement seen)')
+			FROM pg_stat_activity
+			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')
+			ORDER BY xact_start ASC NULLS LAST LIMIT 1`
+		err := owner.QueryRowContext(t.Context(), q).Scan(&age, &backend)
+		if err == sql.ErrNoRows {
+			return 0, ""
 		}
-		return age
+		if err != nil {
+			t.Errorf("read pg_stat_activity: %v", err)
+			return 0, ""
+		}
+		return age, backend
 	}
 
 	// A multipart form whose file part never ends: one byte, then a pause,
@@ -1473,13 +1575,16 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// loop is finished before the server gives up and the handler's own failure
 	// path runs.
 	samples, oldest := 0, 0.0
+	oldestBackend := ""
 	for time.Since(start) < timeout*3/4 {
 		select {
 		case got := <-done:
 			t.Fatalf("upload ended before the read deadline: status=%d error=%v after %s", got.code, got.err, time.Since(start))
 		default:
 		}
-		oldest = max(oldest, longest())
+		if age, backend := longest(); age > oldest {
+			oldest, oldestBackend = age, backend
+		}
 		samples++
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -1489,12 +1594,12 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// The bound is half the read timeout, and it is arithmetic rather than taste. A
 	// transaction the upload pinned opens when the request arrives and is still open at
 	// the last sample, so it is at least timeout*3/4 minus one sample interval old —
-	// 2.2s here. A periodic job's transaction is milliseconds old on a quiet machine
-	// and read 0.53s on a loaded CI runner (PR 55, run 144), which a 0.5s bound
-	// refused. timeout/2 sits between the two with margin on both sides.
+	// 2.2s here. Nothing on this role opens a transaction while a body trickles and no
+	// other request is in flight, so the only way to be older than the bound is to be
+	// that transaction. timeout/2 refuses it with a second of room on both sides.
 	if limit := timeout.Seconds() / 2; oldest > limit {
-		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs); the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
-			oldest, limit)
+		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs), held by %s; the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
+			oldest, limit, oldestBackend)
 	}
 
 	var got answer

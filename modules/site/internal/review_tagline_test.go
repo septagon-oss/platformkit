@@ -24,7 +24,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
-	"github.com/septagon-oss/platformkit/modules/site/internal"
 )
 
 // TestReviewSiteAuditExplainsATaglineChange: saving two different taglines used to
@@ -33,7 +32,7 @@ import (
 func TestReviewSiteAuditExplainsATaglineChange(t *testing.T) {
 	admin, conn := dbtest.Schema(t, site.Migrations)
 	ctx := tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New()})
-	svc := internal.NewService()
+	svc := bareService()
 
 	var payloads []string
 	for _, tagline := range []string{"Original review tagline", "Replacement review tagline"} {
@@ -80,7 +79,7 @@ func TestReviewSiteAuditExplainsATaglineChange(t *testing.T) {
 func TestAChangeThatReachesNoFieldPublishesNothing(t *testing.T) {
 	admin, conn := dbtest.Schema(t, site.Migrations)
 	ctx := tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New()})
-	svc := internal.NewService()
+	svc := bareService()
 	in := &contracts.SiteSettings{Title: "Acme", Tagline: "We make things", Theme: "system"}
 	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		saved, err := svc.Save(ctx, tx, in)

@@ -30,7 +30,7 @@ const outbox = "platformkit_outbox"
 func TestServiceConforms(t *testing.T) {
 	contenttest.RunService(t, func(t *testing.T, run func(contenttest.Fixture)) {
 		_, conn := dbtest.Schema(t, content.Migrations)
-		svc := internal.NewService()
+		svc := internal.NewService(internal.Deps{})
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(contenttest.Fixture{Ctx: ctx, Tx: tx, Service: svc,
 				Seed: func(c *contracts.Content) uuid.UUID {
@@ -62,7 +62,7 @@ func TestServiceConforms(t *testing.T) {
 // paths as silent.
 func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
 	admin, conn := dbtest.Schema(t, content.Migrations)
-	svc := internal.NewService()
+	svc := internal.NewService(internal.Deps{})
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		page := &contracts.Content{Slug: "about-us", Title: "About us", Body: "hello"}

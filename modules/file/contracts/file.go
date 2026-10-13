@@ -168,6 +168,19 @@ type File struct {
 	// — and by nothing else, which is why it is empty for every upload that
 	// does not name one. An unknown kind is never deleted, never guessed at.
 	Kind string `json:"kind" gorm:"type:varchar(32);not null;default:''" maxLength:"32" ui:"hide:list" doc:"Retention class, as the product names it" required:"false"`
+
+	// UnusedSince is when this image stopped being shown by anything: the moment
+	// its last use ended. It is the grace period's start, stamped by SetUses when it
+	// ends a file's last use, cleared by SetUses when a use restarts, and read by the
+	// release sweep, which removes the row once the deployment's grace has run with
+	// nobody asking for it. Nothing stamps an arrival: the rule releases a file whose
+	// last use *ended*, and a file the ledger has never spoken about has no such
+	// moment to measure from — the site logo is named by a bare uuid outside the
+	// ledger, so a stamp at upload would reap a configured logo a day after it was
+	// saved. NULL therefore means the file is shown, or that the ledger says nothing
+	// about it — see the CHECK in migrations/000055, which keeps a file the image
+	// pass never measured from carrying a stamp at all.
+	UnusedSince *time.Time `json:"unusedSince,omitempty" gorm:"column:unused_since" doc:"Since when nothing shows it" readOnly:"true" required:"false" format:"date-time"`
 }
 
 // TableName pins the table, so the entity and migrations/000019 agree.
@@ -217,6 +230,11 @@ func (f *File) Validate(ctx context.Context) error {
 	// nothing it does not find there — so syntax is all it can refuse.
 	case !ValidKind(f.Kind):
 		return fmt.Errorf("%q is not a retention class", f.Kind)
+	// The stamp is a claim about the ledger, and the ledger only speaks about
+	// pictures the image pass measured. A stamp on an unmeasured row would be the
+	// sweep deleting a document upload a day after it arrived.
+	case f.UnusedSince != nil && f.Width == 0:
+		return fmt.Errorf("nothing this module's ledger can speak about is stamped: an unstored frame carries no grace period")
 	case f.Size < 0:
 		return fmt.Errorf("a file is not a negative number of bytes")
 	// The same shape files_dimensions CHECKs: a frame is either unmeasured, in
@@ -445,6 +463,12 @@ type FileUse struct {
 	Record uuid.UUID `json:"record" gorm:"type:uuid;not null" format:"uuid" doc:"The record that shows it" readOnly:"true"`
 	Field  string    `json:"field" gorm:"type:varchar(64);not null" maxLength:"64" doc:"The field of that record" readOnly:"true"`
 	Locale string    `json:"locale" gorm:"type:varchar(35);not null" maxLength:"35" doc:"The locale of the body that names it" readOnly:"true"`
+	// Public says the record this row belongs to was showing the file to somebody
+	// who has not signed in. One command writes it — SetShown, called by the module
+	// that owns that record's public face — and files.visibility is recomputed from
+	// it: a file the ledger speaks about is public if and only if some live use row
+	// of it says true here. See migrations/000056.
+	Public bool `json:"public" gorm:"not null;default:false" doc:"Shown to anonymous readers" readOnly:"true"`
 }
 
 // TableName pins the table, so the entity and migrations/000045 agree.
@@ -553,6 +577,14 @@ type Tx func(ctx context.Context) (db.Tx[db.Tenant], error)
 // Service is what a caller does with files. Every command takes the caller's
 // transaction rather than opening one, so the row and its event commit
 // together; the errors are kit/crud's, plus ErrTooLarge.
+//
+// It does not carry the width door: OpenWidth is contracts.WidthOpener, a type
+// beside this one. This interface is what a *caller* does with files, and a
+// caller outside this module serves no `?w=` — the only route that answers a
+// width is this module's own. The other reason is checkable rather than
+// stylistic: an exported interface that gains a method is a break for anybody
+// outside this repository who implemented it, and `Opener`, `Signer` and `Prover`
+// are each separate types for exactly that reason.
 type Service interface {
 	Opener
 
@@ -617,19 +649,57 @@ type Service interface {
 	//
 	// Every file it names is locked before its rows are written, in ascending id
 	// order so two records that share two files cannot lock them in opposite
-	// orders. A file the new set names that is gone answers ErrNotFound
+	// orders. A file whose use ends is locked FOR UPDATE and one the new set only
+	// names FOR KEY SHARE, because "this file is read by nothing now" is a count of
+	// rows another rewrite may be ending in the same instant: two rewrites that drop
+	// the last two uses of one picture serialise on it and the later one counts after
+	// the earlier one lands, so the one that really ended the last use starts the
+	// grace period. A file the new set names that is gone answers ErrNotFound
 	// naming the id — a use of a file that no longer exists is never written,
 	// and nothing else in the set is written either. A file this rewrite only
 	// ends has no such refusal: its ledger row was filed while the file existed
 	// and the file may have been removed since, which is the row to end rather
 	// than a reason to refuse. A record would otherwise be undeletable once
 	// somebody deleted its image, and the row saying a gone file is still shown
-	// would outlive every body that ever named it. It publishes nothing: the record's own write is the
-	// auditable fact, and the file module has no business emitting an event for
-	// somebody else's row. It returns the ids whose last use this ended, which
-	// is the list the release sweep will one day be handed; today the answer is
-	// that they keep their bytes for the sweep to find.
+	// would outlive every body that ever named it. It returns the ids whose last use
+	// this ended, which is the list the release sweep is handed, and the stamp the
+	// sweep measures its grace period from: the ids it returns have their
+	// unused_since set in this same transaction, and a file whose use restarts has the
+	// stamp cleared.
+	//
+	// One publication is its own, and it is the file's. An ended row that had asserted
+	// a public audience takes that audience back here, in the transaction that ended
+	// it, because this rewrite is what every delete and every edit goes through: a
+	// record that was showing a picture is gone, and its bytes must not stay readable
+	// by anybody because nobody recomputed them. The rule is SetShown's — public if any
+	// live use of the file is public, private when none is, a file with no rows at all
+	// now counted as nobody is — and so is its exemption: a file the ledger never had a
+	// row for is not this command's to change, and neither is one whose ended rows said
+	// nothing about the public. Only an audience a publish granted is a publish's to
+	// take back. Every other fact stays silent: the record's own write is the auditable
+	// one, and the file module has no business emitting an event for somebody else's
+	// row.
 	SetUses(ctx context.Context, tx db.Tx[db.Tenant], use Use, refs []uuid.UUID) ([]uuid.UUID, error)
+
+	// SetShown says which files one record is showing, and whether it is showing
+	// them to anybody. owner names the record — its module, entity and id — with
+	// Field and Locale left empty, meaning every field and every locale of it.
+	//
+	// It is the audience half of the ledger, and the half that is asserted: the
+	// module that owns the record's public face calls it from the command that
+	// moves the lifecycle, in that command's transaction, so the flip and the move
+	// commit together or not at all. Each named file is locked FOR UPDATE, in
+	// ascending id order, before its rows are written and its visibility is
+	// recomputed from the whole ledger: public if any live use of it is public,
+	// private when none is. A file the ledger does not speak about is not named
+	// here and keeps whatever its upload asked for.
+	//
+	// public true with no use row for one of the refs is refused — the bytes would
+	// go public while nothing records who shows them, so nothing could ever turn
+	// them back. public false never refuses: taking an image away from the public
+	// is the safe direction. It publishes file.visibility for each flip it makes,
+	// and nothing for a file whose visibility was already right.
+	SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner Use, refs []uuid.UUID, public bool) error
 
 	// EraseSubject removes one subject's rows and bytes for this tenant, under
 	// audit: the rows go in this transaction, the bytes go in the worker that
@@ -660,6 +730,11 @@ const MaxGrantExpiry = 24 * time.Hour
 
 // ErrPublicFile is a grant asked for on a file anybody can already read.
 var ErrPublicFile = errors.New("file: this file is public and needs no grant")
+
+// ErrNotShown is a publish that named a file no use row of that record shows.
+// It is a conflict and not a validation failure: the remedy is to save the body
+// that names the image, which is the door that files uses, and then publish.
+var ErrNotShown = errors.New("file: this record shows no use of that file")
 
 // ErrNotSignable is a grant asked for of a store that cannot hand one out. It is
 // a wiring fact, not something the caller can change.

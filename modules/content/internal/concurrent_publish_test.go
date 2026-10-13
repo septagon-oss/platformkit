@@ -16,7 +16,7 @@ import (
 
 func TestConcurrentPublishEmitsOnce(t *testing.T) {
 	admin, conn := dbtest.Schema(t, content.Migrations)
-	svc := internal.NewService()
+	svc := internal.NewService(internal.Deps{})
 	ctx, cancel := context.WithTimeout(tenancy.WithTenant(t.Context(), acme), 5*time.Second)
 	defer cancel()
 	page := &contracts.Content{Slug: "same-page", Title: "Same page", Body: "## Heading"}

@@ -130,9 +130,9 @@ func SignedIn() Auth { return Auth{kind: kindSignedIn} }
 func AnyCredential() Auth { return Auth{kind: kindAnyCredential} }
 
 // MarshalJSON writes the declaration into the OpenAPI document as
-// {"kind":"permission|operator_permission|public|signed_in|any_credential",
-// "permission":"..."}. huma renders the YAML spec by converting the JSON one,
-// so this is the only encoder needed.
+// {"kind":"permission|operator_permission|public|signed_in|any_credential"}, plus
+// "permission" and "feature" whenever they are non-empty. huma renders the YAML
+// spec by converting the JSON one, so this is the only encoder needed.
 func (a Auth) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Kind       authKind `json:"kind"`
