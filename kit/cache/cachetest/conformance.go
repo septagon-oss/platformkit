@@ -42,9 +42,10 @@ var (
 // sharing and the invalidation cases, which is the whole point of the suite. A
 // call made with a different t must return a store that case owns alone: the suite
 // closes what it is given when the case that asked for it ends, so a store two
-// cases reach is closed for the later one. Keying a store by t.Name() does not
-// satisfy this — a suite run twice in one process (-count, which is what
-// `make flakes` does) asks for the same name twice and would be handed a corpse.
+// cases reach is closed for the later one. A factory that keys its stores by
+// t.Name() therefore has to forget the entry in the cleanup of the case that made
+// it: the name is the same across a repetition of that case (-count, which is what
+// `make flakes` does) and only the *testing.T tells one run's case from the next.
 //
 // A backend with one connection cannot hand a store of its own to every case, so
 // the handle it returns has to release only that handle: a Close that reaches the

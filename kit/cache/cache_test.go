@@ -235,10 +235,11 @@ func (unreachable) Raise(context.Context, string) (int64, error) {
 func (unreachable) Close() error { return nil }
 
 // stores is one store per case *invocation*, so the two handles one case builds
-// read one map and the next case starts clean. The case, not its name, is the
-// identity: a suite run twice in one process (-count, which is what `make flakes`
-// does) asks for this case's store twice, and the suite closed the first one when
-// that first run ended, so the name cannot be the key.
+// read one map and the next case starts clean. The key is the case and not its
+// name: a suite run twice in one process (-count, which is what `make flakes`
+// does) asks for this case's store twice under one name, and the suite closed the
+// first one when that first run ended. The pointer makes a repetition a different
+// key on its own; the Delete in the cleanup only releases a store its case ended.
 var stores sync.Map // *testing.T -> cache.Backend
 
 func shared(t *testing.T) cache.Backend {
@@ -247,9 +248,9 @@ func shared(t *testing.T) cache.Backend {
 		return b.(cache.Backend)
 	}
 	b := cache.MemoryBackend()
-	// LoadOrStore decides who mints, and only the minter ends it: a handle's Close
-	// closes the store behind it (memory.Close is terminal), so a closed store left
-	// in this map would be a store the next case could be handed.
+	// LoadOrStore decides who mints, and only the minter registers the release: a
+	// handle's Close closes the store behind it (memory.Close is terminal), so the
+	// store leaves this map when the case that made it ends.
 	actual, loaded := stores.LoadOrStore(t, b)
 	if !loaded {
 		t.Cleanup(func() { stores.Delete(t) })
