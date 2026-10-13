@@ -1805,11 +1805,14 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// below rather than restated here — the old layout's ledger against the files at
 	// or beneath the adopted ceiling, and the upgraded ledger against every file the
 	// release ships. What the census used to enumerate is the part worth keeping: the
-	// release repeats three numbers, each above the ceiling so the flattening below
+	// release repeats six numbers, each above the ceiling so the flattening below
 	// never meets them — 35 is modules/audit's audit_context beside modules/auth's
 	// passkeys, 43 is the kernel's tenant-app columns beside modules/translation's
-	// field copy, and 50 is the kernel's tenant demo marker beside modules/task's
-	// task_revision. Every file above the ceiling continues past the
+	// field copy, 44 is modules/file's image dimensions beside modules/notification's
+	// mail ledger and modules/webhook's endpoint table, 45 is modules/file's file uses
+	// beside that module's delivery log, 50 is the kernel's tenant demo marker beside
+	// modules/task's task_revision, and 54 is modules/file's image variants beside
+	// modules/site's default accent. Every file above the ceiling continues past the
 	// highest number anywhere in the composition at the time it was written, which is
 	// the rule this fixture exists to enforce — and it is a rule with teeth rather
 	// than tidiness, because
@@ -1837,10 +1840,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// for modules/audit's append-only trail and its retention marks — and two files at
 	// one version under the one owner `audit` is a refusal in kit/db before it is ever
 	// a ledger row. modules/scim's group, mapping and person tables arrived on their
-	// branch as 000044 and are 000054 on the way in, for the same reason and proved by
-	// this same fixture: modules/file had taken 000044 for its image dimensions while
-	// that branch was open, and 54 is the first number no other owner held at the
-	// commit this merge lands.
+	// branch as 000044, then as 000054, and are 000058 here: main took 000044 for
+	// modules/file's image dimensions while that branch was open, then took 000054
+	// twice more for modules/file's variants and modules/site's default accent, and
+	// 000058 continues past 000057, the highest number any owner holds at the commit
+	// this merge lands.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
