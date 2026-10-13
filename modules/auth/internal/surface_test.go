@@ -48,7 +48,7 @@ func (r route) String() string { return r.surface + " " + r.method + " " + r.pat
 
 // wholeSurface is every operation the auth module answers with, in the
 // composition that has everything: a registration policy and an installation
-// issuer. 29 rows, and one of each of the module's six route groups.
+// issuer. 31 rows, and one of each of the module's six route groups.
 var wholeSurface = []route{
 	// handler.go — signing in and out, the caller's own identity, sessions and
 	// password, and the two roles routes.
@@ -67,6 +67,7 @@ var wholeSurface = []route{
 	{"app", "POST", "/api/v1/auth/tokens", "signed_in"},
 	{"app", "GET", "/api/v1/auth/tokens", "signed_in"},
 	{"app", "POST", "/api/v1/auth/tokens/{id}/revoke", "signed_in"},
+	{"app", "POST", "/api/v1/auth/tokens/revoke-self", "any_credential"},
 	// factor_routes.go — the second factor and its recovery codes.
 	{"app", "POST", "/api/v1/auth/factors/totp/begin", "signed_in"},
 	{"app", "POST", "/api/v1/auth/factors/totp/finish", "signed_in"},

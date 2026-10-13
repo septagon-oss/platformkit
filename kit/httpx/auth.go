@@ -125,8 +125,10 @@ func SignedIn() Auth { return Auth{kind: kindSignedIn} }
 // reads it, which of the two doors a route is. The mistake this enables is the
 // wide one — a self-service door about the caller's own credentials mounted here
 // is the escalation SignedIn exists to refuse — so the test at a mount is that the
-// operation reads grants and never spends them, and nothing in a module's routes
-// belongs here.
+// operation reads grants and never spends them. One exception spends a
+// credential: the command that retires the key that authenticated the request,
+// where what is spent is the caller's own key and what it buys is a narrower
+// world. Every other door about a caller's own credentials is SignedIn work.
 func AnyCredential() Auth { return Auth{kind: kindAnyCredential} }
 
 // MarshalJSON writes the declaration into the OpenAPI document as
