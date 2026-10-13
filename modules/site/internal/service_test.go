@@ -103,8 +103,13 @@ func TestSavingTheReadsAnswerStoresTheAbsenceOfAColour(t *testing.T) {
 	}
 
 	var heldDefault string
+	// table_schema = current_schema(): one database serves the whole suite, and an
+	// unqualified information_schema query answers about whichever other test's
+	// site_settings it reaches first — another schema still on the old default makes
+	// this case fail in a full run while passing alone.
 	if err := admin.QueryRowContext(t.Context(), `SELECT column_default FROM information_schema.columns
-		WHERE table_name = 'site_settings' AND column_name = 'primary_color'`).Scan(&heldDefault); err != nil {
+		WHERE table_schema = current_schema()
+		AND table_name = 'site_settings' AND column_name = 'primary_color'`).Scan(&heldDefault); err != nil {
 		t.Fatalf("read the column default: %v", err)
 	}
 	if !strings.HasPrefix(heldDefault, "''") {

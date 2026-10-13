@@ -143,6 +143,7 @@ var census = []rule{
 		allow: []allowed{
 			{"kit/events/providers/nats/jetstream.go", 1, "shared: its subjects are app-scoped"},
 			{"kit/events/internal_test.go", 1, "shared: the case reads the stream the transport made"},
+			{"kit/events/two_apps_replay_moved_ledgers_test.go", 3, "exempt: the decision-0008 pin purges and inspects the shared stream by name to prove a replay landed; its bytes are not this census's to migrate"},
 		},
 	},
 }
