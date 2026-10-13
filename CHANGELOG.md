@@ -6,7 +6,8 @@
 (`auth-token-revoke-self`, the new `httpx.BearerKey()` declaration) ends exactly the key that authenticated the
 request and answers 204; a session is refused with 403, and a dead or absent key with 401 and a Bearer challenge
 — the kernel's one 401. The resource catalogue lists it on an `auth/token` entry with `"operations": []`: an
-unreadable resource now appears for a caller who may call one of its commands. `tenancy.Principal` gains `TokenID`,
+resource declared `httpx.Resource.CommandsOnly` offers none of the five verbs and appears only to a caller who may
+call one of its commands. `tenancy.Principal` gains `TokenID`,
 set for a bearer caller and zero otherwise, and `modules/auth/contracts.Tokens` gains `RevokeOwnToken` and
 `ErrCallerWithoutKey` — an implementer of `Tokens` outside this repository must add the method.
 `authtest.RunTokens` is the conformance suite for `Tokens`. See

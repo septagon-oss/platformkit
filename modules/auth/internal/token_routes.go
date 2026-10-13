@@ -81,12 +81,12 @@ func RegisterTokenRoutes(surfaces httpx.Surfaces, tokens contracts.Tokens) {
 
 // registerSelfRevocation puts the key-retiring command in the resource
 // catalogue, so a client whose only credential is a key can find it. The token
-// resource it rides on declares no read and offers no screen — its list is a
-// SignedIn route, never this document — so the entry is the command alone, and
-// only for a caller BearerKey admits.
+// resource it rides on is CommandsOnly — its list is a SignedIn route, never this
+// document — so the entry is the command alone, and only for a caller BearerKey
+// admits.
 func registerSelfRevocation(surfaces httpx.Surfaces, tokens contracts.Tokens) {
 	surfaces.RegisterResource(httpx.Resource{
-		Module: "auth", Entity: "token", Path: "/tokens",
+		Module: "auth", Entity: "token", Path: "/tokens", CommandsOnly: true,
 		Schema: entity.Schema{Module: "auth", Entity: "token", Path: surfaces.App.Path("/tokens"), Fields: []entity.Field{}},
 	})
 	surfaces.AddCommand("auth", "token", httpx.Command{

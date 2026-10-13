@@ -87,6 +87,11 @@ type Resource struct {
 	// means all five. A shell that rendered a door per verb — New, Edit, Delete —
 	// reads this, and a door behind which no route answers is not a door.
 	Operations []CRUD
+	// CommandsOnly says the resource mounts none of the five and exists for its
+	// commands alone: Offers answers false for every verb, and the catalogue
+	// lists it, with `operations: []`, to a caller who may call one of them and
+	// to nobody else. Operations is then ignored.
+	CommandsOnly bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
 	// Present is what this resource's author said about how it reads. It is the
