@@ -37,6 +37,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
+	"github.com/septagon-oss/platformkit/modules/history"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
@@ -208,6 +209,7 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			auth.Module,
 			auth.EmailRegistration,
 			file.Module,
+			history.Module,
 			task.Module,
 			billing.Module,
 			content.Module,

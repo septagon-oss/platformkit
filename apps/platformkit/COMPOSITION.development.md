@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 17 modules · role `all`.
+App `platformkit` · environment `development` · 18 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 17 modules.
+pkit: platformkit in development builds 18 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
@@ -84,11 +84,10 @@ pkit: auth.Module reads config.Server.
 pkit: auth.Module defines the permission role:manage and passkey:signin.
 pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.factor_used, auth.factor_suspect, auth.passkey_sign_in_set, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested and auth.verification_requested.
 pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_unverified and auth.verification_requested.
-pkit: content.Module is built after file.Module.
-pkit: content.Module needs richtext.Files from file.Module.
-pkit: content.Module needs rest.FileUses from file.Module.
-pkit: content.Module defines the permission content:read and content:manage.
-pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
+pkit: history.Module is built after tenant.Module and file.Module.
+pkit: history.Module needs rest.FileUses from file.Module.
+pkit: history.Module needs jobs.TenantLister from tenant.Module.
+pkit: history.Module emits history.restored.
 pkit: access.Module is built after product.Module, user.Module, notification.Module, auth.Module and site.Module.
 pkit: access.Module needs usercontracts.Service from user.Module.
 pkit: access.Module needs notificationcontracts.Service from notification.Module.
@@ -96,11 +95,12 @@ pkit: access.Module needs sitecontracts.Service from site.Module.
 pkit: access.Module needs usercontracts.Granting from product.Module.
 pkit: access.Module needs authcontracts.Auth from auth.Module.
 pkit: access.Module contributes one changecontracts.SubjectBinding to change.Module.
-pkit: web.Module is built after product.Module, file.Module, content.Module and site.Module.
-pkit: web.Module needs sitecontracts.Service from site.Module.
-pkit: web.Module needs contentcontracts.Service from content.Module.
-pkit: web.Module needs richtext.Files from file.Module.
-pkit: web.Module uses webcontracts.Links from product.Module.
+pkit: content.Module is built after file.Module and history.Module.
+pkit: content.Module needs richtext.Files from file.Module.
+pkit: content.Module needs rest.FileUses from file.Module.
+pkit: content.Module needs httpx.Versions from history.Module.
+pkit: content.Module defines the permission content:read and content:manage.
+pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
 pkit: change.Module is built after product.Module and access.Module.
 pkit: change.Module takes every changecontracts.SubjectBinding from product.Module and access.Module.
 pkit: change.Module uses changecontracts.Notifier from access.Module.
@@ -109,6 +109,11 @@ pkit: change.Module uses *change.ReviewChrome from access.Module.
 pkit: change.Module defines the permission change:read, change:propose and change:decide.
 pkit: change.Module emits change.proposal_proposed, change.proposal_reviewed, change.proposal_applied and change.proposal_withdrawn.
 pkit: change.Module handles change.proposal_reviewed and change.proposal_applied.
+pkit: web.Module is built after product.Module, file.Module, content.Module and site.Module.
+pkit: web.Module needs sitecontracts.Service from site.Module.
+pkit: web.Module needs contentcontracts.Service from content.Module.
+pkit: web.Module needs richtext.Files from file.Module.
+pkit: web.Module uses webcontracts.Links from product.Module.
 pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
@@ -122,6 +127,7 @@ pkit: task.Module provides taskcontracts.Service; no module in platformkit needs
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.
 pkit: auth.Module provides httpx.Authorizer; no module in platformkit needs it.
 pkit: auth.Module provides pkit.Authenticator; no module in platformkit needs it.
+pkit: history.Module provides historycontracts.Service; no module in platformkit needs it.
 pkit: change.Module provides changecontracts.Service; no module in platformkit needs it.
 
 ## What the application answers the kernel
