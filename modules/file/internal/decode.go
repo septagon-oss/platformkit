@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"runtime"
+	"sync"
 	"time"
 )
 
@@ -13,14 +14,21 @@ import (
 // because the bound is one fixed weight: a weighted semaphore would say the same
 // thing with an import and with an Acquire that can be held across a return.
 //
-// One gate serves the whole process because one process builds one file service
-// (pkit builds it once) and the resource being bounded is the machine, not the
-// request. It is held over one frame's decode and nothing else: no row is written
+// One gate serves the whole process, and the process is the whole of its extent
+// because the resource being bounded is the machine and not the request: the
+// frames decoding at once are cores and address space, and a process holding
+// twice its cores in frames is not slower, it is gone. A process builds one
+// service per runtime, and pkit lets one process build several runtimes, so the
+// gate is a process value rather than one per service — see processDecode.
+//
+// It is held over one frame's decode and nothing else: no row is written
 // inside a slot, and the round-trip that opens an object is asked for outside one.
 // What is inside is the rest of that object arriving and the CPU that turns it into
 // pixels, because the alternative — buffering the whole photograph before taking a
 // slot — spends the memory this bound exists to protect in order to shorten a hold
-// on a resource whose whole cost is that CPU.
+// on a resource whose whole cost is that CPU. A pass that opened an object and then
+// found the ceiling closed closes what it opened before it answers: the bound
+// refuses the decode, not the file descriptor.
 
 const (
 	// decodeUploadWait is how long an accepted upload waits for a frame slot
@@ -33,6 +41,12 @@ const (
 	// refusal: the row stays pending and the next round asks again.
 	decodeJobWait = 30 * time.Second
 )
+
+// processDecode is the gate every file service of this process shares, opened the
+// first time one asks. A service built from it cannot hand out a frame the process
+// did not have: two runtimes in one process answer from the same GOMAXPROCS slots,
+// which is the ceiling a deployment reads off the machine it is on.
+var processDecode = sync.OnceValue(func() *decodeGate { return newDecodeFrames(0) })
 
 // decodeGate is the process's ceiling on how many image frames are being decoded
 // at once. The zero value is not usable; build one with newDecodeFrames.

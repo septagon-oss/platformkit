@@ -35,9 +35,10 @@ type Service struct {
 	// maxPixels is the frame the image pass will decode; see processImage.
 	maxPixels int
 	// decode is this process's ceiling on how many frames are being decoded at
-	// once, held by the upload pass and by the background encode alike. It is a
-	// field rather than a parameter because a deployment sets it from the machine,
-	// and a white-box test that wants to see the ceiling close sets it to one.
+	// once, held by the upload pass and by the background encode alike. Every
+	// service of this process is built on the one gate, because the ceiling is the
+	// machine's and a process can build a service per runtime; a white-box test
+	// that wants to see the ceiling close sets the field to a gate of its own.
 	decode *decodeGate
 }
 
@@ -50,7 +51,7 @@ func NewService(storage contracts.Storage, max, quota int64, maxPixels int) *Ser
 	}
 	return &Service{
 		storage: storage, max: max, quota: quota, maxPixels: maxPixels,
-		decode: newDecodeFrames(0),
+		decode: processDecode(),
 	}
 }
 
@@ -827,6 +828,12 @@ func (s *Service) reencode(ctx context.Context, scope contracts.Scope, up contra
 	if err != nil {
 		return nil, s.refuseOrKeep(ctx, up, key, fmt.Errorf("file: read back %s to measure it: %w", key, err))
 	}
+	// Opened here, closed on the way out of this function whichever way that is.
+	// The ceiling below is asked for after this round-trip and can answer no, and a
+	// refusal that left the reader open would charge every refused upload a file
+	// descriptor or a provider stream — a bound that leaks what it refuses is a
+	// slower way to run out. The background encode closes its reader the same way.
+	defer body.Close()
 	// The decode reads straight out of the store: the only bytes held in memory
 	// before the frame is allocated are the header processImage keeps for the
 	// orientation tag, and the frame itself is allocated once the ceiling has
@@ -843,7 +850,6 @@ func (s *Service) reencode(ctx context.Context, scope contracts.Scope, up contra
 	}
 	pass, err := contracts.ProcessImage(body, s.maxPixels)
 	release()
-	_ = body.Close()
 	if err != nil {
 		return nil, s.refuseOrKeep(ctx, up, key, err)
 	}

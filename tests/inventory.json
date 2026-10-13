@@ -32572,6 +32572,44 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/file/internal/decode_process_bound_test.go",
+   "id": "modules/file/internal/decode_process_bound_test.go#TestFileServicesShareTheProcessDecodeBound",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestFileServicesShareTheProcessDecodeBound",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/file/internal/decode_reader_lifetime_test.go",
+   "id": "modules/file/internal/decode_reader_lifetime_test.go#TestARefusedDecodeClosesItsStoredImageReader",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedDecodeClosesItsStoredImageReader",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/file/internal/erasure_proof_test.go",
    "id": "modules/file/internal/erasure_proof_test.go#TestAnErasureProofRowFilesTheReasonAndTheSweepFilesNone",
    "kind": "go",
@@ -32710,6 +32748,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestASweepReachesOnlyTheBlobsUnderItsOwnSegment",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/file/internal/published_fields_lock_order_test.go",
+   "id": "modules/file/internal/published_fields_lock_order_test.go#TestPublishedRecordsWithTwoImageFieldsSaveTogether",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestPublishedRecordsWithTwoImageFieldsSaveTogether",
    "needs_db": true,
    "pkg": "modules/file/internal",
    "round_named": false,
@@ -53943,7 +54000,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1330,
+  "files": 1333,
   "forge_runs": [
    408,
    413,
@@ -53977,7 +54034,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2345,
+   "behaviour": 2348,
    "composition": 291,
    "contract": 19,
    "journey": 67
@@ -53996,9 +54053,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2722,
+  "rows": 2725,
   "tiers": {
-   "merge": 1694,
+   "merge": 1697,
    "nightly": 67,
    "push": 961
   },
@@ -54006,13 +54063,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1114,
+   "keep": 1117,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2374,
+   "keep": 2377,
    "keep-rewrite": 133,
    "merge": 215
   }
