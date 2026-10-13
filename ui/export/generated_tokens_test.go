@@ -129,23 +129,25 @@ func TestExportTokensProjectsAGeneratedPair(t *testing.T) {
 // above, measured at the commit that added the radii. Before that commit the
 // same projection carried the same 22 colours and 3 families and no shape at all.
 //
-// Re-measured for review round 1's HIGH: the document carries the role layer, and
-// three of its declarations changed value — --pk-role-fg-secondary and
+// Re-measured when the role layer entered the document: three of its
+// declarations changed value — --pk-role-fg-secondary and --pk-role-fg-tertiary
+// mix text-primary with text-muted now rather than with
 // --pk-role-fg-tertiary mix text-primary with text-muted now rather than with
 // surface-primary, and --pk-role-fg-placeholder is text-muted outright. The 22
 // theme colours, the 3 families and the 3 dimensions are the same values; a
 // consumer that reads the role layer sees three recolours, and one that reads only
 // the theme modes sees no change at all.
 //
-// Re-measured again for review round 7's HIGH, and this one moves a theme colour:
-// the generator now repairs a light-theme status tint against the muted copy a
-// tinted panel paints on it, so the warning badge of a generated client is a
+// Re-measured again when the generator learned to repair a light-theme status
+// tint, and this one moves a theme colour: that repair measures the muted copy a
+// tinted panel paints, so the warning badge of a generated client is a
 // shade paler than it was (light: #f5e3c5-style tints moved a few units toward
 // white on the seeds where the muted line measured under 4.5:1). A native screen
 // that painted a warning badge sees a shallower tint; nothing else in the
 // document moved.
 //
-// Re-measured a third time for review round 14's finding, and it moves the same
+// Re-measured a third time over the boundary a field draws for itself, and it
+// moves the same
 // two theme colours again: the generator now emits a field's edge that clears
 // SC 1.4.11's 3:1 on the card and the canvas rather than a 1.4:1 hairline, so
 // --pk-color-border-default and --pk-color-border-strong carry different values

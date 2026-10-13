@@ -1,9 +1,9 @@
 package components_test
 
-// Twice over, a finding named one more ground this package
-// paints a component's edge on that the one gate did not name: first the card,
-// the canvas and the muted panel, then the fill a hovered control moves under its
-// own line. Both are gated now — design.EdgeRolePairs names border-primary on
+// Twice, the ground a component's edge is painted on turned out to be one more
+// than the one gate named: first the card, the canvas and the muted panel, then
+// the fill a hovered control moves under its own line. Both are gated now —
+// design.EdgeRolePairs names border-primary on
 // surface-primary, -secondary, -tertiary and -hover at MinContrastGraphic, and
 // FromSeed refuses a palette whose role layer fails that list — so the question
 // left is whether the rule stayed a rule or became four anecdotes.
@@ -11,8 +11,9 @@ package components_test
 // Nothing in the repository reads the list back against the code that paints it.
 // design/roles.go says the grounds were "read out of classlists.go rather than
 // guessed"; that is a claim about a grep nobody runs again, and the next state
-// (a disabled field, a selected row, a dialog footer) is exactly where rounds 14
-// and 15 landed. This case reads the shipped rules themselves, and asks of every
+// (a disabled field, a selected row, a dialog footer) is exactly where the next
+// ground arrives unnoticed. This case reads the shipped rules themselves, and
+// asks of every
 // edge they draw, in every palette a client can be issued, the ratio SC 1.4.11
 // asks of the visual information that identifies a component.
 //
