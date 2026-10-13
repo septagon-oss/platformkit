@@ -2,7 +2,10 @@
 # CI runs `make check` and `make check-race` with TEST_COUNT absent from its environment and from the
 # command line. This case asks the Makefile for exactly that expansion — no TEST_COUNT anywhere — so a
 # later assignment that empties the variable after its `?=` default (which a grep for the default line,
-# or a dry run that names TEST_COUNT on the command line, both still accept) is refused.
+# or a dry run that names TEST_COUNT on the command line, both still accept) is refused. Each of the two
+# suite goals is asked for two parts, not one: the count that makes the run fresh, and the stated
+# per-package clock that keeps a loaded runner from killing a package that is still working. Both live on
+# the line, because the line is the whole of what CI runs.
 # Dry runs only: nothing is compiled, started or tested.
 set -euo pipefail
 
@@ -33,7 +36,8 @@ race="$(ci_line check-race 'go test')"
 # `check`'s line above: go test's ten-minute default is what stopped a working apps/platformkit four
 # times on 2026-10-10 (runs 57644, 57686, 57718 and 57727, each panic naming whichever case happened
 # to be open at the tenth minute). The count, the bound and the package list the bound precedes are
-# the three parts a later edit may not drop; what it may change is everything around them.
+# the three parts a later edit may not drop; what it may change is everything around them — the number
+# itself included, which is why the bound is matched as a stated minutes value and not as 30m.
 case "$race" in
 	'go test -race -count=1 -timeout='*m' ./'*) ;;
 	*)
@@ -44,4 +48,4 @@ if grep -rn 'TEST_COUNT' "$root/.gitea" >&2; then
 	echo 'FAIL: a workflow names TEST_COUNT; CI must take the Makefile default' >&2
 	exit 1
 fi
-echo 'test count: with TEST_COUNT unset, check and check-race run every test fresh, and no workflow sets it'
+echo 'test count: with TEST_COUNT unset, check and check-race run every test fresh inside a stated bound, and no workflow sets it'

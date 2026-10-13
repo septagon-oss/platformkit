@@ -30,7 +30,7 @@
 -- this one is "readable by everybody the tenant policy lets, writable by nobody the
 -- application is" — which is why the sweep below REVOKEs everything and
 -- grants exactly one privilege back, and why that one privilege is given to PUBLIC:
--- module SQL may name no role (migrations/review_round2_module_schema_grants_test.go),
+-- module SQL may name no role (migrations/module_schema_grants_test.go),
 -- and a read grant is the only grant whose correctness does not depend on knowing which
 -- role the deployment picked. Writes are the deployment's to grant, beside the role it
 -- names — this README's Provisioning section carries the two statements.

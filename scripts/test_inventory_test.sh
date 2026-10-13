@@ -79,8 +79,8 @@ write() { python3 "$checker" --root "$fixture" --markdown - --write "$@" >/dev/n
 # The status is asked because it is half the refusal. scripts/check_test_inventory.sh execs the tool
 # and scripts/check_push_tier.sh substitutes it, so the exit status — and not the sentence a person
 # reads in a log — is what stops a merge. Grepping the sentence while the pipeline swallowed the
-# status is how every case below stayed green over a tool that refused and exited 0 (review 1,
-# finding 2); each case now asks the sentence and the status, and the last case asks that a clean
+# status is how every case below stayed green over a tool that refused and exited 0; each case now
+# asks the sentence and the status, and the last case asks that a clean
 # tree exits 0 so a non-zero status cannot become a habit the pin never questions.
 ask() {
 	ASK_RC=0

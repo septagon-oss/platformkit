@@ -1,7 +1,7 @@
 package main
 
 // The workspace's mark, followed through the connection document the way
-// review_surfaces_test.go follows it through the public page: uploaded, named in
+// public_page_links_only_addresses_installation_serves_test.go follows it through the public page: uploaded, named in
 // the site settings, answered to a caller with no session, and fetchable at the
 // address the document gives. connection_test.go pins only the omission half —
 // a workspace with no mark answers no logoUrl — and this is the half where a
