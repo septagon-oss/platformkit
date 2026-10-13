@@ -132,6 +132,87 @@
       "": "O identificador do ficheiro do logótipo"
     }
   },
+  "invalid.site.settings.title.length": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "um título tem no máximo %d caracteres",
+    "plural": {
+      "": "um título tem no máximo %d caracteres"
+    }
+  },
+  "invalid.site.settings.tagline.length": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "um lema tem no máximo %d caracteres",
+    "plural": {
+      "": "um lema tem no máximo %d caracteres"
+    }
+  },
+  "invalid.site.settings.homeSlug.length": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "um slug da página inicial tem no máximo %d caracteres, e esse tem %d",
+    "plural": {
+      "": "um slug da página inicial tem no máximo %d caracteres, e esse tem %d"
+    }
+  },
+  "invalid.site.settings.homeSlug.form": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "%q não é um slug, por isso nada pode ser servido nesse endereço",
+    "plural": {
+      "": "%q não é um slug, por isso nada pode ser servido nesse endereço"
+    }
+  },
+  "invalid.site.settings.theme": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "o tema %q não é um de %v",
+    "plural": {
+      "": "o tema %q não é um de %v"
+    }
+  },
+  "invalid.site.settings.primaryColor": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "%q não é uma cor; uma cor principal é #rrggbb",
+    "plural": {
+      "": "%q não é uma cor; uma cor principal é #rrggbb"
+    }
+  },
+  "invalid.site.settings.nav.count": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "uma navegação tem no máximo %d ligações",
+    "plural": {
+      "": "uma navegação tem no máximo %d ligações"
+    }
+  },
+  "invalid.site.settings.nav.label": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "uma ligação precisa de um rótulo de no máximo %d caracteres, e %q não é um",
+    "plural": {
+      "": "uma ligação precisa de um rótulo de no máximo %d caracteres, e %q não é um"
+    }
+  },
+  "invalid.site.settings.nav.path": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "uma ligação aponta para um caminho dentro deste site, e %q não é um",
+    "plural": {
+      "": "uma ligação aponta para um caminho dentro deste site, e %q não é um"
+    }
+  },
   "enum.site.settings.light": {
     "references": [
       "modules/site/contracts/site.go"

@@ -5,7 +5,6 @@ package internal
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -63,10 +62,16 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 	// Validated here as well as by crud.Update below, because the comparison
 	// that decides whether anything changed has to run against the normalised
 	// values: " Acme " and "Acme" are the same title, and a save that published
-	// because of the whitespace would be a cache invalidated for nothing. The
-	// wrapping is kit/crud's, so both doors answer with the same 422.
+	// because of the whitespace would be a cache invalidated for nothing.
+	//
+	// The refusal is returned as the entity wrote it, with nothing added: a
+	// fault.Reason carries its own verdict, so errors.Is still answers
+	// ErrInvalid and kit/rest still answers 422, while the sentence a person is
+	// shown stays the one sentence its writer keyed. Prefixing this package's
+	// prose onto it would be a second sentence standing where a translated one
+	// belongs.
 	if err := in.Validate(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		return nil, err
 	}
 	if same(stored, in) {
 		return stored, nil
