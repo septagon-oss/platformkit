@@ -16,9 +16,11 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
-// The routes a person's own keys are managed through. Three, all SignedIn, all
-// about the caller — which is why none takes a permission, and why there is no
-// route here that lets one person mint a key as another.
+// The routes a person's own keys are managed through, all about the caller —
+// which is why none takes a permission, and why there is no route here that lets
+// one person mint a key as another. Three are SignedIn; the fourth, a key
+// retiring itself, is AnyCredential, the one credential command a scoped key may
+// run (docs/adr/0020-a-credential-may-retire-itself.md).
 //
 // The revocation is a POST rather than a DELETE for the reason the session
 // revocations give: the page that offers it must be able to make the write as a
@@ -60,6 +62,19 @@ func RegisterTokenRoutes(surfaces httpx.Surfaces, tokens contracts.Tokens) {
 			contracts.EventAPITokenRevoked,
 		}},
 	}, httpx.SignedIn(), handleRevokeToken(tokens))
+
+	httpx.Register(surfaces.App, huma.Operation{
+		OperationID: "auth-token-revoke-self",
+		Method:      http.MethodPost,
+		Path:        "/tokens/revoke-self",
+		Summary:     "Revoke the key that signed this request in",
+		Description: "Ends the key that authenticated this request, and no other: there is no id to name, and no management grant is needed, so a key too narrow for anything else can still retire itself. 204 with no body, because the credential it would describe no longer exists. A session is refused with 403, since it carries no key; a revoked or expired key is not recognised and never reaches this operation. X-Expected-Principal is honoured if sent and never required.",
+		Tags:        []string{"auth"}, DefaultStatus: http.StatusNoContent,
+		Errors: []int{http.StatusForbidden, http.StatusServiceUnavailable},
+		Extensions: map[string]any{httpx.EventsExtension: []string{
+			contracts.EventAPITokenRevoked,
+		}},
+	}, httpx.AnyCredential(), handleRevokeOwnToken(tokens))
 }
 
 func handleIssueToken(tokens contracts.Tokens, surfaces httpx.Surfaces) func(context.Context, *issueTokenInput) (*issuedTokenOutput, error) {
@@ -130,6 +145,24 @@ func handleRevokeToken(tokens contracts.Tokens) func(context.Context, *revokeTok
 			return nil, rest.Fault(err)
 		}
 		return done(), nil
+	}
+}
+
+func handleRevokeOwnToken(tokens contracts.Tokens) func(context.Context, *struct{}) (*struct{}, error) {
+	return func(ctx context.Context, _ *struct{}) (*struct{}, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		caller, _ := tenancy.PrincipalFrom(ctx)
+		if err := tokens.RevokeOwnToken(ctx, tx, caller); err != nil {
+			if errors.Is(err, contracts.ErrCallerWithoutKey) {
+				return nil, problem.New(http.StatusForbidden,
+					"this request carries no bearer key to revoke; revoke a key by id at /tokens/{id}/revoke")
+			}
+			return nil, rest.Fault(err)
+		}
+		return nil, nil
 	}
 }
 
