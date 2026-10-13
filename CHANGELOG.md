@@ -156,7 +156,7 @@ screen, shell or device is handed the empty colour where its own document says
 `#rrggbb`. A save of either accent clears it back to the absence before validation and
 before the diff, so the settings form that submits what the read gave it writes
 nothing, publishes nothing and moves no revision; the event and the trail keep
-speaking stored values. `migrations/000058_site_default_accent.up.sql` moves the
+speaking stored values. `migrations/000054_site_default_accent.up.sql` moves the
 column's default and runs no `UPDATE`: a migration cannot tell a colour somebody
 typed from the one that column used to fill in, so every existing row keeps it.
 
