@@ -49,6 +49,28 @@ func (r RecordUses) SetUses(ctx context.Context, tx db.Tx[db.Tenant], in rest.Us
 	return err
 }
 
+// OrderUses answers rest.FileUsesOrder for this module, which is how a richtext save
+// tells the ledger all of the files it names before it files the first of them.
+//
+// The kit's save names a record and the files it is about to show; the Use this
+// module keys its rows by carries the record alone, exactly as ShowFiles' input does,
+// because the audience and the lock span every field and locale of it. A Service that
+// answers nothing of the kind keeps the order its rewrites always had: this adapter
+// files no uses of its own, so refusing here would cost a composition its write over
+// a guarantee the Service it was wired never offered.
+func (r RecordUses) OrderUses(ctx context.Context, tx db.Tx[db.Tenant], in rest.SaveUses) error {
+	if r.Service == nil {
+		return fmt.Errorf("file: no service to order a use lock with")
+	}
+	ordered, ok := r.Service.(contracts.UsesOrder)
+	if !ok {
+		return nil
+	}
+	return ordered.OrderUses(ctx, tx, contracts.Use{
+		Module: in.Module, Entity: in.Entity, Record: in.Record,
+	}, in.Files)
+}
+
 // RichTextFiles adapts this module's tenant-scoped opener to the generic image port.
 //
 // Dimensions come off the row: the upload pass measured the frame it stored, so

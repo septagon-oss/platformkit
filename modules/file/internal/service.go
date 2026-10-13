@@ -249,6 +249,38 @@ func (s *Service) SetUsesShown(ctx context.Context, tx db.Tx[db.Tenant], use con
 
 var _ contracts.ShownUses = (*Service)(nil)
 
+// OrderUses is the save-wide lock pass contracts.UsesOrder promises: one ascending
+// FOR UPDATE walk over every file this save names and every file the record already
+// shows, taking no decision and writing no row.
+//
+// The record's own ledger rows belong in the walk because the writes that end a use
+// are the ones that most need the file locked — they are the ones that decide whether
+// the file has any use left — and an edit that drops a picture names nothing at all.
+// A save is allowed to name a file no row of this tenant answers for, and this pass
+// says nothing about it either way: the refusal for a file that is not there is
+// setUses', asked once the rows are about to be written and the answer is a fact the
+// caller is owed.
+//
+// The rows this walk locks are exactly the ones setUses and SetShown go on to lock,
+// so nothing is taken weak and upgraded later: a row locked here is already held when
+// the rewrite asks for it, which Postgres answers without waiting.
+func (s *Service) OrderUses(ctx context.Context, tx db.Tx[db.Tenant], owner contracts.Use, refs []uuid.UUID) error {
+	var shown []uuid.UUID
+	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Where("module = ? AND entity = ? AND record = ?", owner.Module, owner.Entity, owner.Record).
+		Distinct().Pluck("file_id", &shown).Error; err != nil {
+		return fmt.Errorf("file: what %s/%s %s shows: %w", owner.Module, owner.Entity, owner.Record, err)
+	}
+	for _, id := range union(contracts.CollapseRefs(refs), shown) {
+		if _, err := lockFileForUpdate(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var _ contracts.UsesOrder = (*Service)(nil)
+
 // setUses is one rewrite, asked with the audience the record owning it asserts.
 // public says whether the rows this pass files are shown to somebody who has not
 // signed in — the record's state, never the request's claim — and it changes two

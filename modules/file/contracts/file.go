@@ -755,6 +755,36 @@ type ShownUses interface {
 	SetUsesShown(ctx context.Context, tx db.Tx[db.Tenant], use Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error)
 }
 
+// UsesOrder is the ledger's promise that the file rows one save touches are locked
+// in one pass, in the ledger's own ascending order, whatever order the save names
+// them in. It is asked by the one caller that can know a whole save at once — the
+// richtext door, which sees every field of the body before it files any of them —
+// and it is optional in the way ShownUses is: a Service that answers nothing of the
+// kind keeps filing one field at a time, which is the order that can collide.
+//
+// The collision it prevents is not a race. A save that files a use of one picture in
+// its body and another in its summary locks two file rows, in the order the document
+// holds them; a second record naming the same two pictures the other way round then
+// holds one row and waits for the other while the first waits for it, and Postgres
+// ends the deadlock by refusing one of the two saves — a person's write, lost to a
+// wait they can neither see nor fix. One ascending pass over everything the save will
+// touch makes the second save wait for the first instead, which is a slow save.
+//
+// OrderUses locks and decides nothing else: it writes no row, publishes no event and
+// refuses nothing. The rewrite itself stays SetUses' and SetUsesShown's, and its own
+// locks are unchanged — what this pass buys is that those later locks are already
+// held, since Postgres grants a row a transaction has locked again for nothing.
+// Locking strong and once is the rule this keeps; nothing here takes a row weak and
+// upgrades it later, which is what two rewrites of one file deadlock on.
+type UsesOrder interface {
+	// OrderUses walks the files refs names, together with every file owner's record
+	// already shows — the second half is what makes an edit that drops a picture join
+	// the same pass — in one ascending FOR UPDATE pass. Files a caller has no right to
+	// see are not there to lock, and locking nothing is not an error: the tenant scope
+	// answers which rows exist, as it does for every other read here.
+	OrderUses(ctx context.Context, tx db.Tx[db.Tenant], owner Use, refs []uuid.UUID) error
+}
+
 // DefaultGrantExpiry is the life of a grant nobody asked a length for: long
 // enough to open a document on a slow connection, short enough that a leaked
 // link is a bad hour and not a bad forever.

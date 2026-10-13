@@ -39,6 +39,15 @@ func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, 
 	if err != nil {
 		return err
 	}
+	// Two passes over the richtext fields, and the reason is the file ledger. Each
+	// field filed is one call that locks the files it names, so a save with two of
+	// them locks in whatever order the entity declares its fields in — and two records
+	// sharing two pictures, each naming them in the other's order, then hold one and
+	// wait for the other, which Postgres ends by killing one save over. The whole save
+	// is named to the ledger once, before anything is filed, so that the locks of a
+	// save are taken in one pass whose order the ledger decides. See FileUsesOrder.
+	var pending []pendingUses
+	whole := SaveUses{Module: s.Module, Entity: s.Entity, Record: entity.BaseOf(e).ID}
 	for _, field := range crud.Fields[T]() {
 		if field.Widget != "richtext" || (columns != nil && !slices.Contains(columns, field.Column)) {
 			continue
@@ -63,9 +72,69 @@ func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, 
 		for _, ref := range refs {
 			ids = append(ids, ref.ID)
 		}
-		if err := s.recordUses(ctx, tx, e, field, ids, public); err != nil {
-			return err
+		whole.Files = append(whole.Files, ids...)
+		pending = append(pending, pendingUses{name: field.Name, in: UsesInput{
+			Module: s.Module, Entity: s.Entity, Field: field.Column,
+			Locale: recordLocale(ctx), Record: whole.Record, Files: ids, Public: public,
+		}})
+	}
+	if err := s.orderUses(ctx, tx, whole); err != nil {
+		return err
+	}
+	for _, p := range pending {
+		if err := s.fileUses().SetUses(ctx, tx, p.in); err != nil {
+			return fmt.Errorf("richtext field %s: %w", p.name, err)
 		}
+	}
+	return nil
+}
+
+// pendingUses is one richtext field's references with the name of the field they
+// came from, which is what the refusal a filed use produces still has to carry.
+type pendingUses struct {
+	name string
+	in   UsesInput
+}
+
+// SaveUses is one record's richtext save in the one sentence the file ledger needs
+// before any of it is filed: which record, and every file that save names across
+// every richtext field of it. A record being deleted names nothing and says so with
+// an empty Files: the ledger knows what the record shows, and it is the ledger that
+// has to lock those rows in one pass rather than one field at a time.
+type SaveUses struct {
+	Module string
+	Entity string
+	Record uuid.UUID
+	Files  []uuid.UUID
+}
+
+// FileUsesOrder is the optional half of FileUses: the wiring that answers it is told
+// a whole save, in one call, before a single field of it is filed.
+//
+// A wiring that does not answer it is not refused and not warned about, and the
+// reason is who is without it. RecordNoUses files no uses, so it locks no file row
+// and has nothing to order; a deployment that wired its own recorder before this
+// capability existed keeps the one-pass-per-field order it always had, which is the
+// order that can collide and is not a new hazard this kit introduced. What a resource
+// with two richtext fields should be wired to is a recorder that answers.
+type FileUsesOrder interface {
+	OrderUses(ctx context.Context, tx db.Tx[db.Tenant], in SaveUses) error
+}
+
+// orderUses tells the ledger the whole save. It asks nothing of a wiring that
+// records no uses, and nothing of one that cannot be told; the error it produces
+// names the record whose files it could not order, because the caller is about to
+// refuse the write and has to say whose audience was at stake.
+func (s Spec[T]) orderUses(ctx context.Context, tx db.Tx[db.Tenant], in SaveUses) error {
+	if s.FileUses == nil {
+		return nil
+	}
+	ordered, ok := s.FileUses.(FileUsesOrder)
+	if !ok {
+		return nil
+	}
+	if err := ordered.OrderUses(ctx, tx, in); err != nil {
+		return fmt.Errorf("who %s/%s %s shows: %w", in.Module, in.Entity, in.Record, err)
 	}
 	return nil
 }
@@ -106,6 +175,15 @@ func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field
 // asks it in the request's language too, which is what kit/rest's own calls will
 // then have used.
 func (s Spec[T]) clearRichTextUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
+	// The record's whole ledger is named first, with no files of its own, so that a
+	// delete ending uses of two pictures takes both locks in one ascending pass and
+	// not one pass per field. What the record shows is what the ledger holds; the save
+	// is about to end all of it.
+	if err := s.orderUses(ctx, tx, SaveUses{
+		Module: s.Module, Entity: s.Entity, Record: entity.BaseOf(e).ID,
+	}); err != nil {
+		return err
+	}
 	for _, field := range crud.Fields[T]() {
 		if field.Widget != "richtext" {
 			continue
