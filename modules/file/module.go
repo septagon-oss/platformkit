@@ -219,6 +219,11 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			// vocabulary (000045_file_uses.up.sql:33-39) and the last is a language tag,
 			// so none of them is a column an address was ever copied into.
 			personaldata.Table{Name: "file_uses", About: []string{"record"}, NotPerson: []string{"file_id"}},
+			// file_variants (000054) is one width of one picture: the file it belongs
+			// to is a row, not a person, and the two text columns hold no sentence —
+			// `state` is a CHECKed vocabulary and `reason` is a failed encode's own
+			// word for itself, capped at 24 characters by the same CHECK.
+			personaldata.Table{Name: "file_variants", NotPerson: []string{"file_id"}},
 		),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
