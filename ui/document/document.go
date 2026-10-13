@@ -252,9 +252,22 @@ func Fault(status int, title, detail, back, backLabel string) View {
 	}
 	return View{Title: title, Status: status, Language: "en", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: title}),
-		components.Alert(components.AlertProps{Tone: "danger", Message: detail, Bordered: true}),
+		refusalLine(detail),
 		components.Link(components.LinkProps{Label: backLabel, Href: back}),
 	}}
+}
+
+// refusalLine is the verdict's own sentence, in the frame's content column.
+//
+// The Alert component is right for a notice that arrives beside other content —
+// that is what its icon column, its padding and its live region are for — and wrong
+// for the page whose whole body is one refusal: the frame's border and padding and
+// the icon push the one line a person came to read some four centimetres off the
+// column every other line on the page sits on, which is a third alignment on a page
+// that speaks two. The announcement stays: this is the page a person is told the
+// refusal on, and it says so as an alert the way the component says it.
+func refusalLine(sentence string) g.Node {
+	return h.Div(h.Role("alert"), components.Text(components.TextProps{Content: sentence, Color: "danger"}))
 }
 
 // RefusalProps is the one verdict that arrives with parts: a refusal of a
@@ -291,7 +304,7 @@ func Refusal(p RefusalProps) View {
 	}
 	body := []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: p.Title}),
-		components.Alert(components.AlertProps{Tone: "danger", Message: p.Sentence, Bordered: true}),
+		refusalLine(p.Sentence),
 	}
 	if p.Missing != "" {
 		body = append(body, components.Text(components.TextProps{Content: p.Missing, Element: "p"}))

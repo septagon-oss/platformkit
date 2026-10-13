@@ -77,6 +77,11 @@ type Resource struct {
 	// "may I do this?" has no answer there, and a control that would be refused is
 	// not worth drawing. ui/screens fills this in from httpx.Resource.
 	Commands []Command
+	// History is this record's versions, read for the caller the page is rendered
+	// for, and nil for a resource whose Spec keeps none. The command it carries is
+	// left out of Commands by the adapter, so the panel is the one place a person
+	// restores from. ui/screens fills this in from httpx.Resource.History.
+	History *HistoryPanel
 }
 
 // PerPage is a screenful, and the page the list renders and links. kit/crud's
@@ -205,8 +210,27 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandForms(o, o.Words(r.Schema), r.Commands, item, false)...)
+	body = append(body, commandForms(o, o.Words(r.Schema), r.offeredCommands(), item, false)...)
+	body = append(body, historyDisclosure(o, r.History))
 	return document.View{Title: named, Body: body}
+}
+
+// offeredCommands is the commands to draw a form for: every one this caller may
+// use, except the one the history panel carries. The panel is that command's
+// control, per version, with the version it names in it; a second form above it
+// asking for a version number by hand would be the same door twice, once usable
+// and once a guess.
+func (r Resource) offeredCommands() []Command {
+	if r.History == nil || r.History.Carries == "" {
+		return r.Commands
+	}
+	out := make([]Command, 0, len(r.Commands))
+	for _, c := range r.Commands {
+		if c.Verb != r.History.Carries {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // Form is the create and edit screen: one control per writable field, derived

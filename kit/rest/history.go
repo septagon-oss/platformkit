@@ -32,6 +32,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -231,7 +232,7 @@ func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read *httpx.Router) {
 		// then writes as an ordinary PATCH would.
 		Expected int64 `json:"expectedRevision,omitempty" doc:"The row's write count as the caller read it; a row past it is refused with 412 and writes nothing"`
 	}
-	Command(surfaces, s, "restore", "Restore a version of this "+s.Entity,
+	Command(surfaces, s, restoreVerb, "Restore a version of this "+s.Entity,
 		"Writes a new version with the stored one's content. No version is changed or removed, and the row's lifecycle fields are not replayed.",
 		[]string{RestoredEvent},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in restoreArgument) (T, error) {
@@ -249,6 +250,32 @@ func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read *httpx.Router) {
 			},
 			SuccessMessage: "A new version was written with the content you restored.",
 		}})
+}
+
+// restoreVerb is the last path segment of the command that writes a stored
+// version back, on the API and on the screen alike. One name for both because the
+// screen performs this command and not a lookalike of it.
+const restoreVerb = "restore"
+
+// historyPort is this Spec's version series as a screen reads it: the verb of the
+// door above, and the series itself, read a page at a time in the request's own
+// transaction and filed under the language this request is served in — the same
+// answer the versions route gives, so the panel and the API cannot disagree about
+// which series a record has.
+func (s Spec[T]) historyPort() *httpx.History {
+	if !s.History {
+		return nil
+	}
+	return &httpx.History{RestoreVerb: restoreVerb, Versions: func(ctx context.Context, id uuid.UUID) ([]httpx.Version, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return s.Versions.ListVersions(ctx, tx, httpx.VersionQuery{
+			Module: s.Module, Entity: s.Entity, Locale: s.versionLocale(ctx, ""),
+			Record: id, Limit: versionsLimit,
+		})
+	}}
 }
 
 // versionLocale resolves the series a request asked for: its own tag when it sent
@@ -277,7 +304,8 @@ func (s Spec[T]) versionLocale(ctx context.Context, asked string) string {
 func (s Spec[T]) restoreVersion(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from int64, locale string, expected int64) (T, error) {
 	var zero T
 	if from < 1 {
-		return zero, fmt.Errorf("%w: a version is numbered from 1", crud.ErrInvalid)
+		return zero, problem.New(http.StatusUnprocessableEntity,
+			httpx.CodeVersionUnusable+": a version is numbered from 1, and "+strconv.FormatInt(from, 10)+" is not one")
 	}
 	stored, err := s.Versions.Version(ctx, tx, httpx.VersionKey{
 		Module: s.Module, Entity: s.Entity, Locale: locale, Record: id, Version: from,
@@ -286,7 +314,7 @@ func (s Spec[T]) restoreVersion(ctx context.Context, tx db.Tx[db.Tenant], id uui
 		return zero, err
 	}
 	fields := crud.Fields[T]()
-	values, err := replayable(fields, s.Immutable, stored.Fields)
+	values, err := replayable(fields, s.Immutable, stored.Fields, s.freshRow())
 	if err != nil {
 		return zero, err
 	}
@@ -315,19 +343,47 @@ func (s Spec[T]) restoreVersion(ctx context.Context, tx db.Tx[db.Tenant], id uui
 // names the schema has a writable column for, and nothing else. It is one
 // function because the answer must not differ between the kit's restore and
 // anything else that replays a version.
-func replayable(fields []crud.Field, immutable []string, document json.RawMessage) (map[string]any, error) {
-	var stored map[string]any
+//
+// Two encodings are held to here, and both were wrong once.
+//
+// A key the stored document does not carry is replayed as the field's own empty
+// value rather than left out. A version is the whole writable document, and the
+// document is encoded with the entity's own tags, so a body that was empty when the
+// version was written has no key at all: leaving the key out would make the restore
+// a partial write that keeps whatever the row has since become, and a person who
+// restored the empty first draft would be told it was back while reading the fourth
+// edit at them.
+//
+// A number is carried through as the bytes the version holds, never as a decoded
+// float. A minor unit is an int64 and JSON's only number is a float64, so decoding
+// into `any` rounds 9007199254740993 to a value two of them away — a restore that
+// succeeds, reports the row back, and is wrong in the last digits of the money.
+func replayable(fields []crud.Field, immutable []string, document json.RawMessage, fresh any) (map[string]any, error) {
+	var stored map[string]json.RawMessage
 	if err := json.Unmarshal(document, &stored); err != nil {
 		return nil, fmt.Errorf("rest: that version's document cannot be read back: %w", err)
 	}
+	blank := reflect.ValueOf(fresh).Elem()
 	out := make(map[string]any, len(fields))
 	for _, field := range fields {
 		if entity.ServerOwned(field) || foldedName(map[string]any{field.Name: nil}, immutable) != "" {
 			continue
 		}
-		if value, ok := stored[field.Name]; ok {
-			out[field.Name] = value
+		if raw, ok := stored[field.Name]; ok {
+			out[field.Name] = raw
+			continue
 		}
+		empty, err := json.Marshal(blank.FieldByIndex(field.Index).Interface())
+		if err != nil {
+			return nil, fmt.Errorf("rest: that version's %s cannot be written back empty: %w", field.Name, err)
+		}
+		out[field.Name] = json.RawMessage(empty)
 	}
 	return out, nil
+}
+
+// freshRow is an untouchable copy of this Spec's entity, so that replay can ask
+// what one of its fields holds when nothing was ever written to it.
+func (s Spec[T]) freshRow() any {
+	return reflect.New(reflect.TypeFor[T]().Elem()).Interface()
 }
