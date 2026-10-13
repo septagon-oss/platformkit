@@ -889,6 +889,38 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
 
+      # The suite's browsers read the desktop's settings through GLib before they serve a page,
+      # and the image this job runs in ships no compiled schema for them to read. Measured 2026-10-13 by starting the
+      # image the runner put job 62753 in (`gitea/runner-images:ubuntu-24.04`, read locally at the
+      # digest that job pulled): `/usr/share/glib-2.0/schemas` holds `gschema.dtd` and nothing
+      # else, so GLib's default schema source is null, and six launches of the pinned Chromium with
+      # this suite's own launch flags print
+      # `GLib-GIO-CRITICAL: g_settings_schema_source_lookup: assertion 'source != NULL' failed`
+      # six times. `npx playwright install --with-deps` above is what installs the browser's shared
+      # libraries, and the dependency list it installs from names no schema package: running that
+      # install in the same image leaves the directory above exactly as it was, so nothing in this job
+      # ever put a schema there. Job 62753 (run 719, head e8bce9d8) is what the line is worth: that
+      # critical is the last thing the dying browser's log says, 80 ms after its launch and before its
+      # first page, immediately above `*** stack smashing detected ***: terminated`.
+      # The package below is what makes the source non-null. In the same image, over the same six
+      # launches after installing it: that line appears none of six times,
+      # `gsettings get org.gnome.desktop.interface font-hinting` answers `light`, and all six still
+      # exit 0 having rendered their page. The precondition is asked again where it is used, below.
+      # What this step changes is the environment the browsers start in. It changes no assertion, no
+      # skip, no retry, no reorder and no wait: the suite still runs the same files and the same 31
+      # tests have to pass. What it does not claim is that the missing schema caused the abort — the
+      # twelve launches here aborted none of twelve, and a process that dies inside its own stack
+      # protector is Chromium's to fix, not this repository's. The claim is the narrower one the
+      # evidence reaches: the refusal happened inside a path this job can take away from every launch,
+      # and it is taken away.
+      # The install goes through scripts/ci_apt_index.sh for the reason written beside that call in the
+      # check job: a mirror mid-sync is a reason to wait forty seconds, not a reason to refuse a pull
+      # request, and scripts/ci_apt_index_test.sh runs this step body to pin that it reaches the retry.
+      - name: Install the desktop schema the editor's browsers read at startup
+        run: |
+          bash scripts/ci_apt_index.sh
+          apt-get install --yes --no-install-recommends gsettings-desktop-schemas
+
       - name: Corrected editor image builds without publishing
         env:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
@@ -907,6 +939,15 @@ jobs:
           CONTAINER_NAME: platformkit-${{ github.run_id }}-editor
         run: |
           test -n "$JOB_NETWORK"
+          # The same fact the install step above exists to make true, asked where it is used: the
+          # browsers started below read the desktop's settings through GLib at startup, and with no
+          # compiled schema they enter GLib's missing-schema path before their first page. Its absence
+          # here is that install step having gone away, which should read as this sentence rather than
+          # as a browser that died for no named reason.
+          if ! [ -r /usr/share/glib-2.0/schemas/gschemas.compiled ]; then
+            echo 'the editor job has no compiled desktop schema: the step that installs it is missing from this job' >&2
+            exit 1
+          fi
           docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
           container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias openpencil \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
