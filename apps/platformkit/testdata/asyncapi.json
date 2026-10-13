@@ -2418,7 +2418,7 @@
     },
     "subject.erased": {
       "address": "platformkit.*.subject.erased",
-      "description": "Published at platformkit.{tenantId}.subject.erased; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.subject.erased; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "subject.erased": {
           "contentType": "application/json",
@@ -2461,7 +2461,7 @@
     },
     "subject.export_ready": {
       "address": "platformkit.*.subject.export_ready",
-      "description": "Published at platformkit.{tenantId}.subject.export_ready; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.subject.export_ready; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "subject.export_ready": {
           "contentType": "application/json",
@@ -2511,7 +2511,7 @@
     },
     "subject.export_requested": {
       "address": "platformkit.*.subject.export_requested",
-      "description": "Published at platformkit.{tenantId}.subject.export_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.subject.export_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "subject.export_requested": {
           "contentType": "application/json",

@@ -4,13 +4,14 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `production` · 19 modules · role `all`.
+App `platformkit` · environment `production` · 20 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in production builds 19 modules.
+pkit: platformkit in production builds 20 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
+pkit: a tenant of platformkit begins as subject_officer, holding subject:export and subject:erase.
 pkit: product.Module needs no other module.
 pkit: product.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: product.Module contributes one changecontracts.SubjectBinding to change.Module.
@@ -19,10 +20,12 @@ pkit: seed.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: user.Module is built after product.Module.
 pkit: user.Module needs usercontracts.Administration from product.Module.
 pkit: user.Module needs usercontracts.Granting from product.Module.
+pkit: user.Module contributes one personaldata.Part to subject.Module.
 pkit: user.Module defines the permission user:read, user:manage and user:approve.
 pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
 pkit: translation.Module is built after product.Module.
 pkit: translation.Module needs rest.TranslationSource from product.Module.
+pkit: translation.Module contributes one personaldata.Part to subject.Module.
 pkit: translation.Module emits translation.updated.
 pkit: site.Module is built after product.Module.
 pkit: site.Module uses sitecontracts.WriteGate from product.Module.
@@ -43,6 +46,7 @@ pkit: notification.Module needs notificationcontracts.RecipientLookup from user.
 pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Module.
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
+pkit: notification.Module contributes one personaldata.Part to subject.Module.
 pkit: notification.Module runs on mailbox, which the deployment picked.
 pkit: notification.Module emits notification.created, notification.email_requested and notification.read.
 pkit: notification.Module handles notification.email_requested.
@@ -50,6 +54,7 @@ pkit: file.Module is built after product.Module and tenant.Module.
 pkit: file.Module needs filecontracts.Storage from product.Module.
 pkit: file.Module needs jobs.TenantLister from tenant.Module.
 pkit: file.Module reads config.Files.
+pkit: file.Module contributes one personaldata.Part to subject.Module.
 pkit: file.Module defines the permission file:read, file:manage, file:erase and file:retain.
 pkit: file.Module emits file.uploaded, file.deleted, file.retained, file.released, file.erased and file.visibility.
 pkit: file.Module handles file.deleted.
@@ -57,6 +62,7 @@ pkit: task.Module is built after product.Module and tenant.Module.
 pkit: task.Module needs jobs.TenantLister from tenant.Module.
 pkit: task.Module uses tenancy.Policy from product.Module.
 pkit: task.Module uses rest.Gate from product.Module.
+pkit: task.Module contributes one personaldata.Part to subject.Module.
 pkit: task.Module defines the permission task:read and task:update.
 pkit: task.Module emits task.task.created, task.task.updated, task.task.deleted, task.assigned, task.resolved and task.sla_breached.
 pkit: billing.Module is built after tenant.Module.
@@ -69,6 +75,7 @@ pkit: audit.Module needs jobs.TenantLister from tenant.Module.
 pkit: audit.Module uses auditcontracts.Plan from product.Module.
 pkit: audit.Module reads config.Audit.
 pkit: audit.Module reads config.Database.
+pkit: audit.Module contributes one personaldata.Part to subject.Module.
 pkit: audit.Module defines the permission audit:read.
 pkit: audit.Module handles every event this application emits.
 pkit: webhook.Module is built after product.Module and tenant.Module.
@@ -76,6 +83,7 @@ pkit: webhook.Module needs jobs.TenantLister from tenant.Module.
 pkit: webhook.Module needs webhookcontracts.Catalogue from product.Module.
 pkit: webhook.Module could use webhookcontracts.Alerts; platformkit composes no provider, so it will not.
 pkit: webhook.Module reads config.Webhook.
+pkit: webhook.Module contributes one personaldata.Part to subject.Module.
 pkit: webhook.Module defines the permission webhook:read and webhook:update.
 pkit: webhook.Module emits webhook.endpoint.created, webhook.endpoint.updated, webhook.endpoint.deleted, webhook.endpoint.disabled and webhook.endpoint.enabled.
 pkit: webhook.Module handles every event this application emits.
@@ -93,6 +101,7 @@ pkit: auth.Module uses authcontracts.SAMLProviders from tenant.Module.
 pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Module.
 pkit: auth.Module reads config.Auth.
 pkit: auth.Module reads config.Server.
+pkit: auth.Module contributes one personaldata.Part to subject.Module.
 pkit: auth.Module defines the permission role:manage and passkey:signin.
 pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.factor_used, auth.factor_suspect, auth.passkey_sign_in_set, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested, auth.verification_requested, auth.no_link_requested and auth.mail_failed.
 pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_unverified, auth.no_link_requested and auth.verification_requested.
@@ -101,6 +110,7 @@ pkit: content.Module needs richtext.Files from file.Module.
 pkit: content.Module needs rest.FileUses from file.Module.
 pkit: content.Module needs rest.Translations from translation.Module.
 pkit: content.Module needs rest.FileShown from file.Module.
+pkit: content.Module contributes one personaldata.Part to subject.Module.
 pkit: content.Module defines the permission content:read and content:manage.
 pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
 pkit: access.Module is built after product.Module, user.Module, notification.Module, auth.Module and site.Module.
@@ -123,9 +133,18 @@ pkit: change.Module takes every changecontracts.SubjectBinding from product.Modu
 pkit: change.Module uses changecontracts.Notifier from access.Module.
 pkit: change.Module uses changecontracts.ProposalPage from access.Module.
 pkit: change.Module uses *change.ReviewChrome from access.Module.
+pkit: change.Module contributes one personaldata.Part to subject.Module.
 pkit: change.Module defines the permission change:read, change:propose and change:decide.
 pkit: change.Module emits change.proposal_proposed, change.proposal_reviewed, change.proposal_applied and change.proposal_withdrawn.
 pkit: change.Module handles change.proposal_reviewed and change.proposal_applied.
+pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module needs usercontracts.Service from user.Module.
+pkit: subject.Module needs filecontracts.Service from file.Module.
+pkit: subject.Module needs notificationcontracts.Service from notification.Module.
+pkit: subject.Module needs jobs.TenantLister from tenant.Module.
+pkit: subject.Module defines the permission subject:export and subject:erase.
+pkit: subject.Module emits subject.erased, subject.export_requested and subject.export_ready.
 pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
@@ -134,12 +153,12 @@ pkit: admin.Module could use admincontracts.Storybook; platformkit composes no p
 pkit: admin.Module runs after everything and saw every other module's manifest.
 pkit: admin.Module defines the permission gallery:read.
 pkit: tenant.Module provides httpx.TenantLoader; no module in platformkit needs it.
-pkit: file.Module provides filecontracts.Service; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Service; no module in platformkit needs it.
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.
 pkit: auth.Module provides httpx.Authorizer; no module in platformkit needs it.
 pkit: auth.Module provides pkit.Authenticator; no module in platformkit needs it.
 pkit: change.Module provides changecontracts.Service; no module in platformkit needs it.
+pkit: subject.Module provides subjectcontracts.Service; no module in platformkit needs it.
 
 ## What the application answers the kernel
 
