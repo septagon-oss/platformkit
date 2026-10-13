@@ -1,6 +1,6 @@
 package app
 
-// The reviewer's mixed_export_outcome_test.go asks whether a metric success hides a
+// mixed_export_outcome_test.go asks whether a metric success hides a
 // trace failure. These are the three readings the same record owes either way, and
 // each one fails on its own:
 //
@@ -16,7 +16,7 @@ package app
 //
 // Nothing here waits on the reader's fifteen-second tick or on a batch filling: the
 // attempts are the ones the wrappers make when the SDK calls them, which is the
-// same path the two live-collector cases (review rounds 20 and 21) reach through a
+// same path the two live-collector cases reach through a
 // port that refuses connections.
 
 import (
@@ -99,7 +99,7 @@ func TestEachExportAnswersForItself(t *testing.T) {
 // TestAHalfThatWasNeverAskedIsNotReportedAsDown covers the silent half of the same
 // reading. A process that has exported numbers and ended no span has one unattempted
 // export and one delivered one; the report that invents a failure for the half
-// nobody asked would fail the case round 20 wrote the "no export attempted" reading
+// nobody asked would fail the case that wrote the "no export attempted" reading
 // for, from the other side.
 func TestAHalfThatWasNeverAskedIsNotReportedAsDown(t *testing.T) {
 	rec := &exported{}

@@ -112,11 +112,16 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	}
 	var from []uuid.UUID
 	live := map[uuid.UUID]bool{}
+	// Which of the rows this rewrite is replacing asserted a public audience, read
+	// before they go: settle below is asked about exactly these, and it is the same
+	// list internal.Service.SetUses builds from the rows it is deleting.
+	wasPublic := map[uuid.UUID]bool{}
 	for _, row := range f.uses {
 		if row.TenantID == scope.TenantID() && row.Module == use.Module && row.Entity == use.Entity &&
 			row.Record == use.Record && row.Field == use.Field && row.Locale == use.Locale {
 			from = append(from, row.FileID)
 			live[row.FileID] = true
+			wasPublic[row.FileID] = wasPublic[row.FileID] || row.Public
 		}
 	}
 	add, remove := contracts.DiffUses(from, wanted)
@@ -137,6 +142,13 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	}
 	slices.SortFunc(kept, func(a, b contracts.FileUse) int { return bytes.Compare(a.FileID[:], b.FileID[:]) })
 	f.uses = kept
+	for _, id := range add {
+		// Shown again, so the grace period is over — the same arm internal.Service
+		// writes with its UPDATE, run against the row this fake keeps in memory.
+		if row, ok := f.rows[id]; ok {
+			row.UnusedSince = nil
+		}
+	}
 	if len(remove) == 0 {
 		return nil, nil
 	}
@@ -150,9 +162,111 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		}
 		if !still {
 			unused = append(unused, id)
+			if row, ok := f.rows[id]; ok && row.DeletedAt == nil && row.Width > 0 {
+				// The grace period starts at the moment the last use went.
+				at := db.Now()
+				row.UnusedSince = &at
+			}
+		}
+	}
+	for _, id := range remove {
+		// An ended row that asserted a public audience takes it back here, from the
+		// whole ledger and not from this rewrite: a second record still showing the
+		// picture keeps it readable, and the file whose last public use went with this
+		// one goes private in the same write that ended it. internal.Service does this
+		// with its own rows and its own lock; the answer has to be the one answer.
+		if wasPublic[id] {
+			f.settle(scope.TenantID(), id, true)
 		}
 	}
 	return unused, nil
+}
+
+// SetShown mirrors internal.Service: the audience lands on this record's rows,
+// a publish that names a file the record shows no use of is refused, and each
+// file's visibility is recomputed off the whole ledger rather than off the rows
+// this call touched. A file with no use rows keeps whatever its upload asked for.
+func (f *Fake) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contracts.Use, refs []uuid.UUID, public bool) error {
+	scope, err := contracts.ScopeOf(ctx)
+	if err != nil {
+		return err
+	}
+	wanted := contracts.CollapseRefs(refs)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	mine := func(row contracts.FileUse) bool {
+		return row.TenantID == scope.TenantID() && row.Module == owner.Module &&
+			row.Entity == owner.Entity && row.Record == owner.Record
+	}
+	if len(wanted) == 0 {
+		for _, row := range f.uses {
+			if mine(row) && !slices.Contains(wanted, row.FileID) {
+				wanted = append(wanted, row.FileID)
+			}
+		}
+	}
+	for _, id := range wanted {
+		if _, ok := f.rows[id]; !ok {
+			return fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
+		}
+	}
+	shown := map[uuid.UUID]bool{}
+	for _, row := range f.uses {
+		if mine(row) && slices.Contains(wanted, row.FileID) {
+			shown[row.FileID] = true
+		}
+	}
+	if public {
+		for _, id := range wanted {
+			if !shown[id] {
+				return fmt.Errorf("%w: %s — save the body that names it, then publish", contracts.ErrNotShown, id)
+			}
+		}
+	}
+	for i, row := range f.uses {
+		if mine(row) && (len(refs) == 0 || slices.Contains(refs, row.FileID)) {
+			f.uses[i].Public = public
+		}
+	}
+	for _, id := range wanted {
+		f.settle(scope.TenantID(), id, false)
+	}
+	return nil
+}
+
+// settle is the invariant once, asked by both commands that can change what the
+// ledger says: public if some live use row of this file is public, private when none
+// is. spoke says whether the ledger has anything to say about the file at all — where
+// it has no rows and has never had one (spoke false) there is nothing to derive and
+// the file keeps what its upload asked for, and where it has just lost its last row
+// (spoke true) "nobody is showing this" is the answer. A flip records its event; a
+// verdict that matches the row records nothing. The caller holds f.mu.
+func (f *Fake) settle(tenant uuid.UUID, id uuid.UUID, spoke bool) {
+	row, ok := f.rows[id]
+	if !ok {
+		return
+	}
+	total, every := 0, 0
+	for _, use := range f.uses {
+		if use.FileID == id && use.TenantID == tenant {
+			total++
+			if use.Public {
+				every++
+			}
+		}
+	}
+	if total == 0 && !spoke {
+		return
+	}
+	want := contracts.VisibilityPrivate
+	if every > 0 {
+		want = contracts.VisibilityPublic
+	}
+	if row.Visibility == want {
+		return
+	}
+	row.Visibility = want
+	f.published = append(f.published, contracts.EventVisibility)
 }
 
 // Published is the names of the events the fake would have emitted.

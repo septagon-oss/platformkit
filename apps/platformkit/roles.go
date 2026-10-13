@@ -16,7 +16,13 @@
 // resolved rather than over a slice a composition function happened to fill.
 //
 // The admin role (everything but the operator's) and the member role (nothing
-// until somebody grants it) are auth's own and are not repeated here. What each
+// until somebody grants it) are auth's own and are not repeated here. A module
+// that adds two doors of its own — webhook:read and webhook:update are the newest —
+// is answered by that pair and not by a line here: admin holds every tenant-scoped
+// permission, which is how a tenant administrator registers an endpoint on day one,
+// and these two personas are the task module's, declared and granted to match what
+// that module declares. Adding webhook words to them would be a grant nobody asked
+// for and a persona test that can no longer refuse anything. What each
 // persona may do, and what each is refused, is persona_test.go's table; which task
 // a coordinator may resolve is policy/task.rego's, not a grant's.
 package main

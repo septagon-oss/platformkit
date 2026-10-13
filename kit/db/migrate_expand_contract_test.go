@@ -9,7 +9,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
 
-// These tests specify T-0018: the runner's lock and statement budgets, the
+// These tests hold the runner's contract: the lock and statement budgets, the
 // -- pkit: header grammar, the static rule table, the contract half's wait for
 // its expand partner, and the batched data migration that runs outside one
 // transaction and resumes where it stopped.
@@ -17,8 +17,8 @@ import (
 // They are written against the door that exists today — db.Migrate,
 // db.MigrationSource, a fstest.MapFS and a real database — so that every one of
 // them is a red test rather than a description of one. A case that needs a
-// symbol the kernel does not have yet is listed in the task's SPECIFY.md as
-// unwritable now, with the reason; none of them is silently dropped.
+// symbol the kernel does not have yet is left unwritten, with the reason said here rather
+// than an assertion that cannot compile; none of them is silently dropped.
 
 // probeTable is the ordinary first file: a table with the single-column primary
 // key a batched backfill keys itself by, and rows put there by the migration

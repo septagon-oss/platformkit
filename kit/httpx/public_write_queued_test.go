@@ -8,7 +8,7 @@ package httpx_test
 // one is an outage this middleware fails open on — and the distinction the four
 // exist to make is the one a CI run got wrong, when a queue of same-key
 // submissions came back as an error and the error was answered by admitting all
-// 75 of them (T-0126 round 83, CI run 52994 job 53535).
+// 75 of them (forge run 52994, job 53535).
 //
 // The fake holds an answer rather than computing one: kit/limit's own cases make
 // the store produce these four, and TestAPublicWriteBurstAtOneDoorStopsAtTheWindow

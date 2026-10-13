@@ -93,7 +93,7 @@ type User struct {
 	// heading and the browser tab all say a person's name rather than their uuid, and a person who has
 	// set no name is still called by their address (ui/resource falls to the next candidate it declares,
 	// never to the id, while one exists). One mark per entity is kit/rest's mount gate.
-	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" ui:"display" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
+	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" ui:"display;label:Name" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
 
 	// Handle is what a person is *called* in this tenant: the thing they type,
 	// say out loud, and see in a URL. It is not the key — users.id is, and every
@@ -117,17 +117,17 @@ type User struct {
 	// look no worse — which is exactly why the declaration is governed, and why a
 	// name outside the vocabulary refuses to mount instead of quietly meaning
 	// nothing.
-	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
+	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person;label:Username;help:Lower-case name this person answers to in this tenant" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
-	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" doc:"Lifecycle state" default:"invited" required:"false"`
+	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" enumTones:"invited=neutral,pending=warning,unverified=warning,active=success,inactive=neutral" doc:"Lifecycle state" default:"invited" required:"false"`
 
 	// Roles are the names of the roles this person holds. What a name grants is
 	// the auth module's business, which is why this is a list of strings and
 	// not a list of permissions: a role can be re-granted without touching a
 	// single user row.
-	Roles Roles `json:"roles" gorm:"type:text[];not null;default:'{}'" required:"false" doc:"Roles this person holds in this tenant"`
+	Roles Roles `json:"roles" gorm:"type:text[];not null;default:'{}'" ui:"visibility:detail" required:"false" doc:"Roles this person holds in this tenant"`
 
 	// PasswordHash is argon2id in the PHC encoding, or empty for somebody who
 	// has never set one — an invited user, or one who only signs in through an

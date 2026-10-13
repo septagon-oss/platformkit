@@ -155,8 +155,8 @@ app is an attribute on each record, `appname.App`).
 
 **Reused** — the rollout-window shape `kit/events/transport`'s `Filters`/`legacyAddress` and `kit/httpx`'s
 `LegacySessionCookies` already establish, which every window above copies rather than invents; `db.TryLock`, whose
-only argument is the name a job locks; and the caller-list source scan of `kit/fault/review4_caller_list_test.go`,
-which is the shape the census takes. **Added** — `Name` and the constructors, because no type in this kernel
+only argument is the name a job locks; and the caller-list source scan in `kit/fault`'s
+`contracts_package_wraps_sentinel_named_guide_test.go`, which is the shape the census takes. **Added** — `Name` and the constructors, because no type in this kernel
 carried which app a process was serving (`grep -rn 'type Name string' kit` was empty at the merge base) and every
 shared name is formed from tenant and module alone today, so nothing existing could hold a name nobody could yet
 spell. **Made reusable** — the census itself: a counted allow-list with a planted case, which any "written down in

@@ -1,4 +1,85 @@
 {
+  "hints.site/settings.field.homeSlug.help": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Qual página é exibida na raiz do site",
+    "plural": {
+      "": "Qual página é exibida na raiz do site"
+    }
+  },
+  "hints.site/settings.field.homeSlug.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Página inicial",
+    "plural": {
+      "": "Página inicial"
+    }
+  },
+  "hints.site/settings.field.logoFileId.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Logotipo",
+    "plural": {
+      "": "Logotipo"
+    }
+  },
+  "hints.site/settings.field.primaryColor.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Cor da marca",
+    "plural": {
+      "": "Cor da marca"
+    }
+  },
+  "hints.site/settings.field.theme.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Esquema de cores",
+    "plural": {
+      "": "Esquema de cores"
+    }
+  },
+  "hints.site/settings.field.title.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Nome do site",
+    "plural": {
+      "": "Nome do site"
+    }
+  },
+  "hints.site/settings.group.site": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Site",
+    "plural": {
+      "": "Site"
+    }
+  },
+  "hints.site/settings.plural": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "configurações do site",
+    "plural": {
+      "": "configurações do site"
+    }
+  },
+  "hints.site/settings.singular": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "configurações do site",
+    "plural": {
+      "": "configurações do site"
+    }
+  },
   "permission.site:manage": {
     "references": [
       "modules/site/module.go"
