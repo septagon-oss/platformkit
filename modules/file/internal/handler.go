@@ -396,6 +396,8 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			}
 			return &rest.Item[*contracts.ErasureReceipt]{Body: receipt}, nil
 		})
+
+	catalog(surfaces, svc)
 }
 
 // arriving is the file part of a multipart request, as a reader nothing has
