@@ -34,8 +34,10 @@ revoke it.
    declaration accepts a cookie or a key, so a challenge would name a scheme the
    caller need not use; this one accepts exactly one.
 5. The resource catalogue carries the command on an `auth/token` entry that
-   declares no read. `ui/screens` lists an unreadable resource when the caller
-   may call one of its commands, with `"operations": []` and no screen, so a key
+   declares no read and is `httpx.Resource.CommandsOnly`: it offers none of the
+   five verbs, so nothing expects a list, a form or a PATCH of it. `ui/screens`
+   lists such a resource — and no other unreadable one — when the caller may
+   call one of its commands, with `"operations": []` and no screen, so a key
    finds the door and a shell draws no list; a session sees no such entry. The
    key is `omitzero`, so every entry printed before reads as it did and
    `CatalogVersion` stays 2.
