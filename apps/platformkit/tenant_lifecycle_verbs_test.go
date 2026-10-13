@@ -1,12 +1,12 @@
 package main
 
-// Review round 1 of T-0115, round 3's delivery: the lifecycle verbs are routes, and until
-// this file nothing in the repository had answered one of the four new ones successfully.
+// The lifecycle verbs are routes, and until this file nothing in the repository had
+// answered one of the four new ones successfully.
 //
 // What existed: modules/tenant/internal drives `Rename`, `Reactivate`, `RemoveHost` and
 // `Delete` through the service and the shared conformance suite drives the same verbs
-// through both doubles, and review round 1's app-level case probes those four addresses
-// anonymously and asserts only that none is *accepted*. A route nobody mounted answers that
+// through both doubles, and one app-level case probed those four addresses
+// anonymously and asserted only that none is *accepted*. A route nobody mounted answers that
 // assertion too. Between the two there was no case that a person's request — right host,
 // right grant, right body, one session — was routed, decoded, answered and read back: a
 // `rename` mounted at the wrong path, or a `remove-host` whose `{host}` parameter never
@@ -17,8 +17,8 @@ package main
 // the name moves without the slug moving, a second host arrives and leaves, the last and the
 // primary host are refused, a suspension is reversed, and a delete is asked for twice — and
 // the name it releases is handed to the next customer by the last request below, which is
-// finding 1 (a retired tenant's hostname stayed unreachable forever) pinned at the door a
-// person actually knocks on rather than only at the service behind it.
+// the release of a hostname a retired tenant would otherwise have held forever,
+// pinned at the door a person actually knocks on rather than only at the service behind it.
 
 import (
 	"encoding/json"

@@ -18,7 +18,7 @@ var authorizationQuestions = []string{
 	"### Provisioning",
 }
 
-// TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions is T-0116's gate:
+// TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions is a gate:
 // a module README without its Authorization section is refused, and the section is
 // read against the manifest rather than trusted — every permission key the module
 // declares must be named in its Permissions subsection, and every operator-only key
