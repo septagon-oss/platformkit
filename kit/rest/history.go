@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -37,28 +36,16 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// RestoredEvent names the write a restore performed. It is spelled here because
-// the kit publishes it, for whichever resource asked for history, in the same way
-// it publishes the three CRUD events of the resources it mounts; the module that
-// owns the versions table declares it typed in its manifest, which is what makes
-// a composition that mounts a History resource without one a boot refusal.
-const RestoredEvent = "history.restored"
+// RestoredEvent and Restored are the write this door publishes, spelled where the
+// contract lives: kit/httpx, beside the Versions port a version is kept behind,
+// so that the module which declares the event typed can name it without importing
+// this package. These two lines name the same contract for the callers that reach
+// it through the door that publishes it; they are not a second spelling of it.
+const RestoredEvent = httpx.RestoredEvent
 
-// Restored is RestoredEvent's payload: which record, which version came back,
-// which number the write landed on, in which language, and when. From and To are
-// the two numbers a person reads after a restore — "Restored from v3" and the
-// version the record is on now — and the pair is why the payload is not simply
-// the entity: the entity says what the row is, and only this says a version of it
-// was brought back.
-type Restored struct {
-	Module, Entity string
-	Record         uuid.UUID
-	From           int64
-	To             int64
-	Locale         string
-	Actor          uuid.UUID
-	At             time.Time
-}
+// Restored is RestoredEvent's payload. See kit/httpx for what each name means and
+// why the pair of From and To is the answer a person reads after a restore.
+type Restored = httpx.Restored
 
 // writeReasonKey carries one write's own sentence about why it happened down to
 // the version row it produces. A reason belongs here and not on a parameter of
@@ -198,7 +185,7 @@ const versionsLimit = 20
 // not by the store's module, because the guard, the surface, the schema and the
 // record's address all belong to the record — a module mounting a page beside the
 // detail view it describes would be a second owner of that record's screens.
-func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read, write *httpx.Router) {
+func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read *httpx.Router) {
 	if s.offers(httpx.CRUDRead) {
 		httpx.Register(read, s.op("versions", http.MethodGet, s.item()+"/versions", 0,
 			"List this "+s.Entity+"'s versions", "Newest first, one locale at a time. A version is one committed write."),

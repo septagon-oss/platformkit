@@ -327,7 +327,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
 	if s.History {
-		s.mountHistory(surfaces, read, write)
+		s.mountHistory(surfaces, read)
 	}
 
 	if s.offers(httpx.CRUDList) {
