@@ -1458,6 +1458,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slug": {
                 "type": "string"
               },
@@ -1479,7 +1482,8 @@
               "slug",
               "title",
               "kind",
-              "status"
+              "status",
+              "revision"
             ],
             "type": "object"
           },
@@ -1537,6 +1541,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slug": {
                 "type": "string"
               },
@@ -1558,7 +1565,8 @@
               "slug",
               "title",
               "kind",
-              "status"
+              "status",
+              "revision"
             ],
             "type": "object"
           },
@@ -1616,6 +1624,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slug": {
                 "type": "string"
               },
@@ -1637,7 +1648,8 @@
               "slug",
               "title",
               "kind",
-              "status"
+              "status",
+              "revision"
             ],
             "type": "object"
           },
@@ -1969,6 +1981,62 @@
       },
       "summary": "Every tenant's delivery of file.uploaded.",
       "title": "file.uploaded"
+    },
+    "history.restored": {
+      "address": "platformkit.*.history.restored",
+      "description": "Published at platformkit.{tenantId}.history.restored; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "history.restored": {
+          "contentType": "application/json",
+          "name": "history.restored",
+          "payload": {
+            "properties": {
+              "actor": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "entity": {
+                "type": "string"
+              },
+              "from": {
+                "type": "integer"
+              },
+              "locale": {
+                "type": "string"
+              },
+              "module": {
+                "type": "string"
+              },
+              "record": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "to": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "module",
+              "entity",
+              "record",
+              "from",
+              "to",
+              "locale",
+              "actor",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "history — history.restored",
+          "title": "history.restored"
+        }
+      },
+      "summary": "Every tenant's delivery of history.restored.",
+      "title": "history.restored"
     },
     "notification.created": {
       "address": "platformkit.*.notification.created",
@@ -4472,6 +4540,23 @@
       "tags": [
         {
           "name": "file"
+        }
+      ]
+    },
+    "history.restored": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/history.restored"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/history.restored/messages/history.restored"
+        }
+      ],
+      "summary": "The history module publishes history.restored.",
+      "tags": [
+        {
+          "name": "history"
         }
       ]
     },

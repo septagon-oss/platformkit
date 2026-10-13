@@ -81,7 +81,14 @@ func (s *Service) to(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, sta
 
 // move writes the two columns the lifecycle owns and says what happened.
 func (s *Service) move(ctx context.Context, tx db.Tx[db.Tenant], c *contracts.Content, event string, at time.Time) error {
-	if err := crud.Update(ctx, tx, c, "status", "published_at", "updated_at"); err != nil {
+	// A lifecycle move is a write of the row, so the row's own write count moves
+	// with it: a page published between the moment a person read its history and
+	// the moment they asked for a restore is a page the restore refuses rather
+	// than one it overwrites. The version series skips this number — a version is
+	// a write's content, and these writes move status, not content — which is why
+	// a series is keyed by the number rather than running unbroken.
+	c.Revision++
+	if err := crud.Update(ctx, tx, c, "status", "published_at", "updated_at", "revision"); err != nil {
 		return err
 	}
 	return events.Publish(ctx, tx, event, contracts.Moved{

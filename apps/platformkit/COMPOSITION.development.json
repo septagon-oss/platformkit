@@ -324,21 +324,23 @@
       ]
     },
     {
-      "name": "content",
+      "name": "history",
       "provides": [
-        "contentcontracts.Service"
+        "historycontracts.Service",
+        "httpx.Versions"
       ],
       "needs": [
         {
-          "contract": "richtext.Files",
+          "contract": "rest.FileUses",
           "from": "file"
         },
         {
-          "contract": "rest.FileUses",
-          "from": "file"
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
         }
       ],
       "after": [
+        "tenant",
         "file"
       ]
     },
@@ -388,32 +390,27 @@
       ]
     },
     {
-      "name": "web",
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
       "needs": [
-        {
-          "contract": "sitecontracts.Service",
-          "from": "site"
-        },
-        {
-          "contract": "contentcontracts.Service",
-          "from": "content"
-        },
         {
           "contract": "richtext.Files",
           "from": "file"
-        }
-      ],
-      "uses": [
+        },
         {
-          "contract": "webcontracts.Links",
-          "from": "product"
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "httpx.Versions",
+          "from": "history"
         }
       ],
       "after": [
-        "product",
         "file",
-        "content",
-        "site"
+        "history"
       ]
     },
     {
@@ -447,6 +444,35 @@
       "after": [
         "product",
         "access"
+      ]
+    },
+    {
+      "name": "web",
+      "needs": [
+        {
+          "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "contentcontracts.Service",
+          "from": "content"
+        },
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webcontracts.Links",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product",
+        "file",
+        "content",
+        "site"
       ]
     },
     {

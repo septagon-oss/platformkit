@@ -6,8 +6,10 @@ archived lifecycle and its events, a public read at
 `/api/v1/public/content/contents` (one published row per `{slug}`) that answers only for published rows, and the
 Markdown renderer `contracts.Render` the [web module](../web/README.md) uses.
 `content:read` and `content:manage` guard the routes and the admin entry at
-`/app/content/contents`. There are no versions by design; see
-[module.go](module.go).
+`/app/content/contents`. Every write a page commits keeps a version, recorded in
+the write's own transaction and stored by [modules/history](../history/README.md)
+— which owns the series, the retention rule and the restore — numbered with the
+row's own `revision`; see [module.go](module.go).
 
 ## Interface
 
