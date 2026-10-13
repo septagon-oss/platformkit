@@ -242,5 +242,14 @@
     "plural": {
       "": "%s pertence a uma rota própria, não a este formulário"
     }
+  },
+  "conflict.rest.unique": {
+    "references": [
+      "kit/rest/rest.go"
+    ],
+    "translation": "Um registo já usa um destes valores. Altere o valor duplicado e tente novamente.",
+    "plural": {
+      "": "Um registo já usa um destes valores. Altere o valor duplicado e tente novamente."
+    }
   }
 }

@@ -658,9 +658,14 @@ func Fault(err error) error {
 	case errors.Is(err, crud.ErrConflict):
 		if _, unique := errors.AsType[*crud.UniqueConflict](err); unique {
 			// The sentence is this package's own, standing in for whatever the
-			// driver said, so no writer's key travels with it: there is nothing to
-			// translate that anybody wrote.
-			return problem.Conflict("A record already uses one of these values. Change the duplicate value and try again.")
+			// driver said, so no writer's key travels with it — but the sentence
+			// itself was written, by here, and a person reads it on a refused form.
+			// So it carries its own key, the way every other sentence this package
+			// writes for a form does (see invalid): the problem document and the log
+			// keep this English, and the page answers the key.
+			reason := &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.rest.unique",
+				Text: "A record already uses one of these values. Change the duplicate value and try again."}
+			return refusing(reason, problem.Conflict(reason.Error()))
 		}
 		return refusing(err, problem.Conflict(err.Error()))
 	default:

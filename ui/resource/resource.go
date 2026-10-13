@@ -320,7 +320,13 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 // translated page in a language the catalogue speaks is not drawn in English.
 func (o Options) Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 	return forms.Control(forms.ControlProps{Field: formField(f, o), Value: value, Error: fieldErr,
-		Immutable: immutable, Notes: o.notes()})
+		Immutable: immutable, Notes: o.notes(),
+		// The empty option is the one word a select shows that no field's label
+		// covers, and it belongs to this catalogue exactly as the option labels
+		// below it do: asked through the same seam the cancel and save buttons are
+		// asked, so a control drawn on a Portuguese page says Portuguese from top
+		// to bottom.
+		ChooseLabel: o.Label("screens.choose", "Choose…")})
 }
 
 // formField projects display words at the screen boundary. The portable form

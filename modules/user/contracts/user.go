@@ -21,7 +21,6 @@ package contracts
 import (
 	"context"
 	"database/sql/driver"
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
 // A user is invited before password setup, pending while awaiting approval,
@@ -160,11 +160,14 @@ func (u *User) Validate(context.Context) error {
 	at := strings.IndexByte(u.Email, '@')
 	switch {
 	case u.Email == "":
-		return fmt.Errorf("a user needs an email address")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.user.email.empty",
+			Text: "a user needs an email address"}
 	case at <= 0 || at == len(u.Email)-1 || strings.ContainsAny(u.Email, " \t\r\n"):
-		return fmt.Errorf("%q is not an email address", u.Email)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.user.email.form",
+			Text: "%q is not an email address", Args: []any{u.Email}}
 	case len(u.Email) > 320:
-		return fmt.Errorf("that email address is too long")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.user.email.length",
+			Text: "that email address is too long"}
 	}
 	if u.Status == "" {
 		u.Status = StatusInvited
@@ -175,18 +178,26 @@ func (u *User) Validate(context.Context) error {
 	u.Handle = strings.ToLower(strings.TrimSpace(u.Handle))
 	if u.Handle != "" {
 		if !handleForm.MatchString(u.Handle) {
-			return fmt.Errorf("handle %q is not 3 to 32 characters of lower-case letters, digits and interior . _ -", u.Handle)
+			return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.user.handle.form",
+				Text: "handle %q is not 3 to 32 characters of lower-case letters, digits and interior . _ -",
+				Args: []any{u.Handle}}
 		}
 		if ReservedHandle(u.Handle) {
-			return fmt.Errorf("handle %q is reserved: it names the platform or a role, not a person", u.Handle)
+			// The same key SetHandle refuses under: one rule is one sentence to the
+			// reader whichever door they came through.
+			return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.user.handle.reserved",
+				Text: "handle %q is reserved: it names the platform or a role, not a person",
+				Args: []any{u.Handle}}
 		}
 	}
 	if !slices.Contains(statuses, u.Status) {
-		return fmt.Errorf("status %q is not a lifecycle state", u.Status)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.user.status",
+			Text: "status %q is not a lifecycle state", Args: []any{u.Status}}
 	}
 	for _, role := range u.Roles {
 		if !roleName.MatchString(role) {
-			return fmt.Errorf("role %q is not a lower-case identifier", role)
+			return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.user.role",
+				Text: "role %q is not a lower-case identifier", Args: []any{role}}
 		}
 	}
 	return nil

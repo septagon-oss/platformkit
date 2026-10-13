@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -321,18 +322,24 @@ func (s *Service) SetHandle(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UU
 	}
 	want := strings.ToLower(strings.TrimSpace(handle))
 	if want == "" {
-		return nil, fmt.Errorf("%w: a handle cannot be released once claimed", crud.ErrInvalid)
+		return nil, &fault.Reason{Kind: crud.ErrInvalid, Key: "invalid.user.handle.released",
+			Text: "a handle cannot be released once claimed"}
 	}
 	if u.Handle == want {
 		return u, nil
 	}
 	if contracts.ReservedHandle(want) {
-		return nil, fmt.Errorf("%w: handle %q names the platform or a role, not a person", crud.ErrInvalid, want)
+		// One rule, one key, one sentence: the entity's own Validate refuses the
+		// same name under the same key, so the person standing in front of either
+		// door is answered the same sentence in their own language.
+		return nil, &fault.Reason{Kind: crud.ErrInvalid, Key: "invalid.user.handle.reserved",
+			Text: "handle %q names the platform or a role, not a person", Args: []any{want}}
 	}
 	if taken, err := s.ByHandle(ctx, tx, want); err == nil && taken.ID != u.ID {
 		// The name of the rule, not the name of the person: "ada is taken" tells a
 		// probe nothing, "ada is Ada Lovelace" tells them who is here.
-		return nil, fmt.Errorf("%w: that handle is already claimed in this tenant", crud.ErrConflict)
+		return nil, &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.user.handle.claimed",
+			Text: "that handle is already claimed in this tenant"}
 	}
 	was := u.Handle
 	u.Handle = want

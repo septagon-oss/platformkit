@@ -3,7 +3,6 @@ package forms
 import (
 	"cmp"
 	"slices"
-	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -18,12 +17,18 @@ type ControlProps struct {
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
-	// ChooseLabel is the empty choice of a select that has a value to offer:
-	// the row a reader picks when they mean "back to nothing chosen". It is a
-	// prop because the words are the page's — ui/components only draws the
-	// option — and a select on a page written in another language has no
-	// business keeping its placeholder in English. Empty keeps the component's
-	// own fallback, which is what a form rendered without a catalog says.
+	// ChooseLabel is the empty choice of a select — the row a reader picks when
+	// they mean "back to nothing chosen", and the prompt a select with no value
+	// yet puts in front of its choices. It is one prop because both are the same
+	// sentence asked in the page's own language, and because the words are the
+	// page's — ui/components only draws the option — and a select on a page
+	// written in another language has no business keeping its placeholder in
+	// English. Whether the option is drawn, and whether it can be picked, is
+	// components.Select's decision from Required: a field with no default is
+	// asked for a value, so its empty option is a prompt rather than a choice,
+	// and one that is not required may genuinely be left empty. Empty here keeps
+	// the component's own fallback, which is what a form rendered without a
+	// catalog says.
 	ChooseLabel string
 	// Notes are this package's own sentences about a control — see Notes.
 	Notes Notes
@@ -74,10 +79,13 @@ func Control(p ControlProps) g.Node {
 				options = append(options, components.SelectOption{Label: value, Value: value})
 			}
 		}
+		// The empty option's words are always the page's. This used to build its
+		// own sentence — "Choose a " plus a lower-cased label — whenever the field
+		// declared no default, which put a half-translated prompt ("Choose a
+		// prioridade") on a page whose every other word the catalogue had answered.
+		// Whether that option exists at all is components.Select's decision, taken
+		// from Required; the words in it are never this package's to invent.
 		placeholder := p.ChooseLabel
-		if f.Default == "" {
-			placeholder = "Choose a " + strings.ToLower(label)
-		}
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, Error: p.Error,

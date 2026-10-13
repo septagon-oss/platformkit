@@ -87,8 +87,9 @@ type Field struct {
 	// Default is the value the entity declares for a field a caller may leave
 	// out, from `default:"open"` — the same tag huma reads, so the form and the
 	// API document agree about what happens when nothing is sent. A form
-	// preselects it, and a select that has one needs no "Choose a …" placeholder
-	// because there is no unchosen state to name.
+	// preselects it, so the reader sees the value the server would have chosen.
+	// The empty option's words are the page's, not this field's — see
+	// ui/forms ControlProps.ChooseLabel.
 	Default string `json:"default,omitempty"`
 	// Doc is what the field is for, from `doc:"Lifecycle state"` — again huma's
 	// own tag, so the sentence in the OpenAPI document is the sentence under the

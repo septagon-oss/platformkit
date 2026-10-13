@@ -242,5 +242,14 @@
     "plural": {
       "": "%s belongs to a route of its own, not to this form"
     }
+  },
+  "conflict.rest.unique": {
+    "references": [
+      "kit/rest/rest.go"
+    ],
+    "translation": "A record already uses one of these values. Change the duplicate value and try again.",
+    "plural": {
+      "": "A record already uses one of these values. Change the duplicate value and try again."
+    }
   }
 }

@@ -329,5 +329,78 @@
     "plural": {
       "": "esta conta está fechada, por isso a sua pessoa não pode alterar o idioma em que é respondida"
     }
+  },
+  "invalid.user.email.empty": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "uma pessoa precisa de um endereço de email",
+    "plural": {
+      "": "uma pessoa precisa de um endereço de email"
+    }
+  },
+  "invalid.user.email.form": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "%q não é um endereço de email",
+    "plural": {
+      "": "%q não é um endereço de email"
+    }
+  },
+  "invalid.user.email.length": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "esse endereço de email é demasiado comprido",
+    "plural": {
+      "": "esse endereço de email é demasiado comprido"
+    }
+  },
+  "invalid.user.handle.form": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "o nome curto %q não tem 3 a 32 caracteres de letras minúsculas, dígitos e . _ - interiores",
+    "plural": {
+      "": "o nome curto %q não tem 3 a 32 caracteres de letras minúsculas, dígitos e . _ - interiores"
+    }
+  },
+  "invalid.user.handle.reserved": {
+    "references": [
+      "modules/user/contracts/user.go",
+      "modules/user/internal/service.go"
+    ],
+    "translation": "o nome curto %q pertence à plataforma ou a uma função, não a uma pessoa",
+    "plural": {
+      "": "o nome curto %q pertence à plataforma ou a uma função, não a uma pessoa"
+    }
+  },
+  "invalid.user.handle.released": {
+    "references": [
+      "modules/user/internal/service.go"
+    ],
+    "translation": "um nome curto não pode ser libertado depois de reclamado",
+    "plural": {
+      "": "um nome curto não pode ser libertado depois de reclamado"
+    }
+  },
+  "invalid.user.status": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "o estado %q não é um estado do ciclo de vida",
+    "plural": {
+      "": "o estado %q não é um estado do ciclo de vida"
+    }
+  },
+  "invalid.user.role": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "a função %q não é um identificador em minúsculas",
+    "plural": {
+      "": "a função %q não é um identificador em minúsculas"
+    }
   }
 }
