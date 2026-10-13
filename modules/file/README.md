@@ -195,12 +195,23 @@ written for has, so `RegisterRoutes` ends by recording the entity those routes a
 mounted on and the caption as a command with its work beside it: the same `SetAlt`, in
 the request's own transaction, behind the guard registration installs.
 
-Four CRUD doors are named because four answer — the list, the read, the upload and the
-delete. No update is named: a file's bytes are what they are, so the only writable fact
-about one is what it says about itself, and that is a claim with an event rather than a
-`PATCH` over the row. No screen is published. The workspace address a person reads files
-at is the page above, and a generated screen over the same entity would be a second
-library beside it.
+Three CRUD doors are named because three are performable by a caller that never
+compiled against this module — the list, the read and the delete. No create is named:
+the upload is a stream, and a form or a generated client has no JSON body to send it
+with, so advertising it would be a New button over a refusal. No update is named: a
+file's bytes are what they are, so the only writable fact about one is what it says
+about itself, and that is a claim with an event rather than a `PATCH` over the row. No
+screen is published. The workspace address a person reads files at is the page above,
+and a generated screen over the same entity would be a second library beside it.
+
+Naming fewer than the five asks nothing of the number beside them:
+`ui/screens.CatalogVersion` moves when a resource already in the document loses a
+verb, because a shell in somebody's pocket drew that button and hears nothing when
+the address stops answering. `file/file` is new to the document, so no installed
+build holds a door of its own to lose and its verb set is this module's to declare.
+A shell that reads `operations` offers the list, the read and the delete here; one
+that ignores the key offers a New button over a stream the route refuses, which is
+the cost the key is written for.
 
 ### The operator boundary
 

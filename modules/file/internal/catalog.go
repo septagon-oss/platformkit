@@ -33,11 +33,13 @@ func catalog(surfaces httpx.Surfaces, svc door) {
 		Path:   path,
 		Read:   contracts.PermissionFileRead,
 		Write:  contracts.PermissionFileManage,
-		// The four doors that answer JSON here. There is no update: a file's bytes
-		// are what they are, and the only writable fact about one is its caption,
-		// which is the command below rather than a PATCH that would promise the rest
-		// of the row is editable too.
-		Operations: []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead, httpx.CRUDCreate, httpx.CRUDDelete},
+		// The three doors a caller that never compiled against this module can
+		// perform: the list, the read and the delete. No create is named, because the
+		// upload is a stream and a generated form or client has no JSON body to send
+		// it with; no update is named, because a file's bytes are what they are, and
+		// the only writable fact about one is its caption, which is the command below
+		// rather than a PATCH over the row.
+		Operations: []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead, httpx.CRUDDelete},
 		Schema: crud.Schema{
 			Module: "file", Entity: "file",
 			Path:   surfaces.App.Prefix() + path,
