@@ -837,8 +837,8 @@ func accepted(s Surface, auth Auth) (ok bool, why string) {
 			return false, "is mounted on the Public router and declares signed_in; the public surface resolves no session and sets no cookie, so nobody can satisfy it — mount it on the App router, or declare it Public()"
 		case kindPermission:
 			return false, fmt.Sprintf("is mounted on the Public router and declares permission %s; the public surface resolves no session and sets no cookie, so nobody can satisfy it — mount it on the App router, or declare it Public()", auth.permission)
-		case kindAnyCredential:
-			return false, "is mounted on the Public router and declares any_credential; the public surface resolves no caller at all, so this door has nobody to admit — mount it on the App router, or declare it Public()"
+		case kindAnyCredential, kindBearerKey:
+			return false, "is mounted on the Public router and declares " + auth.String() + "; the public surface resolves no caller at all, so this door has nobody to admit — mount it on the App router, or declare it Public()"
 		default:
 			return false, fmt.Sprintf("is mounted on the Public router and declares operator_permission %s; the control plane is not a public page — mount it on the Ops router", auth.permission)
 		}

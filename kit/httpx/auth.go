@@ -17,7 +17,7 @@ import (
 const AuthExtension = "x-platformkit-auth"
 
 // authKind is the closed set of things an operation can say about who may call
-// it. There are five, and Auth has one constructor for each.
+// it. There are six, and Auth has one constructor for each.
 type authKind string
 
 const (
@@ -38,6 +38,10 @@ const (
 	// already reach. They need opposite answers from a credential that carries
 	// its own ceiling, which is what AnyCredential says.
 	kindAnyCredential authKind = "any_credential"
+	// kindBearerKey is the one door only a key may open: the operation is about
+	// the key that authenticated the request, so a session has nothing for it to
+	// act on. See BearerKey.
+	kindBearerKey authKind = "bearer_key"
 )
 
 // permissionToken is the grammar of a permission: "<resource>:<action>", both
@@ -125,14 +129,24 @@ func SignedIn() Auth { return Auth{kind: kindSignedIn} }
 // reads it, which of the two doors a route is. The mistake this enables is the
 // wide one — a self-service door about the caller's own credentials mounted here
 // is the escalation SignedIn exists to refuse — so the test at a mount is that the
-// operation reads grants and never spends them. One exception spends a
-// credential: the command that retires the key that authenticated the request,
-// where what is spent is the caller's own key and what it buys is a narrower
-// world. Every other door about a caller's own credentials is SignedIn work.
+// operation reads grants and never spends them. Every door about a caller's own
+// credentials is SignedIn work, except the one BearerKey names.
 func AnyCredential() Auth { return Auth{kind: kindAnyCredential} }
 
+// BearerKey admits only a caller recognised by a bearer key — a principal with a
+// TokenID — whatever that key's scopes, and refuses a session with a 403.
+//
+// It is for an operation whose subject is the key itself, which a session does
+// not have: retiring the key that authenticated the request spends nothing but
+// that key, so a key too narrow for anything else may still run it. Because a key
+// is the only credential such an operation accepts, a request that brings none
+// the installation recognises — absent, revoked, expired — is answered 401 with a
+// Bearer challenge rather than the 403 every other declaration gives: there is
+// exactly one scheme to name. See authorize.
+func BearerKey() Auth { return Auth{kind: kindBearerKey} }
+
 // MarshalJSON writes the declaration into the OpenAPI document as
-// {"kind":"permission|operator_permission|public|signed_in|any_credential"}, plus
+// {"kind":"permission|operator_permission|public|signed_in|any_credential|bearer_key"}, plus
 // "permission" and "feature" whenever they are non-empty. huma renders the YAML
 // spec by converting the JSON one, so this is the only encoder needed.
 func (a Auth) MarshalJSON() ([]byte, error) {
@@ -169,7 +183,7 @@ func (a Auth) Needing(feature string) Auth {
 // with nothing to answer them.
 func (a Auth) Feature() string { return a.feature }
 
-// Declared reports whether a came from one of the four constructors. The zero
+// Declared reports whether a came from one of the constructors. The zero
 // Auth is not a declaration: Go lets any package write httpx.Auth{}, and an
 // empty struct must never read as "public".
 //
@@ -178,7 +192,7 @@ func (a Auth) Feature() string { return a.feature }
 // package asks before it mounts anything.
 func (a Auth) Declared() bool {
 	switch a.kind {
-	case kindPublic, kindSignedIn, kindAnyCredential:
+	case kindPublic, kindSignedIn, kindAnyCredential, kindBearerKey:
 		return true
 	case kindPermission, kindOperator:
 		return ValidPermission(a.permission)
@@ -193,9 +207,8 @@ func (a Auth) Declared() bool {
 func (a Auth) IsPublic() bool { return a.kind == kindPublic }
 
 // NamesAGrant reports whether this declaration asks the roles table a
-// permission. Public, SignedIn and AnyCredential do not: one asks nothing of
-// anybody, the other asks only that there be somebody, and the third asks for a
-// recognised caller of any credential while naming nothing to check. kit/rest
+// permission. Public, SignedIn, AnyCredential and BearerKey do not: one asks
+// nothing of anybody, the others ask only which credential the caller holds. kit/rest
 // asks it because the two generic writes whose row the caller names cannot be
 // guarded by a declaration that decides nothing about the row — see Spec.check.
 func (a Auth) NamesAGrant() bool {
@@ -204,9 +217,9 @@ func (a Auth) NamesAGrant() bool {
 }
 
 // grant is the permission question this declaration asks, and whether it asks
-// one at all. Public, SignedIn and AnyCredential ask none — which is why the
-// middleware, not this function, is where a credential carrying its own ceiling
-// is held to it at those three.
+// one at all. Public, SignedIn, AnyCredential and BearerKey ask none — which is
+// why the middleware, not this function, is where a credential carrying its own
+// ceiling is held to it at those four.
 func (a Auth) grant() (tenancy.Grant, bool) {
 	switch a.kind {
 	case kindPermission:
@@ -266,6 +279,8 @@ func (a Auth) String() string {
 		return "signed_in"
 	case kindAnyCredential:
 		return "any_credential"
+	case kindBearerKey:
+		return "bearer_key"
 	}
 	return "undeclared"
 }
