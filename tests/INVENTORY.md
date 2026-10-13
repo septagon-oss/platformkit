@@ -6,9 +6,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 2584 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1226 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 2394 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 2592 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1230 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 2402 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 215 | filename prefix |
 | rows inside them | 347 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 57 / 1 / 43 / 89 | same walk |
@@ -18,8 +18,8 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 19 | push, first | asserts a golden or the published API set |
-| behaviour | 2243 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
-| composition | 264 | merge | package `main` of the reference app: it boots the composition |
+| behaviour | 2250 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| composition | 265 | merge | package `main` of the reference app: it boots the composition |
 | journey | 58 | nightly | `e2e/`: browser or device |
 
 Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 923 rows sit in packages that open nothing, 1 586 in packages that do, 58 in the browser. The push tier's headline counts 936 and the merge tier's 1 573: the 13-row difference is the contract-key rows (openapi, asyncapi, golden, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those five files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
@@ -46,7 +46,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1011 | 2237 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 1015 | 2245 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 70 | 132 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (0072) |
 | `merge` | 145 | 215 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
