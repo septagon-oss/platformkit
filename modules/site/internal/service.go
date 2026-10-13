@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -14,14 +15,23 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// Service is the tenant's site settings. It has no fields: everything it needs
-// arrives with the transaction it is given.
-type Service struct{}
+// Service is the tenant's site settings. It holds the one thing a read cannot
+// get from the transaction it is given: the installation's own accent, for the
+// site that chose none.
+type Service struct {
+	palette contracts.Palette
+}
 
-// NewService returns the two operations. module.go constructs it.
-func NewService() *Service { return &Service{} }
+// NewService returns the two operations. module.go constructs it, once, with the
+// palette the composition named for itself; a nil palette is an installation with
+// no accent of its own, and a site that chose none is then answered the empty
+// colour and pinned nowhere.
+func NewService(palette contracts.Palette) *Service { return &Service{palette: palette} }
 
-var _ contracts.Service = (*Service)(nil)
+var (
+	_ contracts.Service      = (*Service)(nil)
+	_ contracts.LockedReader = (*Service)(nil)
+)
 
 // Settings is what this tenant has configured, or the defaults. See
 // contracts.Service.
@@ -31,13 +41,18 @@ func (s *Service) Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts
 		return nil, err
 	}
 	if stored != nil {
+		stored.PrimaryColor = stored.Resolve(s.palette)
 		return stored, nil
 	}
 	// Not a row, and not an error either: every tenant has a site from the
 	// moment it exists, and this is what it says before anybody has said
-	// anything. Validate fills in the theme and the colour.
+	// anything. Validate fills in the theme and resolves answers the colour.
 	out := &contracts.SiteSettings{}
-	return out, out.Validate(ctx)
+	if err := out.Validate(ctx); err != nil {
+		return out, err
+	}
+	out.PrimaryColor = out.Resolve(s.palette)
+	return out, nil
 }
 
 // SettingsForUpdate is Settings with the row locked FOR UPDATE.
@@ -57,10 +72,15 @@ func (s *Service) SettingsForUpdate(ctx context.Context, tx db.Tx[db.Tenant]) (*
 		return nil, err
 	}
 	if stored != nil {
+		stored.PrimaryColor = stored.Resolve(s.palette)
 		return stored, nil
 	}
 	out := &contracts.SiteSettings{}
-	return out, out.Validate(ctx)
+	if err := out.Validate(ctx); err != nil {
+		return out, err
+	}
+	out.PrimaryColor = out.Resolve(s.palette)
+	return out, nil
 }
 
 // Save writes the settings and says so, unless nothing changed. See
@@ -81,6 +101,7 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 		// if two requests arrive at once.
 		crud.Reset(in)
 		in.Revision = 1
+		in.ClearInstallationAccent(s.palette)
 		if err := crud.Create(ctx, tx, in); err != nil {
 			return nil, err
 		}
@@ -88,6 +109,7 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 		if err != nil {
 			return nil, err
 		}
+		in.PrimaryColor = in.Resolve(s.palette)
 		return in, publish(ctx, tx, in, changes)
 	}
 	// The id and the timestamps stay the stored row's: this is an update of the
@@ -97,7 +119,11 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 	// that decides whether anything changed has to run against the normalised
 	// values: " Acme " and "Acme" are the same title, and a save that published
 	// because of the whitespace would be a cache invalidated for nothing. The
-	// wrapping is kit/crud's, so both doors answer with the same 422.
+	// wrapping is kit/crud's, so both doors answer with the same 422. The
+	// installation's own colour is cleared first, for the same reason: the value a
+	// form echoes back from a read is not an edit, and the diff below must see the
+	// value this save will store.
+	in.ClearInstallationAccent(s.palette)
 	if err := in.Validate(ctx); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
@@ -106,6 +132,9 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 		return nil, err
 	}
 	if len(changes) == 0 {
+		// Nothing moved, so the row and its count stay where they are; the colour a
+		// reader is shown is still the one this installation draws with.
+		stored.PrimaryColor = stored.Resolve(s.palette)
 		return stored, nil
 	}
 	// The write moves the count, and it moves it here rather than in a trigger or
@@ -115,6 +144,7 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 	if err := crud.Update(ctx, tx, in, columns...); err != nil {
 		return nil, err
 	}
+	in.PrimaryColor = in.Resolve(s.palette)
 	return in, publish(ctx, tx, in, changes)
 }
 
@@ -138,6 +168,13 @@ func (s *Service) stored(tx db.Tx[db.Tenant], lock bool) (*contracts.SiteSetting
 	err := q.Where("deleted_at IS NULL").Take(&row).Error
 	switch classified := crud.Classify(err); {
 	case classified == nil:
+		// char(7) is blank-padded, and the value that means "this site named no
+		// accent" is the empty one, so the column reads back as spaces. Trim it at the
+		// one door every read of this row comes through, so the diff a save makes, the
+		// resolution below and every caller see the value Validate wrote rather than
+		// the column's padding. A colour is seven characters, which is why nothing
+		// noticed the padding until the column could hold nothing.
+		row.PrimaryColor = strings.TrimSpace(row.PrimaryColor)
 		return &row, nil
 	case errors.Is(classified, crud.ErrNotFound):
 		return nil, nil

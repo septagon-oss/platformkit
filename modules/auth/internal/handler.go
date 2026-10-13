@@ -17,6 +17,13 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
+// mints and credential are the kernel's mark for a route whose answer is a credential
+// it minted for that one exchange, and the mark's value. They are named here because a
+// map literal cannot hold a two-value call, and three of this module's routes carry it:
+// a route that hands out a session is a route whose answer cannot be replayed, and so a
+// route that makes no promise an Idempotency-Key could keep. See httpx.MintsACredential.
+var mints, credential = httpx.MintsACredential()
+
 // Every path this module mounts is relative to itself and to the surface it
 // chose. The workspace's JSON lands at /api/v1/auth/… as it always did, and the
 // anonymous legs — the ones a person with no account makes — land under
@@ -37,10 +44,13 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Method:      http.MethodPost,
 		Path:        "/login",
 		Summary:     "Sign in with a password",
-		Description: "Opens a session and sets the platformkit_session cookie. A wrong password and an address nobody has answer identically, and cost the same.",
+		Description: "Opens a session and sets the platformkit_session cookie. A wrong password and an address nobody has answer identically, and cost the same. A sign-in that never got its answer is signed in again rather than replayed: the session is minted as this route answers, and a key could only keep either the cookie, which is a credential nobody should have to leave in a row, or a body that names the caller and signs nobody in.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
-		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn, contracts.EventLoginFailed}},
+		Extensions: map[string]any{
+			httpx.EventsExtension: []string{contracts.EventLoggedIn, contracts.EventLoginFailed},
+			mints:                 credential,
+		},
 	}, httpx.Public(), handleLogin(svc, cookies))
 
 	httpx.Register(app, huma.Operation{
@@ -95,14 +105,17 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Method:      http.MethodPost,
 		Path:        "/password/reset",
 		Summary:     "Set a password with a link",
-		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds, and this browser is signed in — an invitation that left the invited person back at the sign-in form was half a door. The one account left signed out is a person who enrolled a second factor: their password changes and their other sessions end, and the sign-in finishes with the code. A token that is unknown, spent or expired is one answer.",
+		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds, and this browser is signed in — an invitation that left the invited person back at the sign-in form was half a door. The one account left signed out is a person who enrolled a second factor: their password changes and their other sessions end, and the sign-in finishes with the code. A token that is unknown, spent or expired is one answer. The link is spent by the first attempt whatever that answer was, so a retry of one that got no answer is refused as a spent token is refused, and the way back is the sign-in form with the new password.",
 		Tags:        []string{"auth"},
 		Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity,
 			http.StatusTooManyRequests, http.StatusServiceUnavailable},
-		Extensions: map[string]any{httpx.EventsExtension: []string{
-			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
-			contracts.EventSessionRevoked, contracts.EventLoggedIn,
-		}},
+		Extensions: map[string]any{
+			httpx.EventsExtension: []string{
+				contracts.EventPasswordReset, usercontracts.EventPasswordSet,
+				contracts.EventSessionRevoked, contracts.EventLoggedIn,
+			},
+			mints: credential,
+		},
 	}, httpx.Public(), handleResetPassword(svc, cookies))
 
 	httpx.Register(app, huma.Operation{

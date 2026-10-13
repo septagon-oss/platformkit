@@ -13,7 +13,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
-	"github.com/septagon-oss/platformkit/modules/site/internal"
 )
 
 // TestAConcurrentSaveDiffsAgainstTheValueItReplaced holds Save's FOR UPDATE: two
@@ -23,7 +22,7 @@ import (
 func TestAConcurrentSaveDiffsAgainstTheValueItReplaced(t *testing.T) {
 	admin, conn := dbtest.Schema(t, site.Migrations)
 	ctx := tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New()})
-	svc := internal.NewService()
+	svc := bareService()
 	save := func(ctx context.Context, tagline string) error {
 		return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			_, err := svc.Save(ctx, tx, &contracts.SiteSettings{Title: "Race", Tagline: tagline})

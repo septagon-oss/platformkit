@@ -112,8 +112,18 @@ help: ## List the targets
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -buildvcs=false -o /dev/null ./...
 
+# The same stated per-package bound `check` and `check-race` carry, for the same reason against the
+# same measurement: go test's ten-minute default is a clock nobody in this repository chose, and
+# `apps/platformkit` needs most of it even uncached and unraced. Measured on this program's shared
+# Postgres: 9m51s for the package on a host doing nothing else — nine seconds of headroom on a
+# default the suite does not beat so much as tie — and `panic: test timed out after 10m0s` on one
+# doing something, with the cases that were merely running when the clock rang reported as failures.
+# A goal whose verdict is a race against a clock it never names answers to the load on the box, and
+# every caller of this one is a person or a gate waiting for an answer rather than a coin toss. `check`'s bound is the
+# number, not a new one; it sits before $(TEST_FLAGS) so a caller that passes its own -timeout wins,
+# and scripts/check_architecture_test.sh pins this line byte for byte beside `check`'s own.
 test: ## Test selected packages, reusing successful results when inputs match
-	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- $(TEST_FLAGS)
+	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m $(TEST_FLAGS)
 
 vet: ## Run go vet
 	go vet ./...
@@ -232,6 +242,20 @@ check-richtext-bundle: ## Fail when the vendored editor bundle is over its gzip 
 # two files together with the manifest and the lock.
 richtext-bundle: ## Rebuild ui/assets/vendor/richtext/editor.js from its lockfile
 	bash scripts/richtext_bundle_build.sh
+
+# The number decision 0075's i18n row reads: the share of the words a person reads on
+# a served page that a catalogue reached. It renders every document the reference
+# composition serves without a row or a query in front of it, in the pseudo-locale,
+# prints the ratio, the list of what went around a catalogue and the documents it could
+# not reach with the reason for each, and refuses a fall below
+# testdata/i18n-coverage.json — which is both the floor and the set of pages measured. -v is what prints: `check`'s suite runs
+# through gotestsum, whose format drops the output of a passing test, so a number that
+# is only a log line on a green run is a number nobody reads. The gate therefore runs
+# twice — once here, printed, and once inside the suite, silent — which is what keeps
+# `check`'s fresh test boundary the whole suite with nothing taken off it, the boundary
+# scripts/check_architecture_test.sh pins.
+check-i18n: ## Print the share of words a person reads that a translator can reach, and fail below the floor
+	go test ./apps/platformkit -run '^TestThePseudoLocaleGate$$' -count=1 -v
 
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
@@ -360,7 +384,7 @@ fmt-check: ## Fail when any file is not gofmt'd
 # that works from a lock that is merely written down.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
-	./modules/change/... ./apps/platformkit
+	./modules/change/... ./kit/locale/... ./apps/platformkit
 # The same stated per-package bound `check` carries, for the same reason and against the same
 # measurement: go test's ten-minute default is not a decision this repository made, and
 # apps/platformkit has grown up to it. The package's own wall clock under -race on CI's runner, read
@@ -479,7 +503,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-run-owner check-pillars check-step-library check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -518,17 +542,81 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# The alternative is a fresh gate that narrows because nobody looked at it.
 	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m
 	bash scripts/check_architecture_test.sh
+	# scripts/provenance_case_paths_test.sh asks whether the provenance cases the architecture gate runs
+	# are still the files it invokes. The gate keeps that list in one `for provenance_case in …; do`
+	# line, and a rename that reaches only one side of it goes wrong twice over: a name with no file
+	# behind it fails the gate at `FAIL: … refuses the line the rehearsal report is headed with`, which
+	# blames the rehearsal step for a missing file, and a list emptied out reaches no case at all while
+	# the gate prints its `rehearsal step:` line and moves on. Reading the list out of the gate's own
+	# text, rather than repeating it, is what keeps the two halves from parting — so this file refuses a
+	# loop it cannot find, a loop that names nothing, a named case with no file behind it, and a case
+	# named for the round that wrote it rather than for what it protects. It starts no service, reads one
+	# file and two paths, and answers in under a second.
+	bash scripts/provenance_case_paths_test.sh
+	# scripts/test_comments_explain_what_they_protect_test.sh reads every whole-line comment of every
+	# test file — with each comment group's line breaks collapsed — and refuses one that cites the round,
+	# finding number or attempt number that filed the case instead of the behaviour it protects. The
+	# collapse is the point: a phrase split across two `//` lines is invisible to `rg` and to the
+	# per-package comment pins, and one file's own opener was written that way. It excludes the files the
+	# naming census already counts as debt, derived from each file's name rather than listed, so a rename
+	# brings its prose under the rule in the same commit. It starts nothing and reads tracked text; the
+	# planted cases it proves itself on are written into a directory of its own, outside the tree.
+	bash scripts/test_comments_explain_what_they_protect_test.sh
+	# scripts/comment_group_boundaries_test.py asks whether the guard above can still see the shape it
+	# exists for. It runs that guard's own scanner definitions, read out of the file above rather than
+	# copied, on inputs no test file in the tree happens to contain: a citation wrapped over the last two
+	# lines of a file, behind a blank line and a tab, at each of the two comment markers and each of the
+	# two line endings, where a group reader that stops at end of file or numbers a group from its last
+	# line loses the phrase; a blank line and a line of code between two comment groups, which must stay
+	# two groups so two unrelated sentences never collapse into one citation; and the domain prose —
+	# "Review the proposal", "rounded 5 values" — that has to stay allowed. Three mutants of those
+	# definitions die on it: a run that carries on across code, a group reported at its last line, and a
+	# matcher that refuses the word "review". It starts nothing, reads two files and answers in 5 ms.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/comment_group_boundaries_test.py
+	# scripts/plural_comment_citations_test.py holds the plural half of that matcher, which no other layer
+	# names out loud: narrow the matcher to the singular and this file is the one that says which half went
+	# missing, on six subcases over both comment markers and three casings of the word, where the guard's
+	# own planted case fails for a reason that reads like a broken arithmetic boundary. It holds the other
+	# side too — four sentences of ordinary numeric prose, "5.2 to 5, with half rounded up" and "A round
+	# trip reads 8 rows" among them, that the matcher must keep accepting — so a matcher widened past the
+	# digits fails here as well. It reads the matcher through the case above, which execs the guard's own
+	# definitions, so no copied pattern can drift from the real one. It starts nothing, reads two files and
+	# answers in milliseconds.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/plural_comment_citations_test.py
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/make_check_count_default_test.sh
-	# The three cases above read the race recipe's text; this one runs it and asks the binary. It dry-runs
-	# `make check-race` for one package, hands the command it prints back to go with `-n`, and asserts on
-	# the arguments the test binary receives after flag parsing: the stated clock there, go's ten-minute
-	# default when the same recipe loses it. A bound that stops at the recipe would satisfy all three
-	# guards above and still leave the suite answering to a clock nobody chose, which is the failure this
-	# repository already paid for once. Half a second, nothing compiled, nothing started.
+	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
+	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —
+	# and refuses a stated default that vanished or a caller's bound that no longer arrives last. Go honours
+	# the last `-timeout` it is handed, so the order of the two on that line is the whole promise: put the
+	# default after the caller's flags and a shorter ask is answered with the longer bound, which is a suite
+	# ignoring the clock its caller named. Two dry runs in a directory holding only go.mod's module, go and
+	# toolchain lines; nothing is compiled, started or tested.
+	bash scripts/make_test_timeout_override_test.sh
+	# scripts/race_boundary_guard_test.py asks whether the case above could still refuse. It copies the
+	# committed Makefile and that guard into a directory of its own, takes one part out of the race goal
+	# at a time — the detector, the fresh count, the stated bound — and asks four things: that the pair as
+	# committed answers, and that each of the three stripped of one part refuses at the race line and
+	# nowhere else. No file in the tree is touched: the mutation lives in the copy, and the Makefile and
+	# the workflows stay as committed. What it buys is the difference between a guard that is read and a
+	# guard that can be broken, for the four dry runs it names and no database.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_boundary_guard_test.py
+	# scripts/race_guard_check_recipe_test.py asks that the line above stays a line the goal runs. It
+	# expands this goal and asks for exactly one executable mention of that guard — not a comment, not a
+	# recipe line ending in `|| true` — beside the inventory row that still files it as a `scripts/` pin
+	# at the push tier. A line commented out keeps the file, the comment above it and the log's silence,
+	# and loses the refusal, which is the difference this case draws.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_guard_check_recipe_test.py
+	# The race guards above hold the recipe's bytes, break the guard that reads them, and ask that the
+	# breaking stays wired; this one runs the recipe and asks the binary. It dry-runs `make check-race`
+	# for one package, hands the command it prints back to go with `-n`, and asserts on the arguments the
+	# test binary receives after flag parsing: the stated clock there, go's ten-minute default when the
+	# same recipe loses it. A bound that stops at the recipe would satisfy every guard above and still
+	# leave the suite answering to a clock nobody chose, which is the failure this repository already
+	# paid for once. Half a second, nothing compiled, nothing started.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_binary_timeout_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
@@ -543,6 +631,38 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
 	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
 	bash scripts/ci_go_cache_guard_comments_test.sh
+	# The one step of the check job that asks a mirror for anything. Its `apt-get update` ended the job
+	# red on 2026-10-09 with exit 100 and no assertion — `File has unexpected size … Mirror sync in
+	# progress?`, a CDN node whose index had rolled forward under the Release it was serving — and every
+	# guard that asks for psql, ss or PyYAML was red behind a fact about Canonical's mirrors. This file
+	# runs the retry it replaced: which failures are worth another ask, how long they wait, that a fact
+	# about the index is refused at once, that every step of the workflows which asks apt for a package
+	# goes through that bound, and that the step which buys three tools asks all three whether they
+	# arrived. It breaks no mirror of its own: the stub apt-get answers from memory, and the one case that
+	# pays the real waits pays the first of them.
+	bash scripts/ci_apt_index_test.sh
+	# scripts/ci_package_install_refusal_test.py runs the half of that step the guard above cannot see: the
+	# index answered, the ask went out, and the package did not arrive. apt-get install exits 100, and the
+	# `-e` act_runner runs every step body under is what stops it there. A body that lost it, or gained a
+	# `|| true`, would carry on and look green doing it: ci.yml's three questions are answered by whatever
+	# is on PATH, so `command -v ss` and `python3 -c 'import yaml'` would pass off a stub and report an
+	# install that installed nothing, and mobile.yml's next line dials `psql -h postgres`. This case runs
+	# both jobs' committed step bodies with PATH the stub directory alone, refuses the install, and asks
+	# two things of each: that the step exits 100 after exactly two apt calls, and that the file its psql,
+	# ss and python3 stubs each append to the moment they run was never created. It reuses the apt double
+	# scripts/ci_apt_index_test.sh defines rather than carrying a second one, installs nothing, starts no
+	# container, pays no real wait (the retry bound is handed `0 0`) and writes only inside a
+	# TemporaryDirectory it removes.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_package_install_refusal_test.py
+	# scripts/package_install_refusal_guard_test.py asks whether the case above would still refuse if the
+	# refusal it exists to catch came back as success. It runs that case twice over the committed workflow
+	# bodies — once as written, once with `|| true` appended to every `apt-get install` line in the step
+	# body the runner passes through subprocess — and requires the second run to fail both workflow
+	# subcases with no error and no skip. Nothing on disk changes: the mutation lives in the argument list
+	# of the one call, and the workflows stay as committed. It is here because a pin nobody can break is
+	# a pin nobody can trust: the two apt doubles and the three stub tools are shared with the case it
+	# mutates, so this file carries no fixture of its own and costs the two runs it names.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/package_install_refusal_guard_test.py
 	# scripts/ci_container_leak_test.sh asks what the program's CI does with the containers it starts by
 	# hand: whether every `docker run -d` names itself after the run id and clears that name first,
 	# whether every one carries `--label pkit.ci.run=<run id>`, whether the first step of a job that
@@ -654,6 +774,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	bash scripts/push_tier_reaches_test_imports_test.sh
 	bash scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh
 	bash scripts/the_inventory_lists_a_javascript_test_test.sh
+	# scripts/inventory_area_totals_match_document_test.py re-derives the "Round-named verdicts by
+	# area" table in tests/INVENTORY.md from the rows tests/inventory.json carries: each listed area's
+	# file population and its three verdict columns, those columns' sums against the Verdicts table,
+	# and the population of every area the table leaves out because it holds no verdict. The Scale,
+	# Layers and Verdicts figures are re-checked by scripts/check_test_inventory.sh, but these five
+	# columns are quoted by hand, so this is the line that refuses a drift nothing else sees. It reads
+	# two files and starts nothing.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_area_totals_match_document_test.py
 	# scripts/e2e_guards_run_before_the_gate_test.sh above asks one goal whether it still runs the two
 	# subjects it exists for. These two ask that question of `check` itself, whose two source gates are
 	# prerequisites, and a prerequisite that leaves the list leaves nothing else red:

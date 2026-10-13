@@ -9,6 +9,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -53,6 +54,21 @@ type App struct {
 
 // NewApp starts an app.
 func NewApp(name string) *App { return &App{name: name} }
+
+// Slug is the composition's name in the form the runtime needs: the token every
+// name two apps could share is formed from (appname.Durable, appname.Subject).
+// NewApp takes a plain string and cannot answer with an error — a total
+// constructor that refused a name would panic — so the question is asked here,
+// and compose asks it, which is where Validate, Explain and Build already gather
+// a composition's problems. A name a subject token cannot hold is the app that
+// publishes at an app-scoped address while its durable names no app: the
+// disagreement AddressMismatch refuses at delivery time and events.Consume
+// refuses at boot, arrived at here, before either is reachable. The refusal is
+// appname's own sentence, which already quotes the name it refused, so a caller
+// that adds its context does not repeat it.
+func (a *App) Slug() (appname.Name, error) {
+	return appname.Parse(a.name)
+}
 
 // Use composes these modules into the app.
 func (a *App) Use(ms ...*Module) *App { a.uses = append(a.uses, ms...); return a }
@@ -315,6 +331,13 @@ func (a *App) compose(d Deployment) (*plan, []module.Module, map[*Module]map[any
 // list under the method name the joined sentence already carries: Build.
 func (a *App) inspect(d Deployment) (*plan, []module.Module, map[*Module]map[any][]any, []issue, error) {
 	p, issues := a.resolve(d)
+	// The composition's name is a problem of its own, collected with the plan's:
+	// a name no subject token can hold publishes at an app-scoped address while
+	// its durable names no app, which is otherwise a refusal at the first
+	// delivery. appname.Parse names the value it refused, so this adds no prefix.
+	if _, err := a.Slug(); err != nil {
+		issues = append(issues, issue{method: "NewApp", err: err})
+	}
 	if len(issues) > 0 {
 		return p, nil, nil, issues, joinIssues(a.name, issues)
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -76,6 +77,10 @@ const (
 	filesPath   = "/api/v1/file/files"
 	adminEmail  = "root@acme.localhost"
 	adminPass   = "correct horse battery staple"
+	// acmeName is the tenant's own name, which the bootstrap's operator typed. It is
+	// a value and not copy: no catalogue can hold it, and the frame puts it in the
+	// tab title and the chrome, so the pseudo-locale gate reads it back as data.
+	acmeName = "Acme Corporation"
 )
 
 // quiet keeps a passing test's output to the test's own lines.
@@ -84,6 +89,11 @@ func quiet() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // configure writes the configuration the reference app would have read from
 // config.yaml, against a schema of this test's own, and returns the path and
 // the loaded value. The database is empty: no tables, no ledger, nothing.
+// webhookKey is the composition's webhook secret key: thirty-two bytes, the width
+// AES-256-GCM asks for. A fixture's value, not a secret — no receiver on this
+// planet verifies a delivery signed with it.
+const webhookKey = "0123456789abcdef0123456789abcdef"
+
 func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
 	// The seed command's operator proves themselves the way every deployment
@@ -107,6 +117,9 @@ func configure(t *testing.T) (string, config.Config) {
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
 		"log:\n  level: \"error\"\n" +
 		"files:\n  dir: \"" + t.TempDir() + "\"\n" +
+		// Outbound webhooks are composed, so the composition needs the key that
+		// wraps an endpoint's signing secret. The fixture's own thirty-two bytes.
+		"webhook:\n  secret_key: \"" + webhookKey + "\"\n" +
 		"auth:\n  oidc:\n    issuer: \"\"\n    client_id: \"\"\n    client_secret: \"\"\n    redirect_path: \"\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
@@ -143,7 +156,7 @@ func install(t *testing.T, path string) {
 	// e2e/localization.spec.ts then check the other language against.
 	args := []string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
-		"--name", "Acme Corporation", "--admin-email", adminEmail,
+		"--name", acmeName, "--admin-email", adminEmail,
 		"--language", "pt-PT",
 	}
 	until := time.Now().Add(installContentionWait)
@@ -1446,10 +1459,16 @@ func blobs(t *testing.T, cfg config.Config) int {
 // The transaction half is measured from outside, through pg_stat_activity,
 // because the claim is about a server-side connection and not about a Go value.
 // dbtest names this installation's pool after the test's schema, so the count is
-// this application's backends and nobody else's. The question it asks is the age
-// of the oldest open transaction rather than how many there are: the application
-// is running its periodic jobs too, and a job's transaction is milliseconds old,
-// while a pinned one keeps getting older for as long as the body trickles.
+// this application's backends and nobody else's.
+//
+// It asks the age of the oldest open transaction of an installation started as the
+// serving half, because that is the only installation this question has an answer
+// for. The worker half runs the outbox relay, the outbox purge and every module's
+// periodic jobs over this same pool, and a transaction of that work stays open for
+// as long as its goroutine keeps a CPU: on a host carrying several suites at once
+// it is seconds old, and no bound separates it from one a client pinned. On role
+// web nothing but a request opens a transaction, so a transaction still open and
+// old at the last sample is the trickling request's own.
 func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	const timeout = 3 * time.Second
 	path, cfg := configure(t)
@@ -1461,7 +1480,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: memory.New(), Log: quiet(),
+		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 
@@ -1470,14 +1489,28 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// asking dbtest for the URLs again would give this test a fresh schema and
 	// take the tables out from under the application that is serving.
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)
-	longest := func() float64 {
+	// longest answers the age of the oldest open transaction of this installation and
+	// names the backend holding it. The name belongs in the refusal: a bare number says
+	// the claim failed and nothing about which pool to go and look at, and the reader is
+	// left to work out by hand what this one line already knows.
+	longest := func() (float64, string) {
 		var age float64
-		const q = `SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)), 0) FROM pg_stat_activity
-			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`
-		if err := owner.QueryRowContext(t.Context(), q).Scan(&age); err != nil {
-			t.Errorf("read pg_stat_activity: %v", err)
+		var backend string
+		const q = `SELECT EXTRACT(EPOCH FROM now() - xact_start),
+				coalesce(usename::text, '?') || ' at pid ' || pid::text || ': '
+				|| coalesce(left(regexp_replace(query, '\s+', ' ', 'g'), 120), '(no statement seen)')
+			FROM pg_stat_activity
+			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')
+			ORDER BY xact_start ASC NULLS LAST LIMIT 1`
+		err := owner.QueryRowContext(t.Context(), q).Scan(&age, &backend)
+		if err == sql.ErrNoRows {
+			return 0, ""
 		}
-		return age
+		if err != nil {
+			t.Errorf("read pg_stat_activity: %v", err)
+			return 0, ""
+		}
+		return age, backend
 	}
 
 	// A multipart form whose file part never ends: one byte, then a pause,
@@ -1542,13 +1575,16 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// loop is finished before the server gives up and the handler's own failure
 	// path runs.
 	samples, oldest := 0, 0.0
+	oldestBackend := ""
 	for time.Since(start) < timeout*3/4 {
 		select {
 		case got := <-done:
 			t.Fatalf("upload ended before the read deadline: status=%d error=%v after %s", got.code, got.err, time.Since(start))
 		default:
 		}
-		oldest = max(oldest, longest())
+		if age, backend := longest(); age > oldest {
+			oldest, oldestBackend = age, backend
+		}
 		samples++
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -1558,12 +1594,12 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// The bound is half the read timeout, and it is arithmetic rather than taste. A
 	// transaction the upload pinned opens when the request arrives and is still open at
 	// the last sample, so it is at least timeout*3/4 minus one sample interval old —
-	// 2.2s here. A periodic job's transaction is milliseconds old on a quiet machine
-	// and read 0.53s on a loaded CI runner (PR 55, run 144), which a 0.5s bound
-	// refused. timeout/2 sits between the two with margin on both sides.
+	// 2.2s here. Nothing on this role opens a transaction while a body trickles and no
+	// other request is in flight, so the only way to be older than the bound is to be
+	// that transaction. timeout/2 refuses it with a second of room on both sides.
 	if limit := timeout.Seconds() / 2; oldest > limit {
-		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs); the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
-			oldest, limit)
+		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs), held by %s; the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
+			oldest, limit, oldestBackend)
 	}
 
 	var got answer
@@ -1763,33 +1799,41 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 54 — twenty under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52) and thirty-four under
-	// modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24,
-	// 25, 27, 31, 32, 33, 35, 35, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 53).
-	// Every version to 33 is one file, and the only repeat anywhere in the release is
-	// 35 — modules/audit's audit_context and modules/auth's passkeys — which is above
-	// the ceiling, so the flattening below never meets it. The release this fixture is
+	// this head prints 68 — twenty-four under migrations/ (1, 2, 3, 5, 6, 9, 12, 20,
+	// 21, 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52, 58, 59, 60, 61) and forty-four
+	// under modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22,
+	// 23, 24, 25, 27, 31, 32, 33, 35, 35, 36, 37, 38, 39, 40, 42, 43, 44, 44, 44, 45,
+	// 45, 47, 48, 49, 50, 53, 54, 54, 55, 56, 57). Every version to 33 is one file, and
+	// every repeat in the release — 35 (modules/audit's audit_context and modules/auth's
+	// passkeys), 43, 44, 45, 50 and 54 — is above the ceiling, so the flattening below
+	// never meets one. The release this
+	// fixture is
 	// applied from shipped 33 of them: the thirteen under migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The twenty-one above it — the kernel's own 34, 41, 43, 46, 50,
-	// 51 and 52, modules/audit's 35, 36, 37, 48, 49 and 53, modules/auth's 35 and 47,
-	// modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45 and
-	// modules/content's 42 — postdate that release, are not in the old installation's
-	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
-	// the owner that ships them and counts them as new rows. Each continues past the
-	// highest number anywhere in the composition at the time it was written, which is
-	// the rule this fixture exists to enforce — and it is a rule with teeth rather
-	// than tidiness, because
-	// kit/db reads a repeated version only inside one owner: the kernel's
-	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
-	// under two owners, and the only thing that says so is the one map below that
-	// counts every shipped file under one key. modules/audit's 48 and 49 are this
-	// rule's newest customer: the append-only trail and its retention marks were
-	// numbered 41 and 42 while the branch was open, and main took 41 for the kernel's
-	// own outbox baggage and 42 for modules/content's body characters underneath it.
+	// any owner names. The twenty-five above it — the kernel's own 34, 41, 43, 46, 50,
+	// 51, 52, 54, 55, 56 and 57, modules/audit's 35, 36, 37, 48, 49 and 53,
+	// modules/auth's 35 and 47, modules/change's 38, modules/site's 39, modules/file's
+	// 40, 44 and 45 and modules/content's 42 — postdate that release, are not in the
+	// old installation's ledger, and legacyLayout leaves them out; the upgrade below
+	// applies them under the owner that ships them and counts them as new rows. Each
+	// continues past the highest number anywhere in the composition at the time it was
+	// written, which is the rule this fixture exists to enforce — and it is a rule with
+	// teeth rather than tidiness, because kit/db reads a repeated version only inside
+	// one owner: the kernel's 000034_outbox_request and a modules/auth file numbered 34
+	// apply side by side under two owners, and the only thing that says so is the one
+	// map below that counts every shipped file under one key. modules/audit's 48 and 49
+	// are this rule's newest customer: the append-only trail and its retention marks
+	// were numbered 41 and 42 while the branch was open, and main took 41 for the
+	// kernel's own outbox baggage and 42 for modules/content's body characters
+	// underneath it. T-0231's own four are this rule's newest since: they arrived at
+	// 000044, 000045, 000046 and 000047, main took 000046 for its own SAML provider
+	// columns in between, and the flattened fixture below reads one version as one row
+	// whatever the owner, so they are 000058, 000059, 000060 and 000061: this merge is
+	// the seventh time that rule has moved them, main having taken 000054 to 000057 for
+	// modules/file's variants, unused-since, use-audience and its index, and 000054 for
+	// modules/site's default accent, while this branch's four stood at those numbers.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
 	// merged as, for the reason this paragraph has now recorded six times: this fixture
@@ -1814,6 +1858,20 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// The new release, through the path a person runs: bootstrap migrates with
 	// the composed sources before it writes the first tenant.
 	install(t, path)
+	// And the rest of the convergence, which is the same path: 000061 sits behind 000060,
+	// the release's placement window, and kit/db's planOwner bounds a phase=data file only
+	// when nothing of its owner is pending behind it — so this boot stops at the window and
+	// the two steps that finish a release take it: the drain the worker's first tick runs,
+	// then the migration again for the file that waited behind it. That trio is what
+	// `pkit migrate --drain` runs (apps/platformkit/migrate.go) and what
+	// scripts/rehearse_migrations.sh measures. The ledger below is the ledger of the
+	// converged installation, and the count it must reach is every file the release ships.
+	if err := app.Drain(t.Context(), cfg, compose(cfg).modules); err != nil {
+		t.Fatalf("the drain that finishes the upgrade: %v", err)
+	}
+	if err := app.Migrate(t.Context(), cfg, compose(cfg).modules); err != nil {
+		t.Fatalf("the migration behind the drain: %v", err)
+	}
 
 	owners := map[int64]string{}
 	ledger(owners, "SELECT version, owner FROM schema_migrations")
@@ -1830,13 +1888,18 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the twenty-one files above the
-	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 50, 51 and 52,
-	// modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 35 and 47, modules/change
-	// 38, modules/site 39, modules/file 40, 44 and 45 and modules/content 42, all
-	// absent from the old ledger) have to be accounted for:
-	// 54 files in the release, 54 rows — one fewer key than rows in the two maps
-	// below, because the two 35s are one version held by two owners.
+	// release ships is in the ledger, which is where the thirty-five files above the
+	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 50, 51, 52, 58, 59, 60
+	// and 61, modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 35 and 47,
+	// modules/change 38, modules/site 39 and 54, modules/file 40, 44, 45, 54, 55, 56
+	// and 57, modules/content 42, modules/notification 44 and 45, modules/webhook 44
+	// and 45, modules/translation 43 and modules/task 50, all absent from the old
+	// ledger) have to be accounted for:
+	// 68 files in the release and 61 versions among them: seven of those files name a
+	// version another owner already named — 35, 43, 44 twice over, 45, 50 and 54 — so
+	// the two maps below count seven keys fewer than there are files, and every one of
+	// those repeats sits above the ceiling of 33, where the flattened fixture above
+	// never meets one.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

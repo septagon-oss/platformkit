@@ -18,7 +18,8 @@
         "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Locale",
-        "tenantcontracts.Languages"
+        "tenantcontracts.Languages",
+        "webhookcontracts.Catalogue"
       ],
       "contributes": [
         {
@@ -87,7 +88,8 @@
     {
       "name": "site",
       "provides": [
-        "sitecontracts.Service"
+        "sitecontracts.Service",
+        "sitecontracts.LockedReader"
       ],
       "uses": [
         {
@@ -279,6 +281,32 @@
       ]
     },
     {
+      "name": "webhook",
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        },
+        {
+          "contract": "webhookcontracts.Catalogue",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webhookcontracts.Alerts",
+          "from": ""
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Webhook"
+      ]
+    },
+    {
       "name": "auth",
       "provides": [
         "authcontracts.Auth",
@@ -391,6 +419,10 @@
         },
         {
           "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "sitecontracts.LockedReader",
           "from": "site"
         },
         {

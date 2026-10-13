@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `production` · 18 modules · role `all`.
+App `platformkit` · environment `production` · 19 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in production builds 18 modules.
+pkit: platformkit in production builds 19 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
@@ -71,6 +71,14 @@ pkit: audit.Module reads config.Audit.
 pkit: audit.Module reads config.Database.
 pkit: audit.Module defines the permission audit:read.
 pkit: audit.Module handles every event this application emits.
+pkit: webhook.Module is built after product.Module and tenant.Module.
+pkit: webhook.Module needs jobs.TenantLister from tenant.Module.
+pkit: webhook.Module needs webhookcontracts.Catalogue from product.Module.
+pkit: webhook.Module could use webhookcontracts.Alerts; platformkit composes no provider, so it will not.
+pkit: webhook.Module reads config.Webhook.
+pkit: webhook.Module defines the permission webhook:read and webhook:update.
+pkit: webhook.Module emits webhook.endpoint.created, webhook.endpoint.updated, webhook.endpoint.deleted, webhook.endpoint.disabled and webhook.endpoint.enabled.
+pkit: webhook.Module handles every event this application emits.
 pkit: auth.Module is built after product.Module, user.Module, tenant.Module, notification.Module and emailregistration.Module.
 pkit: auth.Module needs authcontracts.Users from user.Module.
 pkit: auth.Module needs authcontracts.Provisioner from user.Module.
@@ -99,6 +107,7 @@ pkit: access.Module is built after product.Module, user.Module, notification.Mod
 pkit: access.Module needs usercontracts.Service from user.Module.
 pkit: access.Module needs notificationcontracts.Service from notification.Module.
 pkit: access.Module needs sitecontracts.Service from site.Module.
+pkit: access.Module needs sitecontracts.LockedReader from site.Module.
 pkit: access.Module needs usercontracts.Granting from product.Module.
 pkit: access.Module needs authcontracts.Auth from auth.Module.
 pkit: access.Module contributes one changecontracts.SubjectBinding to change.Module.
