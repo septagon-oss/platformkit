@@ -204,6 +204,9 @@ query, the content type and the body. The same key with a different body is a 42
 `IDEMPOTENCY_KEY_IN_USE` — because the only way out of a spent key is a fresh one; a
 retry that arrives while the first is still running is a 409,
 `IDEMPOTENCY_IN_FLIGHT`, which is the answer no caller can compute from the outside.
+Records belong to the authenticated person, except at a `BearerKey` command:
+there the key is the subject, so each key keeps its own retry record even when
+one person holds both. Retiring one key cannot replay as another key's success.
 A write that sends no header is answered exactly as it always was. The verbs are
 POST and PATCH; PUT and DELETE are idempotent in the protocol already, so a record of
 them would be a body kept for nothing. The key is 1–128 visible ASCII characters,
