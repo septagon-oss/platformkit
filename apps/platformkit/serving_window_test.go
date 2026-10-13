@@ -1,6 +1,6 @@
 package main
 
-// The witness review 12 left behind.
+// The witness beside the serving wait, holding the second observation alone.
 //
 // waitServing is built from two observations: this application's own log says it
 // is listening at this address, and the address keeps answering while the
