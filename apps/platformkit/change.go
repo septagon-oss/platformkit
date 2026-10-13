@@ -214,7 +214,7 @@ func siteSubjectBinding(sites sitecontracts.Service, locked sitecontracts.Locked
 // The task is this product's second change subject, and the reason change control
 // exists as a kernel object rather than a pattern: nothing in modules/change
 // changed to admit it. Two things did — a `revision` column on the row
-// (modules/task/migrations/000056) so a diff has a number to quote, and the door in
+// (modules/task/migrations/000050) so a diff has a number to quote, and the door in
 // front of the five routes kit/rest mounts for it (task.Deps.Gate). The three facts
 // below are this product's own: which switch says whether a task edit needs a second
 // pair of eyes, which of a task's fields can ever be moved by a proposal, and which

@@ -423,7 +423,7 @@ answer 503 rather than the routes going missing (`Deps.FactorKey`, `:120`). The
 passkey tables carry the same column and the same policy —
 `passkey_credentials`, `passkey_challenges`, and the usernameless door's own
 `passkey_settings`
-(`modules/auth/migrations/000057_passkeys.up.sql:20`, `:76`, `:144`, `:103`,
+(`modules/auth/migrations/000035_passkeys.up.sql:20`, `:76`, `:144`, `:103`,
 `:109`, `:152`) — and nothing in them is sealed, because a public key is public
 and those doors mount whether or not a factor key exists
 (`modules/auth/module.go:267-278`).

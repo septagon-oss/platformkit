@@ -32,7 +32,7 @@ const PermissionRoleManage = "role:manage"
 // in the same grant.
 //
 // It is an ordinary permission rather than an operator one, for the reason
-// migrations/000057_passkeys.up.sql gives for the row it guards: the decision
+// migrations/000035_passkeys.up.sql gives for the row it guards: the decision
 // belongs to the tenant whose people it changes, and the write happens inside
 // that tenant's own transaction under its own policy.
 const PermissionPasskeySignIn = "passkey:signin"

@@ -17,11 +17,6 @@
 -- One statement, no backfill pass: the default writes the value. The column
 -- inherits the table's existing forced row-level security and its tasks_tenant
 -- policy; no new table and so no new policy.
---
--- The number is not this module's own ledger. One installation holds one row per
--- version whoever shipped the file, and the kernel took 000050 for the tenant's demo
--- marker while this file was in review, so it continues past the highest version
--- anywhere in the composition rather than past the 000004 beside it.
 ALTER TABLE tasks
 	ADD COLUMN revision bigint NOT NULL DEFAULT 1
 		CONSTRAINT tasks_revision CHECK (revision >= 1);
