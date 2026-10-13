@@ -26718,6 +26718,25 @@
    "verdict": "keep"
   },
   {
+   "area": "migrations",
+   "evidence": "not-round-named",
+   "file": "migrations/tenant_placement_ledger_fence_test.go",
+   "id": "migrations/tenant_placement_ledger_fence_test.go#TestTenantPlacementHoldsItsLedgerFenceUntilCommit",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTenantPlacementHoldsItsLedgerFenceUntilCommit",
+   "needs_db": true,
+   "pkg": "migrations",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
    "area": "modules",
    "evidence": "not-round-named",
    "file": "modules/admin/gallery_access_test.go",
@@ -56351,7 +56370,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1415,
+  "files": 1416,
   "forge_runs": [
    408,
    413,
@@ -56385,7 +56404,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2447,
+   "behaviour": 2448,
    "composition": 314,
    "contract": 19,
    "journey": 67
@@ -56404,9 +56423,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2847,
+  "rows": 2848,
   "tiers": {
-   "merge": 1788,
+   "merge": 1789,
    "nightly": 67,
    "push": 992
   },
@@ -56414,13 +56433,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1199,
+   "keep": 1200,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2499,
+   "keep": 2500,
    "keep-rewrite": 133,
    "merge": 215
   }
