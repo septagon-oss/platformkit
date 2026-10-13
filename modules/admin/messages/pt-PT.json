@@ -304,5 +304,32 @@
     "plural": {
       "": "Continuar com uma passkey"
     }
+  },
+  "admin.roles.save": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Guardar %s",
+    "plural": {
+      "": "Guardar %s"
+    }
+  },
+  "admin.roles.grants": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "O que %s concede",
+    "plural": {
+      "": "O que %s concede"
+    }
+  },
+  "admin.roles.drops": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Guardar %s também remove %s, que esta aplicação já não oferece aqui.",
+    "plural": {
+      "": "Guardar %s também remove %s, que esta aplicação já não oferece aqui."
+    }
   }
 }
