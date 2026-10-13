@@ -118,7 +118,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | apps | 210 | 23 | 18 | 0 |
 | ui | 174 | 10 | 5 | 0 |
 | tools | 94 | 1 | 0 | 0 |
-| e2e | 87 | 5 | 0 | 0 |
+| e2e | 88 | 5 | 0 | 0 |
 | migrations | 15 | 5 | 8 | 0 |
 
 `tools` appears with the design tooling's JavaScript cases: one of the 89, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above (117 keep-rewrite, 173 merge). The table lists the areas that hold a verdict, and three areas the walk counts hold none: `pkit` (65 files), `design` (4 files) and `scripts` (68 files, a count the Scale table already quotes) are every `keep`, so a row for each would carry three zeroes beside a population and tell a reader nothing the `Verdicts` table above does not — the markdown this file holds is that population's count, so a zero row is priced like any other row. `ui`'s merge column falls to 5 because the round-named sheets that carried those verdicts folded into the named pins beside them. The figures in this table re-derive from the same rows; unlike the four sections above they are quoted by hand, and `scripts/inventory_area_totals_match_document_test.py` — a recipe line of `make check` — re-derives them from `inventory.json` and refuses this file when the rows no longer answer them.
