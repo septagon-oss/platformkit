@@ -9,10 +9,13 @@
 # group of cases runs its three subcommands: a host with a share to give starts at once, a host
 # without one waits, the bound ends the wait rather than the run, a host that cannot be read says so,
 # one sample names the memory, the queue, the ceiling and the pool, and the suite's own verdict
-# survives the sampler wrapped around it. The rest ask what the guard itself cannot: whether the two
-# browser steps of the workflow still call it and reach it from the directory they run in, and whether
-# this file would notice one that stopped — three planted refusals over copied workflow files, and a
-# copied Makefile that lost the line that runs this one.
+# survives the sampler wrapped around it. The container's ceiling is asked of all three shapes a host
+# can leave memory accounting in — cgroup v2, cgroup v1, and none — because a promise one layout keeps
+# and another breaks is a promise about the image, not about the run. The rest ask what the guard
+# itself cannot: whether the two browser steps of the workflow still call it and reach it from the
+# directory they run in, and whether this file would notice one that stopped — three planted refusals
+# over copied workflow files, and a copied Makefile that lost either of the two lines that run these
+# cases.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 guard="$root/scripts/ci_browser_host_share.sh"
@@ -64,6 +67,61 @@ for line in 'runner MemAvailable 500 MB' 'runner load average' '/dev/shm' 'memor
 done
 out="$(bash "$guard" report "$temporary/not-a-meminfo")" || fail "report refused a meminfo it could not read"
 case "$out" in *"no readable $temporary/not-a-meminfo"*) ;; *) fail "an unreadable meminfo printed silence: $out" ;; esac
+
+# The container's own memory accounting, in the three shapes a host can leave it in. The guard asks
+# fixed paths under /sys, which no case can plant, so the guard is copied with its accounting
+# directory moved into this file's own — and the directory it moves is read out of the guard rather
+# than named here, so a guard that moves its paths keeps being tested against the paths it asks. The
+# planted directory is named `cgroup` at the end, as the real one is, because the guard shortens each
+# counter's name at that word and the fixture has to be reported the way a real host is. What all
+# three shapes owe is the same sentence: a readable accounting prints its counters under a line that
+# names the ceiling they were read from, and a host that exposes none says so — the ceiling is the
+# question this block exists to answer, and an answer that depends on the layout would leave the log
+# silent on exactly the hosts whose deaths it was written to attribute.
+cgroup_dir() { # the directory the guard reads its memory accounting from, as the guard itself says it
+	sed -n 's#.*for file in \([^ ]*\)/memory\.max .*#\1#p' "$guard" | head -1
+}
+accounting_dir="$(cgroup_dir)"
+[ -n "$accounting_dir" ] || fail 'the guard no longer names a memory accounting directory this case can copy'
+plant_accounting() { # <layout> <file> <content>...: a copied guard answering to a directory of ours
+	local layout="$1" dir file content
+	dir="$temporary/cgroup-$layout/cgroup"
+	shift
+	mkdir -p "$dir"
+	while [ "$#" -gt 0 ]; do
+		file="$1" content="$2"
+		shift 2
+		mkdir -p "$dir/$(dirname "$file")"
+		printf '%s\n' "$content" > "$dir/$file"
+	done
+	sed "s|$accounting_dir/|$dir/|g" "$guard" > "$temporary/guard-$layout.sh"
+}
+require_line() { # <who answered> <needle> <the sample>: a needle the sample must carry
+	case "$3" in
+		*"$2"*) ;;
+		*) fail "$1 printed no [$2]: $3" ;;
+	esac
+}
+plant_accounting v2 memory.max 1073741824 memory.current 67108864 memory.events 'low 0 high 0 max 0 oom 0 oom_kill 0'
+out="$(bash "$temporary/guard-v2.sh" report "$temporary/meminfo")" || fail 'report refused a cgroup v2 host'
+for line in 'memory ceiling' 'memory.max 1073741824' 'memory.current 67108864' 'memory.events low 0 high 0 max 0 oom 0 oom_kill 0'; do
+	require_line 'a cgroup v2 host' "$line" "$out"
+done
+case "$out" in *'no readable memory ceiling'*) fail "a cgroup v2 host with a readable ceiling was reported as having none: $out" ;; esac
+plant_accounting v1 memory/memory.limit_in_bytes 1073741824 memory/memory.usage_in_bytes 67108864 memory/memory.failcnt 0
+out="$(bash "$temporary/guard-v1.sh" report "$temporary/meminfo")" || fail 'report refused a cgroup v1 host'
+for line in 'memory ceiling' 'memory/memory.limit_in_bytes 1073741824' 'memory/memory.usage_in_bytes 67108864' 'memory/memory.failcnt 0'; do
+	require_line 'a cgroup v1 host' "$line" "$out"
+done
+# A ceiling read is never reported as missing: the sentence belongs to the host that had nothing to
+# read, and a sample answering the ceiling question two ways at all says nothing about either.
+case "$out" in *'no readable memory ceiling'*) fail "a cgroup v1 host with a readable ceiling was reported as having none: $out" ;; esac
+plant_accounting absent
+out="$(bash "$temporary/guard-absent.sh" report "$temporary/meminfo")" || fail 'report refused a host with no memory accounting'
+case "$out" in
+	*'no readable memory ceiling'*) ;;
+	*) fail 'a host with no memory accounting printed no sentence about its ceiling' ;;
+esac
 
 # The suite's verdict survives the sampler wrapped around it — the one way this cure could have been
 # a weakening, and the reason the case asks for a failure and not only a pass.
@@ -139,20 +197,23 @@ fi
 
 echo "ok   a browser suite waits for a core, prints the host it waited for, and keeps its own verdict"
 
-# And the line that runs this file. A recipe that leaves `check` leaves nothing else red — `go tool
-# gotestsum --packages='./...'` sees no shell script — so the case asks the dry run for its own
-# command, and then asks a Makefile with that one line deleted the same question. The nested `make -n`
-# against a tree holding nothing but a go.mod is the shape scripts/check_architecture_test.sh already
-# runs from inside this same recipe; the two together cost half a second.
+# And the two lines that run these cases. A recipe that leaves `check` leaves nothing else red — `go tool
+# gotestsum --packages='./...'` sees no shell script and no python file — so the case asks the dry run
+# for each command, and then asks a Makefile with that one line deleted the same question. The nested
+# `make -n` against a tree holding nothing but a go.mod is the shape scripts/check_architecture_test.sh
+# already runs from inside this same recipe; the four together cost one second.
 sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p; /^toolchain[[:space:]]/p' "$root/go.mod" > "$temporary/go.mod"
-check_recipe_runs_the_case() { # <makefile>
+check_recipe_runs_the_case() { # <makefile> <the line the check goal must still run>
 	local recipe="$temporary/recipe.txt"
 	make --no-print-directory -n -C "$temporary" -f "$1" check > "$recipe" 2>/dev/null || true
-	grep -qx 'bash scripts/ci_browser_host_share_test.sh' "$recipe"
+	grep -qx "$2" "$recipe"
 }
-check_recipe_runs_the_case "$root/Makefile" || fail 'make check no longer runs bash scripts/ci_browser_host_share_test.sh'
-awk 'index($0, "\tbash scripts/ci_browser_host_share_test.sh") != 1' "$root/Makefile" > "$temporary/Makefile-lost-line"
-if check_recipe_runs_the_case "$temporary/Makefile-lost-line"; then
-	fail 'the recipe case accepted a check goal that dropped the guard'
-fi
-echo "ok   make check runs the guard's case, and a recipe that lost it is refused"
+for recipe_line in 'bash scripts/ci_browser_host_share_test.sh' \
+                   'PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_guard_readable_cgroup_test.py'; do
+	check_recipe_runs_the_case "$root/Makefile" "$recipe_line" || fail "make check no longer runs $recipe_line"
+	awk -v line="$recipe_line" 'index($0, "\t" line) != 1' "$root/Makefile" > "$temporary/Makefile-lost-line"
+	if check_recipe_runs_the_case "$temporary/Makefile-lost-line" "$recipe_line"; then
+		fail "the recipe case accepted a check goal that dropped $recipe_line"
+	fi
+done
+echo "ok   make check runs both lines that run these cases, and a recipe that lost either is refused"

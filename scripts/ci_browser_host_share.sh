@@ -35,7 +35,10 @@
 #       Print the host's available memory and load average, this container's own cgroup ceiling and
 #       failure counter where the host exposes one, and the shared-memory pool. Each unreadable
 #       source prints a sentence rather than silence: a sampler that printed nothing and a host with
-#       nothing to say look the same to whoever reads the log next.
+#       nothing to say look the same to whoever reads the log next. The container's memory accounting
+#       answers its question in words either way — a readable host prints its counters under a line
+#       naming the ceiling it read them from, one that exposes none says so — so the ceiling is asked
+#       of every sample and the answer never depends on which layout the host happens to run.
 #   ci_browser_host_share.sh watch [INTERVAL_SECONDS] COMMAND [ARG...]
 #       Run COMMAND, printing `report` every INTERVAL_SECONDS (default 30) while it runs, and return
 #       COMMAND's own status. The highest /dev/shm usage seen is printed at the end, because a pool
@@ -64,11 +67,19 @@ cgroup_report() { # what this container answers to, in its cgroup's own words
     # run whose own cgroup was out while the host had 23 GB free would print a number that cleared
     # memory. `memory.events` carries `oom_kill`, the only record of that death that survives it. v1
     # and v2 paths are both asked, because the image does not choose the host's layout.
+    #
+    # The counter lines are headed by a line naming the ceiling, because the ceiling is what this block
+    # exists to answer: where a counter was read the numbers are the answer, and where none was the
+    # sentence is. Both open with the words `memory ceiling`, so the sample itself says which of the
+    # two a reader is looking at on whichever layout the host happens to run.
     local seen=0 file
     for file in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes \
                 /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory/memory.usage_in_bytes \
                 /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory/memory.failcnt; do
         if [ -r "$file" ]; then
+            if [ "$seen" = 0 ]; then
+                printf 'job container memory ceiling, read from its own cgroup:\n'
+            fi
             printf 'job container %s %s\n' "${file##*/cgroup/}" "$(tr '\n' ' ' < "$file" | sed 's/ $//')"
             seen=1
         fi
