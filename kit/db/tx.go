@@ -76,6 +76,7 @@ type openTx struct {
 	db     *gorm.DB
 	system bool
 	tenant tenancy.Tenant
+	span   trace.Span
 }
 
 type txKey struct{}
@@ -89,8 +90,8 @@ func current(ctx context.Context) (openTx, bool) {
 	// readiness check open a system transaction, while the request holds a
 	// Pending it never used.
 	if p, ok := pendingOf(ctx); ok {
-		if gtx := p.handle(); gtx != nil {
-			return openTx{db: gtx, tenant: p.tenant}, true
+		if gtx, span := p.handle(); gtx != nil {
+			return openTx{db: gtx, tenant: p.tenant, span: span}, true
 		}
 	}
 	return openTx{}, false
@@ -137,7 +138,7 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 		if cur.system || cur.tenant.ID != t.ID {
 			return ErrScopeMismatch
 		}
-		return fn(ctx, Tx[Tenant]{db: cur.db, scope: Tenant{tenant: t}})
+		return fn(ctx, Tx[Tenant]{db: operation(cur.db, cur.span, ctx), scope: Tenant{tenant: t}})
 	}
 	if p, ok := pendingOf(ctx); ok {
 		// A request that has not queried yet. Opening here hands the caller the
@@ -152,7 +153,7 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 		return fn(ctx, tx)
 	}
 
-	p := &Pending{conn: c, tenant: t}
+	p := &Pending{conn: c, tenant: t, owner: ctx}
 	tx, err := p.Tx(ctx)
 	if err != nil {
 		return err
@@ -164,7 +165,9 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 			panic(r)
 		}
 	}()
-	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: tx.db, tenant: t}), tx); err != nil {
+	// A nested join clones the shared handle, never this caller's operation handle.
+	gtx, span := p.handle()
+	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: gtx, tenant: t, span: span}), tx); err != nil {
 		_ = p.Close(false)
 		return err
 	}
@@ -219,9 +222,16 @@ func RunSystem(ctx context.Context, c *Conn, tok tenancy.SystemToken, fn func(ct
 // down — which restarts every replica during the outage instead of after it.
 // So the request carries a Pending, the first Tx or Run opens it, and Close
 // commits or rolls back once the response is decided.
+//
+// The transaction belongs to its owner, the context the Pending was created
+// with: BEGIN, the span, the settings re-read and COMMIT run under it, and once
+// it ends nothing commits and nothing opens. Each caller of Tx gets a handle
+// bound to its own context, so its deadline ends its statements and not the
+// transaction. See README.md, "The transaction's owner".
 type Pending struct {
 	conn   *Conn
 	tenant tenancy.Tenant
+	owner  context.Context
 
 	mu   sync.Mutex
 	gtx  *gorm.DB
@@ -251,13 +261,16 @@ func Lazy(ctx context.Context, c *Conn, tok tenancy.SystemToken) (context.Contex
 	if !ok {
 		return ctx, nil, ErrNoTenant
 	}
-	p := &Pending{conn: c, tenant: t}
+	p := &Pending{conn: c, tenant: t, owner: ctx}
 	return context.WithValue(ctx, pendingKey{}, p), p, nil
 }
 
-// Tx opens the transaction if it is not open yet and returns the handle. A
-// failed open is remembered: a request that could not reach the database asks
-// once, not once per query.
+// Tx opens the transaction if it is not open yet and returns a handle whose
+// statements run under ctx, the caller's operation context, inside the owner's
+// transaction. A failed open under a live owner is remembered: a request that
+// could not reach the database asks once, not once per query. An owner that has
+// ended refuses every open; a caller that has ended is refused alone, and the
+// next live caller may still open.
 func (p *Pending) Tx(ctx context.Context) (Tx[Tenant], error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -265,39 +278,73 @@ func (p *Pending) Tx(ctx context.Context) (Tx[Tenant], error) {
 		return Tx[Tenant]{}, p.err
 	}
 	if p.gtx == nil {
-		// The span opens with the transaction and not with the Pending: a request
-		// that never queries opens neither, which is the whole reason Pending
-		// exists, and a span for a transaction that never happened would be the
-		// trace equivalent of a log line about a query nobody sent.
-		//
-		// One span per opened transaction, under whatever span the work already sits
-		// in — a request's, a job run's, an event delivery's — which is what makes
-		// "SQL under Tx" a boundary a reader can see: the span's duration is the
-		// transaction's, from BEGIN to the commit that was checked, and every
-		// statement the runner issued is inside it. Not one span per statement:
-		// kit/db's own promise is that GORM is the SQL executor and nothing else — no
-		// callbacks, no plugins — and a per-statement span is bought with a callback
-		// and a map of open statements. A transaction that took 40ms says what a
-		// reader needs to know in one span; the question "which of its four
-		// statements was the slow one" is answered by the statement log, not by a
-		// trace of this shape.
-		ctx, span := telemetry.Tracer().Start(ctx, "database transaction",
-			trace.WithAttributes(telemetry.SpanAttrs(ctx)...))
-		gtx := p.conn.db.WithContext(ctx).Begin()
-		if gtx.Error != nil {
-			p.err = fmt.Errorf("db: begin: %w", gtx.Error)
-			endErr(span, p.err)
-			return Tx[Tenant]{}, p.err
+		if p.owner.Err() != nil {
+			return Tx[Tenant]{}, fmt.Errorf("db: the transaction's owner ended before it opened: %w", context.Cause(p.owner))
 		}
-		if err := gtx.Exec("SELECT set_config('platformkit.tenant_id', ?, true)", p.tenant.ID.String()).Error; err != nil {
-			_ = gtx.Rollback().Error
-			p.err = fmt.Errorf("db: set tenant: %w", err)
-			endErr(span, p.err)
-			return Tx[Tenant]{}, p.err
+		if ctx.Err() != nil {
+			return Tx[Tenant]{}, fmt.Errorf("db: the caller ended before the transaction opened: %w", context.Cause(ctx))
 		}
-		p.gtx, p.span = gtx, span
+		if err := p.open(); err != nil {
+			return Tx[Tenant]{}, err
+		}
 	}
-	return Tx[Tenant]{db: p.gtx, scope: Tenant{tenant: p.tenant}}, nil
+	return Tx[Tenant]{db: operation(p.gtx, p.span, ctx), scope: Tenant{tenant: p.tenant}}, nil
+}
+
+// open begins the transaction under the owner and places the tenant. A failure
+// caused by the owner ending (a cancel while waiting for a connection) is
+// returned and not remembered, so Err keeps meaning the database refused.
+func (p *Pending) open() error {
+	// The span opens with the transaction and not with the Pending: a request
+	// that never queries opens neither, which is the whole reason Pending
+	// exists, and a span for a transaction that never happened would be the
+	// trace equivalent of a log line about a query nobody sent.
+	//
+	// One span per opened transaction, under whatever span the work already sits
+	// in — a request's, a job run's, an event delivery's — which is what makes
+	// "SQL under Tx" a boundary a reader can see: the span's duration is the
+	// transaction's, from BEGIN to the commit that was checked, and every
+	// statement the runner issued is inside it. Not one span per statement:
+	// kit/db's own promise is that GORM is the SQL executor and nothing else — no
+	// callbacks, no plugins — and a per-statement span is bought with a callback
+	// and a map of open statements. A transaction that took 40ms says what a
+	// reader needs to know in one span; the question "which of its four
+	// statements was the slow one" is answered by the statement log, not by a
+	// trace of this shape.
+	ctx, span := telemetry.Tracer().Start(p.owner, "database transaction",
+		trace.WithAttributes(telemetry.SpanAttrs(p.owner)...))
+	gtx := p.conn.db.WithContext(ctx).Begin()
+	if gtx.Error != nil {
+		return p.failed(span, fmt.Errorf("db: begin: %w", gtx.Error))
+	}
+	if err := gtx.Exec("SELECT set_config('platformkit.tenant_id', ?, true)", p.tenant.ID.String()).Error; err != nil {
+		_ = gtx.Rollback().Error
+		return p.failed(span, fmt.Errorf("db: set tenant: %w", err))
+	}
+	p.gtx, p.span = gtx, span
+	return nil
+}
+
+// failed ends the span of an open that did not happen and remembers err unless
+// the owner ending is what stopped it.
+func (p *Pending) failed(span trace.Span, err error) error {
+	if p.owner.Err() != nil {
+		err = fmt.Errorf("db: the transaction's owner ended before it opened: %w (%w)", context.Cause(p.owner), err)
+	} else {
+		p.err = err
+	}
+	endErr(span, err)
+	return err
+}
+
+// operation is the handle one caller's statements run through: a clone of the
+// shared transaction handle carrying the caller's deadline and values, with the
+// transaction's span as its current span. The shared handle is never changed.
+func operation(gtx *gorm.DB, span trace.Span, ctx context.Context) *gorm.DB {
+	if span != nil {
+		ctx = trace.ContextWithSpan(ctx, span)
+	}
+	return gtx.WithContext(ctx)
 }
 
 // endErr is how a database failure reaches a span: the error itself, and a status,
@@ -316,15 +363,17 @@ func (p *Pending) Err() error {
 	return p.err
 }
 
-func (p *Pending) handle() *gorm.DB {
+func (p *Pending) handle() (*gorm.DB, trace.Span) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.gtx
+	return p.gtx, p.span
 }
 
-// Close ends the transaction: it commits when keep is true and the settings the
-// open placed are still the ones in force, and rolls back otherwise. It is a
-// no-op when nothing was ever opened, and idempotent.
+// Close ends the transaction: it commits when keep is true, the owner has not
+// ended and the settings the open placed are still the ones in force, and rolls
+// back otherwise. An owner that ended first is reported as an error wrapping its
+// cause, whatever keep asked for. It is a no-op when nothing is open, and
+// idempotent; a Close under a live owner leaves the Pending able to open again.
 func (p *Pending) Close(keep bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -338,6 +387,13 @@ func (p *Pending) Close(keep bool) error {
 		// over the moment the decision was made, and a rolled back one is the answer
 		// a reader of a failed request is looking for.
 		defer span.End()
+	}
+	if p.owner.Err() != nil {
+		_ = gtx.Rollback().Error
+		err := fmt.Errorf("db: the transaction's owner ended before it was finalised: %w", context.Cause(p.owner))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 	if !keep {
 		return gtx.Rollback().Error
