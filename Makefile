@@ -587,6 +587,16 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
+	# scripts/ci_browser_host_share_test.sh asks the two browser suites of the workflow the question
+	# their refusals cannot answer from inside a runner: does a step that starts a Chromium ask the host
+	# for a core before its first page, and does the suite's own verdict survive the sampler wrapped
+	# around it? The guard it runs is scripts/ci_browser_host_share.sh, adopted here because `go tool
+	# gotestsum --packages='./...'` sees no shell script and a step that quietly stopped guarding its
+	# browsers would leave nothing else red — which is also why the case asks the dry-run recipe of this
+	# goal for its own line, and refuses a copied Makefile that lost it. Cases over the guard's three
+	# subcommands and its two steps, four of them planted refusals over copied files; 3.3 s, no node,
+	# no browser, no database and no listener.
+	bash scripts/ci_browser_host_share_test.sh
 	bash scripts/make_check_count_default_test.sh
 	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
 	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —

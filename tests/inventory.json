@@ -55755,6 +55755,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/ci_browser_host_share_test.sh",
+   "id": "scripts/ci_browser_host_share_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "ci_browser_host_share_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/ci_checkout_history_test.sh",
    "id": "scripts/ci_checkout_history_test.sh",
    "kind": "shell_pin",
@@ -58742,7 +58762,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1506,
+  "files": 1507,
   "forge_runs": [
    408,
    413,
@@ -58777,7 +58797,7 @@
   ],
   "layers": {
    "behaviour": 2528,
-   "composition": 330,
+   "composition": 331,
    "contract": 19,
    "journey": 88
   },
@@ -58795,23 +58815,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 2965,
+  "rows": 2966,
   "tiers": {
    "merge": 1860,
    "nightly": 88,
-   "push": 1017
+   "push": 1018
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1321,
+   "keep": 1322,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2675,
+   "keep": 2676,
    "keep-rewrite": 117,
    "merge": 173
   }
