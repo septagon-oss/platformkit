@@ -101,8 +101,12 @@ func TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom(t *testing.T) {
 	}
 	var doc struct {
 		Resources []struct {
-			Module string `json:"module"`
-			Path   string `json:"path"`
+			Module     string   `json:"module"`
+			Path       string   `json:"path"`
+			Operations []string `json:"operations"`
+			Commands   []struct {
+				Verb string `json:"verb"`
+			} `json:"commands"`
 		} `json:"resources"`
 	}
 	if err := json.Unmarshal([]byte(body), &doc); err != nil {
@@ -113,6 +117,12 @@ func TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom(t *testing.T) {
 	for _, r := range doc.Resources {
 		if r.Path == tasksPath {
 			named = true
+		}
+		// An entry with `operations: []` reads nothing and carries only the
+		// commands the document already narrowed to this caller: a key's door
+		// on itself, which no scope opens or shuts.
+		if r.Operations != nil && len(r.Operations) == 0 && len(r.Commands) > 0 {
+			continue
 		}
 		if r.Module != "task" {
 			beyondScope = append(beyondScope, r.Module+" "+r.Path)

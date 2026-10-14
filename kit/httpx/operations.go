@@ -43,13 +43,16 @@ func ValidCRUD(verb string) bool {
 }
 
 // Offers reports whether this resource mounted the route for a verb. An empty
-// Operations answers true for all five.
+// Operations answers true for all five; CommandsOnly answers false for all five.
 //
 // It is a property of the code that mounted the resource, never of who is
 // asking: what differs per caller is whether they may use a route that exists,
 // which is ReadAuth's and WriteAuth's question, and answered by Readable,
 // Writable and CommandsFor.
 func (r Resource) Offers(c CRUD) bool {
+	if r.CommandsOnly {
+		return false
+	}
 	if len(r.Operations) == 0 {
 		return true
 	}
@@ -63,8 +66,12 @@ func (r Resource) Offers(c CRUD) bool {
 
 // OperationWords is this resource's operation set as the catalogue prints it —
 // the five in order, and nil for a resource that offers all five, because an
-// entry that hides no verb prints no list of them.
+// entry that hides no verb prints no list of them. A CommandsOnly resource is
+// the one empty, non-nil answer: it hides all five.
 func (r Resource) OperationWords() []string {
+	if r.CommandsOnly {
+		return []string{}
+	}
 	if len(r.Operations) == 0 {
 		return nil
 	}

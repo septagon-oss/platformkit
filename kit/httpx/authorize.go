@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -22,10 +23,10 @@ const ExpectedPrincipalHeader = "X-Expected-Principal"
 
 // authorize enforces the operation's declaration.
 //
-// Every refusal is a 403, never a 401: which of the four conditions failed says
-// nothing an attacker can act on, but it says a great deal to whoever is
-// debugging a deployment, so the code is in the response and the request that
-// carried it is in the log.
+// Every refusal is a 403: which of the four conditions failed says nothing an
+// attacker can act on, but it says a great deal to whoever is debugging a
+// deployment, so the code is in the response and the request that carried it is
+// in the log. The one 401 is BearerKey's unrecognised caller, see challenge.
 func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	auth, ok := declarationOf(ctx.Operation())
 	if !ok {
@@ -57,6 +58,10 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		if to, page := signInFor(ctx); page {
 			ctx.SetHeader("Location", to)
 			ctx.SetStatus(http.StatusSeeOther)
+			return
+		}
+		if auth.kind == kindBearerKey {
+			a.challenge(ctx)
 			return
 		}
 		a.deny(ctx, CodeAnonymous, "this operation requires a signed-in caller")
@@ -95,11 +100,15 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	// credential is a key. Refusing it would leave a scoped credential able to do
 	// its work and unable to find it, and would buy nothing, because that document
 	// is filtered by this credential's own scopes on the way out. See AnyCredential.
+	if auth.kind == kindBearerKey && p.TokenID == uuid.Nil {
+		a.deny(ctx, CodeDenied, "this operation acts on the key that authenticated the request, and a session carries none")
+		return
+	}
 	if auth.kind == kindSignedIn && p.Permissions != nil {
 		a.deny(ctx, CodeDenied, "this credential carries its own scope, and this operation answers only to its holder")
 		return
 	}
-	if auth.kind == kindSignedIn || auth.kind == kindAnyCredential {
+	if auth.kind == kindSignedIn || auth.kind == kindAnyCredential || auth.kind == kindBearerKey {
 		if !a.entitled(ctx, auth) {
 			return
 		}
@@ -325,6 +334,18 @@ const (
 	// grant was held and the policy refused this row. kit/rest answers it with the same
 	// code.
 	CodePolicyDenied = "POLICY_DENIED"
+	// The idempotency key's own four refusals, published rather than written into the
+	// calls because a caller that sent a key reads all four of them and the document
+	// declares the header: a code only visible in a log line is a code a client
+	// cannot branch on. The distinction between the last two is the one a client acts
+	// on differently — an in-flight write can be retried and will eventually be
+	// answered, a spent key can only be abandoned.
+	CodeIdempotencyKey         = "IDEMPOTENCY_KEY_INVALID"
+	CodeIdempotencyConflict    = "IDEMPOTENCY_KEY_IN_USE"
+	CodeIdempotencyInFlight    = "IDEMPOTENCY_IN_FLIGHT"
+	CodeIdempotencySpent       = "IDEMPOTENCY_ANSWER_NOT_RECORDED"
+	CodeIdempotencyTooLarge    = "IDEMPOTENCY_BODY_TOO_LARGE"
+	CodeIdempotencyUnavailable = "IDEMPOTENCY_UNAVAILABLE"
 )
 
 // notHere answers the control plane's own answer: the 404 an address nobody
@@ -353,6 +374,22 @@ func (a *API) notHere(ctx huma.Context) {
 // ui/page's table of sentences exists for. Answering them with the document is
 // the defect apps/platformkit/app_fault_test.go names in its own opening line:
 // "a person who navigated and gets JSON".
+// challenge refuses a BearerKey operation to a request that brought no key the
+// installation recognises: 401 with a Bearer challenge (RFC 6750 §3.1), because a
+// key is the only credential that operation accepts, so there is one scheme to
+// name. A revoked, expired or unknown key gets the same answer as no key at all,
+// so the refusal never says whether a revocation landed.
+func (a *API) challenge(ctx huma.Context) {
+	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: authorization denied",
+		"code", CodeAnonymous, "method", ctx.Method(), "path", ctx.URL().Path)
+	challenge := "Bearer"
+	if strings.HasPrefix(ctx.Header("Authorization"), "Bearer ") {
+		challenge = `Bearer error="invalid_token"`
+	}
+	ctx.SetHeader("WWW-Authenticate", challenge)
+	a.refuse(ctx, http.StatusUnauthorized, CodeAnonymous+": this operation requires a bearer key")
+}
+
 func (a *API) deny(ctx huma.Context, code, detail string) {
 	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: authorization denied",
 		"code", code, "method", ctx.Method(), "path", ctx.URL().Path)

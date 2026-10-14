@@ -49,7 +49,7 @@ type Options = resource.Options
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
 	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
-		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present}
+		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present, API: r.Path}
 }
 
 // view is the whole of what a mounted screen knows: the resource's own shape, and
