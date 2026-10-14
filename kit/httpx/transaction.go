@@ -85,10 +85,11 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 // one, rather than the way a database going away does.
 //
 // A browser that closes the tab cancels the request context, which owns the
-// request transaction (kit/db's README, "The transaction's owner"). database/sql
-// rolls the transaction back itself, and Close refuses to commit whatever status
-// the handler decided, answering with the context's cause. That reads as a fault
-// and is not one: nothing was written, and there is nobody left to tell.
+// request transaction (kit/db's README, "The transaction's owner"). Close then
+// refuses to commit whatever status the handler decided, answering with the
+// context's cause; a cancel landing after that check but before COMMIT has
+// database/sql roll back first, and the commit answers sql.ErrTxDone. Either
+// reads as a fault and is not one: nothing was written, and nobody is left to tell.
 //
 // It matters because the alternative was an ERROR line per abandoned request.
 // An alert that fires on ordinary browsing is an alert people turn off, and the

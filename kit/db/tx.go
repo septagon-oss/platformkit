@@ -382,12 +382,11 @@ func (p *Pending) Close(keep bool) error {
 	if gtx == nil {
 		return nil
 	}
-	if span != nil {
-		// Ended before the outcome is returned, whatever it is: the transaction is
-		// over the moment the decision was made, and a rolled back one is the answer
-		// a reader of a failed request is looking for.
-		defer span.End()
-	}
+	// open sets gtx and span together, so span is live here. It ends before the
+	// outcome is returned, whatever it is: the transaction is over the moment the
+	// decision was made, and a rolled back one is what a reader of a failed
+	// request is looking for.
+	defer span.End()
 	if p.owner.Err() != nil {
 		_ = gtx.Rollback().Error
 		err := fmt.Errorf("db: the transaction's owner ended before it was finalised: %w", context.Cause(p.owner))
@@ -400,14 +399,12 @@ func (p *Pending) Close(keep bool) error {
 	}
 	if err := sealed(gtx, p.tenant.ID.String(), ""); err != nil {
 		_ = gtx.Rollback().Error
-		if span != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 	err := gtx.Commit().Error
-	if err != nil && span != nil {
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	}
