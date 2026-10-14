@@ -44,8 +44,9 @@ type Catalog struct {
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
-// an unreadable resource is not in the document at all: what a caller may not
-// look at, they are not told exists. `writable` is the caller's guard narrowed by
+// an unreadable resource is not in the document — save a CommandsOnly one whose
+// command the caller holds, listed with empty operations: what a caller may not
+// look at, they are not offered. `writable` is the caller's guard narrowed by
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
@@ -95,7 +96,11 @@ type Entry struct {
 	// already listed hides one, and why apps/platformkit's ratchet case refuses to
 	// let that move be a memory. An absent key means all five, so it is the shell's
 	// next build that has to require it, reading this field.
-	Operations []string `json:"operations,omitempty"`
+	//
+	// An empty list, printed as [], is a CommandsOnly resource: nothing to read
+	// or write, only its commands to call (see DescribeLanguage). omitzero
+	// keeps nil — all five — absent, so no entry printed before reads otherwise.
+	Operations []string `json:"operations,omitzero"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
 	// it is the record and its form, and never a list with a New button on it.
 	Singleton bool `json:"singleton,omitempty"`
@@ -155,16 +160,33 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
-		if !r.Readable(ctx) {
-			continue
-		}
 		// r is this loop's copy, so narrowing its commands to the ones this
 		// caller may call leaves Describe1 the pure function it is.
 		r.Commands = r.CommandsFor(ctx)
+		if r.CommandsOnly {
+			if len(r.Commands) > 0 {
+				out.Resources = append(out.Resources, commandsOnly(Localise(r, text)))
+			}
+			continue
+		}
+		if !r.Readable(ctx) {
+			continue
+		}
 		r = Localise(r, text)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
 	}
 	return out
+}
+
+// commandsOnly is the entry of a CommandsOnly resource for a caller who holds
+// one of its commands — a key retiring itself reads nothing about keys. It
+// names no screen and offers no operation, so a shell draws the commands and no
+// list or form; the caller is told the resource exists because a door on it is
+// theirs.
+func commandsOnly(r httpx.Resource) Entry {
+	e := Describe1(r, false)
+	e.Screen = ""
+	return e
 }
 
 // Localise is a resource with every declared word read through the seam, and the
