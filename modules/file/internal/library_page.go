@@ -41,10 +41,14 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
-// ThumbnailWidth is the width a grid tile asks the content door for. It is a member
-// of contracts.VariantWidthSet rather than an invention: that set is the closed list
-// the encode pass builds and the door accepts, so a tile asking for anything else
+// ThumbnailWidth is the widest picture a grid tile asks the content door for. It is a
+// member of contracts.VariantWidthSet rather than an invention: that set is the closed
+// list the encode pass builds and the door accepts, so a tile asking for anything else
 // would be a tile waiting on an object nobody wrote.
+//
+// It is a ceiling and not an order. What a tile may name is a width this row has
+// actually got — see tile — and a frame smaller than this, or one the encode pass has
+// not reached, is drawn from the frame's own address.
 const ThumbnailWidth = 480
 
 // widthQuery is the content door's own parameter, spelled as contentInput declares
@@ -70,6 +74,7 @@ type LibraryPages struct {
 	Shown     UseReader
 	Remove    Remover
 	Add       Storer
+	Widths    WidthReader
 	Authorize httpx.Authorizer
 	PerPage   int
 }
@@ -92,6 +97,18 @@ type Remover interface {
 // the page and the refusal an upload gets cannot be two sums.
 type Storer interface {
 	Upload(ctx context.Context, tx contracts.Tx, up contracts.Upload) (*contracts.File, error)
+}
+
+// WidthReader is the grid's other question: of the widths this module can serve, which
+// ones does each of these rows have standing ready. It is asked once for the page,
+// because a tile that asked per row would be one query per picture on the screen.
+//
+// The page asks because a tile is a promise about a picture: an address it names has
+// to answer when the browser fetches it, and a width is only an object once the encode
+// pass has written it. A composition that wires no reader draws every tile from the
+// frame, which is the one address that always serves.
+type WidthReader interface {
+	ReadyWidths(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) (map[uuid.UUID][]int, error)
 }
 
 // libraryFaults are the statuses this page answers with beyond the shell's defaults,
@@ -296,6 +313,11 @@ func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes s
 	if err != nil {
 		return page.View{}, fault(err)
 	}
+	// Which of the grid's rows have a width standing ready, asked once for the page.
+	ready, err := p.readyWidths(ctx, tx, rows)
+	if err != nil {
+		return page.View{}, fault(err)
+	}
 	may, err := p.mayManage(ctx, r)
 	if err != nil {
 		return page.View{}, fault(err)
@@ -313,10 +335,7 @@ func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes s
 		if status >= http.StatusInternalServerError {
 			return page.View{}, refused
 		}
-		body = append(body, components.Alert(components.AlertProps{
-			Tone: "danger", Title: said(r, "file.library.refusal.title", "That could not be done"),
-			Message: refusal(refused, r.Locale), Bordered: true,
-		}))
+		body = append(body, refusedLine(r, refused))
 	}
 	body = append(body,
 		components.Toolbar(components.ToolbarProps{
@@ -325,7 +344,7 @@ func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes s
 		uploadForm(r, where, may),
 		meterPanel(r, meter, total),
 		filterForm(r, where, in, query),
-		grid(r, where, bytes, rows, total),
+		grid(r, where, bytes, rows, total, ready),
 		components.Pagination(components.PaginationProps{
 			CurrentPage: min(at, last), TotalPages: last, BaseURL: where + "?" + query,
 			NavigationLabel: said(r, "file.library.pagination", "Media library pagination"),
@@ -349,7 +368,7 @@ func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes s
 // charge. Each tile links to this same page with itself open, so opening a picture's
 // details needs no script, is linkable, and is reachable by a keyboard and by a flow
 // that never saw this page before.
-func grid(r page.Request, where, bytes string, rows []*contracts.File, total int64) g.Node {
+func grid(r page.Request, where, bytes string, rows []*contracts.File, total int64, ready map[uuid.UUID][]int) g.Node {
 	if total == 0 {
 		// Nothing uploaded at all, said as one sentence rather than drawn as an empty
 		// frame: the frame would promise a table with nothing in it.
@@ -371,7 +390,7 @@ func grid(r page.Request, where, bytes string, rows []*contracts.File, total int
 	}
 	photos := make([]components.Photo, 0, len(rows))
 	for i, f := range rows {
-		thumb, full := tile(r, bytes, f)
+		thumb, full := tile(r, bytes, f, ready[f.ID])
 		label := fmt.Sprintf("%s · %s · %s", f.Name,
 			contracts.MediaFamily(f.ContentType, f.Width), human(f.Size))
 		if f.UnusedSince != nil {
@@ -399,11 +418,11 @@ func grid(r page.Request, where, bytes string, rows []*contracts.File, total int
 	}})
 }
 
-// tile is one row as a pair of pictures: the thumbnail at the width the grid asks
-// for, and the frame itself for whoever opens it. A row no browser may be shown
-// inline arrives as the empty media state saying so, because a broken-image glyph
+// tile is one row as a pair of pictures: the thumbnail at the widest built width the
+// grid can use, and the frame itself for whoever opens it. A row no browser may be
+// shown inline arrives as the empty media state saying so, because a broken-image glyph
 // would be a claim about the file rather than about what this page can draw.
-func tile(r page.Request, bytes string, f *contracts.File) (thumb, full components.MediaProps) {
+func tile(r page.Request, bytes string, f *contracts.File, built []int) (thumb, full components.MediaProps) {
 	if contracts.MediaFamily(f.ContentType, f.Width) != contracts.FamilyImage || f.Height <= 0 {
 		absent := said(r, "file.library.noPreview", "Nothing to preview here")
 		return components.MediaProps{Status: components.MediaEmpty, Reason: absent},
@@ -418,9 +437,9 @@ func tile(r page.Request, bytes string, f *contracts.File) (thumb, full componen
 	} else if alt == "" {
 		alt = f.Name
 	}
+	src, width, height := thumbnail(bytes, f, built)
 	return components.MediaProps{
-		Src: bytes + "/" + f.ID.String() + "/content" + widthQuery + strconv.Itoa(ThumbnailWidth),
-		Alt: alt, Decorative: f.Decorative, Width: ThumbnailWidth, Height: scaledHeight(f),
+		Src: src, Alt: alt, Decorative: f.Decorative, Width: width, Height: height,
 		Lazy: true,
 	}, components.MediaProps{
 		Src: bytes + "/" + f.ID.String() + "/content",
@@ -428,15 +447,41 @@ func tile(r page.Request, bytes string, f *contracts.File) (thumb, full componen
 	}
 }
 
-// scaledHeight is the tile's height at the width the tile asks for, from the frame
-// the image pass measured — the pair that keeps the box the right shape until the
-// bytes land. A row nobody measured carries no height, and the box is then the
-// browser's to work out.
-func scaledHeight(f *contracts.File) int {
-	if f.Width <= 0 || f.Height <= 0 {
-		return 0
+// thumbnail is the address a tile names and the box it names it in: the widest of the
+// row's ready widths that still fits the tile, or the frame's own address when the row
+// has none.
+//
+// The frame is not a compromise, it is what the row has. A picture no wider than the
+// tile never acquires a width — contracts.VariantWidths plans strictly smaller widths
+// and never upscales — and a picture whose encode pass has not run has nothing ready
+// yet. Naming the tile's width in either case names an object nobody wrote, and the
+// grid answers that with the door's 404 behind a broken-image glyph.
+func thumbnail(bytes string, f *contracts.File, built []int) (string, int, int) {
+	at := bytes + "/" + f.ID.String() + "/content"
+	widest := 0
+	for _, w := range built {
+		if w <= ThumbnailWidth && w > widest {
+			widest = w
+		}
 	}
-	return contracts.VariantHeight(f.Width, f.Height, ThumbnailWidth)
+	if widest == 0 {
+		return at, f.Width, f.Height
+	}
+	return at + widthQuery + strconv.Itoa(widest), widest, contracts.VariantHeight(f.Width, f.Height, widest)
+}
+
+// readyWidths is the page's one ask about widths, answered as nothing when the
+// composition wired no reader: every tile then draws the frame, which is the honest
+// fallback rather than a guess at what the encode pass got round to.
+func (p LibraryPages) readyWidths(ctx context.Context, tx db.Tx[db.Tenant], rows []*contracts.File) (map[uuid.UUID][]int, error) {
+	if p.Widths == nil {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, f := range rows {
+		ids = append(ids, f.ID)
+	}
+	return p.Widths.ReadyWidths(ctx, tx, ids)
 }
 
 // filterForm is the grid's read as a plain GET form: search, family, order, the
@@ -540,6 +585,32 @@ func meterPanel(r page.Request, q *contracts.Quota, shown int64) g.Node {
 		panel.Description = meterSaid(q)
 	}
 	return components.DetailList(panel)
+}
+
+// refusedLine is a command the page refused, as the page says it: the fact that
+// nothing was written, and the sentence that says why.
+//
+// It is not components.Alert, and the reason is the design floor rather than taste.
+// The alert sets its message beside an icon and inside its own padding, sixty-eight
+// pixels in from the content column, and this page has exactly the two alignments the
+// floor allows already — the grid, meter and filters on the page's own column, and the
+// panel on the rail it opens over. A refusal that took a third alignment would be the
+// one line on the page that does not stand where the page's copy stands, and the page
+// would refuse a caption by moving the sentence that says so.
+//
+// What the alert owns and this line keeps is the announcement: role and aria-live go
+// on the text itself, so the sentence is read out when it lands rather than being
+// something the person has to look for, and the danger foreground is the one the
+// form's own field errors wear.
+func refusedLine(r page.Request, refused error) g.Node {
+	return components.Text(components.TextProps{
+		ComponentProps: components.ComponentProps{Attrs: map[string]string{
+			"role": "alert", "aria-live": "assertive", "aria-atomic": "true",
+		}},
+		Content: said(r, "file.library.refusal.title", "That could not be done") + ". " +
+			refusal(refused, r.Locale),
+		Size: "sm", Color: "danger",
+	})
 }
 
 // uploadForm is the library's one write of bytes: a plain multipart form whose action
@@ -648,7 +719,7 @@ func pickerForm(r page.Request, where, bytes, field, back string, rows []*contra
 	}
 	tiles := []g.Node{}
 	for _, f := range rows {
-		_, preview := tile(r, bytes, f)
+		_, preview := tile(r, bytes, f, nil)
 		if !contracts.Pickable(f) {
 			tiles = append(tiles, h.Div(
 				components.Media(preview),
@@ -711,7 +782,7 @@ func (p LibraryPages) panel(ctx context.Context, r page.Request, where, bytes, a
 		Items:        facts(r, f, uses),
 	})}
 	if contracts.MediaFamily(f.ContentType, f.Width) == contracts.FamilyImage && f.Height > 0 {
-		_, preview := tile(r, bytes, f)
+		_, preview := tile(r, bytes, f, nil)
 		preview.Caption = said(r, "file.library.preview", "The frame as it is stored")
 		body = append(body, components.Media(preview))
 	}

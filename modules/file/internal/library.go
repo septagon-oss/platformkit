@@ -88,6 +88,31 @@ func orderColumn(field string, desc bool) string {
 	return column + " ASC, id DESC"
 }
 
+// ReadyWidths is which widths of each row the grid is about to draw stand ready.
+// See the page's WidthReader.
+//
+// One read over the whole page rather than one per row: the question is the same for
+// every tile, and a page of twenty pictures is not twenty queries. Only ready rows
+// answer — a pending width is no object yet and a failed one never will be — and a
+// file with nothing ready is simply absent, which is the same answer the tile wants:
+// draw the frame. Rows of another tenant are absent for the reason every other read
+// here gives: the policy does not show their variant rows to this transaction.
+func (s *Service) ReadyWidths(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) (map[uuid.UUID][]int, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []contracts.Variant
+	if err := tx.DB().WithContext(ctx).Where("file_id IN ? AND state = ? AND deleted_at IS NULL",
+		ids, contracts.VariantReady).Order("file_id, width").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("file: which widths these rows serve: %w", err)
+	}
+	out := make(map[uuid.UUID][]int, len(rows))
+	for _, row := range rows {
+		out[row.FileID] = append(out[row.FileID], row.Width)
+	}
+	return out, nil
+}
+
 // Quota is the meter. See contracts.Library.
 //
 // It takes no advisory lock, on purpose: the lock exists so that twenty uploads
@@ -155,3 +180,4 @@ func (s *Service) SetAlt(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 }
 
 var _ contracts.Library = (*Service)(nil)
+var _ WidthReader = (*Service)(nil)

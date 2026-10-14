@@ -135,6 +135,15 @@ there because it is the address the catalog's `alt` command sends a client to (s
 catalog entry below): a command a document offers at a door that answers `405` is a door
 nobody outside the browser it was hand-written for has.
 
+A grid tile names a width only when its row has one. The content door serves a planned
+width only once it is built and never falls back, so a tile that asked for 480 whatever
+the row held would be a broken-image glyph over a 404 — which is what it was, for every
+picture narrower than the plan and for every picture whose encode pass had not run. The
+page therefore asks `Service.ReadyWidths` once for the rows it is drawing, and each tile
+asks for the widest ready width that fits it, or the frame's own address when the row has
+none: the frame is the one picture of a file that always answers, and for a picture
+narrower than the plan it is the only one there will ever be.
+
 Four decisions are functions in `contracts/` and not clauses in a query —
 `MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` — because the SQL service and
 `filetest.Fake` have to answer them identically, and the fake encodes no widths and
@@ -376,7 +385,7 @@ the way such a client does.
 The media library's page is a grid, a meter, a panel and three forms. What it does not
 have yet, and nothing pretends otherwise: no upload progress, cancel or retry (the
 browser's own is all there is), no per-file error tile beside the grid's rows — a
-refused upload answers one alert above the grid and the person re-picks the file — no
+refused upload answers one sentence above the grid and the person re-picks the file — no
 Replace on a stored file, no keyboard-and-axe pass and no Storybook state for the
 picker, and no journey in `e2e/steps` (there is no `file.ts`), so the brief's four
 acceptance journeys are unproved end to end. The picker's answer is a query parameter
@@ -390,8 +399,8 @@ The image pass decodes JPEG, PNG, the first frame of a GIF and WebP (through
 pixel ceiling is still read from a header and not from an allocated frame). A planned
 width is served only once it is built: `?w=` answers 404 rather than falling back to the
 original, because one address with one width has one object to serve, and the encode is
-on the clock (`file-variants`, five minutes), so a fresh upload's srcset names its own
-frame alone until the job has been round. A width that will not fit the tenant's quota
+on the clock (`file-variants`, five minutes), which is why it is the page that asks which
+widths exist rather than the browser finding out. A width that will not fit the tenant's quota
 fails at the encode and is recorded as failed with `reason = 'quota'` — the original was
 already accepted, charged and served, and this module does not reach back to refuse an
 upload. A `failed` row is never retried and nothing reads it automatically yet; the media
