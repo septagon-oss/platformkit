@@ -47,9 +47,9 @@ func TestFakeRecordsWhatItWouldPublish(t *testing.T) {
 }
 
 // TestTheSuiteRunsTheseCases pins every case name, in order. A case name is a
-// requirement's evidence in a client repository, so renaming one has to be a
-// diff somebody reads; tasktest has pinned its list since the first port, and
-// this closes the gap review 1 named (finding 10) for the other two ports.
+// requirement's evidence in a client repository, so renaming one has to be a diff
+// somebody reads, and it is the only thing that notices when a description stops
+// declaring a case the harness had been running.
 //
 // It is also the record of what the kit/porttest description bought here: nine
 // cases before it, eighteen after. The one name of the nine that is gone is the

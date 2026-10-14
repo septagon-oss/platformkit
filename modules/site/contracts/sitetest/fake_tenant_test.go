@@ -20,12 +20,12 @@ var (
 	tenantB = tenancy.Tenant{ID: uuid.New(), Slug: "b", Name: "B"}
 )
 
-// TestTheFakeKeepsEachTenantOnItsOwnRow is the floor contenttest's fake got from
-// review 1's finding 4 and this package did not: sitetest.Fake kept one
-// *contracts.SiteSettings and read the tenant on the context nowhere, so one
-// instance handed any tenant the settings another tenant had saved, while its
-// Skip[porttest.Elsewhere] reason told the harness there was no second tenant
-// here to be refused.
+// TestTheFakeKeepsEachTenantOnItsOwnRow is the tenancy floor this package did not
+// have: sitetest.Fake kept one *contracts.SiteSettings and read the tenant on the
+// context nowhere, so one instance handed any tenant the settings another had
+// saved, while its Skip[porttest.Elsewhere] reason told the harness that no second
+// tenant was here to be refused. A description that declines the generated tenant
+// case leaves that claim with nothing else checking it, so this is the check.
 //
 // It reaches the same rule as the real service from the other side: a tenant
 // reads and writes its own row and nothing else's. The tenant-less context a
@@ -43,7 +43,7 @@ func TestTheFakeKeepsEachTenantOnItsOwnRow(t *testing.T) {
 			got.Title, "Acme Journal")
 	}
 
-	// The finding: B reads A's row as the database would return it — nothing.
+	// Row-blindness, which is what row-level security gives B: A's row, as nothing.
 	if got := read(t, fake, with(ctx, tenantB)); got.Title != "" {
 		t.Errorf("tenant B read title=%q tagline=%q; tenant A saved that, and row-level security "+
 			"gives the real service one settings row per tenant, which the fake claims too",
