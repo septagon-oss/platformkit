@@ -5,11 +5,19 @@ const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
 const publisherPass = 'Second-publisher!';
 
+// These two journeys walk the field with the editor's module refused, which is the
+// page the brief promises without it: the textarea is the surface, it posts, and the
+// server validates every line. The assertions are about that contract — the exact
+// spelling Normalise stores and the prose it renders back — and the constructs the
+// second case refuses (raw HTML, an image hosted elsewhere) are ones an editor could
+// not hold in the first place. What the mounted editor stores is pinned by
+// richtext-editor-keeps-what-was-typed.spec.ts and richtext-editor-round-trip.spec.ts.
 test.beforeEach(async ({ page }) => {
+  await page.route('**/js/richtext.js', (route) => route.abort());
   await signInForContent(page, email, password);
 });
 
-test('an editor saves Markdown and sees shared prose on the detail view', async ({ page }) => {
+test('the form saves Markdown and the server stores its canonical spelling', async ({ page }) => {
   const slug = `richtext-${Date.now()}`;
   const markdown = '## Opening hours  \n\n- Monday\n- Tuesday\n\n[Website](https://example.com)\n\n```go\nfmt.Println(1)\n```';
   await fillContentForm(page, { slug, title: 'Opening hours', kind: 'page', body: markdown });
