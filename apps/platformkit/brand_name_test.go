@@ -7,7 +7,7 @@ package main
 // footer appends modules/web's `brand`, and this application's machine-readable face
 // composes its own through workspaceName and brandName. That is three places spelling
 // one name, which is the shape this repository has been caught in before — a comment
-// promising a test nobody wrote (review_surfaces_test.go records exactly that). This
+// promising a test nobody wrote (public_page_links_only_addresses_installation_serves_test.go records exactly that). This
 // is the test that comment promised, and it asks the question in the only way a test
 // in this package can: not whether two constants are equal across a boundary Go will
 // not cross (apps/platformkit may not import modules/web/internal), but whether the

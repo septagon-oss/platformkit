@@ -27,8 +27,8 @@ func TestAFailingNoticeDoesNotResendOutsideTheLadder(t *testing.T) {
 	e.drain(acme)
 	crossed := to.count()
 
-	// The drain's lease is one minute; the ladder's next rung after attempt 2 is
-	// five. Two minutes later nothing is due.
+	// The drain's lease is one minute; the ladder's rung after the second failed
+	// delivery is five. Two minutes later nothing is due.
 	e.clock.Add(2 * time.Minute)
 	e.drain(acme)
 	if to.count() != crossed {

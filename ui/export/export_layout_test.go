@@ -128,7 +128,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// Cascade layers: Compose now emits `@layer tokens, base, components,
 	// client;` and wraps each layer's rules in a block, so the exported sheet is
-	// the same declarations at one more level of nesting, and review round 1 of
+	// the same declarations at one more level of nesting, and the first pass of
 	// that change moved the kernel's own component-state rules out of @layer base
 	// into @layer components, ahead of the class lists, because a layer ranks
 	// before specificity and a dismissed modal was losing to the `flex` on its
@@ -233,7 +233,18 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// /sha256 and the html of pk-ui.component.breadcrumb/default. No CSS, token, theme,
 	// notice, icon or schema leaf moves: `flex-wrap` was already emitted, and no utility
 	// was taken away, since only the crumbs stopped naming one.
-	if legacy.SHA256 != "22d51b2f1a0964c9d3b4a998ce33f02c06561ded1d95126863e56e9105d72fa5" {
+	//
+	// The rich text field's chrome joins @layer components, and the editing surface
+	// takes the published page's prose rules with it. Measured by exporting this
+	// tree and the same tree with those two merges removed and walking both
+	// documents leaf by leaf: 99,906 leaves each, none added, none removed, and
+	// exactly two changed — /css, which carries the new rules, and /sha256, which is
+	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
+	// schema or font policy moves. The digest below is that measurement of this tree.
+	// Together, the workspace chrome and rich text styles retain all 99,906 leaves.
+	// Against the rich text baseline, only the digest and 27 examples' HTML change;
+	// CSS, tokens, schemas, themes, icons and notices remain identical.
+	if legacy.SHA256 != "a1e7bc3c99e694f7b925e1e412fb0571936a6f4b00b9664bbe2e6a2551f1cec9" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

@@ -393,6 +393,16 @@ func (r proseRenderer) link(w util.BufWriter, _ []byte, n ast.Node, entering boo
 			dest = strings.ToLower(scheme) + ":" + rest
 		}
 		_, _ = fmt.Fprintf(w, `<a href="%s"`, html.EscapeString(dest))
+		// The author's own words about where the address goes are part of what they
+		// wrote, so they are rendered: dropped here, a link saved with a title would come
+		// back from the store and be shown without it, and no further write could put it
+		// back. The backslashes that let a quote sit inside a title are read the same way
+		// they are in the text of a paragraph, and the phrase reaches the page through the
+		// escaping alt text is under — the policy beside this one allows the attribute and
+		// decides nothing about its words, because a title is nobody's closed set.
+		if title := string(util.UnescapePunctuations(n.(*ast.Link).Title)); title != "" {
+			_, _ = fmt.Fprintf(w, ` title="%s"`, html.EscapeString(title))
+		}
 		if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
 			_, _ = w.WriteString(` rel="noopener noreferrer nofollow ugc"`)
 		}
@@ -414,6 +424,10 @@ func richTextPolicy(legacy bool) *bluemonday.Policy {
 	p.AllowRelativeURLs(true)
 	p.AllowAttrs("href").Matching(regexp.MustCompile(`^(?:https?://[^[:space:]<>"']+|mailto:[^[:space:]<>"']+|tel:[+0-9().-]+|/(?:[^/\\[:space:]<>"'][^\\[:space:]<>"']*)?|#[A-Za-z0-9_-]+)$`)).OnElements("a")
 	p.AllowAttrs("rel").Matching(regexp.MustCompile(`^noopener noreferrer nofollow ugc$`)).OnElements("a")
+	// A link's title is the author's sentence about the destination, which is why the
+	// stored form carries it. Its length and words are nobody's to decide, and the
+	// value reaches the page through the same escaping alt text does.
+	p.AllowAttrs("title").OnElements("a")
 	p.AllowAttrs("id").Matching(regexp.MustCompile(`^pk-[a-z0-9-]+$`)).OnElements("h2", "h3", "h4")
 	p.AllowAttrs("class").Matching(regexp.MustCompile(`^language-[A-Za-z0-9_+-]+$`)).OnElements("code")
 	p.AllowAttrs("align").Matching(regexp.MustCompile(`^(left|center|right)$`)).OnElements("th", "td")

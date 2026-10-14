@@ -168,7 +168,7 @@ func TestAttrNamesReadsTheNameASelectorAddresses(t *testing.T) {
 }
 
 // TestResolveNamesSpellsTextTheWayTheBrowserResolvesIt pins the read refuseClientSheet
-// compares against, which round 10 found applied to attribute names and to nothing
+// compares against, which was found to apply to attribute names and to nothing
 // else. The cases that decide it: a hex escape's terminating whitespace belongs
 // to the escape and does not reappear, a name is folded whatever case wrote it, and
 // text with no escape in it comes back byte for byte — a read that rewrote ordinary

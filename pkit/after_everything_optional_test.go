@@ -46,7 +46,7 @@ func optionalConsole() *pkit.Module {
 }
 
 // Choose can withdraw the supplier of the last module's need, which is the
-// half of finding 1 review 2 named and did not build. The last module is now
+// half of that refusal which was named and left unbuilt. The last module is now
 // resolved like every other one, so the withdrawal reaches it: an ambiguous
 // optional need is the ambiguity sentence, and the Choose the sentence asks
 // for settles it onto the module that survives.
