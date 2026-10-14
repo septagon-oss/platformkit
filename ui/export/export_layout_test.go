@@ -218,9 +218,12 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
 	// no example, schema, icon, class or notice.
 	//
-	// The digest below is that measurement of this merged tree, printed by the
-	// refusal above the re-measure and copied from it.
-	if legacy.SHA256 != "be39ae2b0e1efb7f1cbcbdbf0e0a5df841740683ad240379886ad53259ee6e5b" {
+	// The rich text field's chrome joins @layer components, and the editing surface
+	// takes the published page's prose rules with it.
+	//
+	// The digest below is that measurement of this tree, printed by the refusal
+	// above the re-measure and copied from it.
+	if legacy.SHA256 != "5004fa12de463e88646fdb918286ee332c335a402a8d20a2b4b0a4077d1ba99c" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

@@ -3,17 +3,65 @@
 `kit/httpx` builds the one Huma API the application serves and enforces that
 every operation declares its authorization. `New(Options)` returns the `*API`
 and the router; `Register` mounts a handler with an `Auth` — `Public()`,
-`SignedIn()`, `AnyCredential()`, `Permission(key)` or `OperatorPermission(key)` —
+`SignedIn()`, `AnyCredential()`, `BearerKey()`, `Permission(key)` or
+`OperatorPermission(key)` —
 and `ValidateDeclarations` is the boot gate that refuses a route without one. Read
 [httpx.go](httpx.go) for the middleware chain: which surface an address is, host
 to tenant, the lazily opened tenant transaction (`TxFrom`, `ConnFrom`), the
-request on the context (`RequestFrom`), the security headers and the per-request
-nonce (`Nonce`).
+request on the context (`RequestFrom`), the security headers, the per-request
+nonce (`Nonce`) and what a page may declare about its own response
+(`AllowWASM`).
 
 A module's `Routes` receives `httpx.Surfaces` — three routers, one per surface —
 and mounts on the one that fits the door. It never writes a prefix: `Prefix`,
 `Path` and `PagePath` compose an address from the surface and the module, and
 `Register` refuses a path that repeats either. See [surfaces.go](surfaces.go).
+
+## One page may run WebAssembly
+
+`htmlPolicy` refuses `WebAssembly.instantiate`. `script-src` carries `'self'` and
+this request's nonce, and both speak about where a script came from; a module
+compiled from bytes came from nowhere, so the policy that lets the shell's own
+tagged script run still refuses the thing such a page was written to do.
+
+A page that needs the capability says so — `httpx.AllowWASM(ctx)`, in the shape of
+`Nonce(ctx)` — and *that response's* policy gains `'wasm-unsafe-eval'` inside
+`script-src`. Nothing else moves: the nonce, every other directive, and the whole
+policy of every page that said nothing are the bytes they were before the
+declaration existed, which is what [wasm_test.go](wasm_test.go) holds the pair
+to. Three consequences are the design:
+
+- The token is a constant of [headers.go](headers.go) and the declaration takes no
+  argument beyond the request, so no module can ask this file for
+  `'unsafe-inline'`, a source expression or a host.
+- A handler that set a `Content-Security-Policy` of its own keeps it: a
+  declaration may widen the kernel's default and never a handler's stricter one.
+- The claim lives on the response. It is set-once, per request, unreadable from
+  outside this package, and worth nothing after the status is written — a page
+  that streamed past the response buffer keeps the policy it was given.
+
+[ui/page](../ui/page/serve.go)'s `View.RunsWASM` is the field a module author
+writes against, and `Serve` calls this for the view it actually rendered: a refusal
+page and a redirect instantiate nothing, so neither carries the token.
+
+Reused: `(*API).headers` and `(*secured).policy` — the repository's only writer of
+a policy; `nonceKey` and `Nonce` as the shape of a per-request declaration; the
+per-response state `headers.go` already carried for `markStatic`; the `httptest`
+fixtures of [headers_test.go](headers_test.go) and ui/page's
+`TestAnInlineScriptCarriesThePolicysOwnNonce`.
+
+Added: `AllowWASM`, the two constants it composes from, `document.View.RunsWASM`
+and the one line in `Serve` that reads it. Nothing existing could carry this: the
+policy is one constant whose only variation is the nonce and the surface's
+`object-src`, so editing it widens every page; `Page.ContentSecurityPolicy` makes
+the author restate the whole policy including the nonce, which is exactly how a
+copied storefront once lost it; and a general per-directive policy builder would be
+a new API with one consumer.
+
+Made reusable: the second shape on the nonce pattern — a per-response claim a
+handler writes through one exported, ctx-shaped function and `policy` reads — which
+the next response-level declaration composes instead of reinventing, and
+`View.RunsWASM`, the field the editor pages of decision 0086 will declare through.
 
 ## Three surfaces
 
@@ -84,6 +132,13 @@ is not a browser. Mounting a self-service door here is the escalation `SignedIn(
 exists to refuse: the test at such a mount is that the operation reads grants and
 never spends them, which is why no module's route belongs there and today only
 `kit/app` has one.
+
+`BearerKey()` is the door whose subject is the key itself — retiring the key that
+authenticated the request. It admits a principal with a `TokenID` whatever its
+scopes, refuses a session with 403, and is the one 401 in this package: a request
+with no recognised key is challenged `WWW-Authenticate: Bearer`, because a key is
+the only credential that door accepts. `bearer_key_door_test.go` pins the three
+answers; [ADR 0020](../../docs/adr/0020-a-credential-may-retire-itself.md) says why.
 
 `Home` claims a surface's root for one module — the site's home page at `/`, the
 workspace's at `/app` — and reports to the second claimant that it did not take
@@ -196,6 +251,9 @@ query, the content type and the body. The same key with a different body is a 42
 `IDEMPOTENCY_KEY_IN_USE` — because the only way out of a spent key is a fresh one; a
 retry that arrives while the first is still running is a 409,
 `IDEMPOTENCY_IN_FLIGHT`, which is the answer no caller can compute from the outside.
+Records belong to the authenticated person, except at a `BearerKey` command:
+there the key is the subject, so each key keeps its own retry record even when
+one person holds both. Retiring one key cannot replay as another key's success.
 A write that sends no header is answered exactly as it always was. The verbs are
 POST and PATCH; PUT and DELETE are idempotent in the protocol already, so a record of
 them would be a body kept for nothing. The key is 1–128 visible ASCII characters,

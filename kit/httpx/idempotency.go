@@ -255,6 +255,11 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	var caller uuid.UUID
 	if p, ok := tenancy.PrincipalFrom(ctx.Context()); ok {
 		caller = p.UserID
+		// A key-only command acts on the key, so its holder's other keys are
+		// different callers even when their request bytes are identical.
+		if auth, _ := declarationOf(ctx.Operation()); auth.kind == kindBearerKey {
+			caller = p.TokenID
+		}
 	}
 	scope := idempotency.Scope{
 		Tenant: t.ID,

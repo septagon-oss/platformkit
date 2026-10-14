@@ -45,7 +45,7 @@ import (
 // be made to read as somebody else's.
 type Scope struct {
 	Tenant uuid.UUID // tenancy.FromContext; uuid.Nil for a host that resolved no tenant
-	Caller uuid.UUID // tenancy.PrincipalFrom's UserID; uuid.Nil for an anonymous caller
+	Caller uuid.UUID // The authenticated subject: UserID, or TokenID for a key-only command; uuid.Nil when anonymous.
 	Method string    // "POST" or "PATCH", exactly as the request spelled it
 	Route  string    // the mounted pattern, never the request's own path
 	Key    string    // the caller's Idempotency-Key, syntax-gated before it gets here
