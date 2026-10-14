@@ -34759,6 +34759,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/scim/internal/group_authority_refusal_commit_test.go",
+   "id": "modules/scim/internal/group_authority_refusal_commit_test.go#TestGroupAuthorityRefusalLeavesACommittedTransactionUnchanged",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestGroupAuthorityRefusalLeavesACommittedTransactionUnchanged",
+   "needs_db": true,
+   "pkg": "modules/scim/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/scim/internal/group_command_authority_test.go",
    "id": "modules/scim/internal/group_command_authority_test.go#TestGroupCommandsRefuseAnActorWithoutProvisioningAuthority",
    "kind": "go",
@@ -56359,7 +56378,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1416,
+  "files": 1417,
   "forge_runs": [
    408,
    413,
@@ -56393,7 +56412,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2445,
+   "behaviour": 2446,
    "composition": 315,
    "contract": 20,
    "journey": 67
@@ -56412,9 +56431,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2847,
+  "rows": 2848,
   "tiers": {
-   "merge": 1790,
+   "merge": 1791,
    "nightly": 67,
    "push": 990
   },
@@ -56422,13 +56441,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1200,
+   "keep": 1201,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2499,
+   "keep": 2500,
    "keep-rewrite": 133,
    "merge": 215
   }
