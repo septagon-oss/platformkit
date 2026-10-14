@@ -52,10 +52,16 @@ var webhookCatalogue = emittedEvents{
 	// record's trail would otherwise be refused the two events that say the record
 	// exists.
 	authcontracts.EventNoLinkRequested, authcontracts.EventMailFailed,
+	// The refusal of a role write that would have left the tenant with nobody who
+	// can administer it. The refused write rolled back, so this event is the only
+	// record that the attempt was made, and an installation that watches its own
+	// administration floor subscribes to nothing else.
+	authcontracts.EventAdministrationRefused,
 	// user, including the doors registration opened.
 	usercontracts.EventCreated, usercontracts.EventUpdated, usercontracts.EventDeleted,
 	usercontracts.EventInvited, usercontracts.EventPasswordSet, usercontracts.EventRolesSet,
 	usercontracts.EventHandleSet, usercontracts.EventDeactivated,
+	usercontracts.EventAdministrationRefused,
 	usercontracts.EventRegistrationPending, usercontracts.EventRegistrationApproved,
 	usercontracts.EventRegistrationUnverified, usercontracts.EventEmailVerified,
 	// tenant, whose lifecycle an installation's own operator acts drive.
