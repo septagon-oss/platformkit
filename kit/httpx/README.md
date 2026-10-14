@@ -3,7 +3,8 @@
 `kit/httpx` builds the one Huma API the application serves and enforces that
 every operation declares its authorization. `New(Options)` returns the `*API`
 and the router; `Register` mounts a handler with an `Auth` — `Public()`,
-`SignedIn()`, `AnyCredential()`, `Permission(key)` or `OperatorPermission(key)` —
+`SignedIn()`, `AnyCredential()`, `BearerKey()`, `Permission(key)` or
+`OperatorPermission(key)` —
 and `ValidateDeclarations` is the boot gate that refuses a route without one. Read
 [httpx.go](httpx.go) for the middleware chain: which surface an address is, host
 to tenant, the lazily opened tenant transaction (`TxFrom`, `ConnFrom`), the
@@ -84,6 +85,13 @@ is not a browser. Mounting a self-service door here is the escalation `SignedIn(
 exists to refuse: the test at such a mount is that the operation reads grants and
 never spends them, which is why no module's route belongs there and today only
 `kit/app` has one.
+
+`BearerKey()` is the door whose subject is the key itself — retiring the key that
+authenticated the request. It admits a principal with a `TokenID` whatever its
+scopes, refuses a session with 403, and is the one 401 in this package: a request
+with no recognised key is challenged `WWW-Authenticate: Bearer`, because a key is
+the only credential that door accepts. `bearer_key_door_test.go` pins the three
+answers; [ADR 0020](../../docs/adr/0020-a-credential-may-retire-itself.md) says why.
 
 `Home` claims a surface's root for one module — the site's home page at `/`, the
 workspace's at `/app` — and reports to the second claimant that it did not take
@@ -196,6 +204,9 @@ query, the content type and the body. The same key with a different body is a 42
 `IDEMPOTENCY_KEY_IN_USE` — because the only way out of a spent key is a fresh one; a
 retry that arrives while the first is still running is a 409,
 `IDEMPOTENCY_IN_FLIGHT`, which is the answer no caller can compute from the outside.
+Records belong to the authenticated person, except at a `BearerKey` command:
+there the key is the subject, so each key keeps its own retry record even when
+one person holds both. Retiring one key cannot replay as another key's success.
 A write that sends no header is answered exactly as it always was. The verbs are
 POST and PATCH; PUT and DELETE are idempotent in the protocol already, so a record of
 them would be a body kept for nothing. The key is 1–128 visible ASCII characters,

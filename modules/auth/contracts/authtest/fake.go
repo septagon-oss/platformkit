@@ -68,6 +68,9 @@ type Fake struct {
 	ceremonies    map[uuid.UUID]*fakeCeremony
 	passkeySignIn bool
 
+	// keys is every bearer key issued, by id. See tokens.go.
+	keys map[uuid.UUID]*fakeKey
+
 	// proofs is the first-factor window: the address /login refused to finish,
 	// and when. See RequireFirstFactorProof.
 	proofs map[string]time.Time
@@ -85,12 +88,14 @@ func NewFake(users contracts.Users) *Fake {
 		factors:    map[uuid.UUID]*fakeFactor{},
 		ceremonies: map[uuid.UUID]*fakeCeremony{},
 		proofs:     map[string]time.Time{},
+		keys:       map[uuid.UUID]*fakeKey{},
 	}
 }
 
 var (
 	_ contracts.Service  = (*Fake)(nil)
 	_ contracts.Passkeys = (*Fake)(nil)
+	_ contracts.Tokens   = (*Fake)(nil)
 )
 
 // Published is the names of the events the fake would have emitted, in order.
