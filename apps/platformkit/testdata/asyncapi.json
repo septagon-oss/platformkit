@@ -1520,6 +1520,10 @@
                 },
                 "type": "array"
               },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1599,6 +1603,10 @@
                 },
                 "type": "array"
               },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1677,6 +1685,10 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
               },
               "createdAt": {
                 "format": "date-time",
