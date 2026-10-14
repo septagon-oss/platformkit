@@ -53,7 +53,7 @@ None. The code searched shows no use of `tenancy.Policy` in this module. Role wr
 
 ### Public faces
 
-Public routes are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification` and `auth-verify-email` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset and verify, and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
+Public faces are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification`, `auth-verify-email` and `auth-mail-delivery` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. `auth-mail-delivery` is the one read of the notification module's direct-mail record: keyed by the caller's own `X-Request-ID`, it answers 200 with one field and one of **two** words — `failed` when a transport refused the mail, `pending` for everything else, including a record that says the mail went out. The record it reads is the caller's own and only that one, and only of the two kinds the sign-up and resend flow produce, because every branch of those two routes hands exactly one message to the transport — a link or the message that says no link was sent (`internal/no_link.go`) — so no caller is answered out of somebody else's row and no caller is answered from the absence in front of it. The forgotten-password route is not among those kinds: it mails only the addresses where it found an account, so its refusals are sayable to nobody (see [The record a mail leaves](#the-record-a-mail-leaves)). Review 3 removed the second read that used to stand behind this one — the tenant's newest outcome, for a caller whose own call had left no record — because a stranger could plant the refusal it was answered with. It names no recipient, no kind and no reason, a call that left no record is answered exactly as one from another tenant is, and a call whose mail went is answered exactly as one that mailed nothing, because `sent` about an address is a statement about who has an account here (`contracts.MailReport` is that refusal, and `TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne`, `TestFailedMailDoesNotDiscloseWhetherAnAccountExists`, `TestFailedRegistrationMailDoesNotDiscloseAnExistingAccount` and `TestFailedVerificationResendDoesNotDiscloseAnActiveAccount` are its proofs). Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset and verify, `AskedAboutMail` for the delivery read — its own budget rather than the redemption one, because the shell polls the read while a person waits for a link and must not spend the link's use on waiting — and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
 
 ### The operator boundary
 
@@ -84,6 +84,125 @@ a user id and no list can name a session by one. **Made reusable:**
 provider cache keyed by issuer rather than by tenant, so two tenants sharing a
 door discover it once; and the discovery-port shape itself — a module that asks
 its composition per request instead of holding a client it resolved at boot.
+
+For the mail record: **Reused** — `internal.record`'s raw-SQL write shape, and
+`verificationLock`'s advisory lock: `offer` takes the same
+`pg_advisory_xact_lock` over `auth/password/<tenant>/<user>` before `recent()`, so
+two reset requests for one person mail one link. The RLS pattern of `000027`,
+`served.go`'s "a fact from the event, needed two frames later" slot (now
+`WithOrigin`/`originOf`, carrying the delivered event's `RequestID` and
+`Traceparent` down to the row that names the call), `contracts.EmailKey` for the
+recipient, and `modules/audit`'s `SubscribeAll`, which puts `auth.mail_failed` on
+the trail with nothing registered anywhere to make that true. **Added** —
+`contracts.MailLedger`, which nothing carried because the two direct sends wrote
+nothing down at all, the `Mails` port on `auth.Deps`, the `auth.mail_failed` event,
+`contracts.Limiter.AskedAboutMail`, and the door. **Made reusable:**
+`contracts.RedactMailReason` and `contracts.MailReport` live in the notification
+module's `contracts/` rather than here, so a second module that mails outside a
+notice records it and answers about it the same way instead of inventing a scrubber
+of its own.
+
+For a key retiring itself: **Reused** — `contracts.Tokens` (extended, not
+paralleled), `RevokeToken`'s two-column read and guarded `UPDATE`,
+`EventAPITokenRevoked` and its payload unchanged, the bearer resolution in
+`bearerCaller`, `tenancy.Principal`, and the catalogue's `AddCommand`.
+**Added** — `Principal.TokenID`, because nothing on a principal said which key was
+acting; `RevokeOwnToken` and `ErrCallerWithoutKey`, because no command could take
+"the caller's own key" without taking an id; the `auth-token-revoke-self` door;
+the kernel's `httpx.BearerKey()`, because no declaration admitted a key and
+refused a session; a catalogue entry for a resource read by nobody, because a
+command could only be found on a readable resource; and the fake's token half
+with `authtest.RunTokens`, because no token conformance suite existed. **Made reusable:** `authtest.RunTokens` and its `TokenFixture`, for
+any second implementation of `contracts.Tokens`, and `Principal.TokenID` for any
+later command that must act on the credential rather than on its holder.
+
+## The record a mail leaves
+
+Two mails go out of this module with no notice behind them — a set-password
+link (`contracts.MailSetPassword`, from a reset request and from an invitation)
+and a verification link (`contracts.MailVerification`, from sign-up and from
+resend). They are recorded in the notification module's `direct_mail_deliveries`
+through `contracts.MailLedger`, in the transaction of the send itself: one row
+per attempt saying who it went to, which kind it was, whether the transport took
+it (`sent`), refused it (`failed`, with the transport's words redacted by
+`contracts.RedactMailReason`) or had nothing to send it through (`suppressed`).
+A refusal is acknowledged rather than retried, which is what lets its row commit,
+and it leaves no credential behind: `offer` restores the token row it found and
+raises no notice, because the in-app copy says "the link is in the email this
+raised" and that sentence is owed only by a record that says `sent`
+(`TestARefusedSetPasswordMailLeavesNoNoticeThatSaysItWasSent`). The failure is on
+the trail as `auth.mail_failed`, in the same transaction as the row.
+
+Nothing in a record is a secret: no subject, body, link, token or hash —
+`TestMailedLinkIsRecordedAndCarriesNoCredential` and
+`TestRefusedMailIsRecordedWithoutItsCredential` scan every base table in the
+schema, enumerated from `information_schema` rather than named, for the token and
+its hash.
+
+The one public read is `POST /api/v1/public/auth/mail-delivery` — see
+[Public faces](#public-faces) for its two words and the reason `sent` is not one
+of them. `ui/assets/js/session.js` asks it after a register or
+resend-verification form is accepted, with the `X-Request-ID` that call was
+answered with, and replaces the neutral acknowledgment with "mail could not be
+sent just now: the mail server refused it" only on `failed`; the neutral sentence
+itself never claims a mail left. It does not ask after the forgotten-password
+form, which has no answer to receive (below). The door's address is the module's
+mount plus `/mail-delivery` — `kit/httpx/surfaces.go`'s shape, not the last
+segment of the route that answered, which is how a `/password/forgot` form came
+to ask a path nobody mounts and to leave a refusal unsaid.
+
+### Limits
+
+* **The door answers two words, and `sent` is not one of them.** A route that
+  mails only addresses where somebody has an account cannot report whether a mail
+  left without reporting who has an account, so a person who asks is told that
+  nothing failed rather than that something succeeded. The brief's "'we sent you a
+  link' is said only when a record says `sent`" is honoured by the shell never
+  claiming it at all; showing `sent` to anybody is a product decision.
+* **Which refusals are sayable is decided by the flow, not by the door.** The door
+  reads its answer among `auth.verification` and `auth.verification_no_link`
+  (`internal/mailDeliveryKinds`), and every branch of the sign-up and resend flow
+  hands exactly one message to the transport — the link where an account awaits
+  one, and the sentence that says no link was sent everywhere else: nobody has the
+  address, the account cannot be sent a link, the account was already verified, a
+  link mailed a moment ago still stands, the address is taken (`auth.no_link_requested`).
+  While a transport refuses everything it refuses both callers alike, which is the
+  only case a public door may speak of.
+* **The forgotten-password flow's refusals are not public.** One link is the whole
+  of what a known and an unknown forgot request cause between them
+  (`TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne`), so the
+  no-account branch sends no mail and leaves no record, and a door that answered
+  "that mail was refused" about one of those callers and "that call caused no
+  mail" about the other would have said who has an account. Its `auth.set_password`
+  row is still written and still reaches the trail; what is withheld is the public
+  read of it, and the forgot form is answered by its neutral acknowledgment alone.
+  Buying the word back costs a mail to every address that has nobody behind it.
+* **What the door still leaks, exactly.** A transport that refuses one mailbox and
+  takes another tells a fact about the address it refused, and any word about it
+  names that address. Nothing about the selective case is airtight while it lasts:
+  the only shape that closes it completely is never answering `failed` at all,
+  which leaves the person with a promise of a link nobody sent. The shell's
+  sentence is about the mail server for that reason.
+* **A sign-up for an address that already has an account sends one message.** It
+  says "somebody asked for a link to this address and no link was sent", the same
+  sentence every other no-link branch of the verification flow says, and it is
+  what lets the two sign-ups be answered from their own records. It is mail to a
+  mailbox that asked to register, capped by the same `MayAsk` budget the sign-up
+  itself is capped by — never more than the link it replaced would have cost.
+* **A transient SMTP failure is now final for a direct send.** No outbox retry
+  ladder and no dead letter: the row, the `auth.mail_failed` event and a person who
+  can be told are what took the ladder's place. An invitation whose mail the server
+  refused is therefore not retried, and the inviter learns nothing beyond the trail
+  until the invited person's own screen says so.
+* **No retention or erasure** of the addresses these rows record — the same
+  question `notification_deliveries` lives with, and the product's to answer
+  ([§ Object scope](#object-scope)).
+* **The closed-port journey is not run by `make e2e`.** The harness boots one
+  application whose mail points at the catcher; no second application boots with
+  `mail.port` naming a port nothing listens on, so the `failed` half of the
+  acceptance is proven in Go (`mail_delivery_test.go`, `refused_link_notice_test.go`)
+  and the shell's reading of it is proven against a stubbed door
+  (`e2e/email-verification-forms.spec.ts`), never against a live refused SMTP send.
 
 ## A SAML assertion at the same door
 
@@ -333,6 +452,7 @@ impersonate their browser.
 POST /api/v1/auth/tokens              SignedIn   mint a key; the token is in this response and nowhere else
 GET  /api/v1/auth/tokens              SignedIn   the person's own keys: name, scopes, expiry, last use, revoked
 POST /api/v1/auth/tokens/{id}/revoke  SignedIn   stop one key, leaving the person's own sessions alone
+POST /api/v1/auth/tokens/revoke-self  BearerKey      the presented key retires itself; 204, no id, no grant
 ```
 
 A key is a **narrowed** credential, never an escalated one. Its scopes are
@@ -357,11 +477,13 @@ a key, replace the recovery codes, withdraw a factor, revoke a session, sign out
 every browser. None of them is reachable from a bearer credential whatever its
 scopes, which is the half that kept a key scoped to one read from widening itself
 back to its holder with two POSTs. `kit/httpx/scoped_credential_test.go` pins both
-halves at the kernel, and `review_r4_a_scoped_key_is_held_to_its_scope_test.go`
+halves at the kernel, and `scoped_key_is_held_to_its_scope_test.go`
 drives them at the routes.
 
-The rule stops there, at the operations that spend it, and one operation in this
-installation names no permission because there is none to name: `GET
+The rule stops there, at the operations that spend it. This module's `POST
+/tokens/revoke-self` declares `httpx.BearerKey()`, the single credential door a
+key may spend, because what it spends is that key and nothing of its holder's
+(below). One operation names no permission because there is none to name: `GET
 /api/v1/app/resources`, mounted by `kit/app`, declares `httpx.AnyCredential()` and
 answers a key as readily as a cookie — because it spends nothing on anybody's
 credentials. All it does is ask the authorizer, for this caller, which resources
@@ -393,9 +515,18 @@ cookies at every one of them. `POST /logout` is not such a door: ending a sessio
 is `httpx.SignedIn()` work on the caller's own credentials, so the kernel refuses
 it to a bearer caller ahead of the handler, and no cleared cookie is ever on offer
 — which is the same verdict as before, stated as it is now reached. A key is
-stopped with `POST /tokens/{id}/revoke`, which is a session's work for the same
-reason: a credential that could revoke itself would be a credential that could
-revoke its holder's other keys.
+stopped by id with `POST /tokens/{id}/revoke`, which is a session's work for the
+same reason. The one exception is `POST /tokens/revoke-self`
+(`auth-token-revoke-self`, `httpx.BearerKey()`): it takes no id, ends exactly
+the key whose `tenancy.Principal.TokenID` authenticated the request, needs no
+management grant, and answers 204. A key that can name only itself cannot reach
+its holder's other keys, so a device can sign out by destroying the credential it
+holds. A session is refused it with 403, and a dead or absent key is answered
+401 `AUTH_ANONYMOUS` with a Bearer challenge before the handler. The catalogue
+lists the command for a key on an `auth/token` entry with `"operations": []` —
+nothing about keys is readable there — and lists nothing of it for a session. Called in-process for a key already gone, the command
+answers `crud.ErrNotFound`, where `RevokeToken` answers success —
+[ADR 0020](../../docs/adr/0020-a-credential-may-retire-itself.md) says why.
 
 ### Open here, stated rather than approximated
 
@@ -405,11 +536,10 @@ revoke its holder's other keys.
   which is wider than a scoped key may act as — reporting that to a narrowed
   caller would be a `/me` that lies about the caller's own authority. A
   "who am I, as this key" answer (the brief's `Identity.Token`) is unbuilt.
-* Every route in this module is a session's work, and the one door a bearer key
-  reaches in this installation is the kernel's: the resource catalog, which names
-  the resources the key's own scopes open. A key therefore finds its work by
-  reading `/api/v1/app/resources`, and finds nothing here to manage itself with —
-  no self-revocation, no `GET /api/v1/auth/tokens` to see what a holder minted.
+* Every route in this module but one is a session's work. A bearer key reaches
+  the kernel's resource catalog, which names the resources the key's own scopes
+  open, and this module's `POST /tokens/revoke-self`; it finds nothing else here
+  to manage itself with — no `GET /api/v1/auth/tokens` to see what a holder minted.
 * No page: keys are managed through the JSON routes.
 * Uses are not audited, and `last_used_at` is the record a person reads; the
   trail keeps the two facts that mean something about a key, that it was made and

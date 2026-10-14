@@ -49,13 +49,47 @@ type Limiter interface {
 	// answered as a refusal — ok false, retryAfter the window, no error — so that
 	// a caller which fails open on an error cannot let a busy counter admit the
 	// traffic it exists to refuse. kit/limit/README.md owns that failure mode.
+	//
+	// This is the answer for a caller that only gates. A caller that writes the
+	// limit onto its response reads Reserve instead, which records the same event
+	// in the same statement and keeps the numbers along with the verdict.
 	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
+
+	// Reserve records one event under key and reports, from the one statement that
+	// recorded it, the three numbers that statement knows: whether the window is
+	// still within limit — the limit-th event is allowed and the one after it is not
+	// — how much of limit is left in the window the event landed in, and how long
+	// that window has left.
+	//
+	// One statement, and one reading, because the three answers are one fact about
+	// one row. A caller that asks the row twice gets two windows: the event it
+	// recorded and the count it read a moment later are not the same attempt, and a
+	// server that states a quota it did not decide on states a number the caller has
+	// no reason to believe. Before this method existed the decision and the reading
+	// were separate calls, and the refusal the wire carried named a quota the counter
+	// had already moved past.
+	//
+	// remaining is clamped at zero, and retryAfter is what is left of the window
+	// whichever way the answer went — the caller who was allowed is the one the
+	// number is most useful to, because it is the only moment they can back off
+	// before the refusal rather than after it.
+	//
+	// retryAfter counts down from the instant the statement wrote the row — on a
+	// contended key, the end of the wait for that row rather than its start. The row
+	// owns when its window ends, and a caller may never date a reading earlier than it.
+	//
+	// A counter busy with its key is answered the way Allow answers it — refused,
+	// the whole window, no error — because the callers of this method state a
+	// number on the wire and fail open on an error, and a busy counter is no
+	// reason to admit the traffic the counter exists to refuse.
+	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 
 	// Count reports how many events key has in the window that is open now, and
 	// how long that window has left. It records nothing, because a limit with
 	// three answers rather than two — allow, delay, refuse — has to be read
 	// before the attempt it is about, and a read that counted would make every
-	// successful sign-in an attempt against the lockout.
+	// successful sign-in an attempt against the lockout. It is not the way a
+	// response states itself: that is Reserve, which reads the row it wrote.
 	Count(ctx context.Context, key string, window time.Duration) (n int, retryAfter time.Duration, err error)
 
 	// Forget drops a key: the caller has been proved right about whoever they
@@ -108,12 +142,12 @@ var ErrNoConnection = errors.New("limit: no database connection on this context"
 // all. Nothing was read and nothing was written, and a count invented here
 // would be a number nobody took.
 //
-// Allow never returns it. Its answer to the same fact is the refusal triple —
-// ok false, retryAfter the whole window, no error — because what an error means
-// is the caller's decision, and every caller in the field fails open on one.
-// That is the failure mode this package exists to stop, so it is carried in the
-// answer rather than in the error; README.md says why, and says what a caller
-// that means to fail open would have to ask for.
+// Allow and Reserve never return it. Their answer to the same fact is the
+// refusal — ok false, retryAfter the whole window, no error — because what an
+// error means is the caller's decision, and every caller of these two in the
+// field fails open on one. That is the failure mode this package exists to stop,
+// so it is carried in the answer rather than in the error; README.md says why,
+// and says what a caller that means to fail open would have to ask for.
 var ErrBusy = errors.New("limit: the counter was still busy with this key, and the attempt was not counted")
 
 // Connections is where a limiter finds the pool.
@@ -174,35 +208,69 @@ func queueRun(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx
 	})
 }
 
-func (p postgres) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, time.Duration, error) {
+func (p postgres) Reserve(ctx context.Context, key string, limit int, window time.Duration) (bool, int, time.Duration, error) {
 	// One statement: the row is inserted, or the open window's count is raised,
 	// or a window that has closed is started again — and the count that comes
 	// back is the one this event landed in. Two statements would be two
-	// replicas reading the same number and writing it back.
+	// replicas reading the same number and writing it back, and would be two
+	// answers about one attempt.
+	//
+	// Which window the event landed in is asked of the transaction's own instant, so the
+	// two CASEs cannot disagree about it and the row is anchored at that instant. The
+	// countdown is asked of the clock instead, because another writer of this key can
+	// hold the row's lock and this statement waits for it: the transaction's instant is
+	// then earlier than the event by the wait, and a countdown taken from it is that
+	// wait added back on — every caller of the key told to sit out a window longer than
+	// the row holds. `clock_timestamp()` is the instant the event landed.
 	const q = `INSERT INTO ` + table + ` (key, window_start, count) VALUES (?, now(), 1)
 		ON CONFLICT (key) DO UPDATE SET
 			count = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.count + 1 ELSE 1 END,
 			window_start = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.window_start ELSE now() END
-		RETURNING count, extract(epoch FROM (window_start + ?::interval - now()))`
+		RETURNING count, extract(epoch FROM (window_start + ?::interval - clock_timestamp()))`
 	n, left, err := p.scan(ctx, q, p.scoped(ctx, key), interval(window), interval(window), interval(window))
 	if err != nil {
 		if errors.Is(err, ErrBusy) {
-			// The attempt reached no row, so no window was read and there is
-			// nothing honest to report as what is left of one; the whole window is
-			// the one figure that cannot understate the wait. The refusal carries no
-			// error for the reason ErrBusy's comment gives.
-			return false, window, nil
+			// The attempt reached no row, so no window was read and there is nothing
+			// honest to report as what is left of one; the whole window is the one
+			// figure that cannot understate it, and remaining is zero because this
+			// attempt counted nothing. Refused rather than errored for ErrBusy's own
+			// reason, which is Allow's reason in a four-value shape.
+			return false, 0, window, nil
 		}
+		return false, 0, 0, err
+	}
+	allowed, remaining, left := decided(limit, n, left)
+	return allowed, remaining, left, nil
+}
+
+// Allow is Reserve without the numbers, for a caller that only gates: the same
+// statement, the same row, the same verdict, and no wait promised to a caller
+// that was allowed. A second way to count one key would be a second answer about
+// one attempt, so this reads Reserve and keeps the pair it owes.
+func (p postgres) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, time.Duration, error) {
+	ok, _, after, err := p.Reserve(ctx, key, limit, window)
+	if err != nil {
 		return false, 0, err
 	}
-	if n <= limit {
+	if ok {
 		return true, 0, nil
 	}
-	return false, left, nil
+	return false, after, nil
+}
+
+// decided is the arithmetic of one reading, shared by both stores so the counter
+// in a map and the counter in a row cannot disagree about what the same count
+// under the same quota means. `left` is the window's own clock: it may have closed
+// while the statement ran, or while it waited for another writer of the key, and a
+// caller is never told a wait a closed window owes them.
+func decided(quota, count int, left time.Duration) (allowed bool, remaining int, retryAfter time.Duration) {
+	return count <= quota, max(quota-count, 0), max(left, 0)
 }
 
 func (p postgres) Count(ctx context.Context, key string, window time.Duration) (int, time.Duration, error) {
-	const q = `SELECT count, extract(epoch FROM (window_start + ?::interval - now())) FROM ` + table +
+	// The same rule as Reserve's: the window's ending is a fact of the row, and the
+	// countdown is that fact read at the instant the read happened.
+	const q = `SELECT count, extract(epoch FROM (window_start + ?::interval - clock_timestamp())) FROM ` + table +
 		` WHERE key = ? AND window_start > now() - ?::interval`
 	return p.scan(ctx, q, interval(window), p.scoped(ctx, key), interval(window))
 }

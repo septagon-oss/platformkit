@@ -41,7 +41,7 @@ func request(id, recipient uuid.UUID) events.Event {
 		Payload: []byte(`{"notificationId":"` + id.String() + `","recipientId":"` + recipient.String() + `"}`)}
 }
 
-// TestEveryRequestedChannelEndsInTheLedger is T-0113's first deliverable: a notice that
+// TestEveryRequestedChannelEndsInTheLedger is the ledger's first promise: a notice that
 // asks for a channel leaves a `requested` row, and the step that finishes the channel
 // leaves a terminal one — sent, or suppressed with the reason — in the same transaction,
 // so "was Ada told" is a query and delivery_ledger_coverage is computable.

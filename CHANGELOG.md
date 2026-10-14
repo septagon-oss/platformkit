@@ -2,6 +2,138 @@
 
 ## Unreleased
 
+**A `widget:richtext` field is an editor now, and still a textarea.** The field
+draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
+link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
+only the pages that draw one field load, mounts the vendored Tiptap bundle on it and
+keeps the submitted value in step. Images upload to the file API by drag, paste or
+file pick; a record that keeps a write count autosaves against its own ETag and
+compares on a conflict, and one that does not keeps the draft on the device.
+`make richtext-bundle` rebuilds the bundle; `check-richtext-bundle` keeps it under
+150 KiB gzipped and equal to a fresh build. The browser cases cover typing, one
+surface, a draft kept through a refused save, images by pick and by paste, the alt
+prompt and the parsed round trips; storybook, gallery and mobile editing are owed.
+
+**A scoped credential may retire its own key.** `POST /api/v1/auth/tokens/revoke-self`
+(`auth-token-revoke-self`, the new `httpx.BearerKey()` declaration) ends exactly the key that authenticated the
+request and answers 204; a session is refused with 403, and a dead or absent key with 401 and a Bearer challenge
+— the kernel's one 401. The resource catalogue lists it on an `auth/token` entry with `"operations": []`: an
+resource declared `httpx.Resource.CommandsOnly` offers none of the five verbs and appears only to a caller who may
+call one of its commands. `tenancy.Principal` gains `TokenID`,
+set for a bearer caller and zero otherwise, and `modules/auth/contracts.Tokens` gains `RevokeOwnToken` and
+`ErrCallerWithoutKey` — an implementer of `Tokens` outside this repository must add the method.
+`authtest.RunTokens` is the conformance suite for `Tokens`. See
+[ADR 0020](docs/adr/0020-a-credential-may-retire-itself.md).
+
+**The delivery ledger moves onto its app's durable.** `kit/appname.Durable` puts the app in front of a
+consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an
+installation that sets `nats.app` after running without one finds every claim it already earned on the far
+side of the rename: the same event, handled once already, answered again as a first delivery. `events.MoveLedger`
+is the drain for those two tables. It locks the durables it is about to rename and every tenant that could still be the app's by the end of the move, its own and the ones no app is placed under —
+an INSERT of a claim at an unscoped durable takes its own tenant's shared advisory lock and only then that
+durable's in the schema itself (`migrations/000058_ledger_claim_durable_lock`), and the move asks for the
+exclusive ones in the same order and refuses rather than queueing; the tenant's key is what catches the first
+claim of a subscription, which is the one no committed ledger row names a durable from, and taking the two in
+that order is what lets it catch anything at all, because a claim that reached for its durable first can be
+queued behind another move's durable lock having named no tenant, and under that claim a placement commits and
+this app's own move answers zero over a handler that is still running — and it moves the claims of the tenants this
+app holds: a claim belongs to the tenant it was made in,
+and a tenant belongs to one app (`tenants.app`), so the claims of a tenant whose `tenants.app` is empty stay
+where the deployment that runs app-less beside this one looks for them. One transaction: a copy of each unscoped
+ledger onto the app's own prefix that carries `handled_at`, `name`, `error` and `failed_at` verbatim because the
+purge ages on them, then a delete of exactly the rows the copy read, by the keys that copy read rather than by a predicate the `tenants` table could answer differently a statement later, and a last statement that asks whether anything it had to rename is still unscoped and refuses if it is, and one `platformkit.ledger_moved` record
+per tenant whose claims moved. A delivery mid-claim holds its durable and its tenant, and the move refuses,
+naming itself, having written and emitted nothing. A delivery of a subscription that names no app asks its
+tenant's key in Go, above the read rather than beside the row, and then re-reads `tenants.app` inside the
+transaction that writes its claim, because the app of its tenant is the one fact about that delivery the placement
+changes underneath it, and a second nonlocking snapshot is overtaken by the same placement the first one was while
+the INSERT that would have taken the key waits behind a relation lock: a tenant that took an app while the
+delivery was being read is not this consumer's to run, and the delivery writes no claim, acks, and leaves the
+event to the app the row now names. The table lock this step first took, and a predicate that named the durable
+and no tenant, were the defects it replaced: two apps share these tables, so one app's ordinary traffic refused
+the other app's move on every boot and every job tick, a refusal that wrote nothing left the window open while
+both apps' consumers ran, and walking every unscoped row on the way renamed another app's tenants' claims into a
+durable its consumer never listens to — the harm the move exists to close. `kit/app` runs the step at boot,
+before any subscription is made, and opens no consumer until it answers (`App.moveLedger`): a refusal is waited
+out and logged, not logged past, because a scoped consumer started over a ledger that has not yet moved replays
+an event whose claim is already committed under the old durable — a second claim, a second handler run, and the
+window the move exists to close opened for as long as the retry takes. The process is up while it waits, its
+probes answer and no handler runs; `ledger-move` runs the step again on the scheduler's own lock.
+That job, the record's declaration and the channel that describes it belong only to a deployment that names an
+app: with no slug there is no prefix to move onto, so the step answers with the zero report and the manifest
+declares no event no run could publish. `kit/db`'s `phase=data` window refuses the same act on a table keyed by
+something other than the tenant, which is why this is a drain its owner owns in a job and not a migration.
+**Naming an app places the tenants that already exist.** An app-less boot stamped `tenants.app` with the empty
+slug — 000043's own default for a session that named no app — and the file that proved the NULLs is applied,
+checksummed and immutable, so an operator who sets `nats.app` and `app.hosts` afterwards holds a database of
+tenants nobody placed and a release that runs nothing for them. `migrations/000059_tenant_app_refusal` and
+`migrations/000060_tenant_app_place` are that placement, forward: the explicit mapping wins, a tenant joins the
+app whose declared hosts cover every host it holds, and a tenant neither speaks for stops a boot that named
+itself, by name and having written nothing, so that operator's corrected retry is the same walk. A boot that
+named no app is not stopped, and that half is the line `make check`'s rehearsal drew (v1.1.0 to this tree,
+measured 2026-10-05): such a boot asserts nobody's tenant, the copy it migrates is a previous release's database
+holding one tenant, and refusing it refuses this release to every single-app deployment, so it places what an
+operator's mapping names and leaves the rest exactly as it found them — still on the legacy durable, still
+served, because the move renames nothing for a tenant no app claims. The refusal is a function rather than
+the `DO` block 000043 carries because a windowed statement cannot read what it has just written — a
+data-modifying CTE sees the snapshot it started with — so the placement computes the tenants it could not place
+and hands the list over. Two of these walks run at once on a server that holds two apps over one database,
+each from its own boot and its own tick, so the write repeats the predicate its reading took from a snapshot:
+`platformkit_place_tenants` sets `app` only of a row still empty at the write itself, the competing walk's
+UPDATE waits on that row's lock, re-qualifies against the version the first placement committed, and writes
+nothing — which is where 000043's "a tenant does not move between apps" is made true, since which relay,
+consumer and control-plane scope can reach a tenant follows from that one column. A placement that loses the
+row this way is not refused and does not report the tenant as unplaced: it has an app, and the late
+declaration is the one that is wrong about the row. That write now declares the tenant's
+ledger key too (000061), the key an unscoped claim takes and a ledger move asks for
+exclusively, so a placement either stands in front of a move as its contention refusal or
+lands behind it and owes the move its own boot runs next. Nor is a tenant that joins behind a move which already
+read its ledger a second handling waiting to happen: the mark sits under the durable this tenant's ledger held before the placement, and `events.claim` asks a delivery's own history under both spellings of one subscription's name, so the rename that follows is tidiness and audit and not what the refusal waits on. The declaration has to be on the session that drains, not the one that migrated, so
+`db.BackfillDeclaring` carries `db.Declaration` to the drain (`app.Drain` and the worker's `schema-backfill` job
+both go through it). `app.tenant_apps_file` is the same mapping as a file of `slug=app` lines for an operator
+whose mapping is too long to read in a YAML blob: `kit/config` reads it at load, the inline map wins a
+disagreement, and a line that is not a pair, a tenant mapped twice to two apps or an app that is not a slug
+refuses the load — a slug naming no tenant yet does not, because the mapping may describe a tenant about to be
+created. `pkit.App.Slug` is the kernel half of the composition's own name: `appname.Parse` over the string
+`NewApp` was given, asked by `compose`, so a composition named `Collect EU` fails `Validate` and `Build` rather
+than shipping an app-less durable under an app-scoped address.
+**The envelope carries the app that published it.** `transport.Event` gains `App`, produced and read as the
+CloudEvents extension attribute `app`, and a process that names itself publishes at the address with that token
+in front (`transport.AppSubject`), while a process that names nothing publishes where this kernel has always
+published (`transport.Subject`). A consumer filters its own app's address and, for the length of a rollout, the
+addresses the previous build published at (`transport.AppFilters`, `transport.Filters`), because a NATS `*`
+matches exactly one token and there is no filter that means "this app, or none". The filter is wide and the
+boundary decides: `transport.AddressMismatch` compares the address the broker routed by, the `app` the document
+carries and the slug of the process reading, and a message that disagrees is terminated at the consumer with a
+log line naming the subject, the event and the tenant — before any handler runs and before any ledger row is
+claimed, because a message stored on one tenant's address and stamped as another's would otherwise open its
+transaction inside the second tenant's rows. An app that names itself passes only its own scoped address; a
+deployment that names nothing passes the two app-less addresses it always passed and refuses any address
+carrying somebody else's token. That costs a real deployment something, and the cost is named in
+`kit/appname`: a process must not start naming an app while a process still publishing at the app-less addresses
+is alive, because from that moment its own older traffic is unreadable to it. A scoped address is not a scoped
+ledger, which is what the move above is for; the two are one decision read at two moments.
+
+
+**The wire gate reads the plan feature a door declares.** An operation's authorization
+declaration has three parts — its `kind`, its `permission`, and the plan feature a route
+names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and
+asks the tenant's plan about at request time (a refusal answers `402` with
+`PLAN_EXCLUDES`). The compatibility identity in `kit/wire` was a list of key names that left
+the feature out, so on a document whose only other member had moved, dropping a feature,
+adding one to a door that named none, or renaming one were accepted with zero breaks — and
+`UPDATE_GOLDEN=1` then rewrote the reviewed artefact over a plan gate the runtime still
+enforces. The identity is now the whole emitted declaration, spelled `kind`, `permission`,
+`feature`, then any other member by name, with a name or a value that does not read as one
+member quoted so one member cannot be read as another pair, so all three are B6 refusals
+naming the operation
+and both declarations, and the composition's one reviewed pair (`kind=signed_in` to
+`kind=any_credential`) covers no feature it does not spell on both sides. A pair written
+against a declaration with no feature keeps matching exactly what it matched, which is why
+117 of the reference document's 119 declarations are untouched and its golden is not
+regenerated. Enforcement is unchanged, so this is a gate that stopped missing a change, not
+a door that started refusing a request.
+
 **Any declared field of a record can be said in the tenant's other languages.**
 `modules/translation` holds the saying, not the text: one `translations` table
 whose identity is `(tenant_id, module, entity, record_id, field, locale)` —
@@ -35,6 +167,21 @@ address, key and price are an installation's facts (`translation.Deps.Translator
 and where none is configured `Suggest` refuses and writes nothing — and which
 records a translator may work on is the product's line, written in
 `apps/platformkit/product.go`.
+
+**A client that names no accent gets the palette's, resolved on read.**
+`modules/site`'s `DefaultPrimaryColor` is the empty colour: not a colour but the
+absence of one, stored rather than filled in, so a row says "nobody chose" instead
+of recording whatever the installation's accent was the day it was written.
+`contracts.Palette` asks the composition for that accent per mode — answered from
+`pkit.App.Theme(pair)` over `Wiring.Skin()`, the seam `modules/web` already reads for
+the sheet it composes — and both of the service's reads resolve through it, so no
+screen, shell or device is handed the empty colour where its own document says
+`#rrggbb`. A save of either accent clears it back to the absence before validation and
+before the diff, so the settings form that submits what the read gave it writes
+nothing, publishes nothing and moves no revision; the event and the trail keep
+speaking stored values. `migrations/000054_site_default_accent.up.sql` moves the
+column's default and runs no `UPDATE`: a migration cannot tell a colour somebody
+typed from the one that column used to fill in, so every existing row keeps it.
 
 **A change to somebody else's row is proposed, decided and applied through four
 commands.** `modules/change` holds a proposal over another account's row: the
@@ -96,6 +243,16 @@ text, so hiding a column took its hit target from 60px to 20px. It is a target o
 its own now: `components.RowLink` sets `display: inline-block` and a 1.5rem
 floor, so the 24px the browser audit enforces comes from the rule and not from
 whether the person's title happened to wrap.
+
+**The kernel publishes its journey steps.** `e2e/steps/kernel.ts` and `e2e/steps/public.ts` ship
+in this module, so the version a consumer pins that resolves `kit/rest` and `ui/page` carries the
+steps of the kernel's own acts — the sign-in door, the way out, the workspace, the generated
+screen and the public frame — beside the code they drive. A caller that kept its own copy of that
+walk re-exports these instead; the addresses in `endpoints` are the reference application's
+(`apps/platformkit/fault.go` pins them), and a composition reaches them by its own specifier.
+`scripts/e2e_step_library_test.sh` refuses a published name that vanished, an import a module zip
+cannot carry, an address this application does not serve, and a step whose evidence path, host or
+inbox the file guessed instead of asking the run that started it.
 
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
@@ -225,6 +382,26 @@ key and both are keyed by `(event_id, durable)`; and `scripts/check_gucs.sh` ref
 shortcut a reader might reach for — the file raising the runner's own system-access marker.
 T-0228; that move, the envelope's `app` field, the installation-scope control plane and the
 reference composition's own slug are listed under *Limits* in `kit/appname/README.md`.
+
+**The sequel to a kernel write has an operator's door.** Two commands lived behind a `psql`
+connection: the ledger move (`POST /ops/v1/ledger/move`) and, at that row's own replay address
+on the same plane, the delivery of one outbox row again by its id. The kernel mounts both
+(`kit/app/ledger_ops.go`) at the installation host, where they answer as JSON, and every tenant
+host answers them as an unmounted address, before routing. Each is guarded by its own
+operator grant (`platformkit:ledger_move`, `platformkit:event_replay`), and only a
+composition that names itself mounts them — an app-less deployment has no scoped durable to
+move onto, so the routes would be doors onto a zero report. Each body names the app it acts
+in and a process answers only for itself; and because a replay names a row rather than a set,
+the locked row is asked the same question of its own tenant (`tenants.app`), so one
+installation cannot clear the claims of an event another app's consumer will carry. Both
+answer with what they did — the move its four counts, so a caller can tell "already moved"
+from "found nothing to move", and the replay the event's id, name and the reason it was
+given — and every refusal (the wrong app, a delivery mid-claim, an id whose outbox row is
+gone) writes nothing, emits nothing and says which of them it was.
+`platformkit.ledger_moved` is a kernel event beside
+`platformkit.event_replayed`, declared under the same condition, so the audit trail of each
+tenant whose ledger moved holds the act and the actor: nobody for a boot, the job's name for
+the retry, a person for the verb.
 
 **A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
 `POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
@@ -473,9 +650,11 @@ by construction. Both terms are counted over this composition rather than rememb
 an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
 the document the composition serves and which a committed case refuses to let drift
 from that file, and the two module terms are the jobs and subscriptions the
-composition's manifests register. That tally expressly does not count the four jobs
-this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge` and
-`schema-backfill` — and the run span of each carries no tenant either, for the same
+composition's manifests register. That tally expressly does not count the five jobs
+this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge`,
+`idempotency-purge` and `schema-backfill` — nor the sixth, `ledger-move`, which only a
+deployment that names `nats.app` schedules and whose one pass renames every tenant's
+delivery ledger; the run span of each carries no tenant either, for the same
 reason `file-reconcile`'s does: each is one pass over every tenant's rows, so the one
 tenant it could name would name none of them.
 `file-reconcile` is the one module boundary that carries no tenant, not the only

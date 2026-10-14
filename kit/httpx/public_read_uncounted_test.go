@@ -34,9 +34,9 @@ type refusingSpentCount struct {
 	consulted atomic.Int64
 }
 
-func (l *refusingSpentCount) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
+func (l *refusingSpentCount) Reserve(context.Context, string, int, time.Duration) (bool, int, time.Duration, error) {
 	l.consulted.Add(1)
-	return false, time.Minute, nil
+	return false, 0, time.Minute, nil
 }
 
 // TestAPublicReadIsNeverSpentAgainstTheWriteLimit knocks at a public GET door

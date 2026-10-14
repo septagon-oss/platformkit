@@ -257,6 +257,37 @@ type Notifier interface {
 type (
 	Mailer = notificationcontracts.Mailer
 	Hosts  = notificationcontracts.HostLookup
+	// MailLedger is the notification module's own record of a mail this module
+	// sent without a notice behind it, named here the way Mailer and Hosts are so
+	// that Deps reads as one list of capabilities.
+	//
+	// It is not a port this module can do without: a composition that wires none
+	// sends its mail exactly as it did before the record existed and leaves no
+	// trace of the attempt, which is the bug rather than a mode to preserve.
+	MailLedger = notificationcontracts.MailLedger
+)
+
+// The mails this module sends itself, named the way every event name is named.
+// They are this module's names for its own mails and belong here, not in the
+// shared ledger: a CHECK or a constant in modules/notification listing them would
+// make the next module that mails a schema change.
+//
+// The `*_no_link` kind is the message this module sends when a request for a link
+// could not be answered with one — nobody has the address, the account cannot be
+// sent a link, the link this call found is still outstanding. It is a separate kind
+// rather than the link's own kind because a record of a mail that is not a link must
+// not read as a record of a link: an operator counting reset links would count
+// messages that carry no credential. And it is mailed and recorded rather than
+// skipped, because the public delivery door answers a caller only from the record its
+// own call caused (contracts.MailReport), so a call that handed nothing to the
+// transport could only be answered from somebody else's row — which is why only the
+// flow that pays for a message per call has its refusals read back to the person
+// standing at it, and the forgotten-password route, pinned to one link and nothing
+// else between a known and an unknown request, does not.
+const (
+	MailSetPassword        = "auth.set_password"
+	MailVerification       = "auth.verification"
+	MailVerificationNoLink = "auth.verification_no_link"
 )
 
 // Service is signing in, signing out, recognising a session, and resolving what
@@ -296,18 +327,22 @@ type Service interface {
 	// delay, which is a slowdown and not a gate.
 	Precheck(ctx context.Context, email, ip string) Verdict
 
-	// MayAsk counts one forgotten-password request from an address and reports
-	// whether it is within ResetRequests for the window. It is the public
+	// MayAsk counts one forgotten-password request from an address and reports the
+	// cap that decided it: whether the attempt is within ResetRequests for the
+	// window, and the quota and window the same statement read. It is the public
 	// route's own limit, and it counts the address asking rather than the
-	// address asked about.
-	MayAsk(ctx context.Context, ip string) bool
+	// address asked about. The decision comes back with its numbers because the
+	// route answers with them — a refusal that named no counter and no wait left
+	// the caller guessing — and a caller that cannot reach its counter reports the
+	// zero Decision, which allows the attempt and states nothing.
+	MayAsk(ctx context.Context, ip string) Decision
 
 	// MayRedeem counts one reset-token redemption from an address and reports
 	// whether it is within ResetRedemptions for the window. Asking for a link
 	// was capped and spending one was not, so the token was guessable at the
 	// speed of the network — which 256 bits makes hopeless and a cap makes
 	// pointless.
-	MayRedeem(ctx context.Context, ip string) bool
+	MayRedeem(ctx context.Context, ip string) Decision
 
 	// Login verifies a password and opens a session. It answers ErrCredentials
 	// for a wrong password, an unknown address, a user who is not active and a
