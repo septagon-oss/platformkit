@@ -32325,6 +32325,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/file/internal/a_public_upload_outlives_the_page_that_showed_it_test.go",
+   "id": "modules/file/internal/a_public_upload_outlives_the_page_that_showed_it_test.go#TestAPublicUploadKeepsItsDoorWhenTheRecordThatShowedItDropsIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAPublicUploadKeepsItsDoorWhenTheRecordThatShowedItDropsIt",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/file/internal/a_tenant_another_app_holds_is_never_swept_test.go",
    "id": "modules/file/internal/a_tenant_another_app_holds_is_never_swept_test.go#TestASweepLeavesATenantAnotherAppHoldsEvenUnderItsOwnSegment",
    "kind": "go",
@@ -54019,7 +54038,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1334,
+  "files": 1335,
   "forge_runs": [
    408,
    413,
@@ -54053,7 +54072,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2349,
+   "behaviour": 2350,
    "composition": 291,
    "contract": 19,
    "journey": 67
@@ -54072,9 +54091,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2726,
+  "rows": 2727,
   "tiers": {
-   "merge": 1698,
+   "merge": 1699,
    "nightly": 67,
    "push": 961
   },
@@ -54082,13 +54101,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1118,
+   "keep": 1119,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2378,
+   "keep": 2379,
    "keep-rewrite": 133,
    "merge": 215
   }

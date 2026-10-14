@@ -115,7 +115,7 @@ Any other file, and a host with no tenant, is a 404.
 A public file is refused a grant (`ErrPublicFile`), so no signed URL ever competes with the open door. Download headers come from `modules/file/contracts/response.go`, and `contracts.MetaFor` hands the same set to the store at `Put` so a bucket-served object carries the `docs/cache.md` policy without a handler here.
 Both public routes are reads; the module has no public write, so `kit/limit` is not applied.
 
-Who may read a file is derived, not remembered: the visibility its uploader was given, widened by any live `file_uses` row of it that says the record showing it is showing it to somebody who has not signed in (`SetShown`/`SetUsesShown`, migrations/000056). The public door asks both halves and the row it hands back carries the answer, so the bytes served and the `Cache-Control` on them are one verdict. Only the two commands that hold the file row exclusively write it: `SetShown` when a record moves to or off the public face, and `SetUses` when the last row that asserted a public audience goes — which is what a record's delete does through `kit/rest`. Bytes whose last public user is gone are therefore anonymously unreadable at once, not when the release sweep arrives a day or two later, and an ordinary edit that adds a picture to a published record makes those bytes readable in the same write, from the use row it just filed. What that leaves the file row is the audience the file was *given*: a picture a published page gained in an edit still lists as private until a command that holds it says otherwise, and the object stored for it carries the private cache policy — the conservative direction, one read slower and never one reader wider. A file the ledger has no row for keeps what its uploader asked for: the site logo, named by a bare uuid with no field and no lifecycle, and the media library's hand-raised public upload are those two cases.
+Who may read a file is derived, not remembered: the visibility its uploader was given, widened by any live `file_uses` row of it that says the record showing it is showing it to somebody who has not signed in (`SetShown`/`SetUsesShown`, migrations/000056). The public door asks both halves and the row it hands back carries the answer, so the bytes served and the `Cache-Control` on them are one verdict. Neither half is copied into the other. `files.visibility` is the audience the file was *given* — chosen at upload by whoever holds `file:manage`, and nothing later narrows it — and the audience a record asserts lives in the use row that asserts it. `SetShown` and `SetUses` therefore decide the answer and publish its flip, and never write the answer into the file row: a file whose last public user is gone is anonymously unreadable at once, not when the release sweep arrives a day or two later, and an ordinary edit that adds a picture to a published record makes those bytes readable in the same write, from the row it just filed. What that costs is one indexed read of `file_uses` for a file its own row calls private, and the object stored for a file public only because a page shows it carries the private cache policy — the conservative direction, never one reader wider. The floor is what the upload asked for, and it holds in both directions a person might have meant: a site logo named by a bare uuid with no field and no lifecycle keeps its public read, and so does one that a published page gained and later dropped — that page's audience went back with its own row, and the uploader's choice was never the page's to take back.
 
 ### The operator boundary
 
@@ -155,6 +155,24 @@ store walks through and where a two-implementation disagreement stops being an
 argument; `Reconciler` and `Prover` as ports an implementation declines by name
 rather than by silence; and `Deps.Storage`, which is still the composition's choice —
 `file.Local(dir)` and `file.S3(cfg)` are the same call written in the same place.
+
+The audience, hold and bound work beside that names its share. **Reused:**
+`httpx.WriteLimits` and `httpx.RetryAfter` on the upload route, and `kit/limit`'s
+counter table behind them, so the module adds no counter of its own;
+`rest.Spec.Audience` and `rest.RecordUses`, which are how a record's public face
+reaches this ledger without this module learning what a page is; `crud.GetForUpdate`
+and `db.Now()` again for the hold check and the grace stamp. **Added:**
+`contracts.ShownUses`, `contracts.UsesOrder` and `contracts.InUse` — the audience a
+record asserts travels with the uses it files, the save-wide lock order is the one
+thing a richtext save can promise and a Service cannot guess, and a refusal worth
+naming a count for is worth a typed error;
+`Service.OrderUses`; and the process-wide decode gate in `internal/decode.go`.
+**Made reusable:** `WriteLimits` as the counted arm of the app surface rather than a
+file-module rule, so the next upload route declares two windows and gets the tenant
+scoping, the ordering behind the permission gate and the header for free; and
+`filetest`'s conformance cases for the audience, which run against the fake and the
+SQL service alike — the two implementations are where a rule written twice starts to
+mean two things.
 
 ## Composition
 
@@ -214,6 +232,9 @@ many there are at once is bounded by the process's own ceiling
 inside its wait answers with `ErrBusyDecoding` and a 503 carrying `Retry-After`
 rather than by queueing
 without limit. The encode pass shares those slots and defers instead of failing.
+The two refusals are different answers: a spent window is the caller's and answers
+429, a machine holding every decode slot is nobody's request being wrong and answers
+503 — and both carry `Retry-After`, which is what a retry actually reads.
 How often a caller may ask is the other bound and it belongs to the route: the upload declares `httpx.WriteLimits` (60 a minute per person, 300 per tenant), counted after the permission guard and before the body is read, so a spent window answers 429 with `Retry-After` and opens no write. The release sweep (`file-unused`,
 `internal/unused.go`) removes an image stamped `unused_since` further ago than
 `Deps.UnusedAfter` with no live use and no hold, and only ever a file the image

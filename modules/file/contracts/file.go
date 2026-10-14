@@ -696,12 +696,13 @@ type Service interface {
 	// a public audience takes that audience back here, in the transaction that ended
 	// it, because this rewrite is what every delete and every edit goes through: a
 	// record that was showing a picture is gone, and its bytes must not stay readable
-	// by anybody because nobody recomputed them. The rule is SetShown's — public if any
-	// live use of the file is public, private when none is, a file with no rows at all
-	// now counted as nobody is — and so is its exemption: a file the ledger never had a
-	// row for is not this command's to change, and neither is one whose ended rows said
+	// by anybody because nobody recomputed them. The rule is SetShown's — a stranger
+	// may read the file when any live use of it is public or when its own visibility
+	// says so — and so is its exemption: a file the ledger never had a row for is not
+	// this command's to change, and neither is one whose ended rows said
 	// nothing about the public. Only an audience a publish granted is a publish's to
-	// take back. Every other fact stays silent: the record's own write is the auditable
+	// take back: what an upload was given is the floor, and no record's edit narrows
+	// it. Every other fact stays silent: the record's own write is the auditable
 	// one, and the file module has no business emitting an event for somebody else's
 	// row.
 	SetUses(ctx context.Context, tx db.Tx[db.Tenant], use Use, refs []uuid.UUID) ([]uuid.UUID, error)
@@ -714,10 +715,13 @@ type Service interface {
 	// module that owns the record's public face calls it from the command that
 	// moves the lifecycle, in that command's transaction, so the flip and the move
 	// commit together or not at all. Each named file is locked FOR UPDATE, in
-	// ascending id order, before its rows are written and its visibility is
-	// recomputed from the whole ledger: public if any live use of it is public,
-	// private when none is. A file the ledger does not speak about is not named
-	// here and keeps whatever its upload asked for.
+	// ascending id order, before its rows are written and the answer recomputed from
+	// the whole ledger: somebody who has not signed in may read it when any live use of
+	// it is public, or when its own visibility says so. What is recomputed is that
+	// answer, published as a flip and asked again at the door — never the file's own
+	// visibility, which is what its upload was given and is no command's to take back.
+	// A file the ledger does not speak about is not named here and keeps whatever its
+	// upload asked for.
 	//
 	// public true with no use row for one of the refs is refused — the bytes would
 	// go public while nothing records who shows them, so nothing could ever turn

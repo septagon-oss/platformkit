@@ -97,13 +97,25 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 }
 
 // SetUsesShown mirrors internal.Service.SetUsesShown: the rows this call files
-// carry the audience the record asserts, and each of them has its visibility
-// recomputed off the whole ledger in the same write.
+// carry the audience the record asserts, and the audience a stranger may read each
+// of those files with is the ledger's answer, asked again beside the rows.
 func (f *Fake) SetUsesShown(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	return f.setUses(ctx, tx, use, refs, public)
 }
 
 var _ contracts.ShownUses = (*Fake)(nil)
+
+// OrderUses answers contracts.UsesOrder so that a caller wired to this fake is told
+// the same save-wide pass the SQL service is asked for. The fake keeps no rows and so
+// takes no locks: it holds one mutex for the whole service, which is the serialisation
+// the ledger buys with its ascending FOR UPDATE sweep. What the pass is for — that the
+// whole save arrives in one call before any field of it is filed — is asserted where
+// the pass is called, in kit/rest.
+func (f *Fake) OrderUses(_ context.Context, _ db.Tx[db.Tenant], _ contracts.Use, _ []uuid.UUID) error {
+	return nil
+}
+
+var _ contracts.UsesOrder = (*Fake)(nil)
 
 func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	scope, err := contracts.ScopeOf(ctx)
@@ -177,9 +189,8 @@ func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	if len(remove) == 0 {
 		// Nothing ended, so no clock started — but a public audience still asks who
 		// may read the files it names, which is the published page that gained its
-		// first picture. Nothing is held: the answer goes into the use rows this
-		// rewrite just wrote, not into the file rows.
-		f.settleAudience(was, contracts.Use{Module: use.Module, Entity: use.Entity, Record: use.Record}, nil)
+		// first picture. The answer lives in the use rows this rewrite just wrote.
+		f.settleAudience(was)
 		return nil, nil
 	}
 	var unused []uuid.UUID
@@ -201,13 +212,12 @@ func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		}
 	}
 	// The audience of every file this rewrite named, asked again with the rows in
-	// their new state and published as the flips between the two answers. Held names
-	// the files whose use it ended, which internal.Service.SetUses holds FOR UPDATE
-	// and may therefore write the answer into; the files it merely began a use of keep
-	// their audience in the use row that asserts it. One answer either way — and no
-	// file row locked by a save that only names it, which is what lets two records
-	// that share two pictures be saved at all.
-	f.settleAudience(was, contracts.Use{Module: use.Module, Entity: use.Entity, Record: use.Record}, remove)
+	// their new state and published as the flips between the two answers. Neither half
+	// is written onto a file row: what a publish asserted stays in the use row that
+	// asserts it, and what the file was given stays where its upload put it — one
+	// answer either way, and no file row locked by a save that only names it, which is
+	// what lets two records that share two pictures be saved at all.
+	f.settleAudience(was)
 	return unused, nil
 }
 
@@ -252,10 +262,9 @@ func (f *Fake) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contract
 			}
 		}
 	}
-	// Who may read each named file, asked before the rows say anything new: a
-	// publish is one of the two commands allowed to write the answer back into the
-	// file row, and the flip it publishes is the difference between this answer and
-	// the one asked below.
+	// Who may read each named file, asked before the rows say anything new: the flip
+	// this command publishes is the difference between this answer and the one asked
+	// below.
 	was := map[uuid.UUID]bool{}
 	for _, id := range wanted {
 		was[id] = f.readsPublicly(id)
@@ -265,44 +274,25 @@ func (f *Fake) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contract
 			f.uses[i].Public = public
 		}
 	}
-	f.settleAudience(was, owner, wanted)
+	f.settleAudience(was)
 	return nil
 }
 
-// settleAudience publishes the audience flips between was and the answer now, and
-// writes that answer into the row of every file held. It is internal.Service's rule
-// on this fake's memory: who may read a file is its own visibility widened by the
-// records showing it to a stranger, a held file is answered from the ledger alone, a
-// flip is one event, an audience that did not move records nothing, and a file this
-// command did not hold keeps its answer in the use row that asserts it. The caller
-// holds f.mu.
-func (f *Fake) settleAudience(was map[uuid.UUID]bool, owner contracts.Use, held []uuid.UUID) {
+// settleAudience publishes the audience flips between was and the answer now. It is
+// internal.Service's rule on this fake's memory: who may read a file is its own
+// visibility widened by the records showing it to a stranger, the widened half lives
+// only in the use row that asserts it, the visibility a file was given is the floor
+// no command here takes back, a flip is one event, and an audience that did not move
+// records nothing. The caller holds f.mu.
+func (f *Fake) settleAudience(was map[uuid.UUID]bool) {
 	ids := make([]uuid.UUID, 0, len(was))
 	for id := range was {
 		ids = append(ids, id)
 	}
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	for _, id := range ids {
-		keep := slices.Contains(held, id)
-		read := f.readsPublicly(id)
-		if keep {
-			read = f.shownPublicly(id)
-		}
-		if read == was[id] {
+		if f.readsPublicly(id) == was[id] {
 			continue
-		}
-		want := contracts.VisibilityPrivate
-		if read {
-			want = contracts.VisibilityPublic
-		}
-		if keep {
-			// Written back: rows holds values, so a flip left on the copy this read
-			// handed out would publish an event for a visibility no read of this fake
-			// ever shows.
-			if row, ok := f.rows[id]; ok {
-				row.Visibility = want
-				f.rows[id] = row
-			}
 		}
 		f.published = append(f.published, contracts.EventVisibility)
 	}
