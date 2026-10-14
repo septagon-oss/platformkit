@@ -27873,6 +27873,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/password_resend_interrupted_recovery_test.go",
+   "id": "modules/auth/internal/password_resend_interrupted_recovery_test.go#TestInterruptedPasswordResendAllowsImmediateRecovery",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestInterruptedPasswordResendAllowsImmediateRecovery",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/password_resend_interruption_test.go",
    "id": "modules/auth/internal/password_resend_interruption_test.go#TestInterruptedPasswordResendPreservesTheHeldCredential",
    "kind": "go",
@@ -52025,7 +52044,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1270,
+  "files": 1271,
   "forge_runs": [
    408,
    413,
@@ -52059,7 +52078,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2265,
+   "behaviour": 2266,
    "composition": 275,
    "contract": 19,
    "journey": 64
@@ -52078,9 +52097,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2623,
+  "rows": 2624,
   "tiers": {
-   "merge": 1620,
+   "merge": 1621,
    "nightly": 64,
    "push": 939
   },
@@ -52088,13 +52107,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1055,
+   "keep": 1056,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2276,
+   "keep": 2277,
    "keep-rewrite": 132,
    "merge": 215
   }
