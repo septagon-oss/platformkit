@@ -33218,6 +33218,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/file/internal/two_records_ending_the_same_files_settle_test.go",
+   "id": "modules/file/internal/two_records_ending_the_same_files_settle_test.go#TestTwoRecordsEndingTheSameTwoPicturesBothSave",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoRecordsEndingTheSameTwoPicturesBothSave",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/file/internal/unnamed_sweep_leaves_named_apps_bytes_test.go",
    "id": "modules/file/internal/unnamed_sweep_leaves_named_apps_bytes_test.go#TestUnnamedAppSweepLeavesANamedAppsTenantsBytes",
    "kind": "go",
@@ -54000,7 +54019,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1333,
+  "files": 1334,
   "forge_runs": [
    408,
    413,
@@ -54034,7 +54053,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2348,
+   "behaviour": 2349,
    "composition": 291,
    "contract": 19,
    "journey": 67
@@ -54053,9 +54072,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2725,
+  "rows": 2726,
   "tiers": {
-   "merge": 1697,
+   "merge": 1698,
    "nightly": 67,
    "push": 961
   },
@@ -54063,13 +54082,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1117,
+   "keep": 1118,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2377,
+   "keep": 2378,
    "keep-rewrite": 133,
    "merge": 215
   }
