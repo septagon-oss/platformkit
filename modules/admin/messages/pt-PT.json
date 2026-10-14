@@ -1,4 +1,13 @@
 {
+  "admin.back": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Voltar ao painel",
+    "plural": {
+      "": "Voltar ao painel"
+    }
+  },
   "admin.login.title": {
     "translation": "Iniciar sessão",
     "plural": {

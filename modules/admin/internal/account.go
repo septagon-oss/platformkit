@@ -336,7 +336,8 @@ func accountRefusal(r page.Request, s page.Shell, err error) (page.View, error) 
 		return page.View{}, rest.Fault(err)
 	}
 	line := chrome(r, key, english)
-	v := page.Fault(r.Locale, status, code+": "+line, s.Back, s.BackLabel)
+	back, backLabel := s.WayBack(r.Locale)
+	v := page.Fault(r.Locale, status, code+": "+line, back, backLabel)
 	if line != english && r.Locale != nil {
 		v.Language = r.Locale.Language
 	}

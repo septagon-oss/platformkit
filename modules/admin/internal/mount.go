@@ -209,6 +209,9 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		Tag:       "admin",
 		Back:      a.dashboard.at,
 		BackLabel: "Back to the dashboard",
+		// The words of that way out are the shell's copy too, so they are asked at
+		// this module's catalogue and not left in the language this file is written in.
+		BackKey: "admin.back",
 		// The whole shell and not only its sign-in page: a person who signs in in
 		// Portuguese and is then handed an English table has not been served in
 		// Portuguese. The generated screens read their labels through the

@@ -509,9 +509,15 @@ func (o Options) boolean(value any) string {
 // number is one measured value in the layout this request's language writes numbers
 // in: English counts 12,345.5 with a comma and a point, Portuguese counts it with a
 // space and a comma, and the row carries neither. The key is the catalogue's hold on
-// the layout, and "%g" the source layout — the same shape of answer a date gets from
-// screens.datetime, so a language that groups differently says so in its copy and
-// not in this file. With no catalogue the number is what the value itself says.
+// the layout, so a language that groups differently says so in its copy and not in
+// this file. With no catalogue the number is what the value itself says.
+//
+// A count and a measurement take two keys, because they are written with two
+// different verbs: "%g" prints a float and refuses an integer, which Go answers as
+// "%!g(int=12,345)" on the page, and "%d" prints the digits of a count without ever
+// deciding how many of them are worth showing. A language groups both the same way,
+// and so its two copies differ only in the verb — which is the difference the
+// catalogue holds and this file does not read.
 func (o Options) number(value any) string {
 	switch n := value.(type) {
 	case float64:
@@ -519,25 +525,25 @@ func (o Options) number(value any) string {
 	case float32:
 		return o.Text("screens.number", "%g", float64(n))
 	case int:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case int8:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case int16:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case int32:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case int64:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case uint:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case uint8:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case uint16:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case uint32:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	case uint64:
-		return o.Text("screens.number", "%d", n)
+		return o.Text("screens.integer", "%d", n)
 	default:
 		return display.Text(value)
 	}

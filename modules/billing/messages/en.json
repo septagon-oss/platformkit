@@ -192,5 +192,149 @@
     "plural": {
       "": "Year"
     }
+  },
+  "invalid.billing.plan.code.missing": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a plan needs a code",
+    "plural": {
+      "": "a plan needs a code"
+    }
+  },
+  "invalid.billing.plan.code.form": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "%q is not a plan code; a code is 2 to %d characters of a-z, 0-9 and dashes, and it appears in a URL and on an invoice",
+    "plural": {
+      "": "%q is not a plan code; a code is 2 to %d characters of a-z, 0-9 and dashes, and it appears in a URL and on an invoice"
+    }
+  },
+  "invalid.billing.plan.name.missing": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a plan needs a name",
+    "plural": {
+      "": "a plan needs a name"
+    }
+  },
+  "invalid.billing.plan.name.length": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a plan's name is at most %d characters",
+    "plural": {
+      "": "a plan's name is at most %d characters"
+    }
+  },
+  "invalid.billing.plan.currency": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "currency %q is not an ISO 4217 code",
+    "plural": {
+      "": "currency %q is not an ISO 4217 code"
+    }
+  },
+  "invalid.billing.plan.price.negative": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a price is not negative",
+    "plural": {
+      "": "a price is not negative"
+    }
+  },
+  "invalid.billing.plan.price.maximum": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a price of %d is past the %d this module will bill; a number that large is a typo, and the one time it is not, it is a contract and not a price list",
+    "plural": {
+      "": "a price of %d is past the %d this module will bill; a number that large is a typo, and the one time it is not, it is a contract and not a price list"
+    }
+  },
+  "invalid.billing.plan.interval": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "interval %q is not %s or %s",
+    "plural": {
+      "": "interval %q is not %s or %s"
+    }
+  },
+  "invalid.billing.plan.feature.name": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a feature needs a name",
+    "plural": {
+      "": "a feature needs a name"
+    }
+  },
+  "invalid.billing.subscription.plan": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a subscription is to a plan",
+    "plural": {
+      "": "a subscription is to a plan"
+    }
+  },
+  "invalid.billing.subscription.status": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "status %q is not a lifecycle state",
+    "plural": {
+      "": "status %q is not a lifecycle state"
+    }
+  },
+  "invalid.billing.subscription.period": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a period ends after it starts",
+    "plural": {
+      "": "a period ends after it starts"
+    }
+  },
+  "invalid.billing.subscription.price": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a stamped price of %d is not one this module will bill",
+    "plural": {
+      "": "a stamped price of %d is not one this module will bill"
+    }
+  },
+  "invalid.billing.subscription.currency": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "currency %q is not an ISO 4217 code",
+    "plural": {
+      "": "currency %q is not an ISO 4217 code"
+    }
+  },
+  "invalid.billing.subscription.attempts": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a number of failed attempts is not negative",
+    "plural": {
+      "": "a number of failed attempts is not negative"
+    }
+  },
+  "invalid.billing.subscription.anchorDay": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "%d is not a day of the month to bill on",
+    "plural": {
+      "": "%d is not a day of the month to bill on"
+    }
   }
 }

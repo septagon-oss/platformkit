@@ -12,7 +12,6 @@ package contracts
 import (
 	"context"
 	"database/sql/driver"
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
 // The two intervals a plan may bill on. There is no day and no week: an
@@ -135,6 +135,12 @@ func (Plan) TableName() string { return "billing_plans" }
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: a code that differs
 // only in case is the same plan, and two callers must not disagree.
+//
+// Each refusal is a fault.Reason — verdict, source sentence, and the key this
+// module's catalogue keeps its translation under — because the person reading a
+// refused plan form speaks a language this file does not know. A Reason unwraps
+// to ErrInvalid, so errors.Is, kit/rest's 422 and this sentence in a log or a
+// problem document are what they were; only a page asks the catalogue.
 func (p *Plan) Validate(context.Context) error {
 	p.Code = strings.ToLower(strings.TrimSpace(p.Code))
 	p.Name = strings.TrimSpace(p.Name)
@@ -144,25 +150,36 @@ func (p *Plan) Validate(context.Context) error {
 	}
 	switch {
 	case p.Code == "":
-		return fmt.Errorf("a plan needs a code")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.code.missing",
+			Text: "a plan needs a code"}
 	case !planCode.MatchString(p.Code):
-		return fmt.Errorf("%q is not a plan code; a code is 2 to %d characters of a-z, 0-9 and dashes, and it appears in a URL and on an invoice", p.Code, MaxCode)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.code.form",
+			Text: "%q is not a plan code; a code is 2 to %d characters of a-z, 0-9 and dashes, and it appears in a URL and on an invoice",
+			Args: []any{p.Code, MaxCode}}
 	case p.Name == "":
-		return fmt.Errorf("a plan needs a name")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.name.missing",
+			Text: "a plan needs a name"}
 	case utf8.RuneCountInString(p.Name) > MaxName:
-		return fmt.Errorf("a plan's name is at most %d characters", MaxName)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.name.length",
+			Text: "a plan's name is at most %d characters", Args: []any{MaxName}}
 	case !ValidCurrency(p.Currency):
-		return fmt.Errorf("currency %q is not an ISO 4217 code", p.Currency)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.currency",
+			Text: "currency %q is not an ISO 4217 code", Args: []any{p.Currency}}
 	case p.PriceCents < 0:
-		return fmt.Errorf("a price is not negative")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.price.negative",
+			Text: "a price is not negative"}
 	case p.PriceCents > MaxPriceCents:
-		return fmt.Errorf("a price of %d is past the %d this module will bill; a number that large is a typo, and the one time it is not, it is a contract and not a price list", p.PriceCents, MaxPriceCents)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.price.maximum",
+			Text: "a price of %d is past the %d this module will bill; a number that large is a typo, and the one time it is not, it is a contract and not a price list",
+			Args: []any{p.PriceCents, MaxPriceCents}}
 	case !slices.Contains(intervals, p.Interval):
-		return fmt.Errorf("interval %q is not %s or %s", p.Interval, IntervalMonth, IntervalYear)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.interval",
+			Text: "interval %q is not %s or %s", Args: []any{p.Interval, IntervalMonth, IntervalYear}}
 	}
 	for _, f := range p.Features {
 		if strings.TrimSpace(f) == "" {
-			return fmt.Errorf("a feature needs a name")
+			return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.plan.feature.name",
+				Text: "a feature needs a name"}
 		}
 	}
 	return nil
@@ -287,7 +304,10 @@ func (Subscription) TableName() string { return "billing_subscriptions" }
 // Expired reports whether the period being served has run out.
 func (s *Subscription) Expired(now time.Time) bool { return !now.Before(s.CurrentPeriodEnd) }
 
-// Validate is the entity's own check.
+// Validate is the entity's own check, refusing with the same keyed sentences
+// Plan.Validate raises: the subscription form is a page a person reads in their
+// own language, and a rule that refuses it in this file's English is a sentence
+// the rest of the page has no business answering beside.
 func (s *Subscription) Validate(context.Context) error {
 	if s.Status == "" {
 		s.Status = StatusTrial
@@ -295,21 +315,28 @@ func (s *Subscription) Validate(context.Context) error {
 	s.Currency = strings.ToUpper(strings.TrimSpace(s.Currency))
 	switch {
 	case s.PlanID == uuid.Nil:
-		return fmt.Errorf("a subscription is to a plan")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.subscription.plan",
+			Text: "a subscription is to a plan"}
 	case !slices.Contains(statuses, s.Status):
-		return fmt.Errorf("status %q is not a lifecycle state", s.Status)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.subscription.status",
+			Text: "status %q is not a lifecycle state", Args: []any{s.Status}}
 	case !s.CurrentPeriodEnd.After(s.CurrentPeriodStart):
-		return fmt.Errorf("a period ends after it starts")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.subscription.period",
+			Text: "a period ends after it starts"}
 	case s.PriceCents < 0 || s.PriceCents > MaxPriceCents:
-		return fmt.Errorf("a stamped price of %d is not one this module will bill", s.PriceCents)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.subscription.price",
+			Text: "a stamped price of %d is not one this module will bill", Args: []any{s.PriceCents}}
 	// A free subscription carries no currency, because there is nothing to
 	// denominate; anything with a price carries a real one.
 	case s.PriceCents > 0 && !ValidCurrency(s.Currency):
-		return fmt.Errorf("currency %q is not an ISO 4217 code", s.Currency)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.subscription.currency",
+			Text: "currency %q is not an ISO 4217 code", Args: []any{s.Currency}}
 	case s.AttemptCount < 0:
-		return fmt.Errorf("a number of failed attempts is not negative")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.subscription.attempts",
+			Text: "a number of failed attempts is not negative"}
 	case s.AnchorDay < 0 || s.AnchorDay > 31:
-		return fmt.Errorf("%d is not a day of the month to bill on", s.AnchorDay)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.billing.subscription.anchorDay",
+			Text: "%d is not a day of the month to bill on", Args: []any{s.AnchorDay}}
 	}
 	return nil
 }

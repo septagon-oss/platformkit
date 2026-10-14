@@ -147,6 +147,15 @@
     ],
     "translation": "No"
   },
+  "screens.integer": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "%d",
+    "plural": {
+      "": "%d"
+    }
+  },
   "screens.number": {
     "references": [
       "ui/resource/resource.go"

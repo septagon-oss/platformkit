@@ -192,5 +192,149 @@
     "plural": {
       "": "Ano"
     }
+  },
+  "invalid.billing.plan.code.missing": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "um plano precisa de um código",
+    "plural": {
+      "": "um plano precisa de um código"
+    }
+  },
+  "invalid.billing.plan.code.form": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "%q não é um código de plano; um código tem entre 2 e %d caracteres de a-z, 0-9 e traços, e aparece num URL e numa fatura",
+    "plural": {
+      "": "%q não é um código de plano; um código tem entre 2 e %d caracteres de a-z, 0-9 e traços, e aparece num URL e numa fatura"
+    }
+  },
+  "invalid.billing.plan.name.missing": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "um plano precisa de um nome",
+    "plural": {
+      "": "um plano precisa de um nome"
+    }
+  },
+  "invalid.billing.plan.name.length": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "o nome de um plano tem no máximo %d caracteres",
+    "plural": {
+      "": "o nome de um plano tem no máximo %d caracteres"
+    }
+  },
+  "invalid.billing.plan.currency": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a moeda %q não é um código ISO 4217",
+    "plural": {
+      "": "a moeda %q não é um código ISO 4217"
+    }
+  },
+  "invalid.billing.plan.price.negative": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "um preço não é negativo",
+    "plural": {
+      "": "um preço não é negativo"
+    }
+  },
+  "invalid.billing.plan.price.maximum": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "um preço de %d ultrapassa os %d que este módulo fatura; um número tão grande é um erro, e na única vez em que não é, é um contrato e não uma tabela de preços",
+    "plural": {
+      "": "um preço de %d ultrapassa os %d que este módulo fatura; um número tão grande é um erro, e na única vez em que não é, é um contrato e não uma tabela de preços"
+    }
+  },
+  "invalid.billing.plan.interval": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "o intervalo %q não é %s nem %s",
+    "plural": {
+      "": "o intervalo %q não é %s nem %s"
+    }
+  },
+  "invalid.billing.plan.feature.name": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "uma funcionalidade precisa de um nome",
+    "plural": {
+      "": "uma funcionalidade precisa de um nome"
+    }
+  },
+  "invalid.billing.subscription.plan": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "uma subscrição é de um plano",
+    "plural": {
+      "": "uma subscrição é de um plano"
+    }
+  },
+  "invalid.billing.subscription.status": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "o estado %q não é um estado do ciclo de vida",
+    "plural": {
+      "": "o estado %q não é um estado do ciclo de vida"
+    }
+  },
+  "invalid.billing.subscription.period": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "um período termina depois de começar",
+    "plural": {
+      "": "um período termina depois de começar"
+    }
+  },
+  "invalid.billing.subscription.price": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "um preço fixado de %d não é um que este módulo fature",
+    "plural": {
+      "": "um preço fixado de %d não é um que este módulo fature"
+    }
+  },
+  "invalid.billing.subscription.currency": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "a moeda %q não é um código ISO 4217",
+    "plural": {
+      "": "a moeda %q não é um código ISO 4217"
+    }
+  },
+  "invalid.billing.subscription.attempts": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "um número de tentativas falhadas não é negativo",
+    "plural": {
+      "": "um número de tentativas falhadas não é negativo"
+    }
+  },
+  "invalid.billing.subscription.anchorDay": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "%d não é um dia do mês para faturar",
+    "plural": {
+      "": "%d não é um dia do mês para faturar"
+    }
   }
 }

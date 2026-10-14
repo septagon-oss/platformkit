@@ -1,0 +1,11 @@
+{
+  "app.back.workspace": {
+    "references": [
+      "apps/platformkit/fault.go"
+    ],
+    "translation": "Voltar à área de trabalho",
+    "plural": {
+      "": "Voltar à área de trabalho"
+    }
+  }
+}

@@ -1,4 +1,13 @@
 {
+  "admin.back": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Back to the dashboard",
+    "plural": {
+      "": "Back to the dashboard"
+    }
+  },
   "admin.login.title": {
     "translation": "Sign in",
     "plural": {

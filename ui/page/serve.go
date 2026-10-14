@@ -28,6 +28,13 @@ type Shell struct {
 	Tag       string
 	Back      string
 	BackLabel string
+	// BackKey names the catalogue entry BackLabel is worded under, so the way out
+	// of a refusal arrives in the reader's language and not in the language whoever
+	// wrote the shell happens to speak. It is named by the composition that ships
+	// the copy for it, the same way a module's refusal names its own sentence
+	// (kit/fault.Reason): one label, one key, and no two shells sharing words they
+	// did not write. Empty, and the label is shown as written.
+	BackKey string
 	// Messages is composed once from the participating modules' catalogs.
 	// Nil keeps the existing untranslated shell. Do not mutate it while serving.
 	Messages Messages
@@ -110,7 +117,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			// language without this package learning what the rule was; `fault` claims a
 			// language only over a sentence it replaced, so a verdict no catalogue
 			// speaks stays English and says so.
-			refused := fault(status, detail, reason, r.Locale, "", s.Back, s.BackLabel)
+			refused := fault(status, detail, reason, r.Locale, "", s.Back, s.backLabel(r.Locale))
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -209,6 +216,26 @@ func read(ctx context.Context, c Chrome) Request {
 		r.Inline = []g.Node{InlineScript(ctx, beforePaint)}
 	}
 	return r
+}
+
+// backLabel is the shell's way out, in the language this request is answered in.
+//
+// A label is copy, and copy is the catalogue's: the shell's own words are the
+// fallback a deployment that ships no copy for the key is shown, which is what a
+// shell with no catalogue, no key, or no language for this request keeps printing.
+func (s Shell) backLabel(loc *Locale) string {
+	if loc == nil || s.BackKey == "" {
+		return s.BackLabel
+	}
+	return loc.Text(s.BackKey, s.BackLabel)
+}
+
+// WayBack is the address and the words of this shell's way out, in the language
+// this request is answered in. A renderer outside this package that draws a page
+// of its own asks this rather than reading BackLabel itself, because a link a
+// person follows from a refusal is the sentence the refusal is worth having.
+func (s Shell) WayBack(loc *Locale) (href, label string) {
+	return s.Back, s.backLabel(loc)
 }
 
 // refusal is an error's status, detail and — when the writer of the refusal named
