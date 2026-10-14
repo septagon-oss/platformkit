@@ -10,9 +10,9 @@ package main
 // (modules/subject/internal/service_test.go) ask who was called, in what order and
 // with what published, over owners that own nothing; this one asks whether the rows
 // that are really in a real tenant's tables come back in the bundle and stop naming
-// the person afterwards. Findings 1 to 3 of the review — three contributors naming
-// columns their own migrations never made — were invisible from both sides of that
-// split, and this is the shape that cannot miss them again.
+// the person afterwards. The defect this shape exists for — three contributors naming
+// columns their own migrations never made — was invisible from both sides of that
+// split, and this is the shape that cannot miss it again.
 //
 // The person is seeded by hand rather than through the doors: an invited user, a
 // task assigned to them whose description names them, a page they authored, and a
