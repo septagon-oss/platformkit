@@ -413,9 +413,14 @@ that cannot tell an unsaved picture from a configured one. A resource left on
 `rest.RecordNoUses` sits on the safe side of that boundary: it files no uses, so nothing
 ever stamps its images and the release sweep never reaches them — mount warns because the
 audience of those images is never derived either, so a published page shows only what its
-uploader made public. `Service.Delete` asks the ledger first: it locks the row, then
-locks that file's own `file_uses` rows `FOR UPDATE`, and one of them answers
-`ErrInUse` — 409, the count in the sentence, nothing written and nothing published.
+uploader made public. `Service.Delete` asks the ledger first, and it locks the file
+itself `FOR UPDATE` before it reads: `SetUses` holds that same row `FOR KEY SHARE` for as
+long as one of its transactions is filing a use, so a use in flight is waited for and
+counted rather than missed — a delete that read the ledger without that lock would delete
+the row while a committed use of it landed beside it, and the ledger would then name a
+file nobody can show. Then it locks that file's own `file_uses` rows `FOR UPDATE`, and
+one of them answers `ErrInUse` — 409, the count in the sentence, nothing written and
+nothing published.
 The library's disabled control is the courtesy; this is the refusal, and it reaches a
 client that never saw the page. What ends a use is unchanged: an edit, or the
 record's own delete through `kit/rest`, which is not refused by a file that went

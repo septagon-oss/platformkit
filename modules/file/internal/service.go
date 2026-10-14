@@ -673,8 +673,17 @@ var _ contracts.WidthOpener = (*Service)(nil)
 var _ contracts.VariantServable = (*Service)(nil)
 
 // Delete removes the row and says where the bytes are. See contracts.Service.
+//
+// The row is read under FOR UPDATE, before anything about it is decided. A use
+// takes at least FOR KEY SHARE on the file — SetUses does, on both sides of its
+// rewrite — so this lock is what makes "nothing shows it" a fact rather than a
+// reading: a filing in flight holds the key share until it commits, this delete
+// waits for it, and the ledger read below then runs in a snapshot that already
+// contains the row that filing wrote. Without the lock the ledger read sees only
+// uses that were committed *before* it, a use filed during this transaction lands
+// after it, and the deletion strands a use on bytes its own event orders removed.
 func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
-	f, err := crud.Get[*contracts.File](tx, id)
+	f, err := crud.GetForUpdate[*contracts.File](tx, id)
 	if err != nil {
 		return nil, err
 	}
