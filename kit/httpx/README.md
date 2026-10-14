@@ -51,7 +51,17 @@ Each surface has its own chain, and the difference is not cosmetic:
 - **App** recognises the caller, refuses an anonymous caller except at a route
   that declares `Public()` — and `AnonymousDoors` lists those, because "the
   workspace admits nobody by default" is only checkable once you can see who it
-  admits — and answers `no-store` with `X-Robots-Tag: noindex`.
+  admits — and answers `no-store` with `X-Robots-Tag: noindex`. A route here may
+  also declare `WriteLimits`, the counted sibling of the anonymous arm
+  (`route_writes.go`): the counters declared, evaluated in that order and keyed
+  through `kit/limit`, which scopes every key by tenant, so one caller's own window
+  is spent before the tenant's shared bucket is touched at all. It runs after the
+  permission gate and before the body is read, so a caller who was never allowed
+  spends no allowance, and it refuses with 429 and the `RetryAfter` hint this kernel
+  puts on a refusal that knows how long to wait — the same header a route whose own
+  capacity is full sets for itself with `httpx.RetryAfter`. A limiter that cannot
+  answer lets the request through and logs, which is the anonymous arm's rule and
+  stated twice because it is two arms and not one.
 - **Ops** is served at `Options.Installation`'s host and nowhere else. Anywhere
   else it answers exactly what an address nobody mounted answers — the same
   status, the same body, and the same headers every other refusal of that host
@@ -122,7 +132,11 @@ and `Formatter.Text` over the headers `Serve` already wrote; the cases reuse
 a route contradicting its router, the installation-host gate
 (`Options.Installation`), the one-release alias table and the `Home` claim — none
 of these had an owner before, because one chain answered every address and which
-surface a route was on lived in prose. **Made reusable:** `Router.Prefix`,
+surface a route was on lived in prose; and `WriteLimits`, the counted arm of the app
+surface (`route_writes.go`), which is the windows a route declares beside itself —
+one person's, one tenant's — evaluated in that order behind the permission gate and
+before the body is read, beside `RetryAfter`, the one way any refusal in this kernel
+says how long to wait. **Made reusable:** `Router.Prefix`,
 `Router.Path` and `Router.PagePath`, so a module composes an address instead of
 spelling one; `SurfaceExtension`, the `x-platformkit-surface` key every recorded
 operation carries; `LegacySessionCookies`, which the auth module needs to clear

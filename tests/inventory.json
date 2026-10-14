@@ -19801,6 +19801,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/a_whole_save_is_named_before_any_of_it_is_filed_test.go",
+   "id": "kit/rest/a_whole_save_is_named_before_any_of_it_is_filed_test.go#TestASaveNamesItsWholeRecordBeforeTheLedgerFilesAnyOfIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASaveNamesItsWholeRecordBeforeTheLedgerFilesAnyOfIt",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/catalog_writable_narrowing_test.go",
    "id": "kit/rest/catalog_writable_narrowing_test.go#TestACallerWhoMayNotCallTheOnlyCommandIsNotToldTheResourceIsWritable",
    "kind": "go",
@@ -54038,7 +54057,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1335,
+  "files": 1336,
   "forge_runs": [
    408,
    413,
@@ -54072,7 +54091,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2350,
+   "behaviour": 2351,
    "composition": 291,
    "contract": 19,
    "journey": 67
@@ -54091,9 +54110,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2727,
+  "rows": 2728,
   "tiers": {
-   "merge": 1699,
+   "merge": 1700,
    "nightly": 67,
    "push": 961
   },
@@ -54101,13 +54120,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1119,
+   "keep": 1120,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2379,
+   "keep": 2380,
    "keep-rewrite": 133,
    "merge": 215
   }
