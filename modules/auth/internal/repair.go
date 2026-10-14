@@ -19,6 +19,15 @@ import (
 // of, and SetRole for the write, which holds the lock, the administration floor
 // and the event.
 //
+// Which read decides the write is what this command gets right, and the one that
+// decides it is the locked one. Every list it writes is a row with the dead
+// grants deleted, so a row that moved between the read and the write makes the
+// list wrong in both directions: it revokes a permission somebody had just
+// granted, and it hands back one they had just taken away — and only the second
+// of those is invisible in what the command prints. readUnderRoleLock is where
+// that read happens; it is not a second opinion on the first, it is the read
+// whose answer is written.
+//
 // It asks contracts nothing that can refuse. contracts.SeededRoles validates the
 // initial roles an application names, and the installation this command exists
 // for is the one whose literal still names a permission that left with its
@@ -42,6 +51,14 @@ func RepairSeededRoles(ctx context.Context, tx db.Tx[db.Tenant], roles contracts
 	}
 	tenant := db.TenantOf(tx)
 	dead := Undeclared(held, declared)
+	if remove && len(dead) > 0 {
+		// The unlocked read above says only that this tenant has something to take.
+		// What is taken is computed from the roles as they stand under the lock.
+		if held, err = readUnderRoleLock(ctx, tx, roles, tenant); err != nil {
+			return nil, err
+		}
+		dead = Undeclared(held, declared)
+	}
 	found := map[string][]string{}
 	for _, r := range held {
 		gone := dead[r.Name]
@@ -67,14 +84,28 @@ func RepairSeededRoles(ctx context.Context, tx db.Tx[db.Tenant], roles contracts
 			return nil, err
 		}
 		if !wrote {
-			// The row already held this list by the time this run got the
-			// tenant's lock: somebody else took the same grant between the read
-			// above and the write here, and asked for the same thing. Nothing
-			// about that is wrong — it is what a lock in front of a row is for —
-			// but this run wrote no row and publishes no event, so it says it
-			// removed nothing. A line saying "removed" is a claim about a row.
+			// The report is built from what the write answered and not from what this
+			// run subtracted, which is the only way a line saying "removed" is a claim
+			// about a row. A run that moved no row and published no event says it
+			// removed nothing, even about a grant it did read.
 			delete(found, r.Name)
 		}
 	}
 	return found, nil
+}
+
+// readUnderRoleLock reads this tenant's roles while holding the role lock its
+// writes take, so from this read to the commit that follows it no other
+// transaction can move these rows and what a caller subtracts from them is what
+// it writes. Asking is not free: this tenant's administrators queue behind
+// whoever holds the lock, which is why a caller reads unlocked first and comes
+// here only when it has something to write — a listing, and a walk over an
+// installation that still declares everything it seeded, take no lock at all.
+func readUnderRoleLock(ctx context.Context, tx db.Tx[db.Tenant], roles contracts.Service,
+	tenant tenancy.Tenant,
+) ([]*contracts.Role, error) {
+	if err := lockTenantRoles(ctx, tx, tenant); err != nil {
+		return nil, err
+	}
+	return roles.Roles(ctx, tx)
 }

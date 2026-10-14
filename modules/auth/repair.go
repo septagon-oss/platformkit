@@ -53,7 +53,12 @@ import (
 // SetRole, so it takes that tenant's role lock, is held to the floor that keeps
 // somebody able to administer the tenant, and publishes auth.role_set in the
 // same transaction — a repair no audit could see would be the silent edit this
-// exists not to be.
+// exists not to be. What it subtracts is decided under that same lock: the run
+// takes it, reads the roles again and subtracts from what they hold then, so a
+// permission another operator granted while this run was arriving survives and
+// one they took away is not put back. A repair that subtracted from the unlocked
+// read that found the dead grant would be a widening command wearing a narrowing
+// one's name.
 //
 // It has one direction. An installation that later adds a module does not gain
 // that module's operator permissions on the roles already seeded — SeedRoles

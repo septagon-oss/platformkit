@@ -34,12 +34,16 @@ by the next morning, about a grant no route would ever have accepted. Rows
 written by an older seeder are a customer's and are not edited on the way past:
 `auth.RepairSeededRoles` lists them per tenant and removes them when asked,
 taking away only the grants that seeder wrote — `apps/platformkit repair-roles`
-is the door, and `--remove` is the decision. What that flag prints is what its
-transaction wrote: two operators running it at once both read the same dead
-grant, the second one's write finds the row already cleaned and changes nothing,
-and only the run that moved a row says it removed anything. A line saying
-`removed` is a claim about a row. A listing stops at the same line, for the same
-reason: a role holding a dead grant of somebody else's beside the seeder's is
+is the door, and `--remove` is the decision. What it subtracts from is the roles
+as they stand *under* the tenant's role lock, which it takes and re-reads before
+it derives anything: subtract from the row as it looked when the walk arrived and
+the command revokes a grant somebody had just made and puts back one they had
+just taken away, and only the second of those is invisible in what it prints.
+What that flag prints is what its transaction wrote: two operators running it at
+once both find the same dead grant, the second finds the row already cleaned when
+it takes the lock and writes nothing at all, and only the run that moved a row
+says it removed anything. A line saying `removed` is a claim about a row. A
+listing stops at the same line, for the same reason: a role holding a dead grant of somebody else's beside the seeder's is
 declined whole — `contracts.CheckedPermissions` refuses the list either write
 would produce — so it is named by neither a listing nor a removal, and a run that
 prints nothing has not proved there is nothing left. A role's name belonging to the

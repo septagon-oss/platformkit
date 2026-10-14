@@ -439,8 +439,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			// itself and keeps: whether this call moved a row. The caller that
 			// needs it is modules/auth's repair, whose command prints "removed" —
 			// and prints it from an answer the write already had rather than from
-			// its own read of the roles, which a second operator's identical run
-			// may have made stale between the read and the lock.
+			// its own subtraction, because only the write knows whether a row moved.
 			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
 				[]string{"widget:read"}, Declared); err != nil || !changed {
 				t.Errorf("writing a new role: changed=%v (%v), want true", changed, err)
