@@ -17,7 +17,12 @@ func TestVerificationMailAndPasswordResetKeepTheirDeclaredOutagePolicies(t *test
 	if allowed || !errors.Is(err, limit.ErrNoConnection) {
 		t.Errorf("VerificationMail without a store = %v, %v; want refused with ErrNoConnection", allowed, err)
 	}
-	if !l.Requested(t.Context(), "203.0.113.1") {
+	if d := l.Requested(t.Context(), "203.0.113.1"); d.Decided() && !d.Allowed {
 		t.Error("password reset request without a store was refused; want the declared fail-open policy")
+	} else if d.Decided() {
+		// The same outcome stated the other way round: an attempt this counter could
+		// not read carries no reading, so the Decision that allows it names no policy
+		// and no numbers. A limit stated off an unread row is the failure this checks.
+		t.Errorf("password reset request without a store stated the limit %+v; want no reading claimed", d)
 	}
 }

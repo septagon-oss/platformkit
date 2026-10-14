@@ -8,7 +8,7 @@ package internal_test
 // direction — that an operation which writes rows names the events its own
 // handler publishes — because the aggregate answer hides it: auth-password-change
 // can omit auth.session_revoked and the catalogue still lists the event, since
-// auth-session-revoke names it. Review round 3 named exactly that hole: the two
+// auth-session-revoke names it. The hole is exactly this: the two
 // password operations described ending sessions while their event list said
 // nothing about it, so a consumer that reads the served document to decide what
 // to listen for never learns that a password change is a sign-out.
@@ -66,6 +66,7 @@ var everyCommand = []writeCommand{
 		[]string{contracts.EventRecoveryCodesIssued}},
 	{"auth-token-issue", "Mints a key", []string{contracts.EventAPITokenIssued}},
 	{"auth-token-revoke", "Stops one key", []string{contracts.EventAPITokenRevoked}},
+	{"auth-token-revoke-self", "Ends the key that authenticated this request", []string{contracts.EventAPITokenRevoked}},
 }
 
 func TestEachCommandNamesTheEventsItsOwnDescriptionPromises(t *testing.T) {

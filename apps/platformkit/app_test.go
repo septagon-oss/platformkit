@@ -669,13 +669,13 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			t.Fatalf("%s %s: %v", op.Method, op.Path, err)
 		}
 		switch read.Kind {
-		case "public", "signed_in", "any_credential":
+		case "public", "signed_in", "any_credential", "bearer_key":
 		case "permission", "operator_permission":
 			if read.Permission == "" {
 				t.Errorf("%s %s requires a permission with no name", op.Method, op.Path)
 			}
 		default:
-			t.Errorf("%s %s declares %q, which is not one of the five", op.Method, op.Path, read.Kind)
+			t.Errorf("%s %s declares %q, which is not one of the six", op.Method, op.Path, read.Kind)
 		}
 		kinds[read.Kind]++
 	}
@@ -686,7 +686,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	// going through kit/app's boot. What the fifth door is for is pinned where the
 	// rule lives, by kit/httpx's scoped-credential cases, and at the live
 	// composition by TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom.
-	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission"} {
+	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission", "bearer_key"} {
 		if kinds[kind] == 0 {
 			t.Errorf("no operation declares %q", kind)
 		}
@@ -1819,10 +1819,14 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db reads a repeated version only inside one owner: the kernel's
 	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
 	// under two owners, and the only thing that says so is the one map below that
-	// counts every shipped file under one key. modules/audit's 48 and 49 are this
-	// rule's newest customer: the append-only trail and its retention marks were
-	// numbered 41 and 42 while the branch was open, and main took 41 for the kernel's
-	// own outbox baggage and 42 for modules/content's body characters underneath it.
+	// counts every shipped file under one key. T-0231's four are this rule's newest
+	// customer: they arrived at 000044, 000045, 000046 and 000047, main took 000046 for
+	// its own SAML provider columns in between, and the flattened fixture below reads
+	// one version as one row whatever the owner, so they are 000058, 000059, 000060 and
+	// 000061. modules/audit's 48 and 49 are the customer before them: the append-only
+	// trail and its retention marks were numbered 41 and 42 while the branch was open,
+	// and main took 41 for the kernel's own outbox baggage and 42 for modules/content's
+	// body characters underneath it.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
 	// merged as, for the reason this paragraph has now recorded six times: this fixture
@@ -1840,10 +1844,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// for modules/audit's append-only trail and its retention marks — and two files at
 	// one version under the one owner `audit` is a refusal in kit/db before it is ever
 	// a ledger row. modules/scim's group, mapping and person tables arrived on their
-	// branch as 000044, then as 000054, and are 000058 here: main took 000044 for
-	// modules/file's image dimensions while that branch was open, then took 000054
-	// twice more for modules/file's variants and modules/site's default accent, and
-	// 000058 continues past 000057, the highest number any owner holds at the commit
+	// branch as 000044, then as 000054, and are 000063 here: main took 000044 for
+	// modules/file's image dimensions while that branch was open, then took 000054 twice
+	// more for modules/file's variants and modules/site's default accent, then 000058 to
+	// 000062 for its own ledger lock, refusal, placement and idempotency files, and
+	// 000063 continues past 000062, the highest number any owner holds at the commit
 	// this merge lands.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
@@ -1852,6 +1857,20 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// The new release, through the path a person runs: bootstrap migrates with
 	// the composed sources before it writes the first tenant.
 	install(t, path)
+	// And the rest of the convergence, which is the same path: 000061 sits behind 000060,
+	// the release's placement window, and kit/db's planOwner bounds a phase=data file only
+	// when nothing of its owner is pending behind it — so this boot stops at the window and
+	// the two steps that finish a release take it: the drain the worker's first tick runs,
+	// then the migration again for the file that waited behind it. That trio is what
+	// `pkit migrate --drain` runs (apps/platformkit/migrate.go) and what
+	// scripts/rehearse_migrations.sh measures. The ledger below is the ledger of the
+	// converged installation, and the count it must reach is every file the release ships.
+	if err := app.Drain(t.Context(), cfg, compose(cfg).modules); err != nil {
+		t.Fatalf("the drain that finishes the upgrade: %v", err)
+	}
+	if err := app.Migrate(t.Context(), cfg, compose(cfg).modules); err != nil {
+		t.Fatalf("the migration behind the drain: %v", err)
+	}
 
 	owners := map[int64]string{}
 	ledger(owners, "SELECT version, owner FROM schema_migrations")

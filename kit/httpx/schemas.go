@@ -87,6 +87,11 @@ type Resource struct {
 	// means all five. A shell that rendered a door per verb — New, Edit, Delete —
 	// reads this, and a door behind which no route answers is not a door.
 	Operations []CRUD
+	// CommandsOnly says the resource mounts none of the five and exists for its
+	// commands alone: Offers answers false for every verb, and the catalogue
+	// lists it, with `operations: []`, to a caller who may call one of them and
+	// to nobody else. Operations is then ignored.
+	CommandsOnly bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
 	// Present is what this resource's author said about how it reads. It is the
@@ -397,18 +402,21 @@ func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
 	}
 	g, asks := auth.grant()
 	if !asks {
-		// signed_in, any_credential, or a guard nobody declared. Membership is the
-		// whole answer for the first two — with the ceiling rule below between them —
-		// and no answer at all for the third, which is refused the way the middleware
-		// refuses it: an undeclared guard admits nobody.
+		// signed_in, any_credential, bearer_key, or a guard nobody declared.
+		// Membership is the whole answer for the first two — with the ceiling rule
+		// below between them — a key is for the third, and the last is refused the
+		// way the middleware refuses it: an undeclared guard admits nobody.
 		if _, hasTenant := tenancy.FromContext(ctx); !hasTenant {
 			return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 		}
 		if !recognised(ctx) {
 			return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
 		}
-		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential {
+		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential && auth.kind != kindBearerKey {
 			return problem.New(http.StatusForbidden, CodeUndeclared+": this operation declares no authorization")
+		}
+		if p, _ := tenancy.PrincipalFrom(ctx); auth.kind == kindBearerKey && p.TokenID == uuid.Nil {
+			return problem.New(http.StatusForbidden, CodeDenied+": this acts on the key that authenticated the request, and a session carries none")
 		}
 		// The middleware's ceiling rule, asked of the same two declarations here: a
 		// signed-in closure spends the caller's whole authority, so a credential that

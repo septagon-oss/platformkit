@@ -1,8 +1,8 @@
 package httpx_test
 
 // The guards inside the huma chain answer with API.refuse, and this is the file that
-// holds what that means at the level of this package — the level the reviewer's case
-// in ui/page cannot reach, because that one composes a shell and asks whether the
+// holds what that means at the level of this package — the level the page cases
+// in ui/page cannot reach, because those compose a shell and ask whether the
 // person was shown a translated page.
 //
 // What is being held is one rule with two halves. A refusal that runs ahead of a
@@ -14,10 +14,10 @@ package httpx_test
 // to commit from the status of the response, so a refusal written straight to the
 // writer without saying its verdict to the context is rolled forward as an undecided
 // response and replaced by a 500. The person asking for a page then gets an outage,
-// which is the shape of the second review's finding 1 and the trap its own trial fix
-// fell into. Every case below therefore asserts the status as loudly as the shape.
+// which is the shape a refusal answers with when the page fails, and the trap a
+// trial fix fell into. Every case below therefore asserts the status as loudly as the shape.
 //
-// The fourth review found the rule's other half unwritten: one *answer*. A refusal is
+// The rule has an other half: one *answer*. A refusal is
 // one document — the renderer's page, or the one problem document httpx.Fault's opt-out
 // promises — and the guards are held to it at both ends of that opt-out below, because
 // refuse once asked the kernel-side writer and then wrote huma's copy after it, which
@@ -366,7 +366,7 @@ func guardAsk(t *testing.T, router http.Handler, method, authority, path string,
 	return w
 }
 
-// oneAnswer is the fourth review's finding in one place: a guard decides one verdict and
+// oneAnswer is the rule in one place: a guard decides one verdict and
 // writes one answer. Either the renderer's page, or the one problem document a declining
 // renderer opted into — never the page and the document, and never the document twice.
 func oneAnswer(t *testing.T, res *httptest.ResponseRecorder, want int, code string, page bool, asked int) {
@@ -524,7 +524,7 @@ func TestEveryGuardRefusalInTheChainIsOneDocument(t *testing.T) {
 // answer broke the last of those: two documents under one length, and reading the whole
 // of what the client was promised came back "invalid character '{' after top-level
 // value", a refusal no client can classify. The length is asserted alongside it because
-// the review measured the defect at the wire and this is the case that keeps measuring
+// the defect was measured at the wire and this is the case that keeps measuring
 // it there rather than in a recorder.
 func TestAGuardRefusalTheRendererDeclinesIsOneDocumentOfTheLengthItPromises(t *testing.T) {
 	api, router := guardKernel(t, guardSetup{allow: false, limiter: &window{allow: 0}}, (&countedFault{}).render)
