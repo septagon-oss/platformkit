@@ -1,6 +1,9 @@
 package main
 
 import (
+	"embed"
+	"io/fs"
+
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
@@ -69,5 +72,30 @@ func catalogues() xtext.Catalog {
 		site.Catalogue(),
 		task.Catalogue(),
 		tenant.Catalogue(),
-		user.Catalogue()), "en-XA")
+		user.Catalogue(),
+		// This product's own words, last: whatever a layer already owns it ships,
+		// this holds only what no layer writes — the way out of the workspace this
+		// composition names.
+		product()), "en-XA")
+}
+
+// productMessages is this composition's copy as files, one per locale. There is no
+// en.json, and that is the loader's rule rather than an omission: the English of a
+// label is the string the composition passes as the readable fallback, so the source
+// language is worded where it is used and only the translation needs a file.
+//
+//go:embed messages
+var productMessages embed.FS
+
+// product is the composition's own catalogue source: the words the reference product
+// writes for a control no module owns. It claims no prefix — a client's catalogue is
+// composed after this one, and re-wording what the reference product says is that
+// client's ordinary decision — and a deployment that ships no file of its own reads
+// the fallback in the Go source instead.
+func product() xtext.Source {
+	files, err := fs.Sub(productMessages, "messages")
+	if err != nil {
+		panic("apps/platformkit: its messages directory is not in the binary: " + err.Error())
+	}
+	return xtext.Source{FS: files, Name: "apps/platformkit"}
 }

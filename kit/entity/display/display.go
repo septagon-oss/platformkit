@@ -55,8 +55,9 @@ func Text(v any) string {
 // a number and an instant are what the reader's language writes rather than what the
 // row carries, so a generated record page with a composed catalogue asks the
 // catalogue instead — ui/resource's fieldValue, at screens.boolean_true,
-// screens.boolean_false, screens.number and screens.datetime — and falls back to
-// what is returned here. A shell with no catalogue renders exactly these bytes.
+// screens.boolean_false, screens.integer, screens.number and screens.datetime —
+// and falls back to what is returned here. A shell with no catalogue renders
+// exactly these bytes.
 func Display(f entity.Field, v any) string {
 	switch {
 	case f.Type == entity.TypeBool:

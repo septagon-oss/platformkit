@@ -187,6 +187,11 @@ func faultShell(c composition) page.Shell {
 		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
+		// The label of the way out is this product's copy, so it is named here and
+		// answered in apps/platformkit/messages: a Portuguese person refused a page
+		// is offered the way back in Portuguese, and the English above is what a
+		// deployment that ships no copy for the key prints.
+		BackKey: "app.back.workspace",
 		// Who may hand out what the page refused, as a role and never as a name:
 		// the grant that gates role management is the auth module's fact, and its
 		// label is that module's words, read off the manifest that defines it.

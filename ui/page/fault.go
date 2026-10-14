@@ -203,7 +203,10 @@ func (s Shell) refusalLocale(ctx context.Context, r *http.Request, req Request) 
 
 // FaultHandler builds the kernel's failure renderer for one shell. Back and BackLabel
 // are the shell's own, so the page offers the way out that exists in that application:
-// a generated admin shell sends a stranger to its sign-in; a public site sends them home.
+// a generated admin shell sends a stranger to its sign-in; a public site sends them
+// home. BackKey, when the shell names one, is the entry that label is worded under —
+// the way out in the reader's language rather than in the language whoever wired the
+// shell writes.
 //
 // It returns false — leaving the JSON body — for a shell with no frame, because a page
 // with no chrome is not a page and a kernel that invented one here would be designing
@@ -226,7 +229,7 @@ func FaultHandler(s Shell) httpx.Fault {
 		req.Locale = loc
 		v, ok := granted(r, loc, status, p.Detail, requestID(p.Instance), s)
 		if !ok {
-			v = fault(status, p.Detail, p.Refusal, loc, requestID(p.Instance), s.Back, s.BackLabel)
+			v = fault(status, p.Detail, p.Refusal, loc, requestID(p.Instance), s.Back, s.backLabel(loc))
 		}
 
 		body := s.Frame(ctx, req, v.Body)
@@ -388,7 +391,7 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 		line = detail + " (request " + reference + ")"
 	}
 	p := document.RefusalProps{Status: status, Title: faultTitle(loc, status),
-		Sentence: line, Home: s.Back, HomeLabel: s.BackLabel}
+		Sentence: line, Home: s.Back, HomeLabel: s.backLabel(loc)}
 	if ref.Code == httpx.CodePolicyDenied {
 		p.Missing, _ = word(loc, "fault.holds_the_row",
 			"You already hold what this needs; this row's own rule refused it: %s", ref.Reason)
