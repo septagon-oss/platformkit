@@ -145,6 +145,16 @@ type Content struct {
 	// rather than to whatever happens to be saved next.
 	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" i18n:"translatable" doc:"The content itself, in Markdown"`
 
+	// CoverImageID is the picture this page opens on: a file id and nothing
+	// else. There is no foreign key and no reference hint, for the reason the site
+	// logo's column records — this module must never name modules/file, and a
+	// picture that has been deleted is a page that renders without one rather than
+	// a page that cannot be read. Which file it is, and for whom, the file
+	// module's own ledger answers: the write that names an id files the use in the
+	// same transaction that wrote the row, so the sweep that reads that ledger
+	// knows this page is showing it.
+	CoverImageID *uuid.UUID `json:"coverImageId,omitempty" gorm:"column:cover_image_id;type:uuid" format:"uuid" ui:"present:image;label:Cover" doc:"File id of the cover picture"`
+
 	// Kind and Status are closed sets; the enum tag is what a form renders as a
 	// select and what Validate refuses a value outside.
 	Kind   string `json:"kind" gorm:"type:varchar(10);not null;default:'post'" enum:"page,post" ui:"widget:select;label:Type" doc:"page or post" default:"post" required:"false"`

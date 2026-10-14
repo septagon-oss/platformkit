@@ -53,6 +53,15 @@
       "": "Despublicar"
     }
   },
+  "hints.content/content.field.coverImageId.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Capa",
+    "plural": {
+      "": "Capa"
+    }
+  },
   "hints.content/content.field.kind.label": {
     "references": [
       "modules/content/module.go"
