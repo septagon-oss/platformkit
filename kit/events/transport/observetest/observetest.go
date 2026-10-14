@@ -31,9 +31,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
-// eventName is the event every case publishes. Its shape is what
-// transport.ValidName accepts; no transport here knows which module owns it.
-const eventName = "task.closed"
+// EventName is the event every case publishes. It names no module on purpose: a
+// durable consumer filters an event name across every tenant, and the stream
+// retains what it was fed, so a conformance suite that published a real event
+// would add its own traffic to whatever the module owning that name is testing
+// against the same broker. This name belongs to the harness and to nothing else,
+// and a provider's own case that needs to write one of these events by hand uses
+// the same constant rather than a spelling of its own.
+const EventName = "observetest.watched"
 
 // arrival is how long a case waits for a notice it expects before it calls the
 // transport broken. It is generous because a broker on another host answers in
@@ -65,6 +70,12 @@ type Deps struct {
 	// It is the provider's own fact — a broker's fan-out latency is not something
 	// a case may guess — and every case that asserts absence waits it.
 	Quiet func() time.Duration
+	// App is the slug the named deployment arm runs as, and the fixture namespace
+	// of the provider that owns it: on a shared broker the cases publish there, so
+	// the provider picks a space nothing else subscribes in and clears it the way
+	// its own fixture does. The in-process provider writes no address and reads
+	// this only as the app stamped into the event's own claim.
+	App appname.Name
 }
 
 // Run runs every case as a subtest of t, once for a deployment that names its app
@@ -76,7 +87,10 @@ func Run(t *testing.T, d Deps) {
 	if d.Name == "" || d.Transport == nil || d.Processes == nil || d.Quiet == nil {
 		t.Fatalf("%s: observetest.Run needs Name, Transport, Processes and Quiet", d.Name)
 	}
-	for _, app := range []appname.Name{appname.Name(""), appname.MustParse("acme")} {
+	if !d.App.Named() {
+		t.Fatalf("%s: observetest.Run needs the app slug its named arm deploys as", d.Name)
+	}
+	for _, app := range []appname.Name{appname.Name(""), d.App} {
 		label := "an app-less deployment"
 		if app.Named() {
 			label = "app " + app.String()
@@ -180,11 +194,11 @@ func observe(t *testing.T, tr transport.Transport, tenant uuid.UUID, name string
 func publish(t *testing.T, tr transport.Transport, app appname.Name, tenant uuid.UUID) transport.Event {
 	t.Helper()
 	ev := transport.Event{
-		ID: uuid.New(), Name: eventName, App: app, TenantID: tenant,
+		ID: uuid.New(), Name: EventName, App: app, TenantID: tenant,
 		At: time.Now().UTC(), Payload: json.RawMessage(`{"case":"observation"}`),
 	}
 	if err := tr.Publish(t.Context(), ev); err != nil {
-		t.Fatalf("publish %s in tenant %s: %v", eventName, tenant, err)
+		t.Fatalf("publish %s in tenant %s: %v", EventName, tenant, err)
 	}
 	return ev
 }
@@ -196,7 +210,7 @@ func receivesOnlyItsOwnTenant(t *testing.T, d Deps, app appname.Name) {
 	tr := provider(t, d, app)
 	a, b := uuid.New(), uuid.New()
 
-	inA, inB := observe(t, tr, a, eventName), observe(t, tr, b, eventName)
+	inA, inB := observe(t, tr, a, EventName), observe(t, tr, b, EventName)
 	publish(t, tr, app, b)
 	inA.settles(t, d, 0, "a watch on the other tenant")
 	inB.got(t, d, "a watch on the publishing tenant")
@@ -216,7 +230,7 @@ func receivesOnlyItsOwnTenant(t *testing.T, d Deps, app appname.Name) {
 func bothWatchesSeeOnePublish(t *testing.T, d Deps, app appname.Name) {
 	tr := provider(t, d, app)
 	tenant := uuid.New()
-	first, second := observe(t, tr, tenant, eventName), observe(t, tr, tenant, eventName)
+	first, second := observe(t, tr, tenant, EventName), observe(t, tr, tenant, EventName)
 	ev := publish(t, tr, app, tenant)
 
 	for i, w := range []*watch{first, second} {
@@ -234,9 +248,9 @@ func stopEndsDelivery(t *testing.T, d Deps, app appname.Name) {
 	tr := provider(t, d, app)
 	tenant := uuid.New()
 	w := newWatch()
-	stop, err := tr.Observe(t.Context(), tenant, eventName, w.fn)
+	stop, err := tr.Observe(t.Context(), tenant, EventName, w.fn)
 	if err != nil {
-		t.Fatalf("observe %s in tenant %s: %v", eventName, tenant, err)
+		t.Fatalf("observe %s in tenant %s: %v", EventName, tenant, err)
 	}
 	publish(t, tr, app, tenant)
 	w.got(t, d, "a watch that has not been stopped")
@@ -255,7 +269,7 @@ func noHistory(t *testing.T, d Deps, app appname.Name) {
 	tenant := uuid.New()
 	publish(t, tr, app, tenant)
 
-	observe(t, tr, tenant, eventName).settles(t, d, 0, "a watch started after the publish")
+	observe(t, tr, tenant, EventName).settles(t, d, 0, "a watch started after the publish")
 }
 
 // everyProcessIsNoticed is the deployment shape: two connections to one broker,
@@ -267,7 +281,7 @@ func noHistory(t *testing.T, d Deps, app appname.Name) {
 func everyProcessIsNoticed(t *testing.T, d Deps, app appname.Name) {
 	a, b := pair(t, d, app)
 	tenant := uuid.New()
-	wa, wb := observe(t, a, tenant, eventName), observe(t, b, tenant, eventName)
+	wa, wb := observe(t, a, tenant, EventName), observe(t, b, tenant, EventName)
 	ev := publish(t, a, app, tenant)
 
 	for i, w := range []*watch{wa, wb} {
@@ -287,7 +301,7 @@ func everyProcessIsNoticed(t *testing.T, d Deps, app appname.Name) {
 func publishesAndObservesOneAddress(t *testing.T, d Deps, app appname.Name) {
 	tr := provider(t, d, app)
 	tenant := uuid.New()
-	w := observe(t, tr, tenant, eventName)
+	w := observe(t, tr, tenant, EventName)
 	ev := publish(t, tr, app, tenant)
 
 	if got := w.got(t, d, "a watch on the address this transport publishes at"); got.ID != ev.ID {

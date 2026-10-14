@@ -68,6 +68,12 @@ func TestObservationConformance(t *testing.T) {
 			return a, b, func() { closeA(); closeB() }
 		},
 		Quiet: func() time.Duration { return 500 * time.Millisecond },
+		// This package's own space on the shared broker, and the one stream_fixture
+		// clears before any case runs: the unnamed arm publishes at an address no app
+		// token owns, and durable consumers read the stream from the beginning, so
+		// traffic published under a name somebody else subscribes would be read as
+		// theirs by a later case — the failure mode that file names.
+		App: appname.MustParse("observation"),
 	})
 }
 
@@ -90,11 +96,11 @@ func TestObservationConformance(t *testing.T) {
 // ends by publishing one real event and requiring it.
 func TestAMessageAtAnAddressItsDocumentDoesNotClaimIsNotDelivered(t *testing.T) {
 	url := testNATSURL(t)
-	const name = "task.closed"
-	acme := appname.MustParse("acme")
+	const name = observetest.EventName
+	fixture := appname.MustParse("observation")
 	watched, claimed := uuid.New(), uuid.New()
 
-	tr, closeTransport := observeTransport(t, url, acme)
+	tr, closeTransport := observeTransport(t, url, fixture)
 	defer closeTransport()
 	nc, err := nats.Connect(url)
 	if err != nil {
@@ -120,12 +126,12 @@ func TestAMessageAtAnAddressItsDocumentDoesNotClaimIsNotDelivered(t *testing.T) 
 	}{
 		{"an address naming no app, with a document claiming one",
 			transport.Subject(watched, name),
-			transport.Event{Name: name, App: acme, TenantID: watched}},
+			transport.Event{Name: name, App: fixture, TenantID: watched}},
 		{"a document claiming another tenant at the watched address",
-			transport.AppSubject(acme, watched, name),
-			transport.Event{Name: name, App: acme, TenantID: claimed}},
+			transport.AppSubject(fixture, watched, name),
+			transport.Event{Name: name, App: fixture, TenantID: claimed}},
 		{"a document naming no app at this app's own address",
-			transport.AppSubject(acme, watched, name),
+			transport.AppSubject(fixture, watched, name),
 			transport.Event{Name: name, TenantID: watched}},
 	} {
 		body, err := json.Marshal(forgery.ev)
@@ -147,7 +153,7 @@ func TestAMessageAtAnAddressItsDocumentDoesNotClaimIsNotDelivered(t *testing.T) 
 	}
 
 	// The same watch, the same second, one event this transport published itself.
-	genuine := transport.Event{ID: uuid.New(), Name: name, App: acme, TenantID: watched,
+	genuine := transport.Event{ID: uuid.New(), Name: name, App: fixture, TenantID: watched,
 		At: time.Now().UTC(), Payload: json.RawMessage(`{"case":"observation"}`)}
 	if err := tr.Publish(t.Context(), genuine); err != nil {
 		t.Fatalf("publish the real %s: %v", name, err)

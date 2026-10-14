@@ -34,5 +34,9 @@ func TestObservationConformance(t *testing.T) {
 			return bus, bus, func() {}
 		},
 		Quiet: func() time.Duration { return 5 * time.Millisecond },
+		// The slug is stamped into the event's own claim and nothing else: this
+		// transport routes by tenant and event name inside one process, so it writes
+		// no address that could carry an app and has no address space to clear.
+		App: appname.MustParse("inprocess"),
 	})
 }

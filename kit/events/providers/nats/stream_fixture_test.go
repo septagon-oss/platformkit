@@ -70,4 +70,9 @@ func TestMain(m *testing.M) {
 var fixtureApps = []appname.Name{
 	appname.MustParse("acme"),
 	appname.MustParse("acme-billing"),
+	// The observation cases publish here, and the unnamed arm of them publishes at
+	// an address no app token owns at all — which no purge of an app space reaches.
+	// The event they write names no module, so nothing else filters it; this line is
+	// about the messages still sitting on the stream when the next run starts.
+	appname.MustParse("observation"),
 }
