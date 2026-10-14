@@ -27911,6 +27911,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/password_resend_recovery_tenant_test.go",
+   "id": "modules/auth/internal/password_resend_recovery_tenant_test.go#TestRecoveredPasswordResendIsScopedToItsTenant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestRecoveredPasswordResendIsScopedToItsTenant",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/password_resend_recovery_test.go",
    "id": "modules/auth/internal/password_resend_recovery_test.go#TestFailedPasswordResendAllowsImmediateRecovery",
    "kind": "go",
@@ -52044,7 +52063,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1271,
+  "files": 1272,
   "forge_runs": [
    408,
    413,
@@ -52078,7 +52097,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2266,
+   "behaviour": 2267,
    "composition": 275,
    "contract": 19,
    "journey": 64
@@ -52097,9 +52116,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2624,
+  "rows": 2625,
   "tiers": {
-   "merge": 1621,
+   "merge": 1622,
    "nightly": 64,
    "push": 939
   },
@@ -52107,13 +52126,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1056,
+   "keep": 1057,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2277,
+   "keep": 2278,
    "keep-rewrite": 132,
    "merge": 215
   }
