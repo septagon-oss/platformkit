@@ -218,12 +218,16 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
 	// no example, schema, icon, class or notice.
 	//
-	// The rich text field's chrome joins @layer components, and the editing surface
-	// takes the published page's prose rules with it.
-	//
-	// The digest below is that measurement of this tree, printed by the refusal
-	// above the re-measure and copied from it.
-	if legacy.SHA256 != "5004fa12de463e88646fdb918286ee332c335a402a8d20a2b4b0a4077d1ba99c" {
+	// The merge lands main's rich text field's chrome on top of that move: its rules
+	// join @layer components, and the editing surface takes the published page's prose
+	// rules with them. Measured by exporting this tree and the tree this branch held
+	// before the merge and walking both documents leaf by leaf: 99,906 leaves each,
+	// none added, none removed, and exactly two changed — /css, which gains 197 lines
+	// and loses none, every one of them a [data-richtext…] rule, and /sha256, the
+	// digest of that CSS. No example's HTML, no token, theme, notice, icon, schema or
+	// font policy moves. The digest below is that measurement of this merged tree,
+	// printed by the refusal above the re-measure and copied from it.
+	if legacy.SHA256 != "77f1fd399a58fd14ff5eef4f524243805d3377ccdec5135e792f350b37f6607a" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
