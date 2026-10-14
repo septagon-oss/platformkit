@@ -66,6 +66,7 @@ var everyCommand = []writeCommand{
 		[]string{contracts.EventRecoveryCodesIssued}},
 	{"auth-token-issue", "Mints a key", []string{contracts.EventAPITokenIssued}},
 	{"auth-token-revoke", "Stops one key", []string{contracts.EventAPITokenRevoked}},
+	{"auth-token-revoke-self", "Ends the key that authenticated this request", []string{contracts.EventAPITokenRevoked}},
 }
 
 func TestEachCommandNamesTheEventsItsOwnDescriptionPromises(t *testing.T) {

@@ -82,6 +82,10 @@ var deviceContractPaths = []struct {
 	// it mints it at is part of what a generated client needs to exist at.
 	{operation: "auth-token-issue", method: http.MethodPost, path: "/api/v1/auth/tokens",
 		body: `{"name":"The device","scopes":["task:read"]}`},
+	// The door a device signs out through, by retiring the key it holds. The
+	// probe is the administrator's session, which the command refuses with 403:
+	// the address answers, and nothing is revoked.
+	{operation: "auth-token-revoke-self", method: http.MethodPost, path: "/api/v1/auth/tokens/revoke-self"},
 }
 
 // TestTheOpenAPIDocumentIsTheCompositionServed is the golden and the gate.

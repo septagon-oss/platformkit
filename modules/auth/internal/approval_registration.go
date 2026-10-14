@@ -29,8 +29,8 @@ func RegisterApprovalRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, p
 		if !httpx.SameSite(r) {
 			return nil, problem.New(http.StatusForbidden, "request an account from the registration page itself")
 		}
-		if !svc.MayAsk(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests, "too many account requests from this address; wait and try again")
+		if err := asked(ctx, svc.MayAsk(ctx, ClientOf(r).IP), "too many account requests from this address; wait and try again"); err != nil {
+			return nil, err
 		}
 		if err := in.validate(); err != nil {
 			return nil, err

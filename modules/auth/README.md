@@ -101,6 +101,20 @@ module's `contracts/` rather than here, so a second module that mails outside a
 notice records it and answers about it the same way instead of inventing a scrubber
 of its own.
 
+For a key retiring itself: **Reused** — `contracts.Tokens` (extended, not
+paralleled), `RevokeToken`'s two-column read and guarded `UPDATE`,
+`EventAPITokenRevoked` and its payload unchanged, the bearer resolution in
+`bearerCaller`, `tenancy.Principal`, and the catalogue's `AddCommand`.
+**Added** — `Principal.TokenID`, because nothing on a principal said which key was
+acting; `RevokeOwnToken` and `ErrCallerWithoutKey`, because no command could take
+"the caller's own key" without taking an id; the `auth-token-revoke-self` door;
+the kernel's `httpx.BearerKey()`, because no declaration admitted a key and
+refused a session; a catalogue entry for a resource read by nobody, because a
+command could only be found on a readable resource; and the fake's token half
+with `authtest.RunTokens`, because no token conformance suite existed. **Made reusable:** `authtest.RunTokens` and its `TokenFixture`, for
+any second implementation of `contracts.Tokens`, and `Principal.TokenID` for any
+later command that must act on the credential rather than on its holder.
+
 ## The record a mail leaves
 
 Two mails go out of this module with no notice behind them — a set-password
@@ -437,6 +451,7 @@ impersonate their browser.
 POST /api/v1/auth/tokens              SignedIn   mint a key; the token is in this response and nowhere else
 GET  /api/v1/auth/tokens              SignedIn   the person's own keys: name, scopes, expiry, last use, revoked
 POST /api/v1/auth/tokens/{id}/revoke  SignedIn   stop one key, leaving the person's own sessions alone
+POST /api/v1/auth/tokens/revoke-self  BearerKey      the presented key retires itself; 204, no id, no grant
 ```
 
 A key is a **narrowed** credential, never an escalated one. Its scopes are
@@ -464,8 +479,10 @@ back to its holder with two POSTs. `kit/httpx/scoped_credential_test.go` pins bo
 halves at the kernel, and `scoped_key_is_held_to_its_scope_test.go`
 drives them at the routes.
 
-The rule stops there, at the operations that spend it, and one operation in this
-installation names no permission because there is none to name: `GET
+The rule stops there, at the operations that spend it. This module's `POST
+/tokens/revoke-self` declares `httpx.BearerKey()`, the single credential door a
+key may spend, because what it spends is that key and nothing of its holder's
+(below). One operation names no permission because there is none to name: `GET
 /api/v1/app/resources`, mounted by `kit/app`, declares `httpx.AnyCredential()` and
 answers a key as readily as a cookie — because it spends nothing on anybody's
 credentials. All it does is ask the authorizer, for this caller, which resources
@@ -497,9 +514,18 @@ cookies at every one of them. `POST /logout` is not such a door: ending a sessio
 is `httpx.SignedIn()` work on the caller's own credentials, so the kernel refuses
 it to a bearer caller ahead of the handler, and no cleared cookie is ever on offer
 — which is the same verdict as before, stated as it is now reached. A key is
-stopped with `POST /tokens/{id}/revoke`, which is a session's work for the same
-reason: a credential that could revoke itself would be a credential that could
-revoke its holder's other keys.
+stopped by id with `POST /tokens/{id}/revoke`, which is a session's work for the
+same reason. The one exception is `POST /tokens/revoke-self`
+(`auth-token-revoke-self`, `httpx.BearerKey()`): it takes no id, ends exactly
+the key whose `tenancy.Principal.TokenID` authenticated the request, needs no
+management grant, and answers 204. A key that can name only itself cannot reach
+its holder's other keys, so a device can sign out by destroying the credential it
+holds. A session is refused it with 403, and a dead or absent key is answered
+401 `AUTH_ANONYMOUS` with a Bearer challenge before the handler. The catalogue
+lists the command for a key on an `auth/token` entry with `"operations": []` —
+nothing about keys is readable there — and lists nothing of it for a session. Called in-process for a key already gone, the command
+answers `crud.ErrNotFound`, where `RevokeToken` answers success —
+[ADR 0020](../../docs/adr/0020-a-credential-may-retire-itself.md) says why.
 
 ### Open here, stated rather than approximated
 
@@ -509,11 +535,10 @@ revoke its holder's other keys.
   which is wider than a scoped key may act as — reporting that to a narrowed
   caller would be a `/me` that lies about the caller's own authority. A
   "who am I, as this key" answer (the brief's `Identity.Token`) is unbuilt.
-* Every route in this module is a session's work, and the one door a bearer key
-  reaches in this installation is the kernel's: the resource catalog, which names
-  the resources the key's own scopes open. A key therefore finds its work by
-  reading `/api/v1/app/resources`, and finds nothing here to manage itself with —
-  no self-revocation, no `GET /api/v1/auth/tokens` to see what a holder minted.
+* Every route in this module but one is a session's work. A bearer key reaches
+  the kernel's resource catalog, which names the resources the key's own scopes
+  open, and this module's `POST /tokens/revoke-self`; it finds nothing else here
+  to manage itself with — no `GET /api/v1/auth/tokens` to see what a holder minted.
 * No page: keys are managed through the JSON routes.
 * Uses are not audited, and `last_used_at` is the record a person reads; the
   trail keeps the two facts that mean something about a key, that it was made and

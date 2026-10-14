@@ -104,12 +104,15 @@ func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, co
 		Method:      http.MethodPost,
 		Path:        "/challenge/verify",
 		Summary:     "Answer a second factor",
-		Description: "The second half of a sign-in, and only ever of one. The caller is somebody /login or the provider leg just refused to finish without a code, and that refusal is what makes this answer spendable; a code presented by itself - a recovery code from a leaked file, a TOTP read out to whoever phished it - is refused as one answer and at one cost with a wrong code, and spends nothing. For an address that was just refused, this takes the address and the code, or the address and a recovery code, and opens the session the first half had already earned. A wrong code, a replayed step, a spent recovery code, an address with no factor and an address nobody has are one answer at one cost.",
+		Description: "The second half of a sign-in, and only ever of one — an answer that never reached the caller spends the step again rather than replaying the session it opened. The caller is somebody /login or the provider leg just refused to finish without a code, and that refusal is what makes this answer spendable; a code presented by itself - a recovery code from a leaked file, a TOTP read out to whoever phished it - is refused as one answer and at one cost with a wrong code, and spends nothing. For an address that was just refused, this takes the address and the code, or the address and a recovery code, and opens the session the first half had already earned. A wrong code, a replayed step, a spent recovery code, an address with no factor and an address nobody has are one answer at one cost.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable},
-		Extensions: map[string]any{httpx.EventsExtension: []string{
-			contracts.EventLoggedIn, contracts.EventLoginFailed, contracts.EventRecoveryCodeUsed,
-		}},
+		Extensions: map[string]any{
+			httpx.EventsExtension: []string{
+				contracts.EventLoggedIn, contracts.EventLoginFailed, contracts.EventRecoveryCodeUsed,
+			},
+			mints: credential,
+		},
 	}, httpx.Public(), handleVerifyFactor(factors, cookies))
 }
 

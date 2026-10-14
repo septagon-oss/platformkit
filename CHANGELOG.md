@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+**A `widget:richtext` field is an editor now, and still a textarea.** The field
+draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
+link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
+only the pages that draw one field load, mounts the vendored Tiptap bundle on it and
+keeps the submitted value in step. Images upload to the file API by drag, paste or
+file pick; a record that keeps a write count autosaves against its own ETag and
+compares on a conflict, and one that does not keeps the draft on the device.
+`make richtext-bundle` rebuilds the bundle; `check-richtext-bundle` keeps it under
+150 KiB gzipped and equal to a fresh build. The browser cases cover typing, one
+surface, a draft kept through a refused save, images by pick and by paste, the alt
+prompt and the parsed round trips; storybook, gallery and mobile editing are owed.
+
+**A scoped credential may retire its own key.** `POST /api/v1/auth/tokens/revoke-self`
+(`auth-token-revoke-self`, the new `httpx.BearerKey()` declaration) ends exactly the key that authenticated the
+request and answers 204; a session is refused with 403, and a dead or absent key with 401 and a Bearer challenge
+— the kernel's one 401. The resource catalogue lists it on an `auth/token` entry with `"operations": []`: an
+resource declared `httpx.Resource.CommandsOnly` offers none of the five verbs and appears only to a caller who may
+call one of its commands. `tenancy.Principal` gains `TokenID`,
+set for a bearer caller and zero otherwise, and `modules/auth/contracts.Tokens` gains `RevokeOwnToken` and
+`ErrCallerWithoutKey` — an implementer of `Tokens` outside this repository must add the method.
+`authtest.RunTokens` is the conformance suite for `Tokens`. See
+[ADR 0020](docs/adr/0020-a-credential-may-retire-itself.md).
+
 **The delivery ledger moves onto its app's durable.** `kit/appname.Durable` puts the app in front of a
 consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an
 installation that sets `nats.app` after running without one finds every claim it already earned on the far
@@ -627,11 +650,11 @@ by construction. Both terms are counted over this composition rather than rememb
 an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
 the document the composition serves and which a committed case refuses to let drift
 from that file, and the two module terms are the jobs and subscriptions the
-composition's manifests register. That tally expressly does not count the four jobs
-this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge` and
-`schema-backfill` — nor the fifth, `ledger-move`, which only a deployment that names
-`nats.app` schedules and whose one pass renames every tenant's delivery ledger; the run
-span of each carries no tenant either, for the same
+composition's manifests register. That tally expressly does not count the five jobs
+this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge`,
+`idempotency-purge` and `schema-backfill` — nor the sixth, `ledger-move`, which only a
+deployment that names `nats.app` schedules and whose one pass renames every tenant's
+delivery ledger; the run span of each carries no tenant either, for the same
 reason `file-reconcile`'s does: each is one pass over every tenant's rows, so the one
 tenant it could name would name none of them.
 `file-reconcile` is the one module boundary that carries no tenant, not the only
