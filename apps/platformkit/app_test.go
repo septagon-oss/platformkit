@@ -669,13 +669,13 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			t.Fatalf("%s %s: %v", op.Method, op.Path, err)
 		}
 		switch read.Kind {
-		case "public", "signed_in", "any_credential":
+		case "public", "signed_in", "any_credential", "bearer_key":
 		case "permission", "operator_permission":
 			if read.Permission == "" {
 				t.Errorf("%s %s requires a permission with no name", op.Method, op.Path)
 			}
 		default:
-			t.Errorf("%s %s declares %q, which is not one of the five", op.Method, op.Path, read.Kind)
+			t.Errorf("%s %s declares %q, which is not one of the six", op.Method, op.Path, read.Kind)
 		}
 		kinds[read.Kind]++
 	}
@@ -686,7 +686,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	// going through kit/app's boot. What the fifth door is for is pinned where the
 	// rule lives, by kit/httpx's scoped-credential cases, and at the live
 	// composition by TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom.
-	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission"} {
+	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission", "bearer_key"} {
 		if kinds[kind] == 0 {
 			t.Errorf("no operation declares %q", kind)
 		}

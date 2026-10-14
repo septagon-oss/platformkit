@@ -68,6 +68,9 @@ type Fake struct {
 	ceremonies    map[uuid.UUID]*fakeCeremony
 	passkeySignIn bool
 
+	// keys is every bearer key issued, by id. See tokens.go.
+	keys map[uuid.UUID]*fakeKey
+
 	// proofs is the first-factor window: the address /login refused to finish,
 	// and when. See RequireFirstFactorProof.
 	proofs map[string]time.Time
@@ -85,12 +88,14 @@ func NewFake(users contracts.Users) *Fake {
 		factors:    map[uuid.UUID]*fakeFactor{},
 		ceremonies: map[uuid.UUID]*fakeCeremony{},
 		proofs:     map[string]time.Time{},
+		keys:       map[uuid.UUID]*fakeKey{},
 	}
 }
 
 var (
 	_ contracts.Service  = (*Fake)(nil)
 	_ contracts.Passkeys = (*Fake)(nil)
+	_ contracts.Tokens   = (*Fake)(nil)
 )
 
 // Published is the names of the events the fake would have emitted, in order.
@@ -346,10 +351,11 @@ func (f *Fake) Roles(_ context.Context, _ db.Tx[db.Tenant]) ([]*contracts.Role, 
 
 // SetRole mirrors internal.Service.SetRole, all three refusals included: a
 // permission nothing declares, an operator permission outside the operator's
-// own tenant, and the write that would leave the tenant with no role able to
-// change a role again. They are what the route promises to refuse, so the fake
-// refuses them.
-func (f *Fake) SetRole(_ context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+// own tenant, and the write that would leave the tenant with nobody able to
+// administer it again. They are what the route promises to refuse, so the fake
+// refuses them — and it refuses them through the same door the service calls,
+// asking the same user fake every consumer of this package already answers with.
+func (f *Fake) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
 	name, err := contracts.ValidRoleName(name)
 	if err != nil {
 		return nil, err
@@ -362,20 +368,30 @@ func (f *Fake) SetRole(_ context.Context, tx db.Tx[db.Tenant], name string, perm
 	f.mu.Lock()
 	was, existed := f.roles[name]
 	same := existed && slices.Equal([]string(was), []string(want))
-	// The third refusal, and the same rule: the last role that can administer
-	// roles cannot stop. The closure reads the map under the lock this holds.
+	// The third refusal, and the same rule as the service's: the people who could
+	// still sign in and administer this tenant, on both sides of this write. The
+	// closures read the map under the lock this holds.
 	err = contracts.CheckedAdministration(name, was, want, func() ([]*contracts.Role, error) {
 		others := make([]*contracts.Role, 0, len(f.roles))
 		for other, grants := range f.roles {
 			others = append(others, &contracts.Role{Name: other, Grants: grants})
 		}
 		return others, nil
+	}, func(names []string) ([]uuid.UUID, error) {
+		return f.Users.Holders(ctx, tx, names)
 	})
 	if err == nil {
 		f.roles[name] = want
 	}
 	f.mu.Unlock()
 	if err != nil {
+		if errors.Is(err, crud.ErrInvalid) {
+			// The rule refused it, and the fake records the name the service
+			// writes a row for, so a consumer testing against this map sees the
+			// same trail order the composed application produces. A read that
+			// failed refuses the write too and is not this rule refusing.
+			f.record(contracts.EventAdministrationRefused)
+		}
 		return nil, err
 	}
 	if !same {

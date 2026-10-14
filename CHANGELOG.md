@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+**A `widget:richtext` field is an editor now, and still a textarea.** The field
+draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
+link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
+only the pages that draw one field load, mounts the vendored Tiptap bundle on it and
+keeps the submitted value in step. Images upload to the file API by drag, paste or
+file pick; a record that keeps a write count autosaves against its own ETag and
+compares on a conflict, and one that does not keeps the draft on the device.
+`make richtext-bundle` rebuilds the bundle; `check-richtext-bundle` keeps it under
+150 KiB gzipped and equal to a fresh build. The browser cases cover typing, one
+surface, a draft kept through a refused save, images by pick and by paste, the alt
+prompt and the parsed round trips; storybook, gallery and mobile editing are owed.
+
+**A scoped credential may retire its own key.** `POST /api/v1/auth/tokens/revoke-self`
+(`auth-token-revoke-self`, the new `httpx.BearerKey()` declaration) ends exactly the key that authenticated the
+request and answers 204; a session is refused with 403, and a dead or absent key with 401 and a Bearer challenge
+— the kernel's one 401. The resource catalogue lists it on an `auth/token` entry with `"operations": []`: an
+resource declared `httpx.Resource.CommandsOnly` offers none of the five verbs and appears only to a caller who may
+call one of its commands. `tenancy.Principal` gains `TokenID`,
+set for a bearer caller and zero otherwise, and `modules/auth/contracts.Tokens` gains `RevokeOwnToken` and
+`ErrCallerWithoutKey` — an implementer of `Tokens` outside this repository must add the method.
+`authtest.RunTokens` is the conformance suite for `Tokens`. See
+[ADR 0020](docs/adr/0020-a-credential-may-retire-itself.md).
+
 **The delivery ledger moves onto its app's durable.** `kit/appname.Durable` puts the app in front of a
 consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an
 installation that sets `nats.app` after running without one finds every claim it already earned on the far
@@ -1186,24 +1209,37 @@ before its first read rather than after the read that decides. `ValidRoleName` a
 bounds a name at `contracts.MaxRoleName`, the 64 the route and the form already
 advertised and nothing underneath them enforced.
 
-**One lock, and what it does not buy.** Both floors take
+**One lock, and one rule behind it.** Both floors take
 `"administration/<tenant id>"` through
 `pg_advisory_xact_lock(hashtextextended(key, 0))` — the same literal written out in
 both modules rather than imported from one, pinned by a test on each side and by a
-test across them. That makes the two writes queue behind each other, in both orders,
-which is a real defect closed, and it is nothing more: **the two floors do not
-compose** into the property they are both for, which is that somebody who can still
-sign in holds a role granting `role:manage`. Nothing asks that question. Two sequences
-reach a tenant nobody can administer with every individual write permitted and no
-concurrency involved — create a role granting `role:manage`, give it to nobody, then
-empty the role everybody holds; or, with two administrators holding two such roles,
-strip one person's roles and then empty the other's role. The first is
-`TestTheTwoFloorsStillDoNotComposeIntoOneInvariant`, which asserts the hole and fails
-the day somebody closes it. The symmetric fix is named in
-`auth/contracts.CheckedAdministration` and is not in this release: auth would ask the
-composed question the way the user module already does, through a narrow capability
-the application supplies, so one property is checked once instead of two halves of it
-being checked separately.
+test across them. That makes the two writes queue behind each other, in both orders.
+What the queue was waiting for now exists: the two floors are one rule,
+`user/contracts.CheckedAdministration`, called by every path that can move the
+property — a role's grants, a person's roles, a deactivation, a deletion — with each
+door's own cheap gate about its own row in front of it. It judges two `Reach` values,
+the people who could sign in and administer this tenant before the write and the
+people it would leave, and it refuses the write that takes the last one away and
+never the write that finds none. `auth/contracts.CheckedAdministration` is now that
+rule's door on the roles side and asks `contracts.Users.Holders`, so it no longer
+counts a role nobody holds as an administrator; it reads those rows read-only, under
+the key it already held, and the lock-ordering argument in both files says so.
+`TestTheTwoFloorsStillDoNotComposeIntoOneInvariant` asserted the hole and is now
+`TestTheTwoFloorsComposeIntoOneInvariant`, which asserts the refusal, beside the
+racing pairs (two administrators standing down at once, two administering roles
+emptied at once, one of each across the module boundary) and
+`TestTheComposedCheckJudgesOneTenant`, which is the case that fails if the people a
+tenant is judged by ever stop belonging to that tenant. A refused write still writes
+nothing: the row, the domain event and the returned value all go back with the
+transaction, and the caller gets a 422 naming the rule and the grant that repairs it.
+The attempt is the one thing that survives, because a rolled-back lockout attempt that
+leaves no trace is a fact nobody can read afterwards: each door publishes one record
+outside the transaction it was refused in — `user.administration_refused` with the
+person, the door and the grant it would have taken, `auth.administration_refused` with
+the role and the grants either side — written the way `auth.login_failed` already is
+(`db.Detached`, the request's own connection, a two-second budget, logged and never
+returned), and kept by `modules/audit`, which audits a module by having subscribed to
+what it emits.
 
 How bad a lockout is depends on whose tenant it is, and the repair path is narrower
 than "there is one". `POST /api/v1/tenant/tenants/{id}/invite` runs in a system

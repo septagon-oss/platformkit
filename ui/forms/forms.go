@@ -32,6 +32,46 @@ type Field struct {
 	// both.
 	Help    string
 	Options []components.SelectOption
+	// Editor carries what a widget:richtext field's chrome needs beyond the
+	// field: the record's own address and the revision this form quotes, the key
+	// an unsaved draft is kept under, the route an image is uploaded to and the
+	// deployment's stated ceiling for one.
+	//
+	// Each is decided by whoever draws the form — ui/resource for a generated
+	// screen — and each is absent rather than guessed when it cannot be known:
+	// no Endpoint means no autosave and a draft kept on this device instead, no
+	// DraftKey means nothing is kept at all (a new record has no key to be kept
+	// under), no FileUpload means the session may not upload and the image entry
+	// is not drawn. A control the browser assembled out of guesses is a control
+	// that fails at the server instead of where the person can see why.
+	Editor Editor
+}
+
+// Editor is the rich text field's server-side answer to "what may this browser
+// do, and where". Empty fields mean the feature is off for this field; the glue
+// reads the attributes this data is drawn into and never invents a URL, a key or
+// a permission of its own.
+type Editor struct {
+	// Endpoint is the record's own REST address, and ETag the quoted revision this
+	// form was drawn from. Both empty means the resource takes no expected
+	// version, so the editor saves nothing as the author writes.
+	Endpoint, ETag string
+	// DraftKey is where an unsaved draft is kept in this browser, composed here
+	// from the tenant, the resource, the record and the field — never by the page.
+	DraftKey string
+	// FileUpload is the route an image is posted to, and Limits the sentence that
+	// states the formats and the ceiling before any refusal.
+	FileUpload, Limits string
+	// ImageSrc is where one stored file's bytes are read back, with {file} standing
+	// for the id an upload returned: the address the editor draws a picture from
+	// while the document keeps the pk-file reference it posts. Empty means no
+	// preview is drawn and a reference shows as it was written.
+	ImageSrc string
+	// Submitted says this render is the answer to a write the server refused, so its
+	// controls hold what the person posted rather than what the record holds. The
+	// browser keeps an unsaved draft through such a page: an echo of a refused
+	// submission is no evidence that anything was saved.
+	Submitted bool
 }
 
 // Model contains a form's already-read values and already-decided field errors.
