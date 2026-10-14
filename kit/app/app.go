@@ -39,6 +39,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/stream"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -1032,6 +1033,11 @@ func (a *App) composeGates(api *httpx.API) error {
 		if a.opts.AccessPage != nil {
 			a.opts.AccessPage(api.Surfaces("").App)
 		}
+	}
+	// The live door, on the same condition the catalog is mounted on: a worker
+	// process serves no HTTP surface at all, so it has no connection to hold open.
+	if a.opts.Role != Worker {
+		mountStream(api, a.streamHub(stream.NewRegistry(a.mods)), a.log)
 	}
 	if a.opts.WorkspaceCatalog != nil {
 		a.opts.WorkspaceCatalog(api)

@@ -60,6 +60,14 @@ const maxBuffer = 2 << 20
 func (b *buffer) WriteHeader(status int) {
 	b.withholdCookies()
 	if b.direct {
+		if b.status == status {
+			// The response is already on the wire with this status, so declaring it
+			// again is not a change. The caller that does it is the route that wrote its
+			// own response and then told the framework what it chose — a download, a
+			// stream — and net/http's complaint about the second call is a log line per
+			// connection about a difference that did not exist.
+			return
+		}
 		b.ResponseWriter.WriteHeader(status)
 		return
 	}
@@ -88,6 +96,21 @@ func (b *buffer) Flush() {
 	if f, ok := b.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// FlushError is Flush with the truth attached: this writer does its own work — the
+// withheld cookies taken off, the headers and the body sent — and then asks the
+// writer underneath in the form that can fail.
+//
+// Flush keeps its void signature, because that is http.Flusher's and callers outside
+// this package have always used it. But http.ResponseController consults FlushError
+// before Flusher, and before Unwrap: without this method a flush over a connection
+// that cannot flush reports success, and a stream is the one caller that would never
+// learn that its frames stopped arriving.
+func (b *buffer) FlushError() error {
+	b.withholdCookies()
+	b.send()
+	return flushError(b.ResponseWriter)
 }
 
 func (b *buffer) Unwrap() http.ResponseWriter { return b.ResponseWriter }

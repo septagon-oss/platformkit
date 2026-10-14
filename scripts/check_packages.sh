@@ -126,7 +126,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # caller makes with a key is kept on the request path the page layer shares,
         # so the record package is in the closure of everything that reaches the web
         # kernel. What stays out is the other direction: it links no HTTP.
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
