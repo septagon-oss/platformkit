@@ -464,10 +464,12 @@ type FileUse struct {
 	Field  string    `json:"field" gorm:"type:varchar(64);not null" maxLength:"64" doc:"The field of that record" readOnly:"true"`
 	Locale string    `json:"locale" gorm:"type:varchar(35);not null" maxLength:"35" doc:"The locale of the body that names it" readOnly:"true"`
 	// Public says the record this row belongs to was showing the file to somebody
-	// who has not signed in. One command writes it — SetShown, called by the module
-	// that owns that record's public face — and files.visibility is recomputed from
-	// it: a file the ledger speaks about is public if and only if some live use row
-	// of it says true here. See migrations/000056.
+	// who has not signed in. Two commands write it: SetShown, called by the module
+	// that owns that record's public face, and SetUsesShown, which files a new use
+	// with the audience the record already asserts. The row asserts its own half of
+	// the answer: a stranger may read the file when its own visibility says so or
+	// some live use row of it says true here, which is the question Open asks at the
+	// public door. See migrations/000056.
 	Public bool `json:"public" gorm:"not null;default:false" doc:"Shown to anonymous readers" readOnly:"true"`
 }
 
@@ -569,10 +571,13 @@ func DiffUses(existing, wanted []uuid.UUID) (add, remove []uuid.UUID) {
 // "this module can delete files" is a different sentence from "this module can
 // read one".
 type Opener interface {
-	// Open is the row and its bytes. anonymous is the public door: it serves
-	// only a file whose visibility says anybody may read it, and answers
-	// ErrNotFound for everything else, so a private file and a file that does
-	// not exist are the same answer to a caller who is not signed in.
+	// Open is the row and its bytes. anonymous is the public door: it serves a
+	// file when somebody may read it — because its own visibility says so, or
+	// because a record with a public face is showing it — and answers ErrNotFound
+	// for everything else, so a private file and a file that does not exist are the
+	// same answer to a caller who is not signed in. The row handed back carries the
+	// answer the door gave, so what is served, the cache policy written on it and
+	// what the caller goes on to report about the file are one verdict.
 	Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, anonymous bool) (*File, io.ReadCloser, error)
 }
 
@@ -744,10 +749,13 @@ type Service interface {
 // wired cannot answer. See Service.SetUses for the rules it does not change and
 // Service.SetShown for what public means.
 //
-// A row this call files carries public = true and the file it belongs to has its
-// visibility recomputed in the same transaction, so a published page that gains an
-// image in an ordinary edit gains public bytes at once rather than at the next
-// lifecycle move. Rows it keeps are left alone: the audience of an existing use
+// A row this call files carries public = true, and that row is itself the audience:
+// a published page that gains an image in an ordinary edit gains public bytes in
+// that write, at the door, without waiting for the next lifecycle move. The file's
+// own visibility is left as it stands — writing that row is a lock on the file held
+// to the end of the save that took it, and two records naming two shared pictures in
+// each other's order deadlock on exactly that, which is what UsesOrder exists for.
+// Rows it keeps are left alone: the audience of an existing use
 // stays SetShown's to change, and this command came to file new uses, not to
 // re-assert old ones. public false is SetUses exactly as it is, which is what
 // every command that does not know the answer calls.

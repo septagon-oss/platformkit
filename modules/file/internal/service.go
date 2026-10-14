@@ -237,6 +237,20 @@ func (s *Service) Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUI
 // write, since a delete takes FOR UPDATE on the row it removes and so waits for
 // the key share. Ascending order is what stops two records that name the same two
 // files from each holding one and waiting for the other.
+//
+// The audience the record asserts is not a reason to lock a named file. It is a
+// fact about the row this rewrite files, and the door that serves a stranger
+// reads it there (see readsPublicly), so a begun use writes no file row and takes no
+// lock another rewrite can be waiting behind. A save of two richtext fields is
+// two calls of this one function inside one transaction, and the record's body
+// decides which field names which picture: a rewrite that locked a named file
+// exclusively would then hold one file row while asking for another, in an order
+// nobody wrote down, and two records sharing two pictures would each be waiting
+// for the file the other holds. Postgres ends that cycle by refusing one of the
+// two saves, which is a person's write lost to a collision they cannot see or
+// fix. What still needs the exclusive lock — the count of uses left — is a
+// decision about a file this rewrite is ending, and the save-wide pass above
+// (see contracts.UsesOrder) takes those locks in one ascending sweep.
 func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID) ([]uuid.UUID, error) {
 	return s.setUses(ctx, tx, use, refs, false)
 }
@@ -261,9 +275,9 @@ var _ contracts.ShownUses = (*Service)(nil)
 // setUses', asked once the rows are about to be written and the answer is a fact the
 // caller is owed.
 //
-// The rows this walk locks are exactly the ones setUses and SetShown go on to lock,
-// so nothing is taken weak and upgraded later: a row locked here is already held when
-// the rewrite asks for it, which Postgres answers without waiting.
+// The rows this walk locks include every one setUses and SetShown go on to lock
+// exclusively, so nothing is taken weak and upgraded later: a row locked here is
+// already held when the rewrite asks for it, which Postgres answers without waiting.
 func (s *Service) OrderUses(ctx context.Context, tx db.Tx[db.Tenant], owner contracts.Use, refs []uuid.UUID) error {
 	var shown []uuid.UUID
 	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
@@ -283,10 +297,10 @@ var _ contracts.UsesOrder = (*Service)(nil)
 
 // setUses is one rewrite, asked with the audience the record owning it asserts.
 // public says whether the rows this pass files are shown to somebody who has not
-// signed in — the record's state, never the request's claim — and it changes two
-// things and nothing else: the strength a begun-use file is locked at, because a
-// row written public is followed by a write of the file's visibility, and which
-// files get their visibility recomputed once the rows are down.
+// signed in — the record's state, never the request's claim — and it changes one
+// thing: what the filed rows assert, and therefore whose audience the settlement
+// below has to ask about. It changes no lock: the audience a begun use asserts lives
+// in the use row, not in the file row.
 func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	wanted := contracts.CollapseRefs(refs)
 	var existing []contracts.FileUse
@@ -345,7 +359,7 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 			found bool
 			err   error
 		)
-		if slices.Contains(remove, id) || public {
+		if slices.Contains(remove, id) {
 			found, err = lockFileForUpdate(ctx, tx, id)
 		} else {
 			found, err = lockFileKeyShare(ctx, tx, id)
@@ -356,6 +370,22 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		if !found && slices.Contains(wanted, id) {
 			return nil, fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
 		}
+	}
+	// Who may read each file this rewrite is about to change, asked before any of
+	// it is written. The audience a file ends up with is the answer to a question
+	// about the ledger, so the rewrite asks it twice — once here, once the rows are
+	// down — and publishes the flips between the two. Without the first ask there is
+	// no way to tell the published page that gained its first picture from the one
+	// that already had one, and the second is the same question after the answer
+	// moved. Asked only where the audience can move at all: a public audience being
+	// filed, or a row that asserted one being ended.
+	var given map[uuid.UUID]bool
+	if public || len(retract) > 0 {
+		asked, err := readsPublicly(ctx, tx, union(wanted, remove))
+		if err != nil {
+			return nil, err
+		}
+		given = asked
 	}
 	for _, id := range remove {
 		// Hard, and for the reason the migration says out loud: this table is
@@ -380,22 +410,23 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		// other arm of the same stamp, and it is why an image can be moved from one
 		// body to another inside the grace period and survive: the write that starts
 		// the use is the write that ends the countdown.
+		//
+		// unused_since IS NOT NULL is in the WHERE because a countdown that was never
+		// started has nothing to stop, and an UPDATE locks every row whose predicate it
+		// weighs: written this way, the ordinary save — a picture uploaded a minute ago
+		// and named for the first time — writes and locks no file row at all.
 		if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
-			Where("id IN ?", add).Update("unused_since", nil).Error; err != nil {
+			Where("id IN ? AND unused_since IS NOT NULL", add).Update("unused_since", nil).Error; err != nil {
 			return nil, fmt.Errorf("file: say %d images are shown again: %w", len(add), err)
 		}
 	}
 	if len(remove) == 0 {
 		// Nothing ended, so no grace period started and no audience was taken back.
-		// A public audience is still owed its recompute: the case is the published
-		// page that gained its first picture, whose row was filed by this very write
-		// and whose bytes stay private until something recomputes them.
-		if public {
-			for _, id := range add {
-				if err := s.recomputeVisibility(ctx, tx, id, use, true); err != nil {
-					return nil, err
-				}
-			}
+		// A public audience is still asked about: the case is the published page that
+		// gained its first picture, and the answer is the ledger's, which is where the
+		// door reads it.
+		if err := s.settleAudience(ctx, tx, given, use, nil); err != nil {
+			return nil, err
 		}
 		return nil, nil
 	}
@@ -435,26 +466,14 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 			return nil, fmt.Errorf("file: stamp when %d images stopped being shown: %w", len(unused), err)
 		}
 	}
-	for _, id := range retract {
-		// Recomputed from the whole ledger, not from this rewrite: a second published
-		// record showing the same picture keeps it readable, and a file whose last
-		// public row went with this one goes private in the transaction that ended it,
-		// with its event, so an anonymous read of bytes nobody is showing any more is
-		// refused at the door rather than served until the release sweep gets there.
-		if err := s.recomputeVisibility(ctx, tx, id, use, true); err != nil {
-			return nil, err
-		}
-	}
-	if public {
-		// The added files, under the same locks and in the same transaction as the
-		// rows that just asserted the audience. Counted with spoke true: a file this
-		// write named has a row now, so the ledger has spoken about it, and the
-		// recompute is the answer to "may anybody read this" rather than a shrug.
-		for _, id := range add {
-			if err := s.recomputeVisibility(ctx, tx, id, use, true); err != nil {
-				return nil, err
-			}
-		}
+	// The audience either side of this rewrite named may have moved: rows that
+	// asserted one went, rows that assert one arrived. Held says which file rows
+	// this command may write the answer into — the ones it locked, which are the
+	// ones whose use it ended — and the rest are answered at the door from these
+	// rows, because a begun use taking an exclusive lock on a file it only names is
+	// the lock two records that share two pictures collide on.
+	if err := s.settleAudience(ctx, tx, given, use, remove); err != nil {
+		return nil, err
 	}
 	return unused, nil
 }
@@ -463,16 +482,20 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 // audience. SetUses is the one that takes one back. See contracts.Service.
 //
 // The order is SetUses' and one step stronger: lock every named file FOR UPDATE
-// in ascending id order — this command writes the file rows, so a key share is not
-// enough — then write the audience onto the rows, then recompute each file from the
-// whole ledger. Every path in the kernel takes the record's row before it takes
-// file rows, so record-then-file is the one order and two publishes that share an
-// image serialise on that image rather than each computing from a snapshot the
-// other has not written.
+// in ascending id order — this command writes the file rows — then write the
+// audience onto the rows, then ask the ledger who may read each file now. Every
+// path in the kernel takes the record's row before it takes file rows, so
+// record-then-file is the one order and two publishes that share an image serialise
+// on that image rather than each announcing a flip the other has already announced.
 //
-// The recompute reads the whole table and not the rows this call touched: the
-// rule is "public if any live use is public", and a second record showing the same
-// picture in a published page is exactly the case that has to keep it readable.
+// The audience is read off the whole table and not off the rows this call touched:
+// the rule is "public if any live use is public", and a second record showing the
+// same picture in a published page is exactly the case that has to keep it
+// readable. Because this command holds every file it names, it is one of the two
+// places the answer is written back into the file row; the other is the rewrite that
+// ends a use. Everywhere else the door reads the answer where the ledger wrote it,
+// which is what leaves a save of two richtext fields free to file the second picture
+// without holding the first one's file row.
 func (s *Service) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contracts.Use, refs []uuid.UUID, public bool) error {
 	wanted := contracts.CollapseRefs(refs)
 	if len(wanted) == 0 {
@@ -496,6 +519,10 @@ func (s *Service) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contr
 		if !found {
 			return fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
 		}
+	}
+	was, err := readsPublicly(ctx, tx, wanted)
+	if err != nil {
+		return err
 	}
 	rows := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
 		Where("module = ? AND entity = ? AND record = ?", owner.Module, owner.Entity, owner.Record)
@@ -522,68 +549,169 @@ func (s *Service) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contr
 				contracts.ErrNotShown, missing(wanted, shown))
 		}
 	}
-	for _, id := range wanted {
-		if err := s.recomputeVisibility(ctx, tx, id, owner, false); err != nil {
+	return s.settleAudience(ctx, tx, was, owner, wanted)
+}
+
+// whoReads answers "who may read these files" as the two halves that make it up:
+// which of them their own row was given to the world, and which of them a record
+// with a public face is showing. Either half is enough for a reader, and the two
+// commands that hold a file row keep the first half level with the second.
+//
+// The second half is read where it is written rather than trusted from the file row
+// because writing the file row is a lock on it, held to the end of the transaction
+// that wrote it: a save that wrote the row of every file its body merely names
+// would hold one picture while asking for another, in an order each record's own
+// field order chose and nobody wrote down, and two records that share two pictures
+// then each wait for a row the other holds — which Postgres ends by refusing one of
+// the two saves outright. What that leaves the door is one indexed lookup into the
+// ledger for a file its own row says is private, and the lookup is the same for one
+// file or a hundred asked together.
+func whoReads(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) (given, shown map[uuid.UUID]bool, err error) {
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	half := func(asking string, where string, args ...any) (map[uuid.UUID]bool, error) {
+		var found []uuid.UUID
+		q := tx.DB().WithContext(ctx).Model(&contracts.File{}).Where("files.id IN ?", ids)
+		if err := q.Where(where, args...).Pluck("files.id", &found).Error; err != nil {
+			return nil, fmt.Errorf("file: who %s %d files: %w", asking, len(ids), err)
+		}
+		out := make(map[uuid.UUID]bool, len(found))
+		for _, id := range found {
+			out[id] = true
+		}
+		return out, nil
+	}
+	if given, err = half("may read", "files.visibility = ?", contracts.VisibilityPublic); err != nil {
+		return nil, nil, err
+	}
+	if shown, err = half("is shown by", "EXISTS (SELECT 1 FROM file_uses u"+
+		" WHERE u.file_id = files.id AND u.public AND u.deleted_at IS NULL)"); err != nil {
+		return nil, nil, err
+	}
+	return given, shown, nil
+}
+
+// readsPublicly is whoReads collapsed into the one answer a reader is given: a file
+// is readable by somebody who has not signed in when either half says so.
+func readsPublicly(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) (map[uuid.UUID]bool, error) {
+	given, shown, err := whoReads(ctx, tx, ids)
+	if err != nil {
+		return nil, err
+	}
+	// Seeded with every id asked, so that the answer is a verdict per file and a
+	// caller can tell "asked, and private" from "not asked at all": the settlement
+	// below compares this map with the same one asked after its own writes, file by
+	// file, and an id missing from both would look like an audience that never moved.
+	out := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		out[id] = false
+	}
+	for id := range given {
+		out[id] = true
+	}
+	for id := range shown {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// settleAudience publishes the audience flips between was and the answer now, in the
+// transaction that moved them, and writes that answer into the row of every file
+// held — the ones this command locked, so the write asks no lock anybody else is
+// waiting for. A file not held keeps its audience in the use row that asserts it,
+// where the door reads it: the answer a caller is given is the same either way, and
+// what differs is whether a save had to hold a file row to say it.
+//
+// A held file is answered from the ledger alone, which is the invariant: the
+// audience a publish asserted is taken back in the write that ended it, so bytes
+// nobody is showing are refused at the door in that transaction rather than served
+// until a sweep gets there.
+//
+// A flip is one event, and an audience that did not move records nothing.
+func (s *Service) settleAudience(ctx context.Context, tx db.Tx[db.Tenant], was map[uuid.UUID]bool,
+	owner contracts.Use, held []uuid.UUID) error {
+	if len(was) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(was))
+	for id := range was {
+		ids = append(ids, id)
+	}
+	ids = ascending(ids)
+	given, shown, err := whoReads(ctx, tx, ids)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		keep := slices.Contains(held, id)
+		read := given[id] || shown[id]
+		if keep {
+			read = shown[id]
+		}
+		if read == was[id] {
+			continue
+		}
+		want := contracts.VisibilityPrivate
+		if read {
+			want = contracts.VisibilityPublic
+		}
+		if keep {
+			// Written back so the row a media library lists, and the door that answers
+			// a stranger from it, agree about a file whose audience this command moved.
+			f, err := crud.GetForUpdate[*contracts.File](tx, id)
+			if errors.Is(err, crud.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if f.Visibility != want {
+				f.Visibility = want
+				if err := crud.Update(ctx, tx, f, "visibility", "updated_at"); err != nil {
+					return err
+				}
+			}
+		}
+		// The flip is published whether or not the row was written: the audience moved
+		// either way, and whoever listens for a file becoming readable cannot be made
+		// to reconstruct the change out of a row that still says otherwise.
+		if err := events.Publish(ctx, tx, contracts.EventVisibility, contracts.Visibility{
+			FileID: id, Visibility: want, Module: owner.Module, Entity: owner.Entity,
+			Record: owner.Record, At: db.Now(),
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// recomputeVisibility asks the ledger who may read one file and writes the answer
-// when it differs, publishing the flip in the same transaction as the write that
-// caused it.
-//
-// spoke says whether the ledger has anything to say about this file at all. Where
-// it has rows, or has just lost its last one, the invariant decides: public if and
-// only if a live use row of it is public, so "no rows" is an answer — nobody is
-// showing this and nothing ever asserted otherwise. Where the ledger has never had
-// a row for it (spoke false) there is no answer to derive, and the file keeps
-// whatever its upload asked for: the site logo is that case, named by a bare uuid
-// with no richtext field and no lifecycle, and the media library's hand-raised
-// public upload is the other.
-func (s *Service) recomputeVisibility(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, owner contracts.Use, spoke bool) error {
-	var shown int64
-	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
-		Where("file_id = ? AND public", id).Count(&shown).Error; err != nil {
-		return fmt.Errorf("file: who may read %s: %w", id, err)
+// shownRead is the door's question about one row the caller already read, answered
+// on that row: a file whose own visibility says public is read by anybody, and so
+// is one a record that serves strangers is showing — which is what the use row
+// says and the file row need not. The row handed back carries whichever half
+// answered, because the bytes served, the cache header on them and whatever the
+// caller goes on to report about the file are three places that must not answer
+// the question differently.
+func shownRead(ctx context.Context, tx db.Tx[db.Tenant], f *contracts.File) (bool, error) {
+	if f.Public() {
+		return true, nil
 	}
-	var rows int64
-	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
-		Where("file_id = ?", id).Count(&rows).Error; err != nil {
-		return fmt.Errorf("file: who reads %s: %w", id, err)
-	}
-	if rows == 0 && !spoke {
-		return nil
-	}
-	want := contracts.VisibilityPrivate
-	if shown > 0 {
-		want = contracts.VisibilityPublic
-	}
-	f, err := crud.GetForUpdate[*contracts.File](tx, id)
-	if errors.Is(err, crud.ErrNotFound) {
-		return nil
-	}
+	_, shown, err := whoReads(ctx, tx, []uuid.UUID{f.ID})
 	if err != nil {
-		return err
+		return false, err
 	}
-	if f.Visibility == want {
-		return nil
+	if !shown[f.ID] {
+		return false, nil
 	}
-	f.Visibility = want
-	if err := crud.Update(ctx, tx, f, "visibility", "updated_at"); err != nil {
-		return err
-	}
-	return events.Publish(ctx, tx, contracts.EventVisibility, contracts.Visibility{
-		FileID: id, Visibility: want, Module: owner.Module, Entity: owner.Entity,
-		Record: owner.Record, At: db.Now(),
-	})
+	f.Visibility = contracts.VisibilityPublic
+	return true, nil
 }
 
-// lockFileForUpdate is lockFileKeyShare's stronger sibling, for the one command
-// that writes the file row itself: SetShown recomputes visibility off a read of
-// every use of this file, and the lock is what makes that read repeatable against
-// another publish of the same image.
+// lockFileForUpdate is lockFileKeyShare's stronger sibling, for the two commands
+// that write the file row — SetShown, and the rewrite that ends a use — each of
+// which answers who may read the file off a read of every live use of it, and the
+// lock is what makes that read repeatable against another publish of the same image.
 func lockFileForUpdate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (bool, error) {
 	var found uuid.UUID
 	err := tx.DB().WithContext(ctx).Raw(`SELECT id FROM files WHERE id = ? FOR UPDATE`, id).Row().Scan(&found)
@@ -647,10 +775,16 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, a
 	if err != nil {
 		return nil, nil, err
 	}
-	if anonymous && !f.Public() {
-		// Not a 403: a caller who is not signed in learns nothing about what
-		// this tenant has, including whether it has this.
-		return nil, nil, crud.ErrNotFound
+	if anonymous {
+		may, err := shownRead(ctx, tx, f)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !may {
+			// Not a 403: a caller who is not signed in learns nothing about what
+			// this tenant has, including whether it has this.
+			return nil, nil, crud.ErrNotFound
+		}
 	}
 	return s.openKey(ctx, tx, f, contracts.Key(f.StorageKey))
 }
@@ -684,8 +818,14 @@ func (s *Service) OpenWidth(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UU
 	if err != nil {
 		return nil, nil, err
 	}
-	if anonymous && !f.Public() {
-		return nil, nil, crud.ErrNotFound
+	if anonymous {
+		may, err := shownRead(ctx, tx, f)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !may {
+			return nil, nil, crud.ErrNotFound
+		}
 	}
 	if width == f.Width {
 		// The frame's own width asked for by number: the same object the bare
@@ -821,7 +961,12 @@ func (s *Service) Grant(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	if err != nil {
 		return nil, err
 	}
-	if f.Public() {
+	// The same question the public door answers, so a link is never minted onto
+	// bytes anybody can already have: a file a published page shows is served at
+	// its public address whether or not its own row says so.
+	if may, err := shownRead(ctx, tx, f); err != nil {
+		return nil, err
+	} else if may {
 		return nil, fmt.Errorf("%w: %s is public and is served at its public URL", contracts.ErrPublicFile, id)
 	}
 	signer, ok := s.storage.(contracts.Signer)

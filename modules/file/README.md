@@ -115,7 +115,7 @@ Any other file, and a host with no tenant, is a 404.
 A public file is refused a grant (`ErrPublicFile`), so no signed URL ever competes with the open door. Download headers come from `modules/file/contracts/response.go`, and `contracts.MetaFor` hands the same set to the store at `Put` so a bucket-served object carries the `docs/cache.md` policy without a handler here.
 Both public routes are reads; the module has no public write, so `kit/limit` is not applied.
 
-For a file the use ledger speaks about the audience is derived, not remembered: it is public if and only if some live `file_uses` row of it says the record showing it is showing it to somebody who has not signed in (`SetShown`, migrations/000056). The two commands that can end that assertion take it back in the transaction that ends it — `SetShown` when a record leaves the public face, and `SetUses` when the last row that made a file public goes, which is what a record's delete does through `kit/rest`. Bytes whose last public user is gone are therefore anonymously unreadable at once, not when the release sweep arrives a day or two later. A file the ledger has no row for keeps what its uploader asked for: the site logo, named by a bare uuid with no field and no lifecycle, and the media library's hand-raised public upload are those two cases.
+Who may read a file is derived, not remembered: the visibility its uploader was given, widened by any live `file_uses` row of it that says the record showing it is showing it to somebody who has not signed in (`SetShown`/`SetUsesShown`, migrations/000056). The public door asks both halves and the row it hands back carries the answer, so the bytes served and the `Cache-Control` on them are one verdict. Only the two commands that hold the file row exclusively write it: `SetShown` when a record moves to or off the public face, and `SetUses` when the last row that asserted a public audience goes — which is what a record's delete does through `kit/rest`. Bytes whose last public user is gone are therefore anonymously unreadable at once, not when the release sweep arrives a day or two later, and an ordinary edit that adds a picture to a published record makes those bytes readable in the same write, from the use row it just filed. What that leaves the file row is the audience the file was *given*: a picture a published page gained in an edit still lists as private until a command that holds it says otherwise, and the object stored for it carries the private cache policy — the conservative direction, one read slower and never one reader wider. A file the ledger has no row for keeps what its uploader asked for: the site logo, named by a bare uuid with no field and no lifecycle, and the media library's hand-raised public upload are those two cases.
 
 ### The operator boundary
 
@@ -236,6 +236,12 @@ ends with the next rewrite of that field: an edit, or the record's
 own delete through `kit/rest`, which ends its uses and is not refused by a file
 that went first. An edit of a published record files what it adds as public in
 the same write: `rest.Spec.Audience` is the record's answer and `SetUsesShown`
-is the one rewrite that can act on it. The pass's refusals are
+is the one rewrite that can act on it. That write asserts the audience in the use
+row and never in the file row: the write of a file row is a lock held to the end of
+the save, and a save of two richtext fields naming two shared pictures in each
+other's order is two saves waiting for what the other holds (Postgres ends it by
+refusing one — SQLSTATE 40P01). `rest.RecordUses` therefore names the whole save to
+the ledger before filing any of it, and the ledger takes its exclusive locks in one
+ascending pass over what the save *ends*. The pass's refusals are
 English `error` text, not catalogue keys, so they are untranslated beside the
 `messages/` catalogue the rest of the module answers in.

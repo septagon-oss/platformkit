@@ -125,19 +125,29 @@ func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	}
 	var from []uuid.UUID
 	live := map[uuid.UUID]bool{}
-	// Which of the rows this rewrite is replacing asserted a public audience, read
-	// before they go: settle below is asked about exactly these, and it is the same
-	// list internal.Service.SetUses builds from the rows it is deleting.
-	wasPublic := map[uuid.UUID]bool{}
+	// Who may read each file this rewrite is about to change, asked before any of it
+	// is written: the audience is the answer to a question about the ledger, so the
+	// rewrite asks it once here and once the rows are down, and publishes the flips
+	// between the two. Asked only where it can move at all — a public audience being
+	// filed, or a row that asserted one being ended — which is internal.Service's
+	// rule too, and the draft that renames pictures in a private record pays for
+	// neither read.
+	var was map[uuid.UUID]bool
 	for _, row := range f.uses {
 		if row.TenantID == scope.TenantID() && row.Module == use.Module && row.Entity == use.Entity &&
 			row.Record == use.Record && row.Field == use.Field && row.Locale == use.Locale {
 			from = append(from, row.FileID)
 			live[row.FileID] = true
-			wasPublic[row.FileID] = wasPublic[row.FileID] || row.Public
 		}
 	}
 	add, remove := contracts.DiffUses(from, wanted)
+	retract := contracts.CollapseRefs(remove)
+	if public || len(retract) > 0 {
+		was = map[uuid.UUID]bool{}
+		for _, id := range append(append([]uuid.UUID{}, wanted...), remove...) {
+			was[id] = f.readsPublicly(id)
+		}
+	}
 	kept := f.uses[:0]
 	for _, row := range f.uses {
 		if row.TenantID == scope.TenantID() && slices.Contains(remove, row.FileID) &&
@@ -165,13 +175,11 @@ func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		}
 	}
 	if len(remove) == 0 {
-		// Nothing ended, so no clock started — but a public audience still asks the
-		// invariant, which is the published page that gained its first picture.
-		if public {
-			for _, id := range add {
-				f.settle(scope.TenantID(), id, true)
-			}
-		}
+		// Nothing ended, so no clock started — but a public audience still asks who
+		// may read the files it names, which is the published page that gained its
+		// first picture. Nothing is held: the answer goes into the use rows this
+		// rewrite just wrote, not into the file rows.
+		f.settleAudience(was, contracts.Use{Module: use.Module, Entity: use.Entity, Record: use.Record}, nil)
 		return nil, nil
 	}
 	var unused []uuid.UUID
@@ -192,21 +200,14 @@ func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 			}
 		}
 	}
-	for _, id := range remove {
-		// An ended row that asserted a public audience takes it back here, from the
-		// whole ledger and not from this rewrite: a second record still showing the
-		// picture keeps it readable, and the file whose last public use went with this
-		// one goes private in the same write that ended it. internal.Service does this
-		// with its own rows and its own lock; the answer has to be the one answer.
-		if wasPublic[id] {
-			f.settle(scope.TenantID(), id, true)
-		}
-	}
-	if public {
-		for _, id := range add {
-			f.settle(scope.TenantID(), id, true)
-		}
-	}
+	// The audience of every file this rewrite named, asked again with the rows in
+	// their new state and published as the flips between the two answers. Held names
+	// the files whose use it ended, which internal.Service.SetUses holds FOR UPDATE
+	// and may therefore write the answer into; the files it merely began a use of keep
+	// their audience in the use row that asserts it. One answer either way — and no
+	// file row locked by a save that only names it, which is what lets two records
+	// that share two pictures be saved at all.
+	f.settleAudience(was, contracts.Use{Module: use.Module, Entity: use.Entity, Record: use.Record}, remove)
 	return unused, nil
 }
 
@@ -251,53 +252,82 @@ func (f *Fake) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contract
 			}
 		}
 	}
+	// Who may read each named file, asked before the rows say anything new: a
+	// publish is one of the two commands allowed to write the answer back into the
+	// file row, and the flip it publishes is the difference between this answer and
+	// the one asked below.
+	was := map[uuid.UUID]bool{}
+	for _, id := range wanted {
+		was[id] = f.readsPublicly(id)
+	}
 	for i, row := range f.uses {
 		if mine(row) && (len(refs) == 0 || slices.Contains(refs, row.FileID)) {
 			f.uses[i].Public = public
 		}
 	}
-	for _, id := range wanted {
-		f.settle(scope.TenantID(), id, false)
-	}
+	f.settleAudience(was, owner, wanted)
 	return nil
 }
 
-// settle is the invariant once, asked by both commands that can change what the
-// ledger says: public if some live use row of this file is public, private when none
-// is. spoke says whether the ledger has anything to say about the file at all — where
-// it has no rows and has never had one (spoke false) there is nothing to derive and
-// the file keeps what its upload asked for, and where it has just lost its last row
-// (spoke true) "nobody is showing this" is the answer. A flip records its event; a
-// verdict that matches the row records nothing. The caller holds f.mu.
-func (f *Fake) settle(tenant uuid.UUID, id uuid.UUID, spoke bool) {
-	row, ok := f.rows[id]
-	if !ok {
-		return
+// settleAudience publishes the audience flips between was and the answer now, and
+// writes that answer into the row of every file held. It is internal.Service's rule
+// on this fake's memory: who may read a file is its own visibility widened by the
+// records showing it to a stranger, a held file is answered from the ledger alone, a
+// flip is one event, an audience that did not move records nothing, and a file this
+// command did not hold keeps its answer in the use row that asserts it. The caller
+// holds f.mu.
+func (f *Fake) settleAudience(was map[uuid.UUID]bool, owner contracts.Use, held []uuid.UUID) {
+	ids := make([]uuid.UUID, 0, len(was))
+	for id := range was {
+		ids = append(ids, id)
 	}
-	total, every := 0, 0
-	for _, use := range f.uses {
-		if use.FileID == id && use.TenantID == tenant {
-			total++
-			if use.Public {
-				every++
+	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+	for _, id := range ids {
+		keep := slices.Contains(held, id)
+		read := f.readsPublicly(id)
+		if keep {
+			read = f.shownPublicly(id)
+		}
+		if read == was[id] {
+			continue
+		}
+		want := contracts.VisibilityPrivate
+		if read {
+			want = contracts.VisibilityPublic
+		}
+		if keep {
+			// Written back: rows holds values, so a flip left on the copy this read
+			// handed out would publish an event for a visibility no read of this fake
+			// ever shows.
+			if row, ok := f.rows[id]; ok {
+				row.Visibility = want
+				f.rows[id] = row
 			}
 		}
+		f.published = append(f.published, contracts.EventVisibility)
 	}
-	if total == 0 && !spoke {
-		return
+}
+
+// readsPublicly is the answer the door gives: the visibility a file was given, or the
+// audience a record with a public face is showing it to. internal.Service asks the
+// same question of the two tables it reads it from; see its whoReads. The caller
+// holds f.mu.
+func (f *Fake) readsPublicly(id uuid.UUID) bool {
+	return f.givenPublicly(id) || f.shownPublicly(id)
+}
+
+func (f *Fake) givenPublicly(id uuid.UUID) bool {
+	row, ok := f.rows[id]
+	return ok && row.Public()
+}
+
+func (f *Fake) shownPublicly(id uuid.UUID) bool {
+	for _, u := range f.uses {
+		if u.FileID == id && u.Public {
+			return true
+		}
 	}
-	want := contracts.VisibilityPrivate
-	if every > 0 {
-		want = contracts.VisibilityPublic
-	}
-	if row.Visibility == want {
-		return
-	}
-	// Written back: rows holds values, so a flip left on the copy this read handed
-	// out would publish an event for a visibility no read of this fake ever shows.
-	row.Visibility = want
-	f.rows[id] = row
-	f.published = append(f.published, contracts.EventVisibility)
+	return false
 }
 
 // Forget drops one file row past every rule Delete keeps. It stands in for the
@@ -417,8 +447,18 @@ func (f *Fake) Open(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, anony
 	}
 	f.mu.Lock()
 	row, ok := f.rows[id]
+	if ok && anonymous && !row.Public() && f.readsPublicly(id) {
+		// The ledger answered for a row its own visibility says is private, so the row
+		// the caller is handed says so too: what is served, what the response caches
+		// and what the caller reports about the file are one answer. internal.Service
+		// does the same to the row it read.
+		given := row
+		given.Visibility = contracts.VisibilityPublic
+		row = given
+	}
+	may := ok && (!anonymous || f.readsPublicly(id))
 	f.mu.Unlock()
-	if !ok || (anonymous && !row.Public()) {
+	if !ok || !may {
 		return nil, nil, crud.ErrNotFound
 	}
 	body, err := f.storage.Get(ctx, scope, contracts.Key(row.StorageKey))
@@ -476,7 +516,10 @@ func (f *Fake) Grant(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, exp
 	if !ok {
 		return nil, crud.ErrNotFound
 	}
-	if row.Public() {
+	// The same question the public door answers, so a link is never minted onto
+	// bytes anybody can already have: a file a published page shows is served at its
+	// public address whether or not its own row says so.
+	if f.readsPublicly(id) {
 		return nil, fmt.Errorf("%w: %s is public and is served at its public URL", contracts.ErrPublicFile, id)
 	}
 	signer, ok := f.storage.(contracts.Signer)

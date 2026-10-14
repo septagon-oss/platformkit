@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -96,8 +95,21 @@ func TestTwoRecordsBeginningUsesOfTheSameFilesSettle(t *testing.T) {
 
 	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		for _, id := range ids {
-			row, err := crud.Get[*contracts.File](tx, id)
+			// The door answers, not the column. A use a record began asserts its
+			// audience in its own row: a command that only names a file never writes
+			// the file row, because that write is a lock held to the end of the save
+			// that took it, and two records naming two shared pictures in each
+			// other's order then each wait for a row the other holds. Who may read the
+			// file is the visibility it was given plus the records showing it, which is
+			// what this anonymous read resolves — and the row it hands back carries the
+			// answer, so what is served and what the file is reported to be stay one
+			// answer.
+			row, body, err := svc.Open(ctx, tx, id, true)
 			if err != nil {
+				t.Errorf("an anonymous read of %s after two public records began showing it: %v", id, err)
+				continue
+			}
+			if err := body.Close(); err != nil {
 				return err
 			}
 			if !row.Public() {
