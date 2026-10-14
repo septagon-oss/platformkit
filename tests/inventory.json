@@ -1086,6 +1086,25 @@
   },
   {
    "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/administration_refusal_subscription_test.go",
+   "id": "apps/platformkit/administration_refusal_subscription_test.go#TestTheAdministrationRefusalsCanBeSubscribedToWithTheirPayloads",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheAdministrationRefusalsCanBeSubscribedToWithTheirPayloads",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
    "assertions_in_file": 10,
    "evidence": "only file in its package reaching /admin, /admin/assets, /api/v1/admin",
    "file": "apps/platformkit/alias_row_reference_application_leads_somewhere_answers_test.go",
@@ -59124,7 +59143,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1522,
+  "files": 1523,
   "forge_runs": [
    408,
    413,
@@ -59159,7 +59178,7 @@
   ],
   "layers": {
    "behaviour": 2529,
-   "composition": 349,
+   "composition": 350,
    "contract": 19,
    "journey": 88
   },
@@ -59177,9 +59196,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 2985,
+  "rows": 2986,
   "tiers": {
-   "merge": 1878,
+   "merge": 1879,
    "nightly": 88,
    "push": 1019
   },
@@ -59187,13 +59206,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1337,
+   "keep": 1338,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2695,
+   "keep": 2696,
    "keep-rewrite": 117,
    "merge": 173
   }
