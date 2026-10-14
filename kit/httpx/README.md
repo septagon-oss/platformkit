@@ -3,17 +3,65 @@
 `kit/httpx` builds the one Huma API the application serves and enforces that
 every operation declares its authorization. `New(Options)` returns the `*API`
 and the router; `Register` mounts a handler with an `Auth` — `Public()`,
-`SignedIn()`, `AnyCredential()`, `Permission(key)` or `OperatorPermission(key)` —
+`SignedIn()`, `AnyCredential()`, `BearerKey()`, `Permission(key)` or
+`OperatorPermission(key)` —
 and `ValidateDeclarations` is the boot gate that refuses a route without one. Read
 [httpx.go](httpx.go) for the middleware chain: which surface an address is, host
 to tenant, the lazily opened tenant transaction (`TxFrom`, `ConnFrom`), the
-request on the context (`RequestFrom`), the security headers and the per-request
-nonce (`Nonce`).
+request on the context (`RequestFrom`), the security headers, the per-request
+nonce (`Nonce`) and what a page may declare about its own response
+(`AllowWASM`).
 
 A module's `Routes` receives `httpx.Surfaces` — three routers, one per surface —
 and mounts on the one that fits the door. It never writes a prefix: `Prefix`,
 `Path` and `PagePath` compose an address from the surface and the module, and
 `Register` refuses a path that repeats either. See [surfaces.go](surfaces.go).
+
+## One page may run WebAssembly
+
+`htmlPolicy` refuses `WebAssembly.instantiate`. `script-src` carries `'self'` and
+this request's nonce, and both speak about where a script came from; a module
+compiled from bytes came from nowhere, so the policy that lets the shell's own
+tagged script run still refuses the thing such a page was written to do.
+
+A page that needs the capability says so — `httpx.AllowWASM(ctx)`, in the shape of
+`Nonce(ctx)` — and *that response's* policy gains `'wasm-unsafe-eval'` inside
+`script-src`. Nothing else moves: the nonce, every other directive, and the whole
+policy of every page that said nothing are the bytes they were before the
+declaration existed, which is what [wasm_test.go](wasm_test.go) holds the pair
+to. Three consequences are the design:
+
+- The token is a constant of [headers.go](headers.go) and the declaration takes no
+  argument beyond the request, so no module can ask this file for
+  `'unsafe-inline'`, a source expression or a host.
+- A handler that set a `Content-Security-Policy` of its own keeps it: a
+  declaration may widen the kernel's default and never a handler's stricter one.
+- The claim lives on the response. It is set-once, per request, unreadable from
+  outside this package, and worth nothing after the status is written — a page
+  that streamed past the response buffer keeps the policy it was given.
+
+[ui/page](../ui/page/serve.go)'s `View.RunsWASM` is the field a module author
+writes against, and `Serve` calls this for the view it actually rendered: a refusal
+page and a redirect instantiate nothing, so neither carries the token.
+
+Reused: `(*API).headers` and `(*secured).policy` — the repository's only writer of
+a policy; `nonceKey` and `Nonce` as the shape of a per-request declaration; the
+per-response state `headers.go` already carried for `markStatic`; the `httptest`
+fixtures of [headers_test.go](headers_test.go) and ui/page's
+`TestAnInlineScriptCarriesThePolicysOwnNonce`.
+
+Added: `AllowWASM`, the two constants it composes from, `document.View.RunsWASM`
+and the one line in `Serve` that reads it. Nothing existing could carry this: the
+policy is one constant whose only variation is the nonce and the surface's
+`object-src`, so editing it widens every page; `Page.ContentSecurityPolicy` makes
+the author restate the whole policy including the nonce, which is exactly how a
+copied storefront once lost it; and a general per-directive policy builder would be
+a new API with one consumer.
+
+Made reusable: the second shape on the nonce pattern — a per-response claim a
+handler writes through one exported, ctx-shaped function and `policy` reads — which
+the next response-level declaration composes instead of reinventing, and
+`View.RunsWASM`, the field the editor pages of decision 0086 will declare through.
 
 ## Three surfaces
 
@@ -84,6 +132,13 @@ is not a browser. Mounting a self-service door here is the escalation `SignedIn(
 exists to refuse: the test at such a mount is that the operation reads grants and
 never spends them, which is why no module's route belongs there and today only
 `kit/app` has one.
+
+`BearerKey()` is the door whose subject is the key itself — retiring the key that
+authenticated the request. It admits a principal with a `TokenID` whatever its
+scopes, refuses a session with 403, and is the one 401 in this package: a request
+with no recognised key is challenged `WWW-Authenticate: Bearer`, because a key is
+the only credential that door accepts. `bearer_key_door_test.go` pins the three
+answers; [ADR 0020](../../docs/adr/0020-a-credential-may-retire-itself.md) says why.
 
 `Home` claims a surface's root for one module — the site's home page at `/`, the
 workspace's at `/app` — and reports to the second claimant that it did not take
@@ -159,6 +214,179 @@ a public-looking prefix and answer at every customer's host), and refused at a
 namespace's root, where the routes of that namespace answer: `Static("/assets",
 tree)`, never `Static("/", tree)`.
 
+## A write that is sent twice
+
+Two clients can send one write twice — a phone that gave up and retried, a curl
+whose operator pressed the up-arrow — and at `POST /api/v1/task/tasks` a second copy
+of the answer is the work done twice. Two headers live here; the store behind one of
+them lives in [../idempotency](../idempotency), and the counter behind the other in
+[../limit](../limit).
+
+**The header.** A write that carries `Idempotency-Key` is answered from a
+[record](../idempotency/idempotency.go) rather than run again: the same key, the same
+body and the same caller get the first attempt's status, `Content-Type`, the
+navigation it sent the caller to (`Location`, or `HX-Redirect` for the request htmx
+made — html.go's `Redirect` picks between them) and body, and the handler does not
+run. The ceilings it was decided under go with it too. The record keeps the answer's own
+`RateLimit-Policy` line and, separately, the reading each counter gave: the policy line
+comes back as it was first stated, because a door names the ceilings it consulted and not
+only the one that refused, and a field rebuilt from the readings alone would drop a
+ceiling no reading was kept for; the quota comes back as the counter reported it; and
+`RateLimit`'s `t` and `Retry-After` are worked out again at the moment the replay is
+answered, so a closed window is never named again. The wait is the longest of the windows
+that were shut: a counter with quota remaining did not refuse this answer. Those readings
+are the whole of the replayed `RateLimit` line, one item per counter: the anonymous-write
+guard spends a reading of its own on the way down, and a reply that kept both would state
+one policy with two quotas and two resets. What is left of a window is what the row itself
+had left when the event landed in it — the counter measures it against the clock at that
+instant, not the instant its transaction opened, so a key several replicas are waiting on
+costs a caller a shorter window than they were told and never a longer one.
+
+A 303 replayed without its `Location` is a status with nothing to act on, so the
+destination is part of the answer and not a header beside it. "The same write" is
+digested over the method, the mounted
+pattern, the path *as it arrived* — chi routes on `RawPath`, so `/records/a%2Fb/c` and
+`/records/a/b%2Fc` are two resources and one decoded path is not one resource — the
+query, the content type and the body. The same key with a different body is a 422 —
+`IDEMPOTENCY_KEY_IN_USE` — because the only way out of a spent key is a fresh one; a
+retry that arrives while the first is still running is a 409,
+`IDEMPOTENCY_IN_FLIGHT`, which is the answer no caller can compute from the outside.
+Records belong to the authenticated person, except at a `BearerKey` command:
+there the key is the subject, so each key keeps its own retry record even when
+one person holds both. Retiring one key cannot replay as another key's success.
+A write that sends no header is answered exactly as it always was. The verbs are
+POST and PATCH; PUT and DELETE are idempotent in the protocol already, so a record of
+them would be a body kept for nothing. The key is 1–128 visible ASCII characters,
+bare or as a Structured-Fields string — it is a primary-key column, so a value of
+arbitrary shape is a row anybody can mint; a malformed one is a 400 before the request
+body is read, which is also why the middleware runs *after* [the body
+gate](httpx.go) and never has to buffer a request to fingerprint it.
+
+| Attempt | Answer | The handler ran |
+| --- | --- | --- |
+| first with a key | whatever the route decided | yes |
+| same key, same body | the first attempt's answer | no |
+| same key, another body | 422 `IDEMPOTENCY_KEY_IN_USE` | no |
+| same key, first still running | 409 `IDEMPOTENCY_IN_FLIGHT` | no |
+| a write whose answer is a credential it minted | whatever the route decides | yes |
+| no key at all | whatever the route decides | yes |
+
+**The write that cannot be replayed.** A route whose answer *is* a credential —
+[modules/auth](../../modules/auth)'s sign-in, its set-password link, its second-factor
+leg — declares `MintsACredential` and is not keyed: the document says nothing about the
+header there and the guard asks that same question of the request. A remembered answer is
+restated, and a minted credential cannot be. Keeping the cookie in the row would put a
+live bearer token in a table for the day the record lives, where
+[the module that owns a session](../../modules/auth/internal/kernel.go) keeps its hash
+and nothing else, and it would hand back a credential whose session was revoked in the
+meantime — the same false sign-in, one logout later. So a sign-in whose answer was lost
+is signed in again: the password checked a second time, the session minted a second time,
+which is the thing the caller wanted. The legs behind it answer what a spent link and a
+spent step already answer. What that costs is one `auth.logged_in` event per attempt that
+presented the password, and it is the alternative to a credential at rest.
+
+**What a record cannot hold.** An answer larger than `maxRecordedAnswer` — a quarter of
+a megabyte, past every document this API answers with and below the 2 MiB a held response
+may already reach — is remembered as *spent* rather than replayable: the retry of it is
+refused 409 `IDEMPOTENCY_SPENT` and the write is never run again, because losing an
+answer may cost a caller a retry while forgetting a record costs them the second write the
+header exists to prevent. A claim the handler never entered stays takeable, so an outage
+cannot burn a key that demonstrably did no work. The retention is the day the header
+promises, the lease on an unanswered claim is five minutes, and neither is a setting: the
+clock they are measured against is the transport's own, not `Options.Clock`.
+
+It is declared on the operation, through [the table](surfaces.go), so the document and
+the guard cannot say two things — the same reason `x-platformkit-surface` and
+`x-platformkit-streams-body` are in that table. Two exceptions, each in one sentence:
+the control plane's writes are skipped, because this task's brief keys the app and public
+surfaces and leaves the operator console's to the product; and a route whose answer is a
+credential it minted is skipped for the reason above it. The route that reads its own request
+— `kit/rest`'s streamed upload — is *not* an exception, and the reason it is not is that
+a key the guard ignored was a promise the document made and the wire broke: that body is
+digested under the same ceiling every keyed write has (`MaxBodyBytes`, said in the
+declaration), and the reader is replaced on both requests a handler may read it from —
+the one huma decodes a schema'd body from and the one `carry` put on the context for the
+route that reads its own. A keyed upload past that ceiling is refused 413 rather than run
+unremembered. The claim is taken before the
+handler runs, never after; the answer is recorded by the [one writer](respond.go) that
+writes a status code, and only when the response is final — not a 1xx, not a refused
+upgrade, not a response no writer claimed because the request was already over. A
+handler that wrote half a body and panicked leaves no record, so its caller retries
+and gets the 500 again rather than a 201 that was never earned.
+
+**The fields.** A limited write answers with both fields, on the reply that was allowed
+as much as the one that was refused: `RateLimit-Policy` is the field the draft asks to
+stay consistent across a sequence of responses, and it costs no statement to write,
+because it names the quota and window the guard was built with, and `RateLimit` carries
+`r` and `t` as the counter reported them — for an allowed reply too, because a client
+that hears the quota only when it is refused has already spent the traffic the field
+exists to save. Both numbers come from the one statement that recorded the event. The window
+that was refused also answers with `Retry-After`, so a client that only understands RFC
+9110 still knows how long to wait. The policy is `public-writes`, one named constant
+beside the window and the quota it describes — which were two literals in
+[public_writes.go](public_writes.go) and are now one record with a name. The name, the
+`q` and the `w` a client reads have to be the numbers the counter was keyed with, and
+one sentence that quotes `60` three times is the only place they could ever have agreed.
+What this delivery does *not* do is let a module invent a policy per route: a policy
+name belongs to a counter, and a route that spends one states *that* counter's numbers
+through `SayCounted` — which is how [modules/auth](../../modules/auth)'s own caps
+(password reminders, link redemption) come to state the limit that decides them rather
+than leaving the kernel's anonymous-write policy to speak for a counter it never
+consulted — including the lockout, which is counted inside the sign-in command rather
+than at its route and so states itself from there. Two counters on one reply is two items
+in one list, in the order they were consulted; one is one. The port is one method wide, `Reserve`, which
+answers the decision, the quota left and the window left from a single statement; it
+replaced `Allow`+`Count` rather than sitting beside them, because two calls are two
+readings of a row that had other writers between them. That widens `kit/limit`'s
+published `Limiter` the same way — one method, same SQL, one more answer — and the break
+is a deliberate one, recorded in the re-recorded baseline under scripts/baselines.
+
+| Field | Carried on | Says |
+| --- | --- | --- |
+| `RateLimit-Policy` | every reply the limit applies to | the quota, the window, per policy |
+| `RateLimit` | every reply the limit applies to | the quota left and the window left, per policy |
+| `Retry-After` | every 429 | how long to wait, in seconds |
+
+The counter's key is unchanged: tenant slug, method, the mounted route and
+`ClientAddr(r)` — the peer address, and deliberately not `X-Forwarded-For`, which the
+caller can write and which every office behind one egress shares. Two tenants behind
+one egress are therefore counted apart, and a forged header buys an attacker nothing.
+Both fields are rendered with quoted policy names and no commas
+inside a list element, because RFC 9110 joins the two lists with commas, and a comma
+inside an element would be a client reading one policy as two. The `request` scope
+`kit/limit` already offers as a limiter for an unauthenticated request was read and
+not used: it names the shape of a limit the auth module wanted, not the policy that
+guards the anonymous write, and keying this counter by it would change what every
+existing counter means.
+
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it rebuilt.
+**Reused:** the answer a replay carries is written by the same machinery every other
+answer is written by — `respond`'s buffer, its `send`, and `writeProblem` as the one
+encoder of the refusal shape — so a replay is an answer rather than a copy of one, and
+inherits the rule that one status code is written once; the record is written from the
+one defer that knows what the client was finally given, beside the refusal count that
+already lives there, after `send` rather than before it; the memory store's claim, its
+takeover of an abandoned claim and its verdict table are the shape `kit/limit`'s
+`Allow` already answers with — one statement that decides and reports, and a database
+which is not there is a refusal rather than an allowance; the purge rides `kit/jobs`
+beside the limit sweep it belongs to; and `ClientAddr`, `WriteLimiter`, the body limit,
+`problem`'s document,
+`Public()` auth and `api.Recorded()` (the same list the catalogue walks) all appear here
+in the shape they were written in. **Added:** `Options.Idempotency` and the
+`idempotency` middleware — nothing keyed a write before, because the kernel answered a
+second POST as a first; `limitPolicy`, the record that carries the quota, the window and
+the name a caller reads, so the two fields cannot drift from the counter; and
+`isOpsPath`, which the request-time chain and the declaration table now read together.
+**Reused internally:** the verdict table behind `kit/idempotency`'s unexported `decide`,
+which both the in-memory store and the Postgres store answer from, so one suite holds
+both implementations — internal reuse inside that package, not a unit anybody imports, and
+the same is true of `limitPolicy`'s encoder above; and
+the `publicWrite*` constants, which name the limit that used to be two literals at its
+one call site.
+
+
 ## The database boundary
 
 This package imports `kit/db`, and the import is the contract rather than an
@@ -183,6 +411,6 @@ executes SQL of its own — resource registration reads `entity.Schema` and
 [ui/resource](../../ui/resource/resource.go); this package renders nothing.
 
 Prerequisites: a `db.Conn`, a `TenantLoader`, an `Authorizer` and the
-authenticate hook; [apps/platformkit](../../apps/platformkit/modules.go) is the
+authenticate hook; [apps/platformkit](../../apps/platformkit/app.go) is the
 composition to copy. Tests run against the development database: `make up`,
 then `make test TEST_PACKAGES=./kit/httpx`.

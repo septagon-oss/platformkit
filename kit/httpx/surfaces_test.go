@@ -108,16 +108,13 @@ type window struct {
 	seen  int
 }
 
-func (w *window) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
+func (w *window) Reserve(_ context.Context, _ string, limit int, _ time.Duration) (bool, int, time.Duration, error) {
 	w.seen++
-	if w.seen > w.allow {
-		return false, time.Minute, nil
-	}
-	return true, 0, nil
-}
-
-func (w *window) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return w.seen, 0, nil
+	// The same three answers the shared counter gives from its one statement: the
+	// verdict, the quota left under the limit it was handed, and the window it was
+	// handed — so a case that states a limit on the wire states one this fake
+	// reported rather than one the case arithmetic invented.
+	return w.seen <= w.allow, max(limit-w.seen, 0), time.Minute, nil
 }
 
 func (w *window) Forget(context.Context, string) error { return nil }
@@ -695,20 +692,13 @@ type perKey struct {
 	keys []string
 }
 
-func (p *perKey) Allow(_ context.Context, key string, _ int, _ time.Duration) (bool, time.Duration, error) {
+func (p *perKey) Reserve(_ context.Context, key string, limit int, _ time.Duration) (bool, int, time.Duration, error) {
 	p.keys = append(p.keys, key)
 	if p.seen == nil {
 		p.seen = map[string]int{}
 	}
 	p.seen[key]++
-	if p.seen[key] > 1 {
-		return false, time.Minute, nil
-	}
-	return true, 0, nil
-}
-
-func (p *perKey) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return 0, 0, nil
+	return p.seen[key] <= 1, max(limit-p.seen[key], 0), time.Minute, nil
 }
 func (p *perKey) Forget(context.Context, string) error { return nil }
 

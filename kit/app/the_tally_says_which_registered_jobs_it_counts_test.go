@@ -47,15 +47,19 @@ func composedKernelJobs(t *testing.T) []jobs.Job {
 	return list
 }
 
-// TestTheCompositionRegistersFourJobsOfItsOwn pins the fact the published tally
-// rests on: this package owns four of the scheduled jobs — the relay, the two
+// TestTheCompositionRegistersFiveJobsOfItsOwn pins the fact the published tally
+// rests on: this package owns five of the scheduled jobs — the relay, the three
 // purges and the migration drain — and none of them is one of the module jobs the
 // tally's five are. A run span of one of these carries no tenant: the span takes
 // `telemetry.SpanAttrs(ctx)` of the scheduler's context (kit/jobs/jobs.go, per run),
 // and a tenant span appears only on the walk a per-tenant job makes
 // (`<slug> tenant`), which none of these four does.
-func TestTheCompositionRegistersFourJobsOfItsOwn(t *testing.T) {
-	want := map[string]bool{"outbox-relay": true, "outbox-purge": true, "limit-purge": true, "schema-backfill": true}
+func TestTheCompositionRegistersFiveJobsOfItsOwn(t *testing.T) {
+	want := map[string]bool{"outbox-relay": true, "outbox-purge": true, "limit-purge": true,
+		// The idempotency records expire on their own date and are shared by every
+		// replica, so their sweep belongs beside the limit sweep rather than being a
+		// second sweeper of the same kind.
+		"idempotency-purge": true, "schema-backfill": true}
 	got := map[string]bool{}
 	for _, j := range composedKernelJobs(t) {
 		got[j.Name] = true
@@ -65,7 +69,7 @@ func TestTheCompositionRegistersFourJobsOfItsOwn(t *testing.T) {
 			t.Errorf("the composition does not schedule %q; this case and the published tally both assume it does", name)
 		}
 	}
-	if len(got) != 4 {
+	if len(got) != 5 {
 		t.Errorf("this package registers %d jobs (%v), and the tally in CHANGELOG.md accounts for none of them by name", len(got), got)
 	}
 }
@@ -73,7 +77,7 @@ func TestTheCompositionRegistersFourJobsOfItsOwn(t *testing.T) {
 // TestThePublishedTallySaysWhichRegisteredJobsItCounts: the release note says the
 // tally "counts what the composition registers". Either it names the jobs this
 // package registers, or it says in words what its tally leaves out. Naming the
-// four, or writing the exclusion, makes this pass; nothing here asks for a
+// five, or writing the exclusion, makes this pass; nothing here asks for a
 // particular ratio, so the case cannot be satisfied by editing a number and
 // nothing in it fails because somebody else's branch added a job.
 func TestThePublishedTallySaysWhichRegisteredJobsItCounts(t *testing.T) {

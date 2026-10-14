@@ -137,6 +137,16 @@ func TestTheDoorEveryCredentialMayUseRefusesAnotherTenantsKey(t *testing.T) {
 	}
 }
 
+// r6Read GETs a listed path with key, and answers 200 without asking when the
+// entry promised no read.
+func r6Read(t *testing.T, cfg config.Config, key, path string, commandsOnly bool) (int, string) {
+	t.Helper()
+	if commandsOnly {
+		return http.StatusOK, ""
+	}
+	return doKey(t, cfg, key, http.MethodGet, acmeHost, path, "")
+}
+
 // r6Catalogue is the document, as far as this case reads it: which resources are
 // named, and which verbs of theirs.
 type r6Catalogue struct {
@@ -145,7 +155,10 @@ type r6Catalogue struct {
 		Entity   string `json:"entity"`
 		Path     string `json:"path"`
 		Writable bool   `json:"writable"`
-		Commands []struct {
+		// Operations nil is all five; [] is an entry listed for its commands
+		// alone, which promises no read.
+		Operations []string `json:"operations"`
+		Commands   []struct {
 			Verb     string `json:"verb"`
 			Endpoint string `json:"endpoint"`
 		} `json:"commands"`
@@ -187,7 +200,14 @@ func TestWhatTheCatalogueTellsAKeyTheKeyCanActuallyWalk(t *testing.T) {
 		if r.Path == tasksPath {
 			named = true
 		}
-		if code, got := doKey(t, cfg, key, http.MethodGet, acmeHost, r.Path, ""); code >= http.StatusBadRequest {
+		commandsOnly := r.Operations != nil && len(r.Operations) == 0
+		if commandsOnly && len(r.Commands) == 0 {
+			t.Errorf("the catalogue listed %s (%s/%s) with no operation and no command: an entry that offers "+
+				"nothing is a resource the key was told exists for no reason (%s)", r.Path, r.Module, r.Entity, body)
+		}
+		// A commands-only entry says there is nothing here to read; its
+		// commands are still walked below.
+		if code, got := r6Read(t, cfg, key, r.Path, commandsOnly); code >= http.StatusBadRequest {
 			t.Errorf("the catalogue told a key scoped to task:read it may reach %s (%s/%s) and that read = %d %s: "+
 				"Readable answered the closure one way and the route answered the other.",
 				r.Path, r.Module, r.Entity, code, trimHTML(got))

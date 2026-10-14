@@ -70,3 +70,23 @@ responsibility of its assembled application checks.
 
 `Example` refuses empty or duplicate field names with `ErrFields` before
 rendering, because submitted values, labels and source identities need one owner.
+
+## The rich text field
+
+A `widget:richtext` field draws its own editor's chrome — fixed toolbar with the
+rest behind "More formatting", selection bubble, `/` command menu, link popover,
+editing surface, `aria-live` save status, counter, draft-restore bar — and the
+`<textarea name=…>` stays the submitted value, drawn first, with every piece of
+chrome starting hidden. With no JavaScript the field is the textarea and the
+"Formatting help" disclosure: the same form with less, not a control that lies
+about working. `Field.Editor` carries what the browser may know and may not
+guess — the record's address, the revision this form quotes (both absent when the
+entity keeps no write count), the draft key, the image upload route, where a stored
+picture's bytes are read back from, and whether the page shows the record's text or
+a refused submission — and `ui/resource` fills them. The glue is
+`ui/assets/js/richtext.js`, a module only a page with an editable richtext field
+loads, mounting the vendored Tiptap bundle.
+
+* **Reused** — `ui/components`' Button, Input, Textarea and Prose for every control, `ui/document`'s `head()` for script emission, `ui/hooks.go`'s declared-attribute vocabulary, `kit/richtext`'s schema and `Normalise` as the stored format, `modules/file`'s upload route, `components.js`' idiom of binding behaviour to drawn markup.
+* **Added** — the chrome, because `ui/components` has no toolbar, menu, popover or progress component to borrow and inventing one is another task's share; `View.Modules`, because a page-weight budget is only real if the answer is per page; and the vendored bundle, because there was no vendor tree and 0069 §3 names the library.
+* **Made reusable** — the `data-richtext-*` vocabulary and the `richtext:status` event, so a module's own screen can show the field's state in its own words; `richtextCommands`, one list the toolbar, the bubble and the menu cannot disagree about; and `scripts/richtext_bundle_build.sh`, which builds any future vendored bundle outside the tree.
