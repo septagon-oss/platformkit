@@ -118,7 +118,7 @@ ledger, which is what the move above is for; the two are one decision read at tw
 **A file says what it is, and the library can ask it.** `files` gains `alt`
 (`varchar(1000)`, default `''`) and `decorative` (`boolean`, default `false`, under
 `file_files_decorative`, which refuses a picture that carries words while claiming it
-carries none) in `modules/file/migrations/000058_file_alt_text.up.sql`, and one command
+carries none) in `modules/file/migrations/000063_file_alt_text.up.sql`, and one command
 writes them: `Service.SetAlt` re-checks the claim inside the caller's transaction under
 `crud.GetForUpdate`, refuses a row that has moved past the `updatedAt` the caller was
 shown with `ErrConflict` and no write, and publishes the new `file.altered` in the same
