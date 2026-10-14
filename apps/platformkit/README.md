@@ -23,7 +23,9 @@ links, the sign-in form the shell posts to, the languages a locale may be set to
 the roles a new tenant is seeded with, and the empty grant-check holder). `access`
 is second to last because it is the first thing here that can name a person, a
 notice, an authorizer and a site at once: the reach a refusal's ask has here, and
-the one subject this product puts under change control. `admin` declares
+the one subject this product puts under change control. `media` sits immediately
+before `file`, because the media library's page is mounted by the module that owns
+the files and the chrome it is drawn in is this installation's. `admin` declares
 `After(Everything)` and is last, because it generates a screen for every resource
 the modules above it mounted.
 
@@ -87,25 +89,30 @@ modules'.
 
 ### Permissions
 
-Neither `product` nor `access` declares a permission: a manifest with no grant to
-hand out. Every permission the running application offers belongs to the module
+None of `product`, `access` or `media` declares a permission: a manifest with no
+grant to hand out. Every permission the running application offers belongs to the module
 that owns the subject it governs — `user` for people and roles, `content` for
 pages, `billing` for plans — and this application adds none.
 
 ### Object scope
 
-Both work inside one tenant and never across two. `product` hands out values that
+All three work inside one tenant and never across two. `product` hands out values that
 are read once at composition — the session cookie, the rate buckets, the storage
 bucket, the scheduler cadence — and joins that are constructed from a `db.Tx`
 carrying the tenant the request resolved, which is where tenancy is enforced here.
 `access` joins a person, a notice and a site to decide who may be let in, and every
-row it reads is behind that same transaction.
+row it reads is behind that same transaction. `media` reads nothing: it hands
+`file.Module` the shell the library is drawn in and the authorizer that decides
+which of the page's two write controls a person is shown — the check itself is
+`kit/httpx`'s, on the route.
 
 ### Duties the module enforces itself
 
-Neither enforces anything. They provide no route, no duty and no check: `product`
-answers contracts, `access` fills the reach an ask has here and the authorizer the
-sign-in page asks. The enforcement is the modules' whose services they join, and
+None enforces anything. They provide no route of their own, no duty and no check:
+`product` answers contracts, `access` fills the reach an ask has here and the
+authorizer the sign-in page asks, and `media` hands the library its chrome — the
+guard on the page's two posts is `file`'s own permission, asked of the composition
+by the router. The enforcement is the modules' whose services they join, and
 `kit/rest` and `kit/httpx` for the grant a route names.
 
 ### Public faces

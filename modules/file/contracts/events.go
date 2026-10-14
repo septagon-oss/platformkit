@@ -8,7 +8,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 )
 
-// The five events this module emits. There is no rest.Spec here, so there is no
+// The seven events this module emits. There is no rest.Spec here, so there is no
 // file.file.created either: a file arrives as bytes and leaves as bytes, and the
 // routes that do it publish these.
 //
@@ -26,6 +26,7 @@ const (
 	EventReleased   = "file.released"
 	EventErased     = "file.erased"
 	EventVisibility = "file.visibility"
+	EventAltered    = "file.altered"
 )
 
 // Events is every event this module emits, for the manifest. kit/app refuses a
@@ -38,6 +39,7 @@ var Events = []events.Declared{
 	events.Declare[Released](EventReleased),
 	events.Declare[Erased](EventErased),
 	events.Declare[Visibility](EventVisibility),
+	events.Declare[Altered](EventAltered),
 }
 
 // Uploaded is the payload of EventUploaded. It carries the digest as well as
@@ -119,6 +121,22 @@ type Visibility struct {
 	Module     string    `json:"module"`
 	Entity     string    `json:"entity"`
 	Record     uuid.UUID `json:"record"`
+	At         time.Time `json:"at"`
+}
+
+// Altered is the payload of EventAltered: what a picture now says about itself.
+// A caption is a claim that is now part of every body that shows the file, so
+// the question "what did this image say on the day the page went out" is
+// answered from the trail and not from a memory. It carries the frame and the
+// size beside it because those are what a reader of the trail checks the caption
+// against, and no actor: the envelope already knows who asked.
+type Altered struct {
+	FileID     uuid.UUID `json:"fileId"`
+	Alt        string    `json:"alt"`
+	Decorative bool      `json:"decorative"`
+	Size       int64     `json:"size"`
+	Width      int       `json:"width"`
+	Height     int       `json:"height"`
 	At         time.Time `json:"at"`
 }
 

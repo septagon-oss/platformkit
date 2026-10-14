@@ -86,6 +86,11 @@ var webhookCatalogue = emittedEvents{
 	// private again when the last of them stops. A subscriber that watches what an
 	// installation exposes needs that moment, not only the upload.
 	filecontracts.EventVisibility,
+	// What a picture says about itself, and the claim that it says nothing. One
+	// command writes both and publishes in its own transaction, so a subscriber that
+	// watches whether an installation's images are described watches this name: the
+	// upload says a file arrived, never that anyone captioned it.
+	filecontracts.EventAltered,
 	billingcontracts.EventPlanCreated, billingcontracts.EventPlanUpdated, billingcontracts.EventPlanDeleted,
 	billingcontracts.EventSubscribed, billingcontracts.EventCancelled, billingcontracts.EventRenewed,
 	billingcontracts.EventPastDue,
