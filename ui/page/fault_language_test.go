@@ -4,7 +4,7 @@ package page_test
 // the kernel publishes the code a refusal travels in, this package holds the one
 // table from a code to a catalog key, the page is negotiated from the request, and
 // it says which language it is in — in the attribute and in the header. The
-// reviewer's case in review_round2_language_test.go is the one that was failing
+// sibling case in refusal_page_language_test.go is the one that was failing
 // when this change published the codes and stopped there; these are the cases for
 // the rest of the mechanism: every refusal the kernel publishes, in both of the
 // shell's languages, and the way a catalog has nothing to say, which must leave
@@ -40,8 +40,8 @@ type refusal struct {
 // refusals is every refusal the page can be shown: the nine codes kit/httpx
 // publishes and has a row in fault.go's table for, and the three verdicts that
 // carry no code because the router, the recoverer or chi wrote the sentence
-// themselves. A code with no page is not in it — that is the condition F1 of the
-// third review made a rule: the table carries exactly what a person is shown, so
+// themselves. A code with no page is not in it — that is the condition F1 states
+// as a rule: the table carries exactly what a person is shown, so
 // every row of it gets a case here, in both of the shell's languages.
 var refusals = []refusal{
 	{
