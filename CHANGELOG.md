@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**A `widget:richtext` field is an editor now, and still a textarea.** The field
+draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
+link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
+only the pages that draw one field load, mounts the vendored Tiptap bundle on it and
+keeps the submitted value in step. Images upload to the file API by drag, paste or
+file pick; a record that keeps a write count autosaves against its own ETag and
+compares on a conflict, and one that does not keeps the draft on the device.
+`make richtext-bundle` rebuilds the bundle; `check-richtext-bundle` keeps it under
+150 KiB gzipped and equal to a fresh build. The browser cases cover typing, one
+surface, a draft kept through a refused save, images by pick and by paste, the alt
+prompt and the parsed round trips; storybook, gallery and mobile editing are owed.
+
 **A scoped credential may retire its own key.** `POST /api/v1/auth/tokens/revoke-self`
 (`auth-token-revoke-self`, the new `httpx.BearerKey()` declaration) ends exactly the key that authenticated the
 request and answers 204; a session is refused with 403, and a dead or absent key with 401 and a Bearer challenge

@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -224,6 +224,24 @@ check-ui: ## Fail when a layer's markup reaches past the tokens or emits a class
 # to pay for; CI runs that same file as a step of its own, before its browser steps.
 check-fixtures: ## Compile the Go program every design test embeds
 	cd tools/designexport/openpencil && node --import ./register.mjs --test fixtures-compile.test.mjs
+
+# The rich text editor's vendor bundle: Tiptap and its Markdown extension, built
+# to one minified ES module by the node project under tools/richtext-bundle. The
+# ceiling is 150 KiB of gzip — the bytes every page that carries a rich text
+# field adds to the download — counted in bytes against a round number, the way
+# the other ceilings here are counted, and asserted whether or not this machine
+# has a node toolchain. The rebuild comparison needs one, so it is the second
+# arm of the same step rather than a step of its own.
+RICHTEXT_BUNDLE_CEILING ?= 153600
+
+check-richtext-bundle: ## Fail when the vendored editor bundle is over its gzip ceiling or differs from a fresh build
+	bash scripts/richtext_bundle_check.sh $(RICHTEXT_BUNDLE_CEILING)
+
+# Rebuild the bundle and its licence file from what package-lock.json pins.
+# Run it after changing the extension list or a pinned version, and commit the
+# two files together with the manifest and the lock.
+richtext-bundle: ## Rebuild ui/assets/richtext/editor.js from its lockfile
+	bash scripts/richtext_bundle_build.sh
 
 # The number decision 0075's i18n row reads: the share of the words a person reads on
 # a served page that a catalogue reached. It renders every document the reference
@@ -485,7 +503,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
