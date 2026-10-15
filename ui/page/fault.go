@@ -109,12 +109,20 @@ var refusalParts = []string{
 	// offered "Try again" in English on a page otherwise in Portuguese is exactly
 	// the defect this page exists to close, wearing a smaller hat.
 	"fault.retry", "fault.retry_after", "fault.back", "fault.sign_in", "fault.request_reference",
-	referenceKey,
+	homeKey, referenceKey,
 }
 
 // backKey is the way out this package's catalogue words: the page's own way back,
 // asked wherever a refusal offers one and names where its link leads.
 const backKey = "fault.back"
+
+// homeKey is the words for the destination the composition's own shell points its
+// way out at. The label arrives from the application (a Shell's BackLabel, written in
+// apps/platformkit) rather than from this package, and these words live here only so
+// a translator can reach the one label the reference application ships: backWay hands
+// back any other wording untouched, because naming a destination this key does not
+// name would tell a person one place while the href carried another.
+const homeKey = "fault.home"
 
 // referenceKey is the words that name the request's own identifier on the page.
 const referenceKey = "fault.reference"
@@ -127,16 +135,16 @@ const referenceKey = "fault.reference"
 const referenceWords = "(request"
 
 // backWay is the shell's label, translated the way the heading is — but only for the
-// way out this catalogue words, which is the one the shell labelled with the very
-// English the catalogue carries for it. A shell whose link leads somewhere else, or
+// destination this catalogue words (homeKey), which is the one the shell labelled with
+// the very English the catalogue carries for it. A shell whose link leads somewhere else, or
 // whose words are its own, has its own label back: translating it here would tell a
 // person one destination while the href carried another, and the translation is
 // offered only for the destination these words name.
 func backWay(loc *Locale, label string) string {
-	if label != own(backKey) {
+	if label != own(homeKey) {
 		return label
 	}
-	if words := strings.TrimSpace(word0(loc, backKey)); words != "" {
+	if words := strings.TrimSpace(word0(loc, homeKey)); words != "" {
 		return words
 	}
 	return label
@@ -484,8 +492,12 @@ func fault(r *http.Request, status int, detail, key string, loc *Locale, referen
 		}
 	}
 	p := document.FaultProps{
-		Status: status, Title: http.StatusText(status), Sentence: line,
-		Home: s.Back, HomeLabel: s.BackLabel,
+		// The heading and the way on are the catalogue's, in both shapes of this
+		// page: a heading that comes from net/http and a home label that comes from
+		// the shell are words no translator can reach, and this page is read when a
+		// person least wants to be reading it.
+		Status: status, Title: statusTitle(loc, status, detail), Sentence: line,
+		Home: s.Back, HomeLabel: backWay(loc, s.BackLabel),
 		BackLabel: word0(loc, backKey),
 	}
 	// A handler's own 4xx arrives through Serve, which hands the request when it

@@ -406,6 +406,15 @@
       "": "Voltar à página de onde veio"
     }
   },
+  "fault.home": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Voltar ao espaço de trabalho",
+    "plural": {
+      "": "Voltar ao espaço de trabalho"
+    }
+  },
   "fault.sign_in": {
     "references": [
       "ui/page/fault.go"
