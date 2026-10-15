@@ -259,7 +259,25 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 // learns the mail did not go. It carries no words of its own: a transport may
 // quote its input in an error, the outbox retains handler errors, and the input
 // here is a link nobody holds.
-var ErrDeliveryRefused = errors.New("auth: set-password email delivery failed")
+var ErrDeliveryRefused = errors.New("auth: the mail transport refused the credential")
+
+// AcknowledgeRefusedDelivery wraps a subscription handler with the answer a refused
+// send deserves from an event worker: acknowledged. The record of a mail no transport
+// took is written in the event's own transaction, so a handler that returns the
+// failure rolls back the one artefact that says the mail did not go, and the person
+// reading the delivery door is left to guess. The credential itself is already back
+// where it was before the send, and the retry ladder a refusal would otherwise earn
+// is four more attempts at one mailbox. A caller that asked for the mail in a command
+// still gets the sentinel, and its transaction unwinds beside the delivery.
+func AcknowledgeRefusedDelivery(h events.Handler) events.Handler {
+	return func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+		err := h(ctx, tx, ev)
+		if errors.Is(err, ErrDeliveryRefused) {
+			return nil
+		}
+		return err
+	}
+}
 
 // refuseSetPassword records the refused send in the caller's transaction and
 // answers with the sentinel. The transport's own words go to the record, redacted
