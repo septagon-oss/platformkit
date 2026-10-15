@@ -160,7 +160,8 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	// "invalid or has expired" from a row that exists but is not yet visible.
 	// The delivery keeps its advisory lock across the whole of this, so no other
 	// offer or redemption of this user's is between the commit and the send.
-	if err := s.postVerification(ctx, id, current.Email, token, at); err != nil {
+	ahead, err := s.postVerification(ctx, tx, id, current.Email, token, at)
+	if err != nil {
 		return err
 	}
 	if err := s.mail.Mailer.Send(ctx, notification.Message{
@@ -182,7 +183,13 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		// it, and a caller that asked for the mail directly learns it did not go. The
 		// transport's own words reach the operator, redacted into the row, and nothing
 		// credential-bearing travels either way.
-		s.restoreVerification(ctx, id, was)
+		if ahead {
+			// The row went in on the pool, so the caller's rollback cannot reach
+			// it: it goes back in a write of its own.
+			s.restoreVerification(ctx, id, was)
+		} else if rerr := restoreLink(tx, "verification_tokens", id, was); rerr != nil {
+			return rerr
+		}
 		return s.refuseVerification(ctx, tx, current.Email, err, token)
 	}
 	// The transport took the message, so the row stops being an offer and becomes
@@ -207,14 +214,28 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 // it later, and the pool has drained by then.
 const credentialWriteBudget = 2 * time.Second
 
-// postVerification commits one verification credential on its own.
-func (s *Service) postVerification(ctx context.Context, id uuid.UUID, email, token string, at time.Time) error {
-	return s.writeCredential(ctx, "commit", "verification", func(tx db.Tx[db.Tenant]) error {
-		return tx.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"+
+// postVerification writes one verification credential where the person reading the
+// mail will look for it, and says whether it got a commit of its own.
+//
+// That commit is the rule wherever the caller carries the application pool: a link
+// that arrives in seconds must name a row a reader can already see, and a row held
+// inside the delivery's own transaction is invisible until after the send. A caller
+// with no pool on its context — a relay that runs this module's subscriptions over a
+// transaction of its own — gets the other shape, which is the only one it can have:
+// the row goes in beside the send and the two stand or fall together, which is what
+// sent_at beside the insert already says.
+func (s *Service) postVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
+	email, token string, at time.Time) (bool, error) {
+	write := func(w db.Tx[db.Tenant]) error {
+		return w.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, email = EXCLUDED.email,"+
 			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at, sent_at = NULL",
-			contracts.Hash(token), db.TenantOf(tx).ID, id, email, at, at.Add(contracts.VerificationLifetime)).Error
-	})
+			contracts.Hash(token), db.TenantOf(w).ID, id, email, at, at.Add(contracts.VerificationLifetime)).Error
+	}
+	if _, pooled := httpx.ConnFrom(ctx); !pooled {
+		return false, write(tx)
+	}
+	return true, s.writeCredential(ctx, "commit", "verification", write)
 }
 
 // restoreVerification puts a credential back the way this attempt found it, in a

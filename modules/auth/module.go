@@ -8,6 +8,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -271,7 +272,18 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
-				return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
+				if err := svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID); err != nil {
+					// A refused transport is acknowledged, not retried: the record of
+					// it is written in this transaction and only a commit lets anybody
+					// read that the mail did not go. The credential itself is already
+					// back where it was (see offer), and the four retries a refusal
+					// would otherwise earn are four more mails to one mailbox.
+					if errors.Is(err, internal.ErrDeliveryRefused) {
+						return nil
+					}
+					return err
+				}
+				return nil
 			},
 		}, {
 			Module: "auth", Name: contracts.EventResetRequested,
@@ -280,7 +292,14 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 					return fmt.Errorf("auth: read the reset request: %w", err)
 				}
-				return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
+				if err := svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email); err != nil {
+					// The same answer as the invitation above, for the same reason.
+					if errors.Is(err, internal.ErrDeliveryRefused) {
+						return nil
+					}
+					return err
+				}
+				return nil
 			},
 		}},
 		Routes: func(s httpx.Surfaces) {
