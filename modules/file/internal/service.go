@@ -592,7 +592,7 @@ func whoReads(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) (given,
 		return out, nil
 	}
 	// The floor is what the upload was given, and not the row's own visibility: an
-	// earlier release wrote this same column with the answer a publish implied, so the
+	// earlier release wrote the answer a publish implied into that row column, so the
 	// only column that still says what the uploader chose is the one nothing rewrites.
 	if given, err = half("may read", "files.upload_visibility = ?", contracts.VisibilityPublic); err != nil {
 		return nil, nil, err
