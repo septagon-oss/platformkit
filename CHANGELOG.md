@@ -124,13 +124,17 @@ row that cannot be said of is the operator's own administrator while it still ho
 wildcard, the only role the seeder writes named permissions into: once a module leaves,
 nothing records whether a departed grant was the seeder's or a hand's, so every dead
 grant there is taken — each dead either way, and beside a wildcard that still grants the
-rest. What `--remove` prints is what its transaction wrote, not what it read: two
-operators running the command at once both read one dead grant, because the tenant's
-advisory lock is taken by the write and not by the read, and the second write then finds
-the row already holding the list it was handed and changes nothing — so it reports
-nothing. Two lines for one removal would tell a tenant twice that a person changed
-something nobody changed. The listing a run without `--remove` prints is bounded by
-that same guard, so a role the write could not finish is named by neither run and the
+rest. What `--remove` prints is what its transaction wrote, not what it read. A run reads
+a tenant's roles unlocked to find out whether it holds anything to take, and when it does
+it takes that tenant's role lock, reads again, and subtracts from what *that* read holds:
+derived from the first read instead, the list it writes revokes a permission somebody had
+just granted and hands back one they had just taken away, and only the second of those
+leaves no trace in what the command prints. Two operators running the command at once
+therefore both find the same dead grant, and the second finds the row already cleaned once
+it holds the lock and writes nothing at all — so it reports nothing. Two lines for one
+removal would tell a tenant twice that a person changed something nobody changed. The
+listing a run without `--remove` prints is bounded by that same guard, so a role the write
+could not finish is named by neither run and the
 sweep goes on being the only thing that says it is there.
 
 **One published signature moved, and that is this change's cost.** `auth.SeedRoles` is
