@@ -360,6 +360,14 @@
    "coverage": "",
    "round_named": 0
   },
+  "modules/audit": {
+   "ci_fails": 0,
+   "ci_max_s": null,
+   "ci_med_s": null,
+   "ci_runs": 0,
+   "coverage": "",
+   "round_named": 0
+  },
   "modules/audit/contracts/audittest": {
    "ci_fails": 0,
    "ci_max_s": null,
@@ -29239,6 +29247,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/applied_migrations_test.go",
+   "id": "modules/audit/applied_migrations_test.go#TestAnInstallationThatAppliedTheShippedAuditFilesMigratesOnThisTree",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnInstallationThatAppliedTheShippedAuditFilesMigratesOnThisTree",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/contracts/audittest/fake_test.go",
    "id": "modules/audit/contracts/audittest/fake_test.go#TestTheFakeIsAService",
    "kind": "go",
@@ -56528,6 +56555,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/check_applied_migrations_test.sh",
+   "id": "scripts/check_applied_migrations_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "check_applied_migrations_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/check_architecture_test.sh",
    "id": "scripts/check_architecture_test.sh",
    "kind": "shell_pin",
@@ -59675,7 +59722,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1542,
+  "files": 1544,
   "forge_runs": [
    408,
    413,
@@ -59709,8 +59756,8 @@
    578
   ],
   "layers": {
-   "behaviour": 2554,
-   "composition": 353,
+   "behaviour": 2555,
+   "composition": 354,
    "contract": 19,
    "journey": 88
   },
@@ -59728,23 +59775,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3014,
+  "rows": 3016,
   "tiers": {
-   "merge": 1903,
+   "merge": 1904,
    "nightly": 88,
-   "push": 1023
+   "push": 1024
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1357,
+   "keep": 1359,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2724,
+   "keep": 2726,
    "keep-rewrite": 117,
    "merge": 173
   }

@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -260,6 +260,12 @@ check-i18n: ## Print the share of words a person reads that a translator can rea
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
+# An applied migration is checksummed by every installation that ran it, so an edit to one is a boot
+# failure there. CI passes the commit it compares with; empty means the merge base with origin/main.
+MIGRATIONS_BASE ?=
+check-applied-migrations: ## Fail when a migration file the base carries was edited, renamed or removed
+	./scripts/check_applied_migrations.sh $(MIGRATIONS_BASE)
+
 # The pillar section of ARCHITECTURE.md is prose a contributor is meant to trust, and
 # it carries line citations into other people's files, so it drifts the way code does:
 # a file grows, a citation that named a symbol names a blank line, and nothing fails.
@@ -503,7 +509,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -584,6 +590,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# answers in milliseconds.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/plural_comment_citations_test.py
 	bash scripts/check_budget_ratchet_test.sh
+	bash scripts/check_applied_migrations_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
