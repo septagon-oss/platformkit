@@ -1,14 +1,14 @@
 # Test inventory and verdicts — platformkit (decision 0088)
 
-One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 2602 rows over 1239 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
+One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 2606 rows over 1243 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
 
 ## Scale
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 2602 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1239 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 2412 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 2606 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1243 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 2416 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 215 | filename prefix |
 | rows inside them | 347 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 57 / 1 / 43 / 89 | same walk |
@@ -18,7 +18,7 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 19 | push, first | asserts a golden or the published API set |
-| behaviour | 2260 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| behaviour | 2264 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 265 | merge | package `main` of the reference app: it boots the composition |
 | journey | 58 | nightly | `e2e/`: browser or device |
 
@@ -46,7 +46,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1024 | 2255 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 1028 | 2259 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 70 | 132 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (0072) |
 | `merge` | 145 | 215 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
