@@ -106,34 +106,21 @@ var issuerLegs = map[string]bool{
 	route{"app", "GET", "/api/v1/auth/oidc/callback", "public"}.String(): true,
 }
 
-<<<<<<< HEAD
-// mailboxDoors are the four public operations the email-confirmation policy adds
-// beside the /register address it shares with the open policy: the two JSON doors
-// its sign-up page posts to, and the page the mailed link opens with the form on
-// it — the module mounts both in that policy's mount alone, because the credential
-// the page spends is that policy's, and wholeSurface is what the open policy answers.
-||||||| 28c0234
-// mailboxDoors are the two public operations the email-confirmation policy adds
-// beside the /register address it shares with the open policy, and which the
-// open policy does not mount at all.
-=======
-// mailboxDoors are the three public operations the email-confirmation policy adds
-// beside the /register address it shares with the open policy, and which the
-// open policy does not mount at all. The third is the read of the notification
-// module's record of the mail the other two asked for: it answers the caller's
-// own request id with one word, and the same policy mounts it because a delivery
-// record no door reads is a table nobody will consult.
->>>>>>> origin/main
+// mailboxDoors are the five public operations the email-confirmation policy adds beside
+// the /register address it shares with the open policy, and which the open policy does
+// not mount at all: the two JSON doors its sign-up page posts to, and the page the
+// mailed link opens with the form on it — the module mounts both in that policy's mount
+// alone, because the credential the page spends is that policy's, and wholeSurface is
+// what the open policy answers. The fifth is the read of the notification module's
+// record of the mail those two asked for: it answers the caller's own request id with
+// one word, and the same policy mounts it because a delivery record no door reads is a
+// table nobody will consult.
 var mailboxDoors = []route{
 	{"public", "POST", "/api/v1/public/auth/resend-verification", "public"},
 	{"public", "POST", "/api/v1/public/auth/verify-email", "public"},
-<<<<<<< HEAD
 	{"public", "GET", "/auth/verify-email", "public"},
 	{"public", "POST", "/auth/verify-email", "public"},
-||||||| 28c0234
-=======
 	{"public", "POST", "/api/v1/public/auth/mail-delivery", "public"},
->>>>>>> origin/main
 }
 
 // TestTheMailboxRegistrationPolicyMountsItsOwnDoors reads the composition the
