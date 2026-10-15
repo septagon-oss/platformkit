@@ -217,6 +217,15 @@
       "": "Go back to the page you came from"
     }
   },
+  "fault.home": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Back to the workspace",
+    "plural": {
+      "": "Back to the workspace"
+    }
+  },
   "fault.form_unreadable": {
     "references": [
       "ui/page/fault.go"
