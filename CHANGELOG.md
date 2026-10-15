@@ -1134,6 +1134,35 @@ by design, so the button told the person the outcome was unknown and sent nothin
 `TestEveryAccountDoorPostsToAnAddressThatAnswers` now reads each page's own `action` and asks
 the running application what it says.
 
+**A notice says what it would reach; the module decides whether it does.** The ask used to be
+`contracts.Notice.Email`, a bool that either mailed or did not. `contracts.Notice` now carries
+`Intent` (what happened, which selects the template and the row of the person's preferences; `""` is
+the generic pair), `Class` (an ordinary notice, or `ClassSecurity`, which is told over the person's
+opt-out because opt-out exists so people are not marketed to and not so they cannot be told somebody
+took over their account), and `Wants`, a ceiling over the five channels `contracts.Channel` names —
+in-app, mail, push, browser push, webhook — whose zero value is in-app alone. `Email` is gone: where a
+caller wrote `Email: true` it writes `Wants: notificationcontracts.WantsEmail`, and gets in-app with
+it, because the row *is* the notice and no ceiling a caller raises can fall below telling the person in
+the application. That is a breaking change to a published contract, recorded as accepted in
+[scripts/baselines/public-api-v1.1.0.json](scripts/baselines/public-api-v1.1.0.json); `make check`'s
+`check-apidiff` refuses any break beside the ones that file names.
+
+What the ask buys is a decision, not a send. In the caller's own transaction `Service.Notify` reads the
+person's channel choices and quiet window (`notification_preferences`, `notification_quiet_hours`), the
+tenant's sending identity (`notification_senders`, one row per tenant, set and verified and removed by
+commands that recheck the caller's `sender:manage` grant and the copy's expected revision), and the
+channels this deployment wired (`contracts.Providers.Active`), runs `contracts.Decide` once, and opens a
+`requested` row and one outbox event for every channel it kept — one event name per channel, so an
+endpoint that answers 500 all afternoon delays nothing but webhooks — and a `suppressed` row carrying the
+sentence and the `Correction` naming whose decision it was for every channel it refused.
+`notification_deliveries` is append-only under the tenant's row-level security and
+`delivery_ledger_coverage` is the read that answers "was she told" per channel rather than as a count of
+sends; a provider that answers nil closes its row `sent`, `contracts.ErrPermanent` closes it `failed` with
+the reason and acknowledges, and anything else writes nothing and retries on the kernel's ladder. Mail
+goes out as the tenant that raised it — the `From:` header signed under DKIM, the envelope sender left
+where `mail.from` put it. [modules/notification/README.md](modules/notification/README.md) is the
+canonical account of all of it.
+
 ## [1.1.1] - 2026-09-18
 
 A tooling patch. No exported API moved and no shipped behaviour moved: the diff from
