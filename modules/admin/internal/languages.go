@@ -66,10 +66,16 @@ func (p pages) mountLanguages(app *httpx.Router) {
 			if err != nil {
 				return p.unreadable(ctx, r)
 			}
-			_, err = p.Tenants.SetOwnLocale(ctx, tx, expected, tenantcontracts.SetLocale{
+			landed, err := p.Tenants.SetOwnLocale(ctx, tx, expected, tenantcontracts.SetLocale{
 				Default: form.Get("default"), Supported: form["supported"],
 			})
 			if err == nil {
+				// The page a person is about to see is the one this save is about, so the
+				// cached host resolutions have to stop believing the old set: each carries
+				// the languages of the tenant it names, and without this the redirect below
+				// lands on a dashboard still answering in the language that was just removed.
+				// A refusal makes no ask: nothing changed.
+				httpx.ForgetTenantOnCommit(ctx, landed.ID)
 				return page.View{}, httpx.SeeOther(p.at.languages.at + "?languages=saved")
 			}
 			// A refusal comes back to the page it was made from, with the sentence a

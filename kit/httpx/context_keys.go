@@ -18,6 +18,7 @@ type (
 	requestIDKey struct{}
 	bufferKey    struct{}
 	txKey        struct{}
+	forgetKey    struct{}
 )
 
 // TxFrom returns the request's tenant transaction, opening it if this is the

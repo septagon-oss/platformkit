@@ -40,8 +40,11 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 
 	// The connection travels with the transaction: a control-plane route needs
 	// both it and a token to open a transaction of its own. See ConnFrom.
-	rctx = WithConn(rctx, a.opts.Conn)
-	inner := huma.WithContext(ctx, context.WithValue(rctx, txKey{}, p))
+	rctx = context.WithValue(WithConn(rctx, a.opts.Conn), txKey{}, p)
+	// The list a handler may ask to forget at the commit: see ForgetTenantOnCommit.
+	asks := new(forgottenTenants)
+	rctx = context.WithValue(rctx, forgetKey{}, asks)
+	inner := huma.WithContext(ctx, rctx)
 	next(inner)
 
 	if openErr := p.Err(); openErr != nil {
@@ -60,6 +63,15 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// and a transaction nobody decided about must not commit.
 	keep, undecided := statusOf(ctx, a, inner.Status())
 	err = p.Close(keep)
+	if err == nil && keep {
+		// The write is committed, so the resolutions that carry the old version of it
+		// are now wrong rather than merely early. Before the commit this is the one
+		// moment the ask can be honoured without a racing request putting the old
+		// answer back, and a rollback means nothing was written to be stale.
+		for _, tenant := range asks.drain() {
+			a.hosts.dropTenant(tenant)
+		}
+	}
 	b, buffered := bufferFrom(ctx.Context())
 	switch {
 	case err == nil:

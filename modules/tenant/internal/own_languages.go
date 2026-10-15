@@ -34,6 +34,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -97,9 +98,7 @@ func mountOwnLanguages(s httpx.Surfaces, svc contracts.Service) {
 		if !ok {
 			return nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
 		}
-		landed, err := svc.SetOwnLocale(ctx, tx, in.Body.ExpectedRevision, contracts.SetLocale{
-			Default: in.Body.Default, Supported: in.Body.Supported,
-		})
+		landed, err := spokeOwnLocale(ctx, tx, svc, in.Body)
 		if err != nil {
 			// A refusal answers with no body at all: `rest.Fault` keeps the
 			// conflict a conflict, and a response that looked like the declaration
@@ -156,9 +155,7 @@ func mountOwnLanguages(s httpx.Surfaces, svc contracts.Service) {
 			if err != nil {
 				return nil, err
 			}
-			landed, err := svc.SetOwnLocale(ctx, tx, in.ExpectedRevision, contracts.SetLocale{
-				Default: in.Default, Supported: in.Supported,
-			})
+			landed, err := spokeOwnLocale(ctx, tx, svc, in)
 			if err != nil {
 				return nil, rest.Fault(err)
 			}
@@ -195,12 +192,39 @@ func mountOwnLanguages(s httpx.Surfaces, svc contracts.Service) {
 			if err != nil {
 				return err
 			}
-			_, err = svc.SetOwnLocale(ctx, tx, in.ExpectedRevision, contracts.SetLocale{
-				Default: in.Default, Supported: in.Supported,
-			})
+			_, err = spokeOwnLocale(ctx, tx, svc, in)
 			return rest.Fault(err)
 		},
 	})
+}
+
+// spokeOwnLocale is the one write all three of this module's doors make — the JSON
+// address, the resource's own update door and the catalog's command — and the one
+// thing each of them owes afterwards.
+//
+// What is owed is the forgetting of what the cached host resolutions believe about
+// this tenant. A resolution carries the languages of the tenant it names, so a
+// replaced declaration left every page answering in the old set until that entry
+// expired half a minute later: the row the caller had just saved said Portuguese, and
+// the page in front of them said English. The ask names the row that landed rather
+// than the request's Host header, because a tenant is served at more than one name,
+// and it is made only over a declaration that landed — a refusal returns before it,
+// and a command that wrote nothing has nothing to invalidate.
+//
+// The admin module's Languages page writes the same command and asks the same thing:
+// it is the fourth door, and it is why this is a function the doors call rather than
+// a detail of one of them.
+func spokeOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], svc contracts.Service,
+	in ownLanguagesWrite,
+) (*contracts.Tenant, error) {
+	landed, err := svc.SetOwnLocale(ctx, tx, in.ExpectedRevision, contracts.SetLocale{
+		Default: in.Default, Supported: in.Supported,
+	})
+	if err != nil {
+		return nil, err
+	}
+	httpx.ForgetTenantOnCommit(ctx, landed.ID)
+	return landed, nil
 }
 
 // ownLanguagesWrite is the declaration a caller replaces the tenant's with, and the
