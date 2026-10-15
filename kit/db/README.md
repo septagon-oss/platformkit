@@ -242,9 +242,9 @@ reads the id back off the message, counting the ids it is counting off every non
 the package rather than off `refusals.go` by name — an id *is* the constant
 `refusal<Name> = "…"`, wherever the runner keeps it, and a gate that opened one file by name
 could only ever hold the ids that stayed there, which is the tenth review's fourth finding.
-`kit/db/review8_refusal_ids_are_the_table_test.go` reads this table against the ids
+`kit/db/refusal_ids_are_the_table_test.go` reads this table against the ids
 `refusals.go` declares and refuses the two lists to differ, and
-`kit/db/review11_a_refusal_id_is_declared_wherever_the_runner_keeps_it_test.go` refuses an id
+`kit/db/refusal_id_is_declared_wherever_the_runner_keeps_it_test.go` refuses an id
 whose home is not that file: the file the two lists are read from stays one file however the
 code is arranged, which is what makes the promise below hold and not merely happen.
 Between them the two halves of that promise hold: an id named here that nothing prints, or a

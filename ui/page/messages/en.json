@@ -306,5 +306,194 @@
     "plural": {
       "": "Sign in"
     }
+  },
+  "fault.reference": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "(request",
+    "plural": {
+      "": "(request"
+    }
+  },
+  "fault.AUTH_ANONYMOUS.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Unauthorized",
+    "plural": {
+      "": "Unauthorized"
+    }
+  },
+  "fault.AUTH_DENIED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Forbidden",
+    "plural": {
+      "": "Forbidden"
+    }
+  },
+  "fault.AUTH_NOT_OPERATOR.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Forbidden",
+    "plural": {
+      "": "Forbidden"
+    }
+  },
+  "fault.AUTH_UNDECLARED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Forbidden",
+    "plural": {
+      "": "Forbidden"
+    }
+  },
+  "fault.AUTH_NO_TENANT.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Forbidden",
+    "plural": {
+      "": "Forbidden"
+    }
+  },
+  "fault.AUTH_PRINCIPAL_CHANGED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Unauthorized",
+    "plural": {
+      "": "Unauthorized"
+    }
+  },
+  "fault.CSRF_ORIGIN.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Forbidden",
+    "plural": {
+      "": "Forbidden"
+    }
+  },
+  "fault.PUBLIC_SETS_A_COOKIE.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Internal Server Error",
+    "plural": {
+      "": "Internal Server Error"
+    }
+  },
+  "fault.LIMIT_EXHAUSTED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Too Many Requests",
+    "plural": {
+      "": "Too Many Requests"
+    }
+  },
+  "fault.400.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Bad Request",
+    "plural": {
+      "": "Bad Request"
+    }
+  },
+  "fault.401.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Unauthorized",
+    "plural": {
+      "": "Unauthorized"
+    }
+  },
+  "fault.403.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Forbidden",
+    "plural": {
+      "": "Forbidden"
+    }
+  },
+  "fault.404.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Not Found",
+    "plural": {
+      "": "Not Found"
+    }
+  },
+  "fault.405.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Method Not Allowed",
+    "plural": {
+      "": "Method Not Allowed"
+    }
+  },
+  "fault.409.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Conflict",
+    "plural": {
+      "": "Conflict"
+    }
+  },
+  "fault.413.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Request Entity Too Large",
+    "plural": {
+      "": "Request Entity Too Large"
+    }
+  },
+  "fault.422.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Unprocessable Entity",
+    "plural": {
+      "": "Unprocessable Entity"
+    }
+  },
+  "fault.429.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Too Many Requests",
+    "plural": {
+      "": "Too Many Requests"
+    }
+  },
+  "fault.500.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Internal Server Error",
+    "plural": {
+      "": "Internal Server Error"
+    }
+  },
+  "fault.503.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Service Unavailable",
+    "plural": {
+      "": "Service Unavailable"
+    }
   }
 }

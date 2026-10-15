@@ -311,7 +311,11 @@ func (s *Service) VerifySecondFactor(ctx context.Context, tx db.Tx[db.Tenant], e
 	// counter because it is the same decision — how often may one address spend
 	// a credential this module mailed or minted — and a second counter that
 	// means the same thing as the first is two knobs for one policy.
-	if !s.MayRedeem(ctx, from.IP) {
+	// The zero Decision is the counter that could not be reached, which allows the
+	// attempt: the limiter's stated failure mode, and the reason "not allowed" cannot
+	// be the absence of a reading. This one answers no fields, because no response is
+	// in reach from inside a service method — see IMPLEMENT.md's Limits.
+	if d := s.MayRedeem(ctx, from.IP); d.Decided() && !d.Allowed {
 		return nil, nil, contracts.ErrTooManyAttempts
 	}
 	user, err := s.users.ByEmail(ctx, tx, email)
@@ -372,7 +376,9 @@ func (s *Service) RequireFirstFactorProof(ctx context.Context, tx db.Tx[db.Tenan
 	// and it reaches the same ten-in-a-quarter-hour before it is refused. A
 	// second counter for this door would be two knobs for one policy and a
 	// stranger who only has to switch doors.
-	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, counted := s.limiter.Check(ctx, email, from.IP)
+	sayLockout(ctx, counted, verdict == contracts.Refuse)
+	if verdict == contracts.Refuse {
 		if s.limiter.Noted(ctx, email, from.IP) {
 			s.recordFailure(ctx, email, from, true)
 		}

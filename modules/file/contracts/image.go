@@ -13,6 +13,11 @@ import (
 	"io"
 	"mime"
 	"net/http"
+
+	// The WebP decoder registers itself with both image.Decode and
+	// image.DecodeConfig, which is what lets the header gate below answer a
+	// WebP's dimensions without allocating its frame.
+	_ "golang.org/x/image/webp"
 )
 
 // image.go is the pass a raster takes on its way into storage (decision 0069 §4).
@@ -27,17 +32,26 @@ import (
 // the camera held the sensor, because an image that has to be understood to be
 // cleaned is an image that can hide something in the reading.
 //
-// Pure Go and stdlib decoders: JPEG, PNG and the first frame of a GIF. WebP is
-// a `golang.org/x/image/webp` require away from this switch, and it is left
-// there rather than added here because a new dependency is a `packages-budget`
-// and a licence conversation of its own — see T-0188's IMPLEMENT.md.
+// Pure Go, and nothing else: JPEG, PNG, the first frame of a GIF, and WebP
+// through golang.org/x/image/webp, whose decoder registers itself with both
+// `image.Decode` and `image.DecodeConfig`. That registration is what keeps the
+// order below intact for a WebP as for the other three — the header is read,
+// the pixel ceiling is refused, and only then is a frame allocated — because
+// `image.DecodeConfig` is the one call every format answers through.
+//
+// An SVG is still not in the set, and that is the refusal 0069 §4 asks for: a
+// vector drawing with a `<script>` in it is not an image this deployment
+// decodes, and it is refused before a byte of it is kept.
 
-// jpegQuality is the quality a re-encode writes. 82 is the point where a
-// photographic frame is visually indistinguishable from the original at the
-// sizes this module serves; it is a constant rather than a knob because a
-// deployment that could set it could set it to 30, and then the module
-// quietly damages people's photographs.
-const jpegQuality = 82
+// JPEGQuality is the quality a re-encode writes, at the upload and at every
+// variant. 82 is the point where a photographic frame is visually
+// indistinguishable from the original at the sizes this module serves; it is a
+// constant rather than a knob because a deployment that could set it could set it
+// to 30, and then the module quietly damages people's photographs. It is exported
+// because the variant encode lives in internal and needs the same number: two
+// constants for one quality is one of them going stale, and a reader comparing a
+// variant against its parent would find a difference nobody decided.
+const JPEGQuality = 82
 
 // headerProbe is how much of the object is buffered to read a header out of.
 //
@@ -72,7 +86,7 @@ type ImagePass struct {
 // before a byte of it is kept (0069 §4).
 func imageFormat(format string) bool {
 	switch format {
-	case "jpeg", "png", "gif":
+	case "jpeg", "png", "gif", "webp":
 		return true
 	default:
 		return false
@@ -161,7 +175,7 @@ func ProcessImage(r io.Reader, maxPixels int) (ImagePass, error) {
 		}
 		return ImagePass{Bytes: out.Bytes(), ContentType: "image/png", Width: frame.Bounds().Dx(), Height: frame.Bounds().Dy()}, nil
 	}
-	if err := jpeg.Encode(out, frame, &jpeg.Options{Quality: jpegQuality}); err != nil {
+	if err := jpeg.Encode(out, frame, &jpeg.Options{Quality: JPEGQuality}); err != nil {
 		return ImagePass{}, fmt.Errorf("file: re-encode %s as JPEG: %w", format, err)
 	}
 	return ImagePass{Bytes: out.Bytes(), ContentType: "image/jpeg", Width: frame.Bounds().Dx(), Height: frame.Bounds().Dy()}, nil
@@ -278,7 +292,7 @@ func ReadsAsImage(up Upload, head []byte) bool {
 		return true
 	}
 	switch sniffedContentType(head) {
-	case "image/jpeg", "image/png", "image/gif":
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
 		return true
 	}
 	return false

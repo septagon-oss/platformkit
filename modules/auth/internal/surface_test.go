@@ -48,7 +48,7 @@ func (r route) String() string { return r.surface + " " + r.method + " " + r.pat
 
 // wholeSurface is every operation the auth module answers with, in the
 // composition that has everything: a registration policy and an installation
-// issuer. 29 rows, and one of each of the module's six route groups.
+// issuer. 31 rows, and one of each of the module's six route groups.
 var wholeSurface = []route{
 	// handler.go — signing in and out, the caller's own identity, sessions and
 	// password, and the two roles routes.
@@ -67,6 +67,7 @@ var wholeSurface = []route{
 	{"app", "POST", "/api/v1/auth/tokens", "signed_in"},
 	{"app", "GET", "/api/v1/auth/tokens", "signed_in"},
 	{"app", "POST", "/api/v1/auth/tokens/{id}/revoke", "signed_in"},
+	{"app", "POST", "/api/v1/auth/tokens/revoke-self", "bearer_key"},
 	// factor_routes.go — the second factor and its recovery codes.
 	{"app", "POST", "/api/v1/auth/factors/totp/begin", "signed_in"},
 	{"app", "POST", "/api/v1/auth/factors/totp/finish", "signed_in"},
@@ -105,24 +106,42 @@ var issuerLegs = map[string]bool{
 	route{"app", "GET", "/api/v1/auth/oidc/callback", "public"}.String(): true,
 }
 
+<<<<<<< HEAD
 // mailboxDoors are the four public operations the email-confirmation policy adds
 // beside the /register address it shares with the open policy: the two JSON doors
 // its sign-up page posts to, and the page the mailed link opens with the form on
 // it — the module mounts both in that policy's mount alone, because the credential
 // the page spends is that policy's, and wholeSurface is what the open policy answers.
+||||||| 28c0234
+// mailboxDoors are the two public operations the email-confirmation policy adds
+// beside the /register address it shares with the open policy, and which the
+// open policy does not mount at all.
+=======
+// mailboxDoors are the three public operations the email-confirmation policy adds
+// beside the /register address it shares with the open policy, and which the
+// open policy does not mount at all. The third is the read of the notification
+// module's record of the mail the other two asked for: it answers the caller's
+// own request id with one word, and the same policy mounts it because a delivery
+// record no door reads is a table nobody will consult.
+>>>>>>> origin/main
 var mailboxDoors = []route{
 	{"public", "POST", "/api/v1/public/auth/resend-verification", "public"},
 	{"public", "POST", "/api/v1/public/auth/verify-email", "public"},
+<<<<<<< HEAD
 	{"public", "GET", "/auth/verify-email", "public"},
 	{"public", "POST", "/auth/verify-email", "public"},
+||||||| 28c0234
+=======
+	{"public", "POST", "/api/v1/public/auth/mail-delivery", "public"},
+>>>>>>> origin/main
 }
 
 // TestTheMailboxRegistrationPolicyMountsItsOwnDoors reads the composition the
 // reference application actually runs: the email-confirmation policy rather than
-// the open register door, and no issuer. It answers with 25 operations — these 23
-// rows, less the two OIDC legs, plus the four mailbox doors. This is the case that
-// sees a route written into email_registration.go, and the page internal/ui writes
-// beside it, neither of which the other two compositions mount.
+// the open register door, and no issuer. It answers with 34 operations — wholeSurface
+// less the two OIDC legs, plus the five mailbox doors. This is the case that sees a
+// route written into email_registration.go, and the page internal/ui writes beside it,
+// neither of which the other two compositions mount.
 func TestTheMailboxRegistrationPolicyMountsItsOwnDoors(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	_, _, _, api := mountRecorded(t, conn, auth.OIDC{}, false, emailSignup)

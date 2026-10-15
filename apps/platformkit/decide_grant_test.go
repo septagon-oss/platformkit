@@ -41,10 +41,8 @@ func TestAnAccountThatMayOnlyProposeCannotDecide(t *testing.T) {
 		}
 		return false
 	})
-	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for the proposer"}`); code != http.StatusOK {
-		t.Fatalf("the reset = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for the proposer"}`)
 	proposer := signIn(t, cfg, acmeHost, proposerOnlyEmail, "a chosen passphrase for the proposer")
 
 	code, body := do(t, cfg, admin, http.MethodPost, acmeHost, proposalsPath,

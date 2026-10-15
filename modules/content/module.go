@@ -26,10 +26,8 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content/internal"
 )
 
-// Deps is what this module cannot make for itself, and it is empty: content
-// belongs to a tenant by carrying its id, which row-level security matches on,
-// and the author comes off the request's own context. It is a struct rather
-// than no parameter so that the day it needs something, every call site gains a
+// Deps is what this module cannot make for itself. It is a struct rather than
+// no parameter so that the day it needs something, every call site gains a
 // named field instead of a new argument.
 type Deps struct {
 	Files richtext.Files
@@ -38,6 +36,28 @@ type Deps struct {
 	// says so in the log: rest.RecordNoUses is that answer, and it is safe only
 	// for as long as no sweep releases a file nobody reads.
 	Uses rest.FileUses
+	// Translations is the record's door onto another module's table: the title
+	// and the body declare themselves translatable, and a mount that says so
+	// without a port to answer `?lang=` is refused by the Spec's own check. The
+	// composition writes this one line; the translation module is told about
+	// content by TranslationSource below, and by nothing else.
+	Translations rest.Translations
+	// Shown asserts, for a record this module publishes, that the files its body
+	// shows are now showing to anonymous readers — or that they stopped. Unwired,
+	// nothing is asserted: an image keeps the visibility its upload asked for, which
+	// for an upload that asked for nothing is private, so a published page shows a
+	// broken picture rather than leaking bytes.
+	Shown rest.FileShown
+}
+
+// TranslationSource is the content entity's row set as the translation module
+// has to be handed it: the module may not reach into this table, so the
+// composition carries the pair — content names the port it writes to, and the
+// translation module names the rows it may be given. It asks nothing of the
+// mounted Spec but its two names and its entity, which is why a mounted Spec
+// and this are the same answer.
+func TranslationSource() rest.TranslationSource {
+	return rest.TranslationSourceOf(rest.Spec[*contracts.Content]{Module: "content", Entity: "content"})
 }
 
 // Spec is the entity's presence in the application: five routes, two
@@ -98,7 +118,8 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	resource := Spec
 	resource.RichTextFiles = files
 	resource.FileUses = uses
-	svc := internal.NewService()
+	resource.Translations = deps.Translations
+	svc := internal.NewService(internal.Deps{Shown: deps.Shown})
 	return svc, module.Module{
 		Name:        "content",
 		Migrations:  Migrations.Files,

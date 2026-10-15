@@ -38,6 +38,10 @@ type Config struct {
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Webhook is the deployment's share of the outbound webhook sender: the key
+	// that wraps each endpoint's signing secret at rest, which addresses this
+	// deployment is willing to dial, and how long a signed attempt is kept.
+	Webhook Webhook `yaml:"webhook"`
 	// Telemetry is where spans and numbers go. Its zero value exports nothing,
 	// which is the default the runtime ships with: see Telemetry.
 	Telemetry Telemetry `yaml:"telemetry"`
@@ -88,6 +92,42 @@ type Config struct {
 	Flags *Flags `yaml:"flags"`
 }
 
+// readTenantApps parses the operator's placement file: `slug=app` lines, with
+// blank lines and `#` comments allowed. Every refusal names the file and the line,
+// because the file is not in the configuration the person reading the message
+// already has open. Values go through the same grammar as nats.app, so a slug a
+// durable cannot be formed from is refused here and not at the boot that reads it.
+func readTenantApps(path string) (map[string]string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("app.tenant_apps_file: %w", err)
+	}
+	out := make(map[string]string)
+	for i, line := range strings.Split(string(body), "\n") {
+		where := fmt.Sprintf("app.tenant_apps_file %s:%d", path, i+1)
+		text := strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		if text == "" {
+			continue
+		}
+		slug, app, found := strings.Cut(text, "=")
+		if !found {
+			return nil, fmt.Errorf("%s is %q; a line is <tenant-slug>=<app-slug>", where, text)
+		}
+		slug, app = strings.TrimSpace(slug), strings.TrimSpace(app)
+		if slug == "" || app == "" {
+			return nil, fmt.Errorf("%s is %q; both a tenant and an app have to be named", where, text)
+		}
+		if _, err := appname.Parse(app); err != nil {
+			return nil, fmt.Errorf("%s names app %q: %w", where, app, err)
+		}
+		if before, again := out[slug]; again && before != app {
+			return nil, fmt.Errorf("%s maps tenant %s to %q, and the file already maps it to %q", where, slug, app, before)
+		}
+		out[slug] = app
+	}
+	return out, nil
+}
+
 // Seed is the seed command's operator credential. See the field on Config.
 type Seed struct {
 	OperatorEmail    string `yaml:"operator_email"`
@@ -117,6 +157,12 @@ type App struct {
 	// nats.app, and a mapping that does not cover every tenant is refused by the
 	// migration rather than completed by a guess.
 	TenantApps map[string]string `yaml:"tenant_apps"`
+	// TenantAppsFile names a file of `slug=app` lines holding the same placement,
+	// for an operator whose mapping is too long to read in a YAML blob. It is read
+	// at load and merged into TenantApps above, the inline map winning a
+	// disagreement; a line that is not a pair, a tenant mapped twice to two apps or
+	// an app that is not a slug refuses the load. Nothing else reads the key.
+	TenantAppsFile string `yaml:"tenant_apps_file"`
 }
 
 // Flags is the flags block: one boolean per key. See Config.Flags for why the
@@ -434,6 +480,27 @@ type Audit struct {
 	RetentionDays int `yaml:"retention_days"`
 }
 
+// Webhook is what modules/webhook cannot decide for itself: the key that wraps
+// every endpoint's signing secret, whether this deployment dials addresses on the
+// private grid, and how long a finished attempt keeps the payload it signed.
+type Webhook struct {
+	// SecretKey wraps the signing secret of every registered endpoint at rest.
+	// It is 32 bytes — AES-256-GCM's own width — and the module refuses to be
+	// composed without one, because an installation whose key nobody wrote down
+	// cannot move its endpoints to another machine. Put it in
+	// PLATFORMKIT_WEBHOOK_SECRET_KEY, as every other secret here is put; the
+	// development example carries a laptop key so `make run` boots.
+	SecretKey string `yaml:"secret_key"`
+	// AllowLocalEndpoints permits loopback and private ranges to be dialled. It is
+	// deployment-level: no column, field or route carries it, and it never opens
+	// the instance-metadata address. It exists for a developer's laptop running a
+	// receiver beside the application, and for this module's own tests.
+	AllowLocalEndpoints bool `yaml:"allow_local_endpoints"`
+	// RetentionDays is how long a finished delivery row — which holds the whole
+	// event it signed — is kept. Zero means the module's own default.
+	RetentionDays int `yaml:"retention_days"`
+}
+
 // DefaultRetentionDays is a year, the shortest period the obligations that ask
 // for an audit trail at all tend to accept.
 const DefaultRetentionDays = 365
@@ -566,6 +633,7 @@ var keys = []key{
 	// are how a mail host arrives at all.
 	{"mail.host", "PLATFORMKIT_MAIL_HOST", func(c *Config) *string { return &c.Mail.Host }, nil, false},
 	{"mail.port", "PLATFORMKIT_MAIL_PORT", nil, func(c *Config) *int { return &c.Mail.Port }, false},
+	{"webhook.secret_key", "PLATFORMKIT_WEBHOOK_SECRET_KEY", func(c *Config) *string { return &c.Webhook.SecretKey }, nil, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
 	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, nil, false},
@@ -684,6 +752,34 @@ func Load(path string, overrides ...Override) (Config, error) {
 				path, h.key, h.value)
 		}
 	}
+	// The operator's placement, read from the file the configuration points at.
+	// The inline map above and this file hold the same fact; the file exists
+	// because a mapping of five thousand tenants does not belong in a YAML blob,
+	// and the two merge with the inline map winning on a disagreement — it is the
+	// one an operator edits beside the setting it describes.
+	//
+	// A line the loader cannot make sense of is a refusal, correctable at the file:
+	// the mapping is the write that puts a tenant under an app, and there is no safe
+	// half of one. What it does *not* refuse is a slug naming no tenant that exists:
+	// the mapping is written by somebody who may be describing the tenant they are
+	// about to create, and the migration that finds a tenant nobody mapped is the
+	// one that refuses (migrations/000059_tenant_app_refusal.up.sql), and only of a
+	// boot that named itself: see the guard on migrations/000060_tenant_app_place.
+	if c.App.TenantAppsFile != "" {
+		fromFile, err := readTenantApps(c.App.TenantAppsFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("config %s: %w", path, err)
+		}
+		if c.App.TenantApps == nil {
+			c.App.TenantApps = map[string]string{}
+		}
+		for slug, app := range fromFile {
+			if _, written := c.App.TenantApps[slug]; !written {
+				c.App.TenantApps[slug] = app
+			}
+		}
+	}
+
 	// All three DSNs are parsed here rather than by the driver, so a typo is a
 	// message naming the key instead of a dial error four steps later.
 	for _, u := range []struct {

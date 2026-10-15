@@ -32,6 +32,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/file/internal"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // Local is contracts.Storage on the filesystem. main wires it, or whatever a
@@ -117,6 +118,43 @@ type Deps struct {
 	// RetainEvery replaces the daily retention sweep with an interval, for a
 	// test. Zero means the schedule.
 	RetainEvery time.Duration
+
+	// VariantEvery replaces the encode pass that builds a stored image's other
+	// widths with an interval, for a deployment that will not wait five minutes
+	// and for a test that cannot wait at all. Zero means the schedule.
+	VariantEvery time.Duration
+
+	// UnusedAfter is the grace period an image is kept after nothing is showing
+	// it, and zero means internal.DefaultUnusedAfter (a day). It is a dependency
+	// and not a constant because how long a person gets to move a picture from one
+	// draft to another without paying for its storage twice is a deployment's
+	// call; a negative number is not "delete immediately" but no sweep at all.
+	UnusedAfter time.Duration
+
+	// UnusedEvery replaces the daily release sweep with an interval, for a test
+	// that cannot wait until ten to five in the morning. Zero means the schedule.
+	UnusedEvery time.Duration
+
+	// Library is the media library's page: the shell it is drawn in, whose answer
+	// to "may this caller write" its two controls reuse, and how many tiles one
+	// page holds. Nil, the composition serves no library — the manifest's Nav entry
+	// below then names a screen nobody mounted, which is why the composition that
+	// ships this module hands the chrome in rather than leaving the entry dangling.
+	//
+	// What the page reads is not among it, on purpose: the grid, the meter and the
+	// caption are the one service built below, and a composition that could name
+	// them could name a library reading a different service than the doors beside it.
+	Library *LibraryChrome
+}
+
+// LibraryChrome is what a composition hands this module so its one screen can be
+// drawn. The service is filled by this module, from the one it builds; what the
+// application owns is the chrome and the authorizer, which is what this edge carries
+// and nothing more.
+type LibraryChrome struct {
+	Shell     page.Shell
+	Authorize httpx.Authorizer
+	PerPage   int
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -173,6 +211,29 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	retention := internal.NewSweep(deps.Storage, internal.SweepConfig{
 		Retention: deps.Retention, Tenants: deps.Tenants, Every: deps.RetainEvery,
 	})
+	// The encode pass is the third job and the only one that writes bytes rather
+	// than removing them. It needs the service because a width charges for itself
+	// through the same quota an upload does, and it needs the tenant lister
+	// because it walks tenants the way the retention sweep does — which is why
+	// Jobs() mounts nothing when no lister was wired rather than running over
+	// nobody.
+	variants := internal.NewVariants(svc, deps.Storage, deps.Tenants, deps.VariantEvery)
+	// The release sweep is the fourth. It needs no storage — the bytes go on the
+	// strength of the work order it publishes, which is the only thing that can
+	// remove an object after the row's transaction commits — and it needs the
+	// tenant lister for the reason every sweep here does.
+	unused := internal.NewUnused(deps.Tenants, deps.UnusedAfter, deps.UnusedEvery)
+	// The library's page is composed over the service this function just built, so
+	// the meter on it and the refusal in an upload are the same sum, and the grid
+	// reads through the same row-level policy the list door answers by. No chrome
+	// means no page: the surface's own 404 for a screen nobody composed.
+	var library internal.LibraryPages
+	if deps.Library != nil {
+		library = internal.LibraryPages{
+			Shell: deps.Library.Shell, Authorize: deps.Library.Authorize, PerPage: deps.Library.PerPage,
+			Read: svc, Shown: svc, Remove: svc, Add: svc, Widths: svc,
+		}
+	}
 	return svc, module.Module{
 		Name:        "file",
 		Migrations:  Migrations.Files,
@@ -182,10 +243,17 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Nav: []module.NavEntry{
 			{Label: "Files", Screen: "file/files", Permission: contracts.PermissionFileRead},
 		},
-		// The one piece of periodic work, and it is the cost of writing the
-		// bytes before the row: a transaction that failed after the blob was
-		// written left bytes nobody references, and this removes them.
-		Jobs: append(sweep.Jobs(), retention.Jobs()...),
+		// The periodic work, and it is four things now. The orphan sweep is the
+		// cost of writing the bytes before the row: a transaction that failed after
+		// the blob was written left bytes nobody references, and this removes them.
+		// The retention sweep removes rows whose class ran out. The encode pass
+		// builds the widths of a stored image, which is the one job here that writes
+		// bytes rather than removing them — and the reason it is on the clock is that
+		// an upload's own request should answer with the frame it was given rather
+		// than with four encodes on the way there. The release sweep removes the images
+		// nobody is showing once the grace period has run — the one job that reads the
+		// use ledger rather than writing it.
+		Jobs: append(append(append(sweep.Jobs(), retention.Jobs()...), variants.Jobs()...), unused.Jobs()...),
 		// The one subscription, and it is to this module's own event: the bytes
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.
@@ -193,6 +261,9 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Routes: func(s httpx.Surfaces) {
 			sweep.Use(s.Ops.SystemToken())
 			internal.RegisterRoutes(s, svc)
+			// The library page, over the one service the doors above are mounted on —
+			// so the grid's meter and the upload's refusal cannot be two sums.
+			internal.MountLibrary(s, library)
 		},
 	}
 }

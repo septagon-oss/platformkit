@@ -172,11 +172,14 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if !contracts.MailDeliverable(s.mail.Mailer) {
 		// A composition with no mailer writes no token either: a link nobody is
-		// sent is a live credential in a table for an hour, for nothing.
+		// sent is a live credential in a table for an hour, for nothing. It leaves a
+		// suppressed record, because the deployment rather than the caller is what
+		// has to learn that no transport is wired.
 		slog.WarnContext(ctx, "auth: no mailer is wired, so no set-password link was sent", "user", user.ID)
-		return nil
+		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+			notificationcontracts.MailSuppressed, "no mail transport is wired")
 	}
-	if err := passwordOfferLock(tx, user.ID); err != nil {
+	if err := passwordLock(tx, user.ID); err != nil {
 		return err
 	}
 	recent, err := s.recent(tx, user.ID)
@@ -190,24 +193,18 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if err != nil {
 		return err
 	}
+	// The credential this person already holds, read under the same lock the send
+	// is held across: a refused replacement has to put this row back rather than
+	// delete "the" row, because it may be the only link they were sent.
+	was, err := pendingLinkOf(tx, "password_tokens", user.ID)
+	if err != nil {
+		return err
+	}
 	// Read before anything is written: a tenant served at no host of record mails
 	// nothing, and that has to be known while the offer is still nothing.
 	base, err := s.baseURL(ctx, tx)
 	if err != nil {
 		return err
-	}
-	if s.notify != nil {
-		// A path, and one with no query on it: the notification module refuses
-		// an absolute link, and this one is not a credential at all. It stays in
-		// the delivery's transaction: it carries no secret, and a notice raised by
-		// an offer whose mail the transport refused must not outlive that offer.
-		if _, err := s.notify.Notify(ctx, tx, notificationcontracts.Notice{
-			Recipient: user.ID, Title: title,
-			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
-			Link: ResetPath,
-		}); err != nil {
-			return err
-		}
 	}
 	token, at := secret(), db.Now()
 	if held {
@@ -218,38 +215,132 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		return err
 	}
 	if err := s.send(ctx, user, title, body, base, token); err != nil {
-		// A transport may quote its input in an error, and the outbox retains
-		// handler errors, so never carry the mailer's potentially
-		// credential-bearing text. The credential goes with the failure: it is a
-		// link nobody holds. When the row is the caller's own, its rollback —
-		// which this error causes — takes the row already.
+		// The credential goes back the way this attempt found it. When the row went
+		// in ahead of the send, the caller's rollback cannot take it, so the restore
+		// is a write of its own; when the row is the caller's own, the rollback this
+		// error causes takes it and nothing else needs undoing.
 		if ahead {
-			s.retractOffer(ctx, user.ID, token)
+			s.restoreOffer(ctx, user.ID, was)
 		}
-		return errors.New("auth: set-password email delivery failed")
+		return s.refuseSetPassword(ctx, tx, user.Email, err, token)
 	}
-	if !ahead {
-		// The row was written with its sent_at beside it, because that shape
-		// cannot put the send between two commits: row and delivery stand
-		// together or roll back together.
-		return nil
+	if ahead {
+		// The transport took the message, so the row stops being an offer and becomes
+		// a delivery. Its own write, not the delivery's: the fact the cooldown reads
+		// has to outlive an event transaction that rolls back afterwards, or the retry
+		// mails a second link and the first one — the one already in the mailbox —
+		// leads nowhere.
+		if err := s.markOfferSent(ctx, user.ID, token); err != nil {
+			return err
+		}
 	}
-	// The transport took the message, so the row stops being an offer and becomes
-	// a delivery. Its own write, not the delivery's: the fact the cooldown reads
-	// has to outlive an event transaction that rolls back afterwards, or the retry
-	// mails a second link and the first one — the one already in the mailbox —
-	// leads nowhere.
-	return s.markOfferSent(ctx, user.ID, token)
+	if s.notify != nil {
+		// Only now, and only because the transport took the message: a path, and one
+		// with no query on it, because the notification module refuses an absolute
+		// link and this one is not a credential at all. A notice committed beside a
+		// record that says the mail did not go would tell the person the link is in an
+		// email that never left.
+		if _, err := s.notify.Notify(ctx, tx, notificationcontracts.Notice{
+			Recipient: user.ID, Title: title,
+			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
+			Link: ResetPath,
+		}); err != nil {
+			return err
+		}
+	}
+	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+		notificationcontracts.MailSent, "")
 }
 
-// passwordOfferLock holds one person's set-password offer across the commit of
-// the credential and the send that carries it, so that two offers of one address
-// — an invitation and a forgotten-password request arriving together — cannot
-// each mail a link of which the table keeps only the last.
-func passwordOfferLock(tx db.Tx[db.Tenant], userID uuid.UUID) error {
-	key := "auth/password-offer/" + db.TenantOf(tx).ID.String() + "/" + userID.String()
+// ErrDeliveryRefused says the transport refused a credential this module minted
+// for it. The record of the refusal is written in the caller's transaction, so an
+// event worker that has to commit that record acknowledges this answer while the
+// delivery itself still rolls back, and a caller that asked for the mail directly
+// learns the mail did not go. It carries no words of its own: a transport may
+// quote its input in an error, the outbox retains handler errors, and the input
+// here is a link nobody holds.
+var ErrDeliveryRefused = errors.New("auth: set-password email delivery failed")
+
+// refuseSetPassword records the refused send in the caller's transaction and
+// answers with the sentinel. The transport's own words go to the record, redacted
+// of the credential; they never travel in the error.
+func (s *Service) refuseSetPassword(ctx context.Context, tx db.Tx[db.Tenant],
+	email string, cause error, token string) error {
+	if err := s.recordMail(ctx, tx, contracts.MailSetPassword, email,
+		notificationcontracts.MailFailed, cause.Error(), token, string(contracts.Hash(token))); err != nil {
+		return err
+	}
+	return ErrDeliveryRefused
+}
+
+// passwordLock serialises the two things that must not happen twice for one
+// person: sending a second link inside the cap, and minting a token a concurrent
+// attempt is about to replace. It is the same advisory lock verificationLock takes
+// (verification.go), keyed the same way, and it is taken before recent() because
+// recent() is a read: two attempts that both read "no link yet" would both mail.
+// It is held across the commit and the send, so nothing else rotates or spends
+// this person's credential in between, and two offers of one address — an
+// invitation and a forgotten-password request arriving together — cannot each mail
+// a link of which the table keeps only the last. The key includes the tenant even
+// though table visibility is already RLS-bound.
+func passwordLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
+	key := "auth/password/" + db.TenantOf(tx).ID.String() + "/" + id.String()
 	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
-		return fmt.Errorf("auth: lock the set-password offer: %w", err)
+		return fmt.Errorf("auth: lock a password link: %w", err)
+	}
+	return nil
+}
+
+// pendingLink is the credential row as one attempt found it, so that the attempt
+// can put it back. The zero value means there was none.
+type pendingLink struct {
+	hash    contracts.Digest
+	created time.Time
+	expires time.Time
+	sent    sql.NullTime
+	there   bool
+}
+
+// pendingLinkOf reads the one outstanding link a person holds. It is called under
+// the advisory lock, and it is the whole reason the lock is held across the send:
+// a refused attempt has to restore this value rather than delete "the" row, because
+// the row it replaced may be the only link that person has. sent_at comes back with
+// the row, because that column is the record of which delivery the transport took.
+func pendingLinkOf(tx db.Tx[db.Tenant], table string, id uuid.UUID) (pendingLink, error) {
+	var out pendingLink
+	err := tx.DB().Raw("SELECT token_hash, created_at, expires_at, sent_at FROM "+table+
+		" WHERE tenant_id = ? AND user_id = ?", db.TenantOf(tx).ID, id).Row().
+		Scan(&out.hash, &out.created, &out.expires, &out.sent)
+	switch {
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
+		return out, nil
+	case err != nil:
+		return out, fmt.Errorf("auth: read the outstanding link in %s: %w", table, err)
+	}
+	out.there = true
+	return out, nil
+}
+
+// restoreLink puts a person's credential row back the way this attempt found it.
+// Two wrongs are refused here: leaving a live token that nobody was sent, and
+// deleting the link that person was sent five minutes ago because a mail server
+// refused them a second one. Which is which is read off sent_at — the delivery the
+// transport took — and nothing else: a row whose own send never went out holds
+// nobody's link, however long it has been sitting there.
+func restoreLink(tx db.Tx[db.Tenant], table string, id uuid.UUID, was pendingLink) error {
+	if !was.there || !was.sent.Valid {
+		err := tx.DB().Exec("DELETE FROM "+table+" WHERE tenant_id = ? AND user_id = ?",
+			db.TenantOf(tx).ID, id).Error
+		if err != nil {
+			return fmt.Errorf("auth: withdraw the link nobody was sent: %w", err)
+		}
+		return nil
+	}
+	err := tx.DB().Exec("UPDATE "+table+" SET token_hash = ?, created_at = ?, expires_at = ?, sent_at = ?"+
+		" WHERE tenant_id = ? AND user_id = ?",
+		was.hash, was.created, was.expires, was.sent.Time, db.TenantOf(tx).ID, id).Error
+	if err != nil {
+		return fmt.Errorf("auth: restore the link this attempt replaced: %w", err)
 	}
 	return nil
 }
@@ -283,10 +374,9 @@ const offerStatement = "INSERT INTO password_tokens (token_hash, tenant_id, user
 func (s *Service) rotate(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User,
 	title, body, base, token string, at time.Time) error {
 	if err := s.send(ctx, user, title, body, base, token); err != nil {
-		// Nothing was written, so nothing needs withdrawing. A transport may quote
-		// its input in an error and the outbox retains handler errors, so the
-		// mailer's text — which carries the link nobody holds — never travels.
-		return errors.New("auth: set-password email delivery failed")
+		// Nothing was written, so nothing needs withdrawing: the refusal is a record
+		// and an answer, not a rollback.
+		return s.refuseSetPassword(ctx, tx, user.Email, err, token)
 	}
 	return s.commitDelivered(ctx, tx, user.ID, token, at)
 }
@@ -381,18 +471,17 @@ func isUncommittedPerson(err error) bool {
 	return isPostgres && pg.Code == "23503"
 }
 
-// retractOffer withdraws a credential whose email the transport refused, in a
-// write of its own that commits while the failed delivery rolls back. Without it
-// the row would sit for an hour as a credential nobody holds, with nothing in the
-// table to say it was never mailed; the retry rotates what it finds and sends a
-// fresh link either way.
-func (s *Service) retractOffer(ctx context.Context, userID uuid.UUID, token string) {
-	err := s.writeCredential(ctx, "withdraw", "set-password", func(tx db.Tx[db.Tenant]) error {
-		return tx.DB().Exec("DELETE FROM password_tokens WHERE user_id = ? AND token_hash = ?",
-			userID, contracts.Hash(token)).Error
+// restoreOffer puts a credential back the way this attempt found it, in a write of
+// its own that commits while the failed delivery rolls back. Its own, because that
+// rollback is the point: the row went in ahead of the send, so nothing else can
+// take it away. Without it the row would sit for an hour as a credential nobody
+// holds; with a delivered link behind it, that link comes back.
+func (s *Service) restoreOffer(ctx context.Context, userID uuid.UUID, was pendingLink) {
+	err := s.writeCredential(ctx, "restore", "set-password", func(tx db.Tx[db.Tenant]) error {
+		return restoreLink(tx, "password_tokens", userID, was)
 	})
 	if err != nil {
-		slog.ErrorContext(ctx, "auth: could not withdraw a set-password credential its email could not reach",
+		slog.ErrorContext(ctx, "auth: could not put back a set-password credential its email could not reach",
 			"user", userID, "error", err)
 	}
 }
