@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The applied-migration check's cases, each in a throwaway repository: an edited, deleted or renamed
-# applied file is refused, a new file and a file put back to the applied bytes pass, the applied bytes
+# The applied-migration check's cases, each in a throwaway repository: an edited (committed or only
+# staged), deleted or renamed applied file is refused, a new file and a file put back to the applied bytes pass, the applied bytes
 # are the oldest release's when a release carries the file, and a missing base or tag set is refused.
 set -euo pipefail
 
@@ -39,6 +39,13 @@ expect() { # expect <exit code> <case name> <text the output must hold> [argumen
 fresh comment
 echo '-- explain' >> migrations/000001_a.up.sql && commit 'fix: a comment in an applied file'
 expect 1 'a comment edit to an applied file is refused' \
+	'migrations/000001_a.up.sql changed after it was applied; add a new migration' "$base"
+
+# A commit takes the index: an edit staged and then undone in the working tree still ships.
+fresh staged
+echo '-- explain' >> migrations/000001_a.up.sql && git add migrations/000001_a.up.sql
+git show HEAD:migrations/000001_a.up.sql > migrations/000001_a.up.sql
+expect 1 'an edit staged but not in the working tree is refused' \
 	'migrations/000001_a.up.sql changed after it was applied; add a new migration' "$base"
 
 fresh module

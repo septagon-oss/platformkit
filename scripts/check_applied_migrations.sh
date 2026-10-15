@@ -4,9 +4,12 @@
 # kit/db checksums every applied file and stops an installation whose file
 # changed after it ran, so an edit that looks like a comment fix is a boot
 # failure on every database that holds the old bytes. This check judges the
-# change from BASE to HEAD over every `migrations/*.sql` file the base carries:
-# a new file passes, a deleted, renamed or edited one is refused, and the one
-# modification accepted is a file put back to the bytes installations applied.
+# change from the merge base of BASE and HEAD to the candidate — HEAD, the index
+# and the working tree, so it refuses before a commit as well as after — over
+# every `migrations/*.sql` file that merge base carries: a new file passes, a
+# deleted, renamed or edited one is refused, and the one modification accepted
+# is a file put back, in both index and working tree, to the bytes installations
+# applied. A migration upstream added after the branch point is not this change.
 #
 # A file's applied bytes are its blob at the oldest release tag (vMAJOR.MINOR.PATCH,
 # so proof and backup tags never count) that carries it, else at the first
@@ -48,16 +51,15 @@ else
 	fi
 	base="$(git rev-parse "$base^{commit}")"
 fi
+if ! base="$(git merge-base "$base" HEAD)"; then
+	echo 'check-applied-migrations: the base shares no history with HEAD' >&2
+	exit 2
+fi
 
 mapfile -t tags < <(git tag --list 'v*' --sort=v:refname | awk -v release="$release" '$0 ~ release')
 if [ "${#tags[@]}" -eq 0 ]; then
 	echo 'check-applied-migrations: no release tag in this repository; fetch the tags' >&2
 	exit 2
-fi
-
-if [ "$(git rev-parse "$base^{commit}")" = "$(git rev-parse HEAD)" ]; then
-	echo 'check-applied-migrations: base is HEAD; nothing to compare'
-	exit 0
 fi
 
 # applied PATH prints the blob installations hold for PATH, by the rule above.
@@ -73,24 +75,34 @@ applied() {
 	git rev-parse "$first:$1"
 }
 
+# Every judged path the base carries and the index or working tree differs on;
+# the index diff covers what HEAD committed that the working tree left alone.
+mapfile -t paths < <({
+	git diff --name-only --no-renames "$base" --
+	git diff --cached --name-only --no-renames "$base" --
+} | awk -v scope="$scope" '$0 ~ scope' | sort -u)
+if [ "${#paths[@]}" -eq 0 ] && [ "$base" = "$(git rev-parse HEAD)" ]; then
+	echo 'check-applied-migrations: base is HEAD; nothing to compare'
+	exit 0
+fi
+
 failed=0
-while IFS=$'\t' read -r status path; do
-	case "$status" in
-	A) continue ;;
-	D)
+for path in "${paths[@]}"; do
+	git cat-file -e "$base:$path" 2>/dev/null || continue
+	staged="$(git rev-parse --verify --quiet ":$path" || true)"
+	worktree=''
+	[ -f "$path" ] && worktree="$(git hash-object -- "$path")"
+	want="$(applied "$path")"
+	if [ -z "$staged" ] || [ -z "$worktree" ]; then
 		echo "check-applied-migrations: $path was applied but is missing from this tree; add a new migration" >&2
 		failed=1
-		;;
-	*)
-		if [ "$(git rev-parse "HEAD:$path")" = "$(applied "$path")" ]; then
-			echo "check-applied-migrations: $path restores the bytes installations applied"
-		else
-			echo "check-applied-migrations: $path changed after it was applied; add a new migration" >&2
-			failed=1
-		fi
-		;;
-	esac
-done < <(git diff --name-status --no-renames "$base" HEAD | awk -F '\t' -v scope="$scope" '$2 ~ scope')
+	elif [ "$staged" = "$want" ] && [ "$worktree" = "$want" ]; then
+		echo "check-applied-migrations: $path restores the bytes installations applied"
+	else
+		echo "check-applied-migrations: $path changed after it was applied; add a new migration" >&2
+		failed=1
+	fi
+done
 
 if [ "$failed" -ne 0 ]; then
 	exit 1

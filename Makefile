@@ -261,7 +261,8 @@ check-versions: ## Fail when go.mod replaces a dependency or a go.work file is p
 	./scripts/check_versions.sh
 
 # An applied migration is checksummed by every installation that ran it, so an edit to one is a boot
-# failure there. CI passes the commit it compares with; empty means the merge base with origin/main.
+# failure there. CI passes the commit it compares with, judged from its merge base with HEAD; empty
+# means the merge base with origin/main. Uncommitted and staged edits are judged too.
 MIGRATIONS_BASE ?=
 check-applied-migrations: ## Fail when a migration file the base carries was edited, renamed or removed
 	./scripts/check_applied_migrations.sh $(MIGRATIONS_BASE)
@@ -591,6 +592,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/plural_comment_citations_test.py
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/check_applied_migrations_test.sh
+	bash scripts/applied_migration_merge_base_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
