@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/billing/contracts"
@@ -45,14 +46,16 @@ func (s *Service) Current(_ context.Context, tx db.Tx[db.Tenant]) (*contracts.Su
 // Subscribe enrolls the tenant in a plan. See contracts.Service.
 func (s *Service) Subscribe(ctx context.Context, tx db.Tx[db.Tenant], planID uuid.UUID) (*contracts.Subscription, error) {
 	if planID == uuid.Nil {
-		return nil, fmt.Errorf("%w: a subscription is to a plan", crud.ErrInvalid)
+		return nil, &fault.Reason{Kind: crud.ErrInvalid, Key: "invalid.billing.subscription.plan",
+			Text: "a subscription is to a plan"}
 	}
 	plan, err := crud.Get[*contracts.Plan](tx, planID)
 	if err != nil {
 		return nil, err
 	}
 	if !plan.Active {
-		return nil, fmt.Errorf("%w: plan %s does not accept new subscriptions", crud.ErrConflict, plan.Code)
+		return nil, &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.billing.plan.inactive",
+			Text: "plan %s does not accept new subscriptions", Args: []any{plan.Code}}
 	}
 	now := db.Now()
 
@@ -96,8 +99,9 @@ func (s *Service) Subscribe(ctx context.Context, tx db.Tx[db.Tenant], planID uui
 	// asks Outstanding rather than the status because a subscription cancelled
 	// while it owed is cancelled and still owes.
 	if end, owes := sub.Outstanding(); owes && sub.PlanID != planID {
-		return nil, fmt.Errorf("%w: this subscription owes for the period ending %s; it is settled before the plan changes",
-			crud.ErrConflict, end.UTC().Format(time.RFC3339))
+		return nil, &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.billing.subscription.owes_plan_change",
+			Text: "this subscription owes for the period ending %s; it is settled before the plan changes",
+			Args: []any{end.UTC().Format(time.RFC3339)}}
 	}
 	sub.PlanID, sub.CancelAtPeriodEnd = planID, false
 	columns := []string{"plan_id", "cancel_at_period_end", "updated_at"}
@@ -165,7 +169,8 @@ func (s *Service) Cancel(ctx context.Context, tx db.Tx[db.Tenant], atPeriodEnd b
 	if atPeriodEnd {
 		switch {
 		case sub.Status == contracts.StatusCancelled:
-			return nil, fmt.Errorf("%w: this subscription has already ended", crud.ErrConflict)
+			return nil, &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.billing.subscription.ended",
+				Text: "this subscription has already ended"}
 		case sub.CancelAtPeriodEnd:
 			return sub, nil
 		}
@@ -186,8 +191,9 @@ func (s *Service) Cancel(ctx context.Context, tx db.Tx[db.Tenant], atPeriodEnd b
 	// may leave at the end of the one they are in, and may not walk away from
 	// the debt by leaving in the middle.
 	if end, owes := sub.Outstanding(); owes {
-		return nil, fmt.Errorf("%w: this subscription owes for the period ending %s; it is settled, or the grace period runs out, before it ends now — cancel at period end instead",
-			crud.ErrConflict, end.UTC().Format(time.RFC3339))
+		return nil, &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.billing.subscription.owes_end_now",
+			Text: "this subscription owes for the period ending %s; it is settled, or the grace period runs out, before it ends now — cancel at period end instead",
+			Args: []any{end.UTC().Format(time.RFC3339)}}
 	}
 	// The period is left where it is: what was paid for is a fact, and the
 	// status is what says service has stopped.
@@ -373,8 +379,9 @@ func RefuseWhileSubscribed(token tenancy.SystemToken) func(context.Context, db.T
 			return err
 		}
 		if live > 0 {
-			return fmt.Errorf("%w: plan %s is still being billed, by %d subscription(s); deactivate it instead, which stops new subscriptions and leaves the ones already on it running",
-				crud.ErrConflict, plan.Code, live)
+			return &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.billing.plan.subscribed",
+				Text: "plan %s is still being billed, by %d subscription(s); deactivate it instead, which stops new subscriptions and leaves the ones already on it running",
+				Args: []any{plan.Code, live}}
 		}
 		return nil
 	}

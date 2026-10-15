@@ -276,7 +276,8 @@
   },
   "invalid.billing.subscription.plan": {
     "references": [
-      "modules/billing/contracts/billing.go"
+      "modules/billing/contracts/billing.go",
+      "modules/billing/internal/service.go"
     ],
     "translation": "a subscription is to a plan",
     "plural": {
@@ -335,6 +336,51 @@
     "translation": "%d is not a day of the month to bill on",
     "plural": {
       "": "%d is not a day of the month to bill on"
+    }
+  },
+  "conflict.billing.plan.inactive": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "plan %s does not accept new subscriptions",
+    "plural": {
+      "": "plan %s does not accept new subscriptions"
+    }
+  },
+  "conflict.billing.plan.subscribed": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "plan %s is still being billed, by %d subscription(s); deactivate it instead, which stops new subscriptions and leaves the ones already on it running",
+    "plural": {
+      "": "plan %s is still being billed, by %d subscription(s); deactivate it instead, which stops new subscriptions and leaves the ones already on it running"
+    }
+  },
+  "conflict.billing.subscription.ended": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "this subscription has already ended",
+    "plural": {
+      "": "this subscription has already ended"
+    }
+  },
+  "conflict.billing.subscription.owes_end_now": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "this subscription owes for the period ending %s; it is settled, or the grace period runs out, before it ends now — cancel at period end instead",
+    "plural": {
+      "": "this subscription owes for the period ending %s; it is settled, or the grace period runs out, before it ends now — cancel at period end instead"
+    }
+  },
+  "conflict.billing.subscription.owes_plan_change": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "this subscription owes for the period ending %s; it is settled before the plan changes",
+    "plural": {
+      "": "this subscription owes for the period ending %s; it is settled before the plan changes"
     }
   }
 }

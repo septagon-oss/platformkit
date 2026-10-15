@@ -276,7 +276,8 @@
   },
   "invalid.billing.subscription.plan": {
     "references": [
-      "modules/billing/contracts/billing.go"
+      "modules/billing/contracts/billing.go",
+      "modules/billing/internal/service.go"
     ],
     "translation": "uma subscrição é de um plano",
     "plural": {
@@ -335,6 +336,51 @@
     "translation": "%d não é um dia do mês para faturar",
     "plural": {
       "": "%d não é um dia do mês para faturar"
+    }
+  },
+  "conflict.billing.plan.inactive": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "o plano %s não aceita novas subscrições",
+    "plural": {
+      "": "o plano %s não aceita novas subscrições"
+    }
+  },
+  "conflict.billing.plan.subscribed": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "o plano %s ainda está a ser faturado (%d subscrições ativas); desative-o em vez de o remover, o que impede novas subscrições e deixa correr as que já lá estão",
+    "plural": {
+      "": "o plano %s ainda está a ser faturado (%d subscrições ativas); desative-o em vez de o remover, o que impede novas subscrições e deixa correr as que já lá estão"
+    }
+  },
+  "conflict.billing.subscription.ended": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "esta subscrição já terminou",
+    "plural": {
+      "": "esta subscrição já terminou"
+    }
+  },
+  "conflict.billing.subscription.owes_end_now": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "esta subscrição deve o período terminado em %s; é liquidada, ou o período de tolerância esgota-se, antes de terminar agora — cancele antes no fim do período",
+    "plural": {
+      "": "esta subscrição deve o período terminado em %s; é liquidada, ou o período de tolerância esgota-se, antes de terminar agora — cancele antes no fim do período"
+    }
+  },
+  "conflict.billing.subscription.owes_plan_change": {
+    "references": [
+      "modules/billing/internal/service.go"
+    ],
+    "translation": "esta subscrição deve o período terminado em %s; é liquidada antes de o plano mudar",
+    "plural": {
+      "": "esta subscrição deve o período terminado em %s; é liquidada antes de o plano mudar"
     }
   }
 }

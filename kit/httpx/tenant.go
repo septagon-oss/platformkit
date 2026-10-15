@@ -61,6 +61,23 @@ func (c *hostCache) remove(host string) {
 	delete(c.hosts, host)
 }
 
+// dropTenant forgets every name that resolves to one tenant.
+//
+// A tenant's languages and its status travel inside a cached resolution, and the
+// names a tenant answers at are the ones that carry it: forgetting one host of a
+// tenant that has four leaves three pages still served in the languages somebody
+// just replaced. The scan is over the resolutions this installation holds, which
+// is bounded by the hosts the operator owns.
+func (c *hostCache) dropTenant(id uuid.UUID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for host, e := range c.hosts {
+		if e.tenant.ID == id {
+			delete(c.hosts, host)
+		}
+	}
+}
+
 func (c *hostCache) put(host string, t tenancy.Tenant) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -76,6 +93,60 @@ const resolveTimeout = 2 * time.Second
 // effect now rather than within hostTTL. The tenant module calls it when it
 // changes a host; nothing else has any reason to.
 func (a *API) InvalidateHost(host string) { a.hosts.remove(HostOnly(host)) }
+
+// forgottenTenants is the list one request accumulates while it runs, and the
+// reason it is a pointer behind a context value: the middleware that commits the
+// transaction is above the handler that decided to change a tenant, and it has to
+// read what that handler asked for.
+type forgottenTenants struct {
+	mu      sync.Mutex
+	tenants []uuid.UUID
+}
+
+func (f *forgottenTenants) add(id uuid.UUID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tenants = append(f.tenants, id)
+}
+
+// drain takes the list, leaving it empty: a request is answered once, and what it
+// asked for is forgotten once.
+func (f *forgottenTenants) drain() []uuid.UUID {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	asked := f.tenants
+	f.tenants = nil
+	return asked
+}
+
+// ForgetTenantOnCommit asks the kernel to drop every cached resolution of one
+// tenant once this request's transaction commits — and to forget nothing if that
+// commit does not happen.
+//
+// The cached resolution carries the tenant's languages, so a command that changed
+// them leaves every page answered in the old set until the entry expires, half a
+// minute of pages that contradict the row the caller just saved. A writer on a
+// system transaction that has already committed invalidates directly instead
+// (InvalidateHost); this is for the writer inside the request's own transaction,
+// which cannot see its own commit and must not pretend it already happened.
+//
+// The list is held until the commit for the reason a premature invalidation is no
+// invalidation at all: a request that arrives while this one is still open, and
+// resolves the host again, puts the old resolution back for another half minute.
+//
+// A call outside a request transaction is a no-op, and that is the whole answer
+// rather than a swallowed failure: the write whose result could go stale needs
+// the same transaction this list is carried by, so a caller with no transaction
+// has written nothing and has nothing to forget. A writer that committed a change
+// on a system transaction invalidates through the router instead.
+func ForgetTenantOnCommit(ctx context.Context, tenant uuid.UUID) {
+	if tenant == uuid.Nil {
+		return
+	}
+	if f, ok := ctx.Value(forgetKey{}).(*forgottenTenants); ok {
+		f.add(tenant)
+	}
+}
 
 // resolve maps a host to a tenant, through the loader, inside a cross-tenant
 // transaction the kernel opens for it. The loader is a module: it cannot mint
