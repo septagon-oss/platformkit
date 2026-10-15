@@ -165,16 +165,16 @@ func New(deps Deps) module.Module {
 		// account of attempts, so the uuids below name rows but nobody — except
 		// `created_by`, the person who registered the address and the person a
 		// disablement notice addresses. The text claims are the sentences somebody
-		// writes here: why an endpoint stopped, why an attempt failed, and the
-		// payload, which is the event's own document and can carry an address
-		// verbatim the way audit's does. `url` is claimed by nobody and scrubbed
-		// by nobody on purpose: it is a machine address a tenant configured, and a
-		// token in it is a broken integration, not a person's protection.
+		// writes here: an endpoint's label, why an endpoint stopped, why an attempt
+		// failed, and the payload, which is the event's own document and can carry
+		// an address verbatim the way audit's does. `url` is claimed by nobody and
+		// scrubbed by nobody on purpose: it is a machine address a tenant configured,
+		// and a token in it is a broken integration, not a person's protection.
 		PersonalData: personaldata.Implements(
 			personaldata.Table{
 				Name:  "webhook_endpoints",
 				About: []string{"created_by"},
-				Text:  []string{"disabled_reason"},
+				Text:  []string{"name", "disabled_reason"},
 			},
 			personaldata.Table{
 				Name:      "webhook_endpoint_secrets",

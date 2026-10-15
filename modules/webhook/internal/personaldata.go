@@ -69,18 +69,25 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	return json.Marshal(webhookPart{Endpoints: rows})
 }
 
-// Erase scrubs the three columns somebody can fill with words: the reason an endpoint
-// was disabled, the reason an attempt failed, and the payload the platform POSTed,
-// which is the event's own document and can carry this person's address verbatim. The
-// payload is a jsonb column, so it takes ScrubJSON's cast and the refusal that comes
+// Erase scrubs the columns somebody can fill with words: an endpoint's label, the reason
+// an endpoint was disabled, the reason an attempt failed, and the payload the platform
+// POSTed, which is the event's own document and can carry this person's address verbatim.
+// The payload is a jsonb column, so it takes ScrubJSON's cast and the refusal that comes
 // with it: a stored document that will not parse is a row an erasure cannot certify.
+//
+// `name` is the label an operator types, and the person whose subscription the endpoint
+// tracks is the likeliest thing to type — "Jo Jones <jo.jones@example.com>" is a label
+// that reads well until the erasure reaches it. It is a copy of the identifier in the
+// same sense a task title is, so it is scrubbed. `url` is not: rewriting a destination
+// would break the delivery it is the destination for, which is the write that takes
+// something away rather than the one that finds nothing.
 //
 // `created_by` stays. It is the trail's own kind of attribution — the same account
 // modules/audit keeps its actor — and the person it points at is the anonymised row the
 // erasure leaves behind, not the address it just removed.
 func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
 	if _, err := personaldata.Scrub(ctx, tx, s, "webhook_endpoints",
-		[]string{"disabled_reason"}, ""); err != nil {
+		[]string{"name", "disabled_reason"}, ""); err != nil {
 		return err
 	}
 	if _, err := personaldata.Scrub(ctx, tx, s, "webhook_deliveries",

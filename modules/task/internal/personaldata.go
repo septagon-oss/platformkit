@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 )
 
@@ -68,8 +69,13 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 // task is *about* is not necessarily its assignee, and the note that names them is the
 // thing they asked for. What it cannot do is read a description that identifies somebody
 // by describing them, and ADR 0020 says so rather than claiming otherwise.
+//
+// The task's revision moves with its words (ScrubCounted): a proposal against this row
+// carries the revision its diff was written against, and Apply rechecks it. An erasure
+// that rewrote the title under an open proposal without moving the counter would have that
+// proposal stamp a diff computed from text that no longer exists.
 func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
-	_, err := personaldata.Scrub(ctx, tx, s, "tasks",
+	_, err := personaldata.ScrubCounted(ctx, tx, s, "tasks", entity.RevisionField,
 		[]string{"title", "description", "resolution"}, "")
 	return err
 }
