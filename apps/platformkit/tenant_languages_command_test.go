@@ -53,6 +53,13 @@ func postOtherLanguages(t *testing.T, cfg config.Config, client *http.Client, re
 
 // postLanguagesForm is the request both forms above make, with redirects left for the
 // case to read: where a save lands is part of the answer under test.
+//
+// It says which language it is answered in, because the case below reads a sentence
+// of the answer. Which language that is has been the tenant's live declaration all
+// along — this case simply never noticed, because it ran ahead of the half-minute the
+// cached host resolution used to keep the old declaration in place. A browser sends
+// the header on every request, and the set this case has just written holds English,
+// so what is pinned is the sentence and not a race.
 func postLanguagesForm(t *testing.T, cfg config.Config, client *http.Client, form url.Values) (int, string) {
 	t.Helper()
 	noRedirect := *client
@@ -64,6 +71,7 @@ func postLanguagesForm(t *testing.T, cfg config.Config, client *http.Client, for
 	}
 	req.Host = acmeHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Referer", "http://"+acmeHost+"/app/tenant/languages")
 	res, err := noRedirect.Do(req)
 	if err != nil {
