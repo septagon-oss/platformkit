@@ -20,7 +20,7 @@ import (
 )
 
 func VerificationSubscriptions(svc *Service) []events.Subscription {
-	return []events.Subscription{{
+	subs := []events.Subscription{{
 		Module: "auth", Name: user.EventRegistrationUnverified,
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], event events.Event) error {
 			var registered user.RegistrationUnverified
@@ -70,6 +70,10 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			return svc.offerVerification(ctx, tx, found.ID, asked.Email)
 		},
 	}}
+	for i := range subs {
+		subs[i].Handler = AcknowledgeRefusedDelivery(subs[i].Handler)
+	}
+	return subs
 }
 
 // Both rotation and consumption take this lock before touching a token row.
