@@ -131,23 +131,22 @@ func TestTheRepairOfARoleSomebodyEmptiedOfItsDeadGrantReportsNothing(t *testing.
 	}
 }
 
-// TestTheAuditNamesEveryGrantTheRepairTookWhenTheRowMovedUnderneathIt is the
-// overlap, and what it holds the repair to is the one claim repair.go makes about
-// writing: that the removal goes through SetRole, so state and outbox event
-// commit together.
+// TestTheRepairRacingAWriteThatTookTheDeadGrantItselfPublishesNothing is the
+// overlap, seen from the audit: what a repair that takes its role lock before it
+// derives anything owes a write that landed while it was reading.
 //
-// A second transaction grants finance a permission and commits in the window
-// between the repair's read of the roles and its write of the derived list — the
-// window the tenant's advisory lock does not cover, because the lock is taken
-// after the read. SetRole's last-write-wins whole-row write then puts the row
-// back as the repair saw it, and intranet:read leaves with the stale snapshot.
-// Whether that lost update is SetRole's to prevent is not this case's question —
-// two people PUTting the same role already lose one of them, on origin/main and
-// by design. What this case holds the repair to, and what it must keep holding,
-// is that the grant the repair took away is named in the auth.role_set row it
-// publishes: the loss is in the audit, with the repair as its author, and never
-// invisible because the removal came out of a stale read.
-func TestTheAuditNamesEveryGrantTheRepairTookWhenTheRowMovedUnderneathIt(t *testing.T) {
+// A second transaction grants finance a permission, committing after the repair's
+// unlocked read and before the lock it takes to derive its write. That write
+// cannot name billing:catalog — contracts.CheckedPermissions refuses a list naming
+// a permission no composed module defines — so it is a whole-row PUT that takes
+// the dead grant out by itself. The repair then locks, reads the row as it stands,
+// and finds nothing of its own to take: it writes no row and publishes no event,
+// and leaves what the other operator wrote in place. Held to here in both halves:
+// the grant that write added survives in the audit and in the row, because a
+// command that only ever narrows must not revoke a permission nobody asked it
+// about, and the audit holds exactly one row, because a run that moved nothing
+// publishes nothing.
+func TestTheRepairRacingAWriteThatTookTheDeadGrantItselfPublishesNothing(t *testing.T) {
 	adminDB, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
 	svc, _ := auth.Module(auth.Deps{})
 	tenant := ovSeed(t, conn, svc)
@@ -195,18 +194,31 @@ func TestTheAuditNamesEveryGrantTheRepairTookWhenTheRowMovedUnderneathIt(t *test
 	if err := json.Unmarshal(rawNow, &now); err != nil {
 		t.Fatalf("the last event's now is %s: %v", rawNow, err)
 	}
-	// The repair did write: the row it left holds no dead grant. Read back by
-	// name, from the row itself, so this case reaching its assertion does not
-	// depend on anything the repair printed or published.
+	// Both halves are read back from the installation, not from what the repair
+	// printed: the row it left holds no dead grant, and holds the grant the write
+	// it raced added.
 	if grants := ovRoleGrants(t, conn, svc, tenant, "finance"); slices.Contains(grants, "billing:catalog") {
-		t.Fatalf("the repair reached no row: finance still holds billing:catalog: %v", grants)
+		t.Fatalf("finance still holds billing:catalog after the repair: %v", grants)
+	} else if !slices.Contains(grants, "task:read") {
+		t.Fatalf("the repair revoked task:read, which another operator had just granted: %v", grants)
 	}
-	// And the permission that left with the stale snapshot left named.
-	if !slices.Contains(was, "task:read") {
-		t.Fatalf("the row the repair wrote from was %v, which does not name task:read: the concurrent grant never landed and this case proved nothing", was)
+	// The write this case raced moved the row that held the dead grant; if it did
+	// not, nothing here says anything about a repair that overlapped it.
+	if !slices.Contains(was, "billing:catalog") {
+		t.Fatalf("the row the concurrent write moved was %v, which does not name billing:catalog: this case proved nothing", was)
 	}
-	if slices.Contains(now, "task:read") {
-		t.Errorf("task:read is still in the row, so nothing left with the stale read: now %v", now)
+	if !slices.Contains(now, "task:read") {
+		t.Errorf("the concurrent write's own event says now %v, which does not hold what that write granted", now)
+	}
+	// And the repair added no audit row of its own, because it moved no row.
+	var events int
+	if err := adminDB.QueryRowContext(t.Context(),
+		"SELECT count(*) FROM platformkit_outbox WHERE name = $1 AND tenant_id = $2",
+		contracts.EventRoleSet, tenant.ID).Scan(&events); err != nil {
+		t.Fatalf("read the outbox: %v", err)
+	}
+	if events != 1 {
+		t.Errorf("the tenant holds %d %s rows after a repair with nothing left to take, want the one write alone", events, contracts.EventRoleSet)
 	}
 }
 
