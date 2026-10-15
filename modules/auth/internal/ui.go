@@ -71,7 +71,10 @@ func (c pageCommands) Spend(ctx context.Context, token string) error {
 	return c.svc.verifyEmail(ctx, tx, c.users, token)
 }
 
-// MayRedeem counts one attempt from the machine that asked.
+// MayRedeem counts one attempt from the machine that asked. A page refuses only
+// what the counter really refused: a limiter that could not be reached states no
+// limit, and the person is not punished for the store being down.
 func (c pageCommands) MayRedeem(ctx context.Context, r *http.Request) bool {
-	return c.svc.MayRedeem(ctx, ClientOf(r).IP)
+	d := c.svc.MayRedeem(ctx, ClientOf(r).IP)
+	return !d.Decided() || d.Allowed
 }

@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -145,9 +147,37 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 		Name: up.Name, ContentType: contentType, Visibility: up.Visibility, Kind: up.Kind,
 		Size: size, SHA256: digestHex, StorageKey: key.String(), Width: width, Height: height,
 	}
+	// No grace period starts here. The release rule the sweep runs is "a file whose
+	// last use ended" (this file's own contracts.File.UnusedSince names it), and an
+	// upload has no use that has ended — the ledger has not spoken about this file at
+	// all. Stamping the arrival reaped every image whose only name lives outside the
+	// ledger: a day after a tenant configured its site logo, site_settings names it
+	// by a bare uuid (modules/site/contracts/site.go, LogoFileID), files no use row
+	// and places no hold, so the sweep's predicate matched it exactly and the bytes
+	// the public frame renders were destroyed. The abandoned upload — the person who
+	// picked a file and never saved the record — is the cost of that boundary, and it
+	// is charged to the quota and the retention sweep rather than to a rule that
+	// cannot tell an unsaved picture from a configured one; see this module's README
+	// and the round's report.
 	if err := crud.Create(ctx, tx, f); err != nil {
 		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
+	}
+	// The plan for the other widths, filed in the same transaction as the row it
+	// belongs to, so a plan never exists without its picture and an upload that
+	// rolled back files nothing. Pending rows carry no size, so this costs no
+	// quota: the bytes charge for themselves when they are written, in the tick
+	// that writes them, under the same lock every other charge takes.
+	//
+	// Nothing here encodes anything: the caller's request has already done the
+	// one thing that had to happen in it, which is to store and serve the frame.
+	// internal/variants.go builds the rest on the clock, and until it has been
+	// round, the srcset names this row alone.
+	for _, row := range contracts.VariantPlan(f.ID, width, height, contentType) {
+		if err := crud.Create(ctx, tx, row); err != nil {
+			_ = s.storage.Delete(ctx, scope, key)
+			return nil, err
+		}
 	}
 	return f, events.Publish(ctx, tx, contracts.EventUploaded, contracts.Uploaded{
 		FileID: f.ID, Name: f.Name, ContentType: f.ContentType, Size: f.Size,
@@ -185,13 +215,19 @@ func (s *Service) Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUI
 // field used, decide the difference with the same pure function the fake runs,
 // lock every file either side names in ascending id order, and only then write.
 //
-// The lock is FOR KEY SHARE rather than FOR UPDATE because the row being locked
-// is a file and the thing being protected is a set of rows pointing at it: two
-// records that both reference one file may record their uses in either order,
-// and neither is changing the file. What they cannot do is have the file deleted
-// between this transaction's check and its write, and a key-share lock is
-// exactly the lock a delete — which takes FOR UPDATE on the row it removes —
-// waits for. Ascending order is what stops two records that name the same two
+// Two lock strengths, chosen by what the rewrite does to the file rather than
+// by which table it writes. A file whose use this rewrite ends is locked FOR
+// UPDATE: what it is about to decide — whether that file is now read by nothing —
+// is a count of rows another rewrite may be ending in the same instant, and two
+// compatible key shares let each count the other's not-yet-committed row, so both
+// would answer "still used", both would commit, and the picture would keep its
+// bytes with the grace period unstarted and no sweep ever selecting it again. The
+// exclusive lock makes the later rewrite wait for the earlier one to land and
+// count what is left after it. A file the new set only names is locked FOR KEY
+// SHARE, which is the lock that buys the one thing this rewrite needs of a file
+// it is not deciding about: that it is not deleted between the check and the
+// write, since a delete takes FOR UPDATE on the row it removes and so waits for
+// the key share. Ascending order is what stops two records that name the same two
 // files from each holding one and waiting for the other.
 func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID) ([]uuid.UUID, error) {
 	wanted := contracts.CollapseRefs(refs)
@@ -209,6 +245,23 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		from = append(from, row.FileID)
 	}
 	add, remove := contracts.DiffUses(from, wanted)
+	// Which of the ended rows were asserting a public audience. A publish granted
+	// these files the anonymous read, and this rewrite is removing the row that
+	// granted it, so this is the write that has to take it back — the third way back
+	// the brief names, "deleting the last public user". It names the rows being ended
+	// and not the files left with none: a file the ledger has never had a row for —
+	// the site logo — is in neither list, and the exemption the audience rule gives
+	// it (a file with no use rows keeps whatever its upload asked for) stays exactly
+	// where it was. An
+	// upload the media library made public and a draft only ever named privately is
+	// not here either: the hand door's choice is not this rewrite's to take back,
+	// only the audience a publish asserted.
+	var retract []uuid.UUID
+	for _, id := range remove {
+		if seen[id].Public {
+			retract = append(retract, id)
+		}
+	}
 	// One ascending pass over everything either side names, so the lock order
 	// never depends on which side an id landed on. What a row that is not there
 	// costs depends on that side, and only on that side.
@@ -224,7 +277,21 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	// strand the record trying to stop existing, refused by a file it is giving
 	// up, and leave the ledger saying a file nobody has is still being read.
 	for _, id := range union(wanted, remove) {
-		found, err := lockFileKeyShare(ctx, tx, id)
+		// One ascending walk, one lock per file, taken before any of it is decided:
+		// FOR UPDATE where this rewrite ends a use and so decides whether the file
+		// has any left, FOR KEY SHARE where it only names the file. No lock is taken
+		// weak and upgraded later, which two rewrites of one file would deadlock;
+		// the order is SetShown's too, so a publish and an edit that share an image
+		// serialise on it rather than each reading a snapshot the other has written.
+		var (
+			found bool
+			err   error
+		)
+		if slices.Contains(remove, id) {
+			found, err = lockFileForUpdate(ctx, tx, id)
+		} else {
+			found, err = lockFileKeyShare(ctx, tx, id)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -249,6 +316,16 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 			return nil, err
 		}
 	}
+	if len(add) > 0 {
+		// Something shows these again, so their grace period is over. This is the
+		// other arm of the same stamp, and it is why an image can be moved from one
+		// body to another inside the grace period and survive: the write that starts
+		// the use is the write that ends the countdown.
+		if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
+			Where("id IN ?", add).Update("unused_since", nil).Error; err != nil {
+			return nil, fmt.Errorf("file: say %d images are shown again: %w", len(add), err)
+		}
+	}
 	if len(remove) == 0 {
 		return nil, nil
 	}
@@ -256,6 +333,12 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	// the release sweep will be handed when it exists; today it is what the
 	// caller that dropped the last reference learns, and the file keeps its
 	// bytes either way.
+	//
+	// Counted after every lock above is held, which is what makes the count
+	// trustworthy: a rewrite that ended another use of the same file was waiting
+	// on that lock and, having landed, its rows are gone from this statement's
+	// snapshot. Counting before the lock, or with a lock another rewrite can hold
+	// at the same time, is the two-both-decide-it-is-still-used answer.
 	var live []uuid.UUID
 	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
 		Where("file_id IN ?", remove).Distinct().Pluck("file_id", &live).Error; err != nil {
@@ -264,7 +347,183 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	// What ended and is not read by anything else. The order of the two answers
 	// is "what to write, what to end", so the second one is the list here.
 	_, unused := contracts.DiffUses(remove, live)
+	if len(unused) > 0 {
+		// The grace period starts now, durably, in the transaction that removed the
+		// last use row — the same one that wrote the body that stopped naming the
+		// picture, so an edit that rolls back moves no clock. The sweep measures its
+		// day from this instant; nothing else records when a file stopped being
+		// shown, and deleted_at belongs to a row that is not being deleted.
+		// width > 0 is in the WHERE because only a file the image pass measured is
+		// ever stamped — the ledger speaks about pictures, files_unused_since_measured
+		// CHECKs the stamp against the measurement, and a document upload that loses
+		// the last record that named it has no grace period to start. The list
+		// returned below is unchanged: it names whose last use ended, which is wider
+		// than what the sweep can act on, and the sweep's own predicate asks width > 0.
+		at := db.Now()
+		if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
+			Where("id IN ? AND deleted_at IS NULL AND width > 0", unused).Update("unused_since", &at).Error; err != nil {
+			return nil, fmt.Errorf("file: stamp when %d images stopped being shown: %w", len(unused), err)
+		}
+	}
+	for _, id := range retract {
+		// Recomputed from the whole ledger, not from this rewrite: a second published
+		// record showing the same picture keeps it readable, and a file whose last
+		// public row went with this one goes private in the transaction that ended it,
+		// with its event, so an anonymous read of bytes nobody is showing any more is
+		// refused at the door rather than served until the release sweep gets there.
+		if err := s.recomputeVisibility(ctx, tx, id, use, true); err != nil {
+			return nil, err
+		}
+	}
 	return unused, nil
+}
+
+// SetShown is the audience half of the ledger: the command that asserts an
+// audience. SetUses is the one that takes one back. See contracts.Service.
+//
+// The order is SetUses' and one step stronger: lock every named file FOR UPDATE
+// in ascending id order — this command writes the file rows, so a key share is not
+// enough — then write the audience onto the rows, then recompute each file from the
+// whole ledger. Every path in the kernel takes the record's row before it takes
+// file rows, so record-then-file is the one order and two publishes that share an
+// image serialise on that image rather than each computing from a snapshot the
+// other has not written.
+//
+// The recompute reads the whole table and not the rows this call touched: the
+// rule is "public if any live use is public", and a second record showing the same
+// picture in a published page is exactly the case that has to keep it readable.
+func (s *Service) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contracts.Use, refs []uuid.UUID, public bool) error {
+	wanted := contracts.CollapseRefs(refs)
+	if len(wanted) == 0 {
+		// With nothing named, the record's own rows are the set: an unpublish ends
+		// the audience of every file this record shows, whatever its body now says,
+		// and it must never refuse, because refusing an unpublish would leave bytes
+		// public that nothing is showing.
+		var have []uuid.UUID
+		if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+			Where("module = ? AND entity = ? AND record = ?", owner.Module, owner.Entity, owner.Record).
+			Distinct().Pluck("file_id", &have).Error; err != nil {
+			return fmt.Errorf("file: what %s/%s %s shows: %w", owner.Module, owner.Entity, owner.Record, err)
+		}
+		wanted = have
+	}
+	for _, id := range ascending(wanted) {
+		found, err := lockFileForUpdate(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
+		}
+	}
+	rows := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Where("module = ? AND entity = ? AND record = ?", owner.Module, owner.Entity, owner.Record)
+	if len(refs) > 0 {
+		rows = rows.Where("file_id IN ?", refs)
+	}
+	if err := rows.Update("public", public).Error; err != nil {
+		return fmt.Errorf("file: say who %s/%s %s shows: %w", owner.Module, owner.Entity, owner.Record, err)
+	}
+	if public {
+		// A ref with no use row for this record is a publish that would expose bytes
+		// the ledger says nothing about, and so could never take back. Refusing is
+		// the safe direction, and the remedy is the door that files uses: save the
+		// body, then publish.
+		var shown []uuid.UUID
+		if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+			Where("module = ? AND entity = ? AND record = ? AND file_id IN ?",
+				owner.Module, owner.Entity, owner.Record, wanted).
+			Distinct().Pluck("file_id", &shown).Error; err != nil {
+			return fmt.Errorf("file: whether %s/%s %s shows these files: %w", owner.Module, owner.Entity, owner.Record, err)
+		}
+		if len(shown) != len(wanted) {
+			return fmt.Errorf("%w: %s — save the body that names it, then publish",
+				contracts.ErrNotShown, missing(wanted, shown))
+		}
+	}
+	for _, id := range wanted {
+		if err := s.recomputeVisibility(ctx, tx, id, owner, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// recomputeVisibility asks the ledger who may read one file and writes the answer
+// when it differs, publishing the flip in the same transaction as the write that
+// caused it.
+//
+// spoke says whether the ledger has anything to say about this file at all. Where
+// it has rows, or has just lost its last one, the invariant decides: public if and
+// only if a live use row of it is public, so "no rows" is an answer — nobody is
+// showing this and nothing ever asserted otherwise. Where the ledger has never had
+// a row for it (spoke false) there is no answer to derive, and the file keeps
+// whatever its upload asked for: the site logo is that case, named by a bare uuid
+// with no richtext field and no lifecycle, and the media library's hand-raised
+// public upload is the other.
+func (s *Service) recomputeVisibility(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, owner contracts.Use, spoke bool) error {
+	var shown int64
+	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Where("file_id = ? AND public", id).Count(&shown).Error; err != nil {
+		return fmt.Errorf("file: who may read %s: %w", id, err)
+	}
+	var rows int64
+	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Where("file_id = ?", id).Count(&rows).Error; err != nil {
+		return fmt.Errorf("file: who reads %s: %w", id, err)
+	}
+	if rows == 0 && !spoke {
+		return nil
+	}
+	want := contracts.VisibilityPrivate
+	if shown > 0 {
+		want = contracts.VisibilityPublic
+	}
+	f, err := crud.GetForUpdate[*contracts.File](tx, id)
+	if errors.Is(err, crud.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if f.Visibility == want {
+		return nil
+	}
+	f.Visibility = want
+	if err := crud.Update(ctx, tx, f, "visibility", "updated_at"); err != nil {
+		return err
+	}
+	return events.Publish(ctx, tx, contracts.EventVisibility, contracts.Visibility{
+		FileID: id, Visibility: want, Module: owner.Module, Entity: owner.Entity,
+		Record: owner.Record, At: db.Now(),
+	})
+}
+
+// lockFileForUpdate is lockFileKeyShare's stronger sibling, for the one command
+// that writes the file row itself: SetShown recomputes visibility off a read of
+// every use of this file, and the lock is what makes that read repeatable against
+// another publish of the same image.
+func lockFileForUpdate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (bool, error) {
+	var found uuid.UUID
+	err := tx.DB().WithContext(ctx).Raw(`SELECT id FROM files WHERE id = ? FOR UPDATE`, id).Row().Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("file: lock %s to say who may read it: %w", id, err)
+	}
+	return true, nil
+}
+
+// missing is the first id in want that have does not name, for the refusal that
+// has to say which file the caller means.
+func missing(want, have []uuid.UUID) uuid.UUID {
+	for _, id := range want {
+		if !slices.Contains(have, id) {
+			return id
+		}
+	}
+	return uuid.Nil
 }
 
 // lockFileKeyShare takes FOR KEY SHARE on one file's row and says whether the
@@ -289,9 +548,16 @@ func lockFileKeyShare(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (b
 
 // union is the ascending, deduplicated id list every lock is taken in.
 func union(a, b []uuid.UUID) []uuid.UUID {
-	all := append(slices.Clone(a), b...)
-	slices.SortFunc(all, func(x, y uuid.UUID) int { return bytes.Compare(x[:], y[:]) })
-	return slices.Compact(all)
+	return slices.Compact(ascending(append(slices.Clone(a), b...)))
+}
+
+// ascending puts file ids in the one order every lock pass here takes them, so no
+// two commands can arrive at two files they share from opposite ends. A caller
+// names its files in the order its body holds them, which is nobody's lock order.
+func ascending(ids []uuid.UUID) []uuid.UUID {
+	out := slices.Clone(ids)
+	slices.SortFunc(out, func(x, y uuid.UUID) int { return bytes.Compare(x[:], y[:]) })
+	return out
 }
 
 // Open is the row and its bytes. See contracts.Service.
@@ -305,19 +571,119 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, a
 		// this tenant has, including whether it has this.
 		return nil, nil, crud.ErrNotFound
 	}
-	body, err := s.storage.Get(ctx, contracts.ScopeOfTx(tx), contracts.Key(f.StorageKey))
+	return s.openKey(ctx, tx, f, contracts.Key(f.StorageKey))
+}
+
+// openKey is the one read of the store every door ends at: the row already
+// checked, and the bytes at one key.
+func (s *Service) openKey(ctx context.Context, tx db.Tx[db.Tenant], f *contracts.File, key contracts.Key) (*contracts.File, io.ReadCloser, error) {
+	body, err := s.storage.Get(ctx, contracts.ScopeOfTx(tx), key)
 	if err != nil {
 		// A row that says there are bytes and a store that has none is the one
 		// inconsistency the split can produce, and it is an outage rather than
 		// something the caller did: it reaches huma as a 500 with this in the log.
-		return nil, nil, fmt.Errorf("file: open %s for %s: %w", f.StorageKey, f.ID, err)
+		return nil, nil, fmt.Errorf("file: open %s for %s: %w", key, f.ID, err)
 	}
 	return f, body, nil
 }
 
-// Delete removes the row and says where the bytes are. See contracts.Service.
-func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
+// OpenWidth is Open at one planned width. See contracts.WidthOpener.
+//
+// There is no fallback to the original, and that is the whole design of the
+// door: one address with one width names one object, or every cache between this
+// process and a reader becomes a lie about which of the two it is holding. A
+// width with no ready variant is therefore the same 404 a private file gets at
+// the public door, so an anonymous caller learns nothing about which widths this
+// tenant has waiting to be built.
+func (s *Service) OpenWidth(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, anonymous bool, width int) (*contracts.File, io.ReadCloser, error) {
+	if width <= 0 {
+		return s.Open(ctx, tx, id, anonymous)
+	}
 	f, err := crud.Get[*contracts.File](tx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if anonymous && !f.Public() {
+		return nil, nil, crud.ErrNotFound
+	}
+	if width == f.Width {
+		// The frame's own width asked for by number: the same object the bare
+		// address serves, because a width is never planned equal to the frame's
+		// own and this address has exactly one thing to answer with.
+		return s.openKey(ctx, tx, f, contracts.Key(f.StorageKey))
+	}
+	var row contracts.Variant
+	err = tx.DB().WithContext(ctx).Where("file_id = ? AND width = ? AND state = ? AND deleted_at IS NULL",
+		id, width, contracts.VariantReady).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, fmt.Errorf("%w: no %d pixel width of %s is built", crud.ErrNotFound, width, id)
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("file: which widths %s serves: %w", id, err)
+	}
+	return s.openKey(ctx, tx, atWidth(f, &row), contracts.Key(row.StorageKey))
+}
+
+// atWidth is the row a reader of one width's bytes is told about: the parent's
+// name, type and visibility — a width is the same picture, and the container was
+// decided once, on the frame — and the numbers of the object standing at this
+// address.
+//
+// `size` is what makes this a cure rather than a tidying: contracts.ContentResponse
+// answers every body that cannot seek with Content-Length read from the row it was
+// handed, so a width served with its parent's size is a response whose own header
+// contradicts the bytes it sends — true of any Storage whose Get streams (the two
+// this module ships return a seekable file and an object, so only an adapter written
+// outside this repository meets it today, and the port does not promise seekability).
+// sha256, width, height and updated_at travel for the same reason and no more: they
+// are what a caller checks or caches about the object it is being sent, and a row
+// that describes the frame beside a body that is a width describes something else.
+//
+// The copy is not cosmetic. crud.Get handed back the row this transaction read, and
+// nothing on a read path has any business rewriting it.
+func atWidth(f *contracts.File, row *contracts.Variant) *contracts.File {
+	out := *f
+	out.Size, out.SHA256 = row.Size, row.SHA256
+	out.Width, out.Height = row.Width, row.Height
+	out.UpdatedAt = row.UpdatedAt
+	return &out
+}
+
+// Variants is the widths one file can serve today, smallest first: the read a
+// srcset is built from, and the same answer the door serves a ?w= off, so the
+// two cannot disagree about which widths exist.
+//
+// A ready row is the whole question. A pending one is not servable and a failed
+// one never will be, and a caller that wants to know what is *waiting* reads the
+// rows themselves in the media library rather than through a port that lays
+// images out.
+func (s *Service) Variants(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) ([]contracts.Variant, error) {
+	if _, err := crud.Get[*contracts.File](tx, fileID); err != nil {
+		return nil, err
+	}
+	var rows []contracts.Variant
+	if err := tx.DB().WithContext(ctx).Where("file_id = ? AND state = ? AND deleted_at IS NULL",
+		fileID, contracts.VariantReady).Order("width").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("file: which widths %s serves: %w", fileID, err)
+	}
+	return rows, nil
+}
+
+var _ contracts.WidthOpener = (*Service)(nil)
+var _ contracts.VariantServable = (*Service)(nil)
+
+// Delete removes the row and says where the bytes are. See contracts.Service.
+//
+// The row is read under FOR UPDATE, before anything about it is decided. A use
+// takes at least FOR KEY SHARE on the file — SetUses does, on both sides of its
+// rewrite — so this lock is what makes "nothing shows it" a fact rather than a
+// reading: a filing in flight holds the key share until it commits, this delete
+// waits for it, and the ledger read below then runs in a snapshot that already
+// contains the row that filing wrote. Without the lock the ledger read sees only
+// uses that were committed *before* it, a use filed during this transaction lands
+// after it, and the deletion strands a use on bytes its own event orders removed.
+func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
+	f, err := crud.GetForUpdate[*contracts.File](tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -330,14 +696,42 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	} else if live {
 		return nil, fmt.Errorf("%w: %s (%s)", contracts.ErrHeld, id, why)
 	}
+	// A record that still shows this file is a claim about *that* record, and the
+	// ledger is what knows: refuse here, inside the transaction, rather than
+	// trusting the control a person happened to be shown. The lock is the one
+	// SetUses takes when it ends a use — FOR UPDATE on the row's own ledger — so
+	// "nothing shows it" is a fact and not a race against a save in flight: a
+	// publish that lands after this read waits for this transaction, and one that
+	// landed before it is counted.
+	// The rows and not their count: Postgres refuses a FOR UPDATE under an
+	// aggregate, and the count is the least interesting part of the answer.
+	var shown []uuid.UUID
+	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).Where("file_id = ?", id).
+		Pluck("id", &shown).Error; err != nil {
+		return nil, fmt.Errorf("file: what reads %s: %w", id, err)
+	}
+	if len(shown) > 0 {
+		// Refused, so nothing is written and nothing is published: the remedy is in
+		// the other record, which has to stop showing this one first. The retention
+		// and release sweeps remove rows through their own paths and are never
+		// refused by a ledger row they are about to end, and a subject's erasure
+		// outranks a record's convenience — see the module's README.
+		return nil, fmt.Errorf("%w: %s is shown by %d %s", contracts.ErrInUse, id,
+			len(shown), plural(int64(len(shown)), "record", "records"))
+	}
 	// Hard, not soft. A soft-deleted row is a row that still points at bytes,
 	// and the bytes are about to go: keeping the row would be keeping a lie.
 	if err := crud.Delete[*contracts.File](tx, id, false); err != nil {
 		return nil, err
 	}
+	widths, err := removeWidths(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
 	return f, events.Publish(ctx, tx, contracts.EventDeleted, contracts.Deleted{
 		FileID: f.ID, StorageKey: f.StorageKey, SHA256: f.SHA256, Size: f.Size,
-		Cause: contracts.EraseCaller, At: db.Now(),
+		VariantKeys: widths, Cause: contracts.EraseCaller, At: db.Now(),
 	})
 }
 
@@ -425,6 +819,32 @@ func (s *Service) refuseOrKeep(ctx context.Context, up contracts.Upload, key con
 	return nil
 }
 
+// removeWidths removes one file's variant rows and answers which objects they
+// named, so the caller can put those names on the work order that removes bytes
+// once this transaction commits.
+//
+// Hard, with the parent, and read before the parent's row went: by the time a
+// worker runs there is no row left to read the names from, which is the same
+// reason the parent's own key travels inside file.deleted. A width counted in the
+// tenant's quota sum, so removing its row is what gives the space back — leaving
+// it behind would be a quota charged for bytes nothing can point at any more.
+func removeWidths(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) ([]string, error) {
+	gorm := tx.DB().WithContext(ctx)
+	var keys []string
+	if err := gorm.Model(&contracts.Variant{}).Where("file_id = ?", fileID).
+		Pluck("storage_key", &keys).Error; err != nil {
+		return nil, fmt.Errorf("file: which widths %s has: %w", fileID, err)
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	if err := gorm.Unscoped().Where("file_id = ?", fileID).
+		Delete(&contracts.Variant{}).Error; err != nil {
+		return nil, fmt.Errorf("file: remove the widths of %s: %w", fileID, err)
+	}
+	return keys, nil
+}
+
 // sha256Hex is the digest of bytes this module wrote itself, which is the same
 // account as the digest of the bytes that arrived and has to be true of the
 // object a reader is served.
@@ -468,6 +888,9 @@ func (c *counter) Read(p []byte) (int, error) {
 // on the tenant, so one customer's uploads never queue behind another's; and it
 // needs no table, no row and no migration. It is taken before the sum and never
 // after, which is the only ordering rule there is here.
+//
+// What it asks is usage — the same sum the quota meter answers with, so the
+// number a person is shown and the number that refuses them are one number.
 func (s *Service) charge(ctx context.Context, tx db.Tx[db.Tenant], n int64) error {
 	if s.quota <= 0 {
 		return nil
@@ -477,14 +900,45 @@ func (s *Service) charge(ctx context.Context, tx db.Tx[db.Tenant], n int64) erro
 		Exec(`SELECT pg_advisory_xact_lock(hashtext(?)::bigint)`, lock).Error; err != nil {
 		return fmt.Errorf("file: lock this tenant's quota: %w", err)
 	}
-	var used int64
-	err := tx.DB().Model(&contracts.File{}).Where("deleted_at IS NULL").
-		Select("COALESCE(SUM(size), 0)").Scan(&used).Error
+	used, _, err := usage(ctx, tx)
 	if err != nil {
-		return fmt.Errorf("file: what this tenant is holding: %w", err)
+		return err
 	}
 	if left := s.quota - used; n > left {
 		return fmt.Errorf("%w: %d bytes is past the %d this tenant has left of %d", contracts.ErrQuota, n, max(left, 0), s.quota)
 	}
 	return nil
+}
+
+// usage is one tenant's disk: the bytes of its live rows and the bytes of the
+// other widths of those same pictures, as one number.
+//
+// It is one function with two callers — the refusal above, which takes the
+// tenant's lock before asking, and the meter, which deliberately does not — for
+// the reason that matters: a meter that summed a different way from the refusal
+// would promise space the upload then refused to give. Both ask the same
+// question of the same two tables and get the same answer.
+func usage(ctx context.Context, tx db.Tx[db.Tenant]) (used, widths int64, err error) {
+	if err := tx.DB().Model(&contracts.File{}).Where("deleted_at IS NULL").
+		Select("COALESCE(SUM(size), 0)").Scan(&used).Error; err != nil {
+		return 0, 0, fmt.Errorf("file: what this tenant is holding: %w", err)
+	}
+	// A variant is the same picture at another width, and the disk it takes is
+	// the same disk, so it is the same sum. It enters here and nowhere else: a
+	// second counter would be a second number to be wrong about, and a width that
+	// counted as nothing would make the quota a lie the day widths shipped. A
+	// pending row carries no size, so filing a plan charges for nothing.
+	if err := tx.DB().Model(&contracts.Variant{}).Where("deleted_at IS NULL").
+		Select("COALESCE(SUM(size), 0)").Scan(&widths).Error; err != nil {
+		return 0, 0, fmt.Errorf("file: what this tenant is holding in other widths: %w", err)
+	}
+	return used + widths, widths, nil
+}
+
+// plural is the one word a refusal gets to agree with its own number.
+func plural(n int64, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

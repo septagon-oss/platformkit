@@ -138,6 +138,11 @@ type SystemToken = syscap.SystemToken
 type Principal struct {
 	// UserID identifies the person or machine account.
 	UserID uuid.UUID
+	// TokenID is the api key that authenticated this request, and uuid.Nil when
+	// it was authenticated any other way: a session cookie, an in-process caller.
+	// It names which credential is acting, never the credential's secret, and
+	// it is what lets a key retire itself and no other.
+	TokenID uuid.UUID
 	// Roles are the roles the credential carries, for an authorizer that wants
 	// them without a second lookup.
 	Roles []string

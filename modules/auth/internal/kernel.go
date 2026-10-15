@@ -61,11 +61,11 @@ func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http
 // A revoked key that answered "revoked" would be a probe that told its holder the
 // revocation had landed.
 func (s *Service) bearerPrincipal(ctx context.Context, tx db.Tx[db.Tenant], token string) (tenancy.Principal, bool, error) {
-	user, scopes, ok, err := s.bearerCaller(ctx, tx, token)
+	cred, ok, err := s.bearerCaller(ctx, tx, token)
 	if err != nil || !ok {
 		return tenancy.Principal{}, false, err
 	}
-	return tenancy.Principal{UserID: user.ID, Permissions: scopes}, true, nil
+	return tenancy.Principal{UserID: cred.user.ID, TokenID: cred.tokenID, Permissions: cred.scopes}, true, nil
 }
 
 // Allowed is kit/httpx's authorizer: one query per request that asks a

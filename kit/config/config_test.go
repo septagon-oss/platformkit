@@ -174,7 +174,7 @@ func TestASenderMayCarryADisplayName(t *testing.T) {
 	}
 }
 
-// TestAnInvalidOverrideIsRefusedByName, with the two values the review found in
+// TestAnInvalidOverrideIsRefusedByName, with the two values found in
 // a client overlay. Both used to be accepted: public_host was checked for
 // emptiness and nothing else, and mail.from for emptiness only when a host was
 // set beside it.

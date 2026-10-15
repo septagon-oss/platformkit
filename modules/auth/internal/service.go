@@ -37,6 +37,14 @@ type Delivery struct {
 	Mailer contracts.Mailer
 	Hosts  contracts.Hosts
 	Secure bool
+
+	// Mails is what this module records about a mail it sends itself, with no
+	// notice behind it: one row per send, saying who it went to, which kind it was,
+	// what became of it and which call asked — and no subject, body, link or
+	// credential. A composition that wires none sends its mail exactly as it did
+	// before the record existed and leaves no trace of the attempt, which is the bug
+	// the record exists to close rather than a mode to preserve.
+	Mails contracts.MailLedger
 }
 
 // Service is signing in and what a role may do.
@@ -86,17 +94,32 @@ func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery)
 // Precheck is the limiter's verdict, read from the shared counters. See
 // contracts.Service.
 func (s *Service) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
-	return s.limiter.Check(ctx, email, ip)
+	// The verdict alone, and the numbers with it dropped: Precheck decides whether to
+	// pause, and the answer that goes on the wire is decided by Login, which asks its
+	// own question of the same counter. Two readings stating themselves on one answer
+	// would be two rate lines for one attempt.
+	verdict, _ := s.limiter.Check(ctx, email, ip)
+	return verdict
 }
 
 // MayAsk counts one forgotten-password request from an address. See
 // contracts.Service.
-func (s *Service) MayAsk(ctx context.Context, ip string) bool { return s.limiter.Requested(ctx, ip) }
+func (s *Service) MayAsk(ctx context.Context, ip string) contracts.Decision {
+	return s.limiter.Requested(ctx, ip)
+}
 
 // MayRedeem counts one reset-token redemption from an address. See
 // contracts.Service.
-func (s *Service) MayRedeem(ctx context.Context, ip string) bool {
+func (s *Service) MayRedeem(ctx context.Context, ip string) contracts.Decision {
 	return s.limiter.Redeemed(ctx, ip)
+}
+
+// MayAskAboutMail counts one read of a delivery record from an address. It is
+// not MayRedeem: the shell polls this read while a person waits for a link, and
+// spending the link's own budget on waiting would lock the person out of the
+// thing they are waiting for.
+func (s *Service) MayAskAboutMail(ctx context.Context, ip string) bool {
+	return s.limiter.AskedAboutMail(ctx, ip)
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -113,7 +136,9 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 	// Precheck — a two-second sleep here holds one of sixteen pool connections,
 	// and twenty-four of them at once took a replica to twenty-nine seconds of
 	// latency for every other request. See contracts.Service.Precheck.
-	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, counted := s.limiter.Check(ctx, email, from.IP)
+	sayLockout(ctx, counted, verdict == contracts.Refuse)
+	if verdict == contracts.Refuse {
 		// Once per account per address per window. The refusal happens before
 		// anything is checked, so a script against a locked account produces
 		// one of these a millisecond; the first says the account is under
@@ -531,7 +556,8 @@ func (s *Service) identify(ctx context.Context, tx db.Tx[db.Tenant], user *userc
 // fail records one failure and returns the one answer a failed login gets.
 func (s *Service) fail(ctx context.Context, email string, from contracts.Client) error {
 	s.limiter.Failed(ctx, email, from.IP)
-	s.recordFailure(ctx, email, from, s.limiter.Check(ctx, email, from.IP) == contracts.Refuse)
+	verdict, _ := s.limiter.Check(ctx, email, from.IP)
+	s.recordFailure(ctx, email, from, verdict == contracts.Refuse)
 	return contracts.ErrCredentials
 }
 

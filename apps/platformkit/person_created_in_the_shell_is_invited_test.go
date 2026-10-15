@@ -57,9 +57,7 @@ func TestAPersonCreatedFromTheShellIsSentTheInvitation(t *testing.T) {
 	}
 
 	const chosen = "a password Miguel chose himself"
-	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, mail)+`","new":"`+chosen+`"}`); code != http.StatusOK {
-		t.Fatalf("setting the password from the mailed link = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, mail)+`","new":"`+chosen+`"}`)
 	signIn(t, cfg, acmeHost, email, chosen)
 }

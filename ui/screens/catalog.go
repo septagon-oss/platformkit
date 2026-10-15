@@ -26,11 +26,11 @@ type Text = resource.Text
 // key: an older shell ignores what it has not read, which is the only reason any
 // of this can move forward without a flag day.
 //
-// What the number cannot do is protect a build that is already installed — the
-// shell in somebody's pocket parses what it was written to parse. So the rule
-// that actually protects it is the one beside this constant: additive, optional,
-// and never a change of meaning. A consumer that must refuse is the *next* build,
-// reading this field, and that is who the field is written for.
+// What the number cannot do is protect the build already installed: the shell in
+// somebody's pocket parses what it was written to parse. It protects it by what it
+// refuses to do to it — additive, optional, never a change of meaning — and moves
+// for a listed resource losing a verb, whose button that build drew and whose
+// address now answers nothing. A verb hidden by a new entry strands nobody.
 const CatalogVersion = 2
 
 // Catalog is the machine-readable form of what a shell shows: every resource
@@ -44,8 +44,9 @@ type Catalog struct {
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
-// an unreadable resource is not in the document at all: what a caller may not
-// look at, they are not told exists. `writable` is the caller's guard narrowed by
+// an unreadable resource is not in the document — save a CommandsOnly one whose
+// command the caller holds, listed with empty operations: what a caller may not
+// look at, they are not offered. `writable` is the caller's guard narrowed by
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
@@ -91,11 +92,15 @@ type Entry struct {
 	// offers all five prints nothing, exactly as it did before this key existed.
 	//
 	// A shell that has not read this key reads an entry that hides a verb as if it
-	// did not — which is why CatalogVersion moves with the first *shipped* resource
-	// that hides one, and why apps/platformkit's ratchet case refuses to let that
-	// move be a memory. An absent key means all five, so it is the shell's next
-	// build that has to require it, reading this field.
-	Operations []string `json:"operations,omitempty"`
+	// did not — which is why CatalogVersion moves when a resource the document had
+	// already listed hides one, and why apps/platformkit's ratchet case refuses to
+	// let that move be a memory. An absent key means all five, so it is the shell's
+	// next build that has to require it, reading this field.
+	//
+	// An empty list, printed as [], is a CommandsOnly resource: nothing to read
+	// or write, only its commands to call (see DescribeLanguage). omitzero
+	// keeps nil — all five — absent, so no entry printed before reads otherwise.
+	Operations []string `json:"operations,omitzero"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
 	// it is the record and its form, and never a list with a New button on it.
 	Singleton bool `json:"singleton,omitempty"`
@@ -155,16 +160,33 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
-		if !r.Readable(ctx) {
-			continue
-		}
 		// r is this loop's copy, so narrowing its commands to the ones this
 		// caller may call leaves Describe1 the pure function it is.
 		r.Commands = r.CommandsFor(ctx)
+		if r.CommandsOnly {
+			if len(r.Commands) > 0 {
+				out.Resources = append(out.Resources, commandsOnly(Localise(r, text)))
+			}
+			continue
+		}
+		if !r.Readable(ctx) {
+			continue
+		}
 		r = Localise(r, text)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
 	}
 	return out
+}
+
+// commandsOnly is the entry of a CommandsOnly resource for a caller who holds
+// one of its commands — a key retiring itself reads nothing about keys. It
+// names no screen and offers no operation, so a shell draws the commands and no
+// list or form; the caller is told the resource exists because a door on it is
+// theirs.
+func commandsOnly(r httpx.Resource) Entry {
+	e := Describe1(r, false)
+	e.Screen = ""
+	return e
 }
 
 // Localise is a resource with every declared word read through the seam, and the

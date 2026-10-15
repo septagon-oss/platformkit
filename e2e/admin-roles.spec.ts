@@ -55,7 +55,7 @@ test('the Roles entry in the sidebar opens a screen that changes what a role gra
   // The tick is taken back off before the spec leaves. Every browser spec in this
   // run shares one tenant in one database, and `member` is the role a person who
   // holds nothing is created with: the two refusal journeys
-  // (e2e/access-request.spec.ts, e2e/review-r2-refusal-measure.spec.ts) start by
+  // (e2e/access-request.spec.ts, e2e/refusal-sentence-measure.spec.ts) start by
   // being refused `task:read`, and one of them sorts after this file — a grant left
   // on this box hands them the permission they are there to be refused, and their
   // journey has no start. Unticking and saving is also the half of this screen's

@@ -1,7 +1,7 @@
 package main
 
-// T-0117's case for the two provider routes at the reference composition, and
-// for the step the tenant module's own test could not take.
+// The case for the two provider routes at the reference composition, and for
+// the step the tenant module's own test could not take.
 //
 // modules/tenant/internal/oidc_test.go asserts that `tenant.oidc_set` is in the
 // outbox with a payload that enumerates the provider and holds a secret
