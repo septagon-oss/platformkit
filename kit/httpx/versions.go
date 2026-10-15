@@ -171,4 +171,9 @@ type History struct {
 	// transaction and behind the record's own read guard: a caller who may not read
 	// the record is refused here exactly as at the JSON route beside it.
 	Versions func(ctx context.Context, id uuid.UUID) ([]Version, error)
+	// Asks is what the command says a restore will cost, in the words its author
+	// declared. A screen that offered the verb without it would invent the
+	// consequence, so an empty Asks means the author declared none and the screen
+	// asks in none of its own.
+	Asks string
 }

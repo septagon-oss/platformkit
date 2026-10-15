@@ -25,6 +25,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // Chrome is what every page of one shell has in common.
@@ -257,6 +258,13 @@ func Fault(status int, title, detail, back, backLabel string) View {
 	}}
 }
 
+// clRefusalMeasure bounds the sentence of a refusal page to the measure the rest of
+// the frame's prose keeps. The design floor divides a paragraph's box by half its
+// font size, and a refusal whose body is the one line a person came to read spans the
+// whole content column: 142 characters at 1440 px. The bound never centres: the
+// sentence keeps the left edge the title above it sits on.
+var clRefusalMeasure = style.New().MaxWScaled(style.MaxWProse)
+
 // refusalLine is the verdict's own sentence, in the frame's content column.
 //
 // The Alert component is right for a notice that arrives beside other content —
@@ -267,7 +275,15 @@ func Fault(status int, title, detail, back, backLabel string) View {
 // that speaks two. The announcement stays: this is the page a person is told the
 // refusal on, and it says so as an alert the way the component says it.
 func refusalLine(sentence string) g.Node {
-	return h.Div(h.Role("alert"), components.Text(components.TextProps{Content: sentence, Color: "danger"}))
+	return h.Div(h.Role("alert"), refusalSentence(sentence, "danger"))
+}
+
+// refusalSentence is one line of a refusal page in the frame's own paragraph, bounded
+// to the measure the floor reads.
+func refusalSentence(sentence, color string) g.Node {
+	p := components.TextProps{Content: sentence, Element: "p", Color: color}
+	p.Class = clRefusalMeasure.Compile()
+	return components.Text(p)
 }
 
 // RefusalProps is the one verdict that arrives with parts: a refusal of a
@@ -307,10 +323,10 @@ func Refusal(p RefusalProps) View {
 		refusalLine(p.Sentence),
 	}
 	if p.Missing != "" {
-		body = append(body, components.Text(components.TextProps{Content: p.Missing, Element: "p"}))
+		body = append(body, refusalSentence(p.Missing, ""))
 	}
 	if p.Granter != "" {
-		body = append(body, components.Text(components.TextProps{Content: p.Granter, Element: "p", Color: "secondary"}))
+		body = append(body, refusalSentence(p.Granter, "secondary"))
 	}
 	if p.Ask != "" {
 		body = append(body, components.Form(components.FormProps{Action: p.Ask, Label: p.AskLabel},
