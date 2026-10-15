@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 )
 
@@ -76,8 +77,13 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 // stops digesting the scrubbed copy. That is the honest remainder: recomputing the
 // digest would be a claim to know what the source said before it was scrubbed, which is
 // exactly what an erasure is asked to forget.
+//
+// The row's own revision moves with the text (ScrubCounted). A translation form is open
+// for as long as somebody is typing into it, and a save that arrives after the erasure
+// carrying the revision it was served with would otherwise match, write the erased words
+// back, and emit the event of a change nobody made.
 func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
-	_, err := personaldata.Scrub(ctx, tx, s, "translations",
+	_, err := personaldata.ScrubCounted(ctx, tx, s, "translations", entity.RevisionField,
 		[]string{"value", "source_text"}, "")
 	return err
 }

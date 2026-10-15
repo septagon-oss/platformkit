@@ -55,8 +55,19 @@ type Subject struct {
 // from the id the audit rule requires to survive, so two mentions of one person still
 // read as two mentions of the same person, and neither of them reads as a person.
 func (s Subject) Token() string {
-	return "<erased " + s.ID.String()[:8] + ">"
+	return "<erased " + shortID(s.ID) + ">"
 }
+
+// shortID is the fragment of a person's id a token carries: the first eight hex digits
+// of the uuid, enough to tell two people's placeholders apart and not enough to be an
+// id anybody can act on.
+func shortID(id uuid.UUID) string { return id.String()[:8] }
+
+// shortToken is Token with the word taken out, for a row whose column has no room for
+// the whole placeholder: see widths in scrub.go, which is why a replacement has to have
+// a fallback at all. It keeps the same fragment of the id, so two mentions of one
+// person still read as two mentions of the same person; it only says less.
+func (s Subject) shortToken() string { return "<" + shortID(s.ID) + ">" }
 
 // ErasedEmail is the value users.email and any other address column takes. It is
 // unique per tenant, so the partial unique index on lower(email) still holds after the

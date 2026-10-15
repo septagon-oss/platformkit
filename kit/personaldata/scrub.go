@@ -50,9 +50,41 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // One match does not run over the whole tenant however the caller is written: a handle
 // read as a bare word is only taken for the person in a row that carries their own id.
 // See Subject.Known for why, and ownRow for how.
+//
+// A column bounded to a declared width is rewritten inside that width, and where even
+// the narrower of Subject's two placeholders will not fit, the value is cut to the width
+// from its tail: the erasure keeps the row and loses characters that could not have lived
+// there anyway, which is the smaller of the two losses open to an operation whose whole
+// purpose is to forget. See widths.
 func Scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, where string, args ...any) (int64, error) {
-	return scrub(ctx, tx, s, table, columns, false, where, args)
+	return scrub(ctx, tx, s, "", table, columns, false, where, args)
+}
+
+// ScrubCounted is Scrub for a table whose row counts its own writes: the same rewrite,
+// with the same statement advancing the column named by counter, because a rewrite is a
+// write and "this row counts its writes" — the words the migration that gives tasks their
+// counter uses for the column — does not except an erasure. entity.RevisionField is the
+// kernel's name for such a column.
+//
+// Moving the counter is what refuses a caller who read the row before the erasure. A form
+// served beforehand still holds the revision it was answered with, and a save whose
+// expectation still matches would write the erased words back over the top of them and
+// leave the row looking as though nobody had touched it since. A table with no counter
+// cannot be helped this way — the stale read is then indistinguishable from a current one.
+//
+// The counter is named by the caller rather than assumed here, for a reason with a body: a
+// subject request's row is opened by a command that re-reads its own revision *after* the
+// contributors have run (modules/subject/internal/service.go:152-193), so a counter this
+// package moved under that command would leave its guarded write matching no row at all,
+// and the receipt of the erasure would be lost without an error anywhere. Naming the column
+// is the reading that precedes opting a table in.
+func ScrubCounted(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table, counter string,
+	columns []string, where string, args ...any) (int64, error) {
+	if !namePattern.MatchString(counter) {
+		return 0, fmt.Errorf("personaldata: %s.%s is not a column name this scrub will write into SQL", table, counter)
+	}
+	return scrub(ctx, tx, s, counter, table, columns, false, where, args)
 }
 
 // ScrubJSON is Scrub for a jsonb column, which is one cast away and no further: the
@@ -68,7 +100,7 @@ func Scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 // which is the right answer: an erasure that could not read a row cannot certify it.
 func ScrubJSON(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, where string, args ...any) (int64, error) {
-	return scrub(ctx, tx, s, table, columns, true, where, args)
+	return scrub(ctx, tx, s, "", table, columns, true, where, args)
 }
 
 // Residue counts the rows of one table that still carry one of the subject's
@@ -89,9 +121,13 @@ func ResidueJSON(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table stri
 	return rows(ctx, tx, s, table, columns, true, where, args)
 }
 
-func scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
+func scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, counter, table string,
 	columns []string, isJSON bool, where string, args []any) (int64, error) {
-	q, err := query(s, table, columns, isJSON, where, args)
+	holds, err := widths(ctx, tx, table, columns)
+	if err != nil {
+		return 0, err
+	}
+	q, err := query(s, counter, table, columns, isJSON, holds, where, args)
 	if err != nil {
 		return 0, err
 	}
@@ -108,7 +144,10 @@ func scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 
 func rows(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, isJSON bool, where string, args []any) (int64, error) {
-	q, err := query(s, table, columns, isJSON, where, args)
+	// No widths and no counter: a count writes nothing, so it has nothing to keep inside
+	// a column's width and nothing to advance. The filter it asks with is the one the
+	// rewrite uses, which is the whole point of the re-read.
+	q, err := query(s, "", table, columns, isJSON, nil, where, args)
 	if err != nil {
 		return 0, err
 	}
@@ -239,12 +278,83 @@ func ownRow(table string) string {
 		")) AS named WHERE named.value = ?::text)"
 }
 
+// widths asks the server how many characters each named column's own type holds, and
+// answers nothing for a column that holds any number of them (text, jsonb) or one whose
+// width this server does not carry in its type at all.
+//
+// It has to ask because the rewrite can make a value *longer* than the identifier it
+// replaced: Subject.Token is seventeen characters, and a person's name is often shorter
+// than that. A row whose column already fills its declared width has nowhere for the extra
+// characters to go, the server refuses the statement with "value too long", and the whole
+// erasure dies with it — leaving the person named in every row the transaction did not
+// reach, and a request that fails the same way every time it is retried. So a bounded
+// column is rewritten inside the width the server declares for it.
+//
+// The width is read from the catalog rather than claimed beside the scrub: a claim of a
+// column's width goes stale the day a migration widens the column, and the stale answer
+// truncates text that no longer needs truncating. to_regclass resolves the table the way
+// the UPDATE resolves it, through the session's search_path; counting the bare name across
+// every schema would answer with another table's columns. A width a column carries as a
+// CHECK over an unbounded text column instead of in its type is not seen here, and an
+// erasure of such a row at its ceiling fails loudly rather than silently.
+func widths(ctx context.Context, tx db.Tx[db.Tenant], table string, columns []string) (map[string]int, error) {
+	if len(columns) == 0 {
+		return nil, nil
+	}
+	var found []struct {
+		Name  string
+		Chars *int
+	}
+	err := tx.DB().WithContext(ctx).Raw(`SELECT a.attname::text AS name,
+       CASE WHEN t.typname IN ('varchar', 'bpchar') AND a.atttypmod > 4
+            THEN a.atttypmod - 4 END AS chars
+FROM pg_attribute a
+JOIN pg_type t ON t.oid = a.atttypid
+WHERE a.attrelid = to_regclass(?) AND a.attnum > 0 AND NOT a.attisdropped`, table).Scan(&found).Error
+	if err != nil {
+		return nil, fmt.Errorf("personaldata: the width of %s's columns: %w", table, err)
+	}
+	wanted := make(map[string]bool, len(columns))
+	for _, c := range columns {
+		wanted[c] = true
+	}
+	holds := make(map[string]int, len(columns))
+	for _, f := range found {
+		if f.Chars != nil && wanted[f.Name] {
+			holds[f.Name] = *f.Chars
+		}
+	}
+	return holds, nil
+}
+
+// piece is one fragment of a SET expression and the values its `?` stand for, kept
+// together so the fragments of one expression can be put together in the order that reads
+// as English and still bind in the order the server asks for them. The wide rewrite below
+// appears twice in the finished SQL; a placeholder counted by hand is a value bound one
+// expression away from the pattern that means it.
+type piece struct {
+	sql  string
+	args []any
+}
+
+// bound puts pieces into one expression, with their arguments in the same order.
+func bound(parts ...piece) piece {
+	sql := make([]string, 0, len(parts))
+	out := piece{}
+	for _, p := range parts {
+		sql = append(sql, p.sql)
+		out.args = append(out.args, p.args...)
+	}
+	out.sql = strings.Join(sql, "")
+	return out
+}
+
 // query writes the rewrite, and refuses one whose caller mis-counted its own filter.
 //
 // A nil statement with no error is the honest no-op: a person with no email, no name
 // and no handle has no string to hunt, and a table with no text columns to look in has
 // nowhere to hunt — rewriting everything, or nothing, would both be a lie.
-func query(s Subject, table string, columns []string, isJSON bool,
+func query(s Subject, counter, table string, columns []string, isJSON bool, holds map[string]int,
 	where string, args []any) (*rewrite, error) {
 	if !namePattern.MatchString(table) {
 		return nil, fmt.Errorf("personaldata: %q is not a table name this scrub will write into SQL", table)
@@ -272,32 +382,52 @@ func query(s Subject, table string, columns []string, isJSON bool,
 		if isJSON {
 			text = c + "::text"
 		}
-		expr := text
-		for _, m := range ids {
-			// Identifiers are longest first, so a name inside the person's own address
-			// goes with the address and not after it, which would leave the tail of a
-			// mailbox in a note about somebody. boundedPattern is what lets an address
-			// full of dots, pluses and question marks be a pattern at all, and stops that
-			// pattern finding a colleague's word that merely contains them.
-			//
-			// A handle is the one string whose pattern the row itself picks: the CASE below
-			// asks the server, per row, whether this row carries the person's id, and a row
-			// that does is searched for the bare word as well as the mention. One expression
-			// decides both halves, which is what makes the re-read below mean what it says.
-			find := "?"
-			if m.ownPattern != "" {
-				q.args = append(q.args, s.ID, m.ownPattern)
-				find = "(CASE WHEN " + own + " THEN ? ELSE ? END)"
+		// rewrite is this column's whole chain of replacements, given the placeholder it
+		// leaves behind: the same text at two widths, because a column at its declared
+		// ceiling can hold the narrow one and not the wide one. See widths.
+		rewrite := func(token string) piece {
+			out := piece{sql: text}
+			for _, m := range ids {
+				// Identifiers are longest first, so a name inside the person's own address
+				// goes with the address and not after it, which would leave the tail of a
+				// mailbox in a note about somebody. boundedPattern is what lets an address
+				// full of dots, pluses and question marks be a pattern at all, and stops that
+				// pattern finding a colleague's word that merely contains them.
+				//
+				// A handle is the one string whose pattern the row itself picks: the CASE below
+				// asks the server, per row, whether this row carries the person's id, and a row
+				// that does is searched for the bare word as well as the mention. One expression
+				// decides both halves, which is what makes the re-read below mean what it says.
+				find := "?"
+				if m.ownPattern != "" {
+					out.args = append(out.args, s.ID, m.ownPattern)
+					find = "(CASE WHEN " + own + " THEN ? ELSE ? END)"
+				}
+				out.sql = "regexp_replace(" + out.sql + ", " + find + ", ?, 'gi')"
+				out.args = append(out.args, m.pattern, token)
 			}
-			expr = "regexp_replace(" + expr + ", " + find + ", ?, 'gi')"
-			q.args = append(q.args, m.pattern, s.Token())
+			if isJSON {
+				// Back to jsonb by cast, and an unparseable payload fails here rather than
+				// writing a quoted string into a document column.
+				out.sql += "::jsonb"
+			}
+			return out
 		}
-		if isJSON {
-			// Back to jsonb by cast, and an unparseable payload fails here rather than
-			// writing a quoted string into a document column.
-			expr += "::jsonb"
+		wide := rewrite(s.Token())
+		set := bound(piece{sql: c + " = "}, wide)
+		// A jsonb column carries no width, so the two cases never meet; the guard says so
+		// rather than relying on the catalog never answering for a document column.
+		if width := holds[c]; width > 0 && !isJSON {
+			limit := piece{sql: "?", args: []any{width}}
+			set = bound(piece{sql: c + " = (CASE WHEN length("}, wide,
+				piece{sql: ") <= "}, limit,
+				piece{sql: " THEN "}, wide,
+				piece{sql: " ELSE left("}, rewrite(s.shortToken()),
+				piece{sql: ", "}, limit,
+				piece{sql: ") END)"})
 		}
-		q.sets = append(q.sets, c+" = "+expr)
+		q.sets = append(q.sets, set.sql)
+		q.args = append(q.args, set.args...)
 		for _, m := range ids {
 			// The same pattern the rewrite used, and not a plain substring test: the
 			// re-read has to ask what the rewrite would find, or a row the rewrite left
@@ -310,6 +440,12 @@ func query(s Subject, table string, columns []string, isJSON bool,
 			}
 			termArgs = append(termArgs, m.pattern)
 		}
+	}
+
+	if counter != "" {
+		// The row's own counter, added to by the server. No value is bound here, so this
+		// half of the SET list cannot move a placeholder out from under an expression.
+		q.sets = append(q.sets, counter+" = "+counter+" + 1")
 	}
 
 	q.filter = strings.Join(terms, " OR ")

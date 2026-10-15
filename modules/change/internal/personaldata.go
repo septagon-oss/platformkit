@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 )
 
@@ -81,8 +82,13 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 // inside a JSON string is still the person's identifier, and replacing it inside the
 // serialisation leaves the document parseable because the token it replaces is text with
 // no quotes in it.
+//
+// The proposal's revision moves with its words (ScrubCounted): an approval is a form a
+// reviewer opens, leaves, and comes back to, and Apply rechecks the revision that form was
+// served with. A scrub that left the counter where it was would let that approval apply a
+// diff computed against text the erasure has since anonymised.
 func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
-	_, err := personaldata.Scrub(ctx, tx, s, "change_proposals",
+	_, err := personaldata.ScrubCounted(ctx, tx, s, "change_proposals", entity.RevisionField,
 		[]string{"summary", "comment", "diff"}, "")
 	return err
 }
