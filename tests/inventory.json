@@ -52115,6 +52115,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/generated_screen_floor_test.go",
+   "id": "ui/resource/generated_screen_floor_test.go#TestAGeneratedScreenFillsOneActionAndBoundsItsBodySizes",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGeneratedScreenFillsOneActionAndBoundsItsBodySizes",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/help_language_test.go",
    "id": "ui/resource/help_language_test.go#TestAFormDrawsItsLabelAndItsHelpLineInOneLanguage",
    "kind": "go",
@@ -54191,6 +54210,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestSemanticColorsResolveBothModesAndCallerPalette",
+   "needs_db": false,
+   "pkg": "ui/style",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/style/semantic_colors_test.go",
+   "id": "ui/style/semantic_colors_test.go#TestGeneratedScreenTextPairsMeetTheContrastFloor",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestGeneratedScreenTextPairsMeetTheContrastFloor",
    "needs_db": false,
    "pkg": "ui/style",
    "round_named": false,
@@ -59675,7 +59713,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1542,
+  "files": 1543,
   "forge_runs": [
    408,
    413,
@@ -59709,7 +59747,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2554,
+   "behaviour": 2556,
    "composition": 353,
    "contract": 19,
    "journey": 88
@@ -59728,23 +59766,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3014,
+  "rows": 3016,
   "tiers": {
    "merge": 1903,
    "nightly": 88,
-   "push": 1023
+   "push": 1025
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1357,
+   "keep": 1358,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2724,
+   "keep": 2726,
    "keep-rewrite": 117,
    "merge": 173
   }
