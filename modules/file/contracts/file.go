@@ -149,7 +149,26 @@ type File struct {
 	// Visibility decides which door serves it. It defaults to private, and it
 	// is spelled as a closed set rather than a bool so that the third answer
 	// somebody will want — signed URLs — is a value and not a schema change.
+	//
+	// It is the audience this row carries, and only one thing ever raises it: the
+	// upload. The write that takes an audience back lowers it (see
+	// internal.Service.settleAudience), and the derived half of who may read the
+	// file — a record with a public face showing it — is never written here,
+	// because that half belongs to the record and lives in its use row. An
+	// earlier release did write it here, which is what UploadVisibility is for.
 	Visibility string `json:"visibility" gorm:"type:varchar(10);not null;default:'private'" enum:"private,public" ui:"widget:select" doc:"Who may read it" default:"private" required:"false"`
+
+	// UploadVisibility is the audience the upload itself was given: the choice
+	// made by whoever held file:manage when the bytes arrived, and the floor of
+	// who may read the file. No command that shows a file, publishes a record or
+	// takes an audience back writes it, which is the whole reason it is a second
+	// column and not files.visibility — that one held the derived answer for
+	// every file a published page showed, and so stopped saying what its uploader
+	// chose. Rows written before this column existed get it back from their own
+	// file.uploaded event; see migrations/000064. It is the module's own record of
+	// a choice, not a second answer to show a caller: the answer a caller is given
+	// is Visibility, which is that choice widened by whatever is showing the file.
+	UploadVisibility string `json:"-" gorm:"column:upload_visibility;type:varchar(10);not null;default:'private'"`
 
 	// UploaderID is whoever uploaded it, a user id with no foreign key behind
 	// it. Validate stamps it from the caller on the context, the way content
@@ -202,6 +221,12 @@ func (File) TableName() string { return "files" }
 // Public reports whether anybody may read this file.
 func (f *File) Public() bool { return f.Visibility == VisibilityPublic }
 
+// GivenPublic is the floor: the audience the upload was given, whatever the records
+// showing the file have since asserted. Every file a person has ever published reads
+// the same as Public(); the two part company for a file whose visibility a record with
+// a public face is widening right now, which is readable and was not given public.
+func (f *File) GivenPublic() bool { return f.UploadVisibility == VisibilityPublic }
+
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through.
 func (f *File) Validate(ctx context.Context) error {
@@ -212,6 +237,12 @@ func (f *File) Validate(ctx context.Context) error {
 	}
 	if f.Visibility == "" {
 		f.Visibility = VisibilityPrivate
+	}
+	if f.UploadVisibility == "" {
+		// A write that names the audience it gives names the floor with the same
+		// word: the two columns part company only when something takes an audience
+		// back, and no command that does that arrives here.
+		f.UploadVisibility = f.Visibility
 	}
 	if f.UploaderID == uuid.Nil {
 		// The context is the one thing that knows whose request this is, which

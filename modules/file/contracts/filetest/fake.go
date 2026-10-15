@@ -299,10 +299,11 @@ func (f *Fake) SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner contract
 }
 
 // settleAudience publishes the audience flips between was and the answer now. It is
-// internal.Service's rule on this fake's memory: who may read a file is its own
-// visibility widened by the records showing it to a stranger, the widened half lives
-// only in the use row that asserts it, the visibility a file was given is the floor
-// no command here takes back, a flip is one event, and an audience that did not move
+// internal.Service's rule on this fake's memory: who may read a file is what its upload
+// gave it widened by the records showing it to a stranger, the widened half lives only
+// in the use row that asserts it, the visibility a file was given is the floor no
+// command here takes back, a revocation puts the row's own visibility back to private
+// beside the event that says so, a flip is one event, and an audience that did not move
 // records nothing. The caller holds f.mu.
 func (f *Fake) settleAudience(was map[uuid.UUID]bool) {
 	ids := make([]uuid.UUID, 0, len(was))
@@ -311,7 +312,17 @@ func (f *Fake) settleAudience(was map[uuid.UUID]bool) {
 	}
 	slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	for _, id := range ids {
-		if f.readsPublicly(id) == was[id] {
+		now := f.readsPublicly(id)
+		if was[id] && !now {
+			// The audience a record asserted went with the record. Only ever
+			// downward, and only to the floor: internal.Service writes the same row
+			// in the same transaction as the event below.
+			if row, ok := f.rows[id]; ok && !row.GivenPublic() && row.Public() {
+				row.Visibility = contracts.VisibilityPrivate
+				f.rows[id] = row
+			}
+		}
+		if now == was[id] {
 			continue
 		}
 		f.published = append(f.published, contracts.EventVisibility)
@@ -328,7 +339,7 @@ func (f *Fake) readsPublicly(id uuid.UUID) bool {
 
 func (f *Fake) givenPublicly(id uuid.UUID) bool {
 	row, ok := f.rows[id]
-	return ok && row.Public()
+	return ok && row.GivenPublic()
 }
 
 func (f *Fake) shownPublicly(id uuid.UUID) bool {
@@ -436,6 +447,9 @@ func (f *Fake) Upload(ctx context.Context, open contracts.Tx, up contracts.Uploa
 		Base: crud.Base{ID: uuid.New(), CreatedAt: db.Now(), UpdatedAt: db.Now()},
 		Name: up.Name, ContentType: contentType, Visibility: up.Visibility, Kind: up.Kind,
 		Size: size, SHA256: digestHex, StorageKey: key.String(), Width: width, Height: height,
+		// Both columns, the same word: what the upload was given is the floor no
+		// later audience takes back, and it is recorded here rather than derived.
+		UploadVisibility: up.Visibility,
 	}
 	if err := row.Validate(ctx); err != nil {
 		_ = f.storage.Delete(ctx, scope, key)
@@ -473,11 +487,11 @@ func (f *Fake) Open(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, anony
 	}
 	f.mu.Lock()
 	row, ok := f.rows[id]
-	if ok && anonymous && !row.Public() && f.readsPublicly(id) {
-		// The ledger answered for a row its own visibility says is private, so the row
-		// the caller is handed says so too: what is served, what the response caches
-		// and what the caller reports about the file are one answer. internal.Service
-		// does the same to the row it read.
+	if ok && anonymous && !row.GivenPublic() && f.readsPublicly(id) {
+		// The ledger answered for a row its upload was not given to the world, so the
+		// row the caller is handed says so too: what is served, what the response
+		// caches and what the caller reports about the file are one answer.
+		// internal.Service does the same to the row it read.
 		given := row
 		given.Visibility = contracts.VisibilityPublic
 		row = given

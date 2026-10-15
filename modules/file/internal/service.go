@@ -154,6 +154,11 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 	f := &contracts.File{
 		Name: up.Name, ContentType: contentType, Visibility: up.Visibility, Kind: up.Kind,
 		Size: size, SHA256: digestHex, StorageKey: key.String(), Width: width, Height: height,
+		// The same word in both columns, and this one is where it stays: what the
+		// upload was given is the floor of who may read the file, and the only
+		// writes it ever sees after here are this one and the migration that
+		// recovered it for rows an earlier release overwrote.
+		UploadVisibility: up.Visibility,
 	}
 	// No grace period starts here. The release rule the sweep runs is "a file whose
 	// last use ended" (this file's own contracts.File.UnusedSince names it), and an
@@ -586,7 +591,10 @@ func whoReads(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) (given,
 		}
 		return out, nil
 	}
-	if given, err = half("may read", "files.visibility = ?", contracts.VisibilityPublic); err != nil {
+	// The floor is what the upload was given, and not the row's own visibility: an
+	// earlier release wrote this same column with the answer a publish implied, so the
+	// only column that still says what the uploader chose is the one nothing rewrites.
+	if given, err = half("may read", "files.upload_visibility = ?", contracts.VisibilityPublic); err != nil {
 		return nil, nil, err
 	}
 	if shown, err = half("is shown by", "EXISTS (SELECT 1 FROM file_uses u"+
@@ -621,10 +629,23 @@ func readsPublicly(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) (m
 }
 
 // settleAudience publishes the audience flips between was and the answer now, in the
-// transaction that moved them. It writes no file row: who may read a file is the
-// answer to a question about the ledger, the door asks it there (see whoReads), and
-// the one fact about a file's audience that is not that answer — what its uploader
-// was given — lives in the row this function would have to overwrite to write it.
+// transaction that moved them, and puts back the one row write a revocation owes.
+//
+// Who may read a file is the answer to a question about the ledger — the door asks it
+// there (see whoReads) — and the one fact about a file's audience that is not that
+// answer is what its upload was given, which lives in files.upload_visibility and is
+// written by the upload and by the migration that recovered it for older rows, and by
+// nothing that shows a file. So an audience being asserted writes no file row: the
+// half it adds lives in the use row that asserts it.
+//
+// An audience being *taken back* writes one, and only downward: a file whose recorded
+// upload visibility is private and which nothing public reads any more has its own
+// visibility put back to private. For a row this release wrote that is where it already
+// stood, and for a row an earlier release promoted by writing the derived answer into
+// files.visibility it is the row learning its own floor again. The rows this can reach
+// are the ones the command already locked FOR UPDATE — a downward move needs a public
+// use row to have just ended, and the rewrite that ends one is the one holding that
+// lock — so the write asks for no lock its caller does not already hold.
 //
 // So the upload's choice is the floor. A file given public by a person holding
 // file:manage keeps that read whatever a record later does with it: a page that
@@ -650,6 +671,9 @@ func (s *Service) settleAudience(ctx context.Context, tx db.Tx[db.Tenant], was m
 	if err != nil {
 		return err
 	}
+	if err := revokeGiven(ctx, tx, was, now); err != nil {
+		return err
+	}
 	for _, id := range ids {
 		if now[id] == was[id] {
 			continue
@@ -668,15 +692,47 @@ func (s *Service) settleAudience(ctx context.Context, tx db.Tx[db.Tenant], was m
 	return nil
 }
 
+// revokeGiven puts files.visibility back to private for every file this settlement
+// found is no longer publicly readable and whose recorded upload visibility is private.
+// One statement over the ids the caller already holds the locks on: a file whose
+// visibility already says private matches nothing, so the ordinary revocation of an
+// ordinary upload writes no row at all, and what does match is a row an earlier release
+// wrote the derived answer into.
+func revokeGiven(ctx context.Context, tx db.Tx[db.Tenant], was, now map[uuid.UUID]bool) error {
+	var ended []uuid.UUID
+	for id, before := range was {
+		if before && !now[id] {
+			ended = append(ended, id)
+		}
+	}
+	if len(ended) == 0 {
+		return nil
+	}
+	ended = ascending(ended)
+	if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
+		Where("id IN ? AND visibility = ? AND upload_visibility = ?",
+			ended, contracts.VisibilityPublic, contracts.VisibilityPrivate).
+		Update("visibility", contracts.VisibilityPrivate).Error; err != nil {
+		return fmt.Errorf("file: take back the audience %d files were shown to: %w", len(ended), err)
+	}
+	return nil
+}
+
 // shownRead is the door's question about one row the caller already read, answered
-// on that row: a file whose own visibility says public is read by anybody, and so
-// is one a record that serves strangers is showing — which is what the use row
-// says and the file row need not. The row handed back carries whichever half
-// answered, because the bytes served, the cache header on them and whatever the
-// caller goes on to report about the file are three places that must not answer
-// the question differently.
+// on that row: a file the upload gave to the world is read by anybody, and so is one
+// a record that serves strangers is showing — which is what the use row says and the
+// file row need not. The row handed back carries whichever half answered, because the
+// bytes served, the cache header on them and whatever the caller goes on to report
+// about the file are three places that must not answer the question differently.
+//
+// The first question is asked of what the upload was given rather than of the row's own
+// visibility, which is the same rule as whoReads' and for the same reason: a release
+// before this one wrote the derived answer into files.visibility, so for a private
+// upload a published page had shown that column said public — and a door that believed
+// it would go on serving those bytes to strangers after the page had taken the audience
+// back.
 func shownRead(ctx context.Context, tx db.Tx[db.Tenant], f *contracts.File) (bool, error) {
-	if f.Public() {
+	if f.GivenPublic() {
 		return true, nil
 	}
 	_, shown, err := whoReads(ctx, tx, []uuid.UUID{f.ID})
