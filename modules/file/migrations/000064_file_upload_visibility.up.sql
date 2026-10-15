@@ -14,11 +14,12 @@
 -- rather than a fix to the old one: their files.visibility no longer says anything
 -- about the upload, and the one place that ever recorded the upload's own choice is
 -- the file.uploaded event, whose payload carries it. So the ledger is asked once,
--- here, for the answer that is nowhere else: the first uploaded event names the
--- visibility the bytes arrived under. Where a file has no such event — its upload
--- predates the ledger's own retention, or the row arrived by some path that published
--- nothing — there is no record of a choice to recover, and the row's own value is all
--- that survives of it: this refuses to take away a public read on the strength of a
+-- here, for the answer that is nowhere else: each row starts from its own value, and
+-- the first uploaded event of a file overwrites that with the visibility the bytes
+-- actually arrived under. A file with no such event — its upload predates the ledger's
+-- own retention, or the row arrived by some path that published nothing — keeps the
+-- value it has, because there is no record of a choice to recover and a default of its
+-- own would be one: this refuses to take away a public read on the strength of a
 -- missing row, which is the direction that can be corrected by a later revocation
 -- rather than one that destroys the only evidence a page has.
 --
@@ -28,21 +29,27 @@
 -- taken back from, and the door reads this one for the half that is not derived.
 ALTER TABLE files ADD COLUMN upload_visibility varchar(10) NOT NULL DEFAULT 'private';
 
-UPDATE files AS f SET upload_visibility = COALESCE(u.visibility, f.visibility)
+-- Each row starts from its own answer, so a file the ledger has no upload event for
+-- keeps the read it has rather than losing one to a column nothing ever filled.
+UPDATE files SET upload_visibility = visibility;
+
+-- The events then correct the rows they can speak for: one row per fileId, the
+-- earliest of them, which is the upload itself and not a later flip of the audience.
+-- The key is compared as the text the event stored, so a payload naming anything that
+-- is not this row's uuid simply says nothing, and the row keeps what it has.
+UPDATE files AS f SET upload_visibility = u.visibility
 FROM (
-	SELECT DISTINCT ON ((payload->>'fileId')::uuid)
-		(payload->>'fileId')::uuid AS id,
+	SELECT DISTINCT ON (payload->>'fileId')
+		payload->>'fileId' AS file_id,
 		CASE payload->>'visibility'
 			WHEN 'public' THEN 'public'
 			WHEN 'private' THEN 'private'
 		END AS visibility
 	FROM platformkit_outbox
 	WHERE name = 'file.uploaded'
-		AND (payload->>'fileId') ~
-			'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-	ORDER BY (payload->>'fileId')::uuid, created_at, id
+	ORDER BY payload->>'fileId', created_at, id
 ) AS u
-WHERE u.id = f.id;
+WHERE u.file_id = f.id::text AND u.visibility IS NOT NULL;
 
 ALTER TABLE files ADD CONSTRAINT files_upload_visibility
 	CHECK (upload_visibility IN ('private', 'public'));
