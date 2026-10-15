@@ -37273,6 +37273,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/task/internal/erasure_preserves_title_capacity_test.go",
+   "id": "modules/task/internal/erasure_preserves_title_capacity_test.go#TestErasureCanAnonymiseATaskWhoseTitleAlreadyFillsItsAllowedLength",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestErasureCanAnonymiseATaskWhoseTitleAlreadyFillsItsAllowedLength",
+   "needs_db": true,
+   "pkg": "modules/task/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/task/internal/handler_test.go",
    "id": "modules/task/internal/handler_test.go#TestTheThreeCommandsAnswer",
    "kind": "go",
@@ -38610,6 +38629,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/translation/internal/erasure_invalidates_saved_revision_test.go",
+   "id": "modules/translation/internal/erasure_invalidates_saved_revision_test.go#TestErasureInvalidatesTheRevisionAnOpenTranslationFormHolds",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestErasureInvalidatesTheRevisionAnOpenTranslationFormHolds",
+   "needs_db": true,
+   "pkg": "modules/translation/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/translation/internal/event_carries_what_changed_test.go",
    "id": "modules/translation/internal/event_carries_what_changed_test.go#TestATranslationWriteSaysWhatItReplaced",
    "kind": "go",
@@ -39916,6 +39954,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/webhook/internal/erasure_removes_endpoint_labels_test.go",
+   "id": "modules/webhook/internal/erasure_removes_endpoint_labels_test.go#TestErasureRemovesThePersonsNameAndAddressFromEndpointLabels",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestErasureRemovesThePersonsNameAndAddressFromEndpointLabels",
+   "needs_db": true,
+   "pkg": "modules/webhook/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
    "verdict": "keep"
   },
   {
@@ -58020,7 +58077,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1470,
+  "files": 1473,
   "forge_runs": [
    408,
    413,
@@ -58054,7 +58111,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2504,
+   "behaviour": 2507,
    "composition": 337,
    "contract": 19,
    "journey": 67
@@ -58073,9 +58130,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 2927,
+  "rows": 2930,
   "tiers": {
-   "merge": 1831,
+   "merge": 1834,
    "nightly": 67,
    "push": 1029
   },
@@ -58083,13 +58140,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1284,
+   "keep": 1287,
    "keep-rewrite": 61,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2636,
+   "keep": 2639,
    "keep-rewrite": 118,
    "merge": 173
   }
