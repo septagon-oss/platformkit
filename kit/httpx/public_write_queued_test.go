@@ -8,7 +8,7 @@ package httpx_test
 // one is an outage this middleware fails open on — and the distinction the four
 // exist to make is the one a CI run got wrong, when a queue of same-key
 // submissions came back as an error and the error was answered by admitting all
-// 75 of them (T-0126 round 83, CI run 52994 job 53535).
+// 75 of them (forge run 52994, job 53535).
 //
 // The fake holds an answer rather than computing one: kit/limit's own cases make
 // the store produce these four, and TestAPublicWriteBurstAtOneDoorStopsAtTheWindow
@@ -39,15 +39,15 @@ import (
 
 // answeredLimit is one of kit/limit's four rows, held still: what it returns is
 // what the counter returns in that world, including ErrBusy where the counter
-// puts it (Count and Forget) and no error at all where Allow puts the refusal.
+// puts it (Count and Forget) and no error at all where Reserve puts the refusal.
 type answeredLimit struct {
 	ok    bool
 	retry time.Duration
 	err   error
 }
 
-func (a answeredLimit) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
-	return a.ok, a.retry, a.err
+func (a answeredLimit) Reserve(context.Context, string, int, time.Duration) (bool, int, time.Duration, error) {
+	return a.ok, 0, a.retry, a.err
 }
 
 // writeDoor composes the one public POST this file needs, counted by l, and

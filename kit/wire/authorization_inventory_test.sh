@@ -19,7 +19,7 @@ cases = {
         "TestAllowancesCoverOnlyWhatTheyName",
         "TestAuthorizationIdentitySpellings",
     ),
-    "reviewed_widening_gains_no_feature_test.go": ("TestAReviewedWideningCoversNoFeatureTheDoorGained",),
+    "an_allowance_pair_over_the_kind_covers_no_feature_the_door_gained_test.go": ("TestAReviewedWideningCoversNoFeatureTheDoorGained",),
     "authorization_member_names_test.go": ("TestAuthorizationMemberNamesCannotBorrowReviewedTransitions",),
     "allowance_quoted_member_spelling_test.go": ("TestAnAllowanceOverAQuotedMemberNamesItsExactSpelling",),
 }

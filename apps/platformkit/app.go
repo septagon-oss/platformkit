@@ -50,6 +50,7 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
 	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -103,7 +104,11 @@ type composition struct {
 	passwordDoor bool
 	access       httpx.AskForAccess
 	granter      page.Granter
-	messages     xtext.Catalog
+	// messages is the copy this composition serves — the same value the sentence
+	// handed to Languages, read here so the shell the kernel's failure page renders
+	// is worded from it rather than from a second read of the same files. It is the
+	// interface and not the provider: composeCopy is what replaces it.
+	messages pkit.Catalogue
 }
 
 // reference is the application, its deployment, and the composition it resolved.
@@ -120,9 +125,30 @@ func compose(cfg config.Config) composition {
 	return composeReference(cfg, pkit.Development).composition
 }
 
+// composeCopy is compose with its copy supplied. `installed` is the catalogue this
+// installation ships and stays the answer to "which languages exist"; `served`, when
+// non-nil, is the value the sentence is worded from, which is how the pseudo-locale
+// gate (kit/locale/providers/pseudo) renders the shipped graph with every reached
+// word marked. It is the same sentence with one of its own words replaced — not a
+// second composition — and no production caller passes one: main.go, start.go,
+// bootstrap.go and migrate.go all arrive through compose or composeReference.
+func composeCopy(cfg config.Config, installed xtext.Catalog, served pkit.Catalogue) composition {
+	return composeReferenceReading(cfg, pkit.Development, installed, served).composition
+}
+
 // composeReference is the sentence and the one resolution of it: the composition,
 // its deployment, and the process's reading of the services it resolved.
 func composeReference(cfg config.Config, env pkit.Environment) reference {
+	return composeReferenceReading(cfg, env, catalogues(), nil)
+}
+
+// composeReferenceReading resolves the sentence over a named catalogue and, optionally,
+// the value it is served in. See composeCopy for what that second value is for and who
+// may name it.
+func composeReferenceReading(cfg config.Config, env pkit.Environment, installed xtext.Catalog, served pkit.Catalogue) reference {
+	if served == nil {
+		served = installed
+	}
 	// The two values the app's own chrome reads and no module can build: the
 	// reach an ask has here, which the access module fills once the two services
 	// it joins exist, and the shell the ask's two pages are drawn in, which is
@@ -134,7 +160,7 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell, provision, face := sentences(cfg)
+	a, ask, shell, provision, face := sentence(cfg, served)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -142,7 +168,7 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		panic("platformkit: " + err.Error())
 	}
 	c := composition{
-		planned: p, modules: p.Modules(), options: p.Options(), messages: catalogues(),
+		planned: p, modules: p.Modules(), options: p.Options(), messages: served,
 		tenants: value[tenantcontracts.Service](p), users: value[usercontracts.Service](p),
 		auth: value[authcontracts.Auth](p), notify: value[notificationcontracts.Service](p),
 		mail: value[notificationcontracts.Mailer](p), files: value[filecontracts.Service](p),
@@ -198,7 +224,11 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 // repository boots the same composition with when it wants the handler rather
 // than a process. There is one of it because a second statement of a
 // composition is a second composition, and the two drift.
-func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+//
+// `served` is the copy that one sentence is worded from: for every caller in this
+// binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
+// different value to name, and sentences is what everybody else calls.
+func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
 	ask, shell, provision, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &connectionFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
@@ -208,6 +238,9 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			notification.Module,
 			auth.Module,
 			auth.EmailRegistration,
+			// The media library's chrome, immediately before the module that mounts
+			// the page: the authorizer its controls ask is the auth service above it.
+			media(),
 			file.Module,
 			task.Module,
 			billing.Module,
@@ -221,19 +254,31 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			site.Module,
 			web.Module,
 			audit.Module,
+			// Outbound webhooks: the machine's half of the same outbox the trail
+			// reads. It needs the tenant lister and this file's own catalogue of
+			// event names, and it is placed here because the events it can be asked
+			// for are everything above it has already declared.
+			webhook.Module,
 			seeding(provision),
 			access(ask),
 			change.Module,
 			admin.Module,
 		}, without)...).
 		Theme(design.Default()).
-		Languages(catalogues()).
+		Languages(served).
 		Home(pinnedHome).
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
 		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
 	return a, ask, shell, provision, face
+}
+
+// sentences is that sentence in the copy this installation ships, for every caller
+// with no opinion about the words — including the cases that take a module out of
+// the list to ask what the composition resolves to without its provider.
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+	return sentence(cfg, catalogues(), without...)
 }
 
 // omitted takes the names a case asked to leave out of the list. It exists for

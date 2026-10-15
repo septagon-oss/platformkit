@@ -40,12 +40,12 @@ type recordedLimit struct {
 	called atomic.Int64
 }
 
-func (l *recordedLimit) Allow(_ context.Context, key string, _ int, _ time.Duration) (bool, time.Duration, error) {
+func (l *recordedLimit) Reserve(_ context.Context, key string, _ int, _ time.Duration) (bool, int, time.Duration, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.keys = append(l.keys, key)
 	l.called.Add(1)
-	return l.ok, l.retry, l.err
+	return l.ok, 0, l.retry, l.err
 }
 
 func (l *recordedLimit) asked() []string {

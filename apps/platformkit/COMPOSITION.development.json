@@ -18,7 +18,8 @@
         "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Locale",
-        "tenantcontracts.Languages"
+        "tenantcontracts.Languages",
+        "webhookcontracts.Catalogue"
       ],
       "contributes": [
         {
@@ -87,7 +88,8 @@
     {
       "name": "site",
       "provides": [
-        "sitecontracts.Service"
+        "sitecontracts.Service",
+        "sitecontracts.LockedReader"
       ],
       "uses": [
         {
@@ -186,32 +188,6 @@
       }
     },
     {
-      "name": "file",
-      "provides": [
-        "filecontracts.Service",
-        "richtext.Files",
-        "rest.FileUses",
-        "rest.FileShown"
-      ],
-      "needs": [
-        {
-          "contract": "filecontracts.Storage",
-          "from": "product"
-        },
-        {
-          "contract": "jobs.TenantLister",
-          "from": "tenant"
-        }
-      ],
-      "after": [
-        "product",
-        "tenant"
-      ],
-      "reads": [
-        "config.Files"
-      ]
-    },
-    {
       "name": "task",
       "provides": [
         "taskcontracts.Service"
@@ -276,6 +252,32 @@
       "reads": [
         "config.Audit",
         "config.Database"
+      ]
+    },
+    {
+      "name": "webhook",
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        },
+        {
+          "contract": "webhookcontracts.Catalogue",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webhookcontracts.Alerts",
+          "from": ""
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Webhook"
       ]
     },
     {
@@ -346,31 +348,18 @@
       ]
     },
     {
-      "name": "content",
+      "name": "media",
       "provides": [
-        "contentcontracts.Service"
+        "*file.LibraryChrome"
       ],
       "needs": [
         {
-          "contract": "richtext.Files",
-          "from": "file"
-        },
-        {
-          "contract": "rest.FileUses",
-          "from": "file"
-        },
-        {
-          "contract": "rest.Translations",
-          "from": "translation"
-        },
-        {
-          "contract": "rest.FileShown",
-          "from": "file"
+          "contract": "authcontracts.Auth",
+          "from": "auth"
         }
       ],
       "after": [
-        "file",
-        "translation"
+        "auth"
       ]
     },
     {
@@ -391,6 +380,10 @@
         },
         {
           "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "sitecontracts.LockedReader",
           "from": "site"
         },
         {
@@ -416,6 +409,100 @@
         "notification",
         "auth",
         "site"
+      ]
+    },
+    {
+      "name": "file",
+      "provides": [
+        "filecontracts.Service",
+        "richtext.Files",
+        "rest.FileUses",
+        "rest.FileShown"
+      ],
+      "needs": [
+        {
+          "contract": "filecontracts.Storage",
+          "from": "product"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "*file.LibraryChrome",
+          "from": "media"
+        }
+      ],
+      "after": [
+        "product",
+        "tenant",
+        "media"
+      ],
+      "reads": [
+        "config.Files"
+      ]
+    },
+    {
+      "name": "change",
+      "provides": [
+        "changecontracts.Service"
+      ],
+      "uses": [
+        {
+          "contract": "changecontracts.Notifier",
+          "from": "access"
+        },
+        {
+          "contract": "changecontracts.ProposalPage",
+          "from": "access"
+        },
+        {
+          "contract": "*change.ReviewChrome",
+          "from": "access"
+        }
+      ],
+      "takes": [
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "from": [
+            "product",
+            "access"
+          ]
+        }
+      ],
+      "after": [
+        "product",
+        "access"
+      ]
+    },
+    {
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        },
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.FileShown",
+          "from": "file"
+        }
+      ],
+      "after": [
+        "file",
+        "translation"
       ]
     },
     {
@@ -454,39 +541,6 @@
         "translation",
         "content",
         "site"
-      ]
-    },
-    {
-      "name": "change",
-      "provides": [
-        "changecontracts.Service"
-      ],
-      "uses": [
-        {
-          "contract": "changecontracts.Notifier",
-          "from": "access"
-        },
-        {
-          "contract": "changecontracts.ProposalPage",
-          "from": "access"
-        },
-        {
-          "contract": "*change.ReviewChrome",
-          "from": "access"
-        }
-      ],
-      "takes": [
-        {
-          "contract": "changecontracts.SubjectBinding",
-          "from": [
-            "product",
-            "access"
-          ]
-        }
-      ],
-      "after": [
-        "product",
-        "access"
       ]
     },
     {

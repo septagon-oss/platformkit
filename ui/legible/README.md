@@ -1,0 +1,68 @@
+# legible — what a person reads in a served document
+
+`Scan(body, reached)` parses one response body and hands back every string a person
+could read in it: each text node, and each `alt`, `title`, `aria-label` and
+`placeholder`, with the path it sits at (`html[1] > body[2] > main[1] > div[1]#text`,
+element siblings numbered). `Violations` are the strings that went around a catalogue;
+`Exempted` are the ones the number does not count. `Exempt(text)` is the exemption
+rule, and `Reached` is the decision handed in by whoever marks the copy —
+`pseudo.Wrapped` in the gate — so this package names no locale and no delimiter.
+`MarkDatum(collected, reached, values)` marks the strings the application itself holds as
+what a person typed, and decides a node the frame joined part by part — one marked
+sentence stays one part however many separators it holds inside itself — while
+`Report(label, collected)` prints the verdict one document at a time:
+`TEXT <label> <path> "text"` for every string that went around a catalogue and
+`DATA <label> <path> "text" <why>` for every string it declined to count, with the rule
+that declined.
+
+It reads documents and writes nothing: no I/O, no clock, no tenant, so a case asserts
+the whole list against a literal.
+
+The two decisions worth arguing about are both refusals to be convenient. Nothing is
+skipped but `script`, `style`, `template` and `noscript`: `<title>` is copy a person
+reads in a tab, and `aria-hidden="true"` stays in the count, because hiding a node
+from assistive technology does not make an English label translatable and honouring it
+would hand out a switch for this gate. And `Exempt` is a function of what a string
+*is* — no letters, or nothing but machine shapes (numerals, ids, timestamps, amounts
+with a Currency, opaque tokens, keys, language tags, hosts, file names) — never of
+where it sits, because a predicate satisfiable by position is one somebody would
+satisfy by position. A mixed line ("Delete task 4b2a…") is therefore reported: the
+word that is not a shape is a sentence somebody wrote in Go. Dates exempt only in the
+numeric forms this kernel renders; a page that spells `Monday, 4 October 2026` is a
+page whose month names nobody translated, and that is reported. An address exempts by
+shape — a path from the root, a media type, a product tag and its version — and not by
+holding a slash, because `Yes/No` and `Show/Hide` hold one and are copy. What no rule
+over a shape can decide is which sentences a person typed: "Pump room inspection" and
+"Back to the workspace" are the same kind of text, and only the write that stored the
+first knows it, which is why the gate hands its own seeded values to `MarkDatum`. A
+joined node is decided by the same rule, part by part, and the mark is what tells a
+frame's separator from the one a sentence holds between its own words.
+
+**Reused** — `golang.org/x/net/html` (`html.Parse`, already a requirement) rather than
+a second HTML reader, and the raw-text skip that falls out of the parse tree: a
+`<script>` body is a text node whose parent names it. **Added** — the scan and the
+exemption grammar; nothing in the tree read a rendered document back (`grep -rln
+"html.Parse"` returned two test files) and there was no exemption rule to extend.
+**Made reusable** — the scan, `Exempt`, `MarkDatum` and `Report` are one client's own
+gate's halves: a product renders its pages under the same pseudo-locale, calls `Scan` with
+`pseudo.Wrapped`, marks what it typed, and floors its own ratio, without this package
+knowing what a page, a route or a client is.
+
+A sentence whose *argument* is English counts as reached. `Text` formats a catalogue
+answer around what the caller hands it, and the pseudo-locale marks the answer before the
+argument arrives, so `⟦That could not be saved: a task needs a title⟧` is one marked
+string — the *sentence* reached a catalogue and the English inside it never did. This
+package reads rendered documents, so it cannot see the seam; a gate that must not lose
+the difference reads the values it stored itself (`MarkDatum`) and leaves an interpolated
+*constant* to whoever owns the code that interpolated it.
+
+Known over-reach, printed rather than hidden: `of-PT` passes as a language tag, a
+16-character slug holding a digit passes as an opaque token, and `and/or` reads as a
+relative address because every one of its segments is spelled the way an address
+segment is. A label's colon and an English month name no longer read as data — `Name:`
+and `Mon 04 Oct 2026 12:00:00 UTC` are copy this reports — so what is exempt is a
+separator *inside* a token (`task:read`, `a.b.c` with two dots inside it, `a_b`) and a shape the
+grammar names: a scheme'd URL, a language tag, an id, an amount, a numeric timestamp. `e.g.`
+is not exempt: one dot inside and one at the end is an abbreviation, which is a word.
+`Report` prints every exempt string with the reason, so what the number
+declined to count stays reviewable.

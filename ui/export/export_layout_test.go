@@ -128,7 +128,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// Cascade layers: Compose now emits `@layer tokens, base, components,
 	// client;` and wraps each layer's rules in a block, so the exported sheet is
-	// the same declarations at one more level of nesting, and review round 1 of
+	// the same declarations at one more level of nesting, and the first pass of
 	// that change moved the kernel's own component-state rules out of @layer base
 	// into @layer components, ahead of the class lists, because a layer ranks
 	// before specificity and a dismissed modal was losing to the `flex` on its
@@ -210,7 +210,15 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// removed; CSS, schema, notices, themes, icons and font policy are identical.
 	// The digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
-	if legacy.SHA256 != "b51d21dec00319b066ddb3b154ae1cbf7776d3fe1aa44f329433f81b4dbb4bf4" {
+	//
+	// The rich text field's chrome joins @layer components, and the editing surface
+	// takes the published page's prose rules with it. Measured by exporting this
+	// tree and the same tree with those two merges removed and walking both
+	// documents leaf by leaf: 99,906 leaves each, none added, none removed, and
+	// exactly two changed — /css, which carries the new rules, and /sha256, which is
+	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
+	// schema or font policy moves. The digest below is that measurement of this tree.
+	if legacy.SHA256 != "5004fa12de463e88646fdb918286ee332c335a402a8d20a2b4b0a4077d1ba99c" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

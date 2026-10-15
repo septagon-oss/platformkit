@@ -38,6 +38,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/translation"
 	"github.com/septagon-oss/platformkit/modules/user"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 )
 
 // everything is the kernel's schema and every reference module's, in the order
@@ -49,7 +50,7 @@ import (
 // composes, so a table the application creates is a table the walk has seen.
 var everything = []db.MigrationSource{migrations.Source, user.Migrations, notification.Migrations, auth.Migrations,
 	task.Migrations, billing.Migrations, translation.Migrations, content.Migrations, site.Migrations,
-	file.Migrations, audit.Migrations, change.Migrations}
+	file.Migrations, audit.Migrations, webhook.Migrations, change.Migrations}
 
 // exemption is the marker a table that belongs to no tenant carries, in its
 // own COMMENT, so that "this one is deliberate" is written where the table is
@@ -62,7 +63,7 @@ const exemption = "platformkit:tenant-scoping-exempt"
 // a tenant policy: a policy would have to name a tenant the row does not have.
 // The one door on them is the REVOKE, and it is checked rather than asserted —
 // below, in this walk, from the catalog, and by running the statements from an
-// application connection in kit/db/review_guarantees_test.go. A table added to
+// application connection in kit/db/contention_err_contended_under_budget_deployment_named_test.go. A table added to
 // this list without that door is a table somebody else can write.
 var runnerTables = []string{"schema_migrations", "schema_migration_backfill"}
 

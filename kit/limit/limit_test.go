@@ -53,23 +53,33 @@ func TestBothLimitersAgree(t *testing.T) {
 var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"the limit-th event is allowed and the next is not": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		for i := range 3 {
-			ok, retry, err := l.Allow(ctx, "ada", 3, window)
+			ok, remaining, retry, err := l.Reserve(ctx, "ada", 3, window)
 			if err != nil {
-				t.Fatalf("Allow %d: %v", i+1, err)
+				t.Fatalf("Reserve %d: %v", i+1, err)
 			}
 			if !ok {
 				t.Fatalf("event %d of 3 was refused", i+1)
 			}
-			if retry != 0 {
-				t.Errorf("an allowed event asked the caller to wait %s", retry)
+			// An allowed event states its window: `RateLimit`'s `t` is that number and
+			// the caller who is still inside the quota is the one it is worth most to.
+			// Before the port answered all three from one statement, an allowed event
+			// reported no window at all and the field could only be written on a refusal.
+			if retry <= 0 || retry > window {
+				t.Errorf("an allowed event reported %s of a %s window", retry, window)
+			}
+			if want := 3 - (i + 1); remaining != want {
+				t.Errorf("event %d reported %d left, want %d", i+1, remaining, want)
 			}
 		}
-		ok, retry, err := l.Allow(ctx, "ada", 3, window)
+		ok, remaining, retry, err := l.Reserve(ctx, "ada", 3, window)
 		if err != nil {
-			t.Fatalf("Allow: %v", err)
+			t.Fatalf("Reserve: %v", err)
 		}
 		if ok {
 			t.Error("the fourth event of a limit of three was allowed")
+		}
+		if remaining != 0 {
+			t.Errorf("a refused event reported %d left, want none", remaining)
 		}
 		if retry <= 0 || retry > window {
 			t.Errorf("retryAfter is %s, want what is left of %s", retry, window)
@@ -79,14 +89,14 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"a closed window starts again": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		const brief = 300 * time.Millisecond
 		for range 2 {
-			if _, _, err := l.Allow(ctx, "ada", 1, brief); err != nil {
-				t.Fatalf("Allow: %v", err)
+			if _, _, _, err := l.Reserve(ctx, "ada", 1, brief); err != nil {
+				t.Fatalf("Reserve: %v", err)
 			}
 		}
 		time.Sleep(2 * brief)
-		ok, _, err := l.Allow(ctx, "ada", 1, brief)
+		ok, _, _, err := l.Reserve(ctx, "ada", 1, brief)
 		if err != nil {
-			t.Fatalf("Allow: %v", err)
+			t.Fatalf("Reserve: %v", err)
 		}
 		if !ok {
 			t.Error("the window never closed; a limit that only ever accumulates is a lockout")
@@ -94,8 +104,8 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	},
 
 	"Count records nothing": func(t *testing.T, l limit.Limiter, ctx context.Context) {
-		if _, _, err := l.Allow(ctx, "ada", 10, window); err != nil {
-			t.Fatalf("Allow: %v", err)
+		if _, _, _, err := l.Reserve(ctx, "ada", 10, window); err != nil {
+			t.Fatalf("Reserve: %v", err)
 		}
 		for range 5 {
 			n, _, err := l.Count(ctx, "ada", window)
@@ -114,8 +124,8 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 
 	"Forget drops the key": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		for range 3 {
-			if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
-				t.Fatalf("Allow: %v", err)
+			if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
+				t.Fatalf("Reserve: %v", err)
 			}
 		}
 		if err := l.Forget(ctx, "ada"); err != nil {
@@ -165,8 +175,8 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"two keys and two tenants are four counters": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		globex := tenancy.WithTenant(ctx, tenancy.Tenant{ID: uuid.New(), Slug: "globex"})
 		for range 3 {
-			if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
-				t.Fatalf("Allow: %v", err)
+			if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
+				t.Fatalf("Reserve: %v", err)
 			}
 		}
 		for _, tt := range []struct {
@@ -199,13 +209,13 @@ func TestTwoReplicasShareOneLimit(t *testing.T) {
 	l := limit.Postgres(httpx.ConnFrom)
 
 	for i, ctx := range []context.Context{first, second, first} {
-		if ok, _, err := l.Allow(ctx, "ada", 3, window); err != nil || !ok {
+		if ok, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil || !ok {
 			t.Fatalf("attempt %d = %v, %v; want allowed", i+1, ok, err)
 		}
 	}
-	ok, retry, err := l.Allow(second, "ada", 3, window)
+	ok, _, retry, err := l.Reserve(second, "ada", 3, window)
 	if err != nil {
-		t.Fatalf("Allow: %v", err)
+		t.Fatalf("Reserve: %v", err)
 	}
 	if ok {
 		t.Error("the second replica had a limit of its own, which is three limits on three pods")
@@ -217,7 +227,7 @@ func TestTwoReplicasShareOneLimit(t *testing.T) {
 	if err := l.Forget(first, "ada"); err != nil {
 		t.Fatalf("Forget: %v", err)
 	}
-	if ok, _, err := l.Allow(second, "ada", 3, window); err != nil || !ok {
+	if ok, _, _, err := l.Reserve(second, "ada", 3, window); err != nil || !ok {
 		t.Errorf("after the first replica forgot the key, the second = %v, %v", ok, err)
 	}
 }
@@ -228,8 +238,8 @@ func TestPurgeDropsWindowsThatClosedLongAgo(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
 	l := limit.Postgres(httpx.ConnFrom)
-	if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
-		t.Fatalf("Allow: %v", err)
+	if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
+		t.Fatalf("Reserve: %v", err)
 	}
 	if err := limit.Purge(t.Context(), conn); err != nil {
 		t.Fatalf("Purge: %v", err)
@@ -255,7 +265,7 @@ func TestPurgeDropsWindowsThatClosedLongAgo(t *testing.T) {
 // stopped working.
 func TestAContextWithNoConnectionIsAnError(t *testing.T) {
 	l := limit.Postgres(httpx.ConnFrom)
-	if _, _, err := l.Allow(t.Context(), "ada", 3, window); !errors.Is(err, limit.ErrNoConnection) {
+	if _, _, _, err := l.Reserve(t.Context(), "ada", 3, window); !errors.Is(err, limit.ErrNoConnection) {
 		t.Errorf("Allow with no connection = %v, want ErrNoConnection", err)
 	}
 	if _, _, err := l.Count(t.Context(), "ada", window); !errors.Is(err, limit.ErrNoConnection) {

@@ -119,19 +119,19 @@ func (a *API) writeLimits(ctx huma.Context, next func(huma.Context)) {
 			next(ctx)
 			return
 		}
-		ok, retryAfter, err := a.opts.WriteLimiter.Allow(context.WithoutCancel(ctx.Context()), key, limit.Limit, window)
+		allowed, _, retryAfter, err := a.opts.WriteLimiter.Reserve(context.WithoutCancel(ctx.Context()), key, limit.Limit, window)
 		if err != nil {
 			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the write limit could not be read; proceeding",
 				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 			next(ctx)
 			return
 		}
-		if ok {
+		if allowed {
 			continue
 		}
 		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: write refused by the limit",
 			"method", ctx.Method(), "path", ctx.URL().Path, "per", limit.Per, "limit", limit.Limit)
-		ctx.SetHeader("Retry-After", strconv.Itoa(max(1, int(retryAfter.Seconds()))))
+		sayRetryAfter(ctx, retryAfter)
 		a.refuse(ctx, http.StatusTooManyRequests,
 			CodeLimitExhausted+": too many submissions "+writeLimitSays(limit.Per))
 		return

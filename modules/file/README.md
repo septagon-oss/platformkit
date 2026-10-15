@@ -117,6 +117,120 @@ Both public routes are reads; the module has no public write, so `kit/limit` is 
 
 Who may read a file is derived, not remembered: the visibility its uploader was given, widened by any live `file_uses` row of it that says the record showing it is showing it to somebody who has not signed in (`SetShown`/`SetUsesShown`, migrations/000056). The public door asks both halves and the row it hands back carries the answer, so the bytes served and the `Cache-Control` on them are one verdict. Neither half is copied into the other. `files.visibility` is the audience the file was *given* — chosen at upload by whoever holds `file:manage`, and nothing later narrows it — and the audience a record asserts lives in the use row that asserts it. `SetShown` and `SetUses` therefore decide the answer and publish its flip, and never write the answer into the file row: a file whose last public user is gone is anonymously unreadable at once, not when the release sweep arrives a day or two later, and an ordinary edit that adds a picture to a published record makes those bytes readable in the same write, from the row it just filed. What that costs is one indexed read of `file_uses` for a file its own row calls private, and the object stored for a file public only because a page shows it carries the private cache policy — the conservative direction, never one reader wider. The floor is what the upload asked for, and it holds in both directions a person might have meant: a site logo named by a bare uuid with no field and no lifecycle keeps its public read, and so does one that a published page gained and later dropped — that page's audience went back with its own row, and the uploader's choice was never the page's to take back.
 
+### The media library
+
+The grid, the meter and the caption are three reads and one write on the rows this
+module already owned, and they are `contracts.Library` rather than a fourth and
+fifth method on `Service`, for the reason `WidthOpener` exists: a caller that draws
+a grid has no business being handed the erasure commands.
+
+`GET /api/v1/file/files` gained the grid's three axes — `q`, `type` and `unused` —
+and `GET /api/v1/file/quota` answers what one tenant is holding. The meter is
+`file:read` and never anonymous: an upload must not teach a stranger how much of a
+quota is left, while a member of the tenant asking about that tenant's own disk is
+a different question with a different answer. `PUT /api/v1/file/files/{id}/alt`
+(`file:manage`) writes what a picture says about itself and publishes
+`file.altered`. `POST` to that same address performs the identical write, and it is
+there because it is the address the catalog's `alt` command sends a client to (see The
+catalog entry below): a command a document offers at a door that answers `405` is a door
+nobody outside the browser it was hand-written for has.
+
+A grid tile names a width only when its row has one. The content door serves a planned
+width only once it is built and never falls back, so a tile that asked for 480 whatever
+the row held would be a broken-image glyph over a 404 — which is what it was, for every
+picture narrower than the plan and for every picture whose encode pass had not run. The
+page therefore asks `Service.ReadyWidths` once for the rows it is drawing, and each tile
+asks for the widest ready width that fits it, or the frame's own address when the row has
+none: the frame is the one picture of a file that always answers, and for a picture
+narrower than the plan it is the only one there will ever be.
+
+Four decisions are functions in `contracts/` and not clauses in a query —
+`MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` — because the SQL service and
+`filetest.Fake` have to answer them identically, and the fake encodes no widths and
+holds no lock. The type filter shows why: a family read off the media type's prefix
+alone files `image/svg+xml` — which nothing here decodes, measures or renders
+inline — among the photographs, so `MediaFamily` asks for a frame the image pass
+actually measured (`width > 0`) as well as a type it would show in a browser.
+
+The meter takes no advisory lock, deliberately: the lock exists so twenty
+simultaneous uploads cannot each read one total and each decide there is room, and
+a page load that queued behind the tenant's own uploads would be an outage with a
+friendly face. Its number is the same sum `charge` refuses against, read as of the
+caller's own snapshot, so it can be one commit stale and is never the number that
+refused you. `used` counts a picture and its other widths together — one tenant's
+disk, one sum — and an installation with no ceiling answers `unlimited`, with no
+bar to draw.
+
+An alt text is a claim a person makes about a picture, so it is one command's
+write. `alt = ''` with no decorative claim is legal to arrive at — every upload and
+seeded file starts there — and illegal to leave by; `decorative` with words in it
+is refused by `File.Validate` and by the column's `CHECK`, written in the same
+image; and a caption is written against the `updatedAt` the caller was shown, so a
+row that has moved answers `ErrConflict` and changes nothing. A `PUT` naming no
+revision is a `PUT` that means "last write wins", and this module has no such
+command.
+
+### The library's page
+
+`internal.MountLibrary` serves the screen these reads are for, at the address the
+manifest's one `Nav` entry names: `/app/file/files`, guarded by `file:read` like the
+list door beside it. It is mounted by this module and composed by the application, which
+hands in the shell it already builds and the authorizer its routes already enforce
+(`Deps.Library`, a `*LibraryChrome`); with no chrome wired the module serves no page and
+the surface's own 404 says so, the way `modules/change` answers a queue nobody composed.
+
+One page, four routes, no script. The grid takes its filters as query parameters —
+`q`, `type`, `unused`, `sort`, `page` — so a filtered view is a URL a person can reload
+and send to a colleague; the details panel opens from `?file={id}`, which makes opening
+one a link rather than a click a script has to intercept; and the three write controls are
+`<form method="post">` elements posting to this module's own page routes — `POST
+/files/{id}/alt`, `POST /files/{id}/delete` and `POST /files/upload`, the last of which
+streams the multipart part to storage through the same `Service.Upload` the JSON door
+performs and lands the person on the new file's panel, because the JSON door answers with
+the row it wrote and a raw document is nowhere a person who pressed Upload should land. POST
+rather than the JSON verb, for the reason `modules/change` gives for its decision forms:
+`kit/httpx` refuses an unsafe request carrying a session cookie unless it is same-site,
+and a form cannot send `PUT` or `DELETE`. The JSON doors are unchanged and are still the
+ones a client that can speak them uses. The page fills one action above the fold — Upload
+— and the filter's Apply sits in the secondary tone beside it, because the design floor
+allows one thing to do per view.
+
+What the page decides is nothing. The tiles, the meter and the panel are answers from
+`contracts.Library`, `Service.Uses` and `crud.Get`, so the number on the meter is the
+number `charge` refused against; the caption form carries the `updatedAt` the panel was
+drawn from, so the second copy of that form is refused by `SetAlt` rather than quietly
+winning; and the removal control is disabled while a use row lives while the command
+underneath refuses the same thing whatever the button looks like. The controls a caller
+may not press are absent rather than disabled when the composition's authorizer says so
+— a control that cannot be used is a fact about the page, and the guard on the post is
+what actually decides.
+
+### The catalog entry
+
+`GET /api/v1/app/resources` names `file`/`file`. The routes above answer whether or not
+anybody declares them, and a door nobody can discover is a door only the browser it was
+written for has, so `RegisterRoutes` ends by recording the entity those routes are
+mounted on and the caption as a command with its work beside it: the same `SetAlt`, in
+the request's own transaction, behind the guard registration installs.
+
+Three CRUD doors are named because three are performable by a caller that never
+compiled against this module — the list, the read and the delete. No create is named:
+the upload is a stream, and a form or a generated client has no JSON body to send it
+with, so advertising it would be a New button over a refusal. No update is named: a
+file's bytes are what they are, so the only writable fact about one is what it says
+about itself, and that is a claim with an event rather than a `PATCH` over the row. No
+screen is published. The workspace address a person reads files at is the page above,
+and a generated screen over the same entity would be a second library beside it.
+
+Naming fewer than the five asks nothing of the number beside them:
+`ui/screens.CatalogVersion` moves when a resource already in the document loses a
+verb, because a shell in somebody's pocket drew that button and hears nothing when
+the address stops answering. `file/file` is new to the document, so no installed
+build holds a door of its own to lose and its verb set is this module's to declare.
+A shell that reads `operations` offers the list, the read and the delete here; one
+that ignores the key offers a New button over a stream the route refuses, which is
+the cost the key is written for.
+
 ### The operator boundary
 
 None. No key in `permissions` sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route — `file:erase` and `file:retain` are tenant permissions, granted per role like the other two. The module's only cross-tenant reach is its own orphan sweep, which is a job holding the ops surface's system token (`s.Ops.SystemToken()` in `module.go`) and not a route anybody can call.
@@ -128,6 +242,22 @@ What an operator does instead of a route is two steps beside `make rehearse`: `m
 The code names no role. A composition grants `file:read` to people who may browse, download and mint a grant, `file:manage` to people who may upload and delete, `file:retain` to whoever may keep a file past its class, and `file:erase` to whoever answers a data-protection request — the last two are the ones a broad support role should not hold by default.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module.
+
+## Interface
+
+**Reused** — `kit/crud`, `kit/db`, `kit/httpx`, `kit/rest` (its error mapping, and the
+`FileUses`/`FileShown` ports other modules hand this one), `kit/events`, `kit/problem`,
+`ui/page` and `ui/components`. **Added** — `contracts.Service` and the narrow ports
+beside it (`Opener`, `WidthOpener`, `Library`, `VariantServable`), which are what a
+consumer imports; the HTTP doors listed above; the library page; and `filetest.Fake`,
+which answers all of them without a database. **Made reusable** —
+`ui/page.Route.StreamsBody`, the mark a page that reads its own request carries so the
+kernel bounds it by `files.max_bytes` rather than by the megabyte every other request
+gets, and `LibraryPages`' narrow ports (`UseReader`, `Remover`, `Storer`), which are
+what a page of this shape asks for instead of the whole `Service`.
+
+Consumers import [contracts/](contracts/) and its [fake](contracts/filetest/), never
+`internal/`.
 
 ## Built on what came before
 
@@ -211,15 +341,84 @@ kernel mounted. The orphan sweep asks both tables which objects a row names, so 
 row still says `ready` is never removed as an orphan the night after it was built — its object is
 named by `file_variants.storage_key` and by nothing else.
 
+### Composition — the library's grid, meter and caption (T-0316)
+
+**Reused** — `crud.GetForUpdate` and the tenant policy `000019_file.up.sql` keeps for
+the grid's read, the caption's write and the delete's second lock; `internal.Service.charge`
+and the advisory-locked two-table sum it already took, which the meter now reads through
+the same function rather than beside it; `filetest.RunService` and `filetest.Fake`, which
+ran the three new cases the moment `contracts/` held the decisions behind them; the
+existing `files.unused_since` stamp, `file_uses`, `Service.Uses` and the `file:read`/
+`file:manage` pair — no new column beyond the caption's own two, no new table, no new
+permission. **Added** — `alt`/`decorative` and `contracts.AltClaim`, `MediaFamily`,
+`LibrarySort`, `Quota` and `contracts.ErrInUse`: nothing in the tree could answer what a
+picture says about itself, what a file's family is, whether a tenant is out of room, or
+whether removing a file would strand a page, and each had to be one function `contracts/`
+owns so the SQL service and the fake cannot answer it differently. **Made reusable** —
+`contracts.Quota`, whose `Left`/`Fraction`/`Full` are the meter's whole arithmetic for any
+screen or client; `contracts.MediaFamily`, which is the type filter any later browse of
+these rows draws from; `WithQuota` on the fake, so a consumer can drive its own quota
+empty and get the same refusal the deployment gives; and a caption guarded by the row's
+own `updatedAt` rather than by a second counter, which is the revision guard any future
+single-column edit of a file can copy.
+
+### Composition — the media library's page (T-0316)
+
+**Reused** — `ui/page.Serve` and its `Route`/`Request`/`View`, which is how
+`modules/change`'s two screens are mounted and why this page needs no package of its
+own: it is `modules/file/internal/library_page.go` beside the service it reads, the same
+call `modules/change/internal/reviews.go` made; `ui/components`' `Masonry`, `Media`,
+`DetailList`, `SidePanel`, `EmptyState`, `Toolbar`, `Pagination`, `Alert`, `Form`-family
+controls and `ContentState`, so the grid has no class of its own to style and the states
+are the vocabulary the gallery already documents; `contracts.Library`'s three reads, the
+`file:read`/`file:manage` pair, `Service.Uses`, and the tenant policy that scopes every
+one of them. **Added** — `Deps.Library`/`LibraryChrome`, the one edge that lets a
+composition hand its chrome to a capability that must not guess at it, and the three page
+routes (`POST /files/{id}/alt`, `POST /files/{id}/delete` and `POST /files/upload`),
+which are this module's commands wearing a form. **Made reusable** —
+`LibraryPages.UseReader`, `Remover` and `Storer`, the
+narrow ports a page of this shape asks for instead of the whole `Service`, so a later
+screen (the picker, a record's own image field) takes the one question it needs; the
+revision stamp travelling in the form as the row's own `updatedAt` rather than a second
+counter; and the drawing rule that a write control is absent for a caller the authorizer
+refuses and never merely greyed out.
+
+## Verification
+
+`make test TEST_PACKAGES='./modules/file/... ./apps/platformkit/...'` needs the
+development database, object store and broker `make up` starts; the S3 adapter's
+conformance suite fails rather than skips without the store. The library's own cases —
+the caption invariant and its revision guard, tenant isolation on the grid and the
+panel, the read-only credential refused on both surfaces, the meter, the picker, and
+the two browser cases that drive Chromium at a phone's and a desktop's width — are in
+`modules/file/*_test.go`; `modules/file/internal` holds the service and store cases.
+`make check` covers the imports, the ui layers, the budgets and the published OpenAPI
+document. No mobile or native flow runs against any of it: this repository has no
+`native/` directory, and a catalog client's caption is proved by
+`TestTheCatalogsCaptionCommandAnswersWhereTheCatalogSendsIt`, which derives the address
+the way such a client does.
+
 ## Limits
+
+The media library's page is a grid, a meter, a panel and three forms. What it does not
+have yet, and nothing pretends otherwise: no upload progress, cancel or retry (the
+browser's own is all there is), no per-file error tile beside the grid's rows — a
+refused upload answers one sentence above the grid and the person re-picks the file — no
+Replace on a stored file, no keyboard-and-axe pass and no Storybook state for the
+picker, and no journey in `e2e/steps` (there is no `file.ts`), so the brief's four
+acceptance journeys are unproved end to end. The picker's answer is a query parameter
+on the address that opened it; nothing in this repository opens the picker or reads that
+answer back, because the field that would is its consumer's share (T-0189). The page's
+markup also still lives in `internal/library_page.go` rather than in an `internal/ui`
+layer of its own.
 
 The image pass decodes JPEG, PNG, the first frame of a GIF and WebP (through
 `golang.org/x/image/webp`, whose decoder registers with `image.DecodeConfig`, so the
 pixel ceiling is still read from a header and not from an allocated frame). A planned
 width is served only once it is built: `?w=` answers 404 rather than falling back to the
 original, because one address with one width has one object to serve, and the encode is
-on the clock (`file-variants`, five minutes), so a fresh upload's srcset names its own
-frame alone until the job has been round. A width that will not fit the tenant's quota
+on the clock (`file-variants`, five minutes), which is why it is the page that asks which
+widths exist rather than the browser finding out. A width that will not fit the tenant's quota
 fails at the encode and is recorded as failed with `reason = 'quota'` — the original was
 already accepted, charged and served, and this module does not reach back to refuse an
 upload. A `failed` row is never retried and nothing reads it automatically yet; the media
@@ -249,13 +448,22 @@ that cannot tell an unsaved picture from a configured one. A resource left on
 ever stamps its images and the release sweep never reaches them — mount warns because the
 audience of those images is never derived either, so a published page shows only what its
 uploader made public. `Service.Delete` refuses a file any row of `file_uses`
-still names — `ErrInUse`, naming how many records — and it asks under a lock on
-the file row, so a use that begins concurrently either waits behind the removal
-and is refused the file it named, or lands first and is counted. A dangling row
-is therefore what the erasure door and the retention sweep leave behind, and it
-ends with the next rewrite of that field: an edit, or the record's
-own delete through `kit/rest`, which ends its uses and is not refused by a file
-that went first. An edit of a published record files what it adds as public in
+still names — `ErrInUse`, 409, naming how many records, nothing written and
+nothing published — and it asks under a lock on the file row `FOR UPDATE`:
+`SetUses` holds that same row `FOR KEY SHARE` for as long as one of its
+transactions is filing a use, so a use that begins concurrently either waits
+behind the removal and is refused the file it named, or lands first and is
+counted. The library's disabled control is the courtesy; this is the refusal, and
+it reaches a client that never saw the page. A dangling row is therefore what the
+erasure door and the retention sweep leave behind, and it ends with the next
+rewrite of that field: an edit, or the record's own delete through `kit/rest`,
+which ends its uses and is not refused by a file that went first. The removals
+that outrank a record's convenience keep going through the paths that ignore the
+ledger: a subject's erasure removes what a page is still showing, and the two
+sweeps remove rows they are about to end. A tenant that wants the person's file
+gone and the page intact edits the page first; the module will not tell the holder
+of a subject request to go and do a content edit. Nothing else ends a use. An
+edit of a published record files what it adds as public in
 the same write: `rest.Spec.Audience` is the record's answer and `SetUsesShown`
 is the one rewrite that can act on it. That write asserts the audience in the use
 row and never in the file row: the write of a file row is a lock held to the end of
