@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -68,6 +69,34 @@ func WithWriteReason(ctx context.Context, reason string) context.Context {
 func writeReason(ctx context.Context) string {
 	r, _ := ctx.Value(writeReasonKey{}).(string)
 	return r
+}
+
+// restoreReasonPrefix opens the one write reason this door spells out rather than
+// handing through: a version written back rather than written forward.
+const restoreReasonPrefix = "restore:"
+
+// RestoreWriteReason is the reason a version row files when the write brought
+// version from back: "restore:3" for the third version. It is exported because the
+// panel beside the record reads that reason back, and the two must spell it alike —
+// the reason is stored text, so its spelling belongs to the door that writes it and
+// not to whichever screen draws it.
+func RestoreWriteReason(from int64) string {
+	return restoreReasonPrefix + strconv.FormatInt(from, 10)
+}
+
+// RestoredVersion answers the version a stored write reason names, and false for
+// every other reason — an ordinary save's empty one included. A reason that names no
+// number is treated as no reason: the row keeps whatever it says, and the panel says
+// nothing about where the write came from.
+func RestoredVersion(reason string) (int64, bool) {
+	if !strings.HasPrefix(reason, restoreReasonPrefix) {
+		return 0, false
+	}
+	from, err := strconv.ParseInt(strings.TrimPrefix(reason, restoreReasonPrefix), 10, 64)
+	if err != nil || from < 1 {
+		return 0, false
+	}
+	return from, true
 }
 
 // recordVersion writes the version this committed write produced. snap is the row
@@ -181,6 +210,17 @@ type versionsInput struct {
 // resource whose largest record is read out of the database on every page view.
 const versionsLimit = 20
 
+// restoreWarning is the consequence restoring has, in the words its author
+// declared. One value because two people have to say it identically: the generated
+// form for the command, and the panel beside the record whose version is being
+// brought back. A screen that reworded it would be a second copy of what a write
+// costs.
+var restoreWarning = entity.CommandConfirmation{
+	Title:        "Restore this version?",
+	Body:         "A new version will be written with this content. Nothing is deleted.",
+	ConfirmLabel: "Restore",
+}
+
 // mountHistory puts the two routes a History resource has beyond the five: the
 // read of one record's series, and the restore. Both are mounted by this Spec and
 // not by the store's module, because the guard, the surface, the schema and the
@@ -242,12 +282,8 @@ func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read *httpx.Router) {
 			}
 			return e, nil
 		}, CommandOptions{Present: entity.CommandHints{
-			Label: "Restore this version",
-			Confirmation: &entity.CommandConfirmation{
-				Title:        "Restore this version?",
-				Body:         "A new version will be written with this content. Nothing is deleted.",
-				ConfirmLabel: "Restore",
-			},
+			Label:          "Restore this version",
+			Confirmation:   &restoreWarning,
 			SuccessMessage: "A new version was written with the content you restored.",
 		}})
 }
@@ -266,16 +302,17 @@ func (s Spec[T]) historyPort() *httpx.History {
 	if !s.History {
 		return nil
 	}
-	return &httpx.History{RestoreVerb: restoreVerb, Versions: func(ctx context.Context, id uuid.UUID) ([]httpx.Version, error) {
-		tx, err := transaction(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return s.Versions.ListVersions(ctx, tx, httpx.VersionQuery{
-			Module: s.Module, Entity: s.Entity, Locale: s.versionLocale(ctx, ""),
-			Record: id, Limit: versionsLimit,
-		})
-	}}
+	return &httpx.History{RestoreVerb: restoreVerb, Asks: restoreWarning.Body,
+		Versions: func(ctx context.Context, id uuid.UUID) ([]httpx.Version, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return s.Versions.ListVersions(ctx, tx, httpx.VersionQuery{
+				Module: s.Module, Entity: s.Entity, Locale: s.versionLocale(ctx, ""),
+				Record: id, Limit: versionsLimit,
+			})
+		}}
 }
 
 // versionLocale resolves the series a request asked for: its own tag when it sent
@@ -325,7 +362,7 @@ func (s Spec[T]) restoreVersion(ctx context.Context, tx db.Tx[db.Tenant], id uui
 	if expected > 0 {
 		tag = strconv.Quote(strconv.FormatInt(expected, 10))
 	}
-	e, err := s.updateRow(WithWriteReason(ctx, "restore:"+strconv.FormatInt(from, 10)), tx, id, fields, values, tag)
+	e, err := s.updateRow(WithWriteReason(ctx, RestoreWriteReason(from)), tx, id, fields, values, tag)
 	if err != nil {
 		return e, err
 	}

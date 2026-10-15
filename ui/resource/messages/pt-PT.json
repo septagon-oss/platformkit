@@ -83,5 +83,15 @@
     "references": ["ui/resource/history.go"],
     "translation": "Restaurar esta versão",
     "plural": { "": "Restaurar esta versão" }
+  },
+  "screens.history.restored": {
+    "references": ["ui/resource/history.go"],
+    "translation": "Restaurado de",
+    "plural": { "": "Restaurado de" }
+  },
+  "screens.history.unchanged": {
+    "references": ["ui/resource/history.go"],
+    "translation": "Nenhum campo alterado.",
+    "plural": { "": "Nenhum campo alterado." }
   }
 }

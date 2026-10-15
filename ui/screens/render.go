@@ -192,22 +192,49 @@ func historyPanel(r httpx.Resource, ctx context.Context, o Options, at string, r
 		Carries: r.History.RestoreVerb,
 		Title:   o.Text("screens.history", "History"),
 		Restore: o.Text("screens.history.restore", "Restore this version"),
+		// The consequence comes from the command, not from this page: the panel asks in
+		// the words whoever mounted the resource wrote, and asks nothing when they
+		// declared none.
+		Asking: r.History.Asks,
 	}
 	if revision, numbered := row[entity.RevisionField].(float64); numbered {
 		out.Condition = strconv.FormatInt(int64(revision), 10)
 	}
+	// What each version held, indexed by its number, because the comparison one
+	// version offers is against the one before it and the series arrives newest
+	// first. A number missing from the index is a version retention released, or the
+	// beginning of the series: both answer "nothing to compare against".
+	held := make(map[int64]map[string]any, len(stored))
 	for _, v := range stored {
 		document := map[string]any{}
 		_ = json.Unmarshal(v.Fields, &document)
+		held[v.Version] = document
+	}
+	for _, v := range stored {
 		item := resource.VersionRow{Number: v.Version, When: v.At.UTC().Format("2 Jan 2006, 15:04 UTC")}
+		if from, restored := rest.RestoredVersion(v.Reason); restored {
+			item.RestoredFrom = from
+		}
 		for _, name := range v.Changed {
 			item.Changes = append(item.Changes, resource.VersionChange{
-				Label: rest.Humanize(name), Value: excerpt(document[name]),
+				Label: rest.Humanize(name),
+				Edits: valueEdits(held[v.Version-1], held[v.Version], name),
 			})
 		}
 		out.Rows = append(out.Rows, item)
 	}
 	return out
+}
+
+// valueEdits is one field of one version as the comparison it is: the words the
+// version before held, marked against the words this one left. Where no earlier
+// version stands on this page there is nothing to mark, and the value is shown as one
+// unchanged stretch, cut to the panel's line.
+func valueEdits(before, after map[string]any, name string) []resource.VersionEdit {
+	if before == nil {
+		return []resource.VersionEdit{{Text: excerpt(after[name])}}
+	}
+	return wordEdits(rest.Text(before[name]), rest.Text(after[name]))
 }
 
 // excerpt is a stored value as one line of the panel. A version of a body is
