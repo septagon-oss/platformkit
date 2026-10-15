@@ -291,9 +291,10 @@ function positionBubble(control) {
 // document event, and a selection in the other one is not this one's business.
 //
 // What it does not settle is the editor's half. When the editor later re-asserts its
-// own state over the browser's range, the bubble goes with it, and the paste that
-// decides on the editor's state stands down — the selection-readiness race named in
-// the task's follow-ups, which this listener narrows and does not close.
+// own state over the browser's range, the bubble goes with it. What no longer waits
+// on that agreement is the paste: bindPasteLink answers the page's range when the
+// editor's state has not yet read it, so the words a person selected are linked
+// whatever order the two halves of this field happen to agree in.
 function bindSelectionChrome(control) {
 	document.addEventListener("selectionchange", () => {
 		const selection = window.getSelection();
@@ -419,12 +420,47 @@ function bindLink(control) {
 function bindPasteLink(control) {
 	control.surface.addEventListener("paste", (event) => {
 		const text = event.clipboardData ? event.clipboardData.getData("text/plain").trim() : "";
-		if (!isLink(text) || control.editor.state.selection.empty) return;
+		if (!isLink(text)) return;
+		const words = linkTarget(control);
+		if (!words) return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
-		linkSelection(control, text);
+		linkSelection(control, text, words);
 		commit(control);
 	}, true);
+}
+
+// linkTarget is the words an address is about. It asks the editor first and the page
+// second, because ProseMirror reads a keyboard range on its own schedule: the page
+// shows the range, the toolbar answers it, and the editor's state agrees a moment
+// later. A paste answered inside that moment finds a collapsed selection, and
+// standing down there would hand the paste to ProseMirror, which replaces the words
+// with the address — the failure this listener exists to prevent. Reading the page's
+// own range when the editor has not caught up keeps the words in both orders.
+function linkTarget(control) {
+	const { from, to } = control.editor.state.selection;
+	if (from !== to) return { from: from, to: to };
+	return rangeOnPage(control);
+}
+
+// rangeOnPage is the page's live range in document positions, or nothing for a range
+// that is collapsed, sits outside this field's surface, or is not text the editor
+// holds — a range the editor cannot place is a range it must not overwrite.
+function rangeOnPage(control) {
+	const page = window.getSelection();
+	if (!page || !page.rangeCount) return null;
+	const range = page.getRangeAt(0);
+	if (range.collapsed || !control.surface.contains(range.commonAncestorContainer)) return null;
+	let from, to;
+	try {
+		from = control.editor.view.posAtDOM(range.startContainer, range.startOffset);
+		to = control.editor.view.posAtDOM(range.endContainer, range.endOffset);
+	} catch {
+		return null;
+	}
+	if (from > to) { const place = from; from = to; to = place; }
+	if (from < 0 || to > control.editor.state.doc.content.size || from === to) return null;
+	return { from: from, to: to };
 }
 
 function isLink(text) {
@@ -459,16 +495,17 @@ function saveLink(control) {
 	commit(control);
 }
 
-// linkSelection and removeLink are the address applied to a selection. The bundled
-// Link is a bare mark — it carries href and title and ships no setLink command —
-// so the mark is set by name, which is also the only way a mark the editor does
-// not know about could be applied at all.
-function linkSelection(control, href) {
+// linkSelection and removeLink are the address applied to a selection. The words are
+// the caller's when a paste named them and the editor's own when the popover or a
+// toolbar button did. The bundled Link is a bare mark — it carries href and title and
+// ships no setLink command — so the mark is set by name, which is also the only way a
+// mark the editor does not know about could be applied at all.
+function linkSelection(control, href, words) {
 	const { state } = control.editor;
 	const link = state.schema.marks.link;
-	const { from, to } = state.selection;
-	if (!link || from === to) return;
-	control.editor.view.dispatch(state.tr.addMark(from, to, link.create({ href: href, title: null })).scrollIntoView());
+	const range = words || state.selection;
+	if (!link || range.from === range.to) return;
+	control.editor.view.dispatch(state.tr.addMark(range.from, range.to, link.create({ href: href, title: null })).scrollIntoView());
 }
 
 function removeLink(control) {
