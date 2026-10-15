@@ -37,6 +37,12 @@ type hostEntry struct {
 type hostCache struct {
 	mu    sync.Mutex
 	hosts map[string]hostEntry
+	// invalidations counts the drops this cache has applied. One count for the
+	// whole cache rather than one per tenant: an outstanding lookup does not know
+	// which tenant it is about to return, so the count it stamps against is only
+	// readable before the question. A lookup that spans another tenant's drop then
+	// costs one more query, which is all it costs.
+	invalidations uint64
 }
 
 func (c *hostCache) get(host string) (tenancy.Tenant, bool) {
@@ -55,9 +61,20 @@ func (c *hostCache) get(host string) (tenancy.Tenant, bool) {
 	return e.tenant, true
 }
 
+// stamp reads the drop count. A resolution stamps with it before it asks, and
+// publishes against it; see put.
+func (c *hostCache) stamp() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.invalidations
+}
+
+// remove forgets one name, and is a drop of it: a host that changed hands while
+// a lookup of it was outstanding must not answer as a tenant no longer served here.
 func (c *hostCache) remove(host string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.invalidations++
 	delete(c.hosts, host)
 }
 
@@ -76,11 +93,25 @@ func (c *hostCache) dropTenant(id uuid.UUID) {
 			delete(c.hosts, host)
 		}
 	}
+	c.invalidations++
 }
 
-func (c *hostCache) put(host string, t tenancy.Tenant) {
+// put publishes a resolution, unless this tenant, or this host, was dropped while
+// the lookup was outstanding.
+//
+// A resolution reads a snapshot, and a commit that landed after the snapshot does
+// not travel back into it. The request that asked is answered from that snapshot —
+// it began before the write, and a page in the languages as they were when its
+// request started is not a page that is wrong — but the requests after that write
+// must not be. Stored, this resolution would answer them for hostTTL, because the
+// drop at the commit had nothing to drop: a name whose lookup is still in flight
+// has no entry yet. That is the window ForgetTenantOnCommit exists to close.
+func (c *hostCache) put(host string, t tenancy.Tenant, stamped uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.invalidations != stamped {
+		return
+	}
 	c.hosts[host] = hostEntry{tenant: t, until: time.Now().Add(hostTTL)}
 }
 
@@ -155,13 +186,18 @@ func ForgetTenantOnCommit(ctx context.Context, tenant uuid.UUID) {
 // Concurrent misses for one host share a single query. A cold cache at the
 // front of a traffic spike is otherwise one lookup per request, all of them
 // asking the same question.
+//
+// The shared lookup carries the drop count it stamped itself with before it asked,
+// so a lookup that overlaps a committed change to its tenant serves the request
+// that waited on it and stops there: see hostCache.put.
 func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) {
 	if t, ok := a.hosts.get(host); ok {
 		return t, nil
 	}
 	shared, err, _ := a.resolving.Do(host, func() (any, error) {
+		stamped := a.hosts.stamp()
 		if t, ok := a.hosts.get(host); ok {
-			return t, nil
+			return hostResolution{tenant: t, stamped: stamped}, nil
 		}
 		// WithoutCancel, because this lookup is shared: the request that
 		// happened to arrive first must not take everyone else's answer with
@@ -174,12 +210,13 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 			t, err = a.opts.Tenants.ByHost(rctx, tx, host)
 			return err
 		})
-		return t, err
+		return hostResolution{tenant: t, stamped: stamped}, err
 	})
 	if err != nil {
 		return tenancy.Tenant{}, err
 	}
-	t := shared.(tenancy.Tenant)
+	resolution := shared.(hostResolution)
+	t := resolution.tenant
 	if t.ID == uuid.Nil {
 		// A loader that answers with the zero Tenant and no error has resolved
 		// nothing and does not know it. Taking it at its word would scope the
@@ -187,8 +224,16 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 		// Principal a member of it.
 		return tenancy.Tenant{}, fmt.Errorf("the loader returned the zero tenant for %q", host)
 	}
-	a.hosts.put(host, t)
+	a.hosts.put(host, t, resolution.stamped)
 	return t, nil
+}
+
+// hostResolution is one answer of the shared lookup, with the drop count the
+// lookup held before it asked. The answer goes to every request that joined the
+// lookup; the stamp decides whether it may also be remembered.
+type hostResolution struct {
+	tenant  tenancy.Tenant
+	stamped uint64
 }
 
 // tenant resolves the request host to a tenant and puts it on the context,

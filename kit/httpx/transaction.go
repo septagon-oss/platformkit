@@ -66,8 +66,9 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	if err == nil && keep {
 		// The write is committed, so the resolutions that carry the old version of it
 		// are now wrong rather than merely early. Before the commit this is the one
-		// moment the ask can be honoured without a racing request putting the old
-		// answer back, and a rollback means nothing was written to be stale.
+		// moment the ask can be honoured, and a rollback means nothing was written to be
+		// stale. A lookup that read the old row and has not answered yet has no entry for
+		// this scan to drop; the stamp it carries is what keeps it from adding one.
 		for _, tenant := range asks.drain() {
 			a.hosts.dropTenant(tenant)
 		}
