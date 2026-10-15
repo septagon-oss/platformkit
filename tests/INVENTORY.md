@@ -116,7 +116,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | kit | 450 | 66 | 111 | 0 |
 | modules | 356 | 7 | 31 | 0 |
 | apps | 225 | 23 | 18 | 0 |
-| ui | 175 | 10 | 5 | 0 |
+| ui | 176 | 10 | 5 | 0 |
 | tools | 94 | 1 | 0 | 0 |
 | e2e | 88 | 5 | 0 | 0 |
 | migrations | 15 | 5 | 8 | 0 |
