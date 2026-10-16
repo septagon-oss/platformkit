@@ -81,10 +81,10 @@ func TestTheMoveIsScheduledOnlyByAnAppThatNamesItself(t *testing.T) {
 }
 
 // TestTheBootLineCountsTheMoveForAnAppThatNamesItself boots the same composition
-// the app-less figure is read from, with nats.app's slug set, and reads 4/5: the
-// kernel's four covered declarations and hello's one uncovered declaration. A
+// the app-less figure is read from, with nats.app's slug set, and reads 5/6: the
+// kernel's five covered declarations and hello's one uncovered declaration. A
 // composition that names itself gains the move's declaration, and the number the
-// pillar is measured by moves with it — which is what says the app-less 3/4 is a
+// pillar is measured by moves with it — which is what says the app-less 4/5 is a
 // count of that composition and not a constant.
 func TestTheBootLineCountsTheMoveForAnAppThatNamesItself(t *testing.T) {
 	cfg, opts := compose(t)
@@ -106,9 +106,9 @@ func TestTheBootLineCountsTheMoveForAnAppThatNamesItself(t *testing.T) {
 	}
 	if line := coverageLine(logs.String()); line == "" {
 		t.Fatalf("the boot log named no event_schema_coverage:\n%s", logs.String())
-	} else if !strings.Contains(line, "event_schema_coverage=4/5") {
-		t.Errorf("the boot line of an app that names itself reads %q, want event_schema_coverage=4/5 "+
-			"for the kernel's four covered declarations (the move's among them) and hello's one uncovered one", line)
+	} else if !strings.Contains(line, "event_schema_coverage=5/6") {
+		t.Errorf("the boot line of an app that names itself reads %q, want event_schema_coverage=5/6 "+
+			"for the kernel's five covered declarations (the move's among them) and hello's one uncovered one", line)
 	}
 }
 
