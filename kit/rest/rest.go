@@ -1104,6 +1104,9 @@ type collectionInput[I any] struct {
 // inside the request's transaction: an event that describes a change that
 // rolled back is never seen, because it rolled back too.
 func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T, hook func(context.Context, db.Tx[db.Tenant], T) error) error {
+	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
+		return err
+	}
 	if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
 		return err
 	}

@@ -31,6 +31,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/idempotency"
+	"github.com/septagon-oss/platformkit/kit/operation"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -63,7 +65,7 @@ const (
 	// maxKeyLength bounds the header's value. The key is a primary-key column, so
 	// an unbounded value is an unbounded row anybody can mint; a hundred twenty-
 	// eight characters is far past the UUID the draft recommends.
-	maxKeyLength = 128
+	maxKeyLength = operation.MaxTokenLength
 )
 
 // keyedMethod reports whether a verb is one a key is promised on.
@@ -108,28 +110,12 @@ func validKey(v string) bool {
 	if !quoted && strings.IndexByte(v, '"') >= 0 {
 		return false
 	}
-	if n := len(inner); n == 0 || n > maxKeyLength {
-		return false
-	}
-	return isToken(inner)
+	return request.ValidToken(inner)
 }
 
 // keyRule names the rule in the caller's terms: the answer they can act on is a
 // UUID, which is what the draft recommends for exactly this reason.
 const keyRule = "an idempotency key is 1 to 128 characters of the RFC 9110 token set (a UUID is the usual choice)"
-
-// isToken reports whether every byte is an RFC 9110 token character.
-func isToken(v string) bool {
-	for i := 0; i < len(v); i++ {
-		switch c := v[i]; {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		case strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0:
-		default:
-			return false
-		}
-	}
-	return true
-}
 
 // addressOf is the path half of the request identity: the address as it arrived on
 // the wire, not a decoding of it.
@@ -193,6 +179,10 @@ func fingerprint(method, route, path, rawQuery, contentType string, body []byte)
 // that knows what the client was finally given — so what gets written down is the
 // answer, not a draft of one.
 func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
+	if a.opts.Operations != nil {
+		a.operationAdmission(ctx, next)
+		return
+	}
 	store := a.opts.Idempotency
 	if store == nil || !keyedSurface(ctx.Context()) || !keyedMethod(ctx.Method()) || mintsACredential(ctx.Operation()) {
 		// The same three facts the document reads, read here: a route the document
@@ -394,9 +384,12 @@ type claimKey struct{}
 // Nothing guards it: the write happens inside the call stack of the read, on one
 // goroutine, and the read happens after that stack has returned.
 type claimNote struct {
-	store idempotency.Store
-	scope idempotency.Scope
-	claim uuid.UUID
+	store      idempotency.Store
+	scope      idempotency.Scope
+	claim      uuid.UUID
+	operation  bool
+	noReplay   bool
+	failureErr error
 	// ctx is the context the claim was taken on: the one the store's Connections
 	// found the pool on, because Claim ran below a.transaction, which is where the
 	// connection is put there. The response's own context does not carry it — that
@@ -448,7 +441,7 @@ func withClaim(ctx context.Context) context.Context {
 // exchange rather than the answer. `Content-Type` has its own field because it is the one the row is read into. A
 // header not on this list is a header a replay answers without, which is the trade
 // the memory makes on purpose: keep what the answer does, not how it was carried.
-var keptHeaders = []string{"Location", "HX-Redirect", RateLimitPolicyHeader}
+var keptHeaders = []string{"Location", "HX-Redirect", RateLimitPolicyHeader, OperationIDHeader, OperationLocationHeader}
 
 // keepHeaders reads the headers worth keeping out of the response the caller was
 // finally given, in the order the list names them, with the value the writer
@@ -502,12 +495,12 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, header htt
 	// This reading dates the record, and nothing else: the windows its limits name were
 	// closed when their readings arrived, because a handler may work for seconds after
 	// the statement that decided the answer (see recorded).
-	at := time.Now().UTC()
+	at := a.opts.Clock().UTC()
 	answer := idempotency.Answer{
 		Status: status, ContentType: header.Get("Content-Type"), Body: body,
 		Headers: keepHeaders(header), Limits: recorded(counted),
 	}
-	if !held || len(answer.Body) > maxRecordedAnswer {
+	if n.noReplay || !held || len(answer.Body) > maxRecordedAnswer {
 		// The bytes were already on the wire, or they are too large to hold: the
 		// write is remembered as spent, which costs the caller a 409 and never a
 		// second write. One line says which route did it, because a route that
@@ -559,29 +552,9 @@ func declaresKey(op *huma.Operation) bool {
 	return declaresIdempotencySurface(op) && !mintsACredential(op)
 }
 
-// CredentialExtension marks an operation whose answer *is* a credential the caller
-// can only use by receiving it: the session a sign-in opens, the key a mint hands
-// out. Such a route is not a keyed write, and the document says nothing about the
-// header on it.
-//
-// The reason is the same promise the header is bought for. A remembered answer is
-// replayed, and a credential cannot be: either the row holds the cookie, which puts a
-// live bearer token in a table for the day the record lives and hands it back after
-// the session behind it may have been revoked — modules/auth keeps a hash of a session
-// id for exactly that reason, and a replayed credential that no longer opens anything
-// is the same false sign-in by another route — or the row holds nothing, and the
-// replay answers a sign-in with a body that says who the caller is and no way to act
-// as them. Neither is a promise worth keeping, and the direction that cannot break
-// either one is the direction that makes the route honest about what it is: a sign-in
-// retried is a sign-in attempted again, the credentials re-checked, a session minted
-// again, and the caller signed in.
-//
-// It is an extension on the operation and not a rule the middleware infers from a
-// response, because the kernel must not know which module owns a route, and because
-// the alternative — claiming the key, running the write, discovering a Set-Cookie and
-// forgetting the record — would make every route that ever sets a cookie free to run
-// twice. A route that mints a credential and does an unguarded write behind it would
-// be the second write the header exists to prevent.
+// CredentialExtension marks an answer containing a newly minted credential.
+// The kernel tracks its intent but never stores the credential for replay.
+// A keyed retry is spent and cannot mint a second credential.
 const CredentialExtension = "x-platformkit-mints-a-credential"
 
 // MintsACredential is what a route whose answer is a credential it just made puts in
@@ -615,7 +588,7 @@ func declaresIdempotencySurface(op *huma.Operation) bool {
 // its own request takes a body this big without one (Options.MaxUpload), and a caller
 // that asks for a promise about a write larger than the promise holds is refused 413
 // rather than run unremembered.
-var keyDescription = "Replays this write for 24 hours. A retry with byte-identical request and body gets the answer the first attempt was given; the same key with another body, path or query is refused 422, and the same key while the first attempt is still running is refused 409. Optional: a write without a key runs as it always did. A keyed body is bounded to " + strconv.Itoa(maxKeyedBody) + " bytes; a larger write is refused 413 rather than made unremembered. A UUID is the usual value."
+var keyDescription = "Replays this write for 24 hours. A retry with byte-identical request and body gets the answer the first attempt was given; the same key with another body, path or query is refused 422, and the same key while the first attempt is still running is refused 409. Optional: a write without a key receives a new operation identity. Unresolved and approval-pending identities remain spent after answer expiry until their owner completes them. A keyed body is bounded to " + strconv.Itoa(maxKeyedBody) + " bytes; a larger write is refused 413 rather than made unremembered. A UUID is the usual value."
 
 // declareKey writes the parameter into the operation the document is built from and
 // the middleware reads — the same *huma.Operation, which is the property record

@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request modules/task/domain design ui/forms
+parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
@@ -90,7 +90,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # job lock, limit bucket, stored path) is formed by the same grammar. A
         # package that reaches it reaches only values; nothing reaches back.
         appname = p "kit/appname"
-        delivery = p "kit/events/transport " p "kit/events/internal/delivery " appname
+        operation = p "kit/operation"
+        delivery = p "kit/events/transport " p "kit/events/internal/delivery " appname " " operation
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
         # kit/trace is in the outbox bound and the kernel one because the trace
         # context of a request is stored with the event the request caused, and
@@ -101,7 +102,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # gone. It is a value package — the standard library and kit/trace — and
         # it parses no request, which is why net/http stays out of this closure and
         # why the HTTP middleware is the only writer of these fields.
-        outbox = identity " " delivery " " p "kit/db " p "kit/trace " p "kit/request"
+        # Receipt completion uses the retry owner and the existing aggregate lock.
+        # Portable operation values remain independent of request and storage.
+        outbox = identity " " delivery " " p "kit/db " p "kit/trace " p "kit/request " p "kit/idempotency " p "kit/crud " p "kit/entity " p "kit/fault"
         # The recorded closure of the page composition layer (see the comment above parts).
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
@@ -155,7 +158,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # Which call, from where, on which trace: a value the request leaves
         # behind, so the standard library and kit/trace and nothing else. Reading
         # net/http here would put a server in the closure of every worker.
-        check("kit/request", p "kit/trace")
+        check("kit/operation", "")
+        check("kit/request", p "kit/trace " operation)
         # kit/cache is the value every replica reads: the standard library, uuid and
         # singleflight. A store it talks to is a provider, not this core.
         check("kit/cache", uuid " golang.org/x/sync/singleflight")
@@ -201,7 +205,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # beside web; what stays refused is a *second* package that could install a
         # provider, and pkit installs none.
         check("pkit", kernel " " p "kit/app " p "kit/health " p "kit/limit " p "migrations " p "design " p "pkit", web " " measurement, "web")
-        check("kit/events/transport", uuid " " appname)
+        check("kit/events/transport", uuid " " appname " " operation)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox " " p "kit/telemetry", sql " " otel, "trace")
         check("kit/events/providers/nats", p "kit/config " delivery,
