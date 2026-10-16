@@ -1,12 +1,12 @@
 package internal_test
 
-// The auth module's copy, held to the same gate ui/page holds its own refusal catalogue to
-// (ui/page/catalogue_test.go, review_r3_verdict_copy_test.go): the keys are read out of the
-// file that asks for them, not written down beside it, and the catalogue is read out of the
-// module's own embedded messages. A list hand-copied here would be silent the day the page
-// refuses with a fifth sentence — which is exactly how the attempt-limit refusal reached a
-// Portuguese reader in English (review round 9, finding 2): the page's two translated
-// sentences were tested and its two untranslated ones were not, and nothing counted them.
+// The auth module's copy, held to the same gate ui/page holds its own refusal catalogue to:
+// the keys are read out of the file that asks for them, not written down beside it, and the
+// catalogue is read out of the module's own embedded messages. A list hand-copied here would
+// be silent the day the page refuses with a fifth sentence — which is how a refusal this
+// module had already learned to word once reached a Portuguese reader in English: the page's
+// two translated sentences were tested and its two untranslated ones were not, and nothing
+// counted them.
 
 import (
 	"encoding/json"
@@ -83,7 +83,7 @@ func TestEveryLineTheConfirmationPageAsksForIsCopiedInTheLanguagesTheModuleSpeak
 }
 
 // TestTheModuleCatalogueCarriesNoCopyThePageCannotAskFor. Copy nothing renders goes stale in
-// silence, the same rule ui/page/catalogue_test.go holds on its own file.
+// silence, the same rule ui/page holds over its own refusal catalogue.
 func TestTheModuleCatalogueCarriesNoCopyThePageCannotAskFor(t *testing.T) {
 	body, err := fs.ReadFile(auth.Catalogue().FS, "pt-PT.json")
 	if err != nil {
