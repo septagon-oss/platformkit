@@ -435,15 +435,21 @@ function bindPasteLink(control) {
 }
 
 // selectedWords answers which words of the document a pasted address belongs to, and
-// answers nothing when nothing is selected. The editor's own selection is the first
-// answer and, once the editor has read the page, the only one needed. The browser's
-// live range is the second: the same range asked one flush earlier, and the one the
-// author can see on the screen. A caret, a range outside this field and a range the
-// editor cannot place in its document all answer nothing, and the paste is left to
-// ProseMirror — which is what a field holding no selection does.
+// answers nothing when nothing is selected. The screen answers first: the browser's
+// live range is what the author sees highlighted, and the editor writes into that
+// range without ever moving it on its own, so reading the document instead of the
+// page can only be answered by what the document was one flush ago. The editor's own
+// selection answers when the page shows none of this field's — see liveWords — because
+// then the document holds the last range this editor was given or took.
 function selectedWords(control) {
-	const selection = control.editor.state.selection;
-	if (!selection.empty) return { from: selection.from, to: selection.to };
+	return liveWords(control) || editorWords(control);
+}
+
+// liveWords reads the range the page draws inside this field, and answers nothing
+// when the page draws none of it: no range at all, a caret, a range belonging to
+// another field — the address popover's own input holds the page's selection while it
+// is open — or words this editor cannot place in its own document.
+function liveWords(control) {
 	const onScreen = window.getSelection();
 	if (!onScreen || !onScreen.rangeCount || onScreen.isCollapsed) return null;
 	const range = onScreen.getRangeAt(0);
@@ -452,6 +458,14 @@ function selectedWords(control) {
 	const end = documentPosition(control.editor.view, range.endContainer, range.endOffset);
 	if (start === null || end === null || start === end) return null;
 	return start < end ? { from: start, to: end } : { from: end, to: start };
+}
+
+// editorWords is the selection the document holds: the author's range once the editor
+// has read the page, and the range a command left behind when the page shows none.
+function editorWords(control) {
+	const selection = control.editor.state.selection;
+	if (selection.empty) return null;
+	return { from: selection.from, to: selection.to };
 }
 
 // documentPosition maps one DOM position into the document, and answers nothing for
@@ -496,16 +510,19 @@ function saveLink(control) {
 // linkSelection and removeLink are the address applied to a selection. The bundled
 // Link is a bare mark — it carries href and title and ships no setLink command —
 // so the mark is set by name, which is also the only way a mark the editor does not
-// know about could be applied at all. The caller names the range when it knows one
-// the editor does not yet hold, and the editor is then told: the words stay selected
-// on the screen, and the next keystroke replaces them as it would have before.
+// know about could be applied at all. The caller names a range the editor does not
+// yet hold, and the editor is then told it: the words stay selected on the screen and
+// the next keystroke replaces them as it would have before. A range the editor already
+// holds is its own answer and needs no telling.
 function linkSelection(control, href, range) {
 	const { state } = control.editor;
 	const link = state.schema.marks.link;
 	const span = range || state.selection;
 	if (!link || span.from === span.to) return;
 	control.editor.view.dispatch(state.tr.addMark(span.from, span.to, link.create({ href: href, title: null })).scrollIntoView());
-	if (range) control.editor.commands.setTextSelection({ from: span.from, to: span.to });
+	if (range && (state.selection.from !== span.from || state.selection.to !== span.to)) {
+		control.editor.commands.setTextSelection({ from: span.from, to: span.to });
+	}
 }
 
 function removeLink(control) {
