@@ -14,7 +14,7 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
 
-// TestARepairOfAnInstallationThatNeedsNoRepairChangesNothing is review 7's pin.
+// TestARepairOfAnInstallationThatNeedsNoRepairChangesNothing is the no-op pin.
 //
 // `repair-roles --remove` is what an operator runs after reading the README, and on
 // an installation no older seeder ever touched it must be a no-op: every roles row

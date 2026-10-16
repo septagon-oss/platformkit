@@ -1,6 +1,6 @@
 package main
 
-// Review 14's pin — brief §2: "a refusal at boot, not a warning … so the state the
+// Brief §2 asks for "a refusal at boot, not a warning … so the state the
 // hourly warning describes cannot be created", and the house rule that a refused
 // mutation writes nothing and emits nothing.
 //

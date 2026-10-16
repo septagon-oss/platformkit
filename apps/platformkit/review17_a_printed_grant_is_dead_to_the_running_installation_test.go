@@ -1,7 +1,6 @@
 package main
 
-// review17_a_printed_grant_is_dead_to_the_running_installation_test.go is
-// review 17's pin, and it asks the one question no committed case asks.
+// This file asks the one question no committed case asks.
 //
 // Every case in this branch decides "is this grant dead" from a list and then
 // reads a row back to check what the command did with that answer. The list is

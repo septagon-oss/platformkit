@@ -1,6 +1,6 @@
 package main
 
-// Review 13's pin. One join carries this whole change and no type can see it:
+// One join carries this whole change, and no type can see it:
 // the catalogue repairRoles reads must be the catalogue the seeding hook was
 // given. A narrower list at the command is not inert — SeededGrants takes every
 // dead name out of the operator's administrator once it holds the wildcard — so

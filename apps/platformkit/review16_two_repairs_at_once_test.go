@@ -1,6 +1,6 @@
 package main
 
-// Review 16's pins. Two claims of this change had no case behind them.
+// Two claims of this change had no case behind them.
 //
 // One is the brief's invariant read off the running installation: acme's
 // administrator holds the wildcard and the operator permissions of the manifests

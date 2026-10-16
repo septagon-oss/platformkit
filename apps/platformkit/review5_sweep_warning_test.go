@@ -1,6 +1,6 @@
 package main
 
-// Review 5's pin. The brief's §5 asks for two things at once: the dead grant
+// The brief's §5 asks for two things at once: the dead grant
 // gone from the operator's administrator, "with the hourly warning stopped".
 // Every case on this branch reads the *row*; nothing in the repository runs the
 // sweep that prints the warning — `grep -rn "no module defines" --include=*_test.go`

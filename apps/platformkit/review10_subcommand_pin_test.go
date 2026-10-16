@@ -1,6 +1,6 @@
 package main
 
-// Review 10's pin. The deliverable the brief names is "a command the operator runs", and every
+// The deliverable the brief names is "a command the operator runs", and every
 // committed case reaches the repair by calling repairRoles([]string{...}) from Go. Nothing in the
 // tree runs the binary, so the one case in main's switch is the line of that deliverable no test
 // touches: delete it, or spell it "repair_roles", and the repair ships unreachable with every
