@@ -470,7 +470,7 @@ is the one rewrite that can act on it. That write asserts the audience in the us
 row and never in the file row: the write of a file row is a lock held to the end of
 the save, and a save of two richtext fields naming two shared pictures in each
 other's order is two saves waiting for what the other holds (Postgres ends it by
-refusing one — SQLSTATE 40P01). `rest.RecordUses` therefore names the whole save to
+refusing one — SQLSTATE 40P01). `file.RecordUses` therefore names the whole save to
 the ledger before filing any of it, and the ledger takes its exclusive locks in one
 ascending pass over what the save *ends*. The pass's refusals are
 English `error` text, not catalogue keys, so they are untranslated beside the
