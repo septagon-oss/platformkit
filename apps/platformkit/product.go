@@ -373,8 +373,9 @@ func (a accessReach) Tell(ctx context.Context, tx db.Tx[db.Tenant], n httpx.Acce
 		Title:     "Access requested",
 		Body: fmt.Sprintf("%s asked for %s, at %s. Their roles are on the person's page.",
 			n.Requester, n.Permission, n.RefusedPath),
-		Link:  pinnedUsers + "/" + n.Requester.String(),
-		Email: false,
+		Link: pinnedUsers + "/" + n.Requester.String(),
+		// No Wants: its zero value is in-app alone, which is what an access
+		// request is - a note for somebody who is already in the application.
 	})
 	return err
 }
