@@ -36,6 +36,7 @@ var Module = pkit.NewModule("admin", wire,
 	// and the header says "Signed in" rather than the application refusing to boot.
 	pkit.Optional[usercontracts.Service](),
 	pkit.Optional[admincontracts.Signin](),
+	pkit.Optional[admincontracts.Pictures](),
 	pkit.Optional[admincontracts.Locale](),
 	pkit.Optional[admincontracts.Storybook](),
 	pkit.After(pkit.Everything),
@@ -64,6 +65,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Locale:    pkit.Get[admincontracts.Locale](w),
 		Storybook: pkit.Get[admincontracts.Storybook](w),
 		SignIn:    signin.Address,
+		// A generated picture cell fetches through the file module's door, which this
+		// shell does not mount and so cannot name: the composition that published that
+		// door to the workspace catalogue hands it here as the same string.
+		PictureSource: pkit.Get[admincontracts.Pictures](w).Source,
 		// The form on the shell's login page posts to the auth module's door, and
 		// the link to it is the same value, so neither half can offer what the
 		// other did not mount.

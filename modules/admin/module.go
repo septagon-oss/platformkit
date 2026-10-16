@@ -77,6 +77,14 @@ type Deps struct {
 	// apps/platformkit's test asks the running server that it answers.
 	SignIn string
 
+	// PictureSource is the address template a generated `present:image` cell
+	// fetches its bytes from, `{id}` standing for the file id the field holds —
+	// the same template the workspace catalogue publishes as `pictures.source`.
+	// Unwired, every picture cell draws the plain value it drew before picture
+	// fields existed: a shell with no file module has no door to name. See
+	// admincontracts.Pictures.
+	PictureSource string
+
 	// Registration is the composition saying that a person with no account may
 	// make one. Nil — the default — means the sign-in page shows the password
 	// door and nothing else: offering a form that posts to a route nobody
@@ -173,9 +181,10 @@ func New(deps Deps) module.Module {
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
-				Token:        s.SystemToken(),
-				SignIn:       deps.SignIn,
-				Registration: deps.Registration,
+				Token:         s.SystemToken(),
+				SignIn:        deps.SignIn,
+				PictureSource: deps.PictureSource,
+				Registration:  deps.Registration,
 			})
 		},
 	}

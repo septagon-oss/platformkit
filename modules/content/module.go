@@ -85,14 +85,21 @@ var Spec = rest.Spec[*contracts.Content]{
 	// is written nowhere here: the body is Markdown source, and a row previewing
 	// raw Markdown is the fault decision 0085 photographs.
 	Present: entity.EntryHints{
-		Singular:      "page",
-		Plural:        "pages",
-		Icon:          "document",
-		Group:         &entity.ResourceGroup{Key: "content", Label: "Content"},
-		PrimaryField:  "title",
-		StatusField:   "status",
-		SummaryFields: []string{"kind"},
-		Sortable:      []string{"title", "publishedAt", "updatedAt"},
+		Singular:     "page",
+		Plural:       "pages",
+		Icon:         "document",
+		Group:        &entity.ResourceGroup{Key: "content", Label: "Content"},
+		PrimaryField: "title",
+		StatusField:  "status",
+		// The one picture this entity holds, and so both the record's opening
+		// photo and the row's thumbnail: `thumbnailField` is said anyway, because
+		// a document that echoes what a shell would have computed still answers
+		// "did somebody choose this?" and a shell that reads only the one key it
+		// was told to read has a thumbnail either way.
+		CoverField:     "coverImageId",
+		ThumbnailField: "coverImageId",
+		SummaryFields:  []string{"kind"},
+		Sortable:       []string{"title", "publishedAt", "updatedAt"},
 	},
 }
 

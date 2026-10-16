@@ -44,6 +44,9 @@ type EntryPresentation struct {
 	Sections         *[]entity.EntitySection `json:"sections,omitempty"`
 	EmptyDescription *string                 `json:"emptyDescription,omitempty"`
 	Sortable         *[]string               `json:"sortable,omitempty"`
+	CoverField       *string                 `json:"coverField,omitempty"`
+	ThumbnailField   *string                 `json:"thumbnailField,omitempty"`
+	PrimaryCommand   *string                 `json:"primaryCommand,omitempty"`
 }
 
 // CommandPresentation is one lifecycle route as its author described it.
@@ -80,6 +83,8 @@ func deviations(p entity.EntryHints) *EntryPresentation {
 		Group: p.Group, Order: declared(p.Order),
 		PrimaryField: declared(p.PrimaryField), PreviewField: declared(p.PreviewField),
 		StatusField: declared(p.StatusField), EmptyDescription: declared(p.EmptyDescription),
+		CoverField: declared(p.CoverField), ThumbnailField: declared(p.ThumbnailField),
+		PrimaryCommand: declared(p.PrimaryCommand),
 	}
 	if p.SummaryFields != nil {
 		out.SummaryFields = &p.SummaryFields
