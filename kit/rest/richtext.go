@@ -39,6 +39,23 @@ import (
 // the row under its lock, so a body is always filed under the record it became.
 func (s Spec[T]) prepareFiles(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
 	value := reflect.ValueOf(e).Elem()
+	// Asked once per write, and once there is anything to ask for: the audience is a
+	// fact of the record, not of the field, and two fields of one record cannot
+	// disagree about who it is showing them to. See Spec.Audience for why the answer
+	// has to be had here rather than after the write.
+	public, err := s.audience(ctx, tx, e)
+	if err != nil {
+		return err
+	}
+	// Two passes over the fields that show a file, and the reason is the file ledger. Each
+	// field filed is one call that locks the files it names, so a save with two of
+	// them locks in whatever order the entity declares its fields in — and two records
+	// sharing two pictures, each naming them in the other's order, then hold one and
+	// wait for the other, which Postgres ends by killing one save over. The whole save
+	// is named to the ledger once, before anything is filed, so that the locks of a
+	// save are taken in one pass whose order the ledger decides. See FileUsesOrder.
+	var pending []pendingUses
+	whole := SaveUses{Module: s.Module, Entity: s.Entity, Record: entity.BaseOf(e).ID}
 	for _, field := range crud.Fields[T]() {
 		if field.Widget != "richtext" || (columns != nil && !slices.Contains(columns, field.Column)) {
 			continue
@@ -63,17 +80,30 @@ func (s Spec[T]) prepareFiles(ctx context.Context, tx db.Tx[db.Tenant], e T, col
 		for _, ref := range refs {
 			ids = append(ids, ref.ID)
 		}
-		if err := s.recordUses(ctx, tx, e, field, ids); err != nil {
-			return err
-		}
+		whole.Files = append(whole.Files, ids...)
+		pending = append(pending, pendingUses{name: field.Name, in: UsesInput{
+			Module: s.Module, Entity: s.Entity, Field: field.Column,
+			Locale: recordLocale(ctx), Record: whole.Record, Files: ids, Public: public,
+		}})
 	}
 	for _, field := range crud.Fields[T]() {
 		if !entity.PicturesAre(field.Present) ||
 			(columns != nil && !slices.Contains(columns, field.Column)) {
 			continue
 		}
-		if err := s.recordUses(ctx, tx, e, field, pictureIDs(value.FieldByIndex(field.Index))); err != nil {
-			return err
+		ids := pictureIDs(value.FieldByIndex(field.Index))
+		whole.Files = append(whole.Files, ids...)
+		pending = append(pending, pendingUses{name: field.Name, in: UsesInput{
+			Module: s.Module, Entity: s.Entity, Field: field.Column,
+			Locale: recordLocale(ctx), Record: whole.Record, Files: ids, Public: public,
+		}})
+	}
+	if err := s.orderUses(ctx, tx, whole); err != nil {
+		return err
+	}
+	for _, p := range pending {
+		if err := s.fileUses().SetUses(ctx, tx, p.in); err != nil {
+			return fmt.Errorf("field %s: %w", p.name, err)
 		}
 	}
 	return nil
@@ -123,32 +153,106 @@ func one(v reflect.Value, add func(uuid.UUID)) {
 	}
 }
 
+// pendingUses is one field's file references with the name of the field they came
+// from, which is what the refusal a filed use produces still has to carry.
+type pendingUses struct {
+	name string
+	in   UsesInput
+}
+
+// SaveUses is one record's save in the one sentence the file ledger needs before
+// any of it is filed: which record, and every file that save names across every
+// richtext and picture field of it. A record being deleted names nothing and says so with
+// an empty Files: the ledger knows what the record shows, and it is the ledger that
+// has to lock those rows in one pass rather than one field at a time.
+type SaveUses struct {
+	Module string
+	Entity string
+	Record uuid.UUID
+	Files  []uuid.UUID
+}
+
+// FileUsesOrder is the optional half of FileUses: the wiring that answers it is told
+// a whole save, in one call, before a single field of it is filed.
+//
+// A wiring that does not answer it is not refused and not warned about, and the
+// reason is who is without it. RecordNoUses files no uses, so it locks no file row
+// and has nothing to order; a deployment that wired its own recorder before this
+// capability existed keeps the one-pass-per-field order it always had, which is the
+// order that can collide and is not a new hazard this kit introduced. What a resource
+// with two richtext fields should be wired to is a recorder that answers.
+type FileUsesOrder interface {
+	OrderUses(ctx context.Context, tx db.Tx[db.Tenant], in SaveUses) error
+}
+
+// orderUses tells the ledger the whole save. It asks nothing of a wiring that
+// records no uses, and nothing of one that cannot be told; the error it produces
+// names the record whose files it could not order, because the caller is about to
+// refuse the write and has to say whose audience was at stake.
+func (s Spec[T]) orderUses(ctx context.Context, tx db.Tx[db.Tenant], in SaveUses) error {
+	if s.FileUses == nil {
+		return nil
+	}
+	ordered, ok := s.FileUses.(FileUsesOrder)
+	if !ok {
+		return nil
+	}
+	if err := ordered.OrderUses(ctx, tx, in); err != nil {
+		return fmt.Errorf("who %s/%s %s shows: %w", in.Module, in.Entity, in.Record, err)
+	}
+	return nil
+}
+
+// audience is Spec.Audience asked, with "nobody" as the answer for the Spec that
+// declares no public face. It is asked once, before any use is filed, so that an
+// error costs the write nothing: a record whose audience cannot be answered never
+// has bytes promoted by this write, and nothing half-filed survives it.
+func (s Spec[T]) audience(ctx context.Context, tx db.Tx[db.Tenant], e T) (bool, error) {
+	if s.Audience == nil {
+		return false, nil
+	}
+	public, err := s.Audience(ctx, tx, e)
+	if err != nil {
+		return false, fmt.Errorf("who %s/%s shows its files to: %w", s.Module, s.Entity, err)
+	}
+	return public, nil
+}
+
 // recordUses files what one field of this record shows. One field, one record,
 // one call: the port's input names the field, so the two doors and the delete
 // cannot invent three shapes of the same sentence.
-func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field crud.Field, ids []uuid.UUID) error {
+func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field crud.Field, ids []uuid.UUID, public bool) error {
 	if err := s.fileUses().SetUses(ctx, tx, UsesInput{
 		Module: s.Module, Entity: s.Entity, Field: field.Column,
-		Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids,
+		Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids, Public: public,
 	}); err != nil {
 		return fmt.Errorf("field %s: %w", field.Name, err)
 	}
 	return nil
 }
 
-// clearFileUses ends every use this record's richtext and picture fields filed.
-// The rewrite is the empty set, per field, because a use is keyed by field and
-// locale and a record that is gone shows nothing in any of them. The locale is the one
+// clearFileUses ends every use this record's richtext and picture fields filed. The
+// rewrite is the empty set, per field, because a use is keyed by field and locale
+// and a record that is gone shows nothing in any of them. The locale is the one
 // the write filed under — recordLocale answers the same question at both doors,
 // and the day a request's own language becomes that argument (T-0190) the delete
 // asks it in the request's language too, which is what kit/rest's own calls will
 // then have used.
 func (s Spec[T]) clearFileUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
+	// The record's whole ledger is named first, with no files of its own, so that a
+	// delete ending uses of two pictures takes both locks in one ascending pass and
+	// not one pass per field. What the record shows is what the ledger holds; the save
+	// is about to end all of it.
+	if err := s.orderUses(ctx, tx, SaveUses{
+		Module: s.Module, Entity: s.Entity, Record: entity.BaseOf(e).ID,
+	}); err != nil {
+		return err
+	}
 	for _, field := range crud.Fields[T]() {
 		if field.Widget != "richtext" && !entity.PicturesAre(field.Present) {
 			continue
 		}
-		if err := s.recordUses(ctx, tx, e, field, nil); err != nil {
+		if err := s.recordUses(ctx, tx, e, field, nil, false); err != nil {
 			return err
 		}
 	}

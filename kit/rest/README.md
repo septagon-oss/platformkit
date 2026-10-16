@@ -126,6 +126,22 @@ Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the
 development database: `make up`, then `make test TEST_PACKAGES=./kit/rest`.
 
+## Composition (T-0360)
+
+**Reused** — the richtext pass that already parsed every field of a save before any of it
+was written, the one transaction that save runs in, and `FileUses` as it stood: a port
+that files one field's uses for one record. **Added** — `Spec.Audience`, a record's answer
+to "is this body served to somebody who has not signed in", asked once per write from the
+row the write already holds and never from the body being saved; `FileUsesOrder` with
+`SaveUses`, the optional half of that port that is told the whole save — every richtext
+field of it, or nothing at all for a record being deleted — before its first field is
+filed; and `recordLocale`, which is one answer at the save door and at the delete. **Made
+reusable** — the save-wide lock order is kit/rest's to offer and the ledger's to decide:
+a resource with two richtext fields gets it by wiring a recorder that answers, which is
+what two records sharing two pictures in each other's field order would otherwise lose to
+Postgres (SQLSTATE 40P01), and a case in this package's own tests holds the order the kit
+owes that recorder.
+
 ## Composition (T-0185)
 
 **Reused** — `kit/httpx`'s closed guard set (`Public`, `SignedIn`, `Permission`,
