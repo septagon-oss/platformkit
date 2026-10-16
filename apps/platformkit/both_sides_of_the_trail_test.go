@@ -168,24 +168,26 @@ func TestALifecycleVerbLeavesOneActInBothTrails(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("read the trail as the installation: %v", err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("one lifecycle verb in one request left %s in the trail, want exactly the customer's row and the "+
+	if len(rows) != 3 {
+		t.Fatalf("one lifecycle verb in one request left %s in the trail, want the operation evidence, customer's row and the "+
 			"installation's mirror: %+v", names(rows), rows)
 	}
-	var customerRow, operatorRow *r1Trail
+	var customerRow, operatorRow, outcomeRow *r1Trail
 	for i := range rows {
 		switch {
+		case rows[i].TenantID == operator && rows[i].Name == "platformkit.operation_outcome":
+			outcomeRow = &rows[i]
 		case rows[i].TenantID == customer && rows[i].Name == "tenant.suspended":
 			customerRow = &rows[i]
 		case rows[i].TenantID == operator && rows[i].Name == "tenant.lifecycle_recorded" && rows[i].Verb == "suspend":
 			operatorRow = &rows[i]
 		}
 	}
-	if customerRow == nil || operatorRow == nil {
+	if customerRow == nil || operatorRow == nil || outcomeRow == nil {
 		t.Fatalf("the request's two trail rows are %s: want tenant.suspended in the customer's trail and "+
 			"tenant.lifecycle_recorded{verb:suspend} in the installation's", names(rows))
 	}
-	for _, r := range []*r1Trail{customerRow, operatorRow} {
+	for _, r := range []*r1Trail{customerRow, operatorRow, outcomeRow} {
 		if r.Traceparent != tr.Parent() {
 			t.Errorf("trail row %s carries %q, want the request's %q", r.Name, r.Traceparent, tr.Parent())
 		}
