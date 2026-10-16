@@ -171,10 +171,13 @@ columns to write and `GetForUpdate` takes a row lock, so a reason saying "`kit/c
 own PATCH owns the revision check" was false about a package that is really there, and
 the harness accepted it — it requires a reason, not a true one, and no check in this
 package can read what a function does. What the two converted suites now do instead is
-watch the load-bearing fact of their reason in Go, where a kernel change reddens it:
-`tasktest`'s and `contenttest`'s `TestTheStaleSkipReasonStillStatesWhatTheKernelHas`
-asks `porttest.RevisionField` whether their entity carries a revision and asks
-`kit/crud.Update` what it takes.
+watch the load-bearing fact of their reason in Go, where a kernel change reddens it.
+Each watches its own: `contenttest`'s `TestTheStaleSkipReasonStillStatesWhatTheKernelHas`
+asks `porttest.RevisionField` whether a piece of content carries anything that reads
+like a revision a caller quotes back, while `tasktest`'s asks `contracts.Service`
+whether any of its commands is given a value a caller could send a revision in — a
+row's own write count is not that value, so the question moved from the row to the
+port. Both ask `kit/crud.Update` what it takes.
 
 ## What a description cannot express
 
