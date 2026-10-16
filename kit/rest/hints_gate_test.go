@@ -151,6 +151,101 @@ type unknownSection struct {
 
 func (unknownSection) TableName() string { return "rest_hinted" }
 
+// A picture is a file id, and the four entities below are the four ways a
+// `present:image`/`present:avatar`/`present:images` name could disagree with the
+// column it sits on.
+
+type coverOnString struct {
+	crud.Base
+	Cover string `json:"cover" ui:"present:image"`
+}
+
+func (coverOnString) TableName() string { return "rest_hinted" }
+
+type avatarOnString struct {
+	crud.Base
+	Face string `json:"face" ui:"present:avatar"`
+}
+
+func (avatarOnString) TableName() string { return "rest_hinted" }
+
+type photosOnUUID struct {
+	crud.Base
+	Photos uuid.UUID `json:"photos" ui:"present:images"`
+}
+
+func (photosOnUUID) TableName() string { return "rest_hinted" }
+
+type coverWithFormat struct {
+	crud.Base
+	Cover *uuid.UUID `json:"cover" ui:"present:image;format:money;currency:unit;scale:2"`
+	Unit  string     `json:"unit"`
+}
+
+func (coverWithFormat) TableName() string { return "rest_hinted" }
+
+type coverWithReference struct {
+	crud.Base
+	Cover *uuid.UUID `json:"cover" ui:"present:image;reference:user/user"`
+}
+
+func (coverWithReference) TableName() string { return "rest_hinted" }
+
+// coverOK is the declaration all of the above get wrong: a nullable file id, the
+// record's opening photo and its row's thumbnail, and one field that is the
+// entry's status field saying which of its values is finished.
+type coverOK struct {
+	crud.Base
+	Title    string     `json:"title"`
+	Cover    *uuid.UUID `json:"cover" ui:"present:image;label:Cover"`
+	Level    string     `json:"level" enum:"low,high" doneValues:"high"`
+	Currency string     `json:"currency"`
+}
+
+func (coverOK) TableName() string { return "rest_hinted" }
+
+// doneOffEnum and doneTwice name a status field, because `doneValues` is refused
+// anywhere but on the field the entry's pill reads.
+type doneOffEnum struct {
+	crud.Base
+	Level string `json:"level" enum:"low,high" doneValues:"urgent"`
+}
+
+func (doneOffEnum) TableName() string { return "rest_hinted" }
+
+type doneTwice struct {
+	crud.Base
+	Level string `json:"level" enum:"low,high" doneValues:"high,high"`
+}
+
+func (doneTwice) TableName() string { return "rest_hinted" }
+
+type doneNoEnum struct {
+	crud.Base
+	Level string `json:"level" doneValues:"high"`
+}
+
+func (doneNoEnum) TableName() string { return "rest_hinted" }
+
+// doneOnKind is the celebration nothing reaches: an enum field, legal values, and
+// not the one field the row's pill reads.
+type doneOnKind struct {
+	crud.Base
+	Kind  string `json:"kind" enum:"a,b" doneValues:"a"`
+	Level string `json:"level" enum:"low,high"`
+}
+
+func (doneOnKind) TableName() string { return "rest_hinted" }
+
+// thumbnailOnDetail is a row's picture drawn from a field the entry keeps off the
+// row.
+type thumbnailOnDetail struct {
+	crud.Base
+	Cover *uuid.UUID `json:"cover" ui:"present:image;visibility:detail"`
+}
+
+func (thumbnailOnDetail) TableName() string { return "rest_hinted" }
+
 func hintRefused(t *testing.T, mount func(), want ...string) {
 	t.Helper()
 	var recovered any
@@ -199,6 +294,10 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 		// TestExplicitShownVisibilityOverridesHideListAtMount.
 		mountAs(t, rest.Spec[*hintedOK]{Module: "hinted", Entity: "hinted", Path: "/things",
 			Read: "hinted:read", Write: "hinted:write", Present: good}, caller{})
+		mountAs(t, rest.Spec[*coverOK]{Module: "hinted", Entity: "hinted", Path: "/covers",
+			Read: "hinted:read", Write: "hinted:write",
+			Present: entity.EntryHints{Icon: "document", PrimaryField: "title",
+				StatusField: "level", CoverField: "cover", ThumbnailField: "cover"}}, caller{})
 	})
 	for _, tc := range []struct {
 		name  string
@@ -234,6 +333,22 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 		// resolves by precedence at entity.Field.OnList, and the two mounts above
 		// are the cases that say so.
 		{"unknown section", mountSpec[*unknownSection](entity.EntryHints{Sections: []entity.EntitySection{{Key: "record", Label: "Record"}}}, "/xx"), []string{`names section "timing"`, "declares no section as"}},
+		// A picture name on a column that holds no file id, and on one that holds a
+		// second reading of the same column.
+		{"image on a string", mountSpec[*coverOnString](plain, "/xx"), []string{`"cover" is presented image and is string`, "not a file id"}},
+		{"avatar on a string", mountSpec[*avatarOnString](plain, "/xx"), []string{`"face" is presented avatar and is string`, "not a file id"}},
+		{"images on a uuid", mountSpec[*photosOnUUID](plain, "/xx"), []string{`"photos" is presented images and is uuid`, "not a list of file ids"}},
+		{"image with a format", mountSpec[*coverWithFormat](plain, "/xx"), []string{`"cover" is presented image and is formatted "money"`}},
+		{"image with a reference", mountSpec[*coverWithReference](plain, "/xx"), []string{`"cover" is presented image and names a reference`, "not a resource a screen may point at"}},
+		{"coverField off a picture", mountSpec[*hintedOK](entity.EntryHints{CoverField: "title"}, "/xx"), []string{`coverField "title" is not a picture`, "present:image"}},
+		{"thumbnailField off a picture", mountSpec[*hintedOK](entity.EntryHints{ThumbnailField: "rank"}, "/xx"), []string{`thumbnailField "rank" is not a picture`}},
+		{"thumbnailField off the list", mountSpec[*thumbnailOnDetail](entity.EntryHints{ThumbnailField: "cover"}, "/xx"), []string{`thumbnailField "cover" names a field kept off the list`}},
+		{"coverField off the entity", mountSpec[*coverOK](entity.EntryHints{CoverField: "nothere"}, "/xx"), []string{`coverField "nothere"`, "not a field"}},
+		// Which values of a status mean finished.
+		{"done values with no enum", mountSpec[*doneNoEnum](entity.EntryHints{StatusField: "level"}, "/xx"), []string{`"level" declares done values and has no enum`}},
+		{"done value off the enum", mountSpec[*doneOffEnum](entity.EntryHints{StatusField: "level"}, "/xx"), []string{`names done value "urgent"`, "enum does not hold"}},
+		{"done value twice", mountSpec[*doneTwice](entity.EntryHints{StatusField: "level"}, "/xx"), []string{`names done value "high" twice`}},
+		{"done values off the status field", mountSpec[*doneOnKind](entity.EntryHints{StatusField: "level"}, "/xx"), []string{`"kind" declares done values and is not this resource's status field`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) { hintRefused(t, tc.mount, tc.want...) })
 	}
