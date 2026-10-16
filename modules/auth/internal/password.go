@@ -215,12 +215,18 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		return err
 	}
 	if err := s.send(ctx, user, title, body, base, token); err != nil {
-		// The credential goes back the way this attempt found it. When the row went
-		// in ahead of the send, the caller's rollback cannot take it, so the restore
-		// is a write of its own; when the row is the caller's own, the rollback this
-		// error causes takes it and nothing else needs undoing.
+		// The credential goes back the way this attempt found it, on both shapes of
+		// write, because a refused send commits rather than unwinds: the record of it
+		// is written in this transaction and the worker acknowledges the delivery to
+		// commit that record (AcknowledgeRefusedDelivery). So the row written ahead of
+		// the send goes back in a write of its own, and the row written beside the
+		// send goes back in this transaction — nothing is rolling it back for us, and a
+		// row that outlived a refused send would sit marked as delivered, holding the
+		// cooldown down for a link nobody was sent.
 		if ahead {
 			s.restoreOffer(ctx, user.ID, was)
+		} else if rerr := restoreLink(tx, "password_tokens", user.ID, was); rerr != nil {
+			return rerr
 		}
 		return s.refuseSetPassword(ctx, tx, user.Email, err, token)
 	}
@@ -367,7 +373,8 @@ func restoreLink(tx db.Tx[db.Tenant], table string, id uuid.UUID, was pendingLin
 // its own and for the caller's. Its %s is what each leaves sent_at: NULL for the
 // row that is about to be mailed — it becomes a delivery in the write that follows
 // the transport — and the clock for the row that is mailed beside it, which cannot
-// outlive that send. EXCLUDED carries the same value into the update branch, so a
+// outlive that send because offer puts it back in that same transaction when the
+// transport refuses. EXCLUDED carries the same value into the update branch, so a
 // rotated link is as (un)delivered as a fresh one.
 const offerStatement = "INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at, sent_at)" +
 	" VALUES (?, ?, ?, ?, ?, %s) ON CONFLICT (tenant_id, user_id) DO UPDATE SET" +
