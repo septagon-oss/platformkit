@@ -150,7 +150,7 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // from its commit is ordinary — and the shape is modules/auth/000050's, taken
 // from the confirmation link this module mails the same way for the same reason.
 //
-// passwordOfferLock is held across the commit and the send, so nothing else
+// passwordLock is held across the commit and the send, so nothing else
 // rotates or spends this person's credential in between, and sent_at is what
 // makes the ordering survivable in both directions: it records the delivery the
 // transport took, in a write of its own, so a retry of a delivery that failed
