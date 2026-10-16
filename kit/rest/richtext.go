@@ -17,8 +17,16 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// prepareRichText runs after the root's row lock and before any database write.
-// columns is nil for create; PATCH only prepares fields the request submitted.
+// prepareFiles runs after the root's row lock and before any database write, and
+// files every file id this record is about to show — the ones a richtext body
+// names and the ones a picture field holds. columns is nil for create; PATCH only
+// prepares fields the request submitted.
+//
+// A picture is walked with a body because the two differ in nothing the ledger
+// cares about: both are file ids this record shows, and a use filed for one and
+// not the other is a sweep deleting a cover out from under a page that still
+// names it. The difference is only in where the ids come from — a parse for a
+// body, one column for a picture.
 //
 // Handing the references to the file module is the second half of this, and it
 // happens here for one reason: this is the moment the record's own body has been
@@ -29,17 +37,17 @@ import (
 // page. An id is read off the entity because both doors stamp it before they
 // write: createRow chooses the id a create will answer with, and an update reads
 // the row under its lock, so a body is always filed under the record it became.
-func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
+func (s Spec[T]) prepareFiles(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
 	value := reflect.ValueOf(e).Elem()
 	// Asked once per write, and once there is anything to ask for: the audience is a
-	// fact of the record, not of the field, and two richtext fields of one record
-	// cannot disagree about who it is showing them to. See Spec.Audience for why the
-	// answer has to be had here rather than after the write.
+	// fact of the record, not of the field, and two fields of one record cannot
+	// disagree about who it is showing them to. See Spec.Audience for why the answer
+	// has to be had here rather than after the write.
 	public, err := s.audience(ctx, tx, e)
 	if err != nil {
 		return err
 	}
-	// Two passes over the richtext fields, and the reason is the file ledger. Each
+	// Two passes over the fields that show a file, and the reason is the file ledger. Each
 	// field filed is one call that locks the files it names, so a save with two of
 	// them locks in whatever order the entity declares its fields in — and two records
 	// sharing two pictures, each naming them in the other's order, then hold one and
@@ -78,27 +86,83 @@ func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, 
 			Locale: recordLocale(ctx), Record: whole.Record, Files: ids, Public: public,
 		}})
 	}
+	for _, field := range crud.Fields[T]() {
+		if !entity.PicturesAre(field.Present) ||
+			(columns != nil && !slices.Contains(columns, field.Column)) {
+			continue
+		}
+		ids := pictureIDs(value.FieldByIndex(field.Index))
+		whole.Files = append(whole.Files, ids...)
+		pending = append(pending, pendingUses{name: field.Name, in: UsesInput{
+			Module: s.Module, Entity: s.Entity, Field: field.Column,
+			Locale: recordLocale(ctx), Record: whole.Record, Files: ids, Public: public,
+		}})
+	}
 	if err := s.orderUses(ctx, tx, whole); err != nil {
 		return err
 	}
 	for _, p := range pending {
 		if err := s.fileUses().SetUses(ctx, tx, p.in); err != nil {
-			return fmt.Errorf("richtext field %s: %w", p.name, err)
+			return fmt.Errorf("field %s: %w", p.name, err)
 		}
 	}
 	return nil
 }
 
-// pendingUses is one richtext field's references with the name of the field they
-// came from, which is what the refusal a filed use produces still has to carry.
+// pictureIDs is the file ids one picture field holds: none, one, or the list its
+// owner ordered. A nil id and an absent picture are the same answer, because the
+// record shows nothing either way and the ledger's own diff is what ends the use
+// a previous save filed.
+//
+// The column is read through reflection rather than a type assertion on one Go
+// type because the field is the entity's to write: `*uuid.UUID`, a named slice
+// over []uuid.UUID and their pointer forms all hold the same fact, and a picture
+// column that silently filed nothing would be a picture a sweep is entitled to
+// delete.
+func pictureIDs(v reflect.Value) []uuid.UUID {
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	var ids []uuid.UUID
+	add := func(id uuid.UUID) {
+		if id != uuid.Nil {
+			ids = append(ids, id)
+		}
+	}
+	if v.Kind() == reflect.Slice {
+		for i := range v.Len() {
+			one(v.Index(i), add)
+		}
+		return ids
+	}
+	one(v, add)
+	return ids
+}
+
+func one(v reflect.Value, add func(uuid.UUID)) {
+	switch id := v.Interface().(type) {
+	case uuid.UUID:
+		add(id)
+	case *uuid.UUID:
+		if id != nil {
+			add(*id)
+		}
+	}
+}
+
+// pendingUses is one field's file references with the name of the field they came
+// from, which is what the refusal a filed use produces still has to carry.
 type pendingUses struct {
 	name string
 	in   UsesInput
 }
 
-// SaveUses is one record's richtext save in the one sentence the file ledger needs
-// before any of it is filed: which record, and every file that save names across
-// every richtext field of it. A record being deleted names nothing and says so with
+// SaveUses is one record's save in the one sentence the file ledger needs before
+// any of it is filed: which record, and every file that save names across every
+// richtext and picture field of it. A record being deleted names nothing and says so with
 // an empty Files: the ledger knows what the record shows, and it is the ledger that
 // has to lock those rows in one pass rather than one field at a time.
 type SaveUses struct {
@@ -154,27 +218,27 @@ func (s Spec[T]) audience(ctx context.Context, tx db.Tx[db.Tenant], e T) (bool, 
 	return public, nil
 }
 
-// recordUses files what one richtext field of this record shows. One field, one
-// record, one call: the port's input names the field, so the two doors and the
-// delete cannot invent three shapes of the same sentence.
+// recordUses files what one field of this record shows. One field, one record,
+// one call: the port's input names the field, so the two doors and the delete
+// cannot invent three shapes of the same sentence.
 func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field crud.Field, ids []uuid.UUID, public bool) error {
 	if err := s.fileUses().SetUses(ctx, tx, UsesInput{
 		Module: s.Module, Entity: s.Entity, Field: field.Column,
 		Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids, Public: public,
 	}); err != nil {
-		return fmt.Errorf("richtext field %s: %w", field.Name, err)
+		return fmt.Errorf("field %s: %w", field.Name, err)
 	}
 	return nil
 }
 
-// clearRichTextUses ends every use this record's richtext fields filed. The
+// clearFileUses ends every use this record's richtext and picture fields filed. The
 // rewrite is the empty set, per field, because a use is keyed by field and locale
 // and a record that is gone shows nothing in any of them. The locale is the one
 // the write filed under — recordLocale answers the same question at both doors,
 // and the day a request's own language becomes that argument (T-0190) the delete
 // asks it in the request's language too, which is what kit/rest's own calls will
 // then have used.
-func (s Spec[T]) clearRichTextUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
+func (s Spec[T]) clearFileUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	// The record's whole ledger is named first, with no files of its own, so that a
 	// delete ending uses of two pictures takes both locks in one ascending pass and
 	// not one pass per field. What the record shows is what the ledger holds; the save
@@ -185,7 +249,7 @@ func (s Spec[T]) clearRichTextUses(ctx context.Context, tx db.Tx[db.Tenant], e T
 		return err
 	}
 	for _, field := range crud.Fields[T]() {
-		if field.Widget != "richtext" {
+		if field.Widget != "richtext" && !entity.PicturesAre(field.Present) {
 			continue
 		}
 		if err := s.recordUses(ctx, tx, e, field, nil, false); err != nil {

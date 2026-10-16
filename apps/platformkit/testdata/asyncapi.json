@@ -1564,6 +1564,10 @@
                 },
                 "type": "array"
               },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1643,6 +1647,10 @@
                 },
                 "type": "array"
               },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1721,6 +1729,10 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
               },
               "createdAt": {
                 "format": "date-time",
@@ -2348,6 +2360,40 @@
       },
       "summary": "Every tenant's delivery of platformkit.event_replayed.",
       "title": "platformkit.event_replayed"
+    },
+    "platformkit.operation_outcome": {
+      "address": "platformkit.*.platformkit.operation_outcome",
+      "description": "Published at platformkit.{tenantId}.platformkit.operation_outcome; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "platformkit.operation_outcome": {
+          "contentType": "application/json",
+          "name": "platformkit.operation_outcome",
+          "payload": {
+            "properties": {
+              "outcome": {
+                "type": "string"
+              },
+              "ref": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "ref",
+              "revision",
+              "outcome"
+            ],
+            "type": "object"
+          },
+          "summary": "platformkit — platformkit.operation_outcome",
+          "title": "platformkit.operation_outcome"
+        }
+      },
+      "summary": "Every tenant's delivery of platformkit.operation_outcome.",
+      "title": "platformkit.operation_outcome"
     },
     "security.access_requested": {
       "address": "platformkit.*.security.access_requested",
@@ -4542,7 +4588,7 @@
   },
   "defaultContentType": "application/cloudevents+json",
   "info": {
-    "description": "The events this application emits, rendered from the module manifests it was composed from. Every event is a CloudEvents 1.0 envelope with `tenantid` as a required extension attribute, `app` as the publisher's own app (absent for a deployment that hosts one), and `traceparent`/`tracestate` as the distributed tracing extension; the subject is platformkit.\u003ctenantId\u003e.\u003cmodule\u003e.\u003cevent\u003e.",
+    "description": "The events this application emits, rendered from the module manifests it was composed from. Every event is a CloudEvents 1.0 envelope with `tenantid` as a required extension attribute, `app` as the publisher's own app (absent for a deployment that hosts one), and `traceparent`/`tracestate` as the distributed tracing extension. Admitted intents carry `operationid`, `operationref`, `operationtenantid`, optional `operationpersonid` and `operationoutcome`, and `operationrevision`; the subject is platformkit.\u003ctenantId\u003e.\u003cmodule\u003e.\u003cevent\u003e.",
     "title": "PlatformKit events",
     "version": "1.0.0"
   },
@@ -5374,6 +5420,23 @@
         }
       ],
       "summary": "The platformkit module publishes platformkit.event_replayed.",
+      "tags": [
+        {
+          "name": "platformkit"
+        }
+      ]
+    },
+    "platformkit.operation_outcome": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platformkit.operation_outcome"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/platformkit.operation_outcome/messages/platformkit.operation_outcome"
+        }
+      ],
+      "summary": "The platformkit module publishes platformkit.operation_outcome.",
       "tags": [
         {
           "name": "platformkit"

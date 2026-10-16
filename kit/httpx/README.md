@@ -268,65 +268,49 @@ retry that arrives while the first is still running is a 409,
 Records belong to the authenticated person, except at a `BearerKey` command:
 there the key is the subject, so each key keeps its own retry record even when
 one person holds both. Retiring one key cannot replay as another key's success.
-A write that sends no header is answered exactly as it always was. The verbs are
-POST and PATCH; PUT and DELETE are idempotent in the protocol already, so a record of
-them would be a body kept for nothing. The key is 1–128 visible ASCII characters,
-bare or as a Structured-Fields string — it is a primary-key column, so a value of
-arbitrary shape is a row anybody can mint; a malformed one is a 400 before the request
-body is read, which is also why the middleware runs *after* [the body
-gate](httpx.go) and never has to buffer a request to fingerprint it.
+Every unsafe write served by `kit/app` receives an `Operation-ID`: the parsed
+key token, or a fresh UUID string when no key was supplied. `Operation-Location`
+points an authenticated person to `GET /api/v1/app/operations/me/{ref}`. The
+reference distinguishes uses of the same token on different routes or tenants.
+Authentication, current route grants, tenant scope and the body ceiling precede
+admission. A malformed key returns 400 without creating a receipt.
+
+POST/PATCH on App/Public keep their existing answer replay. PUT/DELETE, Ops and
+credential-minting routes still receive identity but store no replayable answer;
+a keyed retry returns spent (409) and runs nothing. No credential or cookie is
+kept for replay. An unkeyed retry is another intent, so clients needing retry
+identity must persist their key before the first send, including offline queues.
 
 | Attempt | Answer | The handler ran |
 | --- | --- | --- |
 | first with a key | whatever the route decided | yes |
-| same key, same body | the first attempt's answer | no |
-| same key, another body | 422 `IDEMPOTENCY_KEY_IN_USE` | no |
-| same key, first still running | 409 `IDEMPOTENCY_IN_FLIGHT` | no |
-| a write whose answer is a credential it minted | whatever the route decides | yes |
-| no key at all | whatever the route decides | yes |
+| same scope/key and request bytes | stored answer, or 409 if spent | no |
+| same scope/key with different bytes | 422 `IDEMPOTENCY_KEY_IN_USE` | no |
+| same scope/key while in flight | 409 `IDEMPOTENCY_IN_FLIGHT` | no |
+| no key | route answer and a newly assigned operation | yes |
 
-**The write that cannot be replayed.** A route whose answer *is* a credential —
-[modules/auth](../../modules/auth)'s sign-in, its set-password link, its second-factor
-leg — declares `MintsACredential` and is not keyed: the document says nothing about the
-header there and the guard asks that same question of the request. A remembered answer is
-restated, and a minted credential cannot be. Keeping the cookie in the row would put a
-live bearer token in a table for the day the record lives, where
-[the module that owns a session](../../modules/auth/internal/kernel.go) keeps its hash
-and nothing else, and it would hand back a credential whose session was revoked in the
-meantime — the same false sign-in, one logout later. So a sign-in whose answer was lost
-is signed in again: the password checked a second time, the session minted a second time,
-which is the thing the caller wanted. The legs behind it answer what a spent link and a
-spent step already answer. What that costs is one `auth.logged_in` event per attempt that
-presented the password, and it is the alternative to a credential at rest.
+The operation headers survive answer replay and replacement after rollback.
+A definite refused execution records failed evidence after its domain transaction
+rolls back; uncertain commits remain unknown. Mutation responses must fit the
+existing buffer and cannot flush before commit. Synchronous writes stage success
+with their authoritative transaction; an async owner calls
+`request.DeferOperation(ctx)` and completes through the existing event delivery
+transaction. Pending approval is recorded only by a committed proposal.
 
-**What a record cannot hold.** An answer larger than `maxRecordedAnswer` — a quarter of
-a megabyte, past every document this API answers with and below the 2 MiB a held response
-may already reach — is remembered as *spent* rather than replayable: the retry of it is
-refused 409 `IDEMPOTENCY_SPENT` and the write is never run again, because losing an
-answer may cost a caller a retry while forgetting a record costs them the second write the
-header exists to prevent. A claim the handler never entered stays takeable, so an outage
-cannot burn a key that demonstrably did no work. The retention is the day the header
-promises, the lease on an unanswered claim is five minutes, and neither is a setting: the
-clock they are measured against is the transport's own, not `Options.Clock`.
+Answer replay lasts 24 hours from occurrence admission. An unresolved or
+approval-pending identity survives that answer window and is then spent. A
+terminal identity survives until at least 24 hours after its last outcome.
+The five-minute lease can replace an unbegun attempt, preserving its operation
+reference; it never permits another execution of a begun request.
+`Options.Clock` supplies operation instants. [The receipt contract](../idempotency/README.md)
+owns transitions, retention and person reads.
 
-It is declared on the operation, through [the table](surfaces.go), so the document and
-the guard cannot say two things — the same reason `x-platformkit-surface` and
-`x-platformkit-streams-body` are in that table. Two exceptions, each in one sentence:
-the control plane's writes are skipped, because this task's brief keys the app and public
-surfaces and leaves the operator console's to the product; and a route whose answer is a
-credential it minted is skipped for the reason above it. The route that reads its own request
-— `kit/rest`'s streamed upload — is *not* an exception, and the reason it is not is that
-a key the guard ignored was a promise the document made and the wire broke: that body is
-digested under the same ceiling every keyed write has (`MaxBodyBytes`, said in the
-declaration), and the reader is replaced on both requests a handler may read it from —
-the one huma decodes a schema'd body from and the one `carry` put on the context for the
-route that reads its own. A keyed upload past that ceiling is refused 413 rather than run
-unremembered. The claim is taken before the
-handler runs, never after; the answer is recorded by the [one writer](respond.go) that
-writes a status code, and only when the response is final — not a 1xx, not a refused
-upgrade, not a response no writer claimed because the request was already over. A
-handler that wrote half a body and panicked leaves no record, so its caller retries
-and gets the 500 again rather than a 201 that was never earned.
+A keyed upload is still bounded to `MaxBodyBytes` and returns 413 past that
+ceiling; an unkeyed upload uses the configured upload ceiling. The guard restores
+the body readers it fingerprints. Answer bodies larger than 256 KiB are spent,
+while their minimal receipts remain readable. Standalone `httpx.New` callers
+that omit `Options.Operations` retain the original optional replay behavior;
+`kit/app` always wires the durable SQL owners.
 
 **The fields.** A limited write answers with both fields, on the reply that was allowed
 as much as the one that was refused: `RateLimit-Policy` is the field the draft asks to

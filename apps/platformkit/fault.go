@@ -22,6 +22,7 @@ package main
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 
 	g "maragu.dev/gomponents"
@@ -31,6 +32,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
@@ -172,14 +174,14 @@ func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 func workspaceCatalog() func(api *httpx.API) {
 	// The gate is built here, one per composition, and not at file scope: see
 	// referenceGate.
-	return app.WorkspaceCatalogRoute(documentBuilder(new(referenceGate)))
+	return app.WorkspaceCatalogRoute(documentBuilder(new(documentGate)))
 }
 
 // documentBuilder is the body of that mount: the same catalogues read once, the
 // same gate, and the resources the request's caller may reach. It is a function
 // of its gate because the one thing about this handler that is not a translation
 // is a refusal, and a refusal nobody can call is a refusal nobody tests.
-func documentBuilder(gate *referenceGate) func(context.Context, []httpx.Resource) (*screens.Catalog, error) {
+func documentBuilder(gate *documentGate) func(context.Context, []httpx.Resource) (*screens.Catalog, error) {
 	// The catalogues this composition answers in. The document is read by a shell
 	// that is not a browser, and every word in it is one a person will read, so it
 	// is negotiated the same way the page beside it is — the request's own
@@ -220,32 +222,48 @@ func documentBuilder(gate *referenceGate) func(context.Context, []httpx.Resource
 			return selected.Formatter.Text(key, fallback)
 		}
 		document := screens.DescribeLanguage(ctx, resources, text)
+		// Where a record's picture lives, said once for the whole document rather
+		// than once per field that holds a file id. The address is the file
+		// module's — it mounts the door — and the document is the kernel's, so this
+		// composition is the only party that has met the two and the only one that
+		// may write the string. A shell derives nothing.
+		document.Pictures = &screens.Pictures{
+			Source: filecontracts.PictureSource,
+			Widths: slices.Clone(filecontracts.VariantWidthSet),
+		}
 		return &document, nil
 	}
 }
 
-// referenceGate is the reference check's once-and-its-result. The once is there
-// because the question is about the composition, which does not change after
-// boot, and asking it per request would be a walk of every schema on somebody's
-// page load. It is held by one mount rather than by the process because a
-// process composes several applications — every test binary in this repository
-// boots the reference composition more than once — and a process-wide once lets
-// the first build of a document decide for every later one: a second
-// composition's dangling reference would go unchecked, and a correct
-// composition behind a broken one would serve nothing but 500s. The question
-// each composition asks is about the list *it* registered.
-type referenceGate struct {
+// documentGate is the composition's once-per-mount question about the document it
+// is about to publish, which is every question a reading declaration asks about the
+// modules this process actually registered: does each `reference` name a resource
+// somebody composed, and is each `primaryCommand` a verb this resource mounts?
+//
+// The once is there because the answer is about the composition, which does not
+// change after boot, and asking it per request would be a walk of every schema on
+// somebody's page load. It is held by one mount rather than by the process because a
+// process composes several applications — every test binary in this repository boots
+// the reference composition more than once — and a process-wide once lets the first
+// build of a document decide for every later one: a second composition's dangling
+// declaration would go unchecked, and a correct composition behind a broken one would
+// serve nothing but 500s. The question each composition asks is about the list *it*
+// registered.
+type documentGate struct {
 	once  sync.Once
 	fault error
 }
 
-// check asks the question the first time it is called and remembers the answer.
+// check asks the questions the first time it is called and remembers the answer.
 // sync.Once is the synchronisation: a reader here is a goroutine that has just
 // returned from Do, which happens after the answer was written.
-func (g *referenceGate) check(resources []httpx.Resource) error {
+func (g *documentGate) check(resources []httpx.Resource) error {
 	g.once.Do(func() {
-		if bad := rest.CheckReferences(resources); bad != "" {
-			g.fault = errors.New("apps/platformkit: " + bad)
+		for _, question := range []func([]httpx.Resource) string{rest.CheckReferences, rest.CheckRowHints} {
+			if bad := question(resources); bad != "" {
+				g.fault = errors.New("apps/platformkit: " + bad)
+				return
+			}
 		}
 	})
 	return g.fault

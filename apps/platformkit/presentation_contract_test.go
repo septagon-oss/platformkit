@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 )
 
 // presentationComponents are the seven new component names. The two top-level
@@ -24,6 +25,10 @@ import (
 // inside one is always written and the mount gate refuses the declaration that
 // would leave one empty.
 var presentationComponents = map[string][]string{
+	// The picture door is only ever in the document because the composition put it
+	// there, and inside it the address is always written: a door with no address is
+	// the same nothing as no door, said in a shape a shell would have to guess at.
+	"Pictures":            {"source"},
 	"EntryPresentation":   nil,
 	"CommandPresentation": nil,
 	"ResourceGroup":       {"key", "label"},
@@ -79,6 +84,35 @@ func TestThePresentationKeysAreNeverRequired(t *testing.T) {
 }
 
 func required2(component map[string]any) []string { return wireStringList(component["required"]) }
+
+// TestThePictureAddressTheCataloguePublishesIsADocumentedRoute reads the address
+// a shell is told to fetch from and asks the same document whether anything
+// answers it. A published template that no route was mounted at is the failure a
+// constant nobody reads back drifts into: the shell fetches, gets nothing, and
+// the still state looks like a bug rather than like a broken promise.
+func TestThePictureAddressTheCataloguePublishesIsADocumentedRoute(t *testing.T) {
+	raw, err := os.ReadFile("testdata/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	// The template the composition publishes, read off the module that owns the
+	// door rather than typed out again here.
+	const want = "/api/v1/file/files/{id}/content"
+	if filecontracts.PictureSource != want {
+		t.Fatalf("the file module publishes %q, which this test's assertion about the served document no longer checks", filecontracts.PictureSource)
+	}
+	paths, ok := doc["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("the served document carries no paths")
+	}
+	if _, ok := paths[want]; !ok {
+		t.Errorf("the catalogue sends a shell to %s, which the served document does not answer", want)
+	}
+}
 
 // TestEveryDeclaredReferenceResolvesInTheReferenceComposition is the boot gate
 // for a `reference`: a hint naming a module this installation did not compose is
