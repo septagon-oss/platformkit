@@ -262,7 +262,7 @@ check-versions: ## Fail when go.mod replaces a dependency or a go.work file is p
 
 # An applied migration is checksummed by every installation that ran it, so an edit to one is a boot
 # failure there. CI passes the commit it compares with, judged from its merge base with HEAD; empty
-# means the merge base with origin/main. Uncommitted and staged edits are judged too.
+# means the merge base with origin/main. Uncommitted and staged edits are judged too, as raw bytes.
 MIGRATIONS_BASE ?=
 check-applied-migrations: ## Fail when a migration file the base carries was edited, renamed or removed
 	./scripts/check_applied_migrations.sh $(MIGRATIONS_BASE)

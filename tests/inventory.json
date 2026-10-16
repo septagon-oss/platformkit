@@ -29247,11 +29247,68 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/applied_migration_line_endings_test.go",
+   "id": "modules/audit/applied_migration_line_endings_test.go#TestAppliedMigrationGateRefusesChangedWorkingTreeLineEndings",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAppliedMigrationGateRefusesChangedWorkingTreeLineEndings",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/applied_migration_merge_base_test.go",
    "id": "modules/audit/applied_migration_merge_base_test.go#TestAppliedMigrationGateComparesTheMergeBase",
    "kind": "go",
    "layer": "behaviour",
    "name": "TestAppliedMigrationGateComparesTheMergeBase",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/audit/applied_migration_quoted_path_test.go",
+   "id": "modules/audit/applied_migration_quoted_path_test.go#TestAppliedMigrationGateRefusesChangesToQuotedPaths",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAppliedMigrationGateRefusesChangesToQuotedPaths",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/audit/applied_migration_tag_history_test.go",
+   "id": "modules/audit/applied_migration_tag_history_test.go#TestAppliedMigrationGateIgnoresReleasesOutsideTheBaseHistory",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAppliedMigrationGateIgnoresReleasesOutsideTheBaseHistory",
    "needs_db": true,
    "pkg": "modules/audit",
    "round_named": false,
@@ -59780,7 +59837,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1547,
+  "files": 1550,
   "forge_runs": [
    408,
    413,
@@ -59814,7 +59871,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2557,
+   "behaviour": 2560,
    "composition": 355,
    "contract": 19,
    "journey": 88
@@ -59833,9 +59890,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3019,
+  "rows": 3022,
   "tiers": {
-   "merge": 1906,
+   "merge": 1909,
    "nightly": 88,
    "push": 1025
   },
@@ -59843,13 +59900,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1362,
+   "keep": 1365,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2729,
+   "keep": 2732,
    "keep-rewrite": 117,
    "merge": 173
   }

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The applied-migration check's cases, each in a throwaway repository: an edited (committed or only
 # staged), deleted or renamed applied file is refused, a new file and a file put back to the applied bytes pass, the applied bytes
-# are the oldest release's when a release carries the file, and a missing base or tag set is refused.
+# are the oldest release's the base descends from when one carries the file, a quoted path and a line
+# ending Git normalizes are judged by their own bytes, and a missing base or tag set is refused.
 set -euo pipefail
 
 script="$(cd "$(dirname "$0")" && pwd)/check_applied_migrations.sh"
@@ -94,6 +95,30 @@ echo 'CREATE TABLE f (m int);' > migrations/000007_f.up.sql && commit 'fix: f ag
 base="$(git rev-parse HEAD)"
 echo 'CREATE TABLE f (n int);' > migrations/000007_f.up.sql && commit 'fix: f to the proof bytes'
 expect 1 'a proof tag is not a release' 'migrations/000007_f.up.sql changed after it was applied' "$base"
+
+# A release cut on the candidate is not history the base's installations ran.
+fresh unreleased
+echo 'CREATE TABLE h ();' > migrations/000009_h.up.sql && commit 'feat: h'
+base="$(git rev-parse HEAD)"
+echo '-- explain' >> migrations/000009_h.up.sql && commit 'fix: h after it shipped'
+git tag v0.2.0
+expect 1 'a release tag the base does not descend from is not the applied bytes' \
+	'migrations/000009_h.up.sql changed after it was applied' "$base"
+
+fresh quoted
+git config core.quotePath true
+echo 'CREATE TABLE ç ();' > migrations/000010_ç.up.sql && commit 'feat: ç'
+base="$(git rev-parse HEAD)"
+echo '-- explain' >> migrations/000010_ç.up.sql && commit 'fix: ç after it shipped'
+expect 1 'a path Git quotes is judged under its own name' \
+	'migrations/000010_ç.up.sql changed after it was applied' "$base"
+
+# go:embed ships the bytes on disk, so a line ending autocrlf hides from Git is still an edit.
+fresh crlf
+git config core.autocrlf true
+printf 'CREATE TABLE a ();\r\n' > migrations/000001_a.up.sql
+expect 1 'a line ending Git normalizes is a changed byte' \
+	'migrations/000001_a.up.sql changed after it was applied' "$base"
 
 fresh outside
 echo 'SELECT 2;' > modules/x/testdata/fixture.sql
