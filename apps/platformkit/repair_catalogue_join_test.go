@@ -1,9 +1,9 @@
 package main
 
-// repair_catalogue_join_test.go pins the repair's half of the join review 15
-// named and closed from the seeder's side: the catalogue `repair-roles` narrows
-// against has to be the composition's own list, and not a second list that
-// happens to agree with it today.
+// What the repair narrows against, and not a second list that happens to agree
+// with it today: the seeder's cases pin that every grant it wrote is one the
+// installation defines, and this pins the other side of that join — the list the
+// command subtracts from has to be the composition's own.
 //
 // The command takes grants away. It decides which ones by asking which of the
 // seeded grants no composed module defines any more, so the list it is handed is
@@ -27,9 +27,9 @@ package main
 // a list somebody wrote, or one taken before the modules arrived. The behavioural
 // half of the same claim — the command run against an installation with nothing
 // to repair leaves every row, including the operator's own administrator, alone —
-// is review 7's TestARepairOfAnInstallationThatNeedsNoRepairChangesNothing, which
-// an empty catalogue fails; the half that asks the *running installation* whether
-// it defines the seeded grants is review 15's
+// is TestARepairOfAnInstallationThatNeedsNoRepairChangesNothing, which an empty
+// catalogue fails; the half that asks the *running installation* whether it
+// defines the seeded grants is
 // TestEveryGrantTheSeederWroteIsOneTheRunningInstallationDefines, which reaches
 // the guard over HTTP. This is the link between those two: what the guard answers
 // about is the list the command narrows against.
