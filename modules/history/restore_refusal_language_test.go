@@ -22,6 +22,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/history"
+	"github.com/septagon-oss/platformkit/modules/translation/contracts/translationtest"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
 	"github.com/septagon-oss/platformkit/ui/screens"
@@ -34,7 +35,14 @@ func contentHistoryFixture(t *testing.T, adminShell ...bool) (*world, http.Handl
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, manifest := content.New(content.Deps{Versions: versions})
+	// A page's title and body declare themselves translatable, so the mount needs
+	// the port that answers `?lang=` as much as it needs the store that keeps its
+	// writes: this fixture is about the version series, and translationtest.NewFake
+	// is the answer the page store's own test gives.
+	_, manifest := content.New(content.Deps{
+		Versions:     versions,
+		Translations: translationtest.NewFake(nil),
+	})
 	api, router := httpx.New(httpx.Options{
 		Cache: cache.Memory("pkit"), PublicHost: acmeHost, Installation: acmeHost,
 		Tenants: hosts{byHost: map[string]tenancy.Tenant{acmeHost: acme}}, Conn: app,

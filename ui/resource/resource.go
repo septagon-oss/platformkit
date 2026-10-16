@@ -16,6 +16,8 @@ package resource
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -38,6 +40,13 @@ import (
 type Resource struct {
 	Schema    entity.Schema
 	Immutable []string
+	// API is the resource's own read address as the kernel composed it — the path
+	// its JSON routes answer at — empty for a screen rendered without a kernel
+	// behind it. A renderer builds an autosave target from it and from nothing
+	// else: the screen's own /app/... address is where a person is, not where the
+	// record lives, and a browser that guessed an API path would be guessing which
+	// surface its caller may read on.
+	API string
 	// Present is how this resource's author said it reads. The renderer consults
 	// three parts of it and no others: `visibility`, which keeps a field off the
 	// list and off the record; `section`, which groups the record; and
@@ -101,6 +110,15 @@ type Options struct {
 	Workspace string
 	// Home is the breadcrumb's first entry's label, linking to Workspace.
 	Home string
+	// PictureSource is the address template a `present:image` cell fetches its
+	// bytes from, `{id}` standing for the file id the field holds: the same
+	// template the workspace catalogue publishes as `pictures.source`, and for the
+	// same reason — the door belongs to a module this package may not name, so the
+	// composition that has met both writes the address once here rather than a
+	// renderer guessing at it. Empty means this installation names no such door,
+	// and every picture cell then draws the plain value it drew before this field
+	// existed.
+	PictureSource string
 	// Locale is the request's selected language when the shell composes
 	// page.Shell.Messages; the adapter sets it per request. The fixed labels
 	// — New, Edit, Delete, the count, the pager and the empty state — are
@@ -174,11 +192,14 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 // entity's: a browser tab, a bookmark and a history entry all read it, and
 // eleven of them saying "Task" is eleven of them saying nothing.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
-	return DetailRichText(r, o, row, writable, nil)
+	return DetailRichText(r, o, row, writable, nil, nil)
 }
 
-// DetailRichText renders prose prepared by the request adapter in its tenant transaction.
-func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string) document.View {
+// DetailRichText renders prose prepared by the request adapter in its tenant
+// transaction, beside the record's standing in each language the tenant speaks
+// besides its own.
+func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string,
+	locales []entity.LocaleState) document.View {
 	at := r.Screen
 	// A singleton is reached at its own path, which is the only place its API is
 	// reached too: an id in this path would be an id nobody issued, and the row
@@ -206,11 +227,12 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	body := []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
+		localeStrip(locales),
 		details(r, o.Words(r.Schema), row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandForms(o, o.Words(r.Schema), r.offeredCommands(), item, false)...)
+	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales)...)
 	body = append(body, historyDisclosure(o, r.History))
 	return document.View{Title: named, Body: body}
 }
@@ -245,11 +267,72 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 	if detail != "" {
 		status = statusUnprocessableEntity
 	}
-	return document.View{Title: title, Status: status, Body: []g.Node{
+	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
+}
+
+// richtextModule is the editor's browser half, as a path under the shell's asset
+// prefix. It is a module and not a controller: a page that draws no rich text
+// field carries no tag for it and downloads none of it.
+const richtextModule = "js/richtext.js"
+
+// richtextModule asks whether this form draws an editor at all: an editable rich
+// text field, which is the only thing that needs 470 KB of editor. A record whose
+// rich text is immutable is read-only chrome and no editor, and the page that
+// draws one costs the same as the page that draws none.
+func richtextModules(r Resource) []string {
+	for _, f := range readable(r.Schema.Fields) {
+		if f.Widget == "richtext" && !slices.Contains(r.Immutable, f.Name) {
+			return []string{richtextModule}
+		}
+	}
+	return nil
+}
+
+// fileUploadRoute is the file module's own upload address on the workspace
+// surface, spelled rather than derived: the editor posts the bytes it is handed to
+// this route and to no other, and never builds a path out of a record's own.
+const fileUploadRoute = "/api/v1/file/files"
+
+// fileImageSrc is the same module's own address for reading one stored file back,
+// with {file} standing for the id an upload answered with. The editor substitutes
+// an id an upload handed it and no other text, so the picture a person just
+// uploaded is a picture they can look at while the document, the posted value and
+// the line the server validates all keep the pk-file reference they always held.
+// Spelled here beside the upload route rather than built from it, for the same
+// reason: the browser is handed addresses, never a rule for making one.
+const fileImageSrc = "/api/v1/file/files/{file}/content"
+
+// richtextEditor is the server's answer to "what may this field's editor do, and
+// where". An author who is writing has no record yet, so there is nothing to save
+// against and nothing to keep a draft under: the two attributes appear together
+// with the record's id. An entity that keeps no write count has no tag to quote,
+// so the editor saves nothing as the author writes and keeps the draft instead —
+// which is the honest mode, not a degraded one: a conflict panel needs a revision
+// to disagree about.
+//
+// submitted says this render is the answer to a write that was refused: its
+// controls carry the person's own post rather than the record's text. Nothing
+// compares a kept draft against that text — a refused write saves nothing, and the
+// copy on the device is the only place unsaved words live.
+func richtextEditor(r Resource, row map[string]any, create bool, name string, submitted bool) forms.Editor {
+	editor := forms.Editor{FileUpload: fileUploadRoute, ImageSrc: fileImageSrc, Submitted: submitted}
+	if create || row == nil || r.Singleton || r.API == "" {
+		return editor
+	}
+	id, _ := row["id"].(string)
+	if id == "" || !r.offers("update") {
+		return editor
+	}
+	editor.DraftKey = r.API + "/" + id + "/" + name
+	if revision, quoted := revisionCondition(r, row, create); quoted {
+		editor.Endpoint = r.API + "/" + id
+		editor.ETag = `"` + revision + `"`
+	}
+	return editor
 }
 
 // statusUnprocessableEntity is the one status this package writes: the 422 a
@@ -277,8 +360,15 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	// own write condition, below, so the capacity holds room for it.
 	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
 	words := o.Words(r.Schema)
+	// A render carrying a refusal line is the form redrawn over a write that was
+	// refused, with the person's own words in its controls.
+	refused := detail != ""
 	for _, field := range readable(r.Schema.Fields) {
-		fields = append(fields, formField(words, field))
+		f := formField(words, field)
+		if f.Definition.Widget == "richtext" {
+			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
+		}
+		fields = append(fields, f)
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
@@ -464,7 +554,14 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		// instead of instead of losing it.
 		Cell: func(row components.TableRow, c components.TableColumn) g.Node {
 			if f, known := fieldFor(r.Schema.Fields, c.Key); known {
-				if node := compose(f, row, c.Primary, at); node != nil {
+				// The row's own name, which is what a picture that is the row's way
+				// in is called by: the same words the plain cell would have put in
+				// the link, read off the leading column and its fallback.
+				name := display.Text(row.Cells[primary.Name])
+				if named, ok := named[row.ID]; ok {
+					name = named
+				}
+				if node := compose(f, row, c.Primary, at, o, name); node != nil {
 					return node
 				}
 			}
@@ -479,6 +576,47 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		},
 	}
 	return components.DataListWithSlots(p, slots)
+}
+
+// localeStrip is the record's translation standing: one badge per language this
+// tenant speaks besides its own, each naming how much of this record exists in it
+// and what it is behind by.
+//
+// It is the first thing a translator needs on a record — what is reviewed and what
+// somebody still owes — and the numbers come from the same read a public page
+// answers with, so the badge cannot report a translation a reader would never be
+// served. A language nobody has touched reads 0% rather than disappearing: the
+// language that needs work is the one worth naming.
+//
+// The word beside the number is the point of the badge. "50%" asks the reader to
+// work out whether somebody owes a first translation or owes a second look at one
+// that went stale, and those are different jobs; "50% · Outdated" answers it. The
+// tone stays the one the strip has always worn — success when the language is whole,
+// warning when it is not — because the word, not the colour, carries which of the
+// two it is, and a badge that meant "stale" one release and "never started" the
+// next by colour alone would be a colour doing a word's work.
+//
+// Nothing at all when there is no language to report — an entity with no
+// translatable field, or a tenant served in one language — because a badge about a
+// language nobody can switch to is noise, and every screen of every entity that was
+// never translated would be wearing one.
+func localeStrip(locales []entity.LocaleState) g.Node {
+	if len(locales) == 0 {
+		return g.Raw("")
+	}
+	badges := make([]g.Node, 0, len(locales))
+	for _, state := range locales {
+		tone := "warning"
+		if state.Percent() == 100 {
+			tone = "success"
+		}
+		badges = append(badges, components.Badge(components.BadgeProps{
+			Label: state.Locale + " " + strconv.Itoa(state.Percent()) + "% · " +
+				display.Humanize(state.State()),
+			Tone: tone, Size: "sm",
+		}))
+	}
+	return components.Flex(components.FlexProps{Gap: "2", Wrap: true}, badges...)
 }
 
 // details is the detail screen: every field the author kept on a record, in schema

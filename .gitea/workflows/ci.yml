@@ -284,10 +284,32 @@ jobs:
       # and exited 0. Case 11 of scripts/ci_go_cache_test.sh is the matching refusal: it
       # asks the Makefile which goals it runs parse YAML and this job whether it installs
       # a reader before the step that runs them.
+      #
+      # `apt-get update` is not a line of this file any more; it is a call to scripts/ci_apt_index.sh.
+      # Run 56143, job 56770 (head cea7e46b, 2026-10-09) ended this step with exit 100 and no assertion
+      # anywhere in its log, on `File has unexpected size (1377452 != 1380818). Mirror sync in
+      # progress?` from security.ubuntu.com — a CDN node serving a Release beside an index it had
+      # already rolled forward. The file's header holds the whole refusal and why a bounded retry is the
+      # answer rather than a rerun; scripts/ci_apt_index_test.sh pins the bound, the refusal, and that
+      # this step reaches the retry at all.
+      #
+      # The four lines under the install ask the three tools the same question the steps that need them
+      # will ask. Without them a step is green because apt exited 0, which says the index was readable
+      # and nothing about `psql`, `ss` or `import yaml` being there to answer; the guards that ask are
+      # the ones whose refusal reads like a defect in the tree.
       - name: Install the database client, the socket probe and the YAML reader
         run: |
-          apt-get update
+          bash scripts/ci_apt_index.sh
           apt-get install --yes --no-install-recommends postgresql-client iproute2 python3-yaml
+          missing=''
+          for tool in psql ss; do
+            command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+          done
+          python3 -c 'import yaml' >/dev/null 2>&1 || missing="$missing python3-yaml"
+          if [ -n "$missing" ]; then
+            echo "the install step exited 0 and these are still missing:${missing} — the guards that ask for one of them would refuse for a reason that is not in the tree" >&2
+            exit 1
+          fi
 
       - name: Start NATS with JetStream on this job's network
         id: nats
@@ -721,11 +743,40 @@ jobs:
       # Its own Playwright and its own chromium: the tooling pins a different build
       # from e2e/'s, and `--with-deps` runs apt itself (measured: it fetches its own
       # package lists), so this job needs no database-client step to reach them.
+      #
+      # The two lines after the install are the reason this step has ever failed. It refuses with a
+      # browser death rather than an assertion, and the case it lost passes whenever anybody runs it by
+      # hand: job 64116 lost `real EmptyState keeps enlarged copy and its keyboard action usable at
+      # 320px` with `locator.evaluate: Target crashed` 4.7 s into a case that measures 1.713 s here, on
+      # a head whose only change to this repository's source was an HTTP response header. Three earlier
+      # refusals of this step in the 148 runs of this workflow the forge API pages out, read on
+      # 2026-10-13, lost a different file in the same shape: `source CSS dashed borders match Chromium
+      # after resizing and two FIG saves` twice (`page.evaluate: Target crashed` at job 57327,
+      # `page.screenshot: Protocol error (Page.captureScreenshot): Unable to capture screenshot` at job
+      # 59444) and `real refusal forms inherit a top-aligned editable Alert …` once (job 57181, the same
+      # screenshot protocol error). One earlier failure of this step is not that shape at all — job
+      # 57644 refused on an assertion, `813 !== 812` in `browser/text.test.mjs` — and no bound or
+      # sampler speaks to that one. What the crash-shaped four share is not a number or a tree: it is
+      # two Chromiums started by a step that asked nothing of the host and printed nothing about it.
+      #
+      # So the step now asks the host for a core before its first browser (scripts/
+      # ci_browser_host_share.sh, the file `editor`'s suite has asked for since 50a1828), and runs
+      # its suite inside the sampler that file provides. The bound is 300 s and not the editor's 720
+      # because this job's ceiling is 45 minutes and its own steps are most of it: job 64116 took
+      # 1823 s end to end, of which the suite was 1656 s, leaving about nine minutes after a five
+      # minute wait. When the bound passes the suite starts anyway and says so — refusing would trade
+      # the verdict it distrusts for no verdict at all. Nothing here retries, skips, narrows or
+      # reorders a test: the same 289 observations still have to pass, and one that fails on a host
+      # with a free share still fails this job. What the sampler adds is the number this step never
+      # had — its own container's shared-memory pool, peaked over the whole suite — because the
+      # sibling job's sampler cleared the host (22 GB free, load 9) in the minute this one died, and
+      # the pool a renderer dies in is the one thing neither of those lines can clear or indict.
       - name: Native browser observations
         working-directory: tools/designexport/openpencil
         run: |
           npx playwright install --with-deps chromium
-          npm run test:browser
+          bash ../../../scripts/ci_browser_host_share.sh wait 300
+          bash ../../../scripts/ci_browser_host_share.sh watch 30 npm run test:browser
 
       # Last, and for the same reason as the step of the same name in `check` — this suite compiles
       # Go itself (browser/fixtures.test.mjs: `go build -o <executable> <file>`), so the save that
@@ -867,6 +918,38 @@ jobs:
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
 
+      # The suite's browsers read the desktop's settings through GLib before they serve a page,
+      # and the image this job runs in ships no compiled schema for them to read. Measured 2026-10-13 by starting the
+      # image the runner put job 62753 in (`gitea/runner-images:ubuntu-24.04`, read locally at the
+      # digest that job pulled): `/usr/share/glib-2.0/schemas` holds `gschema.dtd` and nothing
+      # else, so GLib's default schema source is null, and six launches of the pinned Chromium with
+      # this suite's own launch flags print
+      # `GLib-GIO-CRITICAL: g_settings_schema_source_lookup: assertion 'source != NULL' failed`
+      # six times. `npx playwright install --with-deps` above is what installs the browser's shared
+      # libraries, and the dependency list it installs from names no schema package: running that
+      # install in the same image leaves the directory above exactly as it was, so nothing in this job
+      # ever put a schema there. Job 62753 (run 719, head e8bce9d8) is what the line is worth: that
+      # critical is the last thing the dying browser's log says, 80 ms after its launch and before its
+      # first page, immediately above `*** stack smashing detected ***: terminated`.
+      # The package below is what makes the source non-null. In the same image, over the same six
+      # launches after installing it: that line appears none of six times,
+      # `gsettings get org.gnome.desktop.interface font-hinting` answers `light`, and all six still
+      # exit 0 having rendered their page. The precondition is asked again where it is used, below.
+      # What this step changes is the environment the browsers start in. It changes no assertion, no
+      # skip, no retry, no reorder and no wait: the suite still runs the same files and the same 31
+      # tests have to pass. What it does not claim is that the missing schema caused the abort — the
+      # twelve launches here aborted none of twelve, and a process that dies inside its own stack
+      # protector is Chromium's to fix, not this repository's. The claim is the narrower one the
+      # evidence reaches: the refusal happened inside a path this job can take away from every launch,
+      # and it is taken away.
+      # The install goes through scripts/ci_apt_index.sh for the reason written beside that call in the
+      # check job: a mirror mid-sync is a reason to wait forty seconds, not a reason to refuse a pull
+      # request, and scripts/ci_apt_index_test.sh runs this step body to pin that it reaches the retry.
+      - name: Install the desktop schema the editor's browsers read at startup
+        run: |
+          bash scripts/ci_apt_index.sh
+          apt-get install --yes --no-install-recommends gsettings-desktop-schemas
+
       - name: Corrected editor image builds without publishing
         env:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
@@ -885,6 +968,15 @@ jobs:
           CONTAINER_NAME: platformkit-${{ github.run_id }}-editor
         run: |
           test -n "$JOB_NETWORK"
+          # The same fact the install step above exists to make true, asked where it is used: the
+          # browsers started below read the desktop's settings through GLib at startup, and with no
+          # compiled schema they enter GLib's missing-schema path before their first page. Its absence
+          # here is that install step having gone away, which should read as this sentence rather than
+          # as a browser that died for no named reason.
+          if ! [ -r /usr/share/glib-2.0/schemas/gschemas.compiled ]; then
+            echo 'the editor job has no compiled desktop schema: the step that installs it is missing from this job' >&2
+            exit 1
+          fi
           docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
           container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias openpencil \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
@@ -916,55 +1008,13 @@ jobs:
           # all 31 here; only the bound form cannot starve a neighbour. The cost is the overlap:
           # T-0110 round 26 put the same step at 12m49s unbound on CI's runner against about
           # 15m24s serial, inside the job's 45 minutes. No assertion, skip, retry or reordering.
-          # The sampler below is this branch's own addition: a Chromium that crashes leaves
-          # the log with no way to tell starvation from a broken build, and /proc/meminfo in
-          # a job container is the host's, which is the number the next refusal will need.
-          # The two cgroup lines are the other half of that answer, added after the refusal
-          # this comment ends with: `MemAvailable` is the host's and says nothing about the
-          # ceiling this container answers to, so a run whose own cgroup was out while the
-          # host had 23 GB free would still have printed a number that cleared memory.
-          # `memory.events` carries `oom_kill`, the only record of that death that survives
-          # it. v1 and v2 paths are both asked, because the image does not choose the host's
-          # layout, and the sentence for "nothing was readable" is printed rather than
-          # silence: a sampler that prints nothing and a container with no ceiling look the
-          # same to whoever reads this log next, and `bash -e` takes the step with either
-          # unreadable file unless the read is asked in an `if`.
-          container_memory() { # what this container answers to, in its cgroup's own words
-              local seen=0 file
-              for file in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes \
-                          /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory/memory.usage_in_bytes \
-                          /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory/memory.failcnt; do
-                  if [ -r "$file" ]; then
-                      printf 'job container %s %s\n' "${file##*/cgroup/}" "$(tr '\n' ' ' < "$file" | sed 's/ $//')"
-                      seen=1
-                  fi
-              done
-              if [ "$seen" = 0 ]; then echo 'job container reports no readable memory ceiling'; fi
-          }
-          shared_memory() { # the buffer pool a renderer dies in, in its own words
-              # Run 56073 (job 56694) refused this step with `locator.click: Target crashed` while
-              # the sampler printed 20290 MB of `MemAvailable` and 'no readable memory ceiling'.
-              # Neither line can attribute that death: `MemAvailable` is the host's, and Chromium
-              # puts a renderer's frame buffers in /dev/shm, which a container gets at Docker's own
-              # default unless a step says otherwise - and nothing in this file says otherwise for
-              # a step running in the job's container. This is attribution, not a cure: it prints
-              # the number the next refusal of this step will need to say which of the two it was.
-              local pool
-              if pool=$(df -Pk /dev/shm 2>/dev/null | awk 'NR == 2 { printf "%s %s %s", $2, $3, $5 }') && [ -n "$pool" ]; then
-                  set -- $pool
-                  printf 'job container /dev/shm %s MB used of %s MB (%s full)\n' "$(( $2 / 1024 ))" "$(( $1 / 1024 ))" "$3"
-              else
-                  echo 'job container reports no readable /dev/shm'
-              fi
-          }
-          ( while :; do
-              awk '/MemAvailable/{printf "runner MemAvailable %d MB\n", $2/1024}' /proc/meminfo
-              cut -d' ' -f1-3 /proc/loadavg | sed 's/^/runner load average /'
-              container_memory
-              shared_memory
-              sleep 30
-            done ) & sampler=$!
-          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          # The two guards the step below needs are one file, scripts/ci_browser_host_share.sh, which
+          # the `design` job's browser step calls too, so the two suites that die this way ask the
+          # host in the same words and print the same numbers. `wait` keeps this step's own bound of
+          # 720 s, for the reason below it; `watch` samples every 30 s, the interval these lines
+          # already used, and prints the peak of the shared-memory pool when the suite ends, because
+          # a pool that filled and emptied between two samples leaves no other trace.
+          #
           # When the suite is allowed to start. `--test-concurrency=1` bounds what this step
           # puts on the runner; it says nothing about what the runner already owes. Run 51006
           # (job 51505) lost `page and nested layer mode controls retain inheritance, refusal
@@ -989,18 +1039,9 @@ jobs:
           # verdict to replace the one it distrusts, and the queue belongs to nobody here.
           # No assertion, skip, retry, reorder or second attempt: the same 31 tests still have
           # to pass, and a test that fails after the wait still fails the job.
-          host_has_a_share() { awk -v cores="$(nproc)" '{ exit ($1 <= cores) ? 0 : 1 }' /proc/loadavg; }
-          waited=0
-          while ! host_has_a_share; do
-              if [ "$waited" -ge 720 ]; then
-                  echo "editor suite: host still has no free share after ${waited}s — load $(cut -d' ' -f1-3 /proc/loadavg) across $(nproc) cores; running anyway"
-                  break
-              fi
-              echo "editor suite: waiting for a free core — load $(cut -d' ' -f1-3 /proc/loadavg) across $(nproc) cores, waited ${waited}s"
-              sleep 15
-              waited=$((waited + 15))
-          done
-          node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
+          bash ../../../scripts/ci_browser_host_share.sh wait 720
+          bash ../../../scripts/ci_browser_host_share.sh watch 30 \
+            node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
         id: preview

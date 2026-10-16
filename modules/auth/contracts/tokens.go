@@ -39,6 +39,11 @@ const (
 // the scope that failed and never why the others did not.
 var ErrTokenScope = errors.New("auth: that token asks for a grant its holder does not have")
 
+// ErrCallerWithoutKey is RevokeOwnToken's refusal when the caller was not
+// authenticated by a key — a session, or an in-process caller — so there is no
+// key of its own to retire. Ending a key by id is RevokeToken, a session's work.
+var ErrCallerWithoutKey = errors.New("auth: this caller arrived without a bearer key")
+
 // TokenIntent is what a person asks for: a name to recognise the key by, the
 // scopes it may use, and when it stops working. An empty scope list is refused
 // rather than read as "everything" — a name and a list are the two things this
@@ -97,4 +102,17 @@ type Tokens interface {
 	// sessions — a stolen key and a stolen laptop are different incidents, and
 	// the second has its own command.
 	RevokeToken(ctx context.Context, tx db.Tx[db.Tenant], userID, id uuid.UUID) error
+
+	// RevokeOwnToken retires the key that authenticated the caller, and only
+	// that key: it reads caller.TokenID and caller.UserID, and the row it ends
+	// must answer to both. No permission is consulted, so no key is too narrow
+	// to retire itself.
+	//
+	// A zero caller.TokenID is ErrCallerWithoutKey. A pair that names no row —
+	// another person's key, another tenant's, one never issued — and a key that
+	// is already revoked or expired are all crud.ErrNotFound: "gone", not
+	// success, unlike RevokeToken (docs/adr/0020-a-credential-may-retire-itself.md
+	// says why the two differ). A refusal writes and publishes nothing.
+	// Success ends the key and publishes EventAPITokenRevoked in tx.
+	RevokeOwnToken(ctx context.Context, tx db.Tx[db.Tenant], caller tenancy.Principal) error
 }

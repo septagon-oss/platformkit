@@ -6,7 +6,7 @@ package limit_test
 //
 // It exists because of a CI run. septagon-clients' flagship case fired 75
 // anonymous submissions at one public door and measured "76 within the
-// allowance, 0 refused with a 429" (T-0126 round 83, CI run 52994 job 53535)
+// allowance, 0 refused with a 429" (forge run 52994, job 53535)
 // where it measured 60 and 16 on a laptop. Nothing was wrong with the count: the
 // row serialises same-key attempts, so a burst is a queue, and the tail of that
 // queue spent the budget kit/limit gives one attempt before it ever reached the

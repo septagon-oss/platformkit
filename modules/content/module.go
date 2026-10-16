@@ -27,10 +27,8 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content/internal"
 )
 
-// Deps is what this module cannot make for itself, and it is empty: content
-// belongs to a tenant by carrying its id, which row-level security matches on,
-// and the author comes off the request's own context. It is a struct rather
-// than no parameter so that the day it needs something, every call site gains a
+// Deps is what this module cannot make for itself. It is a struct rather than
+// no parameter so that the day it needs something, every call site gains a
 // named field instead of a new argument.
 type Deps struct {
 	Files richtext.Files
@@ -49,6 +47,28 @@ type Deps struct {
 	// version that shows them, so a retained version holds its pictures and no
 	// longer through the same ledger the body files them under.
 	Versions httpx.Versions
+	// Translations is the record's door onto another module's table: the title
+	// and the body declare themselves translatable, and a mount that says so
+	// without a port to answer `?lang=` is refused by the Spec's own check. The
+	// composition writes this one line; the translation module is told about
+	// content by TranslationSource below, and by nothing else.
+	Translations rest.Translations
+	// Shown asserts, for a record this module publishes, that the files its body
+	// shows are now showing to anonymous readers — or that they stopped. Unwired,
+	// nothing is asserted: an image keeps the visibility its upload asked for, which
+	// for an upload that asked for nothing is private, so a published page shows a
+	// broken picture rather than leaking bytes.
+	Shown rest.FileShown
+}
+
+// TranslationSource is the content entity's row set as the translation module
+// has to be handed it: the module may not reach into this table, so the
+// composition carries the pair — content names the port it writes to, and the
+// translation module names the rows it may be given. It asks nothing of the
+// mounted Spec but its two names and its entity, which is why a mounted Spec
+// and this are the same answer.
+func TranslationSource() rest.TranslationSource {
+	return rest.TranslationSourceOf(rest.Spec[*contracts.Content]{Module: "content", Entity: "content"})
 }
 
 // Spec is the entity's presence in the application: five routes, two
@@ -76,14 +96,21 @@ var Spec = rest.Spec[*contracts.Content]{
 	// is written nowhere here: the body is Markdown source, and a row previewing
 	// raw Markdown is the fault decision 0085 photographs.
 	Present: entity.EntryHints{
-		Singular:      "page",
-		Plural:        "pages",
-		Icon:          "document",
-		Group:         &entity.ResourceGroup{Key: "content", Label: "Content"},
-		PrimaryField:  "title",
-		StatusField:   "status",
-		SummaryFields: []string{"kind"},
-		Sortable:      []string{"title", "publishedAt", "updatedAt"},
+		Singular:     "page",
+		Plural:       "pages",
+		Icon:         "document",
+		Group:        &entity.ResourceGroup{Key: "content", Label: "Content"},
+		PrimaryField: "title",
+		StatusField:  "status",
+		// The one picture this entity holds, and so both the record's opening
+		// photo and the row's thumbnail: `thumbnailField` is said anyway, because
+		// a document that echoes what a shell would have computed still answers
+		// "did somebody choose this?" and a shell that reads only the one key it
+		// was told to read has a thumbnail either way.
+		CoverField:     "coverImageId",
+		ThumbnailField: "coverImageId",
+		SummaryFields:  []string{"kind"},
+		Sortable:       []string{"title", "publishedAt", "updatedAt"},
 	},
 }
 
@@ -115,7 +142,8 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	// keeping, which is the one decision content makes about history.
 	resource.History = true
 	resource.Versions = deps.Versions
-	svc := internal.NewService()
+	resource.Translations = deps.Translations
+	svc := internal.NewService(internal.Deps{Shown: deps.Shown})
 	return svc, module.Module{
 		Name:        "content",
 		Migrations:  Migrations.Files,

@@ -87,6 +87,11 @@ type Resource struct {
 	// means all five. A shell that rendered a door per verb — New, Edit, Delete —
 	// reads this, and a door behind which no route answers is not a door.
 	Operations []CRUD
+	// CommandsOnly says the resource mounts none of the five and exists for its
+	// commands alone: Offers answers false for every verb, and the catalogue
+	// lists it, with `operations: []`, to a caller who may call one of them and
+	// to nobody else. Operations is then ignored.
+	CommandsOnly bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
 	// Present is what this resource's author said about how it reads. It is the
@@ -99,6 +104,18 @@ type Resource struct {
 	Schema  entity.Schema
 	// RichTextFiles is the request-scoped image port for generated detail views.
 	RichTextFiles richtext.Files `json:"-"`
+	// Locales answers one record's standing in each language this tenant speaks
+	// besides its own, for the generated record screen to show. It is wired by
+	// kit/rest for a Spec that declares a translatable field and its translation
+	// port, and by nobody else: a resource whose entity translates nothing leaves
+	// it nil, and its screens say nothing about languages they know nothing about.
+	//
+	// It is a closure beside the five, the way RichTextFiles is a port beside them,
+	// because the answer needs the request's own tenant transaction and only the
+	// side that mounted the routes has that: a screen that computed completeness
+	// for itself would be a second implementation of a rule the read doors already
+	// own, and the first one to drift.
+	Locales func(ctx context.Context, id uuid.UUID) ([]entity.LocaleState, error) `json:"-"`
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command
@@ -401,18 +418,21 @@ func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
 	}
 	g, asks := auth.grant()
 	if !asks {
-		// signed_in, any_credential, or a guard nobody declared. Membership is the
-		// whole answer for the first two — with the ceiling rule below between them —
-		// and no answer at all for the third, which is refused the way the middleware
-		// refuses it: an undeclared guard admits nobody.
+		// signed_in, any_credential, bearer_key, or a guard nobody declared.
+		// Membership is the whole answer for the first two — with the ceiling rule
+		// below between them — a key is for the third, and the last is refused the
+		// way the middleware refuses it: an undeclared guard admits nobody.
 		if _, hasTenant := tenancy.FromContext(ctx); !hasTenant {
 			return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 		}
 		if !recognised(ctx) {
 			return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
 		}
-		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential {
+		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential && auth.kind != kindBearerKey {
 			return problem.New(http.StatusForbidden, CodeUndeclared+": this operation declares no authorization")
+		}
+		if p, _ := tenancy.PrincipalFrom(ctx); auth.kind == kindBearerKey && p.TokenID == uuid.Nil {
+			return problem.New(http.StatusForbidden, CodeDenied+": this acts on the key that authenticated the request, and a session carries none")
 		}
 		// The middleware's ceiling rule, asked of the same two declarations here: a
 		// signed-in closure spends the caller's whole authority, so a credential that

@@ -17,8 +17,16 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// prepareRichText runs after the root's row lock and before any database write.
-// columns is nil for create; PATCH only prepares fields the request submitted.
+// prepareFiles runs after the root's row lock and before any database write, and
+// files every file id this record is about to show — the ones a richtext body
+// names and the ones a picture field holds. columns is nil for create; PATCH only
+// prepares fields the request submitted.
+//
+// A picture is walked with a body because the two differ in nothing the ledger
+// cares about: both are file ids this record shows, and a use filed for one and
+// not the other is a sweep deleting a cover out from under a page that still
+// names it. The difference is only in where the ids come from — a parse for a
+// body, one column for a picture.
 //
 // Handing the references to the file module is the second half of this, and it
 // happens here for one reason: this is the moment the record's own body has been
@@ -29,7 +37,7 @@ import (
 // page. An id is read off the entity because both doors stamp it before they
 // write: createRow chooses the id a create will answer with, and an update reads
 // the row under its lock, so a body is always filed under the record it became.
-func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
+func (s Spec[T]) prepareFiles(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
 	value := reflect.ValueOf(e).Elem()
 	for _, field := range crud.Fields[T]() {
 		if field.Widget != "richtext" || (columns != nil && !slices.Contains(columns, field.Column)) {
@@ -59,32 +67,85 @@ func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, 
 			return err
 		}
 	}
+	for _, field := range crud.Fields[T]() {
+		if !entity.PicturesAre(field.Present) ||
+			(columns != nil && !slices.Contains(columns, field.Column)) {
+			continue
+		}
+		if err := s.recordUses(ctx, tx, e, field, pictureIDs(value.FieldByIndex(field.Index))); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// recordUses files what one richtext field of this record shows. One field, one
-// record, one call: the port's input names the field, so the two doors and the
-// delete cannot invent three shapes of the same sentence.
+// pictureIDs is the file ids one picture field holds: none, one, or the list its
+// owner ordered. A nil id and an absent picture are the same answer, because the
+// record shows nothing either way and the ledger's own diff is what ends the use
+// a previous save filed.
+//
+// The column is read through reflection rather than a type assertion on one Go
+// type because the field is the entity's to write: `*uuid.UUID`, a named slice
+// over []uuid.UUID and their pointer forms all hold the same fact, and a picture
+// column that silently filed nothing would be a picture a sweep is entitled to
+// delete.
+func pictureIDs(v reflect.Value) []uuid.UUID {
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	var ids []uuid.UUID
+	add := func(id uuid.UUID) {
+		if id != uuid.Nil {
+			ids = append(ids, id)
+		}
+	}
+	if v.Kind() == reflect.Slice {
+		for i := range v.Len() {
+			one(v.Index(i), add)
+		}
+		return ids
+	}
+	one(v, add)
+	return ids
+}
+
+func one(v reflect.Value, add func(uuid.UUID)) {
+	switch id := v.Interface().(type) {
+	case uuid.UUID:
+		add(id)
+	case *uuid.UUID:
+		if id != nil {
+			add(*id)
+		}
+	}
+}
+
+// recordUses files what one field of this record shows. One field, one record,
+// one call: the port's input names the field, so the two doors and the delete
+// cannot invent three shapes of the same sentence.
 func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field crud.Field, ids []uuid.UUID) error {
 	if err := s.fileUses().SetUses(ctx, tx, UsesInput{
 		Module: s.Module, Entity: s.Entity, Field: field.Column,
 		Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids,
 	}); err != nil {
-		return fmt.Errorf("richtext field %s: %w", field.Name, err)
+		return fmt.Errorf("field %s: %w", field.Name, err)
 	}
 	return nil
 }
 
-// clearRichTextUses ends every use this record's richtext fields filed. The
-// rewrite is the empty set, per field, because a use is keyed by field and locale
-// and a record that is gone shows nothing in any of them. The locale is the one
+// clearFileUses ends every use this record's richtext and picture fields filed.
+// The rewrite is the empty set, per field, because a use is keyed by field and
+// locale and a record that is gone shows nothing in any of them. The locale is the one
 // the write filed under — recordLocale answers the same question at both doors,
 // and the day a request's own language becomes that argument (T-0190) the delete
 // asks it in the request's language too, which is what kit/rest's own calls will
 // then have used.
-func (s Spec[T]) clearRichTextUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
+func (s Spec[T]) clearFileUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	for _, field := range crud.Fields[T]() {
-		if field.Widget != "richtext" {
+		if field.Widget != "richtext" && !entity.PicturesAre(field.Present) {
 			continue
 		}
 		if err := s.recordUses(ctx, tx, e, field, nil); err != nil {

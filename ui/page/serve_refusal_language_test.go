@@ -1,12 +1,12 @@
 package page_test
 
-// A delivery's case for review round 5's finding 1(b).
+// A refusal a module makes is answered in the tenant's own language.
 //
 // `Serve` turned a handler's own 4xx into `page.Fault(status, detail, back, backLabel)`
 // — the exported entry point, which takes no locale — while `FaultHandler` used the
 // unexported `fault(…, loc, …)`, which does. The consequence was that the refusal a
 // module makes was English *in the shell that ships the sentence for it*, and the
-// review's own reproduction had to reach a kernel guard to be answered in Portuguese.
+// reproduction of that refusal had to reach a kernel guard to be answered in Portuguese.
 // Both kinds of refusal now go through one function, so this file asks both halves of
 // that and nothing else:
 //
@@ -23,8 +23,8 @@ package page_test
 // the shell's generic one, in the language the request brought. That is what the same
 // key already does to a kernel 404, and it is the cost of answering a person in their
 // own language from a catalogue rather than from a string; the named slug is what a
-// writer keeps until a refusal can carry a key of its own, which is the kernel's share
-// and is named as such in this task's report.
+// writer keeps until a refusal can carry a key of its own — the kernel's share of the
+// answer, not any one module's.
 
 import (
 	"context"

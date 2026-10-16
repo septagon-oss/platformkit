@@ -132,6 +132,21 @@ func (s Spec[T]) resource() httpx.Resource {
 			return err
 		},
 	}
+	if s.Translations != nil {
+		// The record screen of an entity whose fields a translator owes an answer
+		// to shows what is translated in each language this tenant speaks. It is the
+		// same read the public page makes — same rows, same withholding of an
+		// unreviewed draft, same staleness rule — because a screen that reported a
+		// translation no reader would be given is a screen a translator would trust
+		// and a translator who trusts it marks the wrong thing reviewed.
+		res.Locales = func(ctx context.Context, id uuid.UUID) ([]entity.LocaleState, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return LocaleStates(ctx, tx, TranslationSourceOf(s), s.Translations, id)
+		}
+	}
 	if !s.offers(httpx.CRUDList) {
 		// Count goes with the list, not with the read. Its one caller outside this
 		// package is the dashboard card (modules/admin/internal/pages.go), and the
@@ -274,6 +289,32 @@ func readForm(body []byte, fields []crud.Field, o formRead) (map[string]any, err
 			// meaning for the name, which is why Spec.check refuses the collision, and a
 			// command that names it means the argument, which is why a command's fields are
 			// read with arguments set. See CommandValues.
+			continue
+		}
+		if f.Type == crud.TypeMap {
+			// A map argument arrives as one control per declared key — `values[title]`.
+			// A key posted blank is a key left out of the body rather than one written
+			// blank: a translation of nothing is a refusal, and the person who left six
+			// boxes empty meant to do none of them.
+			keyed := map[string]any{}
+			for _, k := range f.Keys {
+				raw, sent := form[f.Name+"["+k.Name+"]"]
+				if !sent {
+					continue
+				}
+				text := strings.TrimSpace(raw[0])
+				if text == "" {
+					continue
+				}
+				typed, err := coerce(crud.Field{Name: f.Name + " " + k.Name, Type: f.Elem}, text)
+				if err != nil {
+					return nil, err
+				}
+				keyed[k.Name] = typed
+			}
+			if len(keyed) > 0 {
+				out[f.Name] = keyed
+			}
 			continue
 		}
 		raw, sent := form[f.Name]

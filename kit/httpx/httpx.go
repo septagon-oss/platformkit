@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -54,6 +55,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -245,6 +247,20 @@ type Options struct {
 	// module makes for its lockout.
 	WriteLimiter WriteLimiter
 
+	// Idempotency is the memory behind a caller's `Idempotency-Key`: the write it
+	// made, and the answer it was given. Nil remembers nothing, and every write
+	// then runs as it did before the header existed — the same shape as a
+	// composition with no WriteLimiter, and for the same reason: a deployment that
+	// mounts no keyed route, and a test that mounts one route, are not testing a
+	// memory.
+	//
+	// It is the store rather than a middleware because the promise is about the
+	// next request and often the next process: a retry arrives at whichever replica
+	// the load balancer chose, after a deploy that emptied every map in the fleet.
+	// kit/idempotency is that store; what this package does is decide which requests
+	// are keyed and what each disposition answers with.
+	Idempotency idempotency.Store
+
 	// Access is the sequel to a refusal: who to tell when a person asks for the
 	// grant they were refused, and how. Nil draws no ask control on the refusal
 	// page and mounts no ask route — the reach is another module's rows, so a
@@ -269,14 +285,32 @@ type Options struct {
 	Cache cache.Cache
 }
 
-// WriteLimiter is the counting this kernel asks for and nothing more: it is the
-// shape one method wide, declared by the consumer rather than imported from the
-// provider, so that a page renderer that reaches for the router does not
-// inherit a dependency on how the counting is stored. kit/limit's Limiter
-// satisfies it — a Postgres counter or an in-memory one, at the composition's
-// choice — and a test satisfies it with a counter.
+// WriteLimiter is the counting this kernel asks for and nothing more: declared by
+// the consumer rather than imported from the provider, so that a page renderer that
+// reaches for the router does not inherit a dependency on how the counting is
+// stored. kit/limit's Limiter satisfies it — a Postgres counter or an in-memory one,
+// at the composition's choice — and a test satisfies it with a counter. It is one
+// method wide, and the signature is written out rather than named after kit/limit's
+// own type because this package does not import kit/limit and must not: scripts/
+// check_packages.sh keeps the counter behind the composition, so a screen that wants
+// a limit does not link the table that stores one.
+//
+// One method, and one reading, because this package now says a limit's numbers on
+// the wire. `RateLimit-Policy` is the name, quota and window the guard was built
+// with, and costs no statement. `RateLimit`'s `r` and `t` are the quota left and the
+// window left, and those are facts of the attempt this guard just made: read
+// separately, from a second statement, they describe a row another request has since
+// moved, which is a number the caller has no reason to believe. So the decision and
+// the two numbers come back from the one statement that recorded the event, and this
+// port has one method rather than a decision and a read.
 type WriteLimiter interface {
-	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
+	// Reserve records one event under key and reports, from that one statement,
+	// whether the event is within limit (the limit-th is allowed and the one after it
+	// is not), how much of limit is left in the window it landed in, and how long that
+	// window has left. The last two are reported on an allowed event as well as a
+	// refused one: the caller who is still inside the quota is the one a stated number
+	// can keep from ever arriving at the refusal.
+	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 }
 
 // The two body ceilings, and the reason there are two.
@@ -392,6 +426,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	errorShape.Do(func() { huma.NewError = problem.HumaError })
 
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
+	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}
 	}
@@ -496,7 +531,15 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
+	// Idempotency last of all, after bodies, because it is the one guard that reads
+	// a body and needs the one the caller got, in that order: bodies is where the
+	// ceiling on a request body is applied and where reading one becomes safe, and
+	// authenticate and authorize are where the caller is named and checked, which a
+	// replay has to satisfy all over again before it is answered. It is below
+	// transaction because the answer it remembers is finalised even further below,
+	// in respond — a guard above the transaction would remember a 200 that the
+	// buffer then replaced with a 500.
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies, a.idempotency)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
@@ -617,6 +660,13 @@ type recordingAdapter struct {
 func (r *recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if r.builtin && op != nil {
 		declare(op, Public())
+	}
+	// The document says what the middleware does, on the same operation both of them
+	// read: a POST or PATCH that can be replayed declares the header that makes it
+	// replayable, and a client reading the document learns the option from the place
+	// it is already reading the request's other parameters.
+	if declaresKey(op) {
+		declareKey(op)
 	}
 	r.api.record(op)
 	r.Adapter.Handle(op, handler)
@@ -772,4 +822,24 @@ func describe(op *huma.Operation) string {
 		return op.Method + " " + op.Path
 	}
 	return op.Method + " " + op.Path + " (" + op.OperationID + ")"
+}
+
+// schemaNamer is huma's own namer with one concession, and the concession is
+// the language overlay's: a translated page's body *is* the page's body — the
+// same items, the same paging, the same total — and the overlay adds a header
+// and answers a query parameter, not a member. Left alone, huma names the
+// anonymous struct behind a translated page after its parent, so the same
+// document shape would be published twice under "PageContentBody" and
+// "TranslatedPageContentBody": a client generator would emit two types for one
+// wire object, and this repository's own OpenAPI gate (rule B3) reads a renamed
+// schema where no member moved. Only unnamed struct hints are rewritten: they
+// are generated from the parent's name and are the overlay's whole footprint,
+// while named types — a TranslateBody that genuinely is a new shape — keep
+// whatever name the type itself states.
+func schemaNamer(t reflect.Type, hint string) string {
+	name := huma.DefaultSchemaNamer(t, hint)
+	if t.Name() == "" {
+		name = strings.TrimPrefix(name, "Translated")
+	}
+	return name
 }

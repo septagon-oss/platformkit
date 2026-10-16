@@ -4,14 +4,17 @@
 //
 // Content is a page or a post: a slug, a title, a body in Markdown, and a
 // status that decides whether the public site serves it. There are no
-// categories and no translations.
+// versions and no categories. There are no translations in this table either:
+// the title and the body declare themselves translatable, and the text of
+// another language lives in the translation module's own table, reached through
+// the record's own door.
 //
 // A page's versions are kept in no table of this module's own — that is
-// modules/history, a history table, a diff, a restore and a retention rule —
-// and content keeps none of them. What content owes a version is its own write
-// count, Revision: the number a version is numbered with and the number a
-// restore is quoted against, which is what makes a page brought back a new
-// write and the lifecycle still the lifecycle.
+// modules/history, a history table, a diff, a restore and a retention rule, and
+// the private catalogue has one — and content keeps none of them. What content
+// owes a version is its own write count, Revision: the number a version is
+// numbered with and the number a restore is quoted against, which is what makes
+// a page brought back a new write and the lifecycle still the lifecycle.
 package contracts
 
 import (
@@ -64,6 +67,16 @@ const (
 	MaxSlug  = 200
 	MaxTitle = 200
 	MaxBody  = 262144
+)
+
+// FieldTitle and FieldBody are the JSON names of the two fields a reader of a
+// page reads. They are spelled here because whoever translates this entity needs
+// them by name — the side-by-side view keys on them, and modules/web reads a
+// page's text through the translation port rather than through this struct — and
+// a name two callers each typed separately is a name neither can trust.
+const (
+	FieldTitle = "title"
+	FieldBody  = "body"
 )
 
 // fold is the transliteration Slugify does before it drops what is left. It is
@@ -126,12 +139,25 @@ type Content struct {
 	// is normalised on every write, so two callers cannot disagree about
 	// whether "About Us" and "about-us" are the same page.
 	Slug string `json:"slug" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" ui:"label:Address name;help:Used to build this page's web address" doc:"URL name, unique within the tenant" example:"about-us"`
-	// Title is what a list and a heading show.
-	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" doc:"Headline" example:"About us"`
+	// Title is what a list and a heading show. It is one of the two fields this
+	// entity offers for translation: the text of another language is a row of the
+	// translation module's, not a column here, and `?lang=` on this record's own
+	// door is what puts the two together.
+	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" i18n:"translatable" doc:"Headline" example:"About us"`
 	// Body is canonical Markdown. It is normalized on write and rendered on read, so
 	// a change to what the renderer allows applies to everything ever written
 	// rather than to whatever happens to be saved next.
-	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" doc:"The content itself, in Markdown"`
+	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" i18n:"translatable" doc:"The content itself, in Markdown"`
+
+	// CoverImageID is the picture this page opens on: a file id and nothing
+	// else. There is no foreign key and no reference hint, for the reason the site
+	// logo's column records — this module must never name modules/file, and a
+	// picture that has been deleted is a page that renders without one rather than
+	// a page that cannot be read. Which file it is, and for whom, the file
+	// module's own ledger answers: the write that names an id files the use in the
+	// same transaction that wrote the row, so the sweep that reads that ledger
+	// knows this page is showing it.
+	CoverImageID *uuid.UUID `json:"coverImageId,omitempty" gorm:"column:cover_image_id;type:uuid" format:"uuid" ui:"present:image;label:Cover;help:File id of the cover picture" doc:"File id of the cover picture"`
 
 	// Kind and Status are closed sets; the enum tag is what a form renders as a
 	// select and what Validate refuses a value outside.

@@ -5,8 +5,8 @@ package ui_test
 // a composition emits: every block the sheet opens sits inside one of the four
 // layers, and every block opened inside @layer client is one the emitter owns — a
 // @media or @keyframes the consumer asked the API for, never an at-rule its own.
-// Round 1's scan skips every indented line, so a block a consumer stated through
-// selector text passed it — the form review 7 found, refused at the head read
+// The scan that came before skipped every indented line, so a block a consumer stated through
+// selector text passed it — refused at the head read
 // (atRuleHead in ui/ui.go) and pinned here as structure. Each row says whether
 // Compose must refuse it, so the file fails when the gate narrows or widens.
 

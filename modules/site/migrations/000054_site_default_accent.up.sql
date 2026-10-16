@@ -1,0 +1,12 @@
+-- A site that names no accent has no colour of its own. The column's default
+-- becomes the empty colour, which is the value modules/site/contracts stores for
+-- "nobody chose" and resolves against the installation's own accent on every read
+-- (contracts.Palette), so a read still answers #rrggbb and the linked sheet is
+-- what a browser paints.
+--
+-- No UPDATE runs, and that is the decision rather than an omission: a migration
+-- cannot tell the colour somebody typed from the default this column used to
+-- fill in, so every existing row keeps the colour it holds and only a row written
+-- after this move can say "none". The entity's own default moved with it
+-- (contracts.SiteSettings.PrimaryColor), and 000018 ships the old one as history.
+ALTER TABLE site_settings ALTER COLUMN primary_color SET DEFAULT '';

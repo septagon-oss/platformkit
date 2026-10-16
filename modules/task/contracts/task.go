@@ -74,7 +74,7 @@ type Task struct {
 	// struct field with no omitempty as a required request property, so without
 	// it a create would have to send the three fields the server sets itself —
 	// which is the same reasoning as crud.Base's, one level out.
-	Status   string `json:"status" gorm:"type:varchar(20);not null;default:'open'" enum:"open,acknowledged,in_progress,resolved,closed" ui:"widget:select" enumTones:"open=info,acknowledged=info,in_progress=warning,resolved=success,closed=neutral" doc:"Lifecycle state" default:"open" required:"false"`
+	Status   string `json:"status" gorm:"type:varchar(20);not null;default:'open'" enum:"open,acknowledged,in_progress,resolved,closed" ui:"widget:select" enumTones:"open=info,acknowledged=info,in_progress=warning,resolved=success,closed=neutral" doneValues:"resolved" doc:"Lifecycle state" default:"open" required:"false"`
 	Priority string `json:"priority" gorm:"type:varchar(20);not null;default:'normal'" enum:"low,normal,high,critical" ui:"widget:select" enumTones:"low=neutral,normal=neutral,high=warning,critical=danger" doc:"Task priority" default:"normal" required:"false"`
 
 	// Source and SourceRef link a task back to whatever raised it — a sensor, a

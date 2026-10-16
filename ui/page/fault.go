@@ -35,8 +35,12 @@ package page
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+
+	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -78,9 +82,98 @@ var faultKeys = map[string]string{
 // and the confirmation the ask lands on. The test that reads this list is the
 // gate that keeps a part from shipping in English to a tenant served in
 // Portuguese, which is the defect the whole page exists to close.
+//
+// `fault.back` names one way out — back to the workspace — and `fault.request`
+// names the identifier every refusal carries. Both are copy; what they name is not.
+//
+// The shell's own label is the readable fallback and the catalogue carries the
+// translation, the same arrangement the verdict's sentence has with the guard's
+// line — but a translation is offered only for the destination these words name.
+// A shell that says something else (a public site sends the visitor to its home,
+// not to a workspace) keeps its own words: see backWay.
 var refusalParts = []string{
 	"fault.missing", "fault.granter", "fault.ask", "fault.holds_the_row",
-	"fault.sent", "fault.sent_body",
+	"fault.sent", "fault.sent_body", "fault.back", referenceKey,
+}
+
+// backKey is the way out this package's catalogue words; asked wherever the shell
+// offers its way out and means the workspace.
+const backKey = "fault.back"
+
+// backWayOut is the English of the destination `backKey` names. It is not a copy
+// default the shell may overrule with anything: the catalogue's translation names
+// that destination, so a shell offering a different one gets its own label back
+// untranslated rather than a sentence that misnames where its link leads.
+const backWayOut = "Back to the workspace"
+
+// referenceKey is the words that name the request's own identifier on the page.
+const referenceKey = "fault.reference"
+
+// referenceWords is the English of that label. The identifier itself is data, so it
+// is rendered beside these words and never inside them: one string holding both is
+// reported as untranslated copy that no translator can finish, and a pseudo-locale
+// marks and accents the identifier with the sentence around it, which is the one
+// value on the page a person has to be able to read back digit for digit.
+const referenceWords = "(request"
+
+// titleSuffix turns a verdict's sentence key into that verdict's heading: the two
+// halves of one page, one key apart, so the catalogue is read top to bottom as the
+// page is.
+const titleSuffix = ".title"
+
+// statusTitle is the refusal's heading in the request's language. What it says when
+// the catalogue has nothing for the verdict is what it always said — the status text
+// this server registers — because a heading invented for one verdict and not another
+// would name a cause nobody withheld.
+func statusTitle(loc *Locale, status int, detail string) string {
+	english := http.StatusText(status)
+	key, lookup := faultKey(detail, status)
+	if !lookup {
+		return english
+	}
+	return word0(loc, key+titleSuffix, english)
+}
+
+// backWay is the shell's label, translated the way the heading is — but only for
+// the way out this catalogue words. A shell whose link leads somewhere else has
+// words of its own, and translating them here would tell a person one destination
+// while the href carried another.
+func backWay(loc *Locale, label string) string {
+	if label != backWayOut {
+		return label
+	}
+	return word0(loc, backKey, label)
+}
+
+// referenceSaid is the identifier line: the words that name it, then the identifier
+// itself, in its own element so the two stay two strings — one a translator can
+// reach, the other a row in a log.
+func referenceSaid(loc *Locale, reference string) g.Node {
+	return h.P(g.Text(word0(loc, referenceKey, referenceWords)), g.Text(" "),
+		h.Code(g.Text(reference)), g.Text(")"))
+}
+
+// faultTitleKeys is every heading key this page can ask for: each key faultKey can
+// return, with the suffix on the end. catalogue_test.go reads it rather than a list,
+// so the day a tenth code or a fifth status joins the page its heading is demanded of
+// the catalogue in the same commit — which is the rule that already holds for the
+// sentences and the whole reason a heading was ever the English one.
+func faultTitleKeys() []string {
+	seen := map[string]bool{}
+	for _, key := range faultKeys {
+		seen[key] = true
+	}
+	for code := 100; code < 600; code++ {
+		if key, lookup := faultKey("", code); lookup {
+			seen[key] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for key := range seen {
+		out = append(out, key+titleSuffix)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // faultKey is the catalog key of the sentence a refusal is shown in, and whether
@@ -261,15 +354,17 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 			}
 		}
 	}
+	// Every verdict carries the reference, and most especially the ones the person can
+	// do nothing about: a 403 they may be able to fix themselves, a 500 they can only
+	// report. This line used to sit in the else-branch above, which left the 500 page —
+	// the one page where a reference is the entire value of the visit — with an apology
+	// and nothing to quote. It now stands under its own label below the verdict: the
+	// words that name it are this page's copy and the identifier is data, so they are
+	// two strings on the page and not one — see referenceSaid.
+	v := document.Fault(status, statusTitle(loc, status, detail), line, back, backWay(loc, backLabel))
 	if reference != "" {
-		// Every verdict carries the reference, and most especially the ones the person
-		// can do nothing about: a 403 they may be able to fix themselves, a 500 they can
-		// only report. This line used to sit in the else-branch above, which left the 500
-		// page — the one page where a reference is the entire value of the visit — with
-		// an apology and nothing to quote.
-		line = line + " (request " + reference + ")"
+		v.Body = append(v.Body, referenceSaid(loc, reference))
 	}
-	v := Fault(status, line, back, backLabel)
 	if language != "" {
 		v.Language = language
 	}
@@ -321,13 +416,13 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 	if line == "" {
 		line = strings.TrimPrefix(detail, ref.Code+": ")
 	}
-	if language != "" && reference != "" {
-		line = line + " (request " + reference + ")"
-	} else if reference != "" {
-		line = detail + " (request " + reference + ")"
+	if language == "" && reference != "" {
+		// No sentence from the catalogue: the guard's whole line, code first, exactly
+		// as the page has always shown it. The reference itself is said below.
+		line = detail
 	}
-	p := document.RefusalProps{Status: status, Title: http.StatusText(status),
-		Sentence: line, Home: s.Back, HomeLabel: s.BackLabel}
+	p := document.RefusalProps{Status: status, Title: statusTitle(loc, status, detail),
+		Sentence: line, Home: s.Back, HomeLabel: backWay(loc, s.BackLabel)}
 	if ref.Code == httpx.CodePolicyDenied {
 		p.Missing, _ = word(loc, "fault.holds_the_row",
 			"You already hold what this needs; this row's own rule refused it: %s", ref.Reason)
@@ -345,6 +440,9 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 		}
 	}
 	v := document.Refusal(p)
+	if reference != "" {
+		v.Body = append(v.Body, referenceSaid(loc, reference))
+	}
 	if language != "" {
 		// The verdict's own line is this language, which is the line the page is
 		// read for; a part the catalogue has no copy for is English beside it, as

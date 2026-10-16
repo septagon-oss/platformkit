@@ -53,6 +53,15 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 		t.Fatalf("document = %d %s", code, body)
 	}
 	doc := wireDocument(t, []byte(body))
+	// A cover is a file this tenant owns, so the fixture uploads one through the file
+	// module's own door. The content write path refuses a file id it cannot find in
+	// this tenant, so an invented uuid is not a fixture for a picture key: the value
+	// has to arrive the way a person's would.
+	code, body = putFile(t, cfg, admin, filesPath, "cover.svg", "image/svg+xml", "<svg xmlns='http://www.w3.org/2000/svg'/>")
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s = %d %s, want 201", filesPath, code, body)
+	}
+	cover := field(t, body, "id")
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -74,20 +83,31 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 	// below comes from the registered Resource, and a newly writable key fails here
 	// until it has a valid value and is driven through its actual route.
 	fixtures := map[string]struct {
-		seed   string
+		seed string
+		// idFrom names where the create put the new row's identity: empty is the
+		// top of the body, which is where every generated create answers.
+		idFrom string
 		values map[string]any
 	}{
-		"task-task-update": {`{"title":"patch task"}`, map[string]any{
+		"task-task-update": {seed: `{"title":"patch task"}`, values: map[string]any{
 			"title": "changed task", "description": "new description", "status": "in_progress", "priority": "high", "source": "fixture", "sourceRef": "fixture-1", "dueAt": "2030-01-02T03:04:05Z", "slaDeadline": "2030-01-03T03:04:05Z",
 		}},
-		"content-content-update": {`{"slug":"patch-content","title":"Patch content","body":"Before","kind":"page"}`, map[string]any{
-			"slug": "changed-content", "title": "Changed content", "body": "New **body**\n", "kind": "post",
+		"content-content-update": {seed: `{"slug":"patch-content","title":"Patch content","body":"Before","kind":"page"}`, values: map[string]any{
+			"slug": "changed-content", "title": "Changed content", "body": "New **body**\n", "kind": "post", "coverImageId": cover,
 		}},
-		"user-user-update": {`{"email":"patch-person@example.test","displayName":"Patch person"}`, map[string]any{
+		"user-user-update": {seed: `{"email":"patch-person@example.test","displayName":"Patch person"}`, values: map[string]any{
 			"email": "changed-person@example.test", "displayName": "Changed person",
 		}},
-		"billing-plan-update": {`{"code":"patch-plan","name":"Patch plan","currency":"EUR","active":true}`, map[string]any{
+		"billing-plan-update": {seed: `{"code":"patch-plan","name":"Patch plan","currency":"EUR","active":true}`, values: map[string]any{
 			"code": "changed-plan", "name": "Changed plan", "priceCents": float64(1234), "currency": "USD", "interval": "year", "features": []any{"exports"}, "active": false,
+		}},
+		// The endpoint's create is no generated create: its answer is the signing
+		// secret beside the row, and a row that carries a secret shown once is
+		// never read back, so the row — and its id — is one level down. The one key
+		// the generic PATCH may move is the label; the address and the event list
+		// belong to `target`, and the lifecycle to its own commands.
+		"webhook-endpoint-update": {seed: `{"name":"Patch endpoint","url":"https://hooks.example.test/ops","events":["task.task.created"]}`, idFrom: "endpoint", values: map[string]any{
+			"name": "Changed endpoint",
 		}},
 	}
 	encode := func(v any) string {
@@ -150,7 +170,7 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 			if code != 201 {
 				t.Fatalf("seed = %d %s", code, body)
 			}
-			rowID := field(t, body, "id")
+			rowID := createdRowID(t, body, fixture.idFrom)
 			at := path + "/" + rowID
 			read := func() map[string]any {
 				t.Helper()
@@ -226,4 +246,30 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 	if len(seen) != len(fixtures) {
 		t.Errorf("registered PATCH count %d, fixtures %d", len(seen), len(fixtures))
 	}
+}
+
+// createdRowID is the identity of the row a create just made, read out of that
+// create's own answer. A generated create answers with the row, so the id sits at
+// the top of the body; a create that must answer with more than the row wraps it,
+// and `wrapper` names the key the row is wrapped under. Either way the row still
+// has to answer at the resource's own read address afterwards, which is the
+// promise this harness makes: where a create puts its id is a shape, not a waiver.
+func createdRowID(t *testing.T, body, wrapper string) string {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatalf("read the created row from %s: %v", body, err)
+	}
+	if wrapper != "" {
+		row, ok := out[wrapper].(map[string]any)
+		if !ok {
+			t.Fatalf("the create answered no %q object: %s", wrapper, body)
+		}
+		out = row
+	}
+	id, _ := out["id"].(string)
+	if id == "" {
+		t.Fatalf("no id in %s", body)
+	}
+	return id
 }
