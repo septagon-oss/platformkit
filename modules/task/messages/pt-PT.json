@@ -80,6 +80,15 @@
       "": "Trabalho"
     }
   },
+  "hints.task/task.highlight.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Vence hoje",
+    "plural": {
+      "": "Vence hoje"
+    }
+  },
   "hints.task/task.plural": {
     "references": [
       "modules/task/module.go"

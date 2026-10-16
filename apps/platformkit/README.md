@@ -65,12 +65,35 @@ holder, `user` reads it and `auth` fills it in its own build. That is
 `pkit`'s tested late-bound holder, and an unfilled holder fails the roles write
 with no row, no event and no stale read.
 
+What the counting door (`summary.go`, `/api/v1/app/summary`) composed and what it
+wrote: **Reused** — `crud.Count` for the total, `(*API).guard` and
+`Resource.Readable` for who may hear it, `httpx.TxFrom` for the tenant scope,
+`cache.Of`/`Get`/`Set` and their generations for the fifteen seconds a total is
+believed, `Options.WorkspaceCatalog` and `workspaceFace` for the address, the
+`connectionDocument` envelope for the way a body type survives into the published
+document, `entity.EntryHints` and `entryHintsFault` for the declaration and its
+refusal, `ui/screens`' pointer-per-key `declared`/`deviations` rule for the echo,
+`ui/resource.Words` for the one word. **Added** — `crud.CountWhere` and
+`crud.CountDays`, because `Query.Filter` reaches equality only and `comparable`
+says so in its own comment, and no grouped read of an entity's column existed;
+`Resource.CountFiltered`/`CountDays` and `API.Cache()`, the store having been
+reachable only as a private field; `screens.Summary` and `Summarise`, `ui/screens`
+having held no per-resource number; the `highlight` and `trendField` hints; and one
+partial index, `due_at` having never been read as a range before. **Made
+reusable** — the predicate grammar (`crud.Ops`, `Predicate`, `Where`) with the one
+coercion table `Coerce`, which `?filter=` now shares with a declared value, the
+anchor resolution (`Declared`, `DayStart`) that lets a declaration name "today"
+instead of a date, a second worked `/api/v1/app` mount whose body type reaches the
+OpenAPI document, and the `summaryBudget` shape: a bounded run of reads whose
+unfinished entries are absent rather than zero.
+
 ## What lives where
 
 | file | what it is |
 |---|---|
 | [app.go](app.go) | the sentence, the resolved composition, and the two entry points every command shares |
 | [product.go](product.go) | the two modules this application composes: the values it owns, and the joins |
+| [summary.go](summary.go) | the workspace's counts: what each resource the caller may read holds, at one instant |
 | [roles.go](roles.go) | the list somebody wrote down of who a new tenant begins as |
 | [change.go](change.go) | the one subject under change control, its flag, and the gate |
 | [fault.go](fault.go) | the refusal page, the two ask pages, and the addresses they are pinned to |
