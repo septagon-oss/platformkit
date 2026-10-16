@@ -52,7 +52,10 @@
           "in_progress": "warning",
           "open": "info",
           "resolved": "success"
-        }
+        },
+        "doneValues": [
+          "resolved"
+        ]
       }
     },
     {

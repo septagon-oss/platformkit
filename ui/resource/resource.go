@@ -105,6 +105,15 @@ type Options struct {
 	Workspace string
 	// Home is the breadcrumb's first entry's label, linking to Workspace.
 	Home string
+	// PictureSource is the address template a `present:image` cell fetches its
+	// bytes from, `{id}` standing for the file id the field holds: the same
+	// template the workspace catalogue publishes as `pictures.source`, and for the
+	// same reason — the door belongs to a module this package may not name, so the
+	// composition that has met both writes the address once here rather than a
+	// renderer guessing at it. Empty means this installation names no such door,
+	// and every picture cell then draws the plain value it drew before this field
+	// existed.
+	PictureSource string
 	// Locale is the request's selected language when the shell composes
 	// page.Shell.Messages; the adapter sets it per request. The fixed labels
 	// — New, Edit, Delete, the count, the pager and the empty state — are
@@ -521,7 +530,14 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		// instead of instead of losing it.
 		Cell: func(row components.TableRow, c components.TableColumn) g.Node {
 			if f, known := fieldFor(r.Schema.Fields, c.Key); known {
-				if node := compose(f, row, c.Primary, at); node != nil {
+				// The row's own name, which is what a picture that is the row's way
+				// in is called by: the same words the plain cell would have put in
+				// the link, read off the leading column and its fallback.
+				name := display.Text(row.Cells[primary.Name])
+				if named, ok := named[row.ID]; ok {
+					name = named
+				}
+				if node := compose(f, row, c.Primary, at, o, name); node != nil {
 					return node
 				}
 			}
