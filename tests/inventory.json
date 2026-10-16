@@ -36429,6 +36429,44 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/file/internal/legacy_published_audience_test.go",
+   "id": "modules/file/internal/legacy_published_audience_test.go#TestUnpublishingALegacyRecordRevokesItsPrivateUploadsAudience",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestUnpublishingALegacyRecordRevokesItsPrivateUploadsAudience",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/file/internal/legacy_published_audience_test.go",
+   "id": "modules/file/internal/legacy_published_audience_test.go#TestEndingALegacyRecordsLastUseRevokesItsPrivateUploadsAudience",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEndingALegacyRecordsLastUseRevokesItsPrivateUploadsAudience",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/file/internal/library_commands_test.go",
    "id": "modules/file/internal/library_commands_test.go#TestUsedFileDeletionRefusesWithoutReturningARow",
    "kind": "go",
@@ -37047,6 +37085,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/file/internal/upload_audience_unpublish_test.go",
+   "id": "modules/file/internal/upload_audience_unpublish_test.go#TestUnpublishingPreservesTheUploadAudienceAndRollsBackItsEvents",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestUnpublishingPreservesTheUploadAudienceAndRollsBackItsEvents",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "merge",
    "unique_lines": null,
    "unique_reach": [],
@@ -60131,7 +60188,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1558,
+  "files": 1560,
   "forge_runs": [
    408,
    413,
@@ -60165,7 +60222,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2578,
+   "behaviour": 2581,
    "composition": 353,
    "contract": 19,
    "journey": 88
@@ -60184,9 +60241,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3038,
+  "rows": 3041,
   "tiers": {
-   "merge": 1926,
+   "merge": 1929,
    "nightly": 88,
    "push": 1024
   },
@@ -60194,13 +60251,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1373,
+   "keep": 1375,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2748,
+   "keep": 2751,
    "keep-rewrite": 117,
    "merge": 173
   }
