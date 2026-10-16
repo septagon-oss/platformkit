@@ -607,7 +607,7 @@ func sentence(line string, loc *Locale, status int, detail, key string) (text, l
 	if shipped == line {
 		return text, ""
 	}
-	_, guardSaid := strings.CutPrefix(loc.Language, sourceLanguage)
+	guardSaid := isSourceLanguage(loc.Language)
 	// The guard's own line stands beside the shipped copy only where the guard wrote one
 	// for this page. A refusal with no detail to show — a diagnostic, or a 500 whose
 	// reason is in the log — has already said that its sentence is not the person's, and
@@ -633,6 +633,21 @@ func sentence(line string, loc *Locale, status int, detail, key string) (text, l
 // carry every key, so "the source language" is a fact to state and not a hole in a
 // file to infer from.
 const sourceLanguage = "en"
+
+// isSourceLanguage is whether the language on the page is the one this copy is
+// authored in, or a regional spelling of it — the only case that reads a refusal in
+// both sentences (sentence).
+//
+// It names the language rather than matching its first two letters, because a tag
+// that begins with "en" need not be English at all: kit/locale/providers/pseudo
+// reports itself as "en-XA", which is a measuring tag and no reader's language, and
+// a prefix test read it as English. The page that measurement rendered then carried a
+// guard's English beside the catalogue's sentence — on a document negotiated from a
+// Portuguese catalogue, which is the one shape of this page the source-language rule
+// refuses.
+func isSourceLanguage(language string) bool {
+	return language == sourceLanguage || strings.HasPrefix(language, sourceLanguage+"-")
+}
 
 // sourceMark is what stands between the shipped copy and the guard's own line on a
 // source-language refusal: an em dash, because the two halves are written by two
