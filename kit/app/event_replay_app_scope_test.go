@@ -37,6 +37,9 @@ func installationDelivery(t *testing.T, permissions ...string) (http.Handler, *s
 		t.Fatal(err)
 	}
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)
+	if _, err := owner.ExecContext(t.Context(), `INSERT INTO tenants (id,slug,name,operator,app) VALUES ($1,$2,$2,true,$3)`, operator.ID, operator.Slug, "collect"); err != nil {
+		t.Fatal(err)
+	}
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -46,6 +49,7 @@ func installationDelivery(t *testing.T, permissions ...string) (http.Handler, *s
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(a.giveBackDeclared)
 	store := cache.Memory("pkit")
 	api, router, err := a.buildAPI(t.Context(), store)
 	if err != nil {
@@ -54,6 +58,7 @@ func installationDelivery(t *testing.T, permissions ...string) (http.Handler, *s
 	// Start hands the connection and the store to the API it just built; a test
 	// that serves the installation's commands over a real database hands them
 	// the same way.
+	a.held.fill(conn)
 	if err := api.Connect(conn, store); err != nil {
 		t.Fatal(err)
 	}

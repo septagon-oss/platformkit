@@ -15,11 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// maxTracked bounds the map, for maxTracked's reason in kit/limit/memory.go: a
-// key anybody can invent is a record anybody can mint, so past the bound the
-// records that can no longer be replayed are dropped, and if that was not enough
-// the map is emptied. What that costs an attacker is the memory of writes they
-// never made.
+// maxTracked starts pruning expired attempts. Unresolved identities survive
+// regardless of count; Memory is a conformance fake, never a deployment bound.
 const maxTracked = 10_000
 
 // Memory returns a store that remembers in this process's memory. now is the
@@ -30,20 +27,22 @@ func Memory(now func() time.Time) Store {
 	if now == nil {
 		now = time.Now
 	}
-	return &memory{now: now, records: map[string]record{}}
+	return &memory{now: now, records: map[string]record{}, operations: map[operationKey]Receipt{}}
 }
 
 type memory struct {
-	mu      sync.Mutex
-	now     func() time.Time
-	records map[string]record
+	mu         sync.Mutex
+	now        func() time.Time
+	records    map[string]record
+	operations map[operationKey]Receipt
 }
 
-// record is the stored row plus the clock reading that put it there, which is
-// what a map has to keep explicitly and a row keeps in a column.
+// record pairs an attempt with the tenant used to consult its receipt during pruning.
+type operationKey struct{ tenant, ref uuid.UUID }
+
 type record struct {
-	at  time.Time
-	row row
+	tenant uuid.UUID
+	row    row
 }
 
 // key is the identity as the map holds it. The two identifiers come first, in
@@ -55,7 +54,10 @@ func (s Scope) key() string {
 }
 
 func (m *memory) Claim(_ context.Context, s Scope, at time.Time) (Verdict, error) {
-	at = m.clock(at)
+	if err := validClaim(s, at); err != nil {
+		return Verdict{}, err
+	}
+	at = m.clock(at).UTC().Truncate(time.Microsecond)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prune(at)
@@ -65,11 +67,23 @@ func (m *memory) Claim(_ context.Context, s Scope, at time.Time) (Verdict, error
 	var existing *row
 	if found {
 		r := cur.row
+		if receipt, ok := m.operations[operationKey{s.Tenant, r.operationRef}]; ok {
+			r.receipt = &receipt
+		}
 		existing = &r
 	}
 	v := decide(existing, found, s, at, claim, lease, retention)
 	if v.Kind == First {
-		m.records[k] = record{at: at, row: row{
+		ref, started := uuid.Nil, time.Time{}
+		if s.Track {
+			ref, started = uuid.New(), at
+		}
+		if found && !claimExpired(existing, at, retention) {
+			ref, started = existing.operationRef, existing.startedAt
+		}
+		v.OperationRef, v.StartedAt = ref, started
+		m.records[k] = record{tenant: s.Tenant, row: row{
+			operationRef: ref, startedAt: started,
 			fingerprint: s.Fingerprint,
 			claim:       claim,
 			claimedAt:   at,
@@ -93,15 +107,13 @@ func (m *memory) Begin(_ context.Context, s Scope, claim uuid.UUID, _ time.Time)
 	return nil
 }
 
-func (m *memory) Complete(_ context.Context, s Scope, claim uuid.UUID, a Answer, at time.Time) error {
-	at = m.clock(at)
+func (m *memory) Complete(_ context.Context, s Scope, claim uuid.UUID, a Answer, _ time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, found := m.records[s.key()]
 	if !found || cur.row.claim != claim || cur.row.completed {
 		return ErrLostClaim
 	}
-	cur.at = at
 	cur.row.completed = true
 	cur.row.recorded = a.Status != 0
 	cur.row.answer = a
@@ -109,13 +121,8 @@ func (m *memory) Complete(_ context.Context, s Scope, claim uuid.UUID, a Answer,
 	return nil
 }
 
-// clock is the caller's reading of now, or this store's own when the call named
-// none. The zero time is never kept as a moment: it is a claim older than the
-// retention by the whole of the calendar, so a record written with one would be
-// answered as First by the next attempt and the key's whole promise would last as
-// long as one call. Postgres needs no such guard — a timestamptz column cannot
-// hold the zero time — which is the difference between a map that stores a time
-// and a row that is required to.
+// clock supplies the fake's default for legacy claims that omitted an instant.
+// Tracked claims reject zero before reaching this helper.
 func (m *memory) clock(at time.Time) time.Time {
 	if at.IsZero() {
 		return m.now()
@@ -123,21 +130,20 @@ func (m *memory) clock(at time.Time) time.Time {
 	return at
 }
 
-// prune drops what can no longer be replayed, and empties the map if that was not
-// enough. The caller holds the lock. Unlike Postgres.Purge this runs on the write
-// path, and it may: a map this small is bounded by the bound itself, and a fake
-// that grew without one would be a fixture that hides a memory leak rather than a
-// stand-in for the shared store.
+// prune removes expired attempts at the fake's threshold. The caller holds the
+// mutex; unresolved receipts keep their key identities.
 func (m *memory) prune(at time.Time) {
 	if len(m.records) < maxTracked {
 		return
 	}
 	for k, r := range m.records {
-		if at.Sub(r.at) >= retention {
+		rr := r.row
+		if receipt, ok := m.operations[operationKey{r.tenant, rr.operationRef}]; ok {
+			rr.receipt = &receipt
+		}
+		if claimExpired(&rr, at, retention) {
 			delete(m.records, k)
 		}
 	}
-	if len(m.records) >= maxTracked {
-		clear(m.records)
-	}
+
 }
