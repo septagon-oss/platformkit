@@ -17,6 +17,7 @@
         "webcontracts.Links",
         "rest.TranslationSource",
         "admincontracts.Signin",
+        "admincontracts.Pictures",
         "admincontracts.Locale",
         "tenantcontracts.Languages",
         "webhookcontracts.Catalogue"
@@ -578,6 +579,10 @@
       "uses": [
         {
           "contract": "admincontracts.Signin",
+          "from": "product"
+        },
+        {
+          "contract": "admincontracts.Pictures",
           "from": "product"
         },
         {

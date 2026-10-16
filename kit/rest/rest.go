@@ -498,14 +498,14 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	crud.Reset(e)                        // IDs, tenancy and timestamps belong to the server at both doors.
 	s.clearRevision(crud.Fields[T](), e) // and so does the count of this row's writes
 	// The record has to be itself before its own body can be filed. What a body
-	// shows is recorded in prepareRichText below, and a use names the record that
+	// shows is recorded in prepareFiles below, and a use names the record that
 	// shows the file — an id stamped by crud.Create one step later would be filed
 	// under nil, which is the row nobody can link back to or sweep forward. So
 	// the id is chosen here, and Create keeps the id it finds rather than making
 	// another one. Reset already dereferenced the entity, so there is nothing
 	// between these two lines that a nil body could have reached.
 	entity.BaseOf(e).ID = uuid.New()
-	if err := s.prepareRichText(ctx, tx, e, nil); err != nil {
+	if err := s.prepareFiles(ctx, tx, e, nil); err != nil {
 		return e, err
 	}
 	// The trail's field is discarded here for the same reason the id is chosen here:
@@ -599,7 +599,7 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := s.gate(ctx, tx, id, VerbUpdate, "", changed); err != nil {
 		return e, err
 	}
-	if err := s.prepareRichText(ctx, tx, e, columns); err != nil {
+	if err := s.prepareFiles(ctx, tx, e, columns); err != nil {
 		return e, err
 	}
 	// Write only the submitted columns, the timestamp and the row's own revision.
@@ -750,7 +750,7 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// file panel that links to a record no route answers, and — once the release
 	// sweep exists — a file that can never be released because something that no
 	// longer exists is said to be reading it.
-	if err := s.clearRichTextUses(ctx, tx, e); err != nil {
+	if err := s.clearFileUses(ctx, tx, e); err != nil {
 		return e, err
 	}
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {

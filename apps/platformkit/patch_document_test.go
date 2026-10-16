@@ -68,6 +68,15 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 		t.Fatalf("document = %d %s", code, body)
 	}
 	doc := wireDocument(t, []byte(body))
+	// A cover is a file this tenant owns, so the fixture uploads one through the file
+	// module's own door. The content write path refuses a file id it cannot find in
+	// this tenant, so an invented uuid is not a fixture for a picture key: the value
+	// has to arrive the way a person's would.
+	code, body = putFile(t, cfg, admin, filesPath, "cover.svg", "image/svg+xml", "<svg xmlns='http://www.w3.org/2000/svg'/>")
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s = %d %s, want 201", filesPath, code, body)
+	}
+	cover := field(t, body, "id")
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +108,7 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 			"title": "changed task", "description": "new description", "status": "in_progress", "priority": "high", "source": "fixture", "sourceRef": "fixture-1", "dueAt": "2030-01-02T03:04:05Z", "slaDeadline": "2030-01-03T03:04:05Z",
 		}},
 		"content-content-update": {seed: `{"slug":"patch-content","title":"Patch content","body":"Before","kind":"page"}`, values: map[string]any{
-			"slug": "changed-content", "title": "Changed content", "body": "New **body**\n", "kind": "post",
+			"slug": "changed-content", "title": "Changed content", "body": "New **body**\n", "kind": "post", "coverImageId": cover,
 		}},
 		"user-user-update": {seed: `{"email":"patch-person@example.test","displayName":"Patch person"}`, values: map[string]any{
 			"email": "changed-person@example.test", "displayName": "Changed person",

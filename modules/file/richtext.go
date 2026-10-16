@@ -132,12 +132,14 @@ func (a RichTextFiles) srcSet(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 }
 
 // imagePath is the one place this adapter writes a URL, so the workspace door
-// and the public one cannot drift into two shapes.
+// and the public one cannot drift into two shapes. The workspace arm is the
+// address this module publishes as contracts.PictureSource — the same string the
+// catalogue gives a shell that has no way to derive it.
 func imagePath(id uuid.UUID, audience richtext.Audience) string {
 	if audience == richtext.Public {
 		return "/api/v1/public/file/files/" + id.String()
 	}
-	return "/api/v1/file/files/" + id.String() + "/content"
+	return contracts.PictureURL(id)
 }
 
 // ShowFiles adapts this module's SetShown to the audience port kit/rest declares,
