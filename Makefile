@@ -203,8 +203,12 @@ restore-drill: ## Put a backup back and prove the bytes and the application's re
 load-test: ## Compare bounded tenant work and database pool capacity
 	go test ./kit/jobs -run '^$$' -bench '^BenchmarkPerTenantCapacity$$' -benchtime=2s -count=3 -timeout=3m
 
-check-loc: ## Fail when a bucket exceeds its line ceiling
-	go run ./tools/locbudget --check
+# A bucket may grow since the merge base with origin/main by what this branch's own build(budget)
+# commits declare, and no more; a ceiling main's own growth made stale is not this branch's to
+# restate (CONTRIBUTING.md, "Keep budgets honest"). Fetch origin/main first: a stale one is an
+# older merge base.
+check-loc: ## Fail when a bucket grew beyond what this branch's build(budget) commits declare
+	bash scripts/check_budget_ratchet.sh --merge-base origin/main
 
 # Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
 # A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is

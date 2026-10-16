@@ -1,24 +1,43 @@
 #!/usr/bin/env bash
-# Compare reviewed ceilings with one explicit base commit:
+# Compare reviewed ceilings with one explicit base commit, or with the merge base of a ref:
 #   check_budget_ratchet.sh BASE_COMMIT [repository]
+#   check_budget_ratchet.sh --merge-base REF [repository]
 # CI supplies the pull request base or the push's previous revision. Consumers
 # call this implementation from their resolved foundation dependency.
-# Requires Git and jq. An unavailable baseline fails the check.
+# With --merge-base (what `make check-loc` runs against origin/main) a bucket may
+# also grow, since the merge base, by no more than this branch's own build(budget)
+# commits declare; main's growth is not this branch's to price.
+# Requires Git and jq, and Go for --merge-base. An unavailable baseline fails the check.
 set -euo pipefail
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [[ ! "$1" =~ ^[0-9a-fA-F]{40}$ ]] || [[ "$1" =~ ^0+$ ]]; then
-	echo 'budget ratchet: supply a nonzero full base commit SHA' >&2
-	exit 2
-fi
-base="$1"
-cd "${2:-.}"
-if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-	if ! git fetch --quiet --no-tags --depth=1 origin "$base" 2>/dev/null; then
-		echo "budget ratchet: could not fetch base commit $base" >&2
+tool_root="$(cd "$(dirname "$0")/.." && pwd)"
+merge_base_ref=''
+if [ "${1:-}" = --merge-base ]; then
+	if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
+		echo 'budget ratchet: --merge-base needs one ref' >&2
 		exit 2
 	fi
+	merge_base_ref="$2"
+	cd "${3:-.}"
+	if ! base="$(git merge-base "$merge_base_ref" HEAD 2>/dev/null)"; then
+		echo "budget ratchet: $merge_base_ref has no merge base with HEAD; fetch it first (git fetch origin main)" >&2
+		exit 2
+	fi
+else
+	if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [[ ! "$1" =~ ^[0-9a-fA-F]{40}$ ]] || [[ "$1" =~ ^0+$ ]]; then
+		echo 'budget ratchet: supply a nonzero full base commit SHA' >&2
+		exit 2
+	fi
+	base="$1"
+	cd "${2:-.}"
+	if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+		if ! git fetch --quiet --no-tags --depth=1 origin "$base" 2>/dev/null; then
+			echo "budget ratchet: could not fetch base commit $base" >&2
+			exit 2
+		fi
+	fi
+	git cat-file -e "$base^{commit}"
 fi
-git cat-file -e "$base^{commit}"
 
 # Missing or malformed baselines are errors, never evidence of unchanged
 # ceilings. Removing a bucket or changing what it measures also needs review.
@@ -73,17 +92,21 @@ fi
 # bucket or a changed measurement is never excused this way. CI checks out with fetch-depth 0; history
 # that cannot be read refuses.
 budget_files='loc-budget.json packages-budget.json'
+if ! touched="$(git rev-list --no-merges "$base..HEAD" -- $budget_files 2>/dev/null)"; then
+	echo 'budget ratchet: the history between the base and HEAD cannot be read' >&2
+	exit 2
+fi
+# budget_commit COMMIT — whether COMMIT is a build(budget) commit touching only budget files.
+budget_commit() {
+	local others
+	others="$(git diff-tree --no-commit-id --name-only -r "$1" | grep -vxE 'loc-budget\.json|packages-budget\.json' || true)"
+	[[ "$(git log -1 --format=%s "$1")" == build\(budget\):* ]] && [ -z "$others" ]
+}
 if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from '; then
-	if ! touched="$(git rev-list --no-merges "$base..HEAD" -- $budget_files 2>/dev/null)"; then
-		echo 'budget ratchet: the history between the base and HEAD cannot be read' >&2
-		exit 2
-	fi
 	unreviewed=''
 	for commit in $touched; do
-		subject="$(git log -1 --format=%s "$commit")"
-		others="$(git diff-tree --no-commit-id --name-only -r "$commit" | grep -vxE 'loc-budget\.json|packages-budget\.json' || true)"
-		if [[ "$subject" != build\(budget\):* ]] || [ -n "$others" ]; then
-			unreviewed="${unreviewed}${unreviewed:+$'\n'}${commit:0:12} ${subject}"
+		if ! budget_commit "$commit"; then
+			unreviewed="${unreviewed}${unreviewed:+$'\n'}${commit:0:12} $(git log -1 --format=%s "$commit")"
 		fi
 	done
 	if [ -n "$touched" ] && [ -z "$unreviewed" ]; then
@@ -102,6 +125,51 @@ if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from ';
 	elif [ -n "$unreviewed" ]; then
 		problems="${problems}"$'\n'"budget ratchet: these commits change a budget file and are not a build(budget) commit touching only budget files:"$'\n'"${unreviewed}"
 	fi
+fi
+# What this branch declares: each build(budget) commit's own signed change to each loc-budget.json
+# ceiling, one `commit bucket delta` row apiece. A merge is never walked, so a branch that merges main
+# carries main's numbers and declares nothing by doing so.
+declared=''
+for commit in $touched; do
+	budget_commit "$commit" && git cat-file -e "$commit:loc-budget.json" 2>/dev/null || continue
+	before="$(git show "$commit^:loc-budget.json" 2>/dev/null || echo '{"buckets": []}')"
+	rows="$(jq -nr --arg c "$commit" --argjson before "$before" --argjson after "$(git show "$commit:loc-budget.json")" '
+	    $after.buckets[] as $a | $before.buckets[] | select(.name == $a.name and .max != $a.max)
+	    | "\($c) \($a.name) \($a.max - .max)"
+	')"
+	declared="${declared}${declared:+${rows:+$'\n'}}${rows}"
+done
+# A raise of more than 1,000 lines in one bucket is the owner's, not only the reviewer's: every commit
+# raising that bucket names the approval in an `Owner-approved:` trailer. The check reads that the
+# claim is recorded where review reads it; it cannot read that the owner made it.
+for bucket in $(awk '$3 > 0 { sum[$2] += $3 } END { for (b in sum) if (sum[b] > 1000) print b }' <<< "$declared"); do
+	for commit in $(awk -v b="$bucket" '$2 == b && $3 > 0 { print $1 }' <<< "$declared"); do
+		if [ -z "$(git log -1 --format='%(trailers:key=Owner-approved,valueonly)' "$commit" | tr -d '[:space:]')" ]; then
+			problems="${problems:+$problems$'\n'}loc-budget.json: $bucket rises over 1,000 lines on this branch and ${commit:0:12} carries no Owner-approved: trailer"
+		fi
+	done
+done
+# With --merge-base, each bucket's growth since the merge base is held to what this branch declares.
+# The merge base's tree is counted by the same tool in a throwaway clone the trap removes, never in a
+# worktree, which would register in the .git this host's other checkouts share.
+if [ -n "$merge_base_ref" ]; then
+	tmp="$(mktemp -d)"
+	trap 'rm -rf "$tmp"' EXIT
+	if ! (cd "$tool_root" && go build -o "$tmp/locbudget" ./tools/locbudget) \
+		|| ! git clone --quiet --shared --no-checkout "$(cd "$(git rev-parse --git-common-dir)" && pwd)" "$tmp/base" \
+		|| ! git -C "$tmp/base" checkout --quiet --detach "$base" \
+		|| ! base_counts="$("$tmp/locbudget" --root "$tmp/base")" \
+		|| ! head_counts="$("$tmp/locbudget" --root .)"; then
+		echo "budget ratchet: the tree at the merge base ${base:0:12} cannot be checked out and counted" >&2
+		exit 2
+	fi
+	while read -r name grew; do
+		allowed="$(awk -v b="$name" '$2 == b { sum += $3 } END { print sum + 0 }' <<< "$declared")"
+		if [ "$grew" -gt "$allowed" ]; then
+			problems="${problems:+$problems$'\n'}loc-budget.json: $name grew by $grew lines since the merge base ${base:0:12}; this branch's build(budget) commits declare $allowed"
+		fi
+	done < <(awk 'NR == FNR { if ($3 == "/") at_base[$1] = $2; next } $3 == "/" && ($1 in at_base) { print $1, $2 - at_base[$1] }' \
+		<(printf '%s\n' "$base_counts") <(printf '%s\n' "$head_counts"))
 fi
 if [ -n "$problems" ]; then
 	printf '%s\n' "$problems" >&2

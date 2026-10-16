@@ -15,7 +15,7 @@ budget() { # budget <go max> [<extra bucket name>]
 	echo '{"packages": 5}' > packages-budget.json
 }
 
-commit() { git add -A && git -c user.name=t -c user.email=t@example.invalid commit -qm "$1"; }
+commit() { git add -A && git -c user.name=t -c user.email=t@example.invalid commit -qm "$1" ${2:+-m "$2"}; }
 
 fresh() { # a repository whose first commit is the base; prints the base sha
 	local dir="$root/$1"
@@ -92,6 +92,85 @@ if [ "$unreviewed" != 1 ] || ! grep -q 'go raised from 100 to 160' "$root/unrevi
 	failures=$((failures + 1))
 else
 	echo 'ok   a refusal still names the raise it refused'
+fi
+
+# The merge-base cases, which are `make check-loc`: a bucket may grow since the merge base with
+# origin/main by what this branch's own build(budget) commits declare and no more, and a ceiling that
+# main's own growth made stale is not this branch's to restate.
+lines() { local n; for n in $(seq "$2"); do echo "// $n" >> "$1"; done; }
+fresh_branch() { # main holds a.go at its go ceiling of 3, origin/main points there, HEAD is a branch off it
+	fresh "$1"
+	budget 3 docs && printf 'package a\n// one\n// two\n' > a.go && commit 'main at its ceiling'
+	git update-ref refs/remotes/origin/main HEAD
+	git checkout -q -b branch
+}
+on_main() { git checkout -q main; "$@"; git update-ref refs/remotes/origin/main HEAD; git checkout -q branch; }
+main_raises_then_overruns() { # main prices go 3 -> 5, then grows to 7 lines: its own ceiling is stale
+	budget 5 docs && commit 'build(budget): go 3 -> 5'
+	lines b.go 4 && commit 'feat: main grows past its own raise'
+}
+expect_merge_base() { # expect_merge_base <exit code> <case name>
+	local want="$1" name="$2" got=0
+	bash "$script" --merge-base origin/main >"$root/out" 2>&1 || got=$?
+	if [ "$got" != "$want" ]; then
+		echo "FAIL: $name: exit $got, wanted $want"
+		sed 's/^/    /' "$root/out"
+		failures=$((failures + 1))
+	else
+		echo "ok   $name"
+	fi
+}
+
+fresh_branch moved_merged
+on_main main_raises_then_overruns
+sed -i 's/one/uno/' a.go && commit 'feat: a change that grows nothing'
+git merge -q --no-edit origin/main
+expect_merge_base 0 'a branch that merged main after a main-side raise passes without touching loc-budget.json'
+
+fresh_branch moved_unmerged
+sed -i 's/one/uno/' a.go && commit 'feat: a change that grows nothing'
+on_main main_raises_then_overruns
+expect_merge_base 0 'a branch whose origin/main moved past a raise passes unmerged'
+
+fresh_branch unpriced
+lines a.go 2 && commit 'feat: two lines nobody priced'
+expect_merge_base 1 'a branch growing a bucket without a build(budget) commit is refused'
+if ! grep -q 'go grew by 2 lines since the merge base .* declare 0' "$root/out"; then
+	echo 'FAIL: the refusal does not name the bucket, its growth and what was declared'
+	failures=$((failures + 1))
+fi
+
+fresh_branch inside
+budget 8 docs && commit 'build(budget): go 3 -> 8'
+lines a.go 4 && commit 'feat: four lines inside the five priced'
+expect_merge_base 0 'growth inside a declared raise passes'
+
+fresh_branch beyond
+budget 5 docs && commit 'build(budget): go 3 -> 5'
+lines a.go 4 && commit 'feat: four lines against two priced'
+expect_merge_base 1 'growth beyond a declared raise is refused'
+
+fresh_branch resolution
+on_main main_raises_then_overruns
+git merge -q --no-ff --no-commit origin/main >/dev/null
+budget 20 docs && commit 'merge main, raising go in the resolution'
+lines a.go 4 && commit 'feat: four lines the merge resolution claimed to price'
+expect_merge_base 1 'a raise declared only in a merge resolution declares nothing'
+
+fresh_branch unapproved
+budget 1004 docs && commit 'build(budget): go 3 -> 1004'
+expect_merge_base 1 'a raise over 1,000 lines without Owner-approved is refused'
+
+fresh_branch approved
+budget 1004 docs && commit 'build(budget): go 3 -> 1004' 'Owner-approved: the owner, for this raise'
+expect_merge_base 0 'a raise over 1,000 lines with Owner-approved passes'
+
+fresh_branch unfetched
+git update-ref -d refs/remotes/origin/main
+expect_merge_base 2 'a branch with no merge base with origin/main is refused'
+if ! grep -q 'no merge base' "$root/out"; then
+	echo 'FAIL: the refusal does not say there is no merge base'
+	failures=$((failures + 1))
 fi
 
 [ "$failures" -eq 0 ] || { echo "$failures case(s) failed"; exit 1; }
