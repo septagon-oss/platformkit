@@ -167,6 +167,44 @@ func (s *Service) RevokeToken(ctx context.Context, tx db.Tx[db.Tenant], userID, 
 	})
 }
 
+// RevokeOwnToken retires the key the caller presented. See contracts.Tokens.
+func (s *Service) RevokeOwnToken(ctx context.Context, tx db.Tx[db.Tenant], caller tenancy.Principal) error {
+	if caller.TokenID == uuid.Nil {
+		return contracts.ErrCallerWithoutKey
+	}
+	// Both columns: an id alone would end a key that is not the caller's, and a
+	// user alone would end the wrong one of theirs.
+	var row apiTokenRow
+	err := crud.Classify(tx.DB().Where("id = ? AND user_id = ?", caller.TokenID, caller.UserID).Take(&row).Error)
+	if err != nil {
+		return err
+	}
+	at := db.Now()
+	if row.RevokedAt != nil || !row.ExpiresAt.After(at) {
+		return crud.ErrNotFound
+	}
+	res := tx.DB().Model(&apiTokenRow{}).Where("id = ? AND revoked_at IS NULL", row.ID).
+		Update("revoked_at", at)
+	if res.Error != nil {
+		return fmt.Errorf("auth: revoke a caller's own token: %w", res.Error)
+	}
+	if res.RowsAffected != 1 {
+		// Revoked by another request since the read: gone, and no second event.
+		return crud.ErrNotFound
+	}
+	return events.Publish(ctx, tx, contracts.EventAPITokenRevoked, contracts.APITokenRevoked{
+		TokenID: row.ID, Name: row.Name, ExpiresAt: row.ExpiresAt, LastUsedAt: row.LastUsedAt, At: at,
+	})
+}
+
+// bearerCredential is what a key bought: the person it belongs to, the key's own
+// id, and the ceiling that person's roles still grant the key today.
+type bearerCredential struct {
+	user    *usercontracts.User
+	tokenID uuid.UUID
+	scopes  []string
+}
+
 // bearerCaller is what a token buys: the person it belongs to, and the ceiling
 // they may act inside. Nil, with no error, means this token is nobody — revoked,
 // expired, spent, or one that was never issued here — and every one of those is
@@ -177,46 +215,46 @@ func (s *Service) RevokeToken(ctx context.Context, tx db.Tx[db.Tenant], userID, 
 // back off the row: standing somebody down from a role must narrow the keys they
 // minted, in the same request that did it, and a cache of the intersection would
 // be a list of decisions the platform has already reversed.
-func (s *Service) bearerCaller(ctx context.Context, tx db.Tx[db.Tenant], token string) (user *usercontracts.User, scopes []string, ok bool, err error) {
+func (s *Service) bearerCaller(ctx context.Context, tx db.Tx[db.Tenant], token string) (*bearerCredential, bool, error) {
 	// The prefix is part of the string a caller holds, and not part of what is
 	// hashed: it says what the secret is, so a scanner reading a log can tell
 	// this from a session id, and a person can tell which way to paste it.
 	body, found := strings.CutPrefix(token, tokenPrefix)
 	if !found {
-		return nil, nil, false, nil
+		return nil, false, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(body)
 	if err != nil || len(raw) != tokenBytes {
-		return nil, nil, false, nil
+		return nil, false, nil
 	}
 	var row apiTokenRow
 	switch err := crud.Classify(tx.DB().Where("token_hash = ?", contracts.Hash(string(raw))).Take(&row).Error); {
 	case errors.Is(err, crud.ErrNotFound):
-		return nil, nil, false, nil
+		return nil, false, nil
 	case err != nil:
-		return nil, nil, false, err
+		return nil, false, err
 	}
 	at := db.Now()
 	if row.RevokedAt != nil || !row.ExpiresAt.After(at) {
-		return nil, nil, false, nil
+		return nil, false, nil
 	}
-	user, err = s.users.Get(ctx, tx, row.UserID)
+	user, err := s.users.Get(ctx, tx, row.UserID)
 	if err != nil {
 		if errors.Is(err, crud.ErrNotFound) {
-			return nil, nil, false, nil
+			return nil, false, nil
 		}
-		return nil, nil, false, err
+		return nil, false, err
 	}
 	if user.Status != usercontracts.StatusActive {
-		return nil, nil, false, nil
+		return nil, false, nil
 	}
 	held, err := s.Permissions(ctx, tx, []string(user.Roles))
 	if err != nil {
-		return nil, nil, false, err
+		return nil, false, err
 	}
 	// The intersection, in the order the key was issued with, and never wider
 	// than the row: the roles decide what a scope still means.
-	scopes = make([]string, 0, len(row.Scopes))
+	scopes := make([]string, 0, len(row.Scopes))
 	for _, scope := range row.Scopes {
 		// The same predicate as at issue: a holder with the wildcard has every
 		// scope their key names, and a holder who has been stood down from the
@@ -231,10 +269,10 @@ func (s *Service) bearerCaller(ctx context.Context, tx db.Tx[db.Tenant], token s
 	if row.LastUsedAt.Add(contracts.APITokenTouch).Before(at) {
 		if err := tx.DB().Model(&apiTokenRow{}).Where("id = ?", row.ID).
 			Update("last_used_at", at).Error; err != nil {
-			return nil, nil, false, fmt.Errorf("auth: note the use of a token: %w", err)
+			return nil, false, fmt.Errorf("auth: note the use of a token: %w", err)
 		}
 	}
-	return user, scopes, true, nil
+	return &bearerCredential{user: user, tokenID: row.ID, scopes: scopes}, true, nil
 }
 
 const (

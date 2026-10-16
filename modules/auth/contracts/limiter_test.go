@@ -30,12 +30,12 @@ func TestTheLockoutIsNotAWeapon(t *testing.T) {
 		for range contracts.MaxAttempts {
 			l.Failed(ctx, "ada@acme.example.com", "203.0.113.1")
 		}
-		if got := l.Check(ctx, "ada@acme.example.com", "203.0.113.1"); got != contracts.Refuse {
+		if got := check(l, ctx, "ada@acme.example.com", "203.0.113.1"); got != contracts.Refuse {
 			t.Errorf("Check after %d failures from one address = %v, want Refuse", contracts.MaxAttempts, got)
 		}
 		// And another account is untouched: the limit is per account, so one
 		// person under attack does not lock out everybody else.
-		if got := l.Check(ctx, "grace@acme.example.com", "203.0.113.1"); got != contracts.Allow {
+		if got := check(l, ctx, "grace@acme.example.com", "203.0.113.1"); got != contracts.Allow {
 			t.Errorf("another account = %v, want Allow", got)
 		}
 	})
@@ -45,7 +45,7 @@ func TestTheLockoutIsNotAWeapon(t *testing.T) {
 		for i := range contracts.MaxAttempts + contracts.MaxSources {
 			l.Failed(ctx, "ada@acme.example.com", ip(i))
 		}
-		got := l.Check(ctx, "ada@acme.example.com", "198.51.100.7")
+		got := check(l, ctx, "ada@acme.example.com", "198.51.100.7")
 		if got == contracts.Refuse {
 			t.Fatal("a distributed attack locked the account's owner out, which is doing the attacker's work")
 		}
@@ -61,11 +61,29 @@ func TestTheLockoutIsNotAWeapon(t *testing.T) {
 		}
 		// No account's own counter has been touched — one failure each — so
 		// this is the only thing that sees the run.
-		if got := l.Check(ctx, "nobody@acme.example.com", "203.0.113.9"); got != contracts.Delay {
+		if got := check(l, ctx, "nobody@acme.example.com", "203.0.113.9"); got != contracts.Delay {
 			t.Errorf("Check from an address working through a list = %v, want Delay", got)
 		}
-		if got := l.Check(ctx, "nobody@acme.example.com", "203.0.113.10"); got != contracts.Allow {
+		if got := check(l, ctx, "nobody@acme.example.com", "203.0.113.10"); got != contracts.Allow {
 			t.Errorf("Check from somewhere else = %v, want Allow", got)
+		}
+	})
+
+	t.Run("the refusal states the counter that refused it", func(t *testing.T) {
+		l, ctx := newLimiter()
+		for range contracts.MaxAttempts {
+			l.Failed(ctx, "ada@acme.example.com", "203.0.113.1")
+		}
+		verdict, counted := l.Check(ctx, "ada@acme.example.com", "203.0.113.1")
+		if verdict != contracts.Refuse {
+			t.Fatalf("Check = %v, want Refuse", verdict)
+		}
+		if counted.Policy.Name != contracts.LoginAttemptsPolicyName || counted.Policy.Quota != contracts.MaxAttempts || counted.Policy.Window != contracts.AttemptWindow {
+			t.Errorf("the counter that refused = %+v, want %s: %d in %s", counted.Policy,
+				contracts.LoginAttemptsPolicyName, contracts.MaxAttempts, contracts.AttemptWindow)
+		}
+		if counted.Allowed || counted.Remaining != 0 || counted.Left <= 0 {
+			t.Errorf("the reading a refusal states = %+v, want refused, nothing left, and a window still running", counted)
 		}
 	})
 
@@ -75,16 +93,24 @@ func TestTheLockoutIsNotAWeapon(t *testing.T) {
 			l.Failed(ctx, "ada@acme.example.com", "203.0.113.1")
 		}
 		l.Succeeded(ctx, "ada@acme.example.com")
-		if got := l.Check(ctx, "ada@acme.example.com", "203.0.113.1"); got != contracts.Allow {
+		if got := check(l, ctx, "ada@acme.example.com", "203.0.113.1"); got != contracts.Allow {
 			t.Errorf("Check after a success = %v, want Allow", got)
 		}
 		for i := range contracts.SourceAttempts - contracts.MaxAttempts {
 			l.Failed(ctx, account(i), "203.0.113.1")
 		}
-		if got := l.Check(ctx, "fresh@acme.example.com", "203.0.113.1"); got != contracts.Delay {
+		if got := check(l, ctx, "fresh@acme.example.com", "203.0.113.1"); got != contracts.Delay {
 			t.Errorf("the source after a success and the remaining failures = %v, want Delay", got)
 		}
 	})
+}
+
+// check asks the limiter the verdict question alone. Check answers with the reading of
+// the counter as well, because a refused attempt states it on the wire; these cases are
+// about the verdict.
+func check(l *contracts.Limiter, ctx context.Context, email, from string) contracts.Verdict {
+	verdict, _ := l.Check(ctx, email, from)
+	return verdict
 }
 
 func ip(i int) string { return "203.0.113." + string(rune('a'+i%26)) }

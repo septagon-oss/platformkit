@@ -39,13 +39,41 @@ const CatalogVersion = 2
 // way a browser shell generates them from httpx.Resources, by the same rules.
 type Catalog struct {
 	// Version is CatalogVersion at the moment the document was written.
-	Version   int     `json:"catalogVersion"`
-	Resources []Entry `json:"resources"`
+	Version   int       `json:"catalogVersion"`
+	Resources []Entry   `json:"resources"`
+	Pictures  *Pictures `json:"pictures,omitempty"`
+}
+
+// Pictures is this installation's door to the bytes of a stored picture, said
+// once for the whole document rather than once per field that holds an id.
+//
+// Source is a template and not a base path: the literal `{id}` is replaced with
+// the field's own value — the lower-case hyphenated UUID text — and nothing else
+// in it is substituted. It is published for the same reason `screen`,
+// `write_path` and a command's `path` are: a shell that builds an address out of
+// another component's rules is guessing, and this repository has already paid for
+// one such guess once.
+//
+// Widths is the set of resized variants this door serves, ascending; a request
+// for a width outside it is refused by the door and names the set back. Absent
+// Widths, or a width the picture was never planned at, the answer is the stored
+// frame at its own size. A shell that fetches no variant fetches Source.
+//
+// An absent `pictures` block means this installation composed no module that
+// serves a record's pictures. Every picture field then draws the still state its
+// own renderer chooses — which is an answer, not a mistake, and the reason a
+// resource with a picture column can mount in an installation that has no file
+// module at all. A key is on the wire because somebody declared it, so the
+// composition writes this and a resource-bearing document never invents it.
+type Pictures struct {
+	Source string `json:"source"`
+	Widths []int  `json:"widths,omitempty"`
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
-// an unreadable resource is not in the document at all: what a caller may not
-// look at, they are not told exists. `writable` is the caller's guard narrowed by
+// an unreadable resource is not in the document — save a CommandsOnly one whose
+// command the caller holds, listed with empty operations: what a caller may not
+// look at, they are not offered. `writable` is the caller's guard narrowed by
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
@@ -95,7 +123,11 @@ type Entry struct {
 	// already listed hides one, and why apps/platformkit's ratchet case refuses to
 	// let that move be a memory. An absent key means all five, so it is the shell's
 	// next build that has to require it, reading this field.
-	Operations []string `json:"operations,omitempty"`
+	//
+	// An empty list, printed as [], is a CommandsOnly resource: nothing to read
+	// or write, only its commands to call (see DescribeLanguage). omitzero
+	// keeps nil — all five — absent, so no entry printed before reads otherwise.
+	Operations []string `json:"operations,omitzero"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
 	// it is the record and its form, and never a list with a New button on it.
 	Singleton bool `json:"singleton,omitempty"`
@@ -155,16 +187,33 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
-		if !r.Readable(ctx) {
-			continue
-		}
 		// r is this loop's copy, so narrowing its commands to the ones this
 		// caller may call leaves Describe1 the pure function it is.
 		r.Commands = r.CommandsFor(ctx)
+		if r.CommandsOnly {
+			if len(r.Commands) > 0 {
+				out.Resources = append(out.Resources, commandsOnly(Localise(r, text)))
+			}
+			continue
+		}
+		if !r.Readable(ctx) {
+			continue
+		}
 		r = Localise(r, text)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
 	}
 	return out
+}
+
+// commandsOnly is the entry of a CommandsOnly resource for a caller who holds
+// one of its commands — a key retiring itself reads nothing about keys. It
+// names no screen and offers no operation, so a shell draws the commands and no
+// list or form; the caller is told the resource exists because a door on it is
+// theirs.
+func commandsOnly(r httpx.Resource) Entry {
+	e := Describe1(r, false)
+	e.Screen = ""
+	return e
 }
 
 // Localise is a resource with every declared word read through the seam, and the
