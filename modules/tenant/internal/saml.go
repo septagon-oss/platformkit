@@ -84,6 +84,9 @@ func (s *Service) SetSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if err != nil {
 		return nil, crud.Classify(err)
 	}
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
+	}
 	if err := events.PublishFor(ctx, tx, id, contracts.EventSAMLSet, contracts.SAMLSet{
 		TenantID: id, EntityID: in.EntityID, MetadataURL: in.MetadataURL,
 		EmailAttribute: in.EmailAttribute, Registration: samlMode(in), Roles: in.Roles,
@@ -114,6 +117,9 @@ func (s *Service) ClearSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 	}).Error
 	if err != nil {
 		return nil, crud.Classify(err)
+	}
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
 	}
 	return t, events.PublishFor(ctx, tx, id, contracts.EventSAMLCleared, contracts.SAMLCleared{
 		TenantID: id, EntityID: before.EntityID, At: db.Now(),

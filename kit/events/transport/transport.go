@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/operation"
 
 	"github.com/septagon-oss/platformkit/kit/appname"
 )
@@ -94,6 +95,8 @@ type Event struct {
 	SourceFile string
 	SourceLine int
 	Initiator  uuid.UUID
+	// Operation is the originating intent, independent of this delivery actor.
+	Operation operation.Identity
 }
 
 // Attribution is the cause of an event when the cause was not a session: which
