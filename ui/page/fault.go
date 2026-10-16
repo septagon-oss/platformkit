@@ -607,7 +607,7 @@ func sentence(line string, loc *Locale, status int, detail, key string) (text, l
 	if shipped == line {
 		return text, ""
 	}
-	guardSaid := isSourceLanguage(loc.Language)
+	said := guardSaid(loc.Language)
 	// The guard's own line stands beside the shipped copy only where the guard wrote one
 	// for this page. A refusal with no detail to show — a diagnostic, or a 500 whose
 	// reason is in the log — has already said that its sentence is not the person's, and
@@ -616,12 +616,12 @@ func sentence(line string, loc *Locale, status int, detail, key string) (text, l
 		return shipped, loc.Language
 	}
 	if code, rest, named := strings.Cut(detail, ": "); named {
-		if guardSaid {
+		if said {
 			return code + ": " + shipped + " " + sourceMark + " " + rest, loc.Language
 		}
 		return code + ": " + shipped, loc.Language
 	}
-	if guardSaid {
+	if said {
 		return shipped + " " + sourceMark + " " + line, loc.Language
 	}
 	return shipped, loc.Language
@@ -634,19 +634,18 @@ func sentence(line string, loc *Locale, status int, detail, key string) (text, l
 // file to infer from.
 const sourceLanguage = "en"
 
-// isSourceLanguage is whether the language on the page is the one this copy is
-// authored in, or a regional spelling of it — the only case that reads a refusal in
-// both sentences (sentence).
-//
-// It names the language rather than matching its first two letters, because a tag
-// that begins with "en" need not be English at all: kit/locale/providers/pseudo
-// reports itself as "en-XA", which is a measuring tag and no reader's language, and
-// a prefix test read it as English. The page that measurement rendered then carried a
-// guard's English beside the catalogue's sentence — on a document negotiated from a
-// Portuguese catalogue, which is the one shape of this page the source-language rule
-// refuses.
-func isSourceLanguage(language string) bool {
-	return language == sourceLanguage || strings.HasPrefix(language, sourceLanguage+"-")
+// guardSaid is whether the language this page is read in is the language the guards
+// author their sentences in — the one language that reads a refusal in both sentences
+// (sentence). It names the language rather than matching its first letters, because a
+// tag that begins with "en" need not be English: the pseudo-locale
+// kit/locale/providers/pseudo reports is `en-XA`, a measuring tag and no reader's
+// language, and a prefix match read it as English. The page that measurement rendered
+// then carried a guard's English beside the catalogue's sentence on a document
+// negotiated from a Portuguese catalogue — and a regional spelling of English needs no
+// match here anyway, because a request's own tag is rewritten to the tenant's before
+// it reaches this page (TenantPreferences).
+func guardSaid(language string) bool {
+	return language == sourceLanguage
 }
 
 // sourceMark is what stands between the shipped copy and the guard's own line on a
