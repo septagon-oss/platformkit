@@ -109,6 +109,19 @@ func cases() map[string]func(*testing.T, Fixture) {
 			published(t, f, contracts.EventCreated, contracts.EventEmailRequested)
 		},
 
+		"the email flag a notice was written with asks the worker for it": func(t *testing.T, f Fixture) {
+			n := notice("A task was assigned to you")
+			n.Email = true
+			if _, err := f.Service.Notify(f.Ctx, f.Tx, n); err != nil {
+				t.Fatalf("Notify: %v", err)
+			}
+			// The boolean is the spelling notices had before they named channels,
+			// and applications written against that contract are still compiled.
+			// It asks for the channel it stood for: an upgrade that read it as a
+			// notice asking for nothing would stop the mail with no error.
+			published(t, f, contracts.EventCreated, contracts.EventEmailRequested)
+		},
+
 		"a recipient with no address gets the row and no mail": func(t *testing.T, f Fixture) {
 			n := notice("A task was assigned to you")
 			n.Recipient = Bob

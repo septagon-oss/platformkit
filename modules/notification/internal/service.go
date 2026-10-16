@@ -156,7 +156,7 @@ func (s *Service) decide(ctx context.Context, tx db.Tx[db.Tenant], n contracts.N
 	// provider for it. Active is the same question module.subscriptions asks, so a
 	// channel cannot be openable here and unstaffed there.
 	available := append([]contracts.Channel{contracts.ChannelEmail}, s.providers.Active()...)
-	return contracts.Decide(n.Wants, n.Class, n.Intent, prefs, quiet, sender, contracts.Scope{
+	return contracts.Decide(n.Ceiling(), n.Class, n.Intent, prefs, quiet, sender, contracts.Scope{
 		Now: s.clock(), Available: available,
 		SenderOptional: s.senders == nil,
 	}), nil

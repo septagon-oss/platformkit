@@ -1194,12 +1194,14 @@ the running application what it says.
 the generic pair), `Class` (an ordinary notice, or `ClassSecurity`, which is told over the person's
 opt-out because opt-out exists so people are not marketed to and not so they cannot be told somebody
 took over their account), and `Wants`, a ceiling over the five channels `contracts.Channel` names —
-in-app, mail, push, browser push, webhook — whose zero value is in-app alone. `Email` is gone: where a
-caller wrote `Email: true` it writes `Wants: notificationcontracts.WantsEmail`, and gets in-app with
-it, because the row *is* the notice and no ceiling a caller raises can fall below telling the person in
-the application. That is a breaking change to a published contract, recorded as accepted in
-[scripts/baselines/public-api-v1.1.0.json](scripts/baselines/public-api-v1.1.0.json); `make check`'s
-`check-apidiff` refuses any break beside the ones that file names.
+in-app, mail, push, browser push, webhook — whose zero value is in-app alone. `Email` is deprecated
+and still read: `Notice.Ceiling` folds it into `Wants`, so an application written against the older
+contract keeps asking for mail rather than stopping in silence, and a new caller writes
+`Wants: notificationcontracts.WantsEmail`. Either spelling gets in-app with it, because the row *is*
+the notice and no ceiling a caller raises can fall below telling the person in the application. What
+stays breaking is the carrier, not the ask: `notification.SMTP` and `notification.Mail` left with the
+SMTP conversation and `Deps` holds a map; the baseline records those, and no line about `Email`, which
+came back. `make check`'s `check-apidiff` refuses any break beside the ones that file names.
 
 What the ask buys is a decision, not a send. In the caller's own transaction `Service.Notify` reads the
 person's channel choices and quiet window (`notification_preferences`, `notification_quiet_hours`), the

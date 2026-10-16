@@ -90,6 +90,24 @@ type Notice struct {
 	// value is in-app alone — the floor every notice has — so a caller that says
 	// nothing tells the person in the application and contacts nobody.
 	Wants Wants
+	// Email is the flag this notice carried before Wants existed: true asked for
+	// mail beside the row. Read, not remembered: Ceiling folds it into the
+	// asked-for set, so an application compiled against the older contract keeps
+	// asking for mail instead of stopping silently. New callers name the channel.
+	//
+	// Deprecated: write Wants: contracts.WantsEmail.
+	Email bool
+}
+
+// Ceiling is every channel this notice asks for: Wants with the deprecated
+// Email flag folded in as WantsEmail. Anything that reads what a notice asked
+// for reads this and never Wants, so the older spelling cannot be dropped by an
+// implementation that stopped looking at it.
+func (n Notice) Ceiling() Wants {
+	if n.Email {
+		return n.Wants | WantsEmail
+	}
+	return n.Wants
 }
 
 // The two classes of notice. A class is not a channel and not an event: it is
