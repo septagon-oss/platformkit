@@ -507,7 +507,7 @@ func Validate(mods []Module) error {
 // for every attributable refused authorization (see kit/httpx Options.Denied). They
 // count as emitted for Validate and are expanded for a SubscribeAll module, so
 // modules/audit keeps them like any other event.
-var KernelEvents = []string{"security.denied", "security.access_requested"}
+var KernelEvents = []string{"security.denied", "security.access_requested", events.EventOperationOutcome}
 
 // KernelName is the manifest name kit/app gives the kernel's own share of the
 // composition. It is named because it is read by a rule: KernelEvents are the

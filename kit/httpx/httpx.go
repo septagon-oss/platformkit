@@ -260,6 +260,11 @@ type Options struct {
 	// kit/idempotency is that store; what this package does is decide which requests
 	// are keyed and what each disposition answers with.
 	Idempotency idempotency.Store
+	// Operations enables durable admission for every unsafe route. Nil retains
+	// the lightweight standalone router; kit/app always supplies the SQL owner.
+	Operations idempotency.Operations
+	// Clock supplies UTC operation instants; nil resolves to db.Now.
+	Clock func() time.Time
 
 	// Access is the sequel to a refusal: who to tell when a person asks for the
 	// grant they were refused, and how. Nil draws no ask control on the refusal
@@ -406,6 +411,9 @@ var errorShape sync.Once
 // rather than hidden because static assets and the server itself need it; every
 // route that is an API operation goes through Register.
 func New(cfg Options) (*API, *chi.Mux) {
+	if cfg.Clock == nil {
+		cfg.Clock = db.Now
+	}
 	switch {
 	case cfg.Tenants == nil:
 		panic("httpx.New: Options.Tenants is required; every request resolves a tenant from its host")

@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/modules/audit/contracts"
 )
 
@@ -35,6 +36,9 @@ var _ contracts.Service = (*Fake)(nil)
 
 // Record mirrors internal.Service.Record, idempotency included.
 func (f *Fake) Record(_ context.Context, _ db.Tx[db.Tenant], ev events.Event) error {
+	if err := transport.ValidateOperation(ev.Operation); err != nil {
+		return err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, row := range f.rows {
@@ -50,6 +54,18 @@ func (f *Fake) Record(_ context.Context, _ db.Tx[db.Tenant], ev events.Event) er
 		actor := ev.Actor
 		row.Actor = &actor
 	}
+	if ev.Operation.ID != "" {
+		row.OperationID = new(ev.Operation.ID)
+		row.OperationRef = new(uuid.MustParse(ev.Operation.Ref))
+		row.OperationTenantID = new(uuid.MustParse(ev.Operation.Tenant))
+		row.OperationRevision = new(ev.Operation.Revision)
+		if ev.Operation.Person != "" {
+			row.OperationPersonID = new(uuid.MustParse(ev.Operation.Person))
+		}
+		if ev.Operation.Outcome != "" {
+			row.OperationOutcome = new(ev.Operation.Outcome)
+		}
+	}
 	f.rows = append(f.rows, row)
 	return nil
 }
@@ -62,6 +78,7 @@ func (f *Fake) List(_ context.Context, _ db.Tx[db.Tenant], q contracts.Query) ([
 	for i := len(f.rows) - 1; i >= 0; i-- {
 		row := f.rows[i]
 		switch {
+		case q.OperationRef != uuid.Nil && (row.OperationRef == nil || *row.OperationRef != q.OperationRef):
 		case q.Name != "" && row.Name != q.Name:
 		case q.Actor != uuid.Nil && (row.Actor == nil || *row.Actor != q.Actor):
 		case q.Record != uuid.Nil && !mentions(row.Payload, q.Record.String()):

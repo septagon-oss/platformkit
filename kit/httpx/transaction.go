@@ -36,7 +36,18 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	// Close is idempotent, so this covers the panic path and nothing else.
-	defer func() { _ = p.Close(false) }()
+	closed := false
+	defer func() {
+		if !closed {
+			rollbackErr := p.Close(false)
+			if n, ok := operationNote(ctx.Context()); ok && rollbackErr == nil {
+				if err := a.failedOperation(n); err != nil {
+					n.failureErr = err
+					a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: could not persist failed operation", "error", err)
+				}
+			}
+		}
+	}()
 
 	// The connection travels with the transaction: a control-plane route needs
 	// both it and a token to open a transaction of its own. See ConnFrom.
@@ -59,7 +70,30 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// thinks, so commit and say so; if nothing has been sent, nobody decided,
 	// and a transaction nobody decided about must not commit.
 	keep, undecided := statusOf(ctx, a, inner.Status())
+	if n, ok := operationNote(ctx.Context()); ok {
+		if b, ok := bufferFrom(ctx.Context()); ok && b.streamRefused {
+			keep = false
+			undecided = true
+		}
+		if keep {
+			if finishErr := a.finishOperation(n); finishErr != nil {
+				keep = false
+				undecided = true
+				a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: operation completion refused", "error", finishErr)
+			}
+		}
+	}
 	err = p.Close(keep)
+	closed = true
+	if n, ok := operationNote(ctx.Context()); ok && !keep && err == nil {
+		if failureErr := a.failedOperation(n); failureErr != nil {
+			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: failed operation evidence could not persist", "error", failureErr)
+			if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
+				a.refuse(ctx, http.StatusServiceUnavailable, "")
+			}
+			return
+		}
+	}
 	b, buffered := bufferFrom(ctx.Context())
 	switch {
 	case err == nil:
