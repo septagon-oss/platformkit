@@ -57625,6 +57625,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/richtext-formatted-selection-paste.spec.ts",
+   "id": "e2e/richtext-formatted-selection-paste.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "a pasted address follows a backward selection across formatting and preserves its neighbours",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/richtext-image-alt-accessibility.spec.ts",
    "id": "e2e/richtext-image-alt-accessibility.spec.ts",
    "kind": "playwright",
@@ -61712,7 +61732,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1610,
+  "files": 1611,
   "forge_runs": [
    408,
    413,
@@ -61749,7 +61769,7 @@
    "behaviour": 2629,
    "composition": 379,
    "contract": 20,
-   "journey": 89
+   "journey": 90
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -61765,23 +61785,23 @@
   },
   "round_named_ceiling": 37,
   "round_named_files": 37,
-  "rows": 3117,
+  "rows": 3118,
   "tiers": {
    "merge": 2000,
-   "nightly": 89,
+   "nightly": 90,
    "push": 1028
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1407,
+   "keep": 1408,
    "keep-rewrite": 66,
    "merge": 137
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2799,
+   "keep": 2800,
    "keep-rewrite": 133,
    "merge": 185
   }
