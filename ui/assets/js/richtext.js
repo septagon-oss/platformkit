@@ -291,9 +291,10 @@ function positionBubble(control) {
 // document event, and a selection in the other one is not this one's business.
 //
 // What it does not settle is the editor's half. When the editor later re-asserts its
-// own state over the browser's range, the bubble goes with it, and the paste that
-// decides on the editor's state stands down — the selection-readiness race named in
-// the task's follow-ups, which this listener narrows and does not close.
+// own state over the browser's range, the bubble goes with it. The one reader that
+// could not wait for that half to arrive — the address pasted across words — asks
+// this same question of the screen rather than of the editor's state; see
+// selectedWords.
 function bindSelectionChrome(control) {
 	document.addEventListener("selectionchange", () => {
 		const selection = window.getSelection();
@@ -415,16 +416,49 @@ function bindLink(control) {
 // ProseMirror parses a paste as soon as its handlers see it and replaces whatever
 // was selected, so the selection the author means to link is gone by the time a
 // listener downstream could answer. Answering before it is the only way to keep
-// the words and add the address.
+// the words and add the address. Which words is selectedWords's question, and not
+// the editor state's alone: the state can be one flush behind the page, and a paste
+// that reaches this listener in the turn after the keystroke that made the range —
+// Shift+Home and Ctrl+V, which is how a person pastes over words — would otherwise
+// read "nothing selected", drop the address onto the caret and lose the words the
+// author meant to keep.
 function bindPasteLink(control) {
 	control.surface.addEventListener("paste", (event) => {
 		const text = event.clipboardData ? event.clipboardData.getData("text/plain").trim() : "";
-		if (!isLink(text) || control.editor.state.selection.empty) return;
+		const words = isLink(text) ? selectedWords(control) : null;
+		if (!words) return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
-		linkSelection(control, text);
+		linkSelection(control, text, words);
 		commit(control);
 	}, true);
+}
+
+// selectedWords answers which words of the document a pasted address belongs to, and
+// answers nothing when nothing is selected. The editor's own selection is the first
+// answer and, once the editor has read the page, the only one needed. The browser's
+// live range is the second: the same range asked one flush earlier, and the one the
+// author can see on the screen. A caret, a range outside this field and a range the
+// editor cannot place in its document all answer nothing, and the paste is left to
+// ProseMirror — which is what a field holding no selection does.
+function selectedWords(control) {
+	const selection = control.editor.state.selection;
+	if (!selection.empty) return { from: selection.from, to: selection.to };
+	const onScreen = window.getSelection();
+	if (!onScreen || !onScreen.rangeCount || onScreen.isCollapsed) return null;
+	const range = onScreen.getRangeAt(0);
+	if (!control.surface.contains(range.commonAncestorContainer)) return null;
+	const start = documentPosition(control.editor.view, range.startContainer, range.startOffset);
+	const end = documentPosition(control.editor.view, range.endContainer, range.endOffset);
+	if (start === null || end === null || start === end) return null;
+	return start < end ? { from: start, to: end } : { from: end, to: start };
+}
+
+// documentPosition maps one DOM position into the document, and answers nothing for
+// a node or an offset this editor holds no position for.
+function documentPosition(view, node, offset) {
+	if (!node) return null;
+	try { return view.posAtDOM(node, offset); } catch { return null; }
 }
 
 function isLink(text) {
@@ -461,14 +495,17 @@ function saveLink(control) {
 
 // linkSelection and removeLink are the address applied to a selection. The bundled
 // Link is a bare mark — it carries href and title and ships no setLink command —
-// so the mark is set by name, which is also the only way a mark the editor does
-// not know about could be applied at all.
-function linkSelection(control, href) {
+// so the mark is set by name, which is also the only way a mark the editor does not
+// know about could be applied at all. The caller names the range when it knows one
+// the editor does not yet hold, and the editor is then told: the words stay selected
+// on the screen, and the next keystroke replaces them as it would have before.
+function linkSelection(control, href, range) {
 	const { state } = control.editor;
 	const link = state.schema.marks.link;
-	const { from, to } = state.selection;
-	if (!link || from === to) return;
-	control.editor.view.dispatch(state.tr.addMark(from, to, link.create({ href: href, title: null })).scrollIntoView());
+	const span = range || state.selection;
+	if (!link || span.from === span.to) return;
+	control.editor.view.dispatch(state.tr.addMark(span.from, span.to, link.create({ href: href, title: null })).scrollIntoView());
+	if (range) control.editor.commands.setTextSelection({ from: span.from, to: span.to });
 }
 
 function removeLink(control) {
