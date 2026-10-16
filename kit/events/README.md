@@ -297,3 +297,19 @@ test reads rather than one a release note claims; `UPDATE_GOLDEN=1` as the only
 writer of a checked-in contract; and `KernelName` with the `KernelEvents`
 exemption in `Validate`, which is the shape the next kernel-emitted event arrives
 in.
+
+## Operation causality
+
+`Event.Operation` carries the origin independently of the current event actor.
+The outbox, relay and CloudEvents codec preserve `operationid`, `operationref`,
+`operationtenantid`, `operationpersonid`, `operationoutcome` and
+`operationrevision`. Partial or invalid metadata is refused; a fully absent
+snapshot is historical. Publishing rechecks immutable identity against the
+receipt and reads its current outcome in the same transaction. An expired
+terminal snapshot can still be copied without creating another receipt.
+
+Consume restores causality and clears it for historical events. It restores no
+session or actor impersonation. Explicit completion and owner-designated terminal
+callbacks share the existing delivery transaction. Audit copies the six facts
+and exposes an exact operation-reference filter. [The receipt contract](../idempotency/README.md)
+is the canonical explanation of transitions, admission and retention.
