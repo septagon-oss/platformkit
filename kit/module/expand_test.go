@@ -48,11 +48,25 @@ func TestExpandRewritesSubscriptionsAndNothingElse(t *testing.T) {
 	if len(got) != len(mods) {
 		t.Fatalf("Expand returned %d modules for a composition of %d", len(got), len(mods))
 	}
-	// The expansion really expanded: without this the six claims below could
-	// all be satisfied by an Expand that returns its argument untouched.
-	if len(got[1].Subscriptions) != 2 || got[1].SubscribeAll {
-		t.Fatalf("the trail holds %d subscriptions and SubscribeAll %v: this case needs a module whose one template became one per event",
-			len(got[1].Subscriptions), got[1].SubscribeAll)
+	// The expansion really expanded, and to exactly the events this composition
+	// emits — the kernel's own beside the modules', since KernelEvents count as
+	// emitted for a subscriber. Stated as the rule rather than a count, so the
+	// claims below cannot be satisfied by an Expand that returns its argument
+	// untouched and the probe cannot go stale when the next event is declared.
+	var emitted []string
+	for _, m := range mods {
+		for _, e := range m.Emits() {
+			emitted = append(emitted, e.Name)
+		}
+	}
+	want := slices.Sorted(slices.Values(append(slices.Clone(KernelEvents), emitted...)))
+	var names []string
+	for _, s := range got[1].Subscriptions {
+		names = append(names, s.Name)
+	}
+	if !slices.Equal(names, want) || got[1].SubscribeAll {
+		t.Fatalf("the trail subscribes to %v with SubscribeAll %v, want %v: this case cannot say anything about a repair's catalogue until its own expansion is the one Expand promises",
+			names, got[1].SubscribeAll, want)
 	}
 
 	// The join itself: one catalogue, whichever list Grants is handed.
