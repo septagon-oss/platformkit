@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/appname"
+	"github.com/septagon-oss/platformkit/kit/operation"
 )
 
 const (
@@ -82,14 +83,23 @@ type envelope struct {
 	// The attribution, in the extension's lower-case spelling: what caused this
 	// when the cause was not a session. All four are absent for a person's
 	// request, which the `actor` attribute already names.
-	ActorKind  string `json:"actorkind,omitempty"`
-	SourceFile string `json:"sourcefile,omitempty"`
-	SourceLine int    `json:"sourceline,omitempty"`
-	Initiator  string `json:"initiator,omitempty"`
+	ActorKind         string            `json:"actorkind,omitempty"`
+	SourceFile        string            `json:"sourcefile,omitempty"`
+	SourceLine        int               `json:"sourceline,omitempty"`
+	Initiator         string            `json:"initiator,omitempty"`
+	OperationID       string            `json:"operationid,omitempty"`
+	OperationRef      string            `json:"operationref,omitempty"`
+	OperationTenant   string            `json:"operationtenantid,omitempty"`
+	OperationPerson   string            `json:"operationpersonid,omitempty"`
+	OperationOutcome  operation.Outcome `json:"operationoutcome,omitempty"`
+	OperationRevision int64             `json:"operationrevision,omitzero"`
 }
 
 // MarshalJSON writes the CloudEvents form of the event.
 func (e Event) MarshalJSON() ([]byte, error) {
+	if err := ValidateOperation(e.Operation); err != nil {
+		return nil, err
+	}
 	doc := envelope{
 		SpecVersion:     SpecVersion,
 		ID:              e.ID.String(),
@@ -122,6 +132,8 @@ func (e Event) MarshalJSON() ([]byte, error) {
 	if e.Initiator != uuid.Nil {
 		doc.Initiator = e.Initiator.String()
 	}
+	doc.OperationID, doc.OperationRef, doc.OperationTenant, doc.OperationPerson = e.Operation.ID, e.Operation.Ref, e.Operation.Tenant, e.Operation.Person
+	doc.OperationOutcome, doc.OperationRevision = e.Operation.Outcome, e.Operation.Revision
 	return json.Marshal(doc)
 }
 
@@ -237,7 +249,27 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 			return err
 		}
 	}
-	*e = Event{ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
+	op := operation.Identity{ID: doc.OperationID, Ref: doc.OperationRef, Tenant: doc.OperationTenant, Person: doc.OperationPerson, Outcome: doc.OperationOutcome, Revision: doc.OperationRevision}
+	if err := ValidateOperation(op); err != nil {
+		return err
+	}
+	var attributes map[string]json.RawMessage
+	if err := json.Unmarshal(body, &attributes); err != nil {
+		return err
+	}
+	for _, name := range []string{"operationid", "operationref", "operationtenantid", "operationpersonid", "operationoutcome", "operationrevision"} {
+		if _, present := attributes[name]; present && op == (operation.Identity{}) {
+			return errors.New("events: empty operation extensions")
+		}
+	}
+	if _, present := attributes["operationpersonid"]; present && op.Person == "" {
+		return errors.New("events: empty operation person")
+	}
+	if _, present := attributes["operationoutcome"]; present && op.Outcome == "" {
+		return errors.New("events: empty operation outcome")
+	}
+
+	*e = Event{Operation: op, ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
 		App: app, TraceParent: doc.TraceParent, TraceState: doc.TraceState, Baggage: doc.Baggage,
 		ActorKind: doc.ActorKind, SourceFile: doc.SourceFile, SourceLine: doc.SourceLine,
 		Initiator: initiator}
@@ -289,4 +321,34 @@ func parseUUID(member, value string) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("events: CloudEvents %s %q is not a UUID: %w", member, value, err)
 	}
 	return id, nil
+}
+
+// ValidateOperation accepts an absent historical snapshot and refuses partial or
+// malformed metadata. Person and outcome may be absent on an admitted intent.
+func ValidateOperation(op operation.Identity) error {
+	if op == (operation.Identity{}) {
+		return nil
+	}
+	if !operation.ValidToken(op.ID) || op.Revision <= 0 || (op.Outcome != "" && !op.Outcome.Valid()) {
+		return errors.New("events: invalid operation metadata")
+	}
+	for name, value := range map[string]string{"operationref": op.Ref, "operationtenantid": op.Tenant} {
+		id, err := parseUUID(name, value)
+		if err != nil {
+			return err
+		}
+		if id == uuid.Nil {
+			return fmt.Errorf("events: %s is zero", name)
+		}
+	}
+	if op.Person != "" {
+		id, err := parseUUID("operationpersonid", op.Person)
+		if err != nil {
+			return err
+		}
+		if id == uuid.Nil {
+			return errors.New("events: operation person is zero")
+		}
+	}
+	return nil
 }

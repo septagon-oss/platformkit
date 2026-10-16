@@ -16,6 +16,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/events/transport"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/modules/audit/contracts"
 )
 
@@ -46,6 +48,10 @@ var _ contracts.Service = (*Service)(nil)
 // tenant; taking it from the transaction anyway is what makes the isolation the
 // database's rather than a struct field's.
 func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+	if err := transport.ValidateOperation(ev.Operation); err != nil {
+		return err
+	}
+	facts := operationFacts(ev.Operation)
 	var actor any
 	if ev.Actor != uuid.Nil {
 		actor = ev.Actor
@@ -82,14 +88,15 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	// The ids the payload mentions are lifted out here, once, so that reading
 	// one row's trail is an index lookup rather than a scan of the tenant's.
 	// See migrations/000023 and List.
-	err := tx.DB().Exec("INSERT INTO "+table+
-		" (tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent,"+
-		" actor_kind, source_file, source_line, initiator)"+
-		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, NULLIF(?, '')::inet, ?, ?, ?, ?, ?)"+
-		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
-		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload),
-		pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.RequestID), ev.ClientIP, nilIfEmpty(ev.TraceParent),
-		kind, file, line, initiator).Error
+	columns := "tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent, actor_kind, source_file, source_line, initiator"
+	values := "?, ?, ?, ?, ?, ?::jsonb, ?, ?, NULLIF(?, '')::inet, ?, ?, ?, ?, ?"
+	args := []any{db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload), pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.RequestID), ev.ClientIP, nilIfEmpty(ev.TraceParent), kind, file, line, initiator}
+	if ev.Operation.ID != "" {
+		columns += ", operation_id, operation_ref, operation_tenant_id, operation_person_id, operation_outcome, operation_revision"
+		values += ", ?, ?, ?, ?, ?, ?"
+		args = append(args, facts...)
+	}
+	err := tx.DB().Exec("INSERT INTO "+table+" ("+columns+") VALUES ("+values+") ON CONFLICT (tenant_id,event_id) DO NOTHING", args...).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)
 	}
@@ -116,6 +123,9 @@ func nilIfEmpty(s string) any {
 func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query) ([]*contracts.Event, int64, error) {
 	build := func() *gorm.DB {
 		g := tx.DB().Table(table)
+		if q.OperationRef != uuid.Nil {
+			g = g.Where("operation_ref = ?", q.OperationRef)
+		}
 		if q.Name != "" {
 			g = g.Where("name = ?", q.Name)
 		}
@@ -250,4 +260,18 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*co
 		return nil, fmt.Errorf("audit: read %s: %w", id, err)
 	}
 	return &row, nil
+}
+
+func operationFacts(op request.Operation) []any {
+	if op.ID == "" {
+		return []any{nil, nil, nil, nil, nil, nil}
+	}
+	var person, outcome any
+	if op.Person != "" {
+		person = op.Person
+	}
+	if op.Outcome != "" {
+		outcome = string(op.Outcome)
+	}
+	return []any{op.ID, op.Ref, op.Tenant, person, outcome, op.Revision}
 }
