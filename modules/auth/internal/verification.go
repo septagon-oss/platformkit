@@ -31,7 +31,7 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			// that asked for it is gone: the port it was answered at rides the event.
 			ctx = WithServed(ctx, registered.Served)
 			ctx = WithOrigin(ctx, event)
-			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email)
+			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email, askedAtSignUp)
 		},
 	}, {
 		Module: "auth", Name: contracts.EventNoLinkRequested,
@@ -67,7 +67,7 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			if err != nil {
 				return err
 			}
-			return svc.offerVerification(ctx, tx, found.ID, asked.Email)
+			return svc.offerVerification(ctx, tx, found.ID, asked.Email, askedForAnotherLink)
 		},
 	}}
 	for i := range subs {
@@ -86,7 +86,28 @@ func verificationLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 	return nil
 }
 
-func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) error {
+// asker names which of this module's two ways into offerVerification is asking,
+// which is what decides what the offer owes the person on the branch where no
+// link leaves.
+//
+// The public delivery door (RegisterEmailRegistrationRoutes' auth-mail-delivery)
+// answers a caller from the one record its own call caused, so every branch of an
+// ask must hand one message to the transport (no_link.go). Whether this delivery
+// is such an ask is not a fact the credential table can answer — a first delivery
+// and a redelivery of one event look identical in it — so the caller says.
+type asker int
+
+const (
+	// askedForAnotherLink is somebody at the resend form. Their ask is the one the
+	// door answers, and it is answered from the record this delivery causes.
+	askedForAnotherLink asker = iota
+	// askedAtSignUp is one account creation, which the outbox may deliver more than
+	// once under one id. The sign-up route answered its caller 202 Accepted, and the
+	// message that call is answered from is caused by the first delivery of it.
+	askedAtSignUp
+)
+
+func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string, asked asker) error {
 	if !contracts.MailDeliverable(s.mail.Mailer) || s.mail.Hosts == nil {
 		return fmt.Errorf("auth: verification delivery is unavailable")
 	}
@@ -140,10 +161,23 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	}
 	if recent {
 		// A link this person was sent a moment ago still stands, so no second one
-		// leaves — and this call still hands one message to the transport, for the
-		// reason the branch above gives. The sentence it carries is the one the flow
-		// says on every branch: about this request, no link was sent, which is true
+		// leaves — and a person who asked still hands one message to the transport,
+		// for the reason the branch above gives: the sentence is the one the flow
+		// says on every branch, about this request no link was sent, which is true
 		// even while an earlier one is on its way.
+		//
+		// A delivery of the sign-up event is nobody asking again. It is the outbox's
+		// retry of one account creation, and user.registration_unverified is raised
+		// once per account: every later ask arrives as an explicit resend. So a
+		// delivery of it that finds its own link already sent can only be that
+		// delivery arriving twice. The row which set this branch off is the record
+		// that the transport took the link for this creation: the mail went, its
+		// call was answered, and a second message here would tell the person holding
+		// the link that no link was sent, and write a second record for a request the
+		// door has already read. The retry owes nothing, so it sends nothing.
+		if asked == askedAtSignUp {
+			return nil
+		}
 		return s.noVerificationLink(ctx, tx, email)
 	}
 	base, err := s.baseURL(ctx, tx)
