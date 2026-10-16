@@ -890,12 +890,12 @@ shape, so a caller that renders the role it was given is untouched; an out-of-tr
 implementation of the service interface owes the new method, and `authtest.NewFake`
 ships one. Measured
 with the comparison the release process asks for (`python3 scripts/check_public_api.py
-v1.1.0 HEAD`): 20 reported incompatibilities at this tip against 18 at
-`origin/main`, the added lines these two.
+v1.1.0 HEAD`): the v1.1.0 line answers 106 accepted incompatibilities at the merged
+tree, and the added lines are these two.
 [RELEASE.md](RELEASE.md#choose-the-compatible-release-line) measures a break against
-v1.1.0 with no accepted-break baseline, and
-[scripts/PUBLIC-API.md](scripts/PUBLIC-API.md) keeps that comparison out of `make check`
-and in a scheduled workflow; the `usertest.NewFake` entry below names the same
+v1.1.0, and the accepted-break baseline is re-measured where a merge joins the two
+([scripts/PUBLIC-API.md](scripts/PUBLIC-API.md)); `check-apidiff` is a required line
+of `make check`, not a workflow that runs on a Sunday. the `usertest.NewFake` entry below names the same
 constraint and the `/v2` migration it owes. The reference composition, this repository's
 tests and the repair command are on the new shape; the products repository, whose
 `registry.go` passes the literal, is the caller left to move.
