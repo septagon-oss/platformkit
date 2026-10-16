@@ -37634,6 +37634,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/scim/internal/reactivation_patch_refusal_commit_test.go",
+   "id": "modules/scim/internal/reactivation_patch_refusal_commit_test.go#TestInvalidReactivationPatchPreservesTheConnectorsRightToReactivate",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestInvalidReactivationPatchPreservesTheConnectorsRightToReactivate",
+   "needs_db": true,
+   "pkg": "modules/scim/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/scim/internal/schema_address_test.go",
    "id": "modules/scim/internal/schema_address_test.go#TestEveryAdvertisedSchemaCanBeReadByItsIdentifier",
    "kind": "go",
@@ -59740,7 +59759,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1544,
+  "files": 1545,
   "forge_runs": [
    408,
    413,
@@ -59774,7 +59793,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2575,
+   "behaviour": 2576,
    "composition": 334,
    "contract": 20,
    "journey": 88
@@ -59793,9 +59812,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3017,
+  "rows": 3018,
   "tiers": {
-   "merge": 1909,
+   "merge": 1910,
    "nightly": 88,
    "push": 1020
   },
@@ -59803,13 +59822,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1359,
+   "keep": 1360,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2727,
+   "keep": 2728,
    "keep-rewrite": 117,
    "merge": 173
   }
