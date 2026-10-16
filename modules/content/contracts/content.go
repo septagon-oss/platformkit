@@ -153,7 +153,7 @@ type Content struct {
 	// module's own ledger answers: the write that names an id files the use in the
 	// same transaction that wrote the row, so the sweep that reads that ledger
 	// knows this page is showing it.
-	CoverImageID *uuid.UUID `json:"coverImageId,omitempty" gorm:"column:cover_image_id;type:uuid" format:"uuid" ui:"present:image;label:Cover" doc:"File id of the cover picture"`
+	CoverImageID *uuid.UUID `json:"coverImageId,omitempty" gorm:"column:cover_image_id;type:uuid" format:"uuid" ui:"present:image;label:Cover;help:File id of the cover picture" doc:"File id of the cover picture"`
 
 	// Kind and Status are closed sets; the enum tag is what a form renders as a
 	// select and what Validate refuses a value outside.

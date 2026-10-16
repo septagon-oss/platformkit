@@ -2280,6 +2280,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/cover_help_portuguese_test.go",
+   "id": "apps/platformkit/cover_help_portuguese_test.go#TestTheCoverPictureHelpIsDeclaredAndAnsweredInPortuguese",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheCoverPictureHelpIsDeclaredAndAnsweredInPortuguese",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/cross_tenant_proposal_test.go",
    "id": "apps/platformkit/cross_tenant_proposal_test.go#TestAnotherTenantCannotReachAProposal",
    "kind": "go",
@@ -59922,7 +59941,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1551,
+  "files": 1552,
   "forge_runs": [
    408,
    413,
@@ -59957,7 +59976,7 @@
   ],
   "layers": {
    "behaviour": 2563,
-   "composition": 356,
+   "composition": 357,
    "contract": 20,
    "journey": 88
   },
@@ -59975,9 +59994,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3027,
+  "rows": 3028,
   "tiers": {
-   "merge": 1914,
+   "merge": 1915,
    "nightly": 88,
    "push": 1025
   },
@@ -59985,13 +60004,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1366,
+   "keep": 1367,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2737,
+   "keep": 2738,
    "keep-rewrite": 117,
    "merge": 173
   }
