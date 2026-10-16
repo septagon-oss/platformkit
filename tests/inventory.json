@@ -34431,6 +34431,25 @@
   },
   {
    "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/repair_transaction_rollback_test.go",
+   "id": "modules/auth/repair_transaction_rollback_test.go#TestARefusedRepairRollsBackEarlierRoleChangesAndEvents",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedRepairRollsBackEarlierRoleChangesAndEvents",
+   "needs_db": true,
+   "pkg": "modules/auth",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
    "assertions_in_file": 10,
    "evidence": "round-named and reaches nothing a kept sibling does not reach",
    "file": "modules/auth/review12_duplicate_grants_pin_test.go",
@@ -60514,7 +60533,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1567,
+  "files": 1568,
   "forge_runs": [
    408,
    413,
@@ -60548,7 +60567,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2578,
+   "behaviour": 2579,
    "composition": 369,
    "contract": 19,
    "journey": 88
@@ -60567,9 +60586,9 @@
   },
   "round_named_ceiling": 37,
   "round_named_files": 37,
-  "rows": 3054,
+  "rows": 3055,
   "tiers": {
-   "merge": 1942,
+   "merge": 1943,
    "nightly": 88,
    "push": 1024
   },
@@ -60577,13 +60596,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1364,
+   "keep": 1365,
    "keep-rewrite": 66,
    "merge": 137
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2736,
+   "keep": 2737,
    "keep-rewrite": 133,
    "merge": 185
   }
