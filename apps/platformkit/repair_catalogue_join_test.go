@@ -47,11 +47,15 @@ func TestTheRepairNarrowsAgainstTheCatalogueItsSeederWasGiven(t *testing.T) {
 	c := compose(cfg)
 
 	// The expectation, written out from the manifests this composition holds.
-	// Nothing in this file's production code computes it.
+	// Nothing in this file's production code computes it. A manifest is a key, the
+	// words the module uses for it and whether it reaches the control plane, so the
+	// expectation is written out as all three: a catalogue that lost the labels
+	// would answer the repair's question and still leave a refusal with nothing to
+	// say.
 	var composed []tenancy.Grant
 	for _, m := range c.modules {
 		for _, p := range m.Permissions {
-			composed = append(composed, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+			composed = append(composed, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
 		}
 	}
 
