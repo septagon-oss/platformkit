@@ -25,7 +25,7 @@ var appliedAudit = map[string]string{
 }
 
 // firstLaterFoundationFile is the first kernel version an installation of that era did not have;
-// the upgrade below applies it and every one after it.
+// the upgrade below applies the schema files from it, leaving a data file and its successors to the worker.
 const firstLaterFoundationFile = 58
 
 // TestAnInstallationThatAppliedTheShippedAuditFilesMigratesOnThisTree migrates a database as an
