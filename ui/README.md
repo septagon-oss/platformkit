@@ -38,8 +38,10 @@ and refuses growth beyond these recorded closures:
 - `ui/page` and `ui/screens` are the adapters and are gated at the adapter
   closure, which reaches kit/db and net/http through kit/httpx; neither may
   import `ui/export` or `ui/source`. What needs the kernel stays there: the
-  local-path check on a sign-in link, the nonce on an inline script, the
-  guarded closures of an `httpx.Resource`.
+  local-path check on a sign-in link, the nonce on an inline script, a view's
+  `RunsWASM` declaration (the kernel's `httpx.AllowWASM`, called for the rendered
+  view and for no refusal or redirect), the guarded closures of an
+  `httpx.Resource`.
 - `ui/components` never imports `ui/components/examples`: a renderer needs no
   reflection. `ui` never imports `ui/export`: a shell needs no design tooling.
 
@@ -91,7 +93,7 @@ were drawn here, so the cure is here too.
   sidebar already branches on, `style.MaxWScaled(style.MaxWSM)` (the bound
   `document.Bare` and the reference app's fault page already chose),
   `components.Text`'s own size vocabulary, and the gate's own probe as
-  `e2e/review-r3-refusal-floor.spec.ts` transcribes it. That bound is carried by
+  `e2e/refusal-floor.spec.ts` transcribes it. That bound is carried by
   the two sentences under a control (`clHelp`, `clFieldErr`) and by the wrapper
   inside the footer — never by the field's own flex column (`clFieldWrap`),
   because the design tool projects no composition whose sizing is constrained of

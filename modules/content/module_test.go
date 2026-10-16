@@ -23,6 +23,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
+	"github.com/septagon-oss/platformkit/modules/translation/contracts/translationtest"
 )
 
 const (
@@ -96,7 +97,16 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, contents := content.New(content.Deps{Versions: &kept{}})
+	// The module as main mounts it, port and all: the title and the body are
+	// translatable fields, and a mount that declares them with no Translations
+	// port is refused by the Spec's own check — which is the sentence
+	// translationtest.NewFake lets this file speak without dragging a second
+	// Postgres table into a test about content. A page keeps a version of every
+	// write, so the mount needs the store to keep it in as well.
+	_, contents := content.New(content.Deps{
+		Translations: translationtest.NewFake(nil),
+		Versions:     &kept{},
+	})
 	contents.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -249,7 +259,7 @@ func field(t *testing.T, body, name string) string {
 }
 
 // TestThePublicPageIsConditional. Rendering is the expensive half of the public
-// route — the review measured 2.25 seconds for one large body, on every
+// route — one large body measured 2.25 seconds to render, on every
 // anonymous request — so a reader who already has the page is told so and the
 // renderer never runs.
 func TestThePublicPageIsConditional(t *testing.T) {

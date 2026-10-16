@@ -20,6 +20,9 @@ import (
 // composition file: rich text resolves the images a body embeds, and the module
 // that can resolve them says so, so withdrawing it is a refusal naming both.
 //
+// A fourth comes out beside it: rest.FileShown, the audience of those uses, which
+// is the fact a public face asserts and this module turns into visibility.
+//
 // A third contract comes out: rest.FileUses is the ledger a mounted richtext
 // resource writes its references into, and the module that owns the file rows is
 // the one that can write them, in its caller's transaction.
@@ -30,9 +33,11 @@ import (
 var Module = pkit.NewModule("file", wire,
 	pkit.Needs[filecontracts.Storage](),
 	pkit.Needs[jobs.TenantLister](),
+	pkit.Optional[*LibraryChrome](),
 	pkit.Provides[filecontracts.Service](),
 	pkit.Provides[richtext.Files](),
 	pkit.Provides[rest.FileUses](),
+	pkit.Provides[rest.FileShown](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -44,9 +49,20 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		MaxImagePixels: settings.MaxImagePixels,
 		Retention:      settings.Retention,
 		Tenants:        pkit.Get[jobs.TenantLister](w),
+		// The library's page arrives from the composition or does not. Nothing here
+		// guesses at which chrome its grid sits in, and the reads it draws are the
+		// service below rather than anything a composition could hand in.
+		Library: pkit.Get[*LibraryChrome](w),
 	})
 	pkit.Put(w, svc)
-	pkit.Put[richtext.Files](w, RichTextFiles{Opener: svc})
+	// The image port reads the widths this file can serve today, and the service
+	// is what answers that. The assertion is a narrowing and not a discovery: the
+	// concrete service this function just built has the method, and a composition
+	// handed a Service that cannot answer it gets today's one-descriptor srcset
+	// rather than a compile-time demand that every fake grow a pixel pipeline.
+	widths, _ := svc.(filecontracts.VariantServable)
+	pkit.Put[richtext.Files](w, RichTextFiles{Opener: svc, Variants: widths})
 	pkit.Put[rest.FileUses](w, RecordUses{Service: svc})
+	pkit.Put[rest.FileShown](w, ShowFiles{Service: svc})
 	return manifest, nil
 }

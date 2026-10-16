@@ -1,0 +1,20 @@
+{
+  "permission.webhook:read": {
+    "references": [
+      "modules/webhook/module.go"
+    ],
+    "translation": "ler endpoints e entregas de webhook",
+    "plural": {
+      "": "ler endpoints e entregas de webhook"
+    }
+  },
+  "permission.webhook:update": {
+    "references": [
+      "modules/webhook/module.go"
+    ],
+    "translation": "registar, alterar, ativar e desativar endpoints de webhook",
+    "plural": {
+      "": "registar, alterar, ativar e desativar endpoints de webhook"
+    }
+  }
+}

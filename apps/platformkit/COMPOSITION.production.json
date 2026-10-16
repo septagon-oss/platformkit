@@ -15,9 +15,12 @@
         "sitecontracts.WriteGate",
         "rest.Gate",
         "webcontracts.Links",
+        "rest.TranslationSource",
         "admincontracts.Signin",
+        "admincontracts.Pictures",
         "admincontracts.Locale",
-        "tenantcontracts.Languages"
+        "tenantcontracts.Languages",
+        "webhookcontracts.Catalogue"
       ],
       "contributes": [
         {
@@ -69,9 +72,25 @@
       ]
     },
     {
+      "name": "translation",
+      "provides": [
+        "rest.Translations"
+      ],
+      "needs": [
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product"
+      ]
+    },
+    {
       "name": "site",
       "provides": [
-        "sitecontracts.Service"
+        "sitecontracts.Service",
+        "sitecontracts.LockedReader"
       ],
       "uses": [
         {
@@ -144,7 +163,8 @@
       "provides": [
         "notificationcontracts.Service",
         "authcontracts.Notifier",
-        "notificationcontracts.Mailer"
+        "notificationcontracts.Mailer",
+        "notificationcontracts.MailLedger"
       ],
       "needs": [
         {
@@ -167,31 +187,6 @@
       "implementation": {
         "name": "mailbox"
       }
-    },
-    {
-      "name": "file",
-      "provides": [
-        "filecontracts.Service",
-        "richtext.Files",
-        "rest.FileUses"
-      ],
-      "needs": [
-        {
-          "contract": "filecontracts.Storage",
-          "from": "product"
-        },
-        {
-          "contract": "jobs.TenantLister",
-          "from": "tenant"
-        }
-      ],
-      "after": [
-        "product",
-        "tenant"
-      ],
-      "reads": [
-        "config.Files"
-      ]
     },
     {
       "name": "task",
@@ -261,6 +256,32 @@
       ]
     },
     {
+      "name": "webhook",
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        },
+        {
+          "contract": "webhookcontracts.Catalogue",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webhookcontracts.Alerts",
+          "from": ""
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Webhook"
+      ]
+    },
+    {
       "name": "auth",
       "provides": [
         "authcontracts.Auth",
@@ -287,6 +308,10 @@
         {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
+        },
+        {
+          "contract": "notificationcontracts.MailLedger",
+          "from": "notification"
         },
         {
           "contract": "authcontracts.OIDCProviders",
@@ -324,24 +349,18 @@
       ]
     },
     {
-      "name": "history",
+      "name": "media",
       "provides": [
-        "historycontracts.Service",
-        "httpx.Versions"
+        "*file.LibraryChrome"
       ],
       "needs": [
         {
-          "contract": "rest.FileUses",
-          "from": "file"
-        },
-        {
-          "contract": "jobs.TenantLister",
-          "from": "tenant"
+          "contract": "authcontracts.Auth",
+          "from": "auth"
         }
       ],
       "after": [
-        "tenant",
-        "file"
+        "auth"
       ]
     },
     {
@@ -362,6 +381,10 @@
         },
         {
           "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "sitecontracts.LockedReader",
           "from": "site"
         },
         {
@@ -390,27 +413,36 @@
       ]
     },
     {
-      "name": "content",
+      "name": "file",
       "provides": [
-        "contentcontracts.Service"
+        "filecontracts.Service",
+        "richtext.Files",
+        "rest.FileUses",
+        "rest.FileShown"
       ],
       "needs": [
         {
-          "contract": "richtext.Files",
-          "from": "file"
+          "contract": "filecontracts.Storage",
+          "from": "product"
         },
         {
-          "contract": "rest.FileUses",
-          "from": "file"
-        },
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "uses": [
         {
-          "contract": "httpx.Versions",
-          "from": "history"
+          "contract": "*file.LibraryChrome",
+          "from": "media"
         }
       ],
       "after": [
-        "file",
-        "history"
+        "product",
+        "tenant",
+        "media"
+      ],
+      "reads": [
+        "config.Files"
       ]
     },
     {
@@ -447,6 +479,60 @@
       ]
     },
     {
+      "name": "history",
+      "provides": [
+        "historycontracts.Service",
+        "httpx.Versions"
+      ],
+      "needs": [
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "after": [
+        "tenant",
+        "file"
+      ]
+    },
+    {
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        },
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.FileShown",
+          "from": "file"
+        },
+        {
+          "contract": "httpx.Versions",
+          "from": "history"
+        }
+      ],
+      "after": [
+        "file",
+        "history",
+        "translation"
+      ]
+    },
+    {
       "name": "web",
       "needs": [
         {
@@ -466,11 +552,20 @@
         {
           "contract": "webcontracts.Links",
           "from": "product"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
         }
       ],
       "after": [
         "product",
         "file",
+        "translation",
         "content",
         "site"
       ]
@@ -490,6 +585,10 @@
       "uses": [
         {
           "contract": "admincontracts.Signin",
+          "from": "product"
+        },
+        {
+          "contract": "admincontracts.Pictures",
           "from": "product"
         },
         {

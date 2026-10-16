@@ -18,6 +18,67 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
+// asked puts one of this module's own caps on the answer that cap decided, and says
+// whether the attempt may go on.
+//
+// The kernel's anonymous-write limit already states itself on every public write, and
+// states nothing about the counters this module spends: a forgotten-password request is
+// capped twice over, by two counters, and the one that decided it is the one the caller
+// has to be told about — the name under `RateLimit-Policy`, the attempts left under it,
+// and the wait before either moves. A route that refused on a counter and said nothing
+// left a caller with a 429 and a guess, which is the retry traffic the refusal exists to
+// prevent.
+//
+// The numbers are the deciding statement's own (kit/limit answers in one call for that
+// reason), so nothing here re-counts a row other requests have moved since. A counter
+// that could not be reached allows the attempt and states no limit: Limiter's stated
+// failure mode, restated rather than reinvented here.
+func asked(ctx context.Context, d contracts.Decision, sentence string) error {
+	if !d.Decided() {
+		return nil
+	}
+	httpx.SayCounted(ctx, httpx.Counted{
+		Name:      d.Policy.Name,
+		Quota:     d.Policy.Quota,
+		Window:    d.Policy.Window,
+		Remaining: d.Remaining,
+		Left:      d.Left,
+		Refused:   !d.Allowed,
+	})
+	if d.Allowed {
+		return nil
+	}
+	return problem.New(http.StatusTooManyRequests, sentence)
+}
+
+// sayLockout puts the lockout on the answer it decided, and is the same rule as asked
+// spent on the two mail caps: a refusal this module counted has to name the counter it
+// counted, the quota left under it and the wait before either moves, because a 429 that
+// says none of those leaves the caller to retry on a guess.
+//
+// It is called by the command rather than by the route, because the command is where
+// the counter is read: the route sees ErrTooManyAttempts and nothing else, and a
+// reading taken after that answer is a second look at a window other attempts have
+// moved since. Both of this module's password doors — the sign-in and the second-factor
+// leg — spend the one counter and so state the one policy.
+//
+// A counter that could not be read reports no Decision and this says nothing at all:
+// the attempt was allowed on Limiter's stated failure mode, and the only numbers on
+// offer are ones nobody read.
+func sayLockout(ctx context.Context, d contracts.Decision, refused bool) {
+	if !d.Decided() {
+		return
+	}
+	httpx.SayCounted(ctx, httpx.Counted{
+		Name:      d.Policy.Name,
+		Quota:     d.Policy.Quota,
+		Window:    d.Policy.Window,
+		Remaining: d.Remaining,
+		Left:      d.Left,
+		Refused:   refused,
+	})
+}
+
 func handleLogin(svc contracts.Service, cookies Cookies) func(context.Context, *loginInput) (*sessionOutput, error) {
 	return func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
 		// The verdict first, the sleep second, the transaction third, and that
@@ -145,9 +206,9 @@ func handleForgotPassword(svc contracts.Service) func(context.Context, *forgotIn
 		// limit on the address asked about — that would be the oracle this
 		// route exists not to be.
 		r, _ := httpx.RequestFrom(ctx)
-		if !svc.MayAsk(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests,
-				"too many reset requests from this address; wait and try again")
+		if err := asked(ctx, svc.MayAsk(ctx, ClientOf(r).IP),
+			"too many reset requests from this address; wait and try again"); err != nil {
+			return nil, err
 		}
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -177,9 +238,9 @@ func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Co
 			return nil, problem.New(http.StatusForbidden,
 				"this request came from another site; set the password from the page itself")
 		}
-		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests,
-				"too many reset attempts from this address; wait and try again")
+		if err := asked(ctx, svc.MayRedeem(ctx, ClientOf(r).IP),
+			"too many reset attempts from this address; wait and try again"); err != nil {
+			return nil, err
 		}
 		tx, err := transaction(ctx)
 		if err != nil {

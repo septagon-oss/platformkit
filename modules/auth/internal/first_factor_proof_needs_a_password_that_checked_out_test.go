@@ -7,7 +7,7 @@ package internal_test
 // the first proof", and the answer it consults is a row written by
 // `markFirstFactorProved`. That one call site per door is the whole of the cure:
 // a window minted wherever an address was merely *tried* would put this module
-// back exactly where the review of the challenge route found it — a code held by
+// back exactly where the challenge route was found to be — a code held by
 // a stranger being the account — because every public door in this module knows
 // how to take an address. So the risk that matters here is not the door that was
 // closed, it is a mint attached to the wrong branch: the wrong password, the

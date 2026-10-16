@@ -51,15 +51,16 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/change"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
+	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
-	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
+	webhookcontracts "github.com/septagon-oss/platformkit/modules/webhook/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/export"
@@ -88,9 +89,12 @@ func product(cfg config.Config) *pkit.Module {
 		// same key rather than letting a gate be whichever module built last.
 		pkit.Provides[rest.Gate](),
 		pkit.Provides[webcontracts.Links](),
+		pkit.Provides[rest.TranslationSource](),
 		pkit.Provides[admincontracts.Signin](),
+		pkit.Provides[admincontracts.Pictures](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
+		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
 	}
@@ -155,6 +159,17 @@ func product(cfg config.Config) *pkit.Module {
 			SignIn:     pinnedWorkspace,
 			PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
 		})
+		// Which entity's records this product's public site renders, as the
+		// translation port has to be handed it. It is a value and not a call: the
+		// row set is derived from the entity's own schema tags, so naming it here
+		// builds nothing and needs nobody — which is why this is the one edge the
+		// sentence cannot draw between two modules. content needs the port that
+		// holds the other languages, translation needs to know which table has
+		// fields worth holding them for, and an edge in either direction between
+		// the two is a cycle the resolver would refuse. So the application names
+		// the entity — the same line this composition wrote by hand before the
+		// resolver existed, now said in a place the graph can read.
+		pkit.Put[rest.TranslationSource](w, content.TranslationSource())
 		// The form on the shell's login page posts to the auth module's door, and
 		// the link to the registration form is the same value, so neither half can
 		// offer what the other did not mount. The address is the public door as the
@@ -165,6 +180,12 @@ func product(cfg config.Config) *pkit.Module {
 				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI,
 			},
 		})
+		// Where a stored picture's bytes are fetched from. The workspace catalogue
+		// publishes this same address to a shell that is not a browser, and the
+		// generated screens fetch through it; the door is the file module's and the
+		// document is the kernel's, so this composition is the only party that has met
+		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
+		pkit.Put[admincontracts.Pictures](w, admincontracts.Pictures{Source: filecontracts.PictureSource})
 		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
@@ -172,6 +193,12 @@ func product(cfg config.Config) *pkit.Module {
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
 		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(seedRoles))
+		// Which event names may be put on a webhook endpoint is this file's fact:
+		// the modules that emit them are composed by this file, and the module that
+		// checks a subscription against them cannot enumerate them. The literal is
+		// webhook_catalogue.go's, and a case asks the resolved composition whether it
+		// still matches what that composition emits.
+		pkit.Put[webhookcontracts.Catalogue](w, webhookCatalogue)
 		// A task is this product's second change subject, and it needs no service to
 		// be named: the locked read a diff is made against and the whole-row write an
 		// approved proposal comes through are two named constructors of the module that
@@ -224,8 +251,12 @@ func access(ask *accessReach) *pkit.Module {
 		// One contribution each: a module contributes the one of a contract it is, so
 		// this product's second subject — the task — is contributed by the product
 		// module, which needs nobody and can build it from two named constructors, and
-		// a slice the resolver would refuse is what a loop over both here would be.
-		pkit.Put[changecontracts.SubjectBinding](w, siteSubjectBinding(sites, site.NewLockedReader()))
+		// a slice the resolver would refuse is what a loop over both here would be. The
+		// locked read is the service above under the contract a caller about to write
+		// is handed: a second door to it could not reach what the wiring gives it, and a
+		// base document whose accent read differently from the API's answer would be a
+		// proposal diffed against a site nobody was shown.
+		pkit.Put[changecontracts.SubjectBinding](w, siteSubjectBinding(sites, pkit.Get[sitecontracts.LockedReader](w)))
 		// The same join makes the two facts change control needs to be more than a
 		// row: who is told about a decision, and where the thing decided is read.
 		// modules/change owns the proposal, its page's content and no address, and
@@ -248,6 +279,7 @@ func access(ask *accessReach) *pkit.Module {
 		pkit.Needs[usercontracts.Service](),
 		pkit.Needs[notificationcontracts.Service](),
 		pkit.Needs[sitecontracts.Service](),
+		pkit.Needs[sitecontracts.LockedReader](),
 		pkit.Needs[usercontracts.Granting](),
 		pkit.Needs[authcontracts.Auth](),
 		pkit.Provides[changecontracts.Notifier](),

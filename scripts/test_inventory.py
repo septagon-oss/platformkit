@@ -719,5 +719,5 @@ def main():
 # The refusal is the answer: --check's exit status is the verdict CI acts on, and check_push_tier.sh
 # reads the selection's status before it reads the selection. A bare call here threw the value away and
 # every path exited 0, so a refused table and a refused selection both looked green to the gate that
-# asked (review 1, finding 2).
+# asked.
 sys.exit(main())

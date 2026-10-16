@@ -2,14 +2,14 @@ import { expect, test } from '@playwright/test';
 
 // The cascade, as a browser reads the sheet the application actually serves.
 //
-// ui/ui_test.go and the review pins of rounds 12–15 read the composed bytes: they say what
+// ui/ui_test.go and the sheet's own Go cases read the composed bytes: they say what
 // Compose emits and what refuseClientSheet refuses. What no Go test can say is what a browser
 // *does* with those bytes, and the whole argument rests on one: the sheet's first line ranks
 // the client layer last, which for normal declarations makes it the strongest of the four, so
 // a consumer rule addressed at a kernel class would win the kernel's own element whatever its
 // own selector says — and the refusal, not the ranking, is what protects the component. That
 // claim was never measured in any revision of this repository: every case that exists reads
-// the bytes, and one refusal message had it stated backwards before round 14 caught it.
+// the bytes, and one refusal message once had it stated backwards.
 //
 // The public site is the page to read. modules/web is the only composition in this repository
 // that passes ui.Extra.Sheets to ui.Compose, so its @layer client carries a consumer's rules
