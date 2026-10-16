@@ -764,7 +764,7 @@ race_commands() { # <TEST_COUNT> <goals…>: the same for the race goal, whose l
 # a part the fresh gate is made of, so pasting the failing line back in with `--packages` narrowed,
 # `-count=1` gone or the stated bound dropped is refused rather than rewarded — and it reads this pin,
 # not the Makefile, so it cannot be satisfied by the edit it watches.
-fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m"
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m -p=4"
 for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
 	case " $fresh " in
 	*" $fresh_part"*) ;;
@@ -775,8 +775,8 @@ for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
 		;;
 	esac
 done
-focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -timeout=30m -run Selected"
-if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' -- -timeout=30m" ]]; then
+focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -timeout=30m -p=4 -run Selected"
+if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' -- -timeout=30m -p=4" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package, under the stated clock' >&2
 	exit 1
 fi
@@ -817,7 +817,7 @@ if [[ "$(test_commands -count=1 check)" != "$fresh" ]]; then
 	printf 'FAIL: make check with TEST_COUNT=-count=1 lost the fresh suite line:\n%s\n' "$(test_commands -count=1 check)" >&2
 	exit 1
 fi
-if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m" ]]; then
+if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m -p=4" ]]; then
 	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all, and lose nothing else:\n%s\n' "$(test_commands '' check)" >&2
 	exit 1
 fi
@@ -840,7 +840,7 @@ for race_part in "-race" "-count=1" "-timeout"; do
 	esac
 done
 case "$race_pinned" in
-	'go test -race -count=1 -timeout='*m' ./'*) ;;
+	'go test -race -count=1 -timeout='*m' -p=4 ./'*) ;;
 	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$race_pinned" >&2; exit 1 ;;
 esac
 empty_race="$(race_commands '' check-race)"
