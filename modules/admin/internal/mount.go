@@ -95,6 +95,11 @@ type Shell struct {
 	// SignIn is the auth module's session route, which the sign-in form posts
 	// to. The composition names it; this module only fills the form's action.
 	SignIn string
+	// PictureSource is the address template a generated picture cell fetches its
+	// bytes from, handed straight to the screen renderer that draws the cell. The
+	// composition names it for the same reason it names SignIn: the door belongs
+	// to the module that stores the bytes. Empty draws the plain value.
+	PictureSource string
 	// Registration is the composition saying a stranger may make an account
 	// here. Nil offers no way in but the password, which is the answer for
 	// every composition that wired no registration service.
@@ -208,7 +213,10 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// tenant, no session and no transaction to pay for.
 	app.Static(a.assets.rel, ui.Assets(sheet))
 
-	opts := screens.Options{Workspace: a.workspace.at, Home: "Dashboard"}
+	opts := screens.Options{
+		Workspace: a.workspace.at, Home: "Dashboard",
+		PictureSource: sh.PictureSource,
+	}
 	resources := s.Resources()
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Screen < resources[j].Screen })
 

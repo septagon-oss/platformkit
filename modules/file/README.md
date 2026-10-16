@@ -298,7 +298,10 @@ references, and both had to live in `contracts/` rather than `internal/` so that
 it. **Made reusable** — `ProcessImage`, `ReadsAsImage`, `RefusesPass`, `CollapseRefs`
 and `DiffUses` as shared, tested decisions; `rest.FileUses` as the seam any module with
 a richtext field can mount and `file.RecordUses` as the shape of wiring it;
-`Upload.Image` as the door a picker or an editor knocks on; and `width`/`height` on the
+`Upload.Image` as the door a picker or an editor knocks on, and
+`contracts.PictureSource`/`PictureURL` as the one spelling of that door's address —
+the string a body's `<img src>` and the workspace catalogue's `pictures.source` are
+both written from, so the two cannot drift into two shapes; and `width`/`height` on the
 row as the server's own account of a frame, which the media library and the editor will
 lay out against instead of decoding a header to learn what an image is.
 

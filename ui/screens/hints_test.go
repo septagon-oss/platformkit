@@ -16,6 +16,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -36,7 +38,10 @@ func hintedFields() []entity.Field {
 			Enum: []string{"open", "in_progress", "resolved"},
 			Presentation: entity.FieldHints{
 				EnumLabels: map[string]string{"in_progress": "In progress", "open": "Open", "resolved": "Resolved"},
-				EnumTones:  map[string]string{"in_progress": "info", "open": "neutral", "resolved": "success"}}},
+				EnumTones:  map[string]string{"in_progress": "info", "open": "neutral", "resolved": "success"},
+				// Which of these three means finished, which is not the same
+				// question as which colour it wears.
+				DoneValues: []string{"resolved"}}},
 		{Name: "authorId", Type: entity.TypeUUID,
 			Presentation: entity.FieldHints{Label: "Author", Section: "record", Visibility: "detail",
 				Reference: &entity.FieldReference{Resource: "user/user"}}},
@@ -47,6 +52,9 @@ func hintedFields() []entity.Field {
 			Presentation: entity.FieldHints{Visibility: "hidden"}},
 		{Name: "sentAt", Type: entity.TypeTime,
 			Presentation: entity.FieldHints{Section: "record", Format: "relative"}},
+		// The one picture, and the shape `present:image` demands: a file id.
+		{Name: "cover", Type: entity.TypeUUID, Present: "image",
+			Presentation: entity.FieldHints{Label: "Cover"}},
 	}
 }
 
@@ -64,6 +72,12 @@ func hinted() httpx.Resource {
 		Sections:         []entity.EntitySection{{Key: "record", Label: "Record information"}},
 		EmptyDescription: "Nothing has been written down yet.",
 		Sortable:         []string{"title", "sentAt"},
+		// The picture this record opens on and the one its rows show are the same
+		// column, and both are said: a document echoes what its author declared and
+		// computes no default.
+		CoverField:     "cover",
+		ThumbnailField: "cover",
+		PrimaryCommand: "resolve",
 	}
 	r.Commands = []httpx.Command{
 		{Verb: "publish", Summary: "Publish a note", Collection: false,
@@ -77,6 +91,9 @@ func hinted() httpx.Resource {
 				Confirmation: &entity.CommandConfirmation{Title: "Archive every resolved note?",
 					Body: "Resolved notes leave the list. Nothing else changes.", ConfirmLabel: "Archive"},
 				SuccessMessage: "The resolved notes are archived."}},
+		{Verb: "resolve", Summary: "Resolve this note",
+			Description: "Closes the matter with what was written down.",
+			Present:     entity.CommandHints{Label: "Resolve", SuccessMessage: "The note is resolved."}},
 		{Verb: "purge-drafts", Summary: "Purge abandoned drafts",
 			Description: "An operator's door, not a person's.",
 			Present:     entity.CommandHints{System: true}},
@@ -150,7 +167,10 @@ const frozenEntry = `{
           "in_progress": "info",
           "open": "neutral",
           "resolved": "success"
-        }
+        },
+        "doneValues": [
+          "resolved"
+        ]
       }
     },
     {
@@ -192,6 +212,14 @@ const frozenEntry = `{
         "section": "record",
         "format": "relative"
       }
+    },
+    {
+      "name": "cover",
+      "type": "uuid",
+      "present": "image",
+      "presentation": {
+        "label": "Cover"
+      }
     }
   ],
   "presentation": {
@@ -221,7 +249,10 @@ const frozenEntry = `{
     "sortable": [
       "title",
       "sentAt"
-    ]
+    ],
+    "coverField": "cover",
+    "thumbnailField": "cover",
+    "primaryCommand": "resolve"
   },
   "screen": "/app/note/notes",
   "immutable": [
@@ -263,6 +294,15 @@ const frozenEntry = `{
       }
     },
     {
+      "verb": "resolve",
+      "summary": "Resolve this note",
+      "description": "Closes the matter with what was written down.",
+      "presentation": {
+        "label": "Resolve",
+        "successMessage": "The note is resolved."
+      }
+    },
+    {
       "verb": "purge-drafts",
       "summary": "Purge abandoned drafts",
       "description": "An operator's door, not a person's.",
@@ -287,13 +327,13 @@ func TestTheEntryLevelKeysAreTheFrozenOnes(t *testing.T) {
 	}
 	for _, want := range []string{"singular", "plural", "description", "icon", "group", "order",
 		"primaryField", "previewField", "summaryFields", "statusField", "sections",
-		"emptyDescription", "sortable"} {
+		"emptyDescription", "sortable", "coverField", "thumbnailField", "primaryCommand"} {
 		if _, ok := keys[want]; !ok {
 			t.Errorf("the entry block carries no %q key", want)
 		}
 	}
-	if len(keys) != 13 {
-		t.Errorf("the entry block carries %d keys, want the 13 the contract froze: %s", len(keys), got)
+	if len(keys) != 16 {
+		t.Errorf("the entry block carries %d keys, want the 16 the contract froze: %s", len(keys), got)
 	}
 }
 
@@ -356,11 +396,12 @@ func TestTheFieldLevelKeysAreTheFrozenOnes(t *testing.T) {
 	for name, want := range map[string][]string{
 		"title":       {"label", "help", "visibility"},
 		"body":        {"section"},
-		"status":      {"enumLabels", "enumTones"},
+		"status":      {"enumLabels", "enumTones", "doneValues"},
 		"authorId":    {"label", "section", "visibility", "reference"},
 		"retainerFee": {"label", "section", "format", "money"},
 		"currency":    {"visibility"},
 		"sentAt":      {"section", "format"},
+		"cover":       {"label"},
 	} {
 		raw := byName[name]
 		if len(raw) == 0 {
@@ -433,14 +474,15 @@ func TestAnUnhintedEntryIsByteForByteUnchanged(t *testing.T) {
 // the one parser, and what it must answer is the same FieldHints the case above
 // wrote by hand — one implementation, two declaration shapes.
 type hintedTags struct {
-	ID       string `json:"id"`
-	Title    string `json:"title" ui:"label:Subject;help:One line a person will recognise later;visibility:shown"`
-	Body     string `json:"body" ui:"widget:textarea;hide:list;section:record"`
-	Status   string `json:"status" enum:"open,in_progress,resolved" ui:"widget:select" enumLabels:"open=Open,in_progress=In progress,resolved=Resolved" enumTones:"open=neutral,in_progress=info,resolved=success"`
-	AuthorID string `json:"authorId" ui:"label:Author;section:record;visibility:detail;reference:user/user"`
-	Fee      int64  `json:"retainerFee" ui:"label:Retainer;section:record;format:money;currency:currency;scale:2"`
-	Currency string `json:"currency" ui:"visibility:hidden"`
-	SentAt   string `json:"sentAt" ui:"section:record;format:relative"`
+	ID       string    `json:"id"`
+	Title    string    `json:"title" ui:"label:Subject;help:One line a person will recognise later;visibility:shown"`
+	Body     string    `json:"body" ui:"widget:textarea;hide:list;section:record"`
+	Status   string    `json:"status" enum:"open,in_progress,resolved" ui:"widget:select" enumLabels:"open=Open,in_progress=In progress,resolved=Resolved" enumTones:"open=neutral,in_progress=info,resolved=success" doneValues:"resolved"`
+	AuthorID string    `json:"authorId" ui:"label:Author;section:record;visibility:detail;reference:user/user"`
+	Cover    uuid.UUID `json:"cover" ui:"label:Cover;present:image"`
+	Fee      int64     `json:"retainerFee" ui:"label:Retainer;section:record;format:money;currency:currency;scale:2"`
+	Currency string    `json:"currency" ui:"visibility:hidden"`
+	SentAt   string    `json:"sentAt" ui:"section:record;format:relative"`
 }
 
 func TestTagsDeclareTheSameHintsAsHandWrittenFields(t *testing.T) {
@@ -470,6 +512,12 @@ func TestTagsDeclareTheSameHintsAsHandWrittenFields(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got.Presentation.Reference, want.Presentation.Reference) {
 			t.Errorf("field %q derives reference %+v, want %+v", want.Name, got.Presentation.Reference, want.Presentation.Reference)
+		}
+		if got.Present != want.Present {
+			t.Errorf("field %q derives present %q, want %q", want.Name, got.Present, want.Present)
+		}
+		if !reflect.DeepEqual(got.Presentation.DoneValues, want.Presentation.DoneValues) {
+			t.Errorf("field %q derives done values %v, want %v", want.Name, got.Presentation.DoneValues, want.Presentation.DoneValues)
 		}
 		if !reflect.DeepEqual(got.Presentation.Money, want.Presentation.Money) {
 			t.Errorf("field %q derives money %+v, want %+v", want.Name, got.Presentation.Money, want.Presentation.Money)
