@@ -213,13 +213,15 @@ check-loc: ## Fail when a bucket grew beyond what this branch's build(budget) co
 # Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
 # A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is
 # never written here (CONTRIBUTING.md, "Generated and golden files").
-generate: ## Rewrite every generated file from its inputs, offline
+generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
 
-# The generated files are the ones .gitattributes marks linguist-generated; the diff is against the
-# index, so a regenerated file the author has staged passes and unrelated work is not judged.
-check-generated: generate ## Fail when a generated file differs from what `make generate` writes
-	git diff --exit-code -- $$(git ls-files | git check-attr --stdin linguist-generated | awk -F': ' '$$3 == "true" { print $$1 }')
+# The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
+# holds generated sections. The diff is against the index, so a regenerated file the author has
+# staged passes and unrelated work is not judged.
+check-generated: generate ## Fail when a generated file or section differs from what `make generate` writes
+	git diff --exit-code -- $$(git ls-files | git check-attr --stdin linguist-generated | awk -F': ' '$$3 == "true" { print $$1 }') tests/INVENTORY.md
 
 check-packages: ## Fail when the app links too many first-party packages
 	./scripts/check_packages.sh
@@ -807,14 +809,9 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	bash scripts/push_tier_reaches_test_imports_test.sh
 	bash scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh
 	bash scripts/the_inventory_lists_a_javascript_test_test.sh
-	# scripts/inventory_area_totals_match_document_test.py re-derives the "Round-named verdicts by
-	# area" table in tests/INVENTORY.md from the rows tests/inventory.json carries: each listed area's
-	# file population and its three verdict columns, those columns' sums against the Verdicts table,
-	# and the population of every area the table leaves out because it holds no verdict. The Scale,
-	# Layers and Verdicts figures are re-checked by scripts/check_test_inventory.sh, but these five
-	# columns are quoted by hand, so this is the line that refuses a drift nothing else sees. It reads
-	# two files and starts nothing.
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_area_totals_match_document_test.py
+	# A generated file or section edited by hand, or a marker the writer cannot pair, is refused by
+	# check-generated; this case proves it in a copy of the tree, never in this checkout.
+	bash scripts/a_hand_edited_generated_file_fails_the_regeneration_check_test.sh
 	# scripts/e2e_guards_run_before_the_gate_test.sh above asks one goal whether it still runs the two
 	# subjects it exists for. These two ask that question of `check` itself, whose two source gates are
 	# prerequisites, and a prerequisite that leaves the list leaves nothing else red:
