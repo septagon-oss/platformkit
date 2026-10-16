@@ -165,9 +165,9 @@ type File struct {
 	// column and not files.visibility — that one held the derived answer for
 	// every file a published page showed, and so stopped saying what its uploader
 	// chose. Rows written before this column existed get it back from their own
-	// file.uploaded event; see migrations/000064. It is the module's own record of
-	// a choice, not a second answer to show a caller: the answer a caller is given
-	// is Visibility, which is that choice widened by whatever is showing the file.
+	// file.uploaded event, or from what their uses account for; see 000064. It is
+	// the module's own record of a choice, not a second answer to show a caller:
+	// the answer a caller is given is Visibility, that choice widened by what shows it.
 	UploadVisibility string `json:"-" gorm:"column:upload_visibility;type:varchar(10);not null;default:'private'"`
 
 	// UploaderID is whoever uploaded it, a user id with no foreign key behind

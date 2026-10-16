@@ -36429,6 +36429,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/file/internal/legacy_audience_without_upload_event_test.go",
+   "id": "modules/file/internal/legacy_audience_without_upload_event_test.go#TestUnpublishingAPromotedFileWhoseUploadEventIsGoneRevokesItsAudience",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestUnpublishingAPromotedFileWhoseUploadEventIsGoneRevokesItsAudience",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/file/internal/legacy_published_audience_test.go",
    "id": "modules/file/internal/legacy_published_audience_test.go#TestUnpublishingALegacyRecordRevokesItsPrivateUploadsAudience",
    "kind": "go",
@@ -60188,7 +60207,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1560,
+  "files": 1561,
   "forge_runs": [
    408,
    413,
@@ -60222,7 +60241,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2581,
+   "behaviour": 2582,
    "composition": 353,
    "contract": 19,
    "journey": 88
@@ -60241,9 +60260,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3041,
+  "rows": 3042,
   "tiers": {
-   "merge": 1929,
+   "merge": 1930,
    "nightly": 88,
    "push": 1024
   },
@@ -60251,13 +60270,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1375,
+   "keep": 1376,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2751,
+   "keep": 2752,
    "keep-rewrite": 117,
    "merge": 173
   }
