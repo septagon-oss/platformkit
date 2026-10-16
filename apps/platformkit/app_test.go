@@ -734,25 +734,24 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	}
 }
 
-// knownUnservedNav is the debt this gate is adopted against: two nav entries
-// this repository declares and does not serve yet, each with the reason it is
-// not a line of work this gate can force.
+// knownUnservedNav is the debt this gate is adopted against: the nav entries this
+// repository declares and does not serve yet, each with the reason it is not a
+// line of work this gate can force.
 //
-// Neither is a mistake to delete — both are promised by their own module's
-// README — and neither can be served the way the roles screen was. The real
-// blocker is the same for both and is not in either module: there is no
-// read-only generated screen. ui/screens.Mount registers create, edit and
-// delete unconditionally and takes Resource.WriteAuth(), and httpx.Permission("")
-// panics at the mount site, so a module whose rows are read-only cannot
-// register a resource and get its list and detail from the generator. Giving
-// httpx.Resource and ui/screens a read-only mode serves both of these from the
-// generator and takes this map with it; a seventh and eighth hand-written page
-// in the shell would not.
+// The entry left here is not a mistake to delete — it is promised by its own
+// module's README — and it cannot be served the way the roles screen was: there is
+// no read-only generated screen. ui/screens.Mount registers create, edit and delete
+// unconditionally and takes Resource.WriteAuth(), and httpx.Permission("") panics at
+// the mount site, so a module whose rows are read-only cannot register a resource and
+// get its list and detail from the generator. Giving httpx.Resource and ui/screens a
+// read-only mode serves this entry from the generator and takes the map with it. A
+// hand-written page is what modules/file chose instead, because its screen is not a
+// resource the generator describes either: a browse of rows, the ledger that says what
+// shows each one, and a meter over the sum an upload is refused against.
 //
-// A name is removed from this map by serving the entry, never by moving an
-// entry into it. The gate below refuses a stale name for exactly that reason.
+// A name is removed from this map by serving the entry, never by moving an entry
+// into it. The gate below refuses a stale name for exactly that reason.
 var knownUnservedNav = map[string]string{
-	"/app/file/files":   "modules/file declares it; no read-only generated screen exists yet",
 	"/app/audit/events": "modules/audit declares it; no read-only generated screen exists yet",
 }
 

@@ -26,20 +26,26 @@ func TestAKeyWithoutGrantsDiscoversAndExecutesOnlyItsOwnRetirement(t *testing.T)
 		return &doc, nil
 	})(api)
 	ctx := tenancy.WithTenant(t.Context(), acme)
-	setGrants := func(grants []string) {
+	setGrants := func(role string, grants []string) {
 		t.Helper()
 		if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			_, err := svc.SetRole(ctx, tx, "deployer", grants, declared)
+			_, err := svc.SetRole(ctx, tx, role, grants, declared)
 			return err
 		}); err != nil {
-			t.Fatalf("set the holder's grants: %v", err)
+			t.Fatalf("set %s's grants: %v", role, err)
 		}
 	}
-	setGrants([]string{contracts.PermissionRoleManage})
+	setGrants("deployer", []string{contracts.PermissionRoleManage})
 	person(t, conn, "ada@acme.localhost", "deployer")
 	session := signIn(t, router, "ada@acme.localhost")
 	key, _ := mintKey(t, router, session, "Phone")
-	setGrants(nil)
+	// Emptying the one role that grants role:manage is the write a tenant can never
+	// undo from inside itself, so it is refused while ada is the only person who
+	// could administer. Another administering door first lets the case reach the
+	// state it is about: ada's key loses its only grant all the same.
+	setGrants("keeper", []string{contracts.PermissionRoleManage})
+	person(t, conn, "ben@acme.localhost", "keeper")
+	setGrants("deployer", nil)
 	if res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(key)); res.Code != http.StatusForbidden {
 		t.Fatalf("key after losing its grant = %d %s, want 403", res.Code, res.Body.String())
 	}

@@ -115,6 +115,47 @@ is alive, because from that moment its own older traffic is unreadable to it. A 
 ledger, which is what the move above is for; the two are one decision read at two moments.
 
 
+**A file says what it is, and the library can ask it.** `files` gains `alt`
+(`varchar(1000)`, default `''`) and `decorative` (`boolean`, default `false`, under
+`file_files_decorative`, which refuses a picture that carries words while claiming it
+carries none) in `modules/file/migrations/000063_file_alt_text.up.sql`, and one command
+writes them: `Service.SetAlt` re-checks the claim inside the caller's transaction under
+`crud.GetForUpdate`, refuses a row that has moved past the `updatedAt` the caller was
+shown with `ErrConflict` and no write, and publishes the new `file.altered` in the same
+transaction. An empty alt with no decorative claim is legal to arrive at and illegal to
+leave by — the upload is never refused for want of words nobody typed. Three reads join
+the app surface, all `file:read`: `GET /api/v1/file/files` gained the grid's axes (`q`,
+`type` of `all|image|document|video`, `unused`), `GET /api/v1/file/quota` answers the
+tenant's own disk from the same sum an upload is refused against and without the upload
+lock, and `PUT /api/v1/file/files/{id}/alt` is `file:manage`. `DELETE
+/api/v1/file/files/{id}` gains a refusal of its own: a file a live `file_uses` row still
+shows answers `ErrInUse` (409) after locking that ledger, and writes nothing — the
+removals that outrank a page (a subject's erasure, the two sweeps) keep their own paths.
+`contracts.MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` are pure and in
+`contracts/`, so the SQL service and `filetest.Fake` answer the grid and the meter
+identically; the suite's `Delete` cases now show a file surviving until its last use
+ends. `apps/platformkit/testdata/openapi.json` is re-recorded for the three operations.
+
+**The media library has a page at the address its nav entry names.**
+`/app/file/files` is served by `modules/file/internal` (`internal.MountLibrary`) in the
+shell the composition hands it, so the nav entry this module has declared since the
+module existed no longer leads to a 404, and `apps/platformkit`'s
+`knownUnservedNav` debt loses a line by being served. The grid is `Search` over `q`,
+`type`, `unused`, `sort` and `page` — filters as query parameters, so a filtered view is
+a URL — one tile per row and never one per width, the meter is `Quota` (no bar on an
+installation with no ceiling), and `?file={id}` opens one file's panel server-side: its
+facts, the preview at the stored frame, "Used in" read from the use ledger, the caption
+form, and the removal. Two page posts join them, `POST /app/file/files/{id}/alt` and
+`POST /app/file/files/{id}/delete`, both `file:manage`, both real forms because a `<form>`
+cannot send the JSON verb `kit/httpx` guards a cookie-bearing unsafe request against; the
+JSON doors are untouched. The caption carries the `updatedAt` the panel was drawn from,
+so the second copy of the same form is refused 409 and writes nothing, and the removal is
+disabled while a use row lives while the command underneath refuses it regardless.
+The controls a caller may not press are drawn absent rather than disabled, on the
+composition's own answer (`Deps.Library`, a `*file.LibraryChrome` with the shell and the
+authorizer; `apps/platformkit`'s `media` module supplies it), and every sentence the page
+speaks is a key in `modules/file/messages/pt-PT.json`.
+
 **The wire gate reads the plan feature a door declares.** An operation's authorization
 declaration has three parts — its `kind`, its `permission`, and the plan feature a route
 names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and
@@ -866,24 +907,37 @@ before its first read rather than after the read that decides. `ValidRoleName` a
 bounds a name at `contracts.MaxRoleName`, the 64 the route and the form already
 advertised and nothing underneath them enforced.
 
-**One lock, and what it does not buy.** Both floors take
+**One lock, and one rule behind it.** Both floors take
 `"administration/<tenant id>"` through
 `pg_advisory_xact_lock(hashtextextended(key, 0))` — the same literal written out in
 both modules rather than imported from one, pinned by a test on each side and by a
-test across them. That makes the two writes queue behind each other, in both orders,
-which is a real defect closed, and it is nothing more: **the two floors do not
-compose** into the property they are both for, which is that somebody who can still
-sign in holds a role granting `role:manage`. Nothing asks that question. Two sequences
-reach a tenant nobody can administer with every individual write permitted and no
-concurrency involved — create a role granting `role:manage`, give it to nobody, then
-empty the role everybody holds; or, with two administrators holding two such roles,
-strip one person's roles and then empty the other's role. The first is
-`TestTheTwoFloorsStillDoNotComposeIntoOneInvariant`, which asserts the hole and fails
-the day somebody closes it. The symmetric fix is named in
-`auth/contracts.CheckedAdministration` and is not in this release: auth would ask the
-composed question the way the user module already does, through a narrow capability
-the application supplies, so one property is checked once instead of two halves of it
-being checked separately.
+test across them. That makes the two writes queue behind each other, in both orders.
+What the queue was waiting for now exists: the two floors are one rule,
+`user/contracts.CheckedAdministration`, called by every path that can move the
+property — a role's grants, a person's roles, a deactivation, a deletion — with each
+door's own cheap gate about its own row in front of it. It judges two `Reach` values,
+the people who could sign in and administer this tenant before the write and the
+people it would leave, and it refuses the write that takes the last one away and
+never the write that finds none. `auth/contracts.CheckedAdministration` is now that
+rule's door on the roles side and asks `contracts.Users.Holders`, so it no longer
+counts a role nobody holds as an administrator; it reads those rows read-only, under
+the key it already held, and the lock-ordering argument in both files says so.
+`TestTheTwoFloorsStillDoNotComposeIntoOneInvariant` asserted the hole and is now
+`TestTheTwoFloorsComposeIntoOneInvariant`, which asserts the refusal, beside the
+racing pairs (two administrators standing down at once, two administering roles
+emptied at once, one of each across the module boundary) and
+`TestTheComposedCheckJudgesOneTenant`, which is the case that fails if the people a
+tenant is judged by ever stop belonging to that tenant. A refused write still writes
+nothing: the row, the domain event and the returned value all go back with the
+transaction, and the caller gets a 422 naming the rule and the grant that repairs it.
+The attempt is the one thing that survives, because a rolled-back lockout attempt that
+leaves no trace is a fact nobody can read afterwards: each door publishes one record
+outside the transaction it was refused in — `user.administration_refused` with the
+person, the door and the grant it would have taken, `auth.administration_refused` with
+the role and the grants either side — written the way `auth.login_failed` already is
+(`db.Detached`, the request's own connection, a two-second budget, logged and never
+returned), and kept by `modules/audit`, which audits a module by having subscribed to
+what it emits.
 
 How bad a lockout is depends on whose tenant it is, and the repair path is narrower
 than "there is one". `POST /api/v1/tenant/tenants/{id}/invite` runs in a system

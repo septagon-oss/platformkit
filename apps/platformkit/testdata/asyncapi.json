@@ -1,6 +1,50 @@
 {
   "asyncapi": "3.0.0",
   "channels": {
+    "auth.administration_refused": {
+      "address": "platformkit.*.auth.administration_refused",
+      "description": "Published at platformkit.{tenantId}.auth.administration_refused; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "auth.administration_refused": {
+          "contentType": "application/json",
+          "name": "auth.administration_refused",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "role": {
+                "type": "string"
+              },
+              "was": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "role",
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.administration_refused",
+          "title": "auth.administration_refused"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.administration_refused.",
+      "title": "auth.administration_refused"
+    },
     "auth.api_token_issued": {
       "address": "platformkit.*.auth.api_token_issued",
       "description": "Published at platformkit.{tenantId}.auth.api_token_issued; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -1810,6 +1854,57 @@
       },
       "summary": "Every tenant's delivery of content.unpublished.",
       "title": "content.unpublished"
+    },
+    "file.altered": {
+      "address": "platformkit.*.file.altered",
+      "description": "Published at platformkit.{tenantId}.file.altered; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "file.altered": {
+          "contentType": "application/json",
+          "name": "file.altered",
+          "payload": {
+            "properties": {
+              "alt": {
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "decorative": {
+                "type": "boolean"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "height": {
+                "type": "integer"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "width": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "fileId",
+              "alt",
+              "decorative",
+              "size",
+              "width",
+              "height",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "file — file.altered",
+          "title": "file.altered"
+        }
+      },
+      "summary": "Every tenant's delivery of file.altered.",
+      "title": "file.altered"
     },
     "file.deleted": {
       "address": "platformkit.*.file.deleted",
@@ -3745,6 +3840,48 @@
       "summary": "Every tenant's delivery of translation.updated.",
       "title": "translation.updated"
     },
+    "user.administration_refused": {
+      "address": "platformkit.*.user.administration_refused",
+      "description": "Published at platformkit.{tenantId}.user.administration_refused; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "user.administration_refused": {
+          "contentType": "application/json",
+          "name": "user.administration_refused",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "attempt": {
+                "type": "string"
+              },
+              "roles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "attempt",
+              "roles",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "user — user.administration_refused",
+          "title": "user.administration_refused"
+        }
+      },
+      "summary": "Every tenant's delivery of user.administration_refused.",
+      "title": "user.administration_refused"
+    },
     "user.deactivated": {
       "address": "platformkit.*.user.deactivated",
       "description": "Published at platformkit.{tenantId}.user.deactivated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -4696,6 +4833,23 @@
     "version": "1.0.0"
   },
   "operations": {
+    "auth.administration_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.administration_refused"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.administration_refused/messages/auth.administration_refused"
+        }
+      ],
+      "summary": "The auth module publishes auth.administration_refused.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
     "auth.api_token_issued": {
       "action": "send",
       "channel": {
@@ -5322,6 +5476,23 @@
       "tags": [
         {
           "name": "content"
+        }
+      ]
+    },
+    "file.altered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/file.altered"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/file.altered/messages/file.altered"
+        }
+      ],
+      "summary": "The file module publishes file.altered.",
+      "tags": [
+        {
+          "name": "file"
         }
       ]
     },
@@ -6002,6 +6173,23 @@
       "tags": [
         {
           "name": "translation"
+        }
+      ]
+    },
+    "user.administration_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/user.administration_refused"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/user.administration_refused/messages/user.administration_refused"
+        }
+      ],
+      "summary": "The user module publishes user.administration_refused.",
+      "tags": [
+        {
+          "name": "user"
         }
       ]
     },

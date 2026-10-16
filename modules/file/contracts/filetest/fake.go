@@ -34,6 +34,7 @@ type Fake struct {
 	mu        sync.Mutex
 	storage   contracts.Storage
 	max       int64
+	quota     int64
 	rows      map[uuid.UUID]contracts.File
 	uses      []contracts.FileUse
 	holds     map[uuid.UUID]*contracts.Hold
@@ -46,6 +47,22 @@ func NewFake(storage contracts.Storage, max int64) *Fake {
 		storage: storage, max: max,
 		rows: map[uuid.UUID]contracts.File{}, holds: map[uuid.UUID]*contracts.Hold{},
 	}
+}
+
+// WithQuota gives this fake the disk one tenant may fill, which is the other
+// half of what a deployment decides: one ceiling answers two questions — the
+// meter's number and the upload's refusal — and they are the same sum, computed
+// by Quota and charged by Upload here exactly as internal.Service does it. A
+// ceiling of zero, the default, means no ceiling.
+//
+// What the fake still cannot do is charge for other widths: it encodes no
+// variants, so its Used is the frames' own bytes. That half of the sum is
+// internal's to answer, and the case that answers it lives there.
+func (f *Fake) WithQuota(bytes int64) *Fake {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.quota = bytes
+	return f
 }
 
 var _ contracts.Service = (*Fake)(nil)
@@ -147,6 +164,7 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		// writes with its UPDATE, run against the row this fake keeps in memory.
 		if row, ok := f.rows[id]; ok {
 			row.UnusedSince = nil
+			f.rows[id] = row
 		}
 	}
 	if len(remove) == 0 {
@@ -163,9 +181,13 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		if !still {
 			unused = append(unused, id)
 			if row, ok := f.rows[id]; ok && row.DeletedAt == nil && row.Width > 0 {
-				// The grace period starts at the moment the last use went.
+				// The grace period starts at the moment the last use went, on the
+				// row and not on the copy: the grid's unused filter reads this
+				// column, and a stamp that vanished with the local was the fake
+				// disagreeing with the row-level policy the SQL service writes.
 				at := db.Now()
 				row.UnusedSince = &at
+				f.rows[id] = row
 			}
 		}
 	}
@@ -362,6 +384,22 @@ func (f *Fake) Upload(ctx context.Context, open contracts.Tx, up contracts.Uploa
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// The ceiling is asked of the same sum Quota answers with, under this fake's
+	// own mutex, which stands in for the advisory lock the real service takes on
+	// the tenant: the read and the insert are one step, and twenty uploads that
+	// start together cannot each read the same total and each decide there is
+	// room. Refused, the bytes go back the way they came.
+	if f.quota > 0 {
+		var used int64
+		for _, other := range f.rows {
+			used += other.Size
+		}
+		if size > f.quota-used {
+			_ = f.storage.Delete(ctx, scope, key)
+			return nil, fmt.Errorf("%w: %d bytes is past the %d this tenant has left of %d",
+				contracts.ErrQuota, size, max(f.quota-used, 0), f.quota)
+		}
+	}
 	f.rows[row.ID] = row
 	f.published = append(f.published, contracts.EventUploaded)
 	out := row
@@ -388,12 +426,30 @@ func (f *Fake) Open(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, anony
 }
 
 // Delete mirrors internal.Service.Delete: the row goes and the bytes do not.
-func (f *Fake) Delete(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
+//
+// It asks the ledger first, for the reason the real command gives: a record that
+// still shows this file is a claim about that record, and the refusal is the
+// module's rather than the screen's. The fake reads its own slice of uses, scoped
+// to the tenant the context resolved, because the rows it holds carry no tenant.
+func (f *Fake) Delete(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
+	scope, err := contracts.ScopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	row, ok := f.rows[id]
 	if !ok {
 		return nil, crud.ErrNotFound
+	}
+	var shown int64
+	for _, use := range f.uses {
+		if use.FileID == id && use.TenantID == scope.TenantID() {
+			shown++
+		}
+	}
+	if shown > 0 {
+		return nil, fmt.Errorf("%w: %s is shown by %d records", contracts.ErrInUse, id, shown)
 	}
 	delete(f.rows, id)
 	f.published = append(f.published, contracts.EventDeleted)
