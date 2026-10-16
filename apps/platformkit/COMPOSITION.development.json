@@ -15,10 +15,12 @@
         "sitecontracts.WriteGate",
         "rest.Gate",
         "webcontracts.Links",
+        "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Locale",
         "tenantcontracts.Languages",
-        "authcontracts.ConfirmationChrome"
+        "authcontracts.ConfirmationChrome",
+        "webhookcontracts.Catalogue"
       ],
       "contributes": [
         {
@@ -70,9 +72,25 @@
       ]
     },
     {
+      "name": "translation",
+      "provides": [
+        "rest.Translations"
+      ],
+      "needs": [
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product"
+      ]
+    },
+    {
       "name": "site",
       "provides": [
-        "sitecontracts.Service"
+        "sitecontracts.Service",
+        "sitecontracts.LockedReader"
       ],
       "uses": [
         {
@@ -145,7 +163,8 @@
       "provides": [
         "notificationcontracts.Service",
         "authcontracts.Notifier",
-        "notificationcontracts.Mailer"
+        "notificationcontracts.Mailer",
+        "notificationcontracts.MailLedger"
       ],
       "needs": [
         {
@@ -169,31 +188,6 @@
         "name": "mailbox",
         "simulated": true
       }
-    },
-    {
-      "name": "file",
-      "provides": [
-        "filecontracts.Service",
-        "richtext.Files",
-        "rest.FileUses"
-      ],
-      "needs": [
-        {
-          "contract": "filecontracts.Storage",
-          "from": "product"
-        },
-        {
-          "contract": "jobs.TenantLister",
-          "from": "tenant"
-        }
-      ],
-      "after": [
-        "product",
-        "tenant"
-      ],
-      "reads": [
-        "config.Files"
-      ]
     },
     {
       "name": "task",
@@ -263,6 +257,32 @@
       ]
     },
     {
+      "name": "webhook",
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        },
+        {
+          "contract": "webhookcontracts.Catalogue",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webhookcontracts.Alerts",
+          "from": ""
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Webhook"
+      ]
+    },
+    {
       "name": "auth",
       "provides": [
         "authcontracts.Auth",
@@ -289,6 +309,10 @@
         {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
+        },
+        {
+          "contract": "notificationcontracts.MailLedger",
+          "from": "notification"
         },
         {
           "contract": "authcontracts.OIDCProviders",
@@ -330,22 +354,18 @@
       ]
     },
     {
-      "name": "content",
+      "name": "media",
       "provides": [
-        "contentcontracts.Service"
+        "*file.LibraryChrome"
       ],
       "needs": [
         {
-          "contract": "richtext.Files",
-          "from": "file"
-        },
-        {
-          "contract": "rest.FileUses",
-          "from": "file"
+          "contract": "authcontracts.Auth",
+          "from": "auth"
         }
       ],
       "after": [
-        "file"
+        "auth"
       ]
     },
     {
@@ -366,6 +386,10 @@
         },
         {
           "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "sitecontracts.LockedReader",
           "from": "site"
         },
         {
@@ -394,32 +418,36 @@
       ]
     },
     {
-      "name": "web",
+      "name": "file",
+      "provides": [
+        "filecontracts.Service",
+        "richtext.Files",
+        "rest.FileUses",
+        "rest.FileShown"
+      ],
       "needs": [
         {
-          "contract": "sitecontracts.Service",
-          "from": "site"
+          "contract": "filecontracts.Storage",
+          "from": "product"
         },
         {
-          "contract": "contentcontracts.Service",
-          "from": "content"
-        },
-        {
-          "contract": "richtext.Files",
-          "from": "file"
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
         }
       ],
       "uses": [
         {
-          "contract": "webcontracts.Links",
-          "from": "product"
+          "contract": "*file.LibraryChrome",
+          "from": "media"
         }
       ],
       "after": [
         "product",
-        "file",
-        "content",
-        "site"
+        "tenant",
+        "media"
+      ],
+      "reads": [
+        "config.Files"
       ]
     },
     {
@@ -453,6 +481,72 @@
       "after": [
         "product",
         "access"
+      ]
+    },
+    {
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        },
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.FileShown",
+          "from": "file"
+        }
+      ],
+      "after": [
+        "file",
+        "translation"
+      ]
+    },
+    {
+      "name": "web",
+      "needs": [
+        {
+          "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "contentcontracts.Service",
+          "from": "content"
+        },
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webcontracts.Links",
+          "from": "product"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product",
+        "file",
+        "translation",
+        "content",
+        "site"
       ]
     },
     {
