@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc generate check-generated check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -206,6 +206,17 @@ load-test: ## Compare bounded tenant work and database pool capacity
 check-loc: ## Fail when a bucket exceeds its line ceiling
 	go run ./tools/locbudget --check
 
+# Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
+# A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is
+# never written here (CONTRIBUTING.md, "Generated and golden files").
+generate: ## Rewrite every generated file from its inputs, offline
+	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
+
+# The generated files are the ones .gitattributes marks linguist-generated; the diff is against the
+# index, so a regenerated file the author has staged passes and unrelated work is not judged.
+check-generated: generate ## Fail when a generated file differs from what `make generate` writes
+	git diff --exit-code -- $$(git ls-files | git check-attr --stdin linguist-generated | awk -F': ' '$$3 == "true" { print $$1 }')
+
 check-packages: ## Fail when the app links too many first-party packages
 	./scripts/check_packages.sh
 
@@ -322,7 +333,7 @@ check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
 check-test-inventory: ## Re-check tests/inventory.json against the tests the tree holds
 	./scripts/check_test_inventory.sh
 
-check-push: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
+check-push: build check-generated vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
 	./scripts/check_push_tier.sh
 
 check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
@@ -503,7 +514,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build check-generated vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
