@@ -3505,6 +3505,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/operation_key_per_tenant_test.go",
+   "id": "apps/platformkit/operation_key_per_tenant_test.go#TestOneIdempotencyKeyInTwoTenantsIsTwoOperations",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestOneIdempotencyKeyInTwoTenantsIsTwoOperations",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/passkey_grant_floor_test.go",
    "id": "apps/platformkit/passkey_grant_floor_test.go#TestAPasskeySignInGrantDoesNotHoldTheAdministratorsFloor",
    "kind": "go",
@@ -59960,7 +59979,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1550,
+  "files": 1551,
   "forge_runs": [
    408,
    413,
@@ -59995,7 +60014,7 @@
   ],
   "layers": {
    "behaviour": 2566,
-   "composition": 356,
+   "composition": 357,
    "contract": 19,
    "journey": 88
   },
@@ -60013,9 +60032,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3029,
+  "rows": 3030,
   "tiers": {
-   "merge": 1917,
+   "merge": 1918,
    "nightly": 88,
    "push": 1024
   },
@@ -60023,13 +60042,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1365,
+   "keep": 1366,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2739,
+   "keep": 2740,
    "keep-rewrite": 117,
    "merge": 173
   }
