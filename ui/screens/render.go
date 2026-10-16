@@ -207,7 +207,9 @@ func historyPanel(r httpx.Resource, ctx context.Context, o Options, at string, r
 	held := make(map[int64]map[string]any, len(stored))
 	for _, v := range stored {
 		document := map[string]any{}
-		_ = json.Unmarshal(v.Fields, &document)
+		decoder := json.NewDecoder(strings.NewReader(string(v.Fields)))
+		decoder.UseNumber()
+		_ = decoder.Decode(&document)
 		held[v.Version] = document
 	}
 	for _, v := range stored {
