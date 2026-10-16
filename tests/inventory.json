@@ -3581,6 +3581,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/operation_migrations_applied_test.go",
+   "id": "apps/platformkit/operation_migrations_applied_test.go#TestEveryOperationMigrationIsAppliedAtTheVersionItsFileNames",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestEveryOperationMigrationIsAppliedAtTheVersionItsFileNames",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/operation_receipt_person_scope_test.go",
    "id": "apps/platformkit/operation_receipt_person_scope_test.go#TestAnOperationReceiptIsReadOnlyByThePersonWhoStartedIt",
    "kind": "go",
@@ -60264,7 +60283,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1562,
+  "files": 1563,
   "forge_runs": [
    408,
    413,
@@ -60299,7 +60318,7 @@
   ],
   "layers": {
    "behaviour": 2575,
-   "composition": 362,
+   "composition": 363,
    "contract": 20,
    "journey": 88
   },
@@ -60317,9 +60336,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3045,
+  "rows": 3046,
   "tiers": {
-   "merge": 1931,
+   "merge": 1932,
    "nightly": 88,
    "push": 1026
   },
@@ -60327,13 +60346,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1377,
+   "keep": 1378,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2755,
+   "keep": 2756,
    "keep-rewrite": 117,
    "merge": 173
   }
