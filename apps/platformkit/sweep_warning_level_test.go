@@ -11,9 +11,9 @@ package main
 // with answers Enabled for every level and matches records on the message alone,
 // so a report that moved from WarnContext to DebugContext is the same record to
 // it, and the whole suite stays green while the operator's log stops showing it.
-// That is a mutation no case in the repository answers (round 11's Checked item
-// 9 records measuring it), and the brief's "the warning stays" is about a line a
-// person reading the installation's log does see.
+// That is a mutation no case in the repository answers, and the brief's "the
+// warning stays" is about a line a person reading the installation's log does
+// see: a debug record is not a warning somebody reads.
 
 import (
 	"log/slog"

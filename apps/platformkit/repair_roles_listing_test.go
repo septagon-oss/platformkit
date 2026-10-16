@@ -161,8 +161,8 @@ func TestTheRepairCommandPrintsWhatItCommitted(t *testing.T) {
 // COMMIT, so the UPDATE is accepted, the repair has its stale grants in hand and
 // a line per role ready to print, and only then is the transaction refused — the
 // same shape as the serialisation failure and the contended lock an operator
-// actually meets. Printing from inside the transaction, which is where round 8
-// found the code had been, prints acme's administrator as removed here.
+// actually meets. A line printed from inside the transaction, before the commit
+// that would make it true, prints acme's administrator as removed here.
 //
 // The row is read back afterwards, because the claim worth making is not only
 // that the run kept silent: the removal it could not commit was taken back, and a
