@@ -25,7 +25,7 @@ func TestFakeConforms(t *testing.T) {
 		fake := filetest.NewFake(store, filetest.Limit)
 		run(filetest.Fixture{
 			Ctx: tenancy.WithTenant(t.Context(), fixtureTenant), Service: fake, Storage: store,
-			Keys: store.Keys, Published: fake.Published,
+			Keys: store.Keys, Published: fake.Published, Remove: fake.Forget,
 		})
 	})
 }
