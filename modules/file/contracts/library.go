@@ -9,7 +9,6 @@ package contracts
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -198,12 +197,6 @@ func (q LibraryQuery) Normalize() (LibraryQuery, error) {
 // generated lists draw: a person moving between them should not learn a second
 // pagination.
 const DefaultLibraryPageSize = 20
-
-// ErrInUse refuses removing a file the ledger says something still shows. It is
-// a conflict of its own rather than a validation failure because nothing about
-// the request is wrong: the remedy is in the other record, which has to stop
-// showing this one before this one can go.
-var ErrInUse = errors.New("file: records still show this file")
 
 // Quota is one tenant's disk: what it holds, what it was given, and the two
 // answers a meter draws from that. The arithmetic lives here so the door, the
