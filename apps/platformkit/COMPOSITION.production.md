@@ -44,7 +44,8 @@ pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Mod
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
 pkit: notification.Module runs on mailbox, which the deployment picked.
-pkit: notification.Module emits notification.created, notification.email_requested and notification.read.
+pkit: notification.Module defines the permission sender:manage.
+pkit: notification.Module emits notification.created, notification.email_requested, notification.read, notification.push_requested, notification.web_push_requested, notification.webhook_requested, notification.preference_set, notification.sender_set, notification.sender_verified and notification.sender_removed.
 pkit: notification.Module handles notification.email_requested.
 pkit: task.Module is built after product.Module and tenant.Module.
 pkit: task.Module needs jobs.TenantLister from tenant.Module.

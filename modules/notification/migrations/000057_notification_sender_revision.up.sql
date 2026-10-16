@@ -1,0 +1,17 @@
+-- Two editors of one tenant's sender, and which one won.
+--
+-- Put reads the row it replaces under its own lock, and a lock says two writes
+-- did not overlap. It does not say the version the author of a form was looking
+-- at is the version the lock is now held over: an old copy saved after a newer
+-- one puts every field back to what the old copy read, publishes an event that
+-- says the tenant set it, and leaves nobody any the wiser. contracts/crud has no
+-- version to check — kit/entity's Base carries none (docs/adr/0016 names the gap) —
+-- so this module keeps its own: the row's revision, one per write, which Put
+-- refuses a copy older than the row it is aimed at.
+--
+-- DEFAULT 1 is what the rows that already exist get, and it is the revision a
+-- row is created with: one write has happened. A constant default is why this is
+-- one statement and not a backfill — since PostgreSQL 11 the value is stored in
+-- the catalog and no existing row is touched, so nothing rewrites the table and
+-- no writer is waiting when this applies.
+ALTER TABLE notification_senders ADD COLUMN revision bigint NOT NULL DEFAULT 1;
