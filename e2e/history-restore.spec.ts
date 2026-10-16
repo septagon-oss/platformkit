@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { fillContentForm, signInForContent } from './steps/content';
+import { signInForContent } from './steps/content';
+import { editingSurface } from './steps/richtext';
 import { openHistoryPanel, restoreVersion, storedVersions } from './steps/history';
 
 // A record's past, walked in the browser.
@@ -24,11 +25,25 @@ import { openHistoryPanel, restoreVersion, storedVersions } from './steps/histor
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
 
+/**
+ * Types a body into the form as a person does. The content form mounts a rich-text
+ * editor over the `body` textarea and keeps that textarea hidden, so the words only
+ * reach the record through the editing surface: filling the hidden control works on a
+ * page whose editor module was refused, which is not the page opened here.
+ */
+async function writeBody(page: Page, text: string) {
+  await page.locator(editingSurface).click();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type(text);
+}
+
 /** One page, one first write. Returns its id and the address its detail is served at. */
 async function createPage(page: Page, body: string) {
-  await fillContentForm(page, {
-    slug: `history-${Date.now()}`, title: 'Pool hours', kind: 'page', body,
-  });
+  await page.goto('/app/content/contents/new');
+  await page.getByLabel('Address name').fill(`history-${Date.now()}`);
+  await page.getByLabel('Title').fill('Pool hours');
+  await page.getByLabel('Type').selectOption('page');
+  await writeBody(page, body);
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL(/\/app\/content\/contents\/[0-9a-f-]{36}$/);
   const id = page.url().split('/').at(-1)!;
@@ -40,7 +55,7 @@ test('the version panel shows what an edit moved and brings the older words back
   const { id, detail } = await createPage(page, 'The pool opens at nine on weekdays.');
 
   await page.goto(`${detail}/edit`);
-  await page.getByLabel('Body').fill('The pool opens at ten on weekdays.');
+  await writeBody(page, 'The pool opens at ten on weekdays.');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.locator('[data-component="prose"]')).toContainText('opens at ten');
 
@@ -79,7 +94,7 @@ test('a restore that quotes a write the record has left behind is refused and wr
   await signInForContent(page, email, password);
   const { id, detail } = await createPage(page, 'The pool opens at nine on weekdays.');
   await page.goto(`${detail}/edit`);
-  await page.getByLabel('Body').fill('The pool opens at ten on weekdays.');
+  await writeBody(page, 'The pool opens at ten on weekdays.');
   await page.getByRole('button', { name: 'Save' }).click();
 
   const panel = await openHistoryPanel(page);
@@ -105,7 +120,7 @@ test('axe finds nothing on a record with a version series open', async ({ page }
   await signInForContent(page, email, password);
   const { detail } = await createPage(page, 'The pool opens at nine on weekdays.');
   await page.goto(`${detail}/edit`);
-  await page.getByLabel('Body').fill('The pool opens at ten on weekdays.');
+  await writeBody(page, 'The pool opens at ten on weekdays.');
   await page.getByRole('button', { name: 'Save' }).click();
   // Saving lands on the record, which is the page under test; a goto here would be
   // a second navigation over the one the form already made.
