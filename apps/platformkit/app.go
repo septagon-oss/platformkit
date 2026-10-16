@@ -160,7 +160,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell, provision, face := sentence(cfg, served)
+	a, ask, shell, provision, face, _ := sentence(cfg, served)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -228,8 +228,9 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 // `served` is the copy that one sentence is worded from: for every caller in this
 // binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
 // different value to name, and sentences is what everybody else calls.
-func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace, *summaryFace) {
 	ask, shell, provision, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &connectionFace{}
+	counts := &summaryFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg),
@@ -270,14 +271,14 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
-		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
-	return a, ask, shell, provision, face
+		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount, counts.mount))
+	return a, ask, shell, provision, face, counts
 }
 
 // sentences is that sentence in the copy this installation ships, for every caller
 // with no opinion about the words — including the cases that take a module out of
 // the list to ask what the composition resolves to without its provider.
-func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace, *summaryFace) {
 	return sentence(cfg, catalogues(), without...)
 }
 

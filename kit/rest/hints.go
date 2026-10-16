@@ -3,6 +3,7 @@ package rest
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -25,7 +26,17 @@ import (
 // entryHintFault names what an entry's own hints get wrong, and "" when they are
 // coherent. Every refusal is a mount-time panic, like the rest of check.
 func (s Spec[T]) entryHintFault() string {
-	return entryHintsFault(s.Entity, s.Present, crud.Fields[T]())
+	if bad := entryHintsFault(s.Entity, s.Present, crud.Fields[T]()); bad != "" {
+		return bad
+	}
+	// A sub-count and a day breakdown are questions the list asks: the totals are
+	// refused for a Spec that mounts no list, so declaring either here would be a
+	// hint nothing would ever answer — the same question kit/rest/screens.go asks
+	// before it fills Count at all.
+	if (s.Present.Highlight != nil || s.Present.TrendField != "") && !s.offers(httpx.CRUDList) {
+		return "highlight and trendField name questions only a list route answers, and this resource mounts none"
+	}
+	return ""
 }
 
 func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) string {
@@ -130,6 +141,138 @@ func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) stri
 		if f.Presentation.Hidden() {
 			return fmt.Sprintf("sortable %q names a hidden field; a column nobody sees is not a column to order by", field)
 		}
+	}
+	bounds, bad := declaredBoundsFault(name, p.Highlight, fields)
+	if bad != "" {
+		return bad
+	}
+	if bad := emptyWindowFault(bounds); bad != "" {
+		return bad
+	}
+	if p.TrendField != "" {
+		f, ok := entity.FieldNamed(fields, p.TrendField)
+		if !ok {
+			return fmt.Sprintf("trendField %q is not a field of %s", p.TrendField, name)
+		}
+		if f.Type != entity.TypeTime {
+			return fmt.Sprintf("trendField %q is a %s; a day breakdown reads a column of days", p.TrendField, f.Type)
+		}
+	}
+	return ""
+}
+
+// bounds is one field's declared window: the two instants it is bounded by, when
+// the declaration named an instant, and the anchor word it named otherwise. Kept
+// per field because a window is a question about one column.
+type bounds struct {
+	from, to         time.Time
+	fromWord, toWord string
+	hasFrom, hasTo   bool
+}
+
+// declaredBoundsFault checks one declared sub-count: the words, the predicates,
+// and each predicate against the field it names. Every refusal here is about a
+// declaration that could only ever be answered wrongly — the honest answer to
+// "Due today" written against a column that cannot hold a day is nothing at all,
+// and the alternative is the total in a card that says "Due today".
+func declaredBoundsFault(name string, h *entity.EntryHighlight, fields []crud.Field) (map[string]*bounds, string) {
+	if h == nil {
+		return nil, ""
+	}
+	if h.Label == "" {
+		return nil, "highlight declares no label; a second number beside the total is a number a person has to be told the name of"
+	}
+	if len(h.Filter) == 0 {
+		return nil, "highlight declares no predicate; a label with no predicate is the total wearing a label"
+	}
+	window := map[string]*bounds{}
+	for _, pred := range h.Filter {
+		f, ok := entity.FieldNamed(fields, pred.Field)
+		if !ok {
+			return nil, fmt.Sprintf("highlight filter names %q, which is not a field of %s", pred.Field, name)
+		}
+		if f.Type == entity.TypeList {
+			return nil, fmt.Sprintf("highlight filter names %q, which is a list; a list holds many values and one of them is not what the count is about", pred.Field)
+		}
+		if !crud.ValidOp(pred.Op) {
+			return nil, fmt.Sprintf("highlight filter op %q is no operator; crud.Ops admits %s", pred.Op, strings.Join(crud.Ops, ", "))
+		}
+		switch crud.Op(pred.Op) {
+		case crud.OpEq:
+		case crud.OpLt, crud.OpLte, crud.OpGt, crud.OpGte:
+			if f.Type != entity.TypeTime && f.Type != entity.TypeInt && f.Type != entity.TypeFloat {
+				return nil, fmt.Sprintf("highlight filter %s %q %q compares a %s, and only a count, an amount or a moment is asked about with an order", pred.Field, pred.Op, pred.Value, f.Type)
+			}
+		default:
+			return nil, fmt.Sprintf("highlight filter %s %q %q names an operator nothing asks with", pred.Field, pred.Op, pred.Value)
+		}
+		if _, err := crud.Declared(f, pred.Value, time.Time{}); err != nil {
+			return nil, fmt.Sprintf("highlight filter %s %q %q is refused: %s", pred.Field, pred.Op, pred.Value, err)
+		}
+		w := window[pred.Field]
+		if w == nil {
+			w = &bounds{}
+			window[pred.Field] = w
+		}
+		switch crud.Op(pred.Op) {
+		case crud.OpGt, crud.OpGte:
+			if w.hasFrom {
+				return nil, fmt.Sprintf("highlight filter bounds %s from twice; one column has one lower edge in one question", pred.Field)
+			}
+			w.hasFrom, w.fromWord = true, pred.Value
+			w.from, _ = instantOf(f, pred.Value)
+		case crud.OpLt, crud.OpLte:
+			if w.hasTo {
+				return nil, fmt.Sprintf("highlight filter bounds %s from above twice; one column has one upper edge in one question", pred.Field)
+			}
+			w.hasTo, w.toWord = true, pred.Value
+			w.to, _ = instantOf(f, pred.Value)
+		}
+	}
+	return window, ""
+}
+
+// instantOf is the declared value as an instant, when the field is a moment and
+// the value is an RFC3339 instant. An anchor word answers no instant at mount —
+// it means a different one in every response — and is compared by rank instead.
+func instantOf(f entity.Field, raw string) (time.Time, bool) {
+	if f.Type != entity.TypeTime || entity.ValidAnchor(raw) {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	return t, err == nil
+}
+
+// anchorRank orders the three clock words without knowing the instant they are
+// read against, which is the whole reason a declaration can be checked at mount:
+// the day opens, the request arrives somewhere inside it, the next day opens.
+var anchorRank = map[string]float64{"today": 0, "now": 0.5, "tomorrow": 1}
+
+// emptyWindowFault refuses the pair of bounds that admit nothing — `dueAt >=
+// today AND dueAt < today` is a question with one answer, and a card that counts
+// zero is not that answer. Only a pair the mount can order is refused: an instant
+// against an anchor depends on the response, and a declaration that is sometimes
+// empty is a question, not a mistake.
+func emptyWindowFault(window map[string]*bounds) string {
+	for field, w := range window {
+		if !w.hasFrom || !w.hasTo {
+			continue
+		}
+		from, to := w.from, w.to
+		lower, upper := anchorRank[w.fromWord], anchorRank[w.toWord]
+		switch {
+		case entity.ValidAnchor(w.fromWord) && entity.ValidAnchor(w.toWord):
+			if lower < upper {
+				continue
+			}
+		case !entity.ValidAnchor(w.fromWord) && !entity.ValidAnchor(w.toWord) && !from.IsZero() && !to.IsZero():
+			if from.Before(to) {
+				continue
+			}
+		default:
+			continue
+		}
+		return fmt.Sprintf("highlight filter on %s admits nothing: %q is not before %q", field, w.fromWord, w.toWord)
 	}
 	return ""
 }

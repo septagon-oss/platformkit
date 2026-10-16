@@ -630,6 +630,18 @@ func (a *API) methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 // transactions, and the control-plane one commits on its own.
 func (a *API) SystemToken() tenancy.SystemToken { return a.system }
 
+// Cache is the installation's one shared store — the same adapter host
+// resolution is believed in, and the same one every process that shares this
+// deployment reads.
+//
+// It is reachable because a composition that owns a route has to be able to
+// spread a bounded read across the processes, and building a second store would
+// mean the invalidations this package makes never reached it. The caller re-asks
+// its own authorization before consulting the store: a value is never handed out
+// on the strength of the key that found it, because nothing that forms a key has
+// decided anything about the caller.
+func (a *API) Cache() cache.Cache { return a.opts.Cache }
+
 // Probes mounts handlers beside the API, on the router that carries neither the
 // request middleware nor a transaction. kit/health is the only caller, and the
 // two paths it names are /health and /ready.
