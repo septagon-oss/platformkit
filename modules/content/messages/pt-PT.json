@@ -53,6 +53,24 @@
       "": "Despublicar"
     }
   },
+  "hints.content/content.field.coverImageId.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "ID do ficheiro da imagem de capa",
+    "plural": {
+      "": "ID do ficheiro da imagem de capa"
+    }
+  },
+  "hints.content/content.field.coverImageId.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Capa",
+    "plural": {
+      "": "Capa"
+    }
+  },
   "hints.content/content.field.kind.label": {
     "references": [
       "modules/content/module.go"

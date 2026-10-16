@@ -96,6 +96,7 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		pkit.Provides[webcontracts.Links](),
 		pkit.Provides[rest.TranslationSource](),
 		pkit.Provides[admincontracts.Signin](),
+		pkit.Provides[admincontracts.Pictures](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
 		pkit.Provides[webhookcontracts.Catalogue](),
@@ -184,6 +185,12 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI,
 			},
 		})
+		// Where a stored picture's bytes are fetched from. The workspace catalogue
+		// publishes this same address to a shell that is not a browser, and the
+		// generated screens fetch through it; the door is the file module's and the
+		// document is the kernel's, so this composition is the only party that has met
+		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
+		pkit.Put[admincontracts.Pictures](w, admincontracts.Pictures{Source: filecontracts.PictureSource})
 		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
