@@ -321,6 +321,9 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	if err := tx.DB().Create(u).Error; err != nil {
 		return nil, fmt.Errorf("user: provision %s: %w", u.Email, err)
 	}
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
+	}
 	return u, events.PublishFor(ctx, tx, tenantID, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: at,
 		Served: httpx.ServedFrom(ctx),

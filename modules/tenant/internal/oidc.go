@@ -100,6 +100,9 @@ func (s *Service) SetOIDC(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	if err != nil {
 		return nil, crud.Classify(err)
 	}
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
+	}
 	if err := events.PublishFor(ctx, tx, id, contracts.EventOIDCSet, contracts.OIDCSet{
 		TenantID: id, Issuer: in.Issuer, ClientID: in.ClientID, SecretRef: in.SecretRef,
 		RedirectPath: in.RedirectPath, Registration: registration(in), Roles: in.Roles,
@@ -131,6 +134,9 @@ func (s *Service) ClearOIDC(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 	}).Error
 	if err != nil {
 		return nil, crud.Classify(err)
+	}
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
 	}
 	return t, events.PublishFor(ctx, tx, id, contracts.EventOIDCCleared, contracts.OIDCCleared{
 		TenantID: id, Issuer: before.Issuer, ClientID: before.ClientID, At: db.Now(),

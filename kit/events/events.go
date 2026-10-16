@@ -68,7 +68,7 @@ func ValidName(name string) bool { return transport.ValidName(name) }
 func Publish(ctx context.Context, tx db.Tx[db.Tenant], name string, payload any) error {
 	// The tenant comes from the transaction, never from the caller: an event
 	// belongs to the tenant whose data changed, by construction.
-	return write(ctx, tx.DB(), db.TenantOf(tx).ID, name, payload)
+	return write(ctx, tx.DB(), db.TenantOf(tx).ID, name, payload, false)
 }
 
 // PublishFor writes an event from a cross-tenant transaction, naming the tenant
@@ -88,14 +88,14 @@ func PublishFor(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, na
 	if tenantID == uuid.Nil {
 		return fmt.Errorf("events: %s: an event belongs to a tenant", name)
 	}
-	return write(ctx, tx.DB(), tenantID, name, payload)
+	return write(ctx, tx.DB(), tenantID, name, payload, true)
 }
 
 // write is the one INSERT. The actor is whatever kit/tenancy has on the
 // context and NULL otherwise, passed as an untyped nil so the column is null
 // rather than the nil UUID: "nobody" and "the user 00000000-…" are different
 // answers and only one of them is true.
-func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, payload any) error {
+func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, payload any, system bool) error {
 	if !ValidName(name) {
 		return fmt.Errorf("events: %q is not %q", name, "<module>.<event>")
 	}
@@ -164,17 +164,22 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	// what it was not given, and a row that carries no trace is asked about with
 	// `traceparent IS NULL` — the query the migration says is ordinary, and one
 	// the empty string answers with an empty result set.
+	op, err := operationSnapshot(ctx, gdb, tenantID, system)
+	if err != nil {
+		return err
+	}
+	facts := operationColumns(op)
 	parent, state, correlation := carriedContext(ctx)
 	req, _ := request.From(ctx)
-	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage, request_id, client_ip,"+
-			" actor_kind, source_file, source_line, initiator)"+
-			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, NULLIF(?, '')::inet, ?, ?, ?, ?)",
-		uuid.New(), tenantID, name, string(body), actor,
-		nilIfEmpty(parent), nilIfEmpty(state), nilIfEmpty(correlation),
-		nilIfEmpty(req.ID), req.ClientAddr,
-		kind, file, line, initiator,
-	).Error; err != nil {
+	columns := "id, tenant_id, name, payload, actor, traceparent, tracestate, baggage, request_id, client_ip, actor_kind, source_file, source_line, initiator"
+	values := "?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, NULLIF(?, '')::inet, ?, ?, ?, ?"
+	args := []any{uuid.New(), tenantID, name, string(body), actor, nilIfEmpty(parent), nilIfEmpty(state), nilIfEmpty(correlation), nilIfEmpty(req.ID), req.ClientAddr, kind, file, line, initiator}
+	if op.ID != "" {
+		columns += ", operation_id, operation_ref, operation_tenant_id, operation_person_id, operation_outcome, operation_revision"
+		values += ", ?, ?, ?, ?, ?, ?"
+		args = append(args, facts...)
+	}
+	if err := gdb.Exec("INSERT INTO "+table+" ("+columns+") VALUES ("+values+")", args...).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
@@ -229,6 +234,9 @@ type Subscription struct {
 	Module  string
 	Name    string
 	Handler Handler
+	// Terminal records owner-confirmed failure together with the dead letter.
+	// Nil preserves causality without completing the originating operation.
+	Terminal func(context.Context, db.Tx[db.Tenant], Event, error) error
 }
 
 // durable is the subscription's name on the transport. Dots separate a subject,
@@ -317,6 +325,11 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				}
 				// Only the id is known here. It is all kit/db needs to scope
 				// the transaction, and it is what row-level security reads.
+				if err := transport.ValidateOperation(ev.Operation); err != nil {
+					return err
+				}
+				ctx = request.WithOperation(ctx, ev.Operation)
+				request.DeferOperation(ctx)
 				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
 				// One span per delivery, on the trace of the work that published the
 				// event rather than of the worker that woke up. See trace.go.
@@ -353,12 +366,16 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 					if err != nil || !first {
 						return err
 					}
+					ctx = context.WithValue(ctx, commandDeliveryKey{}, commandDelivery{event: ev, durable: durable})
 					return h(ctx, tx, ev)
 				})
 				endSpan(span, err)
 				return err
 			},
 			Dead: func(ctx context.Context, ev Event, cause error) error {
+				if s.Terminal != nil {
+					return terminalLetter(ctx, conn, ev, durable, cause, s.App, s.Terminal)
+				}
 				return deadLetter(ctx, conn, ev, durable, cause)
 			},
 		}
