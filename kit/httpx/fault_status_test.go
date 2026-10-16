@@ -581,6 +581,6 @@ func kernelFault() httpx.Fault {
 // the answer, and still writes its own Retry-After and its own refusal.
 type spentLimiter struct{}
 
-func (spentLimiter) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
-	return false, 60 * time.Second, nil
+func (spentLimiter) Reserve(context.Context, string, int, time.Duration) (bool, int, time.Duration, error) {
+	return false, 0, 60 * time.Second, nil
 }
