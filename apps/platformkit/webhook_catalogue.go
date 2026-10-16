@@ -72,6 +72,20 @@ var webhookCatalogue = emittedEvents{
 	tenantcontracts.EventSAMLSet, tenantcontracts.EventSAMLCleared,
 	// notification, task, content, site, file, billing, change.
 	notificationcontracts.EventCreated, notificationcontracts.EventEmailRequested, notificationcontracts.EventRead,
+	// The channels the tenant's sender and the person's own switches opened up. One
+	// name per channel rather than one event carrying a channel field, so an endpoint
+	// that answers 500 all afternoon delays its own channel and nothing else; a
+	// subscriber that watches what a notice was asked to do names the channel it cares
+	// about and no other.
+	notificationcontracts.EventPushRequested, notificationcontracts.EventWebPushRequested,
+	notificationcontracts.EventWebhookRequested,
+	// The three moments of a person's and a tenant's own decisions: which switches are
+	// on, which address this tenant sends from, and whether that address ever proved
+	// itself. A removal of a sender that was never believed is its own name rather than
+	// a sender_set saying "pending", and an endpoint that watches the tenant's mail
+	// identity wants the same distinction — see modules/notification/contracts/events.go.
+	notificationcontracts.EventPreferenceSet, notificationcontracts.EventSenderSet,
+	notificationcontracts.EventSenderVerified, notificationcontracts.EventSenderRemoved,
 	taskcontracts.EventCreated, taskcontracts.EventUpdated, taskcontracts.EventDeleted,
 	taskcontracts.EventAssigned, taskcontracts.EventResolved, taskcontracts.EventSLABreached,
 	contentcontracts.EventCreated, contentcontracts.EventUpdated, contentcontracts.EventDeleted,
