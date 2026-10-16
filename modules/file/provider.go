@@ -33,6 +33,7 @@ import (
 var Module = pkit.NewModule("file", wire,
 	pkit.Needs[filecontracts.Storage](),
 	pkit.Needs[jobs.TenantLister](),
+	pkit.Optional[*LibraryChrome](),
 	pkit.Provides[filecontracts.Service](),
 	pkit.Provides[richtext.Files](),
 	pkit.Provides[rest.FileUses](),
@@ -48,6 +49,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		MaxImagePixels: settings.MaxImagePixels,
 		Retention:      settings.Retention,
 		Tenants:        pkit.Get[jobs.TenantLister](w),
+		// The library's page arrives from the composition or does not. Nothing here
+		// guesses at which chrome its grid sits in, and the reads it draws are the
+		// service below rather than anything a composition could hand in.
+		Library: pkit.Get[*LibraryChrome](w),
 	})
 	pkit.Put(w, svc)
 	// The image port reads the widths this file can serve today, and the service
