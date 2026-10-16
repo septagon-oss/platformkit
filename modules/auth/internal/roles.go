@@ -198,6 +198,18 @@ func (s *Service) SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name 
 	}, func(names []string) ([]uuid.UUID, error) {
 		// Who holds a name is the user module's column, asked in this tenant's
 		// transaction under the key this file already holds, read-only.
+		//
+		// A service built with no user module at all answers "nobody", which is the
+		// truth about it rather than a default: pkit refuses a composition of this
+		// module that does not provide authcontracts.Users (modules/auth/provider.go),
+		// so an empty collaborator is a service someone assembled by hand, and the
+		// installation it belongs to has no people to hold a role. The rule behind
+		// this door reads an empty answer as "this write found nobody" and refuses
+		// only the write that leaves no granting role at all — see
+		// usercontracts.CheckedAdministration, which is where that line is drawn.
+		if s.users == nil {
+			return nil, nil
+		}
 		return s.users.Holders(ctx, tx, names)
 	}); err != nil {
 		if errors.Is(err, crud.ErrInvalid) {
