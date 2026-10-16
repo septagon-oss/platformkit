@@ -242,6 +242,9 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 			// The door a tenant's identity provider provisions through, which needs
 			// people to write and roles to name, and so comes after both.
 			scimProvisioning,
+			// The media library's chrome, immediately before the module that mounts
+			// the page: the authorizer its controls ask is the auth service above it.
+			media(),
 			file.Module,
 			task.Module,
 			billing.Module,

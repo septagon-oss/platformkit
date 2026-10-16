@@ -722,25 +722,24 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	}
 }
 
-// knownUnservedNav is the debt this gate is adopted against: two nav entries
-// this repository declares and does not serve yet, each with the reason it is
-// not a line of work this gate can force.
+// knownUnservedNav is the debt this gate is adopted against: the nav entries this
+// repository declares and does not serve yet, each with the reason it is not a
+// line of work this gate can force.
 //
-// Neither is a mistake to delete — both are promised by their own module's
-// README — and neither can be served the way the roles screen was. The real
-// blocker is the same for both and is not in either module: there is no
-// read-only generated screen. ui/screens.Mount registers create, edit and
-// delete unconditionally and takes Resource.WriteAuth(), and httpx.Permission("")
-// panics at the mount site, so a module whose rows are read-only cannot
-// register a resource and get its list and detail from the generator. Giving
-// httpx.Resource and ui/screens a read-only mode serves both of these from the
-// generator and takes this map with it; a seventh and eighth hand-written page
-// in the shell would not.
+// The entry left here is not a mistake to delete — it is promised by its own
+// module's README — and it cannot be served the way the roles screen was: there is
+// no read-only generated screen. ui/screens.Mount registers create, edit and delete
+// unconditionally and takes Resource.WriteAuth(), and httpx.Permission("") panics at
+// the mount site, so a module whose rows are read-only cannot register a resource and
+// get its list and detail from the generator. Giving httpx.Resource and ui/screens a
+// read-only mode serves this entry from the generator and takes the map with it. A
+// hand-written page is what modules/file chose instead, because its screen is not a
+// resource the generator describes either: a browse of rows, the ledger that says what
+// shows each one, and a meter over the sum an upload is refused against.
 //
-// A name is removed from this map by serving the entry, never by moving an
-// entry into it. The gate below refuses a stale name for exactly that reason.
+// A name is removed from this map by serving the entry, never by moving an entry
+// into it. The gate below refuses a stale name for exactly that reason.
 var knownUnservedNav = map[string]string{
-	"/app/file/files":   "modules/file declares it; no read-only generated screen exists yet",
 	"/app/audit/events": "modules/audit declares it; no read-only generated screen exists yet",
 }
 
@@ -1844,12 +1843,12 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// for modules/audit's append-only trail and its retention marks — and two files at
 	// one version under the one owner `audit` is a refusal in kit/db before it is ever
 	// a ledger row. modules/scim's group, mapping and person tables arrived on their
-	// branch as 000044, then as 000054, and are 000063 here: main took 000044 for
+	// branch as 000044, then as 000054, and are 000064 here: main took 000044 for
 	// modules/file's image dimensions while that branch was open, then took 000054 twice
 	// more for modules/file's variants and modules/site's default accent, then 000058 to
-	// 000062 for its own ledger lock, refusal, placement and idempotency files, and
-	// 000063 continues past 000062, the highest number any owner holds at the commit
-	// this merge lands.
+	// 000062 for its own ledger lock, refusal, placement and idempotency files and
+	// 000063 for modules/file's media alt text, and 000064 continues past 000063, the
+	// highest number any owner holds at the commit this merge lands.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}

@@ -32,6 +32,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/file/internal"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // Local is contracts.Storage on the filesystem. main wires it, or whatever a
@@ -133,6 +134,27 @@ type Deps struct {
 	// UnusedEvery replaces the daily release sweep with an interval, for a test
 	// that cannot wait until ten to five in the morning. Zero means the schedule.
 	UnusedEvery time.Duration
+
+	// Library is the media library's page: the shell it is drawn in, whose answer
+	// to "may this caller write" its two controls reuse, and how many tiles one
+	// page holds. Nil, the composition serves no library — the manifest's Nav entry
+	// below then names a screen nobody mounted, which is why the composition that
+	// ships this module hands the chrome in rather than leaving the entry dangling.
+	//
+	// What the page reads is not among it, on purpose: the grid, the meter and the
+	// caption are the one service built below, and a composition that could name
+	// them could name a library reading a different service than the doors beside it.
+	Library *LibraryChrome
+}
+
+// LibraryChrome is what a composition hands this module so its one screen can be
+// drawn. The service is filled by this module, from the one it builds; what the
+// application owns is the chrome and the authorizer, which is what this edge carries
+// and nothing more.
+type LibraryChrome struct {
+	Shell     page.Shell
+	Authorize httpx.Authorizer
+	PerPage   int
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -201,6 +223,17 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	// remove an object after the row's transaction commits — and it needs the
 	// tenant lister for the reason every sweep here does.
 	unused := internal.NewUnused(deps.Tenants, deps.UnusedAfter, deps.UnusedEvery)
+	// The library's page is composed over the service this function just built, so
+	// the meter on it and the refusal in an upload are the same sum, and the grid
+	// reads through the same row-level policy the list door answers by. No chrome
+	// means no page: the surface's own 404 for a screen nobody composed.
+	var library internal.LibraryPages
+	if deps.Library != nil {
+		library = internal.LibraryPages{
+			Shell: deps.Library.Shell, Authorize: deps.Library.Authorize, PerPage: deps.Library.PerPage,
+			Read: svc, Shown: svc, Remove: svc, Add: svc, Widths: svc,
+		}
+	}
 	return svc, module.Module{
 		Name:        "file",
 		Migrations:  Migrations.Files,
@@ -228,6 +261,9 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Routes: func(s httpx.Surfaces) {
 			sweep.Use(s.Ops.SystemToken())
 			internal.RegisterRoutes(s, svc)
+			// The library page, over the one service the doors above are mounted on —
+			// so the grid's meter and the upload's refusal cannot be two sums.
+			internal.MountLibrary(s, library)
 		},
 	}
 }
