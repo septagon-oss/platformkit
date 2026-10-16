@@ -1159,9 +1159,9 @@ sentence and the `Correction` naming whose decision it was for every channel it 
 `delivery_ledger_coverage` is the read that answers "was she told" per channel rather than as a count of
 sends; a provider that answers nil closes its row `sent`, `contracts.ErrPermanent` closes it `failed` with
 the reason and acknowledges, and anything else writes nothing and retries on the kernel's ladder. Mail
-goes out as the tenant that raised it — the `From:` header signed under DKIM, the envelope sender left
-where `mail.from` put it. [modules/notification/README.md](modules/notification/README.md) is the
-canonical account of all of it.
+leaves as the tenant that raised it — `From:` signed under DKIM, envelope from `mail.from` — when the
+product wires `Deps.Senders` and that tenant's row reads `verified`; a nil port sends `mail.from`
+unsigned. [modules/notification/README.md](modules/notification/README.md) accounts for all of it.
 
 ## [1.1.1] - 2026-09-18
 
