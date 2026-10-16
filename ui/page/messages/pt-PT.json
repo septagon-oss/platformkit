@@ -1,0 +1,324 @@
+{
+  "fault.AUTH_ANONYMOUS": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Inicie sessão antes de enviar isto.",
+    "plural": {
+      "": "Inicie sessão antes de enviar isto."
+    }
+  },
+  "fault.AUTH_DENIED": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Não pode fazer isto.",
+    "plural": {
+      "": "Não pode fazer isto."
+    }
+  },
+  "fault.AUTH_DENIED.permission": {
+    "references": ["ui/page/fault.go"],
+    "translation": "Não pode fazer isto. Precisa da permissão %s para isso. Quem gere as funções aqui pode concedê-la: peça ao seu administrador.",
+    "plural": { "": "Não pode fazer isto. Precisa da permissão %s para isso. Quem gere as funções aqui pode concedê-la: peça ao seu administrador." }
+  },
+  "fault.AUTH_NOT_OPERATOR": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Esta operação pertence à instalação, não ao seu tenant.",
+    "plural": {
+      "": "Esta operação pertence à instalação, não ao seu tenant."
+    }
+  },
+  "fault.AUTH_UNDECLARED": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Esta operação nunca disse quem a pode chamar.",
+    "plural": {
+      "": "Esta operação nunca disse quem a pode chamar."
+    }
+  },
+  "fault.AUTH_NO_TENANT": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Este trabalho pertence a um tenant e esta morada não nomeia nenhum.",
+    "plural": {
+      "": "Este trabalho pertence a um tenant e esta morada não nomeia nenhum."
+    }
+  },
+  "fault.AUTH_PRINCIPAL_CHANGED": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "A conta com sessão iniciada não é a que preparou este pedido.",
+    "plural": {
+      "": "A conta com sessão iniciada não é a que preparou este pedido."
+    }
+  },
+  "fault.CSRF_ORIGIN": {
+    "references": [
+      "kit/httpx/csrf.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Este pedido veio de outro site, por isso nada foi escrito.",
+    "plural": {
+      "": "Este pedido veio de outro site, por isso nada foi escrito."
+    }
+  },
+  "fault.PUBLIC_SETS_A_COOKIE": {
+    "references": [
+      "kit/httpx/respond.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Esta página promete que ninguém aqui é lembrado.",
+    "plural": {
+      "": "Esta página promete que ninguém aqui é lembrado."
+    }
+  },
+  "fault.LIMIT_EXHAUSTED": {
+    "references": [
+      "kit/httpx/public_writes.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Demasiados envios a partir deste endereço. Espere e tente de novo.",
+    "plural": {
+      "": "Demasiados envios a partir deste endereço. Espere e tente de novo."
+    }
+  },
+  "fault.404": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não há nada para ver nesta morada.",
+    "plural": {
+      "": "Não há nada para ver nesta morada."
+    }
+  },
+  "fault.405": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Este endereço não aceita este pedido.",
+    "plural": {
+      "": "Este endereço não aceita este pedido."
+    }
+  },
+  "fault.500": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Qualquer coisa correu mal do nosso lado.",
+    "plural": {
+      "": "Qualquer coisa correu mal do nosso lado."
+    }
+  },
+  "fault.503": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "kit/httpx/tenant.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Este serviço está indisponível por um momento. Espere e tente de novo.",
+    "plural": {
+      "": "Este serviço está indisponível por um momento. Espere e tente de novo."
+    }
+  },
+  "fault.missing": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Falta: %s.",
+    "plural": {
+      "": "Falta: %s."
+    }
+  },
+  "fault.granter": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Peça ao seu administrador — qualquer pessoa cuja função lhe dê %s.",
+    "plural": {
+      "": "Peça ao seu administrador — qualquer pessoa cuja função lhe dê %s."
+    }
+  },
+  "fault.ask": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Pedir acesso",
+    "plural": {
+      "": "Pedir acesso"
+    }
+  },
+  "fault.sent": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "O seu pedido foi enviado",
+    "plural": {
+      "": "O seu pedido foi enviado"
+    }
+  },
+  "fault.sent_body": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "As pessoas desta organização que podem conceder acesso foram informadas do que precisa.",
+    "plural": {
+      "": "As pessoas desta organização que podem conceder acesso foram informadas do que precisa."
+    }
+  },
+  "fault.holds_the_row": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Já tem o que isto pede; a regra desta registo recusou-o: %s",
+    "plural": {
+      "": "Já tem o que isto pede; a regra desta registo recusou-o: %s"
+    }
+  },
+  "fault.reference": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "(pedido",
+    "plural": {
+      "": "(pedido"
+    }
+  },
+  "fault.back": {
+    "references": [
+      "apps/platformkit/fault.go"
+    ],
+    "translation": "Voltar ao espaço de trabalho",
+    "plural": {
+      "": "Voltar ao espaço de trabalho"
+    }
+  },
+  "fault.AUTH_ANONYMOUS.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não autorizado",
+    "plural": {
+      "": "Não autorizado"
+    }
+  },
+  "fault.AUTH_DENIED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Proibido",
+    "plural": {
+      "": "Proibido"
+    }
+  },
+  "fault.AUTH_NOT_OPERATOR.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Reservado à instalação",
+    "plural": {
+      "": "Reservado à instalação"
+    }
+  },
+  "fault.AUTH_UNDECLARED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Autorização não declarada",
+    "plural": {
+      "": "Autorização não declarada"
+    }
+  },
+  "fault.AUTH_NO_TENANT.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Morada sem tenant",
+    "plural": {
+      "": "Morada sem tenant"
+    }
+  },
+  "fault.AUTH_PRINCIPAL_CHANGED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "A conta mudou",
+    "plural": {
+      "": "A conta mudou"
+    }
+  },
+  "fault.CSRF_ORIGIN.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Origem não permitida",
+    "plural": {
+      "": "Origem não permitida"
+    }
+  },
+  "fault.PUBLIC_SETS_A_COOKIE.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Esta página não guarda sessão",
+    "plural": {
+      "": "Esta página não guarda sessão"
+    }
+  },
+  "fault.LIMIT_EXHAUSTED.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Demasiados pedidos",
+    "plural": {
+      "": "Demasiados pedidos"
+    }
+  },
+  "fault.404.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não encontrado",
+    "plural": {
+      "": "Não encontrado"
+    }
+  },
+  "fault.405.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Método não permitido",
+    "plural": {
+      "": "Método não permitido"
+    }
+  },
+  "fault.500.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Erro interno no servidor",
+    "plural": {
+      "": "Erro interno no servidor"
+    }
+  },
+  "fault.503.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Serviço indisponível",
+    "plural": {
+      "": "Serviço indisponível"
+    }
+  }
+}

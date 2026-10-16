@@ -47,6 +47,10 @@ const (
 const (
 	MaxName        = 255
 	MaxContentType = 120
+	// MaxAlt is how much a picture is allowed to say about itself. The column is
+	// varchar(1000) and the entity refuses 1001 characters, so the answer is a
+	// 422 that names the limit and not a constraint violation arriving as a 500.
+	MaxAlt = 1000
 )
 
 // Renderable is the closed set of media types this application will let a
@@ -92,6 +96,25 @@ var ErrTooLarge = errors.New("file: larger than this deployment accepts")
 // tell an anonymous caller how much of somebody else's quota is left.
 var ErrQuota = errors.New("file: this tenant has no room left")
 
+// ErrTooManyPixels is a frame over the ceiling this deployment will decode. It
+// is its own refusal rather than ErrTooLarge because the two come apart: a
+// compressed file can be small and the frame it expands to enormous, which is
+// the decompression bomb, and the caller's remedy is a smaller frame rather than
+// a shorter upload.
+var ErrTooManyPixels = errors.New("file: too many pixels to decode")
+
+// ErrNotImage is a file offered as an image that no decoder this module runs
+// reads. It is what refuses a vector drawing with a script in it before a byte
+// of it is stored, and it names the reason rather than the media type somebody
+// typed into a form.
+var ErrNotImage = errors.New("file: not an image this deployment decodes")
+
+// DefaultMaxImagePixels is the frame a deployment decodes unless it says
+// otherwise: forty megapixels, which is above any camera anybody uploads and
+// below the point where one decode is a heap the request cannot be trusted with.
+// It is a count of pixels and not of bytes for the reason above.
+const DefaultMaxImagePixels = 40_000_000
+
 // ErrNoBlob is a key Storage has nothing at. It is what a Get answers with when
 // the row says there are bytes and there are not, which is the one inconsistency
 // the split between a row and a blob can produce.
@@ -132,6 +155,45 @@ type File struct {
 	// it. Validate stamps it from the caller on the context, the way content
 	// stamps an author.
 	UploaderID uuid.UUID `json:"uploader,omitempty" gorm:"column:uploader_id;type:uuid" format:"uuid" ui:"hide:list" doc:"The user who uploaded it" readOnly:"true"`
+
+	// Width and Height are the frame's pixels as they are stored — after the
+	// image pass turned a rotated frame upright, which is why they describe what
+	// a reader gets rather than what the sensor captured. Both are the server's
+	// account: no command takes them, and the rich-text port lays out against
+	// them instead of decoding a header on every render.
+	//
+	// Zero means nobody measured: a file the pass did not run over — a PDF, a
+	// ZIP, a raster no decoder read — is 0 x 0, and 0 is never a real width.
+	Width  int `json:"width" gorm:"not null;default:0" doc:"Pixels across, as stored" readOnly:"true" required:"false" example:"1440"`
+	Height int `json:"height" gorm:"not null;default:0" doc:"Pixels down, as stored" readOnly:"true" required:"false" example:"900"`
+
+	// Kind is the retention class the upload arrived under, as a product names
+	// it. It is read by exactly one thing — the retention sweep's policy lookup
+	// — and by nothing else, which is why it is empty for every upload that
+	// does not name one. An unknown kind is never deleted, never guessed at.
+	Kind string `json:"kind" gorm:"type:varchar(32);not null;default:''" maxLength:"32" ui:"hide:list" doc:"Retention class, as the product names it" required:"false"`
+
+	// UnusedSince is when this image stopped being shown by anything: the moment
+	// its last use ended. It is the grace period's start, stamped by SetUses when it
+	// ends a file's last use, cleared by SetUses when a use restarts, and read by the
+	// release sweep, which removes the row once the deployment's grace has run with
+	// nobody asking for it. Nothing stamps an arrival: the rule releases a file whose
+	// last use *ended*, and a file the ledger has never spoken about has no such
+	// moment to measure from — the site logo is named by a bare uuid outside the
+	// ledger, so a stamp at upload would reap a configured logo a day after it was
+	// saved. NULL therefore means the file is shown, or that the ledger says nothing
+	// about it — see the CHECK in migrations/000055, which keeps a file the image
+	// pass never measured from carrying a stamp at all.
+	UnusedSince *time.Time `json:"unusedSince,omitempty" gorm:"column:unused_since" doc:"Since when nothing shows it" readOnly:"true" required:"false" format:"date-time"`
+
+	// Alt is what the picture says about itself, in the words a person chose, and
+	// it is written by one command only — SetAlt — never merged in from a request
+	// body. A file may arrive without it; a body may not be handed the file until
+	// it has it, or until the picture is declared decorative.
+	Alt string `json:"alt" gorm:"column:alt;type:varchar(1000);not null;default:''" maxLength:"1000" doc:"What the image says about itself, empty until somebody captions it"`
+	// Decorative is the person saying this picture carries no information a reader
+	// would want: the alternative to writing alt text, and never both at once.
+	Decorative bool `json:"decorative" gorm:"column:decorative;not null;default:false" doc:"True when the image carries no information a reader would want"`
 }
 
 // TableName pins the table, so the entity and migrations/000019 agree.
@@ -175,8 +237,35 @@ func (f *File) Validate(ctx context.Context) error {
 		return fmt.Errorf("%q is not a media type", f.ContentType)
 	case f.Visibility != VisibilityPrivate && f.Visibility != VisibilityPublic:
 		return fmt.Errorf("visibility %q is not %s or %s", f.Visibility, VisibilityPrivate, VisibilityPublic)
+	// The same shape files_kind CHECKs, so a mistake is a 422 that names the
+	// token and not a 500 from the database. This module reads no meaning into
+	// a kind — it matches the token against the deployment's table and deletes
+	// nothing it does not find there — so syntax is all it can refuse.
+	case !ValidKind(f.Kind):
+		return fmt.Errorf("%q is not a retention class", f.Kind)
+	// The stamp is a claim about the ledger, and the ledger only speaks about
+	// pictures the image pass measured. A stamp on an unmeasured row would be the
+	// sweep deleting a document upload a day after it arrived.
+	case f.UnusedSince != nil && f.Width == 0:
+		return fmt.Errorf("nothing this module's ledger can speak about is stamped: an unstored frame carries no grace period")
 	case f.Size < 0:
 		return fmt.Errorf("a file is not a negative number of bytes")
+	// A caption is the entity's business too: whichever door writes it — SetAlt,
+	// a fixture, an import — the row may not carry words and the claim that there
+	// are none at the same time. The empty-but-not-declarative state is legal to
+	// arrive in and is refused by the commands that leave it, which is what
+	// contracts.AltClaim's own comment says and what SetAlt enforces.
+	case f.Alt != "" && f.Decorative:
+		return fmt.Errorf("a decorative image says nothing about itself, and that one carries %d characters", utf8.RuneCountInString(f.Alt))
+	case utf8.RuneCountInString(f.Alt) > MaxAlt:
+		return fmt.Errorf("an alt text is at most %d characters, and that one is %d", MaxAlt, utf8.RuneCountInString(f.Alt))
+	// The same shape files_dimensions CHECKs: a frame is either unmeasured, in
+	// which case both numbers are 0, or it is measured, in which case neither
+	// side is. A width with no height is a number nobody read.
+	case f.Width < 0 || f.Height < 0:
+		return fmt.Errorf("a frame is not a negative number of pixels")
+	case (f.Width == 0) != (f.Height == 0):
+		return fmt.Errorf("a measured frame has both a width and a height")
 	case len(f.SHA256) != 64:
 		return fmt.Errorf("a file carries the digest of what arrived")
 	case f.StorageKey == "":
@@ -233,49 +322,123 @@ func validMediaType(s string) bool {
 	return err == nil
 }
 
-// Storage is where the bytes go. There is one implementation in this module, on
-// local disk, and the ones that speak to an object store live outside this
-// repository: a reference architecture carrying an S3 client would be teaching
-// S3, and the interface is what makes that a wiring decision rather than a
-// rewrite.
+// Storage is where the bytes go. There are two implementations in this module:
+// one on local disk, which is what a laptop and a mounted volume are, and one
+// that speaks S3 to any object store. The interface is what makes the choice a
+// wiring decision rather than a rewrite.
 //
-// It takes no transaction, and that is the shape of the whole module: a blob
-// write cannot be rolled back, so it happens outside one on purpose and the
-// order relative to the commit is chosen at each call site. Every key it is
-// given is a UUID this module generated.
+// Every call names a Scope. That is the change from a port that took a bare
+// key: a bucket shared by every tenant of a shared-instance deployment (see
+// decision 0028) cannot keep one tenant out of another's bytes by hoping the
+// key was well-formed, so an adapter derives each object's prefix from the
+// scope and a key has no way to name a prefix that is not its own tenant's.
+//
+// It takes no transaction, and that is still the shape of the whole module: a
+// blob write cannot be rolled back, so it happens outside one on purpose and
+// the order relative to the commit is chosen at each call site. A Scope is not
+// a transaction — it is scope and nothing else, which is why an upload can
+// stream a body for as long as the client likes without holding a connection.
 type Storage interface {
-	// Put writes the bytes at key. size is what the caller declared, or -1 when
-	// nothing did; an implementation that has to know a length up front may
-	// refuse -1, and the one here ignores it. Writing a key that already exists
-	// is an error, because a key is minted per upload and a collision is a bug
-	// rather than a replacement.
-	Put(ctx context.Context, key string, r io.Reader, size int64) error
+	// Put writes the bytes at key under scope, with meta beside them. size is
+	// what the caller declared, or -1 when nothing did, and every implementation
+	// has to write the bytes it was handed either way: this module's own door
+	// streams the request and so declares no length at all
+	// (internal/handler.go's arriving), which means an implementation that
+	// refused -1 would be refusing the upload route. The one on disk ignores the
+	// number outright. What a store may do with a length it was given is answer
+	// the request as one write rather than several.
+	//
+	// Writing a key that already exists is an error whatever the length was,
+	// because a key is minted per upload and a collision is a bug rather than a
+	// replacement — including over a stream that declared none, which an object
+	// store cannot cover with its own conditional create header and so has to
+	// claim before it fills (internal/s3.go).
+	Put(ctx context.Context, scope Scope, key Key, r io.Reader, size int64, meta Meta) error
 
 	// Get opens the bytes at key, or ErrNoBlob when there are none. The caller
 	// closes what it is given.
-	Get(ctx context.Context, key string) (io.ReadCloser, error)
+	Get(ctx context.Context, scope Scope, key Key) (io.ReadCloser, error)
 
 	// Delete removes the bytes at key. A key with nothing at it is not an
 	// error: the worker that calls this retries, and a retry that failed
 	// because the first attempt succeeded would never stop.
-	Delete(ctx context.Context, key string) error
+	Delete(ctx context.Context, scope Scope, key Key) error
 }
 
-// Lister is the half of Storage a reconciliation can be built on, and it is
-// optional: an implementation that cannot enumerate what it holds — a signed-URL
-// gateway, a store behind somebody else's API — simply does not implement it,
-// and the module mounts no reconciliation job.
+// Reconciler is the half of Storage a sweep can be built on, and it is
+// optional: an implementation that cannot enumerate what it holds — a
+// signed-URL gateway, a store behind somebody else's API — simply does not
+// implement it, and the module mounts no sweep over a store it cannot count.
 //
 // It exists because an orphan blob is the one inconsistency this module's own
 // ordering produces on purpose: an upload writes the bytes before the row, so a
 // transaction that then fails leaves bytes nobody references. Nothing in the
 // database records them, which is why the sweep has to start from the store.
-type Lister interface {
-	// Keys is every key written before before. The bound is the whole safety
-	// argument: an upload in flight has bytes and no row yet, and a sweep that
-	// did not exclude it would delete the blob out from under a request that is
-	// about to commit.
-	Keys(ctx context.Context, before time.Time) ([]string, error)
+//
+// It replaces Lister, and the transaction in its signature is why: enumerating
+// a shared bucket is an installation-wide read by construction, so it is system
+// scoped in the type rather than a call that happens to run from a job. A
+// tenant transaction cannot ask this question, which is the difference between
+// a port that can be handed to a request by mistake and one that cannot.
+type Reconciler interface {
+	// Blobs is every object written before before. The bound is the whole
+	// safety argument: an upload in flight has bytes and no row yet, and a
+	// sweep that did not exclude it would delete the blob out from under a
+	// request that is about to commit.
+	//
+	// Each Blob is located by the store that holds it. TenantID is uuid.Nil
+	// where the store cannot know — Local's flat directory records no tenant —
+	// and the object's own tenant wherever the store keeps them apart.
+	Blobs(ctx context.Context, tx db.Tx[db.System], before time.Time) ([]Blob, error)
+
+	// RemoveBlob deletes one object the listing returned. Removing what is
+	// already gone is success and not an error, as Delete promises.
+	RemoveBlob(ctx context.Context, tx db.Tx[db.System], b Blob) error
+}
+
+// Blob is one object, located by the store that holds it.
+type Blob struct {
+	// TenantID is uuid.Nil where the store cannot know whose it is.
+	TenantID uuid.UUID
+	Key      Key
+}
+
+// Prover is the second question a Reconciler answers, and the one an erasure
+// needs: after the delete, does anything still answer to that name? It counts
+// objects, versions, delete markers and abandoned multipart parts, because a
+// store that keeps any of them is a store where "the bytes are gone" needs the
+// listing to mean it.
+//
+// It is optional like Reconciler and Signer. A store that cannot answer is not
+// refused its erasure — the proof row is still written, and its verified_at
+// stays NULL, which is the difference between "we checked" and "we assume"
+// rather than something a caller gets to talk this module out of.
+type Prover interface {
+	Prove(ctx context.Context, scope Scope, key Key) (seen int, err error)
+}
+
+// Signer is the door that hands out a time-limited read onto one object with no
+// request of this process in the path, and like Reconciler it is optional: a
+// store that cannot do it — the one on local disk — does not implement it, and
+// the grant command answers ErrNotSignable rather than pretending.
+type Signer interface {
+	// Sign returns a URL that reads f's bytes until expiry. It is the store's
+	// own presigning (an S3 SigV4 query, for the store here) and not a token
+	// this module invented, so the thing that has to be correct is a signature
+	// standard and not a session of our own devising. f carries the visibility
+	// and the type, which is what the object's metadata already says, so a
+	// caller cannot ask for a longer cache or a friendlier disposition than the
+	// row implies.
+	Sign(ctx context.Context, scope Scope, f *File, expiry time.Duration) (*Grant, error)
+}
+
+// Grant is a door with an expiry on it. It is a value and never a row: minting
+// one creates nothing, there is nothing to revoke, and it is gone when it is
+// expired. It is a bearer capability until ExpiresAt, which is why the expiry is
+// short, why the mint is logged, and why removing the bytes revokes it.
+type Grant struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expiresAt" format:"date-time"`
 }
 
 // Upload is one arriving file: what the caller said about it, and the bytes.
@@ -285,13 +448,122 @@ type Upload struct {
 	Name        string
 	ContentType string
 	Visibility  string
-	// Declared is the length the request declared, or -1. It is a hint for a
-	// Storage that has to know one up front, and nothing else: the size that is
-	// stored and the limit that is enforced both come from counting the bytes
-	// as they go past, because a request that declares a length can be wrong
-	// about it either by accident or on purpose.
+	// Kind is what the product calls this file — an opaque token like
+	// "invoice" or "chat.photo", matched against config.Files.Retention by the
+	// retention sweep. This module never branches on a value of it and names
+	// none: the class is the product's, the duration it means is the
+	// deployment's, and the only thing the module knows is that a kind with no
+	// configured policy is never deleted.
+	Kind string
+	// Declared is the length the request declared, or -1, which is what a
+	// streamed part honestly declares. It is a hint a Storage may use to ask
+	// the store for one write instead of several, and nothing else: the size
+	// that is stored and the limit that is enforced both come from counting the
+	// bytes as they go past, because a request that declares a length can be
+	// wrong about it either by accident or on purpose. No implementation may
+	// refuse -1, because this module never declares anything else here.
 	Declared int64
 	Body     io.Reader
+
+	// Image is the caller saying "this is an image, treat it as one": set by
+	// the media library and by the editor's image field. It costs nothing when
+	// it is true and it changes what a refusal is: an upload the caller called
+	// an image is refused with ErrNotImage when no decoder reads it, where the
+	// same bytes offered as a document stay the attachment they always were
+	// (decision 0069 §4). It asks for no permission the upload does not already
+	// have, and it is never a promise about what the bytes are.
+	Image bool
+}
+
+// FileUse is one live use as it is stored: the file, the field of the record
+// that shows it, and the locale that body is written in.
+type FileUse struct {
+	crud.Base
+	FileID uuid.UUID `json:"fileId" gorm:"column:file_id;type:uuid;not null" format:"uuid" doc:"The file used" readOnly:"true"`
+	Module string    `json:"module" gorm:"type:varchar(32);not null" maxLength:"32" doc:"The module that shows it" readOnly:"true"`
+	Entity string    `json:"entity" gorm:"type:varchar(64);not null" maxLength:"64" doc:"The record's entity" readOnly:"true"`
+	Record uuid.UUID `json:"record" gorm:"type:uuid;not null" format:"uuid" doc:"The record that shows it" readOnly:"true"`
+	Field  string    `json:"field" gorm:"type:varchar(64);not null" maxLength:"64" doc:"The field of that record" readOnly:"true"`
+	Locale string    `json:"locale" gorm:"type:varchar(35);not null" maxLength:"35" doc:"The locale of the body that names it" readOnly:"true"`
+	// Public says the record this row belongs to was showing the file to somebody
+	// who has not signed in. One command writes it — SetShown, called by the module
+	// that owns that record's public face — and files.visibility is recomputed from
+	// it: a file the ledger speaks about is public if and only if some live use row
+	// of it says true here. See migrations/000056.
+	Public bool `json:"public" gorm:"not null;default:false" doc:"Shown to anonymous readers" readOnly:"true"`
+}
+
+// TableName pins the table, so the entity and migrations/000045 agree.
+func (FileUse) TableName() string { return "file_uses" }
+
+// Validate is the same shape file_uses CHECKs, in Go and before the write: an
+// empty module, entity, field or locale names no use, and a field that is not
+// lower-case would be a second spelling of a field that already exists.
+func (u *FileUse) Validate(ctx context.Context) error {
+	switch {
+	case u.FileID == uuid.Nil:
+		return fmt.Errorf("a use names the file it is a use of")
+	case u.Module == "" || u.Entity == "":
+		return fmt.Errorf("a use names the module and entity that show the file")
+	case u.Record == uuid.Nil:
+		return fmt.Errorf("a use names the record that shows the file")
+	case u.Field == "" || u.Field != strings.ToLower(u.Field):
+		return fmt.Errorf("a use names a field, in lower case")
+	case u.Locale == "":
+		return fmt.Errorf("a use names the locale of the body that names the file")
+	}
+	return nil
+}
+
+// Use names the one thing that can reference a file: a field of one record, in
+// one locale. It is SetUses' subject and nothing else's: it carries no verdict
+// about whether the file may be used, which is the transaction's, and no
+// visibility, which is the record's audience and not the writer's claim.
+type Use struct {
+	Module, Entity string
+	Record         uuid.UUID
+	Field, Locale  string
+}
+
+// UseRow is one live use as the details panel reads it: the use, and the file it
+// belongs to, so a list of a file's uses needs no second read.
+type UseRow struct {
+	Use
+	ID        uuid.UUID `json:"-" doc:"The use row's own id"`
+	CreatedAt time.Time `json:"createdAt" doc:"When this use began"`
+}
+
+// CollapseRefs is what a body's references mean as a set of uses: the ids in the
+// order the document shows them, with a file referenced twice by one field used
+// once. Document order is kept because the details panel lists what a record
+// shows in the order a reader meets it.
+func CollapseRefs(refs []uuid.UUID) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(refs))
+	for _, id := range refs {
+		if id == uuid.Nil || slices.Contains(out, id) {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+// DiffUses is the rewrite decision: given the ids a field used and the ids it
+// uses now, which rows to write and which to end. Both sides arrive already
+// collapsed. It is here, and not in either implementation, because the SQL
+// service and the fake must not hold two answers to one question.
+func DiffUses(existing, wanted []uuid.UUID) (add, remove []uuid.UUID) {
+	for _, id := range wanted {
+		if !slices.Contains(existing, id) {
+			add = append(add, id)
+		}
+	}
+	for _, id := range existing {
+		if !slices.Contains(wanted, id) {
+			remove = append(remove, id)
+		}
+	}
+	return add, remove
 }
 
 // Opener is the one thing a consuming module actually needs: the bytes of a
@@ -327,6 +599,14 @@ type Tx func(ctx context.Context) (db.Tx[db.Tenant], error)
 // Service is what a caller does with files. Every command takes the caller's
 // transaction rather than opening one, so the row and its event commit
 // together; the errors are kit/crud's, plus ErrTooLarge.
+//
+// It does not carry the width door: OpenWidth is contracts.WidthOpener, a type
+// beside this one. This interface is what a *caller* does with files, and a
+// caller outside this module serves no `?w=` — the only route that answers a
+// width is this module's own. The other reason is checkable rather than
+// stylistic: an exported interface that gains a method is a break for anybody
+// outside this repository who implemented it, and `Opener`, `Signer` and `Prover`
+// are each separate types for exactly that reason.
 type Service interface {
 	Opener
 
@@ -353,4 +633,143 @@ type Service interface {
 	// transaction commits — see the module's subscription. Deleting what is
 	// already gone is ErrNotFound, because the row is what a caller named.
 	Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*File, error)
+
+	// Grant hands out a time-limited door onto one row's bytes, so a private
+	// byte can be read with no request of this process in the path — which is
+	// what a native client wants, and what anything that hands a link to a
+	// person wants. It changes no state, so it publishes nothing and writes no
+	// audit row: a trail of every link ever minted is noise, and the mint is
+	// logged with the trace id instead.
+	//
+	// A public file is refused with ErrPublicFile rather than answered: it
+	// already has an open door, and handing out a signature for an object that
+	// needs none teaches that signing is where the access control lives.
+	Grant(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, expiry time.Duration) (*Grant, error)
+
+	// Retain places or replaces a hold, which is how a person or an obligation
+	// says a file must outlive its class. until NULL means held until released.
+	Retain(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID, until *time.Time, reason string) (*Hold, error)
+
+	// Release removes the hold, which returns the file to its class's policy.
+	Release(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) error
+
+	// Uses lists the live uses of one file — which record's field, in which
+	// locale. It is the details panel's answer and the sweep's question, and it
+	// is RLS-scoped like every other read here: a file another tenant holds
+	// answers ErrNotFound, not an empty list, because an empty list would say
+	// "nobody reads this one" about a file the reader cannot see at all.
+	Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) ([]UseRow, error)
+
+	// SetUses rewrites the uses one record field makes, inside the writer's
+	// transaction, from the references its body carries. refs is the ids in
+	// document order, and repeats collapse to one use.
+	//
+	// It is a rewrite and not an append, because the body is the whole truth
+	// about what a record shows: a use that survived the edit that dropped the
+	// image is a use of a file nothing displays, which is exactly the row the
+	// release sweep would then be wrong to remove.
+	//
+	// Every file it names is locked before its rows are written, in ascending id
+	// order so two records that share two files cannot lock them in opposite
+	// orders. A file whose use ends is locked FOR UPDATE and one the new set only
+	// names FOR KEY SHARE, because "this file is read by nothing now" is a count of
+	// rows another rewrite may be ending in the same instant: two rewrites that drop
+	// the last two uses of one picture serialise on it and the later one counts after
+	// the earlier one lands, so the one that really ended the last use starts the
+	// grace period. A file the new set names that is gone answers ErrNotFound
+	// naming the id — a use of a file that no longer exists is never written,
+	// and nothing else in the set is written either. A file this rewrite only
+	// ends has no such refusal: its ledger row was filed while the file existed
+	// and the file may have been removed since, which is the row to end rather
+	// than a reason to refuse. A record would otherwise be undeletable once
+	// somebody deleted its image, and the row saying a gone file is still shown
+	// would outlive every body that ever named it. It returns the ids whose last use
+	// this ended, which is the list the release sweep is handed, and the stamp the
+	// sweep measures its grace period from: the ids it returns have their
+	// unused_since set in this same transaction, and a file whose use restarts has the
+	// stamp cleared.
+	//
+	// One publication is its own, and it is the file's. An ended row that had asserted
+	// a public audience takes that audience back here, in the transaction that ended
+	// it, because this rewrite is what every delete and every edit goes through: a
+	// record that was showing a picture is gone, and its bytes must not stay readable
+	// by anybody because nobody recomputed them. The rule is SetShown's — public if any
+	// live use of the file is public, private when none is, a file with no rows at all
+	// now counted as nobody is — and so is its exemption: a file the ledger never had a
+	// row for is not this command's to change, and neither is one whose ended rows said
+	// nothing about the public. Only an audience a publish granted is a publish's to
+	// take back. Every other fact stays silent: the record's own write is the auditable
+	// one, and the file module has no business emitting an event for somebody else's
+	// row.
+	SetUses(ctx context.Context, tx db.Tx[db.Tenant], use Use, refs []uuid.UUID) ([]uuid.UUID, error)
+
+	// SetShown says which files one record is showing, and whether it is showing
+	// them to anybody. owner names the record — its module, entity and id — with
+	// Field and Locale left empty, meaning every field and every locale of it.
+	//
+	// It is the audience half of the ledger, and the half that is asserted: the
+	// module that owns the record's public face calls it from the command that
+	// moves the lifecycle, in that command's transaction, so the flip and the move
+	// commit together or not at all. Each named file is locked FOR UPDATE, in
+	// ascending id order, before its rows are written and its visibility is
+	// recomputed from the whole ledger: public if any live use of it is public,
+	// private when none is. A file the ledger does not speak about is not named
+	// here and keeps whatever its upload asked for.
+	//
+	// public true with no use row for one of the refs is refused — the bytes would
+	// go public while nothing records who shows them, so nothing could ever turn
+	// them back. public false never refuses: taking an image away from the public
+	// is the safe direction. It publishes file.visibility for each flip it makes,
+	// and nothing for a file whose visibility was already right.
+	SetShown(ctx context.Context, tx db.Tx[db.Tenant], owner Use, refs []uuid.UUID, public bool) error
+
+	// EraseSubject removes one subject's rows and bytes for this tenant, under
+	// audit: the rows go in this transaction, the bytes go in the worker that
+	// handles the event, and the proof row records the digest that is gone.
+	//
+	// A subject with no rows is not an error. It answers a receipt with zero
+	// counts, publishes nothing and writes nothing, because an erasure of
+	// nothing is an answer rather than a thing done.
+	//
+	// The reason is why the person asked. It is filed, not accepted and dropped:
+	// it travels with each removal and lands in the proof row beside the digest,
+	// which is the record a data-protection question is answered from. Empty is
+	// allowed; past MaxErasureReason is refused before anything is removed.
+	EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject uuid.UUID, reason string) (*ErasureReceipt, error)
 }
+
+// DefaultGrantExpiry is the life of a grant nobody asked a length for: long
+// enough to open a document on a slow connection, short enough that a leaked
+// link is a bad hour and not a bad forever.
+const DefaultGrantExpiry = 15 * time.Minute
+
+// MaxGrantExpiry is the longest grant this module will mint. It is inside the
+// seven days an S3 signature may live, so the module's own ceiling is the one
+// that binds. Past it a request is refused and not clamped: a caller that asked
+// for a day and silently got fifteen minutes would ship a link that dies in the
+// middle of somebody's download.
+const MaxGrantExpiry = 24 * time.Hour
+
+// ErrPublicFile is a grant asked for on a file anybody can already read.
+var ErrPublicFile = errors.New("file: this file is public and needs no grant")
+
+// ErrNotShown is a publish that named a file no use row of that record shows.
+// It is a conflict and not a validation failure: the remedy is to save the body
+// that names the image, which is the door that files uses, and then publish.
+var ErrNotShown = errors.New("file: this record shows no use of that file")
+
+// ErrNotSignable is a grant asked for of a store that cannot hand one out. It is
+// a wiring fact, not something the caller can change.
+var ErrNotSignable = errors.New("file: this deployment's store cannot hand out a time-limited URL")
+
+// ErrInvalidExpiry is a grant asked for outside the bounds this module mints.
+var ErrInvalidExpiry = errors.New("file: that expiry is not one this module signs")
+
+// ErrHeld is a removal refused because a hold says the bytes must stay.
+var ErrHeld = errors.New("file: this file is under a retention hold")
+
+// ErrUnprovable is an erasure the store cannot certify: it reported a version,
+// a delete marker or an in-flight multipart part, so the bytes are not gone in
+// the only sense this module can check. The answer is the bucket's posture and
+// no caller-side change reaches past it.
+var ErrUnprovable = errors.New("file: the store keeps copies this module cannot remove")

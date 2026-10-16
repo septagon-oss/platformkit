@@ -12,8 +12,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task"
@@ -45,13 +47,14 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 	t.Helper()
 	_, conn := dbtest.Schema(t, task.Migrations)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	task.Module(task.Deps{}).Routes(surfacesOf(api))
+	task.New(task.Deps{}).Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -118,7 +121,7 @@ func TestEveryEventTheRoutesDeclareIsInTheManifest(t *testing.T) {
 		t.Errorf("the routes declare %v; the create hook's event is not among them", declared)
 	}
 	for _, e := range declared {
-		if !slices.Contains(contracts.Events, e) {
+		if !slices.Contains(events.Names(contracts.Events), e) {
 			t.Errorf("a route publishes %q and the manifest does not name it", e)
 		}
 	}

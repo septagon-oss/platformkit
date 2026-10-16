@@ -28,7 +28,7 @@ import (
 // ones (decision 0022).
 func TestTwoRolesOfOneTenantMayHoldTheSameGrantList(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	acme := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 	seedForRepair(t, conn, acme)
 	handEdit(t, conn, svc, acme, "finance", nil)

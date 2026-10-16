@@ -41,11 +41,51 @@ type Module struct {
 	// Permissions are the permission keys this module defines, "<resource>:<action>".
 	Permissions []Permission
 
-	// Events are the event names this module emits, "<name>.<event>". Every
-	// event a rest.Spec would publish has to appear here, or the app refuses to
-	// start: a module that emits something it never promised is an integration
-	// nobody can find.
+	// Roles are the people this module is for: a role it can describe without
+	// being told, because the grants it needs are its own permissions. "A role a
+	// module declares opens that module's screens" is only a rule if the
+	// declaration exists somewhere the kernel can read it, and before this field
+	// nowhere did: the only roles in an installation were auth's two and whatever
+	// the composition happened to list by hand, so nothing could check that a
+	// granted role reached the screens its module serves, and an administrator
+	// granting "editor" was granting a guess.
+	//
+	// Seeding is the composition's act, not this manifest's: apps/platformkit
+	// builds auth.SeedRoles' defaults from these rows (its seedRoles), and
+	// kit/app's Validate refuses a declaration that lies. A module that wants a
+	// role nobody should get in every tenant declares nothing and lets the product
+	// name it.
+	Roles []RoleDecl
+
+	// Events are the events this module emits, by name: "<module>.<event>",
+	// inside the module's own namespace. A name is all the kernel needs to
+	// refuse a route that would publish what no manifest promised, to name a
+	// subscription's subject, and to expand a SubscribeAll module — so a module
+	// whose payload it cannot describe (a hand-built document, a type that
+	// marshals itself) still gets to emit by naming the event here.
+	//
+	// Every event a rest.Spec would publish has to appear in this list or in
+	// Declared, or the app refuses to start: a module that emits something it
+	// never promised is an integration nobody can find. Module.Emits is the one
+	// list that says so; nothing reads these two fields separately.
 	Events []string
+
+	// Declared are the events this module emits, each named with the Go type of
+	// its payload: events.Declare[contracts.Invited](contracts.EventInvited).
+	// It is the typed form of Events, and the one a module composes from this
+	// repository's own contracts uses.
+	//
+	// The payload type is not decoration. It is projected into a JSON Schema
+	// (kit/events/schema.go), the outbox refuses a payload that is not one
+	// before the row is written, and the composition's AsyncAPI document is
+	// emitted from it (kit/app/asyncapi.go). An event named only in Events is
+	// the same list item with Payload nil, which is what events.Declared calls
+	// a payload the kernel does not describe: published unchecked, listed as
+	// uncovered rather than pretended to be.
+	//
+	// A name given in both fields is one event, described — Emits keeps the
+	// typed item and drops the bare name.
+	Declared []events.Declared
 
 	// Subscriptions are the events this module handles. The worker role
 	// subscribes each one; the name has to be an event some module emits.
@@ -103,11 +143,66 @@ type Module struct {
 	// module segment and the middleware chain are the kernel's to compose and
 	// its to refuse. See httpx.Surfaces.
 	Routes func(r httpx.Surfaces)
+
+	// Moved is the addresses this module used to answer at and where each one
+	// lives now. The kernel answers an old address with a redirect and nothing
+	// else — 302 for a safe method, 307 for the rest, never cached, never a
+	// second mount — by the same rules as its own migration table
+	// (kit/httpx/aliases.go). A module that moves a page declares a row here
+	// rather than writing a handler for the old address; the surface gate
+	// refuses a route mounted at an address a row moves.
+	Moved []Move
+}
+
+// Move is one old address, or one old subtree, and where it lives now. Both are
+// whole paths as a browser sends them ("/pets/animals", "/app/pets/animals"); a
+// request under From keeps its remainder and its query.
+type Move struct {
+	From, To string
+}
+
+// Emits returns everything the module says it emits, in the one shape the
+// kernel checks: each typed declaration as it stands, and each bare name in
+// Events as that declaration with no payload type, which is the state
+// events.Declared reserves for a payload the kernel cannot describe. A name
+// given both ways is one event and appears once, as the typed declaration.
+//
+// Validate, Expand, the coverage line and the AsyncAPI document all read this
+// method rather than either field, so the two spellings of a manifest's event
+// list cannot disagree about what the composition emits.
+func (m Module) Emits() []events.Declared {
+	if len(m.Events) == 0 {
+		return m.Declared
+	}
+	typed := make(map[string]bool, len(m.Declared))
+	for _, d := range m.Declared {
+		typed[d.Name] = true
+	}
+	out := make([]events.Declared, 0, len(m.Declared)+len(m.Events))
+	for _, name := range m.Events {
+		if !typed[name] {
+			out = append(out, events.Declared{Name: name})
+		}
+	}
+	return append(out, m.Declared...)
 }
 
 // Permission is one thing a role can be granted.
 type Permission struct {
 	Key string
+
+	// Label is the grant in the words of the module that defines it: "read
+	// tasks", "manage roles". It is source-language text, the readable fallback
+	// handed to the same Locale.Text(key, fallback) seam every other label in
+	// this kernel uses, and the tenant's language for it lives under
+	// `permission.<key>` in the module's own catalogue file.
+	//
+	// It exists because a refusal has to tell a person what they lack, and a
+	// key does not: "AUTH_DENIED: this operation requires task:read" names a
+	// token and leaves the reader to guess whether guessing is safe. Validate
+	// refuses a permission with no label, and one labelled with its own key, so
+	// the field cannot be filled by copying the thing it explains.
+	Label string
 
 	// Operator says this permission belongs to the installation rather than to
 	// a customer: only the operator's own tenant may exercise it at all, and no
@@ -137,15 +232,36 @@ type Permission struct {
 // accept the day it drops the module that defined it. See modules/auth.SeedRoles.
 //
 // Valid has already refused a manifest whose permission is malformed or defined
-// twice, so this does not check either; it is the list, in composition order.
+// twice, so this does not check either; it is the list, in composition order,
+// with each permission's Label carried through so the layer that renders a
+// refusal can name the grant in words (see tenancy.Grant).
 func Grants(mods []Module) []tenancy.Grant {
 	var out []tenancy.Grant
 	for _, m := range mods {
 		for _, p := range m.Permissions {
-			out = append(out, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+			out = append(out, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
 		}
 	}
 	return out
+}
+
+// RoleDecl is one role a module declares for its own capability: seeded into
+// every new tenant by the composition, and granting nothing but permissions this
+// module's own manifest defines. It carries no client, sector, jurisdiction or
+// price: the shape of the grant is the whole of what a module may say about a
+// person, and which of its roles a product composes is the product's list.
+type RoleDecl struct {
+	// Name is the role as it appears in the tenant's role table and on the
+	// roles screen: a lower-case identifier, at most auth's MaxRoleName
+	// characters, and not one of the two names auth owns (admin, member), which
+	// Validate refuses rather than letting a module shadow.
+	Name string
+
+	// Grants are the permission keys this role holds, each one declared by this
+	// module and none of them an operator's. An empty list is a role that grants
+	// nothing — the shape auth's own member role holds by design, and the reason
+	// a module may not declare one.
+	Grants []string
 }
 
 // NavEntry is one link in the application's navigation, shown to a caller who
@@ -177,6 +293,22 @@ var moduleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // screen without naming where the shell lives.
 var screenName = regexp.MustCompile(`^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$`)
 
+// roleName is auth's ValidRoleName grammar restated, because kit/module may not
+// import a module's contracts and a name that fails the module's check would
+// fail the seed's write later, with a worse message. The two are kept in step by
+// the case in kit/module's tests that names auth's constant.
+var roleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// maxRoleName is auth.MaxRoleName, for the same reason roleName restates its
+// grammar: the column the seed writes into is bounded by it.
+const maxRoleName = 64
+
+// reservedRoleNames are the two roles auth owns and seeds itself in every
+// tenant: the administrator and the empty member. A module that declared either
+// would be declaring a grant into a row auth has already written, and ON
+// CONFLICT DO NOTHING would make the lie silent.
+var reservedRoleNames = map[string]bool{"admin": true, "member": true}
+
 // surfacesNames are the words that belong to the kernel: a module called
 // "public", "ops" or "app" would compose a route whose prefix and its surface
 // disagree, and the mount address would read as two things at once. "app" is the
@@ -191,12 +323,35 @@ var surfacesNames = map[string]bool{"public": true, "ops": true, "app": true}
 //
 // It reports every violation in one error rather than the first, because a
 // composition is fixed once and the whole list is what a person needs.
+// validMoves refuses a row the redirect could not honour: a path that is not
+// absolute, a row that points at itself, or an old address two rows claim.
+func validMoves(mods []Module) []string {
+	var bad []string
+	from := map[string]string{}
+	for _, m := range mods {
+		for _, mv := range m.Moved {
+			switch {
+			case !strings.HasPrefix(mv.From, "/") || !strings.HasPrefix(mv.To, "/"):
+				bad = append(bad, fmt.Sprintf("module %q moves %q to %q; both must be absolute paths", m.Name, mv.From, mv.To))
+			case strings.TrimSuffix(mv.From, "/") == strings.TrimSuffix(mv.To, "/"):
+				bad = append(bad, fmt.Sprintf("module %q moves %q to itself", m.Name, mv.From))
+			case from[mv.From] != "":
+				bad = append(bad, fmt.Sprintf("modules %q and %q both move %q", from[mv.From], m.Name, mv.From))
+			default:
+				from[mv.From] = m.Name
+			}
+		}
+	}
+	return bad
+}
+
 func Validate(mods []Module) error {
 	var bad []string
 	add := func(format string, args ...any) { bad = append(bad, fmt.Sprintf(format, args...)) }
 
 	names := map[string]bool{}
-	owner := map[string]string{} // permission key -> the module that defined it
+	owner := map[string]string{}     // permission key -> the module that defined it
+	roleOwner := map[string]string{} // role name -> the module that declared it
 	for _, m := range mods {
 		switch {
 		case m.Name == "":
@@ -217,6 +372,15 @@ func Validate(mods []Module) error {
 				add("module %q: permission %q is not %q", m.Name, p.Key, "<resource>:<action>")
 				continue
 			}
+			// A label nothing would read is a field that should not exist; a label
+			// equal to the key is the defect the field exists to close, and it is
+			// shippable by accident — the key copied twice — unless boot says no.
+			switch p.Label {
+			case "":
+				add("module %q: permission %q has no Label; a refusal has to name what is missing in words, not only as a key", m.Name, p.Key)
+			case p.Key:
+				add("module %q: permission %q is labelled with its own key; a Label is the grant in words", m.Name, p.Key)
+			}
 			if first, seen := owner[p.Key]; seen {
 				add("module %q: permission %q is already defined by module %q", m.Name, p.Key, first)
 				continue
@@ -230,6 +394,49 @@ func Validate(mods []Module) error {
 			}
 		}
 
+		// A declared role is a promise about this module's own permissions, so every
+		// check but one is local to it. The refusals are all compose-time, which is
+		// where checkPersonas already put a bad persona grant: boot and bootstrap fail
+		// before the database opens, and a role that seeds a lie never reaches a tenant.
+		own := map[string]Permission{}
+		for _, p := range m.Permissions {
+			own[p.Key] = p
+		}
+		seenRole := map[string]bool{}
+		for _, rd := range m.Roles {
+			name := strings.ToLower(strings.TrimSpace(rd.Name))
+			switch {
+			case name == "":
+				add("module %q declares a role with no name", m.Name)
+			case !roleName.MatchString(name):
+				add("module %q: role %q is not a lower-case identifier, which is what the roles table and the roles route both require", m.Name, rd.Name)
+			case len(name) > maxRoleName:
+				add("module %q: role %q is longer than %d characters", m.Name, name, maxRoleName)
+			case reservedRoleNames[name]:
+				add("module %q: role %q is auth's own to seed; a module may not declare it", m.Name, name)
+			case seenRole[name]:
+				add("module %q: role %q is declared twice", m.Name, name)
+			case roleOwner[name] != "":
+				add("module %q: role %q is already declared by module %q; two modules seeding one name would write two answers into one row", m.Name, name, roleOwner[name])
+			default:
+				seenRole[name], roleOwner[name] = true, m.Name
+			}
+			if len(rd.Grants) == 0 {
+				add("module %q: role %q grants nothing; a role nobody asked for is auth's member role and that one is seeded already", m.Name, name)
+			}
+			for _, g := range rd.Grants {
+				p, declared := own[g]
+				switch {
+				case !declared:
+					add("module %q: role %q grants %q, which this module does not declare; a module may only open what it owns",
+						m.Name, name, g)
+				case p.Operator:
+					add("module %q: role %q grants %q, an operator permission; a customer's role may not reach the control plane",
+						m.Name, name, g)
+				}
+			}
+		}
+
 		// The files an adoption names are checked by db.Migrate against the
 		// module's SQL before it connects; what only the manifest can say is
 		// that there is SQL to check against at all.
@@ -237,14 +444,32 @@ func Validate(mods []Module) error {
 			add("module %q: adopts migration history and declares no Migrations", m.Name)
 		}
 
-		for _, e := range m.Events {
-			if !events.ValidName(e) {
-				add("module %q: event %q is not %q", m.Name, e, "<name>.<event>")
+		for _, e := range m.Emits() {
+			if !events.ValidName(e.Name) {
+				add("module %q: event %q is not %q", m.Name, e.Name, "<name>.<event>")
 				continue
 			}
-			if !strings.HasPrefix(e, m.Name+".") {
-				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e)
+			// The kernel's own manifest is the one exemption, and only for the
+			// events KernelEvents names: security.denied is raised by the kernel
+			// because the refusal is its — no module ran — so it carries the
+			// kernel's namespace and not the manifest's. Every other manifest
+			// still emits inside its own name, which is what makes a duplicate
+			// emitter impossible rather than merely discourled.
+			if !strings.HasPrefix(e.Name, m.Name+".") &&
+				!(m.Name == KernelName && slices.Contains(KernelEvents, e.Name)) {
+				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
 			}
+		}
+		// The other half of one emitter per name: one emitter, one shape. The
+		// namespace rule above makes it impossible for two modules to declare one
+		// name, so the manifest that can still write one name twice is its own, and
+		// a manifest that does has promised two documents for one event. The check
+		// is kit/events', because what counts as one shape is the projection of the
+		// payload type rather than the Go type; the refusal is the manifest gate's,
+		// because a composition that contradicts itself is refused where every
+		// other composition problem is answered, with the list read once.
+		for _, problem := range events.OneShapePerName(m.Emits()) {
+			add("module %q: %s", m.Name, problem)
 		}
 	}
 
@@ -252,9 +477,12 @@ func Validate(mods []Module) error {
 	// because both point at something another module owns: a link is about what
 	// the reader may see, and a subscription is about what somebody else emits.
 	emitted := map[string]bool{}
+	for _, e := range KernelEvents {
+		emitted[e] = true
+	}
 	for _, m := range mods {
-		for _, e := range m.Events {
-			emitted[e] = true
+		for _, e := range m.Emits() {
+			emitted[e.Name] = true
 		}
 	}
 	for _, m := range mods {
@@ -291,12 +519,30 @@ func Validate(mods []Module) error {
 		}
 	}
 
+	bad = append(bad, validMoves(mods)...)
 	if len(bad) == 0 {
 		return nil
 	}
 	sort.Strings(bad)
 	return errors.New("module: invalid composition:\n  " + strings.Join(bad, "\n  "))
 }
+
+// security.access_requested is the ask that follows a refusal, emitted for the
+// same reason: no module ran, the person was refused by the kernel's own guard.
+//
+// KernelEvents are the events the kernel itself emits, which no module's manifest
+// can declare because no module raises them: security.denied is published by kit/app
+// for every attributable refused authorization (see kit/httpx Options.Denied). They
+// count as emitted for Validate and are expanded for a SubscribeAll module, so
+// modules/audit keeps them like any other event.
+var KernelEvents = []string{"security.denied", "security.access_requested"}
+
+// KernelName is the manifest name kit/app gives the kernel's own share of the
+// composition. It is named because it is read by a rule: KernelEvents are the
+// only events that may be declared outside the emitting manifest's namespace
+// (Validate), and saying which manifest is the kernel's is the other half of
+// that sentence.
+const KernelName = "platformkit"
 
 // Expand turns every SubscribeAll manifest's one subscription into one per
 // event the composition emits, and returns the modules with that done.
@@ -321,10 +567,15 @@ func Validate(mods []Module) error {
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string
+	for _, e := range KernelEvents {
+		if !seen[e] {
+			seen[e], all = true, append(all, e)
+		}
+	}
 	for _, m := range mods {
-		for _, e := range m.Events {
-			if !seen[e] {
-				seen[e], all = true, append(all, e)
+		for _, e := range m.Emits() {
+			if !seen[e.Name] {
+				seen[e.Name], all = true, append(all, e.Name)
 			}
 		}
 	}
@@ -338,7 +589,13 @@ func Expand(mods []Module) []Module {
 		template := m.Subscriptions[0]
 		subs := make([]events.Subscription, 0, len(all))
 		for _, e := range all {
-			subs = append(subs, events.Subscription{Module: template.Module, Name: e, Handler: template.Handler})
+			// App travels with the template rather than being invented here: the
+			// expansion is one subscription per emitted event and nothing else,
+			// and the durable each of them gets is the template's app joined to
+			// that event (kit/appname.Durable). Dropping the field would hand a
+			// SubscribeAll module the unscoped consumer name for every event in
+			// the system.
+			subs = append(subs, events.Subscription{App: template.App, Module: template.Module, Name: e, Handler: template.Handler})
 		}
 		out[i].Subscriptions, out[i].SubscribeAll = subs, false
 	}

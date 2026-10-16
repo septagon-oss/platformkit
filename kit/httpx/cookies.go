@@ -4,7 +4,9 @@ package httpx
 // names an earlier release used are still read so a signed-in person stays so.
 
 import (
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"net/http"
+	"strings"
 )
 
 // SessionCookie is the base name of the cookie a browser session travels in.
@@ -38,11 +40,15 @@ var legacySessionCookies = []string{"platformkit_session"}
 // other customer's. It is dropped when the cookie is not Secure, because a
 // browser refuses one of those over http://localhost; both names are recognised
 // on the way in, and a deployment only ever presents one.
-func CookieName(base string, secure bool) string {
-	if secure {
-		return "__Host-" + base
-	}
-	return base
+func CookieName(base string, secure bool) string { return CookieNameOf(appname.Name(""), base, secure) }
+
+// CookieNameOf is CookieName for a deployment that names its app: the slug sits
+// between the host-only prefix and the base, so two apps served from two hosts of
+// one deployment with the same cookie base stop signing each other out, and two
+// apps on one localhost port stop sharing one jar. With no slug set it is the name
+// every jar in the field already carries.
+func CookieNameOf(app appname.Name, base string, secure bool) string {
+	return appname.Cookie(app, base, secure)
 }
 
 // SessionCookieOf is the session cookie the request presents, under either
@@ -72,7 +78,33 @@ func LegacySessionCookies() []string { return legacyNames() }
 func legacyNames() []string {
 	var out []string
 	for _, base := range legacySessionCookies {
-		out = append(out, CookieName(base, true), base)
+		out = append(out, CookieNameOf(appname.Name(""), base, true), base)
 	}
 	return out
+}
+
+// BearerOf returns the bearer credential a request presented, if it presented
+// one. The scheme is matched case-insensitively, as RFC 7235 requires of a
+// scheme, and the credential is returned verbatim.
+//
+// A request that names the scheme twice, or twice with different values, is
+// refused rather than resolved: which of two credentials the caller meant is not
+// something the kernel can guess, and the safe answer to an ambiguous credential
+// is that none was presented. A header with the scheme and nothing after it is the
+// same refusal.
+func BearerOf(r *http.Request) (string, bool) {
+	const scheme = "bearer"
+	var found string
+	for _, line := range r.Header.Values("Authorization") {
+		kind, rest, ok := strings.Cut(line, " ")
+		if !ok || !strings.EqualFold(kind, scheme) {
+			continue
+		}
+		credential := strings.TrimSpace(rest)
+		if credential == "" || (found != "" && found != credential) {
+			return "", false
+		}
+		found = credential
+	}
+	return found, found != ""
 }

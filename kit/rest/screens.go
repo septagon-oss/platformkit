@@ -12,6 +12,8 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -44,12 +47,23 @@ func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T,
 }
 
 // resource is this Spec as httpx.Resource, for Mount to register.
+//
+// It carries the Spec's own answers — its two guard declarations and its
+// operation set — because the screens are generated from this value and not from
+// the Spec, and a door a shell draws behind which no route answers is a refusal
+// with a button on it. The closures of a verb this Spec did not mount refuse
+// rather than being nil, the way rest.Singleton's do: the generator calls all
+// five, and a nil closure is a panic where a sentence belongs.
 func (s Spec[T]) resource() httpx.Resource {
 	schema := s.Schema()
-	return httpx.Resource{
+	refused := func(verb string) error {
+		return problem.Conflict("a " + s.Entity + " resource offers no " + verb + " route; its Operations name the verbs it has")
+	}
+	res := httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
-		Immutable: s.Immutable, Schema: schema,
+		ReadBy: s.ReadAuth, WriteBy: s.WriteAuth, Operations: s.Operations,
+		Immutable: s.Immutable, Present: s.Present, Schema: schema, RichTextFiles: s.RichTextFiles,
 
 		Count: func(ctx context.Context) (int64, error) {
 			tx, err := transaction(ctx)
@@ -100,16 +114,65 @@ func (s Spec[T]) resource() httpx.Resource {
 		},
 		Update: func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {
 			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				return s.updateRow(ctx, tx, id, schema.Fields, values)
+				// The form quotes the revision it was drawn from, which is the only
+				// answer to "did this person see the row they are editing" that a
+				// transaction can check. Absent, the write is what it always was.
+				quoted, fields, err := conditional(values)
+				if err != nil {
+					var none T
+					return none, err
+				}
+				return s.updateRow(ctx, tx, id, schema.Fields, fields, quoted)
 			})
 		},
 		Delete: func(ctx context.Context, id uuid.UUID) error {
 			_, err := answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				return s.deleteRow(ctx, tx, id)
+				return s.deleteRow(ctx, tx, id, "")
 			})
 			return err
 		},
 	}
+	if s.Translations != nil {
+		// The record screen of an entity whose fields a translator owes an answer
+		// to shows what is translated in each language this tenant speaks. It is the
+		// same read the public page makes — same rows, same withholding of an
+		// unreviewed draft, same staleness rule — because a screen that reported a
+		// translation no reader would be given is a screen a translator would trust
+		// and a translator who trusts it marks the wrong thing reviewed.
+		res.Locales = func(ctx context.Context, id uuid.UUID) ([]entity.LocaleState, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return LocaleStates(ctx, tx, TranslationSourceOf(s), s.Translations, id)
+		}
+	}
+	if !s.offers(httpx.CRUDList) {
+		// Count goes with the list, not with the read. Its one caller outside this
+		// package is the dashboard card (modules/admin/internal/pages.go), and the
+		// whole card links to r.Screen — the address of the list page this Spec did
+		// not mount. A refused count produces no card, which is the truth; a number
+		// on a card that leads nowhere is the lie.
+		res.Count = func(context.Context) (int64, error) { return 0, refused("list") }
+		res.List = func(context.Context, crud.Query) ([]map[string]any, int64, error) {
+			return nil, 0, refused("list")
+		}
+	}
+	if !s.offers(httpx.CRUDRead) {
+		res.Get = func(context.Context, uuid.UUID) (map[string]any, error) { return nil, refused("read") }
+	}
+	if !s.offers(httpx.CRUDCreate) {
+		res.Create = func(context.Context, map[string]any) (map[string]any, error) { return nil, refused("create") }
+	}
+	if !s.offers(httpx.CRUDUpdate) {
+		res.Update = func(context.Context, uuid.UUID, map[string]any) (map[string]any, error) {
+			return nil, refused("update")
+		}
+	}
+	if !s.offers(httpx.CRUDDelete) {
+		res.Delete = func(context.Context, uuid.UUID) error { return refused("delete") }
+	}
+	return res
 }
 
 // row is the entity as a screen reads it. It is the entity's own JSON, so a
@@ -166,7 +229,10 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 }
 
 // UpdateValues reads an edit form, retaining submitted blank text, empty lists
-// and null optional instants while omitting absent and command-owned fields.
+// and null optional instants while omitting absent and command-owned fields. It
+// also carries the row's condition: the revision the form was drawn from arrives
+// under entity.RevisionCondition, and conditional turns it into the tag the write
+// is made against.
 func UpdateValues(body []byte, fields []crud.Field, immutable []string) (map[string]any, error) {
 	values, err := formValues(body, fields, nil, true)
 	return Writable(values, immutable), err
@@ -184,10 +250,45 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 	}
 	out := map[string]any{}
 	for _, f := range fields {
-		if f.ReadOnly {
+		// The two kinds of field the server owns are read back as they are, never as
+		// the form posted them: a control that carried the write count would otherwise
+		// move the row to the number it showed.
+		if entity.ServerOwned(f) {
 			continue
 		}
 		if slices.Contains(refuse, f.Name) {
+			continue
+		}
+		if f.Name == entity.RevisionCondition {
+			// Read once, by the code below, as the condition on the write rather than as
+			// a field to merge. An entity that named a column this way would have its own
+			// meaning for the name, which is why Spec.check refuses the collision.
+			continue
+		}
+		if f.Type == crud.TypeMap {
+			// A map argument arrives as one control per declared key — `values[title]`.
+			// A key posted blank is a key left out of the body rather than one written
+			// blank: a translation of nothing is a refusal, and the person who left six
+			// boxes empty meant to do none of them.
+			keyed := map[string]any{}
+			for _, k := range f.Keys {
+				raw, sent := form[f.Name+"["+k.Name+"]"]
+				if !sent {
+					continue
+				}
+				text := strings.TrimSpace(raw[0])
+				if text == "" {
+					continue
+				}
+				typed, err := coerce(crud.Field{Name: f.Name + " " + k.Name, Type: f.Elem}, text)
+				if err != nil {
+					return nil, err
+				}
+				keyed[k.Name] = typed
+			}
+			if len(keyed) > 0 {
+				out[f.Name] = keyed
+			}
 			continue
 		}
 		raw, sent := form[f.Name]
@@ -267,7 +368,50 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 			out[f.Name] = text
 		}
 	}
+	// An edit form carries the revision it was drawn from, and an edit is the one write
+	// that can be made against a row the person never saw. The name is read after the
+	// fields rather than among them: it is no column's value, and a form that sent
+	// nothing under it keeps the unconditional write every caller written before this
+	// door has — the condition is how a screen says it read the row, not a tax it pays.
+	if update {
+		if raw, sent := form[entity.RevisionCondition]; sent {
+			if text := strings.TrimSpace(raw[0]); text != "" {
+				out[entity.RevisionCondition] = text
+			}
+		}
+	}
 	return out, nil
+}
+
+// conditional takes the row's write count out of the values a form posted, and gives it
+// back as the tag kit/rest's conditional doors compare against. The map it returns holds
+// the fields to write and nothing else, so the one merge behind both write doors keeps
+// refusing every name that is not a field — including this one, which belongs to the door
+// and not to the row.
+//
+// A form that carried nothing gives "" and an unconditional write. A form that carried
+// something no row's revision could be is refused by name: a condition nobody can read is
+// not a condition, and writing whatever arrived as though it had never been sent would be
+// the loss the tag exists to prevent.
+func conditional(values map[string]any) (string, map[string]any, error) {
+	raw, sent := values[entity.RevisionCondition]
+	if !sent {
+		return "", values, nil
+	}
+	text, isText := raw.(string)
+	if !isText {
+		return "", nil, invalid(entity.RevisionCondition, "is not a revision")
+	}
+	out := make(map[string]any, len(values)-1)
+	for name, value := range values {
+		if name != entity.RevisionCondition {
+			out[name] = value
+		}
+	}
+	if _, err := parseTag(`"` + text + `"`); err != nil {
+		return "", out, invalid(entity.RevisionCondition, "is not a whole revision the row can be at")
+	}
+	return `"` + text + `"`, out, nil
 }
 
 // Writable drops the fields a route of its own owns. The update route refuses
@@ -282,6 +426,51 @@ func Writable(values map[string]any, immutable []string) map[string]any {
 		}
 	}
 	return out
+}
+
+// FieldErrorsIn is FieldErrors for a screen that does not speak English. A
+// rich-text refusal carries its structured issues beside the problem, because
+// the English sentences are the contract the JSON API answers with and a form
+// redrawn in another language must not print them at a reader who asked in
+// theirs. text is that language's formatter — the same one that names the form's
+// own labels — and each issue's key is in its package's catalogue.
+//
+// Every other refusal is prose this package cannot take apart, so it comes back
+// from FieldErrors as it stands.
+func FieldErrorsIn(err error, fields []crud.Field, text func(key, fallback string) string) (map[string]string, string) {
+	var refused *richTextProblem
+	if text == nil || !errors.As(err, &refused) {
+		return FieldErrors(err, fields)
+	}
+	_, known := crud.FieldNamed(fields, refused.field)
+	out, lines := map[string]string{}, make([]string, 0, len(refused.issues))
+	for _, issue := range refused.issues {
+		issue = issue.Localize(text)
+		line := fmt.Sprintf("%s %d: %s: %s", text("richtext.line", "line"), issue.Line, issue.Construct, issue.Remedy)
+		lines = append(lines, line)
+		if known {
+			out[refused.field] = strings.TrimPrefix(out[refused.field]+"; "+line, "; ")
+		}
+	}
+	if !known {
+		return nil, strings.Join(lines, "; ")
+	}
+	return out, strings.Join(lines, "; ")
+}
+
+// conditionFault names the one field name a generated form could not make sense of: an
+// entity column called what an edit form calls the row's condition would be read as a
+// condition and never written, which is a silent lie about the person's own submission.
+// The name is asked folded, as every other door asks names, because the browser posts
+// what the renderer wrote and the decoder would bind either spelling into the column.
+func conditionFault(fields []crud.Field) string {
+	for _, f := range fields {
+		if strings.EqualFold(f.Name, entity.RevisionCondition) {
+			return fmt.Sprintf("the entity has a field %q, which is the name an edit form carries the row's revision in",
+				entity.RevisionCondition)
+		}
+	}
+	return ""
 }
 
 // invalid is a 422 about one field, in the shape FieldErrors reads back.
@@ -300,7 +489,7 @@ func invalid(field, why string) error {
 // substring, so a message about "subtitle" marked "title" — the wrong control,
 // with the right message, which is the confusing half of both.
 func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
-	p, ok := err.(*problem.Problem)
+	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok {
 		return nil, err.Error()
 	}
@@ -308,7 +497,10 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 	for _, e := range p.Errors {
 		if name, message, found := strings.Cut(e, ": "); found {
 			if _, known := crud.FieldNamed(fields, name); known {
-				out[name] = message
+				if out[name] != "" {
+					out[name] += "; "
+				}
+				out[name] += message
 			}
 		}
 	}

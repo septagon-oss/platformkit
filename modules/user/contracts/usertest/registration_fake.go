@@ -59,6 +59,28 @@ func (f *Fake) VerifyEmail(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, 
 	return f.get(u.ID)
 }
 
+func (f *Fake) ConfirmAddress(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, expectedEmail string) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, err := f.get(id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Email != strings.ToLower(strings.TrimSpace(expectedEmail)) {
+		return nil, fmt.Errorf("%w: the confirmed address is not the one this account carries", crud.ErrConflict)
+	}
+	if u.Status == contracts.StatusActive {
+		return u, nil
+	}
+	if u.Status != contracts.StatusInvited && u.Status != contracts.StatusUnverified {
+		return nil, fmt.Errorf("%w: only an invited or unverified account is confirmed by an identity provider", crud.ErrConflict)
+	}
+	u.Status, u.UpdatedAt = contracts.StatusActive, db.Now()
+	f.users[id] = *u
+	f.published = append(f.published, contracts.EventEmailVerified)
+	return f.get(u.ID)
+}
+
 func (f *Fake) ApproveRegistration(_ context.Context, _ db.Tx[db.Tenant], id, actor uuid.UUID) (*contracts.User, error) {
 	if actor == uuid.Nil {
 		return nil, fmt.Errorf("%w: approval requires an acting principal", crud.ErrInvalid)
@@ -73,7 +95,9 @@ func (f *Fake) ApproveRegistration(_ context.Context, _ db.Tx[db.Tenant], id, ac
 		return u, nil
 	}
 	if u.Status != contracts.StatusPending || u.PasswordHash == "" {
-		return nil, fmt.Errorf("%w: only a pending registration with a password can be approved", crud.ErrConflict)
+		// The same sentence the SQL service answers with, from the same function:
+		// the fake's cases are the service's cases, and so is its copy.
+		return nil, contracts.ApproveConflict(u)
 	}
 	u.Status, u.UpdatedAt = contracts.StatusActive, db.Now()
 	f.users[id] = *u

@@ -1,5 +1,7 @@
 // Package nats provides the existing JetStream event transport.
-// The caller owns tenant checks and idempotent or transactional sink handling.
+// The caller owns tenant checks and idempotent or transactional sink handling;
+// what this provider owns is the address it routed by, and a delivery whose
+// document does not claim that address is terminated before the sink runs.
 package nats
 
 import (
@@ -13,17 +15,16 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	delivery "github.com/septagon-oss/platformkit/kit/events/internal/delivery"
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
 
-// The one stream and its one subject space. Every PlatformKit event is
-// published as platformkit.<name>, so a consumer filters by subject and an
-// operator sees the whole traffic under one prefix.
-const (
-	stream  = "PLATFORMKIT"
-	subject = "platformkit."
-)
+// The one stream. Its subject space is transport.Subject:
+// platformkit.<tenant>.<module>.<event>, so a consumer filters by subject, an
+// operator sees the whole traffic under one prefix, and a tenant's own backlog
+// is an address rather than a query. See kit/events/transport/subject.go.
+const stream = "PLATFORMKIT"
 
 // JetStream is the transport for a fleet: NATS JetStream, one stream, durable
 // consumers, explicit acknowledgement. Failed deliveries remain unacknowledged
@@ -33,8 +34,8 @@ const (
 // when the worker stops. Native NATS options let the composition supply TLS
 // trust and credentials without putting secrets in the endpoint URL. Options
 // follow the transport defaults, so the composition can override them.
-func JetStream(url string, options ...nats.Option) (transport.Transport, error) {
-	options = append([]nats.Option{nats.Name("platformkit"), nats.MaxReconnects(-1)}, options...)
+func JetStream(app appname.Name, url string, options ...nats.Option) (transport.Transport, error) {
+	options = append([]nats.Option{nats.Name(appname.ConnectionName(appname.Prefix, app)), nats.MaxReconnects(-1)}, options...)
 	nc, err := nats.Connect(url, options...)
 	if err != nil {
 		return nil, connectionError{cause: err}
@@ -55,7 +56,7 @@ func JetStream(url string, options ...nats.Option) (transport.Transport, error) 
 		nc.Close()
 		return nil, fmt.Errorf("events: read the %s stream: %w", stream, err)
 	}
-	return &jetstream{nc: nc, js: js}, nil
+	return &jetstream{nc: nc, js: js, app: app}, nil
 }
 
 // Connection failures may quote credentials in either the endpoint or an SDK
@@ -76,7 +77,7 @@ func (e connectionError) Unwrap() error { return e.cause }
 func wantedStream() *nats.StreamConfig {
 	return &nats.StreamConfig{
 		Name:      stream,
-		Subjects:  []string{subject + ">"},
+		Subjects:  []string{appname.SubjectSpace()},
 		Retention: nats.LimitsPolicy,
 		Storage:   nats.FileStorage,
 		MaxAge:    delivery.Keep,
@@ -86,14 +87,36 @@ func wantedStream() *nats.StreamConfig {
 type jetstream struct {
 	nc *nats.Conn
 	js nats.JetStreamContext
+
+	// app is the slug this process publishes and subscribes as. It is in the
+	// connection name an operator reads, in the address every event is published
+	// at, in the filter set every consumer is created with, and in the durable
+	// names it carries — see kit/appname. The empty Name is the deployment of one
+	// app, which publishes and reads the addresses this kernel formed before
+	// decision 0074.
+	app appname.Name
 }
 
 func (j *jetstream) Publish(ctx context.Context, ev transport.Event) error {
+	// The envelope's app is the publisher's own fact, stamped here rather than read
+	// from the outbox: the outbox holds no app column and needs none, because the
+	// one process that could fill it in already knows what it is (house rule 7).
+	// An event that arrives naming another app is a relay wired to the wrong
+	// composition, and the publish is where that has to say itself: writing the
+	// document anyway would produce a message whose address and whose claim disagree,
+	// which is the pair this envelope exists to be able to check.
+	if ev.App.Named() && ev.App != j.app {
+		return fmt.Errorf("events: refusing to publish %s as app %s from an app %s process", ev.Name, ev.App, j.app)
+	}
+	ev.App = j.app
 	body, err := json.Marshal(ev)
 	if err != nil {
 		return fmt.Errorf("events: marshal %s: %w", ev.Name, err)
 	}
-	if _, err := j.js.Publish(subject+ev.Name, body, nats.Context(ctx)); err != nil {
+	// The address is the envelope's own subject attribute, from the one
+	// function that writes both: a bridge that reads a subject out of a document
+	// and subscribes to it lands on the messages it came from.
+	if _, err := j.js.Publish(transport.AppSubject(j.app, ev.TenantID, ev.Name), body, nats.Context(ctx)); err != nil {
 		return fmt.Errorf("events: publish %s: %w", ev.Name, err)
 	}
 	return nil
@@ -124,11 +147,14 @@ func ackWait() time.Duration { return delivery.Backoff[0] }
 // subscription below and reconcile have to ask for the same thing: two lists of
 // the same settings is how a consumer comes to differ from the code that
 // created it.
-func wanted(durable, name string) []nats.SubOpt {
+func wanted(app appname.Name, durable, name string) []nats.SubOpt {
 	return []nats.SubOpt{
 		nats.Durable(durable), nats.ManualAck(), nats.AckExplicit(), nats.DeliverAll(),
 		nats.AckWait(ackWait()), nats.MaxDeliver(-1), nats.BackOff(delivery.Backoff),
 		nats.BindStream(stream),
+		// Both addresses, while a publisher on the previous build is still
+		// writing events this worker reads. See transport.Filters.
+		nats.ConsumerFilterSubjects(transport.AppFilters(app, name)...),
 	}
 }
 
@@ -249,8 +275,16 @@ func (j *jetstream) reconcile(ctx context.Context, durable, name string) error {
 	// acknowledges, where it starts, and whether it is pushed at all. A
 	// consumer that differs in any of them is not this subscription's consumer
 	// wearing the wrong settings, it is somebody else's under the same name.
-	if info.Config.FilterSubject != subject+name {
-		immutable = append(immutable, fmt.Sprintf("filter_subject %q to %q", info.Config.FilterSubject, subject+name))
+	//
+	// The filter is a set now, and a consumer stored with one filter subject is
+	// a consumer that cannot see the previous build's traffic: an update that
+	// cannot add the second one is the drift, so it is named as the immutable
+	// kind and the consumer is remade. Remaking it replays the stream under
+	// DeliverAll, and platformkit_handled claims make the replay safe — the same
+	// argument two settings above.
+	if want := transport.AppFilters(j.app, name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want) {
+		immutable = append(immutable, fmt.Sprintf("filter_subject %q filters %v to %v",
+			info.Config.FilterSubject, info.Config.FilterSubjects, want))
 	}
 	if info.Config.AckPolicy != nats.AckExplicitPolicy {
 		immutable = append(immutable, fmt.Sprintf("ack_policy %s to explicit", info.Config.AckPolicy))
@@ -294,12 +328,32 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 	if err := j.reconcile(ctx, durable, name); err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}
-	sub, err := j.js.QueueSubscribe(subject+name, group(durable), func(msg *nats.Msg) {
+	// No subscribe subject: a consumer with more than one filter is not
+	// addressable through the subject-based API — nats.go asks the server for a
+	// consumer whose filter is the subject it was handed, and the server refuses
+	// one with both — so the subscription binds to the durable and the consumer
+	// owns its filter set, from wanted above and from nowhere else.
+	sub, err := j.js.QueueSubscribe("", group(durable), func(msg *nats.Msg) {
 		var ev transport.Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
 			// A message that will never parse would be redelivered forever.
 			// Terminate it and say so; the outbox still holds the row.
 			slog.ErrorContext(ctx, "events: undecodable message", "subject", msg.Subject, "error", err)
+			_ = msg.Term()
+			return
+		}
+		// The address this message arrived on is a fact the broker knows and the
+		// document does not get to decide alone. The consumer's filter fixes the
+		// event's name and leaves the tenant as a wildcard, and events.Consume
+		// opens the handler's transaction in the tenant the document names, so a
+		// message stored on one tenant's address and stamped as another's would
+		// run its handler inside the second tenant's rows. Terminating it is the
+		// same shape as the branch above: the copy is undeliverable as addressed,
+		// the outbox still holds the row, and the correctly addressed copy — the
+		// one the relay wrote — is a different message on a different subject.
+		if err := transport.AddressMismatch(j.app, msg.Subject, ev); err != nil {
+			slog.ErrorContext(ctx, "events: message at an address its document does not claim",
+				"subject", msg.Subject, "event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "error", err)
 			_ = msg.Term()
 			return
 		}
@@ -332,7 +386,7 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 			"event", ev.Name, "id", ev.ID, "backoff", wait, "error", err)
 		// Leave the message pending: the consumer already owns its retry timer.
 		// Combining BackOff with NakWithDelay compounds later rungs on NATS 2.14.6.
-	}, wanted(durable, name)...)
+	}, wanted(j.app, durable, name)...)
 	if err != nil {
 		return fmt.Errorf("events: subscribe %s to %s: %w", durable, name, err)
 	}

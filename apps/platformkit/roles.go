@@ -1,120 +1,77 @@
+// roles.go is the list somebody wrote down: who a tenant of this application
+// begins as, beside the two roles auth owns.
+//
+// It used to be derived. `compose` filled `initialRoles` from `declaredRoles(mods)`
+// — every role every composed manifest declares — because the task desk's
+// coordinator is the task module's fact and this application only composes the
+// module. That worked while compose ran before the sentence and could see the
+// manifests it had just built. With the modules wiring themselves there is no
+// such moment: at the time `Roles(…)` is named the manifests do not exist, and
+// the one module that sees them is the one that runs after everything.
+//
+// So the list is written here, and the derivation moved into a case:
+// TestEveryRoleEveryComposedModuleDeclaresIsOneThisApplicationSeeds reads the
+// roles off the resolved composition and names the one this list omits. Same
+// assertion, one direction round, and now over what the application actually
+// resolved rather than over a slice a composition function happened to fill.
+//
+// The admin role (everything but the operator's) and the member role (nothing
+// until somebody grants it) are auth's own and are not repeated here. A module
+// that adds two doors of its own — webhook:read and webhook:update are the newest —
+// is answered by that pair and not by a line here: admin holds every tenant-scoped
+// permission, which is how a tenant administrator registers an endpoint on day one,
+// and these two personas are the task module's, declared and granted to match what
+// that module declares. Adding webhook words to them would be a grant nobody asked
+// for and a persona test that can no longer refuse anything. What each
+// persona may do, and what each is refused, is persona_test.go's table; which task
+// a coordinator may resolve is policy/task.rego's, not a grant's.
+//
+// What is *not* in this file is the operator half of a new administrator's grants.
+// That used to be a two-element literal here, naming two permissions this
+// application happened to compose the owners of, which is the defect: a product
+// built from this sentence without the module owning one seeded the grant and
+// could not exercise it, and only the hourly sweep said so, an hour late, forever.
+// seedRoles reads those grants off the manifests of the modules this application
+// actually composes, and an initial role naming a permission no composed module
+// defines is refused where it used to be written.
 package main
-
-// roles.go is the fifth command, and it exists for installations seeded before
-// a grant was only ever as wide as the composition:
-//
-//	platformkit repair-roles --config config.yaml           # say what is there
-//	platformkit repair-roles --config config.yaml --remove  # take it away
-//
-// The administrator's role used to be seeded with a list of operator
-// permissions written out by hand, so a product that dropped the module owning
-// one kept the grant and warned about it on the hour, forever. Nothing seeds
-// one now; the rows already written are a customer's, and removing them is a
-// person's decision, made by reading this first.
 
 import (
 	"context"
-	"flag"
-	"fmt"
-	"maps"
-	"slices"
 
-	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
-	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
+	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
 
-// repairRoles walks every active tenant and reports the grants its own seeder
-// wrote that no composed module defines any more. Active is the lister this
-// composition hands every tenant-scoped job — modules/auth's hourly sweep
-// included — so a suspended tenant is neither repaired nor swept, which is the
-// behaviour one walk of this installation should have. --remove takes them away,
-// one transaction per tenant, through the module's ordinary role write: the
-// tenant's lock, the floor that keeps somebody able to administer it, and an
-// auth.role_set event in the same transaction, so the repair is in the audit like
-// any other change to a role. What it prints is the roles whose rows that write
-// moved: the write reports whether it changed anything, so two operators running
-// this at once — both reading the same dead grant before either reached it —
-// print one line between them and not two.
+// initialRoles is what this application seeds beyond the two built-in ones, and
+// the one list two readers ask for: the hook below, which decides what a new
+// tenant's roles hold, and repair-roles, which may take away only what that
+// seeder could have written. One list rather than two that happen to agree,
+// because the repair's whole permission to touch a role comes from being the
+// seeder's.
+var initialRoles = []authcontracts.Role{
+	{Name: "coordinator", Grants: authcontracts.Permissions{
+		taskcontracts.PermissionTaskRead, taskcontracts.PermissionTaskUpdate,
+	}},
+	{Name: "observer", Grants: authcontracts.Permissions{taskcontracts.PermissionTaskRead}},
+}
+
+// seedRoles is this application's tenant-creation hook: auth's defaults plus the
+// initial roles above, provisioned in the tenant's creation transaction. It is a
+// hook the product contributes and not something the tenant module could know —
+// but the operator permissions it seeds are no more this file's list than the
+// personas are, so the hook is built from the composition's own catalogue.
 //
-// The two values it passes are the two the seeder is given — the catalogue is the
-// very closure the seeding hook reads (see composition.catalogue) and the roles
-// are the literal it reads — because those two are what the seeder decided with,
-// and a grant it did not write is not this command's to take away. A grant somebody added by hand is reported by the
-// hourly sweep and by nothing here. It is idempotent: a second run finds nothing
-// and prints the one sentence its own case pins. Read that sentence for what it
-// claims, because it claims two things and no third — that this run took nothing,
-// and that every tenant it read was an active one. It prints no count and no
-// slug. Active is the lister, so a tenant somebody suspended was never read and
-// the line says nothing about its rows: a grant left there is inert and the sweep
-// is quiet about it for the same reason, so the all-clear is not the place to
-// start listing suspended tenants, and not a place to call them clean either.
-// Nor is it a place to call the installation clean, for a second reason: a role
-// holding a dead grant of the seeder's beside one of somebody else's is declined
-// whole — the write would take both, and the second is not this command's — so a
-// run that finds nothing it can write has not proved there is nothing anywhere.
-func repairRoles(args []string) error {
-	fs := flag.NewFlagSet("repair-roles", flag.ContinueOnError)
-	path := fs.String("config", "config.yaml", "Path to the configuration file")
-	remove := fs.Bool("remove", false, "Remove the grants found; without it they are only listed. A role this command cannot write is named by neither run; the hourly sweep still reports it")
-	if err := fs.Parse(args); err != nil {
-		return err
+// That catalogue arrives as a function rather than a list because the hook runs
+// when a tenant is created, long after the sentence was written, and asks about
+// modules the sentence has not resolved yet at the moment this is contributed:
+// see app.go, which fills the holder this closes over once the plan is answered.
+func seedRoles(catalogue func() []tenancy.Grant) tenantcontracts.Hook {
+	return func(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
+		return auth.SeedRoles(ctx, tx, t.Tenancy(), catalogue(), initialRoles)
 	}
-	cfg, err := config.Load(*path)
-	if err != nil {
-		return err
-	}
-	logger(cfg.Log.Level)
-
-	ctx := context.Background()
-	c := compose(cfg)
-	declared := c.catalogue()
-	conn, err := db.Open(ctx, cfg.Database.URL)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	verb := "seeded grants no composed module defines"
-	if *remove {
-		verb = "removed"
-	}
-	var found int
-	err = jobs.PerTenant(ctx, conn, tenantcontracts.Active{Service: c.tenants},
-		func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
-			var lines []string
-			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				stale, err := auth.RepairSeededRoles(ctx, tx, c.auth, declared, initialRoles, *remove)
-				if err != nil {
-					return err
-				}
-				for _, name := range slices.Sorted(maps.Keys(stale)) {
-					lines = append(lines, fmt.Sprintf("%s\t%s\t%s\t%v", t.Slug, name, verb, stale[name]))
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-			// Printed once the transaction has committed, and not from inside it.
-			// A line saying "removed" is a claim about a row, and a commit that
-			// fails takes the removal back with it: listing from within the
-			// transaction would report a repair that never happened. A refused
-			// write already returns above, before a line exists.
-			for _, line := range lines {
-				found++
-				fmt.Println(line)
-			}
-			return nil
-		})
-	if err != nil {
-		return err
-	}
-	if found == 0 {
-		fmt.Println("nothing for this run to take from any active tenant; the hourly sweep reports what is left")
-	}
-	return nil
 }

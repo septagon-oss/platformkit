@@ -3,6 +3,7 @@ package internal_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -37,8 +39,30 @@ func administering(context.Context, db.Tx[db.Tenant]) ([]string, error) {
 // because a test against a service with no floor would not be a test of the
 // service the application composes.
 func newService() *internal.Service {
-	return internal.NewService(&contracts.AdministrationFunc{Ask: administering})
+	return internal.NewService(&contracts.AdministrationFunc{Ask: administering}, allowGranting)
 }
+
+// grantSwitch is the Postgres harness's Granting: one answer a case flips. It is
+// the same switch the fake's AllowGranting is, so the shared suite drives both
+// implementations through the same door.
+type grantSwitch struct {
+	mu      sync.Mutex
+	allowed bool
+}
+
+func (g *grantSwitch) May(context.Context, db.Tx[db.Tenant]) (bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.allowed, nil
+}
+
+func (g *grantSwitch) allow(allowed bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.allowed = allowed
+}
+
+var allowGranting = &grantSwitch{allowed: true}
 
 // TestServiceConforms runs the same suite the fake runs, against the real
 // service, a real Postgres and a real tenant transaction.
@@ -47,9 +71,20 @@ func TestServiceConforms(t *testing.T) {
 		_, conn := dbtest.Schema(t, user.Migrations)
 		svc := newService()
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			// One answer per fixture, as the fake's is: the suite's cases each
+			// decide for themselves whether the caller may promote anybody, and a
+			// switch that kept its last answer would make a case depend on the
+			// order the map was walked in.
+			allowGranting.allow(true)
+			// httpx.WithConn because one refusal is written outside this transaction:
+			// the record of a refused last-administrator write needs the request's pool
+			// connection to exist at all (internal's recordRefusal). The fixture and its
+			// delete stand-in take one context, as a request hands one to its hooks.
+			requestCtx := httpx.WithConn(ctx, conn)
 			run(usertest.Fixture{
-				Ctx: ctx, Tx: tx, Service: svc,
+				Ctx: requestCtx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
+				Granting:  allowGranting.allow,
 				// What rest.Spec.deleteRow does, in the order it does it: the
 				// row read and locked, the soft delete, then the hook that
 				// carries the floor. The suite drives the same door the
@@ -73,7 +108,7 @@ func TestServiceConforms(t *testing.T) {
 						if err := crud.Delete[*contracts.User](tx, id, true); err != nil {
 							return err
 						}
-						return svc.RefuseLastAdministrator(ctx, tx, u)
+						return svc.RefuseLastAdministrator(requestCtx, tx, u)
 					}()
 					if err != nil {
 						if back := tx.DB().RollbackTo("beforedelete").Error; back != nil {
@@ -339,3 +374,10 @@ func TestAHandleIsPerTenantAndRenameableWithoutMovingThePerson(t *testing.T) {
 		t.Error("a write through the raw table took a name somebody else holds in this tenant")
 	}
 }
+
+// alwaysGrant is the answer an administration test does not care about: these
+// cases are about the floor, and the door in front of a promotion stays open so
+// the floor is the thing that answers.
+var alwaysGrant = &contracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) {
+	return true, nil
+}}

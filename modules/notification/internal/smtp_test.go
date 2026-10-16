@@ -5,11 +5,13 @@ package internal
 // rather than for the thirty seconds the shipped one waits.
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,4 +143,84 @@ type somewhere struct{}
 
 func (somewhere) PublicHost(context.Context, db.Tx[db.Tenant]) (string, error) {
 	return "acme.example.com", nil
+}
+
+// recording is a mail server that accepts every message and hands back what the
+// client said: each command line, and the message after DATA.
+func recording(t *testing.T) (host string, port int, said <-chan []string) {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = l.Close() })
+	out := make(chan []string, 1)
+	go func() {
+		c, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.Close() }()
+		r, lines, data := bufio.NewReader(c), []string{}, false
+		_, _ = c.Write([]byte("220 recording ESMTP\r\n"))
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				out <- lines
+				return
+			}
+			line = strings.TrimRight(line, "\r\n")
+			lines = append(lines, line)
+			switch {
+			case data && line == ".":
+				data = false
+				_, _ = c.Write([]byte("250 queued\r\n"))
+			case data:
+			case strings.HasPrefix(line, "EHLO"):
+				_, _ = c.Write([]byte("250-recording\r\n250 8BITMIME\r\n"))
+			case line == "DATA":
+				data = true
+				_, _ = c.Write([]byte("354 go ahead\r\n"))
+			case line == "QUIT":
+				_, _ = c.Write([]byte("221 bye\r\n"))
+				out <- lines
+				return
+			default:
+				_, _ = c.Write([]byte("250 ok\r\n"))
+			}
+		}
+	}()
+	addr := l.Addr().(*net.TCPAddr)
+	return addr.IP.String(), addr.Port, out
+}
+
+// TestTheEnvelopeIsTheBareAddressAndTheHeaderKeepsTheName. A sender written as
+// "Acme <noreply@acme.example.com>" used to go into MAIL FROM whole, where every
+// relay refuses it (Mailpit: "501 invalid FROM parameter"), so no message with a
+// named sender was ever delivered. The envelope takes the address; the person
+// sees the name.
+func TestTheEnvelopeIsTheBareAddressAndTheHeaderKeepsTheName(t *testing.T) {
+	host, port, said := recording(t)
+	s := NewSMTP(Mail{Host: host, Port: port, From: "Acme <noreply@acme.example.com>"})
+	if err := s.Send(t.Context(), contracts.Message{
+		To: "ada@acme.example.com", Subject: "Verify your email address", Body: "the link",
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	lines := <-said
+	var envelope, header string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "MAIL FROM:") {
+			envelope = l
+		}
+		if strings.HasPrefix(l, "From: ") {
+			header = l
+		}
+	}
+	if !strings.HasPrefix(envelope, "MAIL FROM:<noreply@acme.example.com>") {
+		t.Errorf("envelope = %q, want the bare address", envelope)
+	}
+	if header != `From: "Acme" <noreply@acme.example.com>` {
+		t.Errorf("header = %q, want the display name and the address", header)
+	}
 }

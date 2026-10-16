@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -56,6 +57,26 @@ const (
 // no source list covers where a form goes.
 const htmlPolicy = "default-src 'self'; script-src 'self' 'nonce-%'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
+// wasmUnsafeEval is the one token a document may ask this file to add to its own
+// script-src, and it is added to that response alone (AllowWASM).
+//
+// A page that compiles or instantiates WebAssembly needs it: 'self' and a nonce
+// both speak about where a script came from, and a module built from bytes came
+// from nowhere — so the policy that lets the page's own tagged script run still
+// refuses the thing the page was written to do. The token permits exactly that
+// one capability, which is why it is a constant of this file rather than a
+// string a caller passes: no module can reach 'unsafe-inline', a source
+// expression or a host through this door, and the policy a response carries
+// stays a policy this repository wrote.
+const wasmUnsafeEval = "'wasm-unsafe-eval'"
+
+// scriptSelf is where the token goes: inside script-src, after 'self', before the
+// nonce. The anchor is the whole prefix rather than `'self'` so the insertion can
+// land in no other directive — htmlPolicy names script-src once, and an anchor
+// that ever stopped matching would leave the policy byte-identical to today's
+// rather than put the token in the wrong clause.
+const scriptSelf = "script-src 'self' "
+
 // hsts is a year, subdomains included. It is set on every response of a
 // deployment that is not reached at a local name, and on none of a deployment
 // that is: a browser told to use https for localhost is a laptop that cannot
@@ -88,6 +109,41 @@ func Nonce(ctx context.Context) string {
 	return n
 }
 
+// claims is what one response declared about itself. The middleware owns it and
+// hands it to the writer below and to the handler's context, which is why it is a
+// pointer: the handler writes it after the writer was built. One per request, so
+// a declaration cannot travel to another response, and it dies with this one.
+type claims struct{ wasm bool }
+
+type claimsKey struct{}
+
+// AllowWASM declares that the document of the response the ctx belongs to
+// instantiates WebAssembly. kit/httpx adds 'wasm-unsafe-eval' to that response's
+// script-src — to that response's, to none other, and to nothing else in it: the
+// nonce, every other directive and the whole policy of a page that said nothing
+// stay as they are.
+//
+// The shape is the nonce's (Nonce): a per-request value the middleware creates,
+// carried on the request, reachable through one exported function. A declaration
+// outside a request is a no-op, as it is for the nonce.
+//
+// Declare before the status is written. The policy is composed at the first byte
+// of the response, so a page that flushed, or streamed past the response buffer,
+// keeps today's policy and its WebAssembly.instantiate is still refused — the
+// browser says so in a console, and this file cannot say it after the fact.
+//
+// A handler that set a Content-Security-Policy of its own keeps it: this
+// declaration may widen the kernel's default and never a handler's stricter one.
+// ui/page's View.RunsWASM is the field a module author writes against, and Serve
+// calls this for it, for the rendered view only — a refusal page and a redirect
+// instantiate nothing, so neither carries the token.
+func AllowWASM(ctx context.Context) {
+	c, _ := ctx.Value(claimsKey{}).(*claims)
+	if c != nil {
+		c.wasm = true
+	}
+}
+
 // noindex is what the workspace and the control plane answer with. A crawler
 // that indexes a signed-in page has read somebody's list into a search engine,
 // and no amount of correct caching afterwards takes that back. The public face
@@ -98,7 +154,8 @@ const noindex = "noindex, nofollow"
 // headers sets the three unconditional headers on the way in and the policy on
 // the way out, because whether a response is a document is something only the
 // response knows. A handler that set a policy of its own — the file download
-// does, and it is a stricter one — keeps it.
+// does, and it is a stricter one — keeps it, and one that declared its document
+// runs WebAssembly (AllowWASM) is the only way a response widens the default.
 //
 // The surface decides the caching and indexing half of the policy, and it is
 // known here and nowhere later: the writer below sees a status, a content type
@@ -114,12 +171,14 @@ func (a *API) headers(next http.Handler) http.Handler {
 			h.Set("Strict-Transport-Security", hsts)
 		}
 		n := nonce()
+		c := &claims{}
 		s := SurfaceOf(r.Context())
 		if s != SurfacePublic {
 			h.Set("X-Robots-Tag", noindex)
 		}
-		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n, surface: s, method: r.Method},
-			r.WithContext(context.WithValue(r.Context(), nonceKey{}, n)))
+		ctx := context.WithValue(context.WithValue(r.Context(), nonceKey{}, n), claimsKey{}, c)
+		next.ServeHTTP(&secured{ResponseWriter: w, nonce: n, claims: c, surface: s, method: r.Method, path: r.URL.Path, ctx: ctx},
+			r.WithContext(ctx))
 	})
 }
 
@@ -128,10 +187,21 @@ func (a *API) headers(next http.Handler) http.Handler {
 type secured struct {
 	http.ResponseWriter
 	nonce   string
+	claims  *claims
 	surface Surface
 	method  string
+	path    string
+	ctx     context.Context
 	done    bool
+	// static is set by the kernel's own file tree (API.tree) for its asset answers, whose
+	// caching is the static-asset row of docs/cache.md rather than the surface's.
+	static bool
 }
+
+// markStatic is how API.tree claims the static-asset row for its own answer. It is
+// reached through the writer chain the handler was given, so nothing but the kernel's
+// tree — which knows it serves the kernel's own immutable files — can claim it.
+func (s *secured) markStatic() { s.static = true }
 
 func (s *secured) WriteHeader(status int) {
 	s.policy(status)
@@ -153,6 +223,9 @@ func (s *secured) policy(status int) {
 	h := s.Header()
 	if h.Get("Content-Security-Policy") == "" && strings.Contains(h.Get("Content-Type"), "html") {
 		policy := htmlPolicy
+		if s.claims.wasm {
+			policy = strings.Replace(policy, scriptSelf, scriptSelf+wasmUnsafeEval+" ", 1)
+		}
 		if s.surface != SurfacePublic {
 			// The workspace may embed nothing. A document that can hold an
 			// <object> can hold a form somebody else's session submits, and
@@ -180,10 +253,23 @@ func (s *secured) policy(status int) {
 //     cache may keep is a refusal nobody can recover from without a hard
 //     reload.
 //
-// Either way a handler that said something about caching first is believed: it
-// knows whether the bytes are somebody's own, and this function does not.
+// A handler that said something about caching first is believed only in the
+// direction of less caching (docs/cache.md). On the public face it knows whether
+// its bytes are somebody's own and this function does not. On the workspace and
+// the control plane every answer sits under a session, so a handler may add to
+// no-store and never take it away: a value without no-store — `public, max-age=…`
+// from a module that meant well — would let a shared cache hand one tenant's page
+// to the next person through. That value is replaced, and the replacement is logged
+// with the route, because a contradiction of the policy is a finding and not a
+// preference. The kernel's own asset tree answers under the static row instead.
 func (s *secured) caching(status int) {
 	if h := s.Header(); h.Get("Cache-Control") != "" {
+		if s.surface == SurfacePublic || s.static || storesNothing(h.Get("Cache-Control")) {
+			return
+		}
+		slog.WarnContext(s.ctx, "httpx: a handler set a storable Cache-Control under a session; replaced with no-store (docs/cache.md)",
+			"surface", s.surface, "method", s.method, "path", s.path, "refused", h.Get("Cache-Control"))
+		h.Set("Cache-Control", noStore)
 		return
 	}
 	switch {
@@ -198,6 +284,17 @@ func (s *secured) caching(status int) {
 		// page somebody has to hard-reload to get rid of.
 		s.Header().Set("Cache-Control", noStore)
 	}
+}
+
+// storesNothing is whether a Cache-Control value forbids storing the response at all:
+// the one answer a session-bearing surface may give.
+func storesNothing(value string) bool {
+	for _, directive := range strings.Split(value, ",") {
+		if strings.EqualFold(strings.TrimSpace(directive), noStore) {
+			return true
+		}
+	}
+	return false
 }
 
 // Unwrap is how net/http's ResponseController reaches the real writer, and how

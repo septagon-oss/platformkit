@@ -114,12 +114,12 @@ async function inspect(page: Page, targets: boolean) {
     // exempt: a skeleton is a placeholder, and announcing it is its own defect.)
     //
     // This is a necessary condition, not a sufficient one, and the difference is not
-    // academic. Verified on this box: a bare `tabindex=0` `overflow:auto` div in an
-    // otherwise empty document does not move its scrollLeft on ArrowRight, End or
-    // Space under Chromium. Focusability is what the markup can promise; scrolling a
-    // focused region with the keyboard is behaviour, and behaviour is asserted where
-    // behaviour is asserted - e2e/known-defects.spec.ts, as an expected failure, so
-    // this rule can never be mistaken for the whole requirement.
+    // academic. Focusability is what the markup can promise; scrolling a focused region
+    // with the keyboard is behaviour, and behaviour is asserted where behaviour is
+    // asserted - e2e/scroll-regions.spec.ts, which polls the region until it moves (it
+    // was an expected failure in known-defects.spec.ts until Chromium began scrolling a
+    // focused scroller from the keyboard), so this rule can never be mistaken for the
+    // whole requirement.
     for (const el of Array.from(document.querySelectorAll('*'))) {
       if (!/auto|scroll/.test(getComputedStyle(el).overflowX) || !shown(el)) continue;
       if ((el as HTMLElement).scrollWidth <= el.clientWidth + 1) continue;

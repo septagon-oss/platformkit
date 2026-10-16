@@ -53,7 +53,7 @@ var (
 
 func TestTheSeederOwnsAGrantItsLiteralSpellsDifferently(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	acme := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -141,7 +141,7 @@ func spelledRoleGrants(t *testing.T, conn *db.Conn, svc contracts.Service, tenan
 // The reachability probe is beta's own role, which the same run has to repair.
 func TestTheRepairReadsOnlyItsOwnTenantsRoles(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	alpha := tenancy.Tenant{ID: uuid.New(), Slug: "alpha"}
 	beta := tenancy.Tenant{ID: uuid.New(), Slug: "beta"}
 	onlyAlpha := []contracts.Role{{Name: "onlyalpha", Grants: contracts.Permissions{"content:read", "role:manage"}}}

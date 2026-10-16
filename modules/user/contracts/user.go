@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/septagon-oss/platformkit/kit/events"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -87,7 +88,12 @@ type User struct {
 	Email string `json:"email" gorm:"type:text;not null" validate:"required" format:"email" maxLength:"320" doc:"Address this person signs in with, unique within the tenant" example:"ada@acme.example.com"`
 	// DisplayName is what a screen shows. It is optional: an invitation has an
 	// address and nothing else.
-	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
+	//
+	// It is also the field a row is called by — `ui:"display"` — so the generated list, the record's
+	// heading and the browser tab all say a person's name rather than their uuid, and a person who has
+	// set no name is still called by their address (ui/resource falls to the next candidate it declares,
+	// never to the id, while one exists). One mark per entity is kit/rest's mount gate.
+	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" ui:"display;label:Name" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
 
 	// Handle is what a person is *called* in this tenant: the thing they type,
 	// say out loud, and see in a URL. It is not the key — users.id is, and every
@@ -111,23 +117,39 @@ type User struct {
 	// look no worse — which is exactly why the declaration is governed, and why a
 	// name outside the vocabulary refuses to mount instead of quietly meaning
 	// nothing.
-	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
+	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person;label:Username;help:Lower-case name this person answers to in this tenant" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
-	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" doc:"Lifecycle state" default:"invited" required:"false"`
+	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" enumTones:"invited=neutral,pending=warning,unverified=warning,active=success,inactive=neutral" doc:"Lifecycle state" default:"invited" required:"false"`
 
 	// Roles are the names of the roles this person holds. What a name grants is
 	// the auth module's business, which is why this is a list of strings and
 	// not a list of permissions: a role can be re-granted without touching a
 	// single user row.
-	Roles Roles `json:"roles" gorm:"type:text[];not null;default:'{}'" required:"false" doc:"Roles this person holds in this tenant"`
+	Roles Roles `json:"roles" gorm:"type:text[];not null;default:'{}'" ui:"visibility:detail" required:"false" doc:"Roles this person holds in this tenant"`
 
 	// PasswordHash is argon2id in the PHC encoding, or empty for somebody who
 	// has never set one — an invited user, or one who only signs in through an
 	// identity provider. It is json:"-", so it is in no response, in no request
 	// and in no generated screen.
 	PasswordHash string `json:"-" gorm:"type:text"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes
+	// user.user.updated, and clears it before the response is written. The create and the delete
+	// share this payload type and never carry it: only a save replaces a row. It is
+	// no column, no form field, no filter and no REST property — a slice of structs is
+	// no entity field type, the gorm tag drops it from the table and the huma tag drops
+	// it from the REST document — so the one event that ever writes it is the update,
+	// which is where "what changed" has to be to still be readable in a year.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (u *User) SetChanges(changes []events.Change) {
+	u.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000007 agree.
@@ -136,12 +158,40 @@ func (User) TableName() string { return "users" }
 // CanSignIn reports whether this user could authenticate with a password.
 func (u *User) CanSignIn() bool { return u.Status == StatusActive && u.PasswordHash != "" }
 
+// CanonicalEmail is an address as this module stores it: trimmed, and folded to
+// lower case. Two strings that differ only in case or padding name one mailbox,
+// so the fold belongs in one published function the entity itself runs before it
+// checks an address — anything else that has to meet the row a string names
+// (a read path, a seed record) asks this, rather than spelling the rule again
+// and drifting from it.
+func CanonicalEmail(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+
+// CanonicalRoles is a role list as this module stores it: each name trimmed and
+// folded to lower case, blanks and repeats dropped, then sorted, because the
+// set a person holds is one answer whatever order and padding named it. SetRoles,
+// the registration input and any caller that has to meet the row a list names (a
+// seed record, an import) ask this one function rather than spelling the fold
+// again and drifting from it — a comparison against a list the module would never
+// store is a comparison that never ends, on every run, with a write nobody asked
+// for. Names outside roleName still refuse: this folds a spelling, it does not
+// invent a role.
+func CanonicalRoles(roles []string) Roles {
+	out := make(Roles, 0, len(roles))
+	for _, role := range roles {
+		if role = strings.ToLower(strings.TrimSpace(role)); role != "" && !slices.Contains(out, role) {
+			out = append(out, role)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: an address that
 // differs only in case or in whitespace is the same mailbox, and two callers
 // must not disagree about that.
 func (u *User) Validate(context.Context) error {
-	u.Email = strings.ToLower(strings.TrimSpace(u.Email))
+	u.Email = CanonicalEmail(u.Email)
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
 	at := strings.IndexByte(u.Email, '@')
 	switch {
@@ -287,6 +337,24 @@ type Service interface {
 	// decision with an enumeration surface of its own, and it belongs to the auth
 	// module, which owns what a failed attempt costs.
 	ByHandle(ctx context.Context, tx db.Tx[db.Tenant], handle string) (*User, error)
+
+	// Holders is the people in this tenant holding at least one of roles, one id
+	// each: active, not soft-deleted, and it is User.CanAdminister that decides,
+	// so this query and the floor that protects the last administrator agree by
+	// construction rather than by two lists kept in step.
+	//
+	// It exists because "tell the people who can grant access" is a question
+	// about who *holds* a role, which is this module's column, while which roles
+	// grant is the auth module's table — the same split as Deps.Administration,
+	// joined by the composition and never by a read across a module's rows.
+	//
+	// An empty or nil roles answers an empty list and no error: "nothing was
+	// named" is not "everybody", and reading it that way would mail a tenant.
+	// Invited, pending and unverified people are excluded, because CanAdminister
+	// excludes them and an unaccepted invitation cannot tick a box — the
+	// difference between notifying everybody we appointed and notifying
+	// everybody who could act.
+	Holders(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error)
 
 	// ByEmail is the login lookup: the user of this tenant with that address,
 	// compared without case. It is ErrNotFound for an address nobody has.

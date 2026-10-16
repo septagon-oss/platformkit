@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -50,6 +51,8 @@ type fixture struct {
 	// authorizer was never reached rather than that it said no.
 	asked atomic.Int32
 	app   *db.Conn
+	// denials is what Options.Denied was handed, in order.
+	denials []httpx.Denial
 	// exec runs one DDL statement as the schema owner, which is all a test
 	// wants the admin connection for.
 	exec func(query string)
@@ -166,6 +169,7 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 		}
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache: cache.Memory("pkit"),
 		// The installation is reached at the same host as the tenant, so a probe mounted on
 		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
 		// where the gate itself is tested.
@@ -178,6 +182,7 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 		Entitle:      f,
 		Authenticate: f.authenticate,
 		Log:          slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Denied:       func(_ context.Context, d httpx.Denial) { f.denials = append(f.denials, d) },
 	})
 	return api, router, f
 }
@@ -1105,6 +1110,7 @@ func TestAFeatureNothingCanAnswerDoesNotStart(t *testing.T) {
 	_ = admin
 	f := &fixture{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}, app: app, logs: &lines{}}
 	api, _ := httpx.New(httpx.Options{
+		Cache: cache.Memory("pkit"),
 		// The installation is reached at the same host as the tenant, so a probe mounted on
 		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
 		// where the gate itself is tested.

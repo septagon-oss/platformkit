@@ -16,9 +16,12 @@ package resource
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
@@ -37,6 +40,20 @@ import (
 type Resource struct {
 	Schema    entity.Schema
 	Immutable []string
+	// API is the resource's own read address as the kernel composed it — the path
+	// its JSON routes answer at — empty for a screen rendered without a kernel
+	// behind it. A renderer builds an autosave target from it and from nothing
+	// else: the screen's own /app/... address is where a person is, not where the
+	// record lives, and a browser that guessed an API path would be guessing which
+	// surface its caller may read on.
+	API string
+	// Present is how this resource's author said it reads. The renderer consults
+	// three parts of it and no others: `visibility`, which keeps a field off the
+	// list and off the record; `section`, which groups the record; and
+	// `sortable`, which names the columns a header may be clicked on. The words,
+	// the icon and the tones are the document's, and the web screen keeps drawing
+	// what it drew until the design decides how they are read.
+	Present entity.EntryHints
 	// Screen is the workspace address of this resource's collection screen:
 	// /app/<module>/<entity>, composed by the kernel at registration. Every
 	// link a renderer writes is built from it, which is the whole reason the
@@ -52,6 +69,17 @@ type Resource struct {
 	// duty on httpx.Resource.Singleton, and ui/screens/catalog.go has always
 	// carried it to the native shell; ui/screens carries it here.
 	Singleton bool
+	// Operations names the routes this resource's API actually mounted — "list",
+	// "read", "create", "update", "delete" — in that order. Empty means all
+	// five, which is what every resource written before a Spec could name its
+	// operations offers, and what a screen rendered without a kernel behind it
+	// (a design export, a golden file) renders.
+	//
+	// The renderers draw a door only for a verb named here, because a door behind
+	// which no route answers is not a door: it is a refusal with a button on it.
+	// The value is plain strings rather than httpx.CRUD because this package is
+	// pure by docs/adr/0007 and imports no transport; ui/screens carries it across.
+	Operations []string
 	// Commands are the lifecycle routes this caller may use, in the order the API
 	// declared them, each with the path its route was mounted on. Empty for a
 	// screen rendered without a caller — a design export, a golden file — because
@@ -121,23 +149,27 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	at, one := r.Screen, display.Humanize(r.Schema.Entity)
 	title := listName(one)
 	var actions []g.Node
-	if writable {
+	// The New button is drawn for a caller who may write *and* a resource that
+	// offers a create: the two questions are different, and the second is
+	// answered by the mounted routes rather than by anybody's permissions.
+	if writable && r.offers("create") {
 		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
 	}
-	body := []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title, Subtitle: o.count(total, one)}, actions...),
-		table(o, r, at, title, rows, sort),
-	}
-	// A command over the whole collection posts beside the list it acts on, and
-	// above the pager so a person who changes page has not lost the door.
-	body = append(body, commandForms(o, r.Commands, at, true)...)
-	body = append(body, components.Pagination(components.PaginationProps{
+	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
-		NavigationLabel: o.Text("screens.pagination", "Pagination"),
-		PreviousLabel:   o.Text("screens.previous", "Previous page"),
-		NextLabel:       o.Text("screens.next", "Next page"),
-	}))
+		NavigationLabel:  o.Text("screens.pagination", "Pagination"),
+		PreviousLabel:    o.Text("screens.previous", "Previous page"),
+		NextLabel:        o.Text("screens.next", "Next page"),
+		PageLabel:        o.Text("screens.page", "Go to page %s", "%d"),
+		CurrentPageLabel: o.Text("screens.current_page", "Page %s, current page", "%d"),
+	}
+	body := []g.Node{table(o, r, at, title, rows, sort, o.count(total, one), &pager, components.DataListSlots{
+		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title}, actions...)},
+		// Collection commands retain their native forms and precede the pager.
+		// Generated CRUD does not gain selected-row writes from a UI control.
+		Footer: commandForms(o, o.Words(r.Schema), r.Commands, at, true),
+	})}
 	return document.View{Title: title, Body: body}
 }
 
@@ -146,6 +178,14 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 // entity's: a browser tab, a bookmark and a history entry all read it, and
 // eleven of them saying "Task" is eleven of them saying nothing.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
+	return DetailRichText(r, o, row, writable, nil, nil)
+}
+
+// DetailRichText renders prose prepared by the request adapter in its tenant
+// transaction, beside the record's standing in each language the tenant speaks
+// besides its own.
+func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string,
+	locales []entity.LocaleState) document.View {
 	at := r.Screen
 	// A singleton is reached at its own path, which is the only place its API is
 	// reached too: an id in this path would be an id nobody issued, and the row
@@ -154,28 +194,31 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 	if !r.Singleton {
 		item = at + "/" + display.Text(row["id"])
 	}
-	named := label(row, r.Schema.Fields)
+	named := label(row, readable(r.Schema.Fields))
 	var actions []g.Node
 	if writable {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
+		if r.offers("update") {
+			actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
+		}
 		// A singleton is not created and not removed, whatever Create and Delete
 		// answer when they are asked. kit/rest makes those two refuse rather than
 		// nil because the generator calls all five closures — which is right for a
 		// closure and wrong for a door: a refusal is a sentence about a mistake
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
-		if !r.Singleton {
+		if !r.Singleton && r.offers("delete") {
 			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
 		}
 	}
 	body := []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
-		details(r, row),
+		localeStrip(locales),
+		details(r, o.Words(r.Schema), row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandForms(o, r.Commands, item, false)...)
+	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.Commands, item, false, locales)...)
 	return document.View{Title: named, Body: body}
 }
 
@@ -191,11 +234,72 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 	if detail != "" {
 		status = statusUnprocessableEntity
 	}
-	return document.View{Title: title, Status: status, Body: []g.Node{
+	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
+}
+
+// richtextModule is the editor's browser half, as a path under the shell's asset
+// prefix. It is a module and not a controller: a page that draws no rich text
+// field carries no tag for it and downloads none of it.
+const richtextModule = "js/richtext.js"
+
+// richtextModule asks whether this form draws an editor at all: an editable rich
+// text field, which is the only thing that needs 470 KB of editor. A record whose
+// rich text is immutable is read-only chrome and no editor, and the page that
+// draws one costs the same as the page that draws none.
+func richtextModules(r Resource) []string {
+	for _, f := range readable(r.Schema.Fields) {
+		if f.Widget == "richtext" && !slices.Contains(r.Immutable, f.Name) {
+			return []string{richtextModule}
+		}
+	}
+	return nil
+}
+
+// fileUploadRoute is the file module's own upload address on the workspace
+// surface, spelled rather than derived: the editor posts the bytes it is handed to
+// this route and to no other, and never builds a path out of a record's own.
+const fileUploadRoute = "/api/v1/file/files"
+
+// fileImageSrc is the same module's own address for reading one stored file back,
+// with {file} standing for the id an upload answered with. The editor substitutes
+// an id an upload handed it and no other text, so the picture a person just
+// uploaded is a picture they can look at while the document, the posted value and
+// the line the server validates all keep the pk-file reference they always held.
+// Spelled here beside the upload route rather than built from it, for the same
+// reason: the browser is handed addresses, never a rule for making one.
+const fileImageSrc = "/api/v1/file/files/{file}/content"
+
+// richtextEditor is the server's answer to "what may this field's editor do, and
+// where". An author who is writing has no record yet, so there is nothing to save
+// against and nothing to keep a draft under: the two attributes appear together
+// with the record's id. An entity that keeps no write count has no tag to quote,
+// so the editor saves nothing as the author writes and keeps the draft instead —
+// which is the honest mode, not a degraded one: a conflict panel needs a revision
+// to disagree about.
+//
+// submitted says this render is the answer to a write that was refused: its
+// controls carry the person's own post rather than the record's text. Nothing
+// compares a kept draft against that text — a refused write saves nothing, and the
+// copy on the device is the only place unsaved words live.
+func richtextEditor(r Resource, row map[string]any, create bool, name string, submitted bool) forms.Editor {
+	editor := forms.Editor{FileUpload: fileUploadRoute, ImageSrc: fileImageSrc, Submitted: submitted}
+	if create || row == nil || r.Singleton || r.API == "" {
+		return editor
+	}
+	id, _ := row["id"].(string)
+	if id == "" || !r.offers("update") {
+		return editor
+	}
+	editor.DraftKey = r.API + "/" + id + "/" + name
+	if revision, quoted := revisionCondition(r, row, create); quoted {
+		editor.Endpoint = r.API + "/" + id
+		editor.ETag = `"` + revision + `"`
+	}
+	return editor
 }
 
 // statusUnprocessableEntity is the one status this package writes: the 422 a
@@ -215,36 +319,113 @@ const statusUnprocessableEntity = 422
 // the refused POST that swaps errors back in is answered at the address the form
 // was drawn from, so the swap still finds its target.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	fields := make([]forms.Field, 0, len(r.Schema.Fields))
-	for _, field := range r.Schema.Fields {
-		fields = append(fields, formField(field))
+	// The form asks for every field its author did not keep off every screen:
+	// `hidden` is the one visibility off this screen too, because a control for a
+	// field no screen may name is a question nobody may answer, and `detail` stays
+	// on it — a required field a form cannot ask for is a record nobody can
+	// create. See readable. The one field added after this loop is the edit form's
+	// own write condition, below, so the capacity holds room for it.
+	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
+	words := o.Words(r.Schema)
+	// A render carrying a refusal line is the form redrawn over a write that was
+	// refused, with the person's own words in its controls.
+	refused := detail != ""
+	for _, field := range readable(r.Schema.Fields) {
+		f := formField(words, field)
+		if f.Definition.Widget == "richtext" {
+			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
+		}
+		fields = append(fields, f)
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
 		values[name] = display.Text(value)
+	}
+	// An edit carries the row's write count back as a hidden value, so the write it
+	// posts can be refused against a row that moved since the person read it. It is a
+	// hidden value and not a control for two reasons that are one: nobody may type the
+	// number of a row's writes (kit/rest refuses a body that names the field), and a
+	// form whose hidden machinery is drawn as a control is a form that invites people to
+	// break its own safety. A create quotes nothing: there is no row to have read.
+	//
+	// The value is the number as the row has it, which is also what a refused write gives
+	// back — the person who is told their deadline is invalid resubmits against the
+	// revision they were already quoting, not against one they never saw.
+	if condition, quoted := revisionCondition(r, row, create); quoted {
+		fields = append(fields, forms.Field{Definition: entity.Field{
+			Name: entity.RevisionCondition, Type: entity.TypeString, Widget: "hidden",
+			Doc: "The revision this form was drawn from. The write is refused if the row has moved.",
+		}})
+		values[entity.RevisionCondition] = condition
 	}
 	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
 		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
 		Action:    action, CancelURL: r.Screen, Title: title,
+		Text: func(key, fallback string) string {
+			if o.Locale == nil {
+				return fallback
+			}
+			return o.Locale.Text(key, fallback)
+		},
 	})
+}
+
+// revisionCondition is the edit form's condition on the write: the row's own write count,
+// and whether this form may quote one at all. A resource whose entity keeps no count,
+// and a form that is not editing a row it read, quote nothing — and the door they post to
+// writes as plainly as it always did. A singleton is the second case by declaration: its
+// API is a PUT with no tag to quote (kit/rest carries If-Match on the patch and the delete
+// alone), so its screen carries a condition its route would not honour.
+func revisionCondition(r Resource, row map[string]any, create bool) (string, bool) {
+	if create || r.Singleton || row == nil {
+		return "", false
+	}
+	counts := false
+	for _, f := range r.Schema.Fields {
+		if f.Name == entity.RevisionField && f.Type == entity.TypeInt {
+			counts = true
+		}
+	}
+	if !counts {
+		// A row that arrived with a revision no field of this schema declares is not this
+		// renderer's to speak for; it quotes nothing, and the write is the plain one.
+		return "", false
+	}
+	if count, has := row[entity.RevisionField]; has {
+		return display.Text(count), true
+	}
+	if carried, has := row[entity.RevisionCondition]; has {
+		return display.Text(carried), true
+	}
+	return "", false
 }
 
 // Control adapts an entity field to the portable form control, preserving the
 // generated screens' existing labels, choices and name-derived DOM identity.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(f), Value: value, Error: fieldErr, Immutable: immutable})
+	return controlWords(Words{}, f, value, fieldErr, immutable)
+}
+
+// controlWords is Control with one thing added: the words a request's language
+// chose, which is what a command's argument controls need and what the exported
+// Control has no request to read. ui/forms stays this package's only owner of the
+// control itself.
+func controlWords(words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
+	return forms.Control(forms.ControlProps{Field: formField(words, f), Value: value, Error: fieldErr, Immutable: immutable})
 }
 
 // formField projects display words at the screen boundary. The portable form
-// owns controls; the value words keep their owner in kit/entity/display.
-func formField(f entity.Field) forms.Field {
+// owns controls; the value words keep their owner in kit/entity/display, and
+// `words` is what puts them in the request's language — the zero Words reads
+// each of them exactly as written.
+func formField(words Words, f entity.Field) forms.Field {
 	options := make([]components.SelectOption, 0, len(f.Enum))
 	for _, value := range f.Enum {
-		options = append(options, components.SelectOption{Label: display.Humanize(value), Value: value})
+		options = append(options, components.SelectOption{Label: words.EnumWord(f, value), Value: value})
 	}
-	return forms.Field{Definition: f, Label: display.FieldLabel(f), Options: options}
+	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
 }
 
 // listName is the heading a list screen wears. It is also the accessible name of
@@ -257,35 +438,67 @@ func listName(one string) string { return one + "s" }
 //
 // The id is not a column. It is the row's identity and it is already the link's
 // href; a table that leads with a UUID is a table nobody can read.
-func table(o Options, r Resource, at, title string, rows []map[string]any, sort string) g.Node {
-	primary := known(r.Schema.Fields)
+func table(o Options, r Resource, at, title string, rows []map[string]any, sort, count string, pager *components.PaginationProps, slots components.DataListSlots) g.Node {
+	// The identity column is chosen from the fields this list shows, not from the
+	// schema: `known` answers without any declaration, so the gate that refuses an
+	// author pointing `primaryField` at hidden plumbing says nothing about this path,
+	// and a table that led with a value its author kept off every row would put that
+	// value back through the one column every row links on.
+	listed := onList(r.Schema.Fields)
+	primary := known(listed)
 	shown := []entity.Field{primary}
-	for _, f := range r.Schema.Fields {
-		if f.HideList || f.Name == primary.Name || f.Name == "id" {
+	for _, f := range listed {
+		// `hidden` is off every screen and `detail` is off this one; both keep
+		// their value in the schema, the PATCH and the JSON, because what a person
+		// is shown and what a caller may read are two questions.
+		if f.Name == primary.Name || f.Name == "id" {
 			continue
 		}
 		shown = append(shown, f)
 	}
 	columns := make([]components.TableColumn, 0, len(shown))
+	words := o.Words(r.Schema)
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: display.FieldLabel(f), Sortable: f.Type != entity.TypeList, Primary: i == 0,
+			Key: f.Name, Label: words.FieldLabel(f), Sortable: r.sortable(f), Primary: i == 0,
 		})
 	}
-	out := make([]components.TableRow, 0, len(rows))
+	out := make([]components.DataRow, 0, len(rows))
+	// named is what a row whose leading column is blank is called by, kept beside the cells
+	// rather than written into them: a cell is a field's own value, and the presentation a
+	// field names composes from it (see compose) — borrowing another field's value would put
+	// an address in a person's disc. What reads this is the row's link, which is the one thing
+	// on the screen that is not a field: it is the row, and so it takes the row's name.
+	named := make(map[string]string, len(rows))
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
-			cells[f.Name] = display.Display(f, row[f.Name])
+			cells[f.Name] = words.Value(f, row[f.Name])
 		}
-		out = append(out, components.TableRow{ID: display.Text(row["id"]), Cells: cells})
+		// The leading cell is the row's only link, so its text is that link's accessible name. A
+		// blank there means this row has nothing in the column the entity leads with, and an empty
+		// link is a row a screen reader reads as "link" — so the row names itself, by the next
+		// candidate it has a value for rather than by its id. See label. The blank is read off the
+		// row, not off the cell above: display.Display spells "nothing" as a dash, and a dash is
+		// not empty, so a cell tested here could never fall back.
+		if display.Text(row[primary.Name]) == "" {
+			if name := label(row, listed); name != "" {
+				named[display.Text(row["id"])] = name
+			}
+		}
+		out = append(out, components.DataRow{TableRow: components.TableRow{ID: display.Text(row["id"]), Cells: cells}})
 	}
-	return components.TableWithSlots(components.TableProps{
+	state := components.ContentState{}
+	groups := []components.DataGroup{{Key: "rows", Rows: out}}
+	if len(rows) == 0 {
+		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity)}
+		groups = nil
+	}
+	p := components.DataListProps{
 		HTMXProps: components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
-		Sortable:  true, Columns: columns, Rows: out,
-		Label:     title,
-		EmptyText: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity),
-	}, components.TableSlots{
+		Columns:   columns, Groups: groups, Label: title, State: state, ResultCountText: count, Pagination: pager,
+	}
+	slots.TableSlots = components.TableSlots{
 		// Sorting is a link the server answers, not a script that reorders what
 		// is on the page: page two of a table sorted in the browser is page two
 		// of the wrong order.
@@ -315,22 +528,118 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 			if !c.Primary {
 				return nil
 			}
-			return components.Link(components.LinkProps{
-				Label: display.Text(row.Cells[c.Key]), Href: at + "/" + row.ID})
+			text := display.Text(row.Cells[c.Key])
+			if name, ok := named[row.ID]; ok {
+				text = name
+			}
+			return components.RowLink(components.LinkProps{Label: text, Href: at + "/" + row.ID})
 		},
-	})
+	}
+	return components.DataListWithSlots(p, slots)
 }
 
-// details is the detail screen: every field, in schema order, as a description
-// list. There is no hiding here — hide:list is about a table being readable,
-// not about a field being secret, and a field a caller may not see is a field
-// the entity's JSON does not carry.
-func details(r Resource, row map[string]any) g.Node {
-	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
-	for _, f := range r.Schema.Fields {
-		items = append(items, components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])})
+// localeStrip is the record's translation standing: one badge per language this
+// tenant speaks besides its own, each naming how much of this record exists in it
+// and what it is behind by.
+//
+// It is the first thing a translator needs on a record — what is reviewed and what
+// somebody still owes — and the numbers come from the same read a public page
+// answers with, so the badge cannot report a translation a reader would never be
+// served. A language nobody has touched reads 0% rather than disappearing: the
+// language that needs work is the one worth naming.
+//
+// The word beside the number is the point of the badge. "50%" asks the reader to
+// work out whether somebody owes a first translation or owes a second look at one
+// that went stale, and those are different jobs; "50% · Outdated" answers it. The
+// tone stays the one the strip has always worn — success when the language is whole,
+// warning when it is not — because the word, not the colour, carries which of the
+// two it is, and a badge that meant "stale" one release and "never started" the
+// next by colour alone would be a colour doing a word's work.
+//
+// Nothing at all when there is no language to report — an entity with no
+// translatable field, or a tenant served in one language — because a badge about a
+// language nobody can switch to is noise, and every screen of every entity that was
+// never translated would be wearing one.
+func localeStrip(locales []entity.LocaleState) g.Node {
+	if len(locales) == 0 {
+		return g.Raw("")
 	}
-	return components.DetailList(components.DetailListProps{Items: items})
+	badges := make([]g.Node, 0, len(locales))
+	for _, state := range locales {
+		tone := "warning"
+		if state.Percent() == 100 {
+			tone = "success"
+		}
+		badges = append(badges, components.Badge(components.BadgeProps{
+			Label: state.Locale + " " + strconv.Itoa(state.Percent()) + "% · " +
+				display.Humanize(state.State()),
+			Tone: tone, Size: "sm",
+		}))
+	}
+	return components.Flex(components.FlexProps{Gap: "2", Wrap: true}, badges...)
+}
+
+// details is the detail screen: every field the author kept on a record, in schema
+// order, as a description list. `hide:list` hides nothing here — it is about a table
+// being readable, not about a field being secret — and `visibility:hidden` is the one
+// declaration that is off this screen too, which readable applies.
+func details(r Resource, words Words, row map[string]any, rendered map[string]string) g.Node {
+	// One pass, in schema order: richtext becomes a prose section as it always
+	// did, and every other readable field becomes a term beside its value.
+	var prose []g.Node
+	type read struct {
+		field entity.Field
+		item  components.DetailItem
+	}
+	var reads []read
+	for _, f := range readable(r.Schema.Fields) {
+		if f.Widget == "richtext" {
+			if html, ok := rendered[f.Name]; ok {
+				prose = append(prose, h.Section(h.H2(g.Text(words.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
+			} else {
+				prose = append(prose, h.Section(h.H2(g.Text(words.FieldLabel(f))), h.P(g.Text(display.Text(row[f.Name])))))
+			}
+			continue
+		}
+		reads = append(reads, read{field: f,
+			item: components.DetailItem{Label: words.FieldLabel(f), Value: words.Value(f, row[f.Name])}})
+	}
+	list := func(items []components.DetailItem) g.Node {
+		return components.DetailList(components.DetailListProps{Items: items})
+	}
+	if len(r.Present.Sections) == 0 {
+		all := make([]components.DetailItem, 0, len(reads))
+		for _, r := range reads {
+			all = append(all, r.item)
+		}
+		return g.Group{list(all), g.Group(prose)}
+	}
+	// Declared sections are the blocks of the record screen, in the order the
+	// author named them. A field naming none is drawn after every one of them, in
+	// schema order: an undeclared field that drifted between two blocks somebody
+	// placed would be the section list losing an argument it never entered.
+	out := make([]g.Node, 0, len(r.Present.Sections)+1)
+	taken := map[string]bool{}
+	for _, sec := range r.Present.Sections {
+		items := make([]components.DetailItem, 0, len(reads))
+		for _, r := range reads {
+			if r.field.Presentation.Section == sec.Key {
+				items = append(items, r.item)
+				taken[r.field.Name] = true
+			}
+		}
+		out = append(out, h.Section(h.H2(g.Text(words.Section(sec).Label)), list(items)))
+	}
+	rest := make([]components.DetailItem, 0, len(reads))
+	for _, r := range reads {
+		if !taken[r.field.Name] {
+			rest = append(rest, r.item)
+		}
+	}
+	if len(rest) > 0 {
+		out = append(out, list(rest))
+	}
+	return g.Group{g.Group(out), g.Group(prose)}
 }
 
 // deleteForm is the destructive action: a real form, so it works without
@@ -357,6 +666,21 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 
 func pages(total int64) int { return int((total + PerPage - 1) / PerPage) }
 
+// offers reports whether this resource mounted the route for a verb. An empty
+// Operations means all five; the same question, stated once on httpx.Resource,
+// decides the route table, and this is its answer at the door.
+func (r Resource) offers(verb string) bool {
+	if len(r.Operations) == 0 {
+		return true
+	}
+	for _, o := range r.Operations {
+		if o == verb {
+			return true
+		}
+	}
+	return false
+}
+
 func direction(sort string) string {
 	if strings.HasPrefix(sort, "-") {
 		return "desc"
@@ -364,15 +688,38 @@ func direction(sort string) string {
 	return "asc"
 }
 
-// known is the field a row is recognised by: the first writable string the
-// entity declares. A schema has no "this is the title" flag, and inventing one
-// would be a tag every entity would have to remember; the field an entity leads
-// with is the one it leads with.
-func known(fields []entity.Field) entity.Field {
-	for _, f := range fields {
-		if !f.ReadOnly && f.Type == entity.TypeString {
-			return f
+// sortable reports whether this column's header offers an order. When the entry
+// names its sortable fields, that list is the answer and nothing outside it is
+// clickable; when it names none, every field that is not a list is, which is what
+// every resource drawn before the declaration existed gets.
+func (r Resource) sortable(f entity.Field) bool {
+	if f.Type == entity.TypeList {
+		return false
+	}
+	if len(r.Present.Sortable) == 0 {
+		return true
+	}
+	for _, name := range r.Present.Sortable {
+		if name == f.Name {
+			return true
 		}
+	}
+	return false
+}
+
+// known is the field a row is recognised by, for the whole table at once: the field the entity marked
+// `ui:"display"` if it declared one, and otherwise the first writable text-shaped field it declares.
+//
+// A `text` column counts beside a `string` one: both hold a name, and the reference app's own users
+// are a `text` table — an entity of text columns that has not marked a field used to answer its own
+// heading and its row's only link with a UUID. The mark still wins when both apply; see candidates.
+//
+// It reads the fields the asking screen shows, which is what callers pass it: an identity selection
+// over a whole schema would pick a field that screen does not draw, and the value would come back on
+// the screen anyway — in the leading cell, the row's link and the tab title.
+func known(fields []entity.Field) entity.Field {
+	if c := candidates(fields); len(c) > 0 {
+		return c[0]
 	}
 	if len(fields) > 0 {
 		return fields[0]
@@ -380,10 +727,64 @@ func known(fields []entity.Field) entity.Field {
 	return entity.Field{Name: "id"}
 }
 
-// label is what one row is called.
+// candidates is the order a row is named in, in the one place that order is written down: the marked
+// field, then every other writable string or text field in schema order. known takes its head for a
+// whole table; label walks it for one row, because the field an entity calls its name can be blank in
+// a row that has not been filled in yet.
+func candidates(fields []entity.Field) []entity.Field {
+	var out []entity.Field
+	for _, f := range fields {
+		if f.Display {
+			out = append(out, f)
+		}
+	}
+	for _, f := range fields {
+		if f.Display || f.ReadOnly {
+			continue // the marked ones are already at the head, and a caller may not write this one
+		}
+		if f.Type == entity.TypeString || f.Type == entity.TypeText {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// onList is the schema as a list of rows reads it: every field whose reading puts it on a row, in
+// schema order. entity.Field.OnList resolves the two tags that say so (`visibility`, and the older
+// `hide:list` a declared visibility overrides); this is where the list asks, once, so the columns it
+// draws and the field it leads with cannot disagree about which fields a row has.
+func onList(fields []entity.Field) []entity.Field {
+	out := make([]entity.Field, 0, len(fields))
+	for _, f := range fields {
+		if f.OnList() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// readable is the schema as the record reads it: `hidden` is the only visibility off this screen,
+// `detail` being the field a record answers and a row does not need. A field that is not drawn here
+// cannot name the row here either — the record's title is its toolbar, its breadcrumb and the browser
+// tab a person bookmarks.
+func readable(fields []entity.Field) []entity.Field {
+	out := make([]entity.Field, 0, len(fields))
+	for _, f := range fields {
+		if !f.Presentation.Hidden() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// label is what one row is called, for one row: the first of those candidates this row has a value
+// for, and the id only when it has nothing else — today's last resort, kept for an entity of no
+// text-shaped fields at all.
 func label(row map[string]any, fields []entity.Field) string {
-	if v := display.Text(row[known(fields).Name]); v != "" {
-		return v
+	for _, f := range candidates(fields) {
+		if v := display.Text(row[f.Name]); v != "" {
+			return v
+		}
 	}
 	return display.Text(row["id"])
 }

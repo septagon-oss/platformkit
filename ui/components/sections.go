@@ -48,6 +48,7 @@ func Section(p SectionProps, slots SectionSlots) g.Node {
 }
 
 type HeroProps struct {
+	Layout string `json:"layout,omitempty" enum:",split,full-bleed"`
 	SectionHeaderProps
 	MaxWidth string `json:"maxWidth,omitempty" enum:",sm,md,lg,xl,2xl,4xl,7xl,full"`
 }
@@ -66,6 +67,9 @@ func Hero(p HeroProps, slots HeroSlots) g.Node {
 		heading.Level = 1
 	}
 	copy := Stack(StackProps{Gap: "6"}, SectionHeader(heading), Flex(FlexProps{Wrap: true, Gap: "3"}, slots.Actions...))
+	if p.Layout == "full-bleed" {
+		return h.Section(append(baseAttrs(p.ComponentProps), g.Attr("data-component", "hero-full-bleed"), Stack(StackProps{Gap: "6"}, g.Group(slots.Media), Container(ContainerProps{MaxWidth: p.MaxWidth}, copy)))...)
+	}
 	body := g.Node(copy)
 	if len(slots.Media) > 0 {
 		body = Grid(GridProps{Columns: "1", MD: "2", Gap: "8"}, copy, g.Group(slots.Media))

@@ -108,8 +108,24 @@ type View struct {
 	// that kept the answer. Only the public face is cacheable to begin with, so this
 	// says nothing about a workspace document, which is never stored at all.
 	Revalidate bool
-	Head       []g.Node
-	Body       []g.Node
+	// Modules are scripts this one page loads as ES modules, as paths under the
+	// shell's asset prefix. A page with a rich text field names the editor; every
+	// other page carries no tag and no bytes. It is a field of the view and not of
+	// the chrome because the question is per page: the controllers a shell loads on
+	// every page answer a different question, and a page weight budget is only real
+	// if the answer is per page too.
+	Modules []string
+	// RunsWASM says this document instantiates WebAssembly, which the content
+	// security policy refuses by default: 'self' and a nonce speak about where a
+	// script came from, and a module built from bytes came from nowhere. The
+	// adapter declares it for this response only (httpx.AllowWASM), which adds
+	// 'wasm-unsafe-eval' to its script-src — an image editor or a trace view is
+	// such a page, and a page that said nothing is served today's policy.
+	// It says nothing about the markup: the body of a view that declares it and
+	// the body of one that does not are the same bytes.
+	RunsWASM bool
+	Head     []g.Node
+	Body     []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
@@ -216,6 +232,13 @@ func head(c Chrome, r Request, v View) g.Node {
 	for _, name := range c.Scripts {
 		scripts = append(scripts, h.Script(h.Src(c.Assets+"/js/"+name), g.Attr("defer")))
 	}
+	// A module is fetched with the document it belongs to and never deferred: it
+	// is the page's own enhancement, and the page it enhances is already parsed by
+	// the time a module at the end of the head runs.
+	modules := make([]g.Node, 0, len(v.Modules))
+	for _, path := range v.Modules {
+		modules = append(modules, h.Script(h.Src(c.Assets+"/"+path), g.Attr("type", "module")))
+	}
 	return h.Head(
 		h.Meta(h.Charset("utf-8")),
 		h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
@@ -224,6 +247,7 @@ func head(c Chrome, r Request, v View) g.Node {
 		h.Link(h.Rel("stylesheet"), h.Href(c.Assets+"/app.css?v="+c.Stylesheet.Fingerprint)),
 		g.If(v.Theme == "", g.Group(r.Inline)),
 		g.Group(scripts),
+		g.Group(modules),
 		g.Group(v.Head),
 	)
 }
@@ -255,4 +279,59 @@ func Fault(status int, title, detail, back, backLabel string) View {
 		components.Alert(components.AlertProps{Tone: "danger", Message: detail, Bordered: true}),
 		components.Link(components.LinkProps{Label: backLabel, Href: back}),
 	}}
+}
+
+// RefusalProps is the one verdict that arrives with parts: a refusal of a
+// person who could be told their way out. Fault draws an alert and a link, and
+// that is every other verdict needs; a person who was refused a grant needs four
+// things — what they lack, in words, who can hand it to them, a door that
+// answers, and a way to ask — and a page that offers only the last one is the
+// dead end the walkthrough met.
+//
+// Every string arrives already worded, by the caller, in the request's language:
+// this package holds no copy of its own and negotiates nothing, which is why a
+// storefront and a refusal page can be drawn by the same layer.
+type RefusalProps struct {
+	Status int
+	// Title is what the status is called, as in Fault.
+	Title string
+	// Sentence is the refusal's own line, code first, as every refusal shows it.
+	Sentence string
+	// Missing names the grant in words ("What is missing: read tasks"), and
+	// Granter names who may hand it out — a role, never a list of people.
+	Missing, Granter string
+	// Home is the way on. It is never the address that refused: a page whose one
+	// link leads back to the same refusal is the defect this page exists to fix.
+	Home, HomeLabel string
+	// Ask is the address the ask posts to, and "" leaves no ask control on the
+	// page — a button to a door nobody mounted is a lie about a door.
+	Ask, AskLabel, Permission, Path string
+}
+
+// Refusal is the page for a person the kernel refused before any handler ran.
+func Refusal(p RefusalProps) View {
+	if strings.TrimSpace(p.Sentence) == "" {
+		p.Sentence = "That did not work."
+	}
+	body := []g.Node{
+		components.Toolbar(components.ToolbarProps{Title: p.Title}),
+		components.Alert(components.AlertProps{Tone: "danger", Message: p.Sentence, Bordered: true}),
+	}
+	if p.Missing != "" {
+		body = append(body, components.Text(components.TextProps{Content: p.Missing, Element: "p"}))
+	}
+	if p.Granter != "" {
+		body = append(body, components.Text(components.TextProps{Content: p.Granter, Element: "p", Color: "secondary"}))
+	}
+	if p.Ask != "" {
+		body = append(body, components.Form(components.FormProps{Action: p.Ask, Label: p.AskLabel},
+			h.Input(h.Type("hidden"), h.Name("permission"), h.Value(p.Permission)),
+			h.Input(h.Type("hidden"), h.Name("path"), h.Value(p.Path)),
+			components.Button(components.ButtonProps{Label: p.AskLabel, Type: "submit", Size: "md"}),
+		))
+	}
+	if p.Home != "" {
+		body = append(body, components.Link(components.LinkProps{Label: p.HomeLabel, Href: p.Home}))
+	}
+	return View{Title: p.Title, Status: p.Status, Language: "en", Body: body}
 }

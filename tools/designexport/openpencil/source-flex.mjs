@@ -22,10 +22,16 @@ function sourceFlex(graph, node) {
 
 function autoSourceText(node) {
   return node.type === 'TEXT' && node.textAutoResize === 'WIDTH_AND_HEIGHT' &&
-    ownSourceLayoutRecord(node)?.textWrap === 'normal-v1'
+    ['normal-v1', 'break-word-v1', 'anywhere-v1'].includes(ownSourceLayoutRecord(node)?.textWrap)
 }
 
 function measureText(measure, node, width) {
+  // Unlike anywhere, break-word does not reduce CSS min-content width. Measure
+  // its unbreakable words with the normal line policy, without changing the node.
+  if (width === 0 && ownSourceLayoutRecord(node)?.textWrap === 'break-word-v1') node = {
+    ...node, pluginData: node.pluginData.map(entry => entry.pluginId === 'platformkit' && entry.key === 'platformkit.source'
+      ? { ...entry, value: JSON.stringify({ ...JSON.parse(entry.value), textWrap: 'normal-v1' }) } : entry),
+  }
   const result = measure?.(node, width)
   if (!result || !Number.isFinite(result.width) || result.width < 0 || !Number.isFinite(result.height) || result.height <= 0) {
     throw new Error('Intrinsic source flex requires actual text measurement')
@@ -53,6 +59,11 @@ function intrinsicWidth(graph, node, measure, minimum, visiting = new Set()) {
 }
 
 export function configureSourceFlex(yoga, graph, node, parent, measure) {
+  // CSS width:100% still participates in cross-axis alignment after max-width
+  // caps its box. Yoga's stretch alone instead places that capped box at start.
+  if (parent.layoutMode === 'VERTICAL' && sourceCompositionLayout(graph, parent) && sourceCompositionLayout(graph, node) &&
+      ['MIN', 'CENTER', 'MAX'].includes(node.layoutAlignSelf) &&
+      node[node.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing'] === 'FILL') yoga.setWidthPercent(100)
   const flex = sourceFlex(graph, node)
   if (!flex || parent.layoutMode !== 'HORIZONTAL' || !sourceCompositionLayout(graph, parent) || node.figmaDerivedLayout) return
   const natural = intrinsicWidth(graph, node, measure, false), padding = node.paddingLeft + node.paddingRight

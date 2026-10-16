@@ -63,7 +63,7 @@ type Deps struct {
 // must hold is a permission that decides nothing.
 var permissions []module.Permission
 
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	// A wiring mistake fails where it is written rather than as a nil
 	// dereference in the worker an hour later.
 	if deps.Mailer == nil {
@@ -75,7 +75,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
-		Events:      contracts.Events,
+		Declared:    contracts.Events,
 		// No nav entry, and it is the same fact as the empty Permissions: a
 		// nav entry names the permission that decides who sees the link, and
 		// there is no permission here to name. Everybody's notifications are

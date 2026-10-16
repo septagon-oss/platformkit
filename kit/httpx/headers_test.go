@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -49,7 +50,9 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 
 	api.Surfaces(probe).App.Static("/assets", fstest.MapFS{"app.css": &fstest.MapFile{Data: []byte(":root{}")}})
 
-	for _, at := range []string{at(api, "/widgets"), at(api, "/page"), "/assets/app.css", "/nothing-here"} {
+	// The tree answers under the surface's page namespace; "/assets/app.css" at the root was a 404, which
+	// carried the headers too but was not the asset it named.
+	for _, at := range []string{at(api, "/widgets"), at(api, "/page"), "/app/" + probe + "/assets/app.css", "/nothing-here"} {
 		h := get(t, router, at).Header()
 		switch {
 		case h.Get("X-Frame-Options") != "DENY":
@@ -65,7 +68,7 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	// nothing, and a policy on every response is a header nobody reads.
 	page := get(t, router, at(api, "/page"))
 	csp := page.Header().Get("Content-Security-Policy")
-	// base-uri and form-action are the two the review found missing, and they
+	// base-uri and form-action are the two that were missing, and they
 	// are the two that make the rest hold: without the first an injected <base>
 	// retargets every relative URL so 'self' stops meaning this origin, and
 	// without the second an injected form posts what a person typed somewhere
@@ -115,6 +118,7 @@ func TestALocalDeploymentIsNotToldToUseHTTPS(t *testing.T) {
 	_ = admin
 	f := &fixture{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}, app: app, logs: &lines{}}
 	api, router := httpx.New(httpx.Options{
+		Cache: cache.Memory("pkit"),
 		// The installation is reached at the same host as the tenant, so a probe mounted on
 		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
 		// where the gate itself is tested.

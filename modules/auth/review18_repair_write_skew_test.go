@@ -67,7 +67,7 @@ func (r *racing) Roles(ctx context.Context, tx db.Tx[db.Tenant]) ([]*contracts.R
 
 func TestARepairDoesNotOverwriteAConcurrentRoleWrite(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	dead := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "file:read"},
 		{Permission: "task:read"}, {Permission: "billing:catalog", Operator: true}}
 	now := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "file:read"}, {Permission: "task:read"}}

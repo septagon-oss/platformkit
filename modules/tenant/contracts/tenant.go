@@ -11,6 +11,7 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -22,10 +23,19 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// The two states. A suspended tenant keeps its rows and stops being served: its
-// hosts resolve to nothing, which reads from outside as "no site here". There
-// is no third state, because "archived" and "deleted" are the same fact with
-// different retention, and retention is not a lifecycle.
+// The two states, which are both about one question: is this tenant served?
+//
+// A suspended tenant keeps its rows and stops being served: its hosts resolve
+// to nothing, which reads from outside as "no site here". Whether a tenant
+// still *is* one is a different fact and it has its own column —
+// `deleted_at`, on the row — which `Delete` writes and nothing here clears:
+// only a restore does that, and a restore is the inverse half of an export, not
+// a state. There is no third `Status`, because "archived" and "deleted" are one
+// fact with different retention, and retention is a job, not a lifecycle.
+//
+// The two axes are read together and never merged: `Get`, `List`, `ByHost` and
+// the partial index in migrations/000006 all filter on `deleted_at IS NULL`, so
+// a deleted tenant is invisible everywhere a suspended one is merely refused.
 const (
 	StatusActive    = "active"
 	StatusSuspended = "suspended"
@@ -36,8 +46,8 @@ const (
 // It does not embed crud.Base, and that is the whole shape of this module. Base
 // contributes a tenant_id column and row-level security matches on it; a tenant
 // has no tenant to belong to. So the entity is a plain struct, there is no
-// rest.Spec, and the five routes are written by hand in internal/ — which is
-// what an exception to a generic mechanism should cost.
+// rest.Spec, and the thirteen routes are written by hand in internal/ — which
+// is what an exception to a generic mechanism should cost.
 type Tenant struct {
 	ID     uuid.UUID `json:"id"`
 	Slug   string    `json:"slug"`
@@ -48,6 +58,23 @@ type Tenant struct {
 	// the one `platformkit bootstrap` created, and no route writes it — see
 	// NewTenant.
 	Operator bool `json:"operator"`
+	// App is the composition this tenant belongs to, in the slug kit/appname forms
+	// every shared name from. It is a column and it is written once, at the create,
+	// from the app the composition boots as — never from a request, and never
+	// rewritten, because a tenant that moved between apps would leave its rows under
+	// an app that never issued them.
+	//
+	// It is not in the API document. The app is a fact about the deployment, and
+	// every read that returns this row is already scoped to one app, so the label
+	// would say the same thing on every row of a response and name the deployment to
+	// whoever asked.
+	App string `json:"-"`
+	// Demo says this tenant was created as a walkthrough tenant, so the
+	// application's demo seed records are its own. `platformkit bootstrap` never
+	// sets it and no command writes the column afterwards: the seed refuses a
+	// demo request for a tenant whose row says false, so a request cannot make
+	// itself one — see docs/seed.md.
+	Demo bool `json:"demo"`
 	// Hosts are the names this tenant is served at, the primary one first. They
 	// live in their own table and are loaded with the tenant, because a tenant
 	// without its hosts is a row nobody can reach and an admin screen that
@@ -59,7 +86,19 @@ type Tenant struct {
 	// Before migrations/000020 the one chosen was whichever sorted first, so
 	// adding admin.acme.example.com silently moved every future link off
 	// acme.example.com and nobody chose that.
-	Hosts     []string   `json:"hosts" gorm:"-"`
+	Hosts []string `json:"hosts" gorm:"-"`
+	// DefaultLocale is the language this tenant's pages answer in when the request
+	// brought nothing its tenant serves — the browser's own list intersected with
+	// Locales, and this when that intersection is empty. It is a column and not a
+	// position in Locales because the loader reads it on every request and a
+	// position is a fact that moves when somebody reorders a list.
+	DefaultLocale string `json:"defaultLocale"`
+	// Locales are the languages this tenant is served in, besides the default.
+	// They are a set and not a ranking — the one position in this pair that means
+	// anything is DefaultLocale — and they live in their own table for the same
+	// reason Hosts do, loaded with the tenant for the same reason: a tenant that
+	// cannot say what it speaks is a page that guesses.
+	Locales   []string   `json:"locales" gorm:"-"`
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 	DeletedAt *time.Time `json:"-"`
@@ -68,11 +107,18 @@ type Tenant struct {
 // TableName pins the table, so the entity and migrations/000006 agree.
 func (Tenant) TableName() string { return "tenants" }
 
-// Tenancy is this tenant as the kernel knows it: the three fields kit/tenancy
-// carries on a context. The conversion is here so that no other package decides
-// which of these fields the kernel gets.
+// Tenancy is this tenant as the kernel knows it: the identity kit/tenancy carries
+// on a context, and the languages a request that resolved it may be answered in.
+// The conversion is here so that no other package decides which of these fields the
+// kernel gets, and so that a tenant which declared nothing reaches the negotiation
+// with no languages rather than with a list holding an empty string — the
+// distinction a page reads as "the deployment's own default answers here".
 func (t *Tenant) Tenancy() tenancy.Tenant {
-	return tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator}
+	kernel := tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator, Demo: t.Demo}
+	if t.DefaultLocale != "" || len(t.Locales) > 0 {
+		kernel.Languages = &tenancy.Languages{Default: t.DefaultLocale, Others: t.Locales}
+	}
+	return kernel
 }
 
 // NewTenant is what creating one takes: a slug, a name, and the first host it
@@ -90,6 +136,13 @@ type NewTenant struct {
 	// writer is Bootstrap, which is the one write in the application with no
 	// caller to authorize and can only ever happen once.
 	Operator bool `json:"-"`
+	// Demo says the tenant being created is a walkthrough tenant. Unlike
+	// Operator it is in the body, because the create route is already guarded by
+	// the operator permission and creating a demo tenant is the ordinary way to
+	// get one; the flag names which seed records the tenant may be given, never
+	// who may reach the control plane. It is written here or not at all — see
+	// migrations/000050_tenant_demo.up.sql.
+	Demo bool `json:"demo" required:"false" default:"false"`
 }
 
 // slugPattern is a DNS label: what a slug has to be if it is ever going to be a
@@ -99,7 +152,9 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 // hostPattern is a hostname: labels of letters, digits and hyphens, separated
 // by dots. It is deliberately narrower than the DNS allows — no underscores, no
 // trailing dot, no port — because kit/httpx has already normalised the incoming
-// Host header to exactly this shape before it asks the loader.
+// Host header to exactly this shape before it asks the loader. A port is not the
+// key a tenant is resolved by, so a published installation declares its public
+// port in server.public_host, the key a mailed link reads a port from.
 var hostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
 // ValidSlug normalises and checks a slug.
@@ -121,6 +176,105 @@ func ValidHost(host string) (string, error) {
 		return "", fmt.Errorf("host %q is not a hostname", host)
 	}
 	return host, nil
+}
+
+// localePattern is a BCP 47 language tag in the shape a language list is written
+// in: a primary subtag, then script, region and variant subtags of two to eight
+// characters each. It deliberately accepts more than the deployment has catalogues
+// for — which languages exist is the catalogues' business — and rejects the shapes
+// that are not a tag at all, because a locale stored badly is a preference that
+// never matches and a page that answers in the wrong language forever.
+var localePattern = regexp.MustCompile(`^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$`)
+
+// ValidLocale normalises one language tag to the form a negotiation compares it
+// in: lower-case language, Title-Case script, UPPER-CASE region, hyphens between.
+//
+// The case is not cosmetics. What a tenant stores is matched against what
+// `golang.org/x/text` spells a selected language as — `pt-PT`, not `pt-pt` — and
+// two spellings of one tag is a preference that never matches, which is the
+// quietest possible failure: the page answers, just not in the language anybody
+// chose.
+//
+// It is not a list of the languages the installation speaks, and it must not become
+// one: a kernel module that knew which languages exist could not serve a deployment
+// that ships a catalogue it never imagined.
+func ValidLocale(tag string) (string, error) {
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if !localePattern.MatchString(tag) {
+		return "", fmt.Errorf("locale %q is not a language tag: a two or three letter language, then optional subtags of two to eight characters, joined by hyphens", tag)
+	}
+	parts := strings.Split(tag, "-")
+	for i, part := range parts {
+		switch {
+		case i == 0: // the language itself, which is lower-case in every spelling
+		case len(part) == 4: // a script: Latn, Cyrl
+			parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		case len(part) == 2, len(part) == 3 && part[0] >= '0' && part[0] <= '9': // a region: PT, US, 419
+			parts[i] = strings.ToUpper(part)
+		}
+	}
+	return strings.Join(parts, "-"), nil
+}
+
+// SetLocale is what saying which languages one tenant is served in takes: the
+// default, and the list the negotiation may choose from.
+//
+// The default has to be in the list, which the module refuses rather than repairs:
+// a set written without its own default is a tenant whose fallback language is one
+// it does not serve, and the page would answer in a language nobody chose.
+type SetLocale struct {
+	Default string `json:"default" minLength:"2" maxLength:"35" doc:"The language a request with no usable preference is answered in" example:"pt-PT"`
+	// Supported is a set: duplicates are dropped and the order does not matter,
+	// because the only position that means anything is Default.
+	Supported []string `json:"supported" doc:"Every language this tenant is served in, besides the default"`
+}
+
+// Rename is what a tenant is called. There is no Slug field, and that absence
+// is the decision: a slug is a DNS label and the base of every URL the platform
+// builds for the tenant, so changing it is another tenant's create, not this
+// tenant's rename. The same refusal as NewTenant.Operator's json:"-" — a thing
+// that cannot be asked for has no field to ask with.
+type Rename struct {
+	Name string `json:"name" minLength:"1" maxLength:"200" doc:"Display name" example:"Acme Corporation"`
+}
+
+// Delete is the confirmation. Slug is what the body has to repeat, because a
+// destructive control-plane verb has to be mounted somewhere, and the guard that
+// makes it safe to mount at all is that the operator writes down which customer
+// they are removing. It is not a password and it is not secret: it is the
+// one-keystroke refusal that stops a mis-clicked POST.
+type Delete struct {
+	Confirm string `json:"confirm" maxLength:"63" doc:"The tenant's slug, repeated" example:"acme"`
+}
+
+// The three registration modes migrations/000030's CHECK admits, named here for
+// the write and in modules/auth/contracts for the read. They are one vocabulary
+// spoken by two modules, and that is deliberate: the column's domain is the
+// schema's, and the module that stores a fact and the module that acts on it
+// each name the values in their own terms rather than one importing the other's
+// — which is what keeps modules/tenant from importing the module that signs
+// people in.
+const (
+	RegistrationDisabled  = "disabled"
+	RegistrationExisting  = "existing"
+	RegistrationProvision = "provision"
+)
+
+// OIDCSettings is which identity provider one tenant's people sign in against,
+// and what an address that provider vouches for means here. It is the same
+// record read and written: a command that took a narrower input than the read
+// returns would be two shapes to keep in step for no rule.
+//
+// SecretRef is a name and not a secret, for the reason migrations/000030 gives:
+// a row is copied into an outbox payload and into the audit trail, and a secret
+// in a payload is a secret in the trail.
+type OIDCSettings struct {
+	Issuer       string   `json:"issuer" maxLength:"512" doc:"The provider's own URL, https unless it is local" example:"https://id.acme.example/realms/people"`
+	ClientID     string   `json:"clientId" maxLength:"256" doc:"The client this application registers as at that provider"`
+	SecretRef    string   `json:"secretRef" maxLength:"64" doc:"Where the client secret is kept — an environment variable's name, never the secret" example:"PLATFORMKIT_OIDC_ACME_SECRET"`
+	RedirectPath string   `json:"redirectPath,omitempty" maxLength:"256" doc:"The path the provider sends the browser back to; empty is this installation's own"`
+	Registration string   `json:"registration,omitempty" doc:"disabled, existing or provision: what an address the provider vouches for and this tenant has no account for does"`
+	Roles        []string `json:"roles,omitempty" doc:"What a provisioned person is given, and only under provision"`
 }
 
 // Hook is something that has to happen inside the transaction that creates a
@@ -153,6 +307,19 @@ type Inviter interface {
 	Invite(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, email, displayName string) error
 }
 
+// ErrNoOperatorTenant says this installation has no operator tenant, so a
+// lifecycle command cannot write the audit row the installation keeps beside the
+// customer's own. The command refuses rather than half-auditing: a control-plane
+// verb whose trail is one-sided is a verb nobody can account for afterwards.
+//
+// It is not a caller's fault and it is not state the caller can change, so it is
+// not one of kit/crud's three; the routes answer 503 and write nothing. Every
+// request that could reach one of these routes came through the operator
+// tenant's own credentials, so in a bootstrapped installation this is
+// unreachable — which is the point: the failure it names is a broken
+// installation, not a bad request.
+var ErrNoOperatorTenant = errors.New("tenant: this installation has no operator tenant, so a lifecycle command cannot audit both sides")
+
 // Service is the tenant lifecycle, and the kernel's host resolution.
 //
 // Every command takes a db.Tx[db.System], because these rows belong to no
@@ -178,6 +345,110 @@ type Service interface {
 	// Suspend stops the tenant being served. Suspending it again changes
 	// nothing and publishes nothing.
 	Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// Rename changes what a tenant is called. Renaming it to what it is already
+	// called changes nothing and publishes nothing, as every other command here
+	// does. The slug never moves: see Rename.
+	Rename(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in Rename) (*Tenant, error)
+
+	// Reactivate resumes serving a suspended tenant. An active tenant changes
+	// nothing and publishes nothing. A deleted tenant is not found: only a
+	// restore brings a deleted tenant back, and there is none here.
+	Reactivate(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// RemoveHost stops serving one name. The primary host, and a tenant's last
+	// host, are refused: the first is what every absolute URL for this tenant is
+	// built on, and the second is the floor — a tenant nobody routes to cannot be
+	// signed into, which is the sentence Create's own comment uses about a create
+	// with no host.
+	//
+	// A host the tenant does not answer at changes nothing and publishes nothing.
+	// Once the row is gone there is nothing left to distinguish "never yours"
+	// from "yours and gone", and the answer that does not leak who serves it now
+	// is the one that is also retry-safe.
+	RemoveHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string) (*Tenant, error)
+
+	// Delete retires a tenant: `deleted_at` is written, the row and every row it
+	// owns stay where they are, and the two names the platform routes on are
+	// released — the slug by the partial index in migrations/000006, and the
+	// hosts by their rows, because `tenant_hosts.host` is a global key and a
+	// tenant that is not served cannot reserve a hostname from the next one. A
+	// retired customer's own rows, its languages and the trail are what a delete
+	// keeps, and `Deleted` names the hosts it released. What a restore — which
+	// this module does not have — would have to re-attach is a host.
+	// The installation's own tenant is refused: it is the door every one of these
+	// routes is walked through, and a delete that closed it could not be undone
+	// through it. A retired tenant is not found, by this verb as by every read:
+	// a retry that answered "already done" would be a reader that admits it can
+	// still see a customer nobody else can.
+	Delete(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in Delete) (*Tenant, error)
+
+	// SetLocale says which languages one tenant is served in, and which of them a
+	// request that brought nothing usable is answered in. Setting the same pair
+	// again changes nothing and publishes nothing, as every other command here
+	// does: an operator's retry must not appear twice in an audit.
+	//
+	// It is a control-plane command and not a tenant's own, because the row it
+	// writes is on the control plane: migrations/000006 lets a tenant transaction
+	// read its own row and write nothing there. What a tenant may write for itself
+	// is copy, in a tenant-scoped table of its own, and that is a different
+	// capability with a different policy — not this one pretending to be it.
+	SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in SetLocale) (*Tenant, error)
+
+	// SetOIDC says which identity provider one tenant signs in against, and what
+	// an unknown-but-verified address does there. Setting the same values again
+	// changes nothing and publishes nothing, as every other command here does.
+	//
+	// It refuses half a provider — an issuer with no client, a provision mode
+	// with no roles, a secret reference that is not a name — because each is a
+	// configuration that cannot be exercised and reads, to whoever wrote it, as
+	// one that can. The pair of CHECKs in migrations/000030 is the same rule
+	// where SQL can see it; this is the part it cannot, and the reason the
+	// refusal names the field: an operator reading a 422 should not have to
+	// guess which of six columns they left empty.
+	//
+	// The event carries the reference and not a secret, for the reason the
+	// column gives: an outbox payload is copied into the audit trail.
+	SetOIDC(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in OIDCSettings) (*Tenant, error)
+
+	// ClearOIDC removes a tenant's provider, so single sign-on answers 404 there
+	// again. People already signed in stay signed in: a session is a row, and
+	// taking a company's SSO away is not a revocation of anybody's — the two are
+	// different decisions and the second one is the sessions page's or an
+	// administrator's, never a side effect of the first.
+	ClearOIDC(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// OIDCOf reads the provider of the tenant the transaction belongs to. It is
+	// the read the sign-in makes, per request, and it is the same tenant-scoped
+	// read HostsOf already is: the policy over tenants lets a tenant transaction
+	// read its own row and write nothing, so which provider a company signs in
+	// against is readable there and writable only by the control plane.
+	//
+	// It answers false, not an error, when this tenant has no provider.
+	OIDCOf(ctx context.Context, tx db.Tx[db.Tenant]) (*OIDCSettings, bool, error)
+
+	// SetSAML says which SAML 2.0 identity provider one tenant's people sign in
+	// against. It refuses the same half-providers SetOIDC refuses — an entity ID
+	// with no metadata, metadata with no entity ID, `provision` with no roles —
+	// naming the field an operator has to fix, and it refuses a metadata document
+	// that carries no signing certificate, because an assertion presented against
+	// that document could never be verified and the moment worth saying so is the
+	// write rather than the first person turned away at the door.
+	//
+	// Writing the same values again changes nothing and publishes nothing.
+	SetSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in SAMLSettings) (*Tenant, error)
+
+	// ClearSAML takes a tenant's SAML provider away, leaving its OIDC provider —
+	// if it has one — exactly where it was: the two column families are
+	// independent and neither command touches the other's columns. People already
+	// signed in stay signed in, for the reason ClearOIDC gives.
+	ClearSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// SAMLSettingsOf is OIDCOf for the other protocol: the read the SAML legs
+	// make, per request, in the transaction the Host header resolved, answering
+	// false and not an error when this tenant signs in no other way than it
+	// always has. A tenant may answer both reads at once.
+	SAMLSettingsOf(ctx context.Context, tx db.Tx[db.Tenant]) (*SAMLSettings, bool, error)
 
 	// Get is one tenant with its hosts.
 	Get(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
@@ -229,4 +500,20 @@ func (a Active) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant
 		}
 	}
 	return out, nil
+}
+
+// Languages is the set a tenant's locale may be set to: what this installation's
+// copy is written in, read off the catalogues the composition installed.
+//
+// It is a contract and not a Deps field because the composition is the thing
+// that read the files, and the module that refuses a locale has to be told what
+// exists — this module names no tag of its own. A composition that installs no
+// catalogues composes no provider, and then nothing is checked against anything.
+//
+// It is a struct around the tags rather than the slice itself because a slice is
+// the resolver's own spelling of "take every contribution of the element"
+// (pkit.Needs[[]E]): a named []string would be read as a demand for every
+// contributed string, and this is one value holding a list.
+type Languages struct {
+	Tags []string
 }

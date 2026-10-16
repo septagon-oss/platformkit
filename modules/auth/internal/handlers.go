@@ -18,6 +18,67 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
+// asked puts one of this module's own caps on the answer that cap decided, and says
+// whether the attempt may go on.
+//
+// The kernel's anonymous-write limit already states itself on every public write, and
+// states nothing about the counters this module spends: a forgotten-password request is
+// capped twice over, by two counters, and the one that decided it is the one the caller
+// has to be told about — the name under `RateLimit-Policy`, the attempts left under it,
+// and the wait before either moves. A route that refused on a counter and said nothing
+// left a caller with a 429 and a guess, which is the retry traffic the refusal exists to
+// prevent.
+//
+// The numbers are the deciding statement's own (kit/limit answers in one call for that
+// reason), so nothing here re-counts a row other requests have moved since. A counter
+// that could not be reached allows the attempt and states no limit: Limiter's stated
+// failure mode, restated rather than reinvented here.
+func asked(ctx context.Context, d contracts.Decision, sentence string) error {
+	if !d.Decided() {
+		return nil
+	}
+	httpx.SayCounted(ctx, httpx.Counted{
+		Name:      d.Policy.Name,
+		Quota:     d.Policy.Quota,
+		Window:    d.Policy.Window,
+		Remaining: d.Remaining,
+		Left:      d.Left,
+		Refused:   !d.Allowed,
+	})
+	if d.Allowed {
+		return nil
+	}
+	return problem.New(http.StatusTooManyRequests, sentence)
+}
+
+// sayLockout puts the lockout on the answer it decided, and is the same rule as asked
+// spent on the two mail caps: a refusal this module counted has to name the counter it
+// counted, the quota left under it and the wait before either moves, because a 429 that
+// says none of those leaves the caller to retry on a guess.
+//
+// It is called by the command rather than by the route, because the command is where
+// the counter is read: the route sees ErrTooManyAttempts and nothing else, and a
+// reading taken after that answer is a second look at a window other attempts have
+// moved since. Both of this module's password doors — the sign-in and the second-factor
+// leg — spend the one counter and so state the one policy.
+//
+// A counter that could not be read reports no Decision and this says nothing at all:
+// the attempt was allowed on Limiter's stated failure mode, and the only numbers on
+// offer are ones nobody read.
+func sayLockout(ctx context.Context, d contracts.Decision, refused bool) {
+	if !d.Decided() {
+		return
+	}
+	httpx.SayCounted(ctx, httpx.Counted{
+		Name:      d.Policy.Name,
+		Quota:     d.Policy.Quota,
+		Window:    d.Policy.Window,
+		Remaining: d.Remaining,
+		Left:      d.Left,
+		Refused:   refused,
+	})
+}
+
 func handleLogin(svc contracts.Service, cookies Cookies) func(context.Context, *loginInput) (*sessionOutput, error) {
 	return func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
 		// The verdict first, the sleep second, the transaction third, and that
@@ -96,8 +157,14 @@ func handleIdentity(svc contracts.Service) func(context.Context, *struct{}) (*id
 		}
 		id, ok := sessionOf(ctx)
 		if !ok {
-			// SignedIn was satisfied, so somebody is here; they arrived with
-			// something other than a session cookie, which nothing issues yet.
+			// SignedIn was satisfied, so somebody is here — they simply arrived
+			// with a bearer key rather than a cookie session. This route reports
+			// a cookie session: its body is the person's roles and everything
+			// those grant, which is wider than a scoped key is allowed to act as,
+			// and answering a narrowed caller with the full list would be a
+			// /me that lies about the caller's own authority. A scoped caller
+			// gets the routes its scopes name; a "who am I, as this key" answer
+			// is named as open in the module README rather than approximated here.
 			return nil, problem.New(http.StatusForbidden, "this operation answers for a cookie session")
 		}
 		r, _ := httpx.RequestFrom(ctx)
@@ -139,9 +206,9 @@ func handleForgotPassword(svc contracts.Service) func(context.Context, *forgotIn
 		// limit on the address asked about — that would be the oracle this
 		// route exists not to be.
 		r, _ := httpx.RequestFrom(ctx)
-		if !svc.MayAsk(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests,
-				"too many reset requests from this address; wait and try again")
+		if err := asked(ctx, svc.MayAsk(ctx, ClientOf(r).IP),
+			"too many reset requests from this address; wait and try again"); err != nil {
+			return nil, err
 		}
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -161,20 +228,110 @@ func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Co
 		// can call in a loop needs a limit whether or not the thing it checks is
 		// hard to guess.
 		r, _ := httpx.RequestFrom(ctx)
-		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests,
-				"too many reset attempts from this address; wait and try again")
+		// The same question the sign-in route asks, for the same reason, and it is
+		// asked here rather than not at all because this route now hands out the
+		// cookie too. A page on another site cannot mint a session here without a
+		// token it cannot get, but it can spend one a visitor already has open in a
+		// tab — and a forced sign-in that leaves the visitor somebody else is the
+		// attack the check exists for. See handleLogin for the whole of it.
+		if !httpx.SameSite(r) {
+			return nil, problem.New(http.StatusForbidden,
+				"this request came from another site; set the password from the page itself")
+		}
+		if err := asked(ctx, svc.MayRedeem(ctx, ClientOf(r).IP),
+			"too many reset attempts from this address; wait and try again"); err != nil {
+			return nil, err
 		}
 		tx, err := transaction(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if err := svc.Reset(ctx, tx, in.Body.Token, in.Body.New); err != nil {
+		session, err := svc.Reset(ctx, tx, in.Body.Token, in.Body.New, ClientOf(r))
+		if err != nil {
 			return nil, refusal(err)
 		}
-		// The cookie goes too. Every session ended, so one left in the browser
-		// is a credential that names nothing, and clearing it is what makes the
-		// next page load a sign-in rather than a silent 403.
+		out := &clearOutput{}
+		// Every session this person held before the link was spent is gone, in
+		// both answers: that is what spending the link does, and it is what
+		// signedOut has always reported here.
+		out.Body.SignedOut = true
+		if session == nil {
+			// The password is set and every session this person held is gone, and
+			// this browser holds none: the account also answers with a second
+			// factor, which a mailed link does not supply. The cookie goes, because
+			// one left behind names a session that no longer exists, and the page
+			// sends the person to the sign-in form to finish the sign-in there.
+			out.SetCookie = cookies.Clear()
+			return out, nil
+		}
+		out.SetCookie = cookies.Session(session.ID, session.ExpiresAt)
+		out.Body.SignedIn = true
+		return out, nil
+	}
+}
+
+// handleListSessions answers for the caller themselves, so it takes no
+// permission and no argument: who is asking comes from the principal the kernel
+// resolved, and the sessions that come back are that person's own — which is a
+// row-level-security fact, not a filter written here.
+func handleListSessions(svc contracts.Service) func(context.Context, *struct{}) (*sessionsOutput, error) {
+	return func(ctx context.Context, _ *struct{}) (*sessionsOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		caller, ok := tenancy.PrincipalFrom(ctx)
+		if !ok || caller.UserID == uuid.Nil {
+			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
+		}
+		current, _ := sessionOf(ctx)
+		items, err := svc.Sessions(ctx, tx, caller.UserID, current)
+		if err != nil {
+			return nil, rest.Fault(err)
+		}
+		out := &sessionsOutput{}
+		out.Body.Items, out.Body.Total = items, len(items)
+		return out, nil
+	}
+}
+
+// handleRevokeSession ends one session named by its ref. The caller's own
+// sessions are the only ones the command can see, so a ref copied from another
+// person's list is a 404 here and not a 403 — the refusal does not confirm that
+// the ref was somebody's.
+func handleRevokeSession(svc contracts.Service) func(context.Context, *revokeSessionInput) (*doneOutput, error) {
+	return func(ctx context.Context, in *revokeSessionInput) (*doneOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		caller, ok := tenancy.PrincipalFrom(ctx)
+		if !ok || caller.UserID == uuid.Nil {
+			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
+		}
+		if err := svc.RevokeSession(ctx, tx, caller.UserID, in.Ref); err != nil {
+			return nil, rest.Fault(err)
+		}
+		return done(), nil
+	}
+}
+
+// handleRevokeAllSessions ends everything and clears the cookie: the caller
+// asked for every machine out, and a browser left holding a session that has
+// just been deleted is a page that 403s instead of signing in again.
+func handleRevokeAllSessions(svc contracts.Service, cookies Cookies) func(context.Context, *struct{}) (*clearOutput, error) {
+	return func(ctx context.Context, _ *struct{}) (*clearOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		caller, ok := tenancy.PrincipalFrom(ctx)
+		if !ok || caller.UserID == uuid.Nil {
+			return nil, problem.New(http.StatusForbidden, "this operation answers for the caller themselves")
+		}
+		if _, err := svc.RevokeAllSessions(ctx, tx, caller.UserID); err != nil {
+			return nil, rest.Fault(err)
+		}
 		out := &clearOutput{SetCookie: cookies.Clear()}
 		out.Body.SignedOut = true
 		return out, nil

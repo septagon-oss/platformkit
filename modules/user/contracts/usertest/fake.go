@@ -2,6 +2,7 @@ package usertest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -28,8 +29,13 @@ type Fake struct {
 	// service asks the application through contracts.Administration; a fake
 	// with no database is handed the answer instead.
 	administering []string
-	users         map[uuid.UUID]contracts.User
-	published     []string
+	// mayGrant is the fake's whole Granting port: whether a write in front of it
+	// may hand out an administering role at all. It defaults to yes, so the
+	// suite's existing cases keep meaning what they meant before the door
+	// existed; AllowGranting(false) is how a case closes it.
+	mayGrant  bool
+	users     map[uuid.UUID]contracts.User
+	published []string
 }
 
 // NewFake returns an empty store whose tenant has no role system at all: no
@@ -62,8 +68,16 @@ func NewFake() *Fake {
 // which is the state user.Module panics rather than allow, reintroduced in the
 // one place a consumer tests against. A distinct name leaves NewFake's callers
 // alone and makes a test that wants the floor say so where it builds the store.
+// AllowGranting closes or opens the fake's door: false is a caller who may write
+// users and may not promote anybody.
+func (f *Fake) AllowGranting(allowed bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mayGrant = allowed
+}
+
 func NewFakeWithAdministration(administering []string) *Fake {
-	return &Fake{administering: administering, users: map[uuid.UUID]contracts.User{}}
+	return &Fake{administering: administering, mayGrant: true, users: map[uuid.UUID]contracts.User{}}
 }
 
 // Delete soft-deletes somebody, the way the generated CRUD route does, and
@@ -153,6 +167,12 @@ func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, rol
 	want := Normalise(roles)
 	if slices.Equal([]string(u.Roles), want) {
 		return u, nil
+	}
+	// The same door the real service guards, on the same condition: a write that
+	// hands out an administering role somebody else's table says administers, to
+	// a caller this fake has been told may not promote anybody.
+	if added := addedAdministering([]string(u.Roles), want, f.administering); len(added) > 0 && !f.mayGrant {
+		return nil, contracts.RefuseUngrantable(added[0])
 	}
 	after := *u
 	after.Roles = want
@@ -282,19 +302,63 @@ func (f *Fake) Provision(_ context.Context, _ db.Tx[db.System], tenantID uuid.UU
 	return f.get(u.ID)
 }
 
-// floor is internal.Service.floor without a database: the same decision, from
-// the same function, so the fake and the service cannot disagree about who the
-// last administrator is. The caller holds the lock the closure reads under.
-func (f *Fake) floor(before, after *contracts.User) error {
-	return contracts.CheckedAdministration(before, after, f.administering, func() ([]*contracts.User, error) {
-		others := make([]*contracts.User, 0, len(f.users))
-		for id, stored := range f.users {
-			if id != before.ID && stored.DeletedAt == nil {
-				others = append(others, &stored)
-			}
+// Holders is contracts.Service.Holders, decided by the same predicate the real
+// service writes in SQL: User.CanAdminister, which is why the two cannot disagree.
+func (f *Fake) Holders(_ context.Context, _ db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(roles) == 0 {
+		return nil, nil
+	}
+	var out []uuid.UUID
+	for id, u := range f.users {
+		if u.CanAdminister(roles) {
+			out = append(out, id)
 		}
-		return others, nil
-	})
+	}
+	slices.SortFunc(out, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+	return out, nil
+}
+
+// addedAdministering is internal.Service.addedAdministering: the roles this write
+// gives that the person did not hold, of the ones that administer.
+func addedAdministering(was, want, administering []string) []string {
+	var added []string
+	for _, role := range want {
+		if !slices.Contains(was, role) && slices.Contains(administering, role) {
+			added = append(added, role)
+		}
+	}
+	return added
+}
+
+// floor is internal.Service.floor without a database: the same gate, the same
+// reach, the same decision from the same function, so the fake and the service
+// cannot disagree about who the last administrator is. The caller holds the lock
+// the loop below reads under.
+func (f *Fake) floor(before, after *contracts.User) error {
+	if !before.Administers(f.administering) || after.Administers(f.administering) {
+		return nil
+	}
+	others := make([]*contracts.User, 0, len(f.users))
+	for id, stored := range f.users {
+		if id != before.ID && stored.DeletedAt == nil {
+			others = append(others, &stored)
+		}
+	}
+	err := contracts.CheckedAdministration(
+		contracts.UserReach(before, f.administering, others),
+		contracts.UserReach(after, f.administering, others),
+		!after.Administers(f.administering),
+		contracts.LeavingAdministration(before, f.administering))
+	if errors.Is(err, crud.ErrInvalid) {
+		// The fake records the name the service writes a row for (internal's
+		// recordRefusal), so a consumer testing against this map sees the refused
+		// attempt in the same place it sees every other event. The name is all
+		// Published keeps, so the attempt and the roles are not here.
+		f.published = append(f.published, contracts.EventAdministrationRefused)
+	}
+	return err
 }
 
 // get is a copy of the stored user, so a caller that mutates what it was handed

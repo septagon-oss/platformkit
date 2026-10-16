@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The three events this module emits. There are no CRUD events, because this
@@ -34,12 +36,81 @@ const (
 	// user.roles_set does: the interesting question about a grant is what it
 	// added.
 	EventRoleSet = "auth.role_set"
+	// EventSessionRevoked is a person ending one of their own sessions or all
+	// of them. It is distinct from auth.logged_out, which is somebody signing
+	// themselves out of the machine in front of them: this is the entry in the
+	// trail that answers "when did I kick that one out, and was it before the
+	// laptop I forgot about".
+	EventSessionRevoked = "auth.session_revoked"
+	// EventNoLinkRequested is a sign-up for an address this tenant already has an
+	// account at: the route said the same thing it says about an address it created,
+	// and it asks the worker to hand the transport the message that says no link was
+	// sent. It is not a failure and it names no judgement about the address — it is
+	// the sign-up route's half of the rule that a call which names an address hands
+	// exactly one message to the transport whichever branch it took, so that the
+	// public delivery door can answer that call from its own record and not from
+	// somebody else's (modules/auth/internal/no_link.go, contracts.MailReport).
+	//
+	// The send stays out of the request for the reason VerificationRequested gives:
+	// a mail handed to a transport inside the transaction that can still roll back
+	// is a mail the record would describe wrongly.
+	EventNoLinkRequested = "auth.no_link_requested"
+	// EventMailFailed is one mail this module could not send. It exists because
+	// an operator has to be able to see failed sign-up mail in the trail, and
+	// modules/audit records an event by its having been emitted
+	// (modules/audit/module.go's SubscribeAll) — nothing is registered anywhere to
+	// make that true, and auth.login_failed is the precedent for a declared auth
+	// event nobody subscribes to by name.
+	//
+	// It is published in the same transaction as the delivery record that says the
+	// mail failed, so the state and its event commit together or neither does.
+	EventMailFailed = "auth.mail_failed"
+	// EventAdministrationRefused is a write to a role this module refused because
+	// it would have left the tenant with nobody who can sign in and administer it.
+	// It records an attempt that did not happen: the refused write rolls back, so
+	// the trail row is the only trace of it. See AdministrationRefused and
+	// internal.Service.SetRole.
+	EventAdministrationRefused = "auth.administration_refused"
 )
 
 // Events is every event this module emits, for the manifest.
-var Events = []string{
-	EventLoggedIn, EventLoggedOut, EventLoginFailed,
-	EventResetRequested, EventPasswordReset, EventRoleSet, EventRegistrationRequested, EventVerificationRequested,
+var Events = []events.Declared{
+	events.Declare[LoggedIn](EventLoggedIn),
+	events.Declare[LoggedOut](EventLoggedOut),
+	events.Declare[LoginFailed](EventLoginFailed),
+	events.Declare[ResetRequested](EventResetRequested),
+	events.Declare[PasswordReset](EventPasswordReset),
+	events.Declare[RoleSet](EventRoleSet),
+	events.Declare[SessionRevoked](EventSessionRevoked),
+	events.Declare[FactorEnrolled](EventFactorEnrolled),
+	events.Declare[FactorWithdrawn](EventFactorWithdrawn),
+	events.Declare[RecoveryCodesIssued](EventRecoveryCodesIssued),
+	events.Declare[RecoveryCodeUsed](EventRecoveryCodeUsed),
+	events.Declare[FactorUsed](EventFactorUsed),
+	events.Declare[FactorSuspect](EventFactorSuspect),
+	events.Declare[PasskeySignInSet](EventPasskeySignInSet),
+	events.Declare[APITokenIssued](EventAPITokenIssued),
+	events.Declare[APITokenRevoked](EventAPITokenRevoked),
+	events.Declare[RegistrationRequested](EventRegistrationRequested),
+	events.Declare[VerificationRequested](EventVerificationRequested),
+	events.Declare[NoLinkRequested](EventNoLinkRequested),
+	events.Declare[MailFailed](EventMailFailed),
+	events.Declare[AdministrationRefused](EventAdministrationRefused),
+}
+
+// NoLinkRequested is the payload of EventNoLinkRequested: this address asked to
+// register, somebody has an account there, and no link will follow this call. It
+// carries the address for the reason ResetRequested does — an address that asked is
+// what an account under attack looks like — and nothing else: no user id, no status,
+// no reason, because the subscriber needs only the mailbox to write to and the trail
+// keeps what an operator reads back.
+type NoLinkRequested struct {
+	Email string    `json:"email"`
+	At    time.Time `json:"at"`
+	// Served is the address the request that asked was answered at, for the reason
+	// ResetRequested and VerificationRequested give: the sentence is rendered in the
+	// worker, and the "ask again" it points at is the address the person typed.
+	Served string `json:"served,omitempty"`
 }
 
 // ResetRequested is the payload of EventResetRequested: this address asked for
@@ -54,6 +125,14 @@ var Events = []string{
 type ResetRequested struct {
 	Email string    `json:"email"`
 	At    time.Time `json:"at"`
+	// Served is the address the request that asked was answered at, port and
+	// all, and empty when it named no port. It is here because the mail is
+	// rendered in the worker, where no call is left to ask: the link has to reach
+	// the same address the person typed, and a development installation serves a
+	// tenant at its name and a port. See httpx.ServedAuthority. Not a credential
+	// and no more personal than an audit line: a name this tenant already
+	// answers at and a port this installation is listening on.
+	Served string `json:"served,omitempty"`
 }
 
 // PasswordReset is the payload of EventPasswordReset. It carries no password,
@@ -72,12 +151,35 @@ type RoleSet struct {
 	At   time.Time `json:"at"`
 }
 
+// AdministrationRefused is the payload of EventAdministrationRefused: somebody
+// tried to take role:manage off the last role anybody active holds, and the write
+// was refused.
+//
+// It names the role, not the caller: actor, request id, client address and trace
+// context ride on every outbox row already and modules/audit copies them into the
+// trail, so a copy here would be a second one to drift. Both grant lists are
+// carried, as RoleSet carries them, because the two lists are the refusal — what
+// this role granted before the write and what it would have granted after — and
+// unlike the user module's record they really do differ: the write was about this
+// row, and a refusal describes the row it found.
+type AdministrationRefused struct {
+	Role string    `json:"role"`
+	Was  []string  `json:"was"`
+	Now  []string  `json:"now"`
+	At   time.Time `json:"at"`
+}
+
 // LoggedIn is the payload of EventLoggedIn.
 type LoggedIn struct {
-	UserID    uuid.UUID `json:"userId"`
-	SessionID uuid.UUID `json:"sessionId"`
-	// Method is "password" or "oidc", because "somebody signed in with a
-	// password after we turned single sign-on on" is a question with an answer.
+	UserID uuid.UUID `json:"userId"`
+	// SessionRef(id), never the id: the id is the cookie credential (review 2026-09-29).
+	SessionRef string `json:"sessionRef"`
+	// Method says how the door was opened: a contracts.SignInMethod — "password",
+	// "oidc" or "saml" — for the three that arrive through Service.Open, "passkey"
+	// for a session this module opened from a device assertion, the factor's kind
+	// ("totp" or "recovery") for a sign-in a second factor finished, and "reset" for
+	// one a reset link finished. It is the only field in this payload that says how
+	// somebody got in, which is the first thing anybody reads after an incident.
 	Method string    `json:"method"`
 	IP     string    `json:"ip,omitempty"`
 	At     time.Time `json:"at"`
@@ -85,9 +187,28 @@ type LoggedIn struct {
 
 // LoggedOut is the payload of EventLoggedOut.
 type LoggedOut struct {
-	UserID    uuid.UUID `json:"userId"`
-	SessionID uuid.UUID `json:"sessionId"`
-	At        time.Time `json:"at"`
+	UserID     uuid.UUID `json:"userId"`
+	SessionRef string    `json:"sessionRef"`
+	At         time.Time `json:"at"`
+}
+
+// SessionRevoked is the payload of EventSessionRevoked: one session this person
+// ended, named by its ref. It carries the agent and the address the session was
+// opened with — the two facts the list is rendered from — so the trail says what
+// went away and not merely that something did. All is set when the revocation
+// was "everywhere": the flag is the difference between one machine leaving and a
+// person who was frightened of one machine and cleaned house.
+//
+// It carries no session id and no hash: a ref is this module's public name for a
+// session and the id is a credential.
+type SessionRevoked struct {
+	UserID     uuid.UUID `json:"userId"`
+	SessionRef string    `json:"sessionRef"`
+	UserAgent  string    `json:"userAgent,omitempty"`
+	IP         string    `json:"ip,omitempty"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	All        bool      `json:"all,omitempty"`
+	At         time.Time `json:"at"`
 }
 
 // LoginFailed is the payload of EventLoginFailed: somebody tried and did not
@@ -103,4 +224,188 @@ type LoginFailed struct {
 	IP     string    `json:"ip,omitempty"`
 	Locked bool      `json:"locked"`
 	At     time.Time `json:"at"`
+}
+
+// MailFailed is the payload of EventMailFailed: a mail this module sends itself
+// did not go. An operator sees it beside the delivery record
+// (modules/notification/contracts/mail.go) and the trail says what the record
+// says — the same redacted sentence, the same address.
+//
+// It carries no token, no hash, no subject, no body, no link and no URL. kit/audit
+// copies every payload into audit_events.payload, so a field here is a field in
+// the trail forever, and the whole reason this module mails a set-password link
+// itself rather than through a notice is that the token may not be in a row.
+//
+// Traceparent and RequestID are in the payload as well as in the envelope, because
+// a nested Publish inside a handler reads its trace off the delivery's span and a
+// process that installs no provider injects nothing: the envelope's member would
+// then be NULL, while these two strings are the delivered event's own members and
+// are there whatever the deployment runs.
+type MailFailed struct {
+	// Kind is which mail: MailSetPassword or MailVerification.
+	Kind string `json:"kind"`
+	// Recipient is the address that asked, contracts.EmailKey'd. An address that
+	// asked is what an account under attack looks like, and ResetRequested and
+	// LoginFailed already carry it for that reason.
+	Recipient string `json:"recipient"`
+	// Reason is what the transport said, through
+	// notificationcontracts.RedactMailReason — the same bytes the record holds.
+	Reason string `json:"reason"`
+	// RequestID is the id the call that started this was answered with, and the
+	// handle the person's own screen reads the outcome back with.
+	RequestID   string    `json:"requestId,omitempty"`
+	Traceparent string    `json:"traceparent,omitempty"`
+	At          time.Time `json:"at"`
+}
+
+// The second factor's three events, and the one that closes a set.
+//
+// None of them carries a secret, a code or a step. An event is copied into the
+// audit trail and delivered to anything subscribed, so a payload naming a
+// credential would turn the trail into a bag of spare factors — which is the
+// reason these four say only that a factor was made, stopped, spent or replaced,
+// and by whom. The one number they carry is a count, because "ten codes were
+// issued" is a fact about an account and "here is one" is a key.
+const (
+	// EventFactorEnrolled: this person proved a second thing and the platform
+	// wrote it down. Kind is which thing, so the trail distinguishes a phone
+	// from a security key without this module naming either.
+	EventFactorEnrolled = "auth.factor_enrolled"
+	// EventFactorWithdrawn: one factor stopped working, and how many are left,
+	// which is the difference between "swapped phones" and "turned the account
+	// back into a password". The latter cannot happen here, and the field is how
+	// a reader of the trail can see that it did not.
+	EventFactorWithdrawn = "auth.factor_withdrawn"
+	// EventRecoveryCodesIssued: a set was handed out. It says how many, never
+	// which.
+	EventRecoveryCodesIssued = "auth.recovery_codes_issued"
+	// EventRecoveryCodeUsed: one was spent to sign in. It is the entry an owner
+	// reads afterwards and the only hint that somebody is in with the codes
+	// rather than with the device — which is why the use is an event even though
+	// the sign-in itself is a session row and a logged_in event.
+	EventRecoveryCodeUsed = "auth.recovery_code_used"
+	// EventFactorUsed is a factor that answered a sign-in, whichever kind it was
+	// and whichever door asked. Until this file the trail could say that a factor
+	// was made and that it was stopped, and nothing said it was used: the
+	// recovery-code event covers the one kind whose spend was not also a login
+	// method. An owner asking "when did anybody last prove something beside the
+	// password on this account" is asking a question the trail could not answer.
+	EventFactorUsed = "auth.factor_used"
+	// EventFactorSuspect is an assertion that reported a counter going backwards
+	// on a credential that had one: the same private key answered twice, which is
+	// a cloned or duplicated authenticator. The credential is refused from that
+	// moment on and the person is refused as they are for any wrong answer, so
+	// this event is the only place the fact is written down.
+	EventFactorSuspect = "auth.factor_suspect"
+	// EventPasskeySignInSet is the usernameless door being opened or shut for a
+	// whole tenant. It is the trail's answer to "when did a password stop being
+	// enough on its own here, and when did that stop", and the only place the
+	// change is written down: migrations/000035 keeps no timestamp on the settings
+	// row precisely because this record is where the fact lives.
+	EventPasskeySignInSet = "auth.passkey_sign_in_set"
+)
+
+// FactorEnrolled is the payload of EventFactorEnrolled.
+type FactorEnrolled struct {
+	UserID   uuid.UUID `json:"userId"`
+	FactorID uuid.UUID `json:"factorId"`
+	Kind     string    `json:"kind" enums:"totp,passkey" example:"passkey"`
+	At       time.Time `json:"at"`
+}
+
+// FactorWithdrawn is the payload of EventFactorWithdrawn.
+type FactorWithdrawn struct {
+	UserID    uuid.UUID `json:"userId"`
+	FactorID  uuid.UUID `json:"factorId"`
+	Kind      string    `json:"kind" enums:"totp,passkey" example:"passkey"`
+	Remaining int       `json:"remaining" example:"1"`
+	At        time.Time `json:"at"`
+}
+
+// FactorUsed is the payload of EventFactorUsed: one factor answered one door.
+// It carries no byte of what was offered — not six digits, not a signature, not
+// a credential id — for the reason the four above carry none: an event is copied
+// into the audit trail and delivered to whatever subscribed, and a spendable
+// thing in it is a bag of spare factors.
+type FactorUsed struct {
+	UserID   uuid.UUID `json:"userId"`
+	FactorID uuid.UUID `json:"factorId"`
+	Kind     string    `json:"kind" enums:"totp,recovery,passkey" example:"passkey"`
+	// Door says whether this answer finished a sign-in on its own or came after
+	// a password, which is the difference an owner reads after an incident.
+	Door string    `json:"door" enums:"sign-in,second-factor" example:"second-factor"`
+	At   time.Time `json:"at"`
+}
+
+// FactorSuspect is the payload of EventFactorSuspect. The two counters are the
+// whole of its evidence and they are a monotonic integer, not credential
+// material: "the device reported 4 after having reported 41" is the sentence an
+// investigator needs and it spends nothing.
+type FactorSuspect struct {
+	UserID uuid.UUID `json:"userId"`
+	// FactorID is the passkey this module has stopped accepting. A cloned
+	// credential is refused from that assertion onwards, and the trail is the
+	// only place a person can see why their phone stopped working.
+	FactorID      uuid.UUID `json:"factorId"`
+	Kind          string    `json:"kind" enums:"passkey" example:"passkey"`
+	PreviousCount int64     `json:"previousCount" example:"41"`
+	ObservedCount int64     `json:"observedCount" example:"4"`
+	At            time.Time `json:"at"`
+}
+
+// PasskeySignInSet is the payload of EventPasskeySignInSet. Two booleans and a
+// moment: what the door was, what it is now, and when. It names no person, the
+// way RoleSet names none — the actor is the envelope's business, and a payload
+// that repeated it would be a second record of who did it for two owners to
+// disagree about.
+type PasskeySignInSet struct {
+	Was bool      `json:"was"`
+	Now bool      `json:"now"`
+	At  time.Time `json:"at"`
+}
+
+// RecoveryCodesIssued is the payload of EventRecoveryCodesIssued.
+type RecoveryCodesIssued struct {
+	UserID uuid.UUID `json:"userId"`
+	Count  int       `json:"count" example:"10"`
+	At     time.Time `json:"at"`
+}
+
+// RecoveryCodeUsed is the payload of EventRecoveryCodeUsed. It carries no
+// identifying byte of the code that was spent: which of the ten is a fact only
+// the row knows, and the row is deleted by the sweep.
+type RecoveryCodeUsed struct {
+	UserID uuid.UUID `json:"userId"`
+	At     time.Time `json:"at"`
+}
+
+// A bearer key's two events. Neither carries the token or its hash: the trail is
+// read by people who must not be able to use what it records, and the two facts
+// that mean something about a key are that it was made and that it was stopped.
+// Uses are not audited — a key used on every request of a mobile session would
+// make the trail a write per request, which is the cost the session touch exists
+// to avoid — and last_used_at is the record a person reads instead.
+const (
+	EventAPITokenIssued  = "auth.api_token_issued"
+	EventAPITokenRevoked = "auth.api_token_revoked"
+)
+
+// APITokenIssued is the payload of EventAPITokenIssued.
+type APITokenIssued struct {
+	TokenID   uuid.UUID `json:"tokenId"`
+	Name      string    `json:"name"`
+	Scopes    []string  `json:"scopes"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	At        time.Time `json:"at"`
+}
+
+// APITokenRevoked is the payload of EventAPITokenRevoked. It carries the last
+// use as well as the expiry, because the question after a revocation is "what was
+// this key doing most recently", and the row that answered it is about to be gone.
+type APITokenRevoked struct {
+	TokenID    uuid.UUID `json:"tokenId"`
+	Name       string    `json:"name"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	LastUsedAt time.Time `json:"lastUsedAt"`
+	At         time.Time `json:"at"`
 }

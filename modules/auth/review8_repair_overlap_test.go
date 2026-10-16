@@ -65,7 +65,7 @@ var (
 // here — it would put billing:catalog back and take intranet:read away.
 func TestTheRepairSubtractsFromTheRowRatherThanRebuildingItFromTheLiteral(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := ovSeed(t, conn, svc)
 
 	found, err := ovRepair(t, conn, svc, tenant)
@@ -96,7 +96,7 @@ func TestTheRepairSubtractsFromTheRowRatherThanRebuildingItFromTheLiteral(t *tes
 // literal would fail here by taking intranet:read away.
 func TestTheRepairOfARoleSomebodyEmptiedOfItsDeadGrantReportsNothing(t *testing.T) {
 	adminDB, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := ovSeed(t, conn, svc)
 
 	// The tenant's own write, through the module's ordinary role write, against
@@ -148,7 +148,7 @@ func TestTheRepairOfARoleSomebodyEmptiedOfItsDeadGrantReportsNothing(t *testing.
 // publishes nothing.
 func TestTheRepairRacingAWriteThatTookTheDeadGrantItselfPublishesNothing(t *testing.T) {
 	adminDB, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := ovSeed(t, conn, svc)
 
 	read, commit := make(chan struct{}), make(chan struct{})
@@ -238,7 +238,7 @@ func TestTheRepairRacingAWriteThatTookTheDeadGrantItselfPublishesNothing(t *test
 // change nobody made.
 func TestARepairThatWroteNoRowReportsNoRemoval(t *testing.T) {
 	adminDB, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := ovSeed(t, conn, svc)
 
 	first, both := make(chan struct{}), make(chan struct{})

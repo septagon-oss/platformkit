@@ -37,6 +37,14 @@ type Delivery struct {
 	Mailer contracts.Mailer
 	Hosts  contracts.Hosts
 	Secure bool
+
+	// Mails is what this module records about a mail it sends itself, with no
+	// notice behind it: one row per send, saying who it went to, which kind it was,
+	// what became of it and which call asked — and no subject, body, link or
+	// credential. A composition that wires none sends its mail exactly as it did
+	// before the record existed and leaves no trace of the attempt, which is the bug
+	// the record exists to close rather than a mode to preserve.
+	Mails contracts.MailLedger
 }
 
 // Service is signing in and what a role may do.
@@ -51,6 +59,13 @@ type Service struct {
 	// it from another goroutine an hour later, so it is guarded.
 	mu        sync.RWMutex
 	catalogue []tenancy.Grant
+
+	// factorKey seals and opens a factor secret. EnableFactors sets it, and a
+	// service that was never handed one writes no factor at all: an empty key is
+	// not a weaker envelope, it is the absence of one. Guarded by the mutex above
+	// for the reason catalogue is — module.go sets it from the wiring path while
+	// requests are already reading it.
+	factorKey []byte
 }
 
 // Declare records the permissions the composition defines. module.go calls it
@@ -79,17 +94,32 @@ func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery)
 // Precheck is the limiter's verdict, read from the shared counters. See
 // contracts.Service.
 func (s *Service) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
-	return s.limiter.Check(ctx, email, ip)
+	// The verdict alone, and the numbers with it dropped: Precheck decides whether to
+	// pause, and the answer that goes on the wire is decided by Login, which asks its
+	// own question of the same counter. Two readings stating themselves on one answer
+	// would be two rate lines for one attempt.
+	verdict, _ := s.limiter.Check(ctx, email, ip)
+	return verdict
 }
 
 // MayAsk counts one forgotten-password request from an address. See
 // contracts.Service.
-func (s *Service) MayAsk(ctx context.Context, ip string) bool { return s.limiter.Requested(ctx, ip) }
+func (s *Service) MayAsk(ctx context.Context, ip string) contracts.Decision {
+	return s.limiter.Requested(ctx, ip)
+}
 
 // MayRedeem counts one reset-token redemption from an address. See
 // contracts.Service.
-func (s *Service) MayRedeem(ctx context.Context, ip string) bool {
+func (s *Service) MayRedeem(ctx context.Context, ip string) contracts.Decision {
 	return s.limiter.Redeemed(ctx, ip)
+}
+
+// MayAskAboutMail counts one read of a delivery record from an address. It is
+// not MayRedeem: the shell polls this read while a person waits for a link, and
+// spending the link's own budget on waiting would lock the person out of the
+// thing they are waiting for.
+func (s *Service) MayAskAboutMail(ctx context.Context, ip string) bool {
+	return s.limiter.AskedAboutMail(ctx, ip)
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -106,7 +136,9 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 	// Precheck — a two-second sleep here holds one of sixteen pool connections,
 	// and twenty-four of them at once took a replica to twenty-nine seconds of
 	// latency for every other request. See contracts.Service.Precheck.
-	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, counted := s.limiter.Check(ctx, email, from.IP)
+	sayLockout(ctx, counted, verdict == contracts.Refuse)
+	if verdict == contracts.Refuse {
 		// Once per account per address per window. The refusal happens before
 		// anything is checked, so a script against a locked account produces
 		// one of these a millisecond; the first says the account is under
@@ -133,6 +165,30 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 		return nil, nil, s.fail(ctx, email, from)
 	}
 	s.limiter.Succeeded(ctx, email)
+	// The password arrived. Whether that is enough is a fact about the account
+	// rather than about this request: a person who enrolled a second factor is
+	// not signed in by the first half of their own sign-in, and opening a
+	// session here and taking it away afterwards would be a window in which a
+	// stolen password was a stolen account for as long as the code took to type.
+	//
+	// Nothing is published from this branch. auth.login_failed is the trail's
+	// record of an attempt that did not get in with what it had; this one did,
+	// and the answer it got is a step rather than a failure. auth.logged_in is
+	// not published either, and that is the point: there is no session, so the
+	// trail that says "signed in" would be describing a row that does not exist.
+	required, err := s.factorEnrolled(ctx, tx, user.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if required {
+		// The half that arrived is written down, and it is what makes the other
+		// half answerable: the challenge leg spends this before it reads a code.
+		// Nothing here could be called a sign-in — no session, no identity, no
+		// event — and a person who gives up now leaves a row that stops being
+		// anything at all five minutes after this password was typed.
+		s.markFirstFactorProved(ctx, user.ID)
+		return nil, nil, contracts.ErrFactorRequired
+	}
 	session, identity, err := s.open(ctx, tx, user, from, "password")
 	if err != nil {
 		return nil, nil, err
@@ -142,7 +198,27 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 
 // Open creates a session for a user somebody else has already recognised. The
 // OIDC callback is its caller.
-func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
+//
+// It asks the account the same question Login asks, and asks it for the same
+// reason. Whether what the caller proved is enough is a fact about the account,
+// not about which door it came to: an identity provider that confirmed a mailbox
+// proved one thing about this person, and the thing it proved is the thing their
+// password also proved. A person who enrolled a second factor is not signed in
+// by the first half of a sign-in, whichever half the first half was, and a leg
+// that opened the session and left the factor for later would be a window in
+// which a session stolen at the provider was a stolen account. Nothing is written or
+// published on this branch, for the reason Login publishes nothing: there is no
+// session, so a trail that said "signed in" would describe a row that does not
+// exist. The person finishes at `/challenge/verify`, which spends the code and
+// opens the session the provider had already earned.
+//
+// The question is asked unconditionally because nothing exists that could answer
+// it otherwise: no column of 000030_tenant_oidc and no field of
+// contracts.OIDCProvider says "this tenant's provider is trusted to have asked",
+// and reading a permission nobody wrote would be inventing it. The declaration
+// the brief's "where the tenant allows" asks for is named as unbuilt in the
+// module's README; until somebody writes it, the account decides at both doors.
+func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client, via contracts.SignInMethod) (*contracts.Session, *contracts.Identity, error) {
 	user, err := s.users.Get(ctx, tx, id)
 	if err != nil {
 		return nil, nil, err
@@ -150,7 +226,20 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, f
 	if user.Status != usercontracts.StatusActive {
 		return nil, nil, contracts.ErrCredentials
 	}
-	return s.open(ctx, tx, user, from, "oidc")
+	required, err := s.factorEnrolled(ctx, tx, user.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if required {
+		// The provider confirmed the address, which is the half a password also
+		// proves, so the same window is marked here as at /login: the person is
+		// sent on to /challenge/verify with something to spend there, and a leg
+		// that refused without leaving one would be a door that cannot be opened
+		// from the outside at all.
+		s.markFirstFactorProved(ctx, user.ID)
+		return nil, nil, contracts.ErrFactorRequired
+	}
+	return s.open(ctx, tx, user, from, string(via))
 }
 
 // open writes the session row and its event in the caller's transaction.
@@ -174,7 +263,7 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], user *usercontr
 		return nil, nil, err
 	}
 	return session, identity, events.Publish(ctx, tx, contracts.EventLoggedIn, contracts.LoggedIn{
-		UserID: user.ID, SessionID: session.ID, Method: method, IP: session.IP, At: at,
+		UserID: user.ID, SessionRef: contracts.SessionRef(session.ID), Method: method, IP: session.IP, At: at,
 	})
 }
 
@@ -218,6 +307,19 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 
 // detachedWriteBudget bounds auth writes that must survive a refused request.
 // A busy or unreachable database must not keep that request open indefinitely.
+//
+// Two seconds, and the number is a tested contract rather than a guess:
+// TestDetachedAuthWritesBoundPoolWait exhausts a one-connection pool and fails
+// a detached write that still has not given up after three, because holding the
+// pool is how every other request on this process dies. Round 15 raised this to
+// 10s to stop a loaded box being read as somebody's broken passkey (see
+// e2e/passkey-second-tenant.spec.ts, refused by `make e2e` on 2026-10-08: a
+// ceremony 358ms old answered 401 after 2244.95ms, which is this budget with a
+// pool wait inside it) and `make check` answered with that test in three places.
+// It came back down, and the lesson is the shape of the problem: giving up is
+// the designed answer, so the cure is a sign-in that does not need a second
+// connection to answer a passkey, or a connection reserved for the writes that
+// must outlive a refusal — not a longer wait. Both are named in IMPLEMENT.md.
 const detachedWriteBudget = 2 * time.Second
 
 // forget deletes one expired session, in a transaction of its own.
@@ -275,22 +377,19 @@ func (s *Service) slide(tx db.Tx[db.Tenant], session *contracts.Session) error {
 	return nil
 }
 
-// RevokeSessions ends every session this user has but one.
+// RevokeSessions ends every session this user has but one, and publishes one
+// auth.session_revoked per machine that left.
 //
 // It is the second half of every password change: the point of setting a new
 // password is that the old one stops working, and a session opened with the old
 // one is the old one still working. except keeps the session the person is
 // asking from, so changing a password does not sign you out of the page you
-// changed it on; the nil UUID keeps none.
-func (s *Service) RevokeSessions(_ context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error {
-	q := tx.DB().Where("user_id = ?", userID)
-	if except != uuid.Nil {
-		q = q.Where("id_hash <> ?", contracts.Hash(except.String()))
-	}
-	if err := q.Delete(&contracts.Session{}).Error; err != nil {
-		return fmt.Errorf("auth: revoke the sessions of %s: %w", userID, err)
-	}
-	return nil
+// changed it on; the nil UUID keeps none, which is also what RevokeAllSessions
+// asks for. Both are the same statement, in the same transaction as whatever
+// asked for them, and both leave the revocations on the trail.
+func (s *Service) RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error {
+	_, err := s.revoke(ctx, tx, userID, except)
+	return err
 }
 
 // Purge deletes this tenant's expired sessions and spent tokens, a batch per
@@ -323,7 +422,60 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if verifications.Error != nil {
 		return 0, fmt.Errorf("auth: purge email verifications: %w", verifications.Error)
 	}
-	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected, nil
+	// A spent recovery code has answered its one question. Keeping the row would
+	// be keeping a list of which of a person's codes still work — the opposite of
+	// what the hash was for.
+	codes := tx.DB().Exec(
+		"DELETE FROM recovery_codes WHERE id IN ("+
+			"SELECT id FROM recovery_codes WHERE used_at IS NOT NULL LIMIT ?)", purgeBatch)
+	if codes.Error != nil {
+		return 0, fmt.Errorf("auth: purge the spent recovery codes: %w", codes.Error)
+	}
+	// A spent assertion id protects nothing past the moment the library would refuse
+	// the assertion anyway — NotOnOrAfter plus its clock skew, which is what the
+	// claim wrote into expires_at. Deleting by expiry, bounded by the same batch, with
+	// the index migrations/000047 put on that column for exactly this statement.
+	replays := tx.DB().Exec(
+		"DELETE FROM saml_assertion_replays WHERE assertion_id IN ("+
+			"SELECT assertion_id FROM saml_assertion_replays WHERE expires_at < now() LIMIT ?)", purgeBatch)
+	if replays.Error != nil {
+		return 0, fmt.Errorf("auth: purge the spent assertions: %w", replays.Error)
+	}
+	// A key that has been dead for a month is no longer a fact anybody reads: the
+	// revocation is on the trail with its name, its scope and its last use, which
+	// is what an incident review asks. The month is the difference between
+	// answering that question from a row and keeping a credential — a hash, but a
+	// row nonetheless — forever because deleting it was a little inconvenient.
+	keys := tx.DB().Exec(
+		"DELETE FROM api_tokens WHERE id IN ("+
+			"SELECT id FROM api_tokens WHERE expires_at <= now() - ?::interval"+
+			" OR revoked_at <= now() - ?::interval LIMIT ?)", retired, retired, purgeBatch)
+	if keys.Error != nil {
+		return 0, fmt.Errorf("auth: purge the retired api tokens: %w", keys.Error)
+	}
+	// A first-factor proof that has aged out is a row that can no longer be
+	// spent: the challenge checks expires_at against the clock, so this is table
+	// hygiene, and the five-minute window means a tenant's whole row count is
+	// the number of people mid-sign-in.
+	proofs := tx.DB().Exec(
+		"DELETE FROM first_factor_proofs WHERE user_id IN ("+
+			"SELECT user_id FROM first_factor_proofs WHERE expires_at <= now() LIMIT ?)", purgeBatch)
+	if proofs.Error != nil {
+		return 0, fmt.Errorf("auth: purge the spent first-factor proofs: %w", proofs.Error)
+	}
+	// A passkey prompt nobody answered is a nonce with a two-minute expiry and a
+	// stranger's request behind it: the begin legs are public, they each write one
+	// row, and the answer that would have deleted it may never arrive. The window is
+	// short enough that a tenant's live count is the number of people mid-ceremony,
+	// so this is the ordinary case rather than a sweep of anybody's history.
+	ceremonies := tx.DB().Exec(
+		"DELETE FROM passkey_challenges WHERE id IN ("+
+			"SELECT id FROM passkey_challenges WHERE expires_at <= now() LIMIT ?)", purgeBatch)
+	if ceremonies.Error != nil {
+		return 0, fmt.Errorf("auth: purge the unanswered passkey prompts: %w", ceremonies.Error)
+	}
+	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
+		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected + ceremonies.RowsAffected, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason
@@ -334,6 +486,9 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 var (
 	purgeBatch = 1000
 	maxAge     = fmt.Sprintf("%d hours", int(contracts.SessionMaxLifetime/time.Hour))
+	// retired is how long a dead API key stays a row: long enough for whoever
+	// noticed to ask about it, short enough that the table is not a museum.
+	retired = fmt.Sprintf("%d hours", int(contracts.APITokenRetention/time.Hour))
 )
 
 // Logout ends a session. Ending one that is already gone is not an error: the
@@ -351,9 +506,9 @@ func (s *Service) Logout(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	if err := tx.DB().Where("id_hash = ?", hash).Delete(&contracts.Session{}).Error; err != nil {
 		return fmt.Errorf("auth: end the session: %w", err)
 	}
-	// The id is the caller's own, not something read back: nothing stores it.
+	// The event names the session by its ref, never by the id the caller holds.
 	return events.Publish(ctx, tx, contracts.EventLoggedOut, contracts.LoggedOut{
-		UserID: session.UserID, SessionID: id, At: db.Now(),
+		UserID: session.UserID, SessionRef: contracts.SessionRef(id), At: db.Now(),
 	})
 }
 
@@ -401,7 +556,8 @@ func (s *Service) identify(ctx context.Context, tx db.Tx[db.Tenant], user *userc
 // fail records one failure and returns the one answer a failed login gets.
 func (s *Service) fail(ctx context.Context, email string, from contracts.Client) error {
 	s.limiter.Failed(ctx, email, from.IP)
-	s.recordFailure(ctx, email, from, s.limiter.Check(ctx, email, from.IP) == contracts.Refuse)
+	verdict, _ := s.limiter.Check(ctx, email, from.IP)
+	s.recordFailure(ctx, email, from, verdict == contracts.Refuse)
 	return contracts.ErrCredentials
 }
 

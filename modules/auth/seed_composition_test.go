@@ -101,7 +101,7 @@ func TestTheSeededRolesAreTheCompositionsAndNothingElse(t *testing.T) {
 // on saying so.
 func TestRepairTakesTheSeedersDeadGrantsAndLeavesTheTenantsOwn(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "operator", Operator: true}
 	was := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "tenant:manage", Operator: true},
 		{Permission: "billing:catalog", Operator: true}}
@@ -185,7 +185,7 @@ func TestRepairTakesTheSeedersDeadGrantsAndLeavesTheTenantsOwn(t *testing.T) {
 // the same run does remove: the case cannot pass by the repair doing nothing.
 func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "operator", Operator: true}
 	was := []tenancy.Grant{{Permission: "role:manage"}, {Permission: "task:read"},
 		{Permission: "content:read"}, {Permission: "billing:catalog", Operator: true}}
@@ -262,7 +262,7 @@ func TestARoleTheRepairCannotFinishIsLeftWhole(t *testing.T) {
 // grant the same run removes, so this cannot pass by the repair doing nothing.
 func TestTheOperatorsOwnAdministratorCannotSayWhoWroteADeadGrant(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	operator := tenancy.Tenant{ID: uuid.New(), Slug: "operator", Operator: true}
 	seedForRepair(t, conn, operator)
 	handEdit(t, conn, svc, operator, contracts.RoleAdmin,

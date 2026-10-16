@@ -117,8 +117,8 @@ cut from. It reads `current_schema()` and not `current_setting('search_path')`
 because a setting is a list, and the name a caller cuts an owner out of has to
 be one namespace. The claim to make about the second one is narrow: it is what a
 test written *here* calls, and `moduleOwner` and the tests beside it are built on
-it. `review_round1_module_schema_gaps_test.go` and
-`review_round2_module_schema_grants_test.go` read `current_setting('search_path')`
+it. `module_schema_gaps_test.go` and
+`module_schema_grants_test.go` read `current_setting('search_path')`
 and re-assert the shape themselves, because a file a review contributed is
 committed as received and the second of them arrived after the helper did — two
 copies that exist, disclosed, rather than a clause that says none do.
@@ -213,6 +213,21 @@ an exception that can except a broken marker is a marker nobody can rely on.
 not as a missing key — because a refusal that names the wrong key sends the operator
 to a line that is already there.
 
+### A file that writes rows
+
+A schema half runs in one transaction, and in no system one: the runner sets
+`platformkit.system_access` inside a `RunSystem` transaction and inside a `phase=data`
+drain, and around a `.up.sql` never. An `INSERT … SELECT` in a schema file therefore
+runs as whatever role `migrate_url` names, under the policies the same release just
+installed — at a deployment whose migrate role owns these tables without being a
+superuser, the source such a policy filters is empty, the statement is accepted, and
+the version is recorded over a write that wrote nothing. Rows belong in a `phase=data`
+half beside the schema one, which the runner drains inside that marker. A file that
+writes none may say so in its commentary — `-- data: exempt reason: <sentence>` — which
+is prose the runner does not read and a reader of the ledger does, naming where the
+rows are written instead. No gate asks for the line yet; 000029_tenant_locale.up.sql
+carries one.
+
 ### What the runner refuses, and what to write instead
 
 Each refusal names its rule, says what the file does, and says what to do instead.
@@ -242,8 +257,8 @@ the installation it refused is the installation that never saw the file. What an
 reads afterwards is the message and the catalogue — `pg_class` answers what a refused run
 left, and `schema_migrations` is not there to be read until some run applied something.
 Two cases hold the boundary from opposite sides:
-`migrations/review_floors_test.go` points `db.Migrate` at a database that is not there and
-asks which rule answered, and `kit/db/review_guarantees_test.go` counts the relations a
+`migrations/rule_floor_files_force_test.go` points `db.Migrate` at a database that is not there and
+asks which rule answered, and `kit/db/contention_err_contended_under_budget_deployment_named_test.go` counts the relations a
 refused composition left behind — the runner's own two among them — and requires that
 count to be zero.
 
@@ -445,7 +460,7 @@ the guard switched off for versions nobody has written yet, the opposite of what
 field is for. Such a floor earns no exemption, and every file of that source is judged
 at the point where the ledger says which of them are pending (a file below an *honest*
 floor is applied bytes, and those the rule table must not judge).
-`kit/db/review3_guard_floor_test.go` holds both directions of that, and a contract half
+`kit/db/source_cannot_declare_floor_past_head_test.go` holds both directions of that, and a contract half
 behind the same unusable floor still waits for its expand.
 
 ### The retry, and the rehearsal

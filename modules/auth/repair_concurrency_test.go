@@ -90,7 +90,7 @@ func (b *betweenWrites) Roles(ctx context.Context, tx db.Tx[db.Tenant]) ([]*cont
 
 func TestARepairThatWritesLeavesWhatAnotherOperatorWroteAndNamesWhatItTook(t *testing.T) {
 	adminDB, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "two-roles"}
 	fails := func(what string, err error) {
 		if err != nil {

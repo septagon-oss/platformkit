@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"os"
 	"slices"
 	"strings"
@@ -120,7 +121,7 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	// This run's own subject and consumer: the stream is shared with every
 	// other run.
 	name := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "") + ".happened"
-	transport, err := provider.JetStream(url)
+	transport, err := provider.JetStream(appname.Name(""), url)
 	if err != nil {
 		t.Fatalf("JetStream: %v", err)
 	}
@@ -150,6 +151,9 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
+	// The first delivery cannot leave the server before the relay hands the event over,
+	// so relayed bounds the first rung from below whatever the handler's own start costs.
+	relayed := time.Now()
 	if err := Relay(t.Context(), conn, transport); err != nil {
 		t.Fatalf("Relay: %v", err)
 	}
@@ -173,11 +177,24 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	if attempts != delivery.MaxDeliveries {
 		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, delivery.MaxDeliveries)
 	}
+	// JetStream schedules each redelivery from the moment it *delivered* (the message is
+	// left pending and AckWait is the ladder's first rung), and the handler stamps the
+	// moment it *started*, which trails the delivery by however long the first,
+	// cold call took: under -race on CI that was 31 ms of a 50 ms rung, and locally
+	// the gap read 1.6 ms in one run of eight. So the first rung is measured from
+	// the relay, which no delivery precedes — a lower bound no handler latency can
+	// break — and the later rungs between warm deliveries, where both ends carry the
+	// same small latency and the gaps land on their rungs to the millisecond.
 	for i := 1; i < len(deliveries); i++ {
-		gap, want := deliveries[i].Sub(deliveries[i-1]), delivery.Backoff[min(i, len(delivery.Backoff))-1]
-		t.Logf("delivery %d gap=%s configured=%s", i+1, gap, want)
-		if gap < want/2 || gap > want+250*time.Millisecond {
-			t.Errorf("delivery %d gap=%s, want one %s backoff plus scheduling tolerance", i+1, gap, want)
+		want := delivery.Backoff[min(i, len(delivery.Backoff))-1]
+		gap, from := deliveries[i].Sub(deliveries[i-1]), "the delivery before"
+		low := want / 2
+		if i == 1 {
+			gap, from, low = deliveries[1].Sub(relayed), "the relay", want
+		}
+		t.Logf("delivery %d at %s after %s, configured %s", i+1, gap, from, want)
+		if gap < low || gap > want+250*time.Millisecond {
+			t.Errorf("delivery %d came %s after %s, want one %s backoff plus scheduling tolerance", i+1, gap, from, want)
 		}
 	}
 
@@ -228,6 +245,17 @@ func TestADriftedConsumerIsReconciled(t *testing.T) {
 	if !slices.Equal(info.Config.BackOff, delivery.Backoff) {
 		t.Errorf("backoff is %v, want %v", info.Config.BackOff, delivery.Backoff)
 	}
+	// And what it filters. The consumer this fixture made by hand carries the
+	// single filter_subject an older build asked for; the subscription has to
+	// come back with both addresses, because the previous build published at
+	// platformkit.<module>.<event> and a `*` matches exactly one token, so a
+	// consumer filtering only platformkit.*.<module>.<event> never sees that
+	// message at all — the stream keeps it, the relay stamps the row published,
+	// and no handler runs. A drift test that checked the ladder but not the
+	// filter set would pass over the loss.
+	if want := []string{"platformkit.*." + name, subject + name}; !slices.Equal(info.Config.FilterSubjects, want) {
+		t.Errorf("filter_subjects is %v, want %v", info.Config.FilterSubjects, want)
+	}
 
 	// And the subscription is a subscription: the handler receives.
 	deliver(t, transport, seen, name)
@@ -266,6 +294,14 @@ func TestAConsumerNATSCannotUpdateIsRecreated(t *testing.T) {
 	if info.Config.DeliverSubject == "" {
 		t.Error("the consumer is still a pull consumer")
 	}
+	// Recreated means the filter set is this build's too, window included: the
+	// settings a consumer cannot change in place are exactly the ones a rolling
+	// window depends on, and a recreate that lost the second address would put
+	// the previous build's events back out of reach on the deploy that was
+	// supposed to keep them.
+	if want := []string{"platformkit.*." + name, subject + name}; !slices.Equal(info.Config.FilterSubjects, want) {
+		t.Errorf("the recreated consumer filters %v, want %v", info.Config.FilterSubjects, want)
+	}
 	deliver(t, transport, seen, name)
 }
 
@@ -277,7 +313,7 @@ func jetstreamForTest(t *testing.T) (Transport, nats.JetStreamContext) {
 	if url == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
-	transport, err := provider.JetStream(url)
+	transport, err := provider.JetStream(appname.Name(""), url)
 	if err != nil {
 		t.Fatalf("JetStream(%s): %v", url, err)
 	}
@@ -500,9 +536,27 @@ func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
 			if err := Relay(finish, conn, transport); err != nil {
 				t.Fatal(err)
 			}
+			// The committed child is the fact under test, and it becomes true when
+			// Postgres commits it, not when this test next looks. At restart=false
+			// nothing ever cancelled that delivery: the pass ended, its transaction
+			// carried on, and its commit races this read — a pass that finds the
+			// parent row still locked by the cancelled pass's own transaction skips
+			// it with SKIP LOCKED and returns nil without waiting for anything.
+			// The window the pass was given is the window the commit is given, and
+			// the assertion on the other side of it is the same number as before.
 			var completed int
-			if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil || completed != 1 {
-				t.Fatalf("committed child events=%d, want 1: %v", completed, err)
+			settle := time.Now().Add(3 * time.Second)
+			for {
+				if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil {
+					t.Fatalf("committed child events: %v", err)
+				}
+				if completed >= 1 || !time.Now().Before(settle) {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if completed != 1 {
+				t.Fatalf("committed child events=%d, want 1", completed)
 			}
 		})
 	}
@@ -536,7 +590,7 @@ func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
 	// A lost acknowledgment of successful work must not turn it into failure.
 	completed := Event{ID: uuid.New(), TenantID: ev.TenantID, Name: ev.Name}
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := claim(tx, completed.ID, durable)
+		_, err := claim(tx, completed.ID, durable, "")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -585,7 +639,7 @@ func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		first, err := claim(tx, legacy, durable)
+		first, err := claim(tx, legacy, durable, "")
 		if first {
 			t.Error("legacy terminal event was claimed for handling again")
 		}

@@ -1,7 +1,6 @@
 package contracts
 
-// PermissionRoleManage guards the two roles routes, and it is the only
-// permission this module declares.
+// PermissionRoleManage guards the two roles routes.
 //
 // There is no role:read beside it. A list of roles is a list of what everybody
 // in the tenant may do, which is the same knowledge as the power to change it
@@ -20,8 +19,26 @@ package contracts
 // kit/module out of every consumer's build graph — see modules/task.
 const PermissionRoleManage = "role:manage"
 
-// The rest of this module's routes declare no permission, and the absence is a
-// decision.
+// PermissionPasskeySignIn guards the one route that says whether a passkey may
+// be the whole sign-in at this tenant — the difference between "this account
+// answers with two things" and "this account answers with one thing that cannot
+// be phished".
+//
+// It is not role:manage borrowed for the purpose. modules/auth/module.go:191
+// already says borrowing that key for the session list "would be the wrong
+// decision twice over", and both halves of that sentence apply harder here: the
+// power to edit roles is not the power to change how every account in the tenant
+// gets in, and an administrator who hands out the one should not find the other
+// in the same grant.
+//
+// It is an ordinary permission rather than an operator one, for the reason
+// migrations/000035_passkeys.up.sql gives for the row it guards: the decision
+// belongs to the tenant whose people it changes, and the write happens inside
+// that tenant's own transaction under its own policy.
+const PermissionPasskeySignIn = "passkey:signin"
+
+// Besides these two, this module's routes declare no permission, and the absence
+// is a decision.
 //
 // Login, the two OIDC legs and the two public halves of the password flow are
 // Public: somebody who cannot sign in is the only caller they are for. Logout,

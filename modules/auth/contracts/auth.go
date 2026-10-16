@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql/driver"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -135,6 +136,9 @@ func (Session) TableName() string { return "sessions" }
 // every request. No salt, because the lookup is by the hash itself: a salted
 // hash cannot be an index probe, and per-row salting protects against a
 // dictionary that does not exist here.
+// SessionRef names a session in events and logs: hex(Hash(id)), never usable as a cookie.
+func SessionRef(id uuid.UUID) string { return hex.EncodeToString(Hash(id.String())) }
+
 func Hash(credential string) Digest {
 	sum := sha256.Sum256([]byte(credential))
 	return sum[:]
@@ -215,6 +219,26 @@ type Users interface {
 	ByEmail(ctx context.Context, tx db.Tx[db.Tenant], email string) (*usercontracts.User, error)
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*usercontracts.User, error)
 	SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, password string) error
+	// ConfirmAddress records that an authority outside this application — the
+	// tenant's own identity provider, in the single sign-on leg — confirmed this
+	// mailbox. It is here because an address arriving from a provider is often a
+	// person this tenant has already invited and who has no password to set:
+	// without this command the callback can find them and still have nothing to
+	// open a session for, and the answer they get blames them for a secret they
+	// never had. Whether confirmation makes a person able to sign in is the user
+	// module's decision, and it refuses an account this tenant closed or has not
+	// yet approved.
+	ConfirmAddress(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) (*usercontracts.User, error)
+	// Holders is the people in this tenant holding at least one of roles: the
+	// same answer the user module's own floor counts with, and this module needs
+	// it for the same reason — changing what a role grants changes who can
+	// administer the tenant, and a role held by nobody administers nothing.
+	//
+	// It is the same question Deps.Administration answers from the other side,
+	// joined by the composition and never by a read across a module's rows: which
+	// names grant is this module's table, which people hold them is the user
+	// module's. An empty or nil roles answers an empty list and no error.
+	Holders(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error)
 }
 
 // Notifier is what this module needs of the notification module to tell
@@ -243,11 +267,59 @@ type Notifier interface {
 type (
 	Mailer = notificationcontracts.Mailer
 	Hosts  = notificationcontracts.HostLookup
+	// MailLedger is the notification module's own record of a mail this module
+	// sent without a notice behind it, named here the way Mailer and Hosts are so
+	// that Deps reads as one list of capabilities.
+	//
+	// It is not a port this module can do without: a composition that wires none
+	// sends its mail exactly as it did before the record existed and leaves no
+	// trace of the attempt, which is the bug rather than a mode to preserve.
+	MailLedger = notificationcontracts.MailLedger
+)
+
+// The mails this module sends itself, named the way every event name is named.
+// They are this module's names for its own mails and belong here, not in the
+// shared ledger: a CHECK or a constant in modules/notification listing them would
+// make the next module that mails a schema change.
+//
+// The `*_no_link` kind is the message this module sends when a request for a link
+// could not be answered with one — nobody has the address, the account cannot be
+// sent a link, the link this call found is still outstanding. It is a separate kind
+// rather than the link's own kind because a record of a mail that is not a link must
+// not read as a record of a link: an operator counting reset links would count
+// messages that carry no credential. And it is mailed and recorded rather than
+// skipped, because the public delivery door answers a caller only from the record its
+// own call caused (contracts.MailReport), so a call that handed nothing to the
+// transport could only be answered from somebody else's row — which is why only the
+// flow that pays for a message per call has its refusals read back to the person
+// standing at it, and the forgotten-password route, pinned to one link and nothing
+// else between a known and an unknown request, does not.
+const (
+	MailSetPassword        = "auth.set_password"
+	MailVerification       = "auth.verification"
+	MailVerificationNoLink = "auth.verification_no_link"
 )
 
 // Service is signing in, signing out, recognising a session, and resolving what
 // a set of roles may do.
 //
+// SignInMethod names the door a session was opened through, and is the value
+// contracts.LoggedIn.Method carries. Two of the three are this module's own doing —
+// a password it checked itself — and the third is a provider's, which is why Open
+// asks for it instead of deciding it: a session opened at a SAML door that the trail
+// called "oidc" is a trail that sends whoever is reading it to the wrong log, at the
+// wrong provider, about the person it is asking about.
+type SignInMethod string
+
+const (
+	// ViaPassword is a session this module opened from credentials it checked itself.
+	ViaPassword SignInMethod = "password"
+	// ViaOIDC is a session opened for an address an OpenID Connect provider verified.
+	ViaOIDC SignInMethod = "oidc"
+	// ViaSAML is a session opened for an address a SAML 2.0 assertion verified.
+	ViaSAML SignInMethod = "saml"
+)
+
 // Every command takes the caller's transaction rather than opening one, so the
 // session row and the event that describes it commit together — with one
 // deliberate exception, described on Login.
@@ -265,18 +337,22 @@ type Service interface {
 	// delay, which is a slowdown and not a gate.
 	Precheck(ctx context.Context, email, ip string) Verdict
 
-	// MayAsk counts one forgotten-password request from an address and reports
-	// whether it is within ResetRequests for the window. It is the public
+	// MayAsk counts one forgotten-password request from an address and reports the
+	// cap that decided it: whether the attempt is within ResetRequests for the
+	// window, and the quota and window the same statement read. It is the public
 	// route's own limit, and it counts the address asking rather than the
-	// address asked about.
-	MayAsk(ctx context.Context, ip string) bool
+	// address asked about. The decision comes back with its numbers because the
+	// route answers with them — a refusal that named no counter and no wait left
+	// the caller guessing — and a caller that cannot reach its counter reports the
+	// zero Decision, which allows the attempt and states nothing.
+	MayAsk(ctx context.Context, ip string) Decision
 
 	// MayRedeem counts one reset-token redemption from an address and reports
 	// whether it is within ResetRedemptions for the window. Asking for a link
 	// was capped and spending one was not, so the token was guessable at the
 	// speed of the network — which 256 bits makes hopeless and a cap makes
 	// pointless.
-	MayRedeem(ctx context.Context, ip string) bool
+	MayRedeem(ctx context.Context, ip string) Decision
 
 	// Login verifies a password and opens a session. It answers ErrCredentials
 	// for a wrong password, an unknown address, a user who is not active and a
@@ -305,25 +381,63 @@ type Service interface {
 	Identify(ctx context.Context, tx db.Tx[db.Tenant], session uuid.UUID, from Client) (*Identity, error)
 
 	// Open creates a session for a user who has already been recognised some
-	// other way. The OIDC callback is its caller: the identity provider did the
-	// verifying, and what is left is the same session this module issues for a
-	// password.
-	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client) (*Session, *Identity, error)
+	// other way. The OIDC and SAML callbacks are its callers: the provider did the
+	// verifying, and what is left is the session this module issues for a password —
+	// asked of the account first, second factor and all, whichever half came through.
+	//
+	// `via` names which provider did the verifying, and it is asked for rather than
+	// assumed because the trail this writes says how somebody got in: a session
+	// opened through a SAML assertion that the log called "oidc" would be a log that
+	// blames the wrong door — and the question "did anyone sign in with a password
+	// after we turned single sign-on on" is answered out of that one field. See
+	// contracts.LoggedIn.
+	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client, via SignInMethod) (*Session, *Identity, error)
 
 	// Permissions is the union of what these roles grant in this tenant. A role
 	// nobody defined grants nothing rather than failing: a user carrying a role
 	// that was deleted is a user with less authority, not a broken request.
 	Permissions(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]string, error)
 
-	// RevokeSessions ends every session this user has, except the one named.
-	// The nil UUID keeps none, which is "sign me out everywhere".
+	// RevokeSessions ends every session this user has, except the one named, and
+	// publishes one auth.session_revoked per row it removed.
 	//
 	// It takes the caller's transaction because it never happens on its own:
-	// every caller is changing the credential those sessions were opened with,
-	// and a revocation that committed apart from the change it belongs to is a
-	// window in which the old password is gone and the sessions it opened are
-	// not.
+	// every caller is either changing the credential those sessions were opened
+	// with, or a person deciding on their own screen which machines stop working;
+	// in both cases a revocation that committed apart from the change it belongs to
+	// is a window in which the old password is gone and the sessions it opened are
+	// not. The nil UUID keeps none, which is RevokeAllSessions.
 	RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error
+
+	// Sessions lists this person's own live sessions, most recently seen first,
+	// for the page that lets them say "that was not me". It answers with
+	// SessionListing rather than Session, and that is the whole of the design:
+	// the row is a credential and the list is not (see SessionListing).
+	//
+	// current is the session the request is being made with, flagged as such and
+	// nothing more. Rows past either lifetime are left out rather than listed as
+	// dead: Identify refuses them, so showing one would be showing a row that is
+	// already gone and waiting for the sweep to agree.
+	Sessions(ctx context.Context, tx db.Tx[db.Tenant], userID, current uuid.UUID) ([]*SessionListing, error)
+
+	// RevokeSession ends one of this person's own sessions, named by its ref,
+	// and publishes auth.session_revoked for it.
+	//
+	// An unknown ref is crud.ErrNotFound and it is the same answer when the ref
+	// belongs to somebody else's session in this tenant and to another tenant
+	// altogether — RLS returns no row either way, so the refusal does not leak
+	// which one it was. It writes nothing and publishes nothing.
+	RevokeSession(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, ref string) error
+
+	// RevokeAllSessions ends every session this person has, including the one
+	// they are asking from, and publishes one auth.session_revoked per row it
+	// removed. It returns how many went, which is what the route reports.
+	//
+	// It is RevokeSessions keeping the nil UUID — one statement, one count, one
+	// event per machine — and it differs from it only in having no exception:
+	// "everywhere" includes the machine asking, which is what the route then makes
+	// obvious by clearing the cookie and sending the person to the sign-in page.
+	RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error)
 
 	// ChangePassword sets a new password for somebody who is signed in, having
 	// checked the one they have. It ends their other sessions and keeps the one
@@ -359,14 +473,29 @@ type Service interface {
 	// message, not in the mechanism.
 	Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error
 
-	// Reset consumes a token, sets the password and ends every session that
-	// user has — including the one asking, because whoever is resetting a
-	// password is not relying on a session and whoever else held one may be the
-	// reason it is being reset. It publishes auth.password_reset.
+	// Reset consumes a token, sets the password, ends every session that user has
+	// — including the one asking, because whoever is resetting a password is not
+	// relying on a session and whoever else held one may be the reason it is being
+	// reset — and opens a new session for the browser that spent the link. It
+	// publishes auth.password_reset and, when a session opened, auth.logged_in.
+	//
+	// The session is the point of the link. An invitation that set a password and
+	// then asked for one was half a door: the person who proved their mailbox and
+	// chose the credential was standing outside it, so this returns the session to
+	// put in a cookie. `from` is the client the link was spent by — address and
+	// user agent — because the session row records the machine that opened it.
+	//
+	// nil session and nil error is the one account left signed out: a person who
+	// enrolled a second factor. Their password changed and their other sessions
+	// ended, and the first half of a sign-in still opens nothing on an account that
+	// answers with two. Every implementation is expected to keep those three facts
+	// in that order — sweep, then open — so that the session it hands back cannot be
+	// one the sweep removed.
 	//
 	// A token that is unknown, spent or expired is ErrCredentials, and the
 	// three are one answer for the reason Login's three are.
-	Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error
+	Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+		from Client) (*Session, error)
 
 	// Roles is every role in this tenant, by name.
 	Roles(ctx context.Context, tx db.Tx[db.Tenant]) ([]*Role, error)
@@ -401,8 +530,11 @@ type Service interface {
 	SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string,
 		declared []tenancy.Grant) (*Role, bool, error)
 
-	// Purge deletes this tenant's expired sessions and spent tokens, in batches,
-	// and reports how many rows went. The hourly job calls it once per tenant.
+	// Purge deletes this tenant's expired sessions, spent tokens, spent recovery
+	// codes and API keys that have been expired or revoked for APITokenRetention,
+	// in batches, and reports how many rows went. The hourly job calls it once per
+	// tenant. It is the sweep that makes "revoked" mean the row is gone eventually
+	// as well as the key not working now.
 	Purge(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
 }
 

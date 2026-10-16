@@ -9,18 +9,44 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// OIDCFromConfig converts the application's own configuration block into this
+// module's struct, so that main writes one line and the module depends on a
+// struct of its own rather than on the configuration surface. The registration
+// mode is not in it: the mode is a tenant's fact now, and the installation's own
+// default provider has never had one to declare.
+func OIDCFromConfig(c config.OIDC) OIDC {
+	return OIDC{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
+		RedirectPath: c.RedirectPath}
+}
+
+// EnvironmentSecrets is the Secrets this installation ships with: a reference is
+// an environment variable's name, which is the only secret store this repository
+// has (kit/config reads secrets from the environment and nowhere else). It is a
+// method on an empty struct rather than a function value because a composition
+// should be able to name the whole of what it wires.
+type EnvironmentSecrets struct{}
+
+// Lookup reads the variable the reference names. An unset name is false, and the
+// sign-in answers 503 for that tenant rather than exchanging a code with an empty
+// client secret.
+func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
+	return os.LookupEnv(ref)
+}
 
 // OIDC is one OpenID Connect provider. It has the same shape as config.OIDC, so
 // main converts one to the other in a line, and this module depends on a struct
@@ -72,13 +98,75 @@ type Deps struct {
 	// by the application over the tenant module.
 	Hosts contracts.Hosts
 
+	// Mails is what this module records about the mails it sends itself: one row
+	// per send, with no subject, body, link or credential in it. It is the
+	// notification module's own ledger of them, named here the way Mailer and Hosts
+	// are, so Deps reads as one list of capabilities. A composition that wires none
+	// sends exactly as it did before the record existed and leaves no trace of the
+	// attempt — which is the bug this closes, not a mode to preserve.
+	Mails contracts.MailLedger
+
 	// Tenants is how the hourly sweep reaches every tenant, to delete the
 	// sessions and tokens that have expired.
 	Tenants jobs.TenantLister
 
-	// OIDC is the optional identity provider. An empty issuer means there is
-	// none, and then the two OIDC routes are not registered at all.
+	// OIDC is the installation's own identity provider, and the fallback for a
+	// tenant that names none. An empty issuer means there is no default, and
+	// then the two OIDC routes are mounted only when OIDCProviders is wired —
+	// which is the case that lets two tenants sign in at two issuers in one
+	// process, each answering for its own host.
 	OIDC OIDC
+
+	// SAMLProviders answers "which SAML 2.0 identity provider does the tenant this
+	// request resolved to sign in against?", per request, from the transaction the
+	// Host header chose. Unlike OIDC there is no installation-level default to fall
+	// back to — no `kit/config.SAML` block exists, because SAML ships tenant-only
+	// and a single-IdP deployment configures its one tenant's row — so this port
+	// being nil is the whole of "nobody here signs in with SAML", and the three SAML
+	// legs are then not mounted at all.
+	SAMLProviders contracts.SAMLProviders
+
+	// OIDCProviders answers "which provider does the tenant this request
+	// resolved to sign in against?", per request, from the transaction the Host
+	// header chose. A composition wires it over the tenant module's OIDCOf; a
+	// composition that wires nothing leaves the installation's own issuer as the
+	// only one there is, which is exactly how every deployment that exists today
+	// behaves.
+	OIDCProviders contracts.OIDCProviders
+
+	// FactorKey is the deployment's key for sealing a second factor's shared
+	// secret at rest. Empty — which is the default — means the factor routes are
+	// not mounted at all: without a key the only secret this module could write
+	// is a plaintext one, and a table of those is a backup an attacker can use,
+	// which is the thing this capability exists not to do. A deployment that sets
+	// no key signs people in exactly as it did before the table existed.
+	FactorKey string
+
+	// Secrets resolves the reference a tenant's row holds into the client secret
+	// it names. The reference is what is in the database, the outbox and the
+	// audit trail; the secret is in the environment and in no row. A composition
+	// that wires none can sign nobody in through a tenant's own provider, and
+	// answers 503 rather than inventing an empty secret.
+	Secrets contracts.Secrets
+
+	// Provisioner makes the person a verified id token names when the tenant's
+	// registration mode is `provision`. Wiring it is the composition's answer to
+	// "may this installation create people from an IdP claim", because who may
+	// exist is the user module's decision and not this one's; with no
+	// Provisioner, `provision` refuses as `existing` does.
+	Provisioner contracts.Provisioner
+
+	// Messages is the application's whole catalogue of copy, this module's
+	// included, and it is what lets the passkey doors refuse a person in the
+	// language they asked to be answered in: a browser ceremony is read on the
+	// sign-in page, and that page's own words are translated. The reference
+	// composition wires the application's own Skin copy — the one catalogue the
+	// sentence names, merged from every layer that ships words — in
+	// modules/auth/provider.go; a module that read its own messages file could
+	// not answer in a language a UI catalogue carries. With none, every refusal
+	// this module answers is English, which is what it was before the field
+	// existed.
+	Messages locale.Messages
 
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
@@ -87,9 +175,20 @@ type Deps struct {
 	PublicHost string
 }
 
+// NewPasskeyDoor returns the one read of a tenant's usernameless door, as
+// contracts.PasskeyDoor (contracts/passkeys.go says why that is a second interface
+// and not a method on Passkeys).
+//
+// It is a second value and not a second return of New because New is what every
+// composition already calls and a door it may not have is a field nothing reads.
+// The answer comes from the same row, by the same method, that BeginPasskeySignIn
+// and FinishPasskeyAssertion act on, so a screen that asked here cannot be shown
+// a door the ceremony then refuses.
+func NewPasskeyDoor() contracts.PasskeyDoor { return internal.NewPasskeyDoor() }
+
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
-func Module(deps Deps) (contracts.Auth, module.Module) {
+func New(deps Deps) (contracts.Auth, module.Module) {
 	if deps.EmailRegistration != nil {
 		if deps.Registration != nil || deps.ApprovalRegistration != nil {
 			panic("auth: choose only one registration lifecycle")
@@ -112,7 +211,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
-		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure,
+		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
 	})
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
@@ -121,11 +220,20 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
-		Events:      contracts.Events,
+		Declared:    contracts.Events,
 		// The one entry, and the shell serves it: a role is keyed by its name
 		// rather than by an id, so no generated screen could answer this path
 		// and modules/admin writes the page. The two routes below are what it
 		// is a face for. See modules/admin/internal/roles.go.
+		// One nav entry, and deliberately only one. The session list is the
+		// caller's own — the routes reach it through the credential and no
+		// permission — and kit/module.Validate refuses an entry that names no
+		// permission, because a link everybody sees is still a decision somebody
+		// has to own. Borrowing role:manage would be the wrong decision twice
+		// over: it hides the screen from the members it is for and it would put
+		// an administrator's own list under a permission they hold for other
+		// people's rows. So the manifest says nothing here, and the product whose
+		// navigation this is names the entry beside the permission it seeds.
 		Nav: []module.NavEntry{
 			{Label: "Roles", Screen: "auth/roles", Permission: contracts.PermissionRoleManage},
 		},
@@ -147,7 +255,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
-				return svc.Offer(ctx, tx, invited.UserID)
+				return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
 			},
 		}, {
 			Module: "auth", Name: contracts.EventResetRequested,
@@ -156,7 +264,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 					return fmt.Errorf("auth: read the reset request: %w", err)
 				}
-				return svc.Reissue(ctx, tx, asked.Email)
+				return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
 			},
 		}},
 		Routes: func(s httpx.Surfaces) {
@@ -165,6 +273,37 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// roles name a permission nothing defines any more.
 			svc.Declare(s.Permissions())
 			internal.RegisterRoutes(s, svc, cookies)
+			// A person's own keys, mounted always: unlike the factor routes
+			// there is no secret this needs from the deployment — the token is
+			// the secret, and it is hashed rather than sealed because it is
+			// never read back.
+			internal.RegisterTokenRoutes(s, svc)
+			// The factor key is the gate, and it is a deployment's setting
+			// rather than a fact about which other modules were composed: a
+			// composition with the key mounts the routes, one without it does
+			// not, and nothing here looks at a module list to decide.
+			// The factor routes are mounted whether or not the deployment set a
+			// key, and with none they answer 503 — the refusal the spec names,
+			// and the reason they are not mounted conditionally: an operation
+			// that exists only sometimes leaves its four events declared and
+			// unreachable, which the application's own catalogue check (every
+			// declared event has a channel) is right to call a lie. A deployment
+			// without a key is told the door is shut rather than being handed a
+			// 404 that says nothing about why.
+			svc.EnableFactors([]byte(deps.FactorKey))
+			internal.RegisterFactorRoutes(s, svc, cookies)
+			// The passkey half mounts always and unconditionally, and it is not
+			// gated on the factor key: a passkey writes no secret, so a deployment
+			// with no key has nothing it cannot do here. What gates the usernameless
+			// door is that tenant's own row in passkey_settings, read per request in
+			// the transaction the host resolved it in — a capability of the tenant,
+			// never a module list and never a deployment setting. With no row
+			// anywhere, which is every installation until somebody writes one, that
+			// door answers 403 with the reason and every other door behaves as it did
+			// before this file existed. The relying party's display name is the tenant's
+			// own row's Name, so Deps carries no installation-wide name for a platform
+			// prompt and nothing here is a fact about one customer.
+			internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)
 			}
@@ -174,9 +313,22 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			if deps.EmailRegistration != nil {
 				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
 			}
-			if deps.OIDC.Issuer != "" {
-				internal.RegisterOIDCRoutes(s, svc, deps.Users,
-					internal.NewProvider(deps.OIDC, cookies, secure))
+			// The gate is "can any tenant here reach a provider", which is the
+			// installation's issuer or the port that resolves one per tenant —
+			// not the installation's issuer alone, which would refuse to mount
+			// the two legs for a deployment whose providers are all per-tenant.
+			if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
+				internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
+					internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
+			}
+			// The gate is the same shape as OIDC's and has one clause less: there is
+			// no installation-level SAML default to ask about, so "can any tenant here
+			// reach an IdP" is answered by the port alone. A composition with no
+			// tenant module — and so no provider to resolve — mounts no /saml/ route,
+			// rather than three doors that would answer 404 for everybody.
+			if deps.SAMLProviders != nil {
+				internal.RegisterSAMLRoutes(s, svc, deps.Users, deps.Provisioner,
+					internal.NewSAMLProvider(cookies, secure, deps.SAMLProviders))
 			}
 		},
 	}
@@ -189,10 +341,13 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 	return svc, manifest
 }
 
-// permissions is what the manifest declares: one, guarding the two roles
-// routes. Every other route here is about the caller themselves. See
-// contracts/permissions.go.
-var permissions = []module.Permission{{Key: contracts.PermissionRoleManage}}
+// permissions is what the manifest declares: two, guarding the two roles routes
+// and the one route that opens the usernameless door. Every other route here is
+// about the caller themselves. See contracts/permissions.go.
+var permissions = []module.Permission{
+	{Key: contracts.PermissionRoleManage, Label: "manage roles"},
+	{Key: contracts.PermissionPasskeySignIn, Label: "let a passkey sign people in alone"},
+}
 
 // SeedRoles provisions a newly created tenant through auth's own storage path,
 // independently of sessions, delivery and periodic jobs. Existing role grants

@@ -1,0 +1,110 @@
+{
+  "hints.billing/plan.enum.interval.month": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Mensal",
+    "plural": {
+      "": "Mensal"
+    }
+  },
+  "hints.billing/plan.enum.interval.year": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Anual",
+    "plural": {
+      "": "Anual"
+    }
+  },
+  "hints.billing/plan.field.features.help": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "O que a pessoa recebe neste plano",
+    "plural": {
+      "": "O que a pessoa recebe neste plano"
+    }
+  },
+  "hints.billing/plan.field.features.label": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Inclui",
+    "plural": {
+      "": "Inclui"
+    }
+  },
+  "hints.billing/plan.field.interval.label": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Período de cobrança",
+    "plural": {
+      "": "Período de cobrança"
+    }
+  },
+  "hints.billing/plan.field.priceCents.label": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Preço",
+    "plural": {
+      "": "Preço"
+    }
+  },
+  "hints.billing/plan.group.billing": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Faturação",
+    "plural": {
+      "": "Faturação"
+    }
+  },
+  "hints.billing/plan.plural": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "planos",
+    "plural": {
+      "": "planos"
+    }
+  },
+  "hints.billing/plan.singular": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "plano",
+    "plural": {
+      "": "plano"
+    }
+  },
+  "permission.billing:catalog": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "gerir o catálogo de planos",
+    "plural": {
+      "": "gerir o catálogo de planos"
+    }
+  },
+  "permission.billing:manage": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "gerir a faturação",
+    "plural": {
+      "": "gerir a faturação"
+    }
+  },
+  "permission.billing:read": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "ler a faturação",
+    "plural": {
+      "": "ler a faturação"
+    }
+  }
+}

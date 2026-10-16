@@ -37,9 +37,11 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -51,7 +53,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -103,6 +107,27 @@ type Entitler interface {
 // Options are the collaborators main chooses for the HTTP layer. Every field
 // except Log, PublicHost and Docs is required: an API missing one of them could
 // only fail closed on every request, which is worse than failing at New.
+// Denial is one refused authorization, as Options.Denied receives it: who was
+// refused, in which tenant, at which operation, and why — the code is the first
+// word of the refusal's detail, the same machine-readable reason the response and
+// the log line carry, and RequestID joins it to both.
+type Denial struct {
+	Status int
+	Code   string
+	Detail string
+	Method string
+	Path   string
+	// Permission and Label are the grant that was missing, when the refusal was
+	// about a grant: the trail has to answer "which permission did they lack"
+	// without the request id and a log line.
+	Permission string
+	Label      string
+	Operation  string
+	RequestID  string
+	Tenant     tenancy.Tenant
+	Principal  tenancy.Principal
+}
+
 type Options struct {
 	// PublicHost is the host the application believes it is reached at. It
 	// names the server in the OpenAPI document; the tenant of a request always
@@ -121,7 +146,24 @@ type Options struct {
 	Tenants TenantLoader
 
 	// Conn is the application connection every request transaction opens on.
+	//
+	// It may be nil exactly when Unwired is set. Every other build of an API is a
+	// build that intends to serve, and serving without a connection is a request
+	// that panics instead of a composition that was refused. An unwired build that
+	// will serve gets its connection from Connect; one that will not is thrown away
+	// once the gates have answered.
 	Conn *db.Conn
+
+	// Unwired records that this API is built while the deployment has opened
+	// nothing: the routes are registered so the gates can read them, and the API is
+	// then either thrown away (a gate pass, see app.Declarations) or handed its
+	// connection and its store by Connect before anything can reach it (the build
+	// that will serve). What the flag buys is the thing it is there for: a build
+	// that answers a question about its own routes without a pool, a migration or a
+	// dial of the store the deployment named — and, for the build that serves, the
+	// same answer about the last registration of its routes rather than only the
+	// first three. Kit/app is the only caller that sets it.
+	Unwired bool
 
 	// Authorize answers the permission questions the declarations ask.
 	Authorize Authorizer
@@ -170,6 +212,17 @@ type Options struct {
 	// test that mounts one is not testing the ceiling.
 	MaxUpload int64
 
+	// Denied is told about every refused authorization that has somebody to
+	// attribute it to — a signed-in principal in a resolved tenant — after the
+	// refusal is written. The composition records it (kit/app publishes
+	// security.denied, which modules/audit keeps), so a denial is an audit row
+	// and an event rather than a log line. An anonymous refusal is not passed:
+	// a stranger at the door has no account to attribute it to, and a hook
+	// that wrote a row per anonymous request would turn every probe into a
+	// database write. Nil records nothing. It must not panic and its error is
+	// its own to report; the caller's answer is already decided.
+	Denied func(ctx context.Context, d Denial)
+
 	// Installation is the host the installation itself is reached at — the one
 	// address that serves the control plane (the Ops surface). It is a
 	// composition's fact and not a tenant's: no TenantLoader answers it, because
@@ -193,16 +246,71 @@ type Options struct {
 	// survive the refusal that followed it. That is the same argument the auth
 	// module makes for its lockout.
 	WriteLimiter WriteLimiter
+
+	// Idempotency is the memory behind a caller's `Idempotency-Key`: the write it
+	// made, and the answer it was given. Nil remembers nothing, and every write
+	// then runs as it did before the header existed — the same shape as a
+	// composition with no WriteLimiter, and for the same reason: a deployment that
+	// mounts no keyed route, and a test that mounts one route, are not testing a
+	// memory.
+	//
+	// It is the store rather than a middleware because the promise is about the
+	// next request and often the next process: a retry arrives at whichever replica
+	// the load balancer chose, after a deploy that emptied every map in the fleet.
+	// kit/idempotency is that store; what this package does is decide which requests
+	// are keyed and what each disposition answers with.
+	Idempotency idempotency.Store
+
+	// Access is the sequel to a refusal: who to tell when a person asks for the
+	// grant they were refused, and how. Nil draws no ask control on the refusal
+	// page and mounts no ask route — the reach is another module's rows, so a
+	// composition that wires none offers no door rather than one that 404s.
+	Access AskForAccess
+
+	// Accessed is the kernel's record of one ask, in the request's own transaction
+	// beside the notices it wrote: kit/app publishes the event, which is where the
+	// payload types and the module catalogue live. Its failure is the ask's failure —
+	// an event that did not commit rolls the notices back with it — so a composition
+	// that cannot write the trail refuses the ask rather than answering 202.
+	Accessed func(context.Context, AccessRecord) error
+
+	// Cache is where a resolved host is believed, and it is required: a belief this
+	// package holds about which tenant a host is, and that it can be told to stop
+	// holding (modules/tenant does exactly that when it suspends a customer), is not
+	// this process's own business. The in-process store is a complete answer for one
+	// process and the same adapter every test runs on — kit/app builds it when the
+	// deployment names no server — but it has to be named, because a shared value
+	// that silently became a map is a suspension that stops reaching the other
+	// replicas and nobody notices until a suspended customer is still serving.
+	Cache cache.Cache
 }
 
-// WriteLimiter is the counting this kernel asks for and nothing more: it is the
-// shape one method wide, declared by the consumer rather than imported from the
-// provider, so that a page renderer that reaches for the router does not
-// inherit a dependency on how the counting is stored. kit/limit's Limiter
-// satisfies it — a Postgres counter or an in-memory one, at the composition's
-// choice — and a test satisfies it with a counter.
+// WriteLimiter is the counting this kernel asks for and nothing more: declared by
+// the consumer rather than imported from the provider, so that a page renderer that
+// reaches for the router does not inherit a dependency on how the counting is
+// stored. kit/limit's Limiter satisfies it — a Postgres counter or an in-memory one,
+// at the composition's choice — and a test satisfies it with a counter. It is one
+// method wide, and the signature is written out rather than named after kit/limit's
+// own type because this package does not import kit/limit and must not: scripts/
+// check_packages.sh keeps the counter behind the composition, so a screen that wants
+// a limit does not link the table that stores one.
+//
+// One method, and one reading, because this package now says a limit's numbers on
+// the wire. `RateLimit-Policy` is the name, quota and window the guard was built
+// with, and costs no statement. `RateLimit`'s `r` and `t` are the quota left and the
+// window left, and those are facts of the attempt this guard just made: read
+// separately, from a second statement, they describe a row another request has since
+// moved, which is a number the caller has no reason to believe. So the decision and
+// the two numbers come back from the one statement that recorded the event, and this
+// port has one method rather than a decision and a read.
 type WriteLimiter interface {
-	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
+	// Reserve records one event under key and reports, from that one statement,
+	// whether the event is within limit (the limit-th is allowed and the one after it
+	// is not), how much of limit is left in the window it landed in, and how long that
+	// window has left. The last two are reported on an allowed event as well as a
+	// refused one: the caller who is still inside the quota is the one a stated number
+	// can keep from ever arriving at the refusal.
+	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 }
 
 // The two body ceilings, and the reason there are two.
@@ -240,6 +348,9 @@ func StreamedBody() (string, any) { return StreamedBodyExtension, true }
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
+	// moved is this composition's own migration rows (API.Alias), asked after the
+	// kernel's table in aliases.go.
+	moved []struct{ from, to string }
 	// api is the recording huma.API. It is unexported because an exported one
 	// is a door: huma.Register(api.API, ...) used to reach the bare adapter,
 	// which the recording — and therefore the boot gate — never saw.
@@ -253,13 +364,16 @@ type API struct {
 	inner  *chi.Mux
 	opts   Options
 	log    *slog.Logger
-	hosts  *hostCache
 	token  tenancy.SystemToken
 	lazy   tenancy.SystemToken
 	system tenancy.SystemToken
 	// resolving collapses concurrent lookups of one host into one query, so a
 	// cold cache under load is one round trip and not one per request.
 	resolving singleflight.Group
+
+	// access is the ask-for-access door, built once from Options and put on every
+	// request's context by carry. Nil means this composition offers no way to ask.
+	access *accessDoor
 
 	mu       sync.Mutex
 	ops      []*huma.Operation
@@ -295,12 +409,14 @@ func New(cfg Options) (*API, *chi.Mux) {
 	switch {
 	case cfg.Tenants == nil:
 		panic("httpx.New: Options.Tenants is required; every request resolves a tenant from its host")
-	case cfg.Conn == nil:
-		panic("httpx.New: Options.Conn is required; every tenant request runs in a transaction")
+	case cfg.Conn == nil && !cfg.Unwired:
+		panic("httpx.New: Options.Conn is required, or Options.Unwired and a call to Connect; every tenant request runs in a transaction")
 	case cfg.Authorize == nil:
 		panic("httpx.New: Options.Authorize is required; Permission declarations have nothing to ask otherwise")
 	case cfg.Authenticate == nil:
 		panic("httpx.New: Options.Authenticate is required; SignedIn declarations have nobody to recognise otherwise")
+	case cfg.Cache == nil:
+		panic("httpx.New: Options.Cache is required; a host resolution cached here must be one every replica can forget")
 	}
 
 	// One error shape for the whole API, assigned where the API is built rather
@@ -310,6 +426,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	errorShape.Do(func() { huma.NewError = problem.HumaError })
 
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
+	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}
 	}
@@ -325,10 +442,18 @@ func New(cfg Options) (*API, *chi.Mux) {
 		inner:  inner,
 		opts:   cfg,
 		log:    cfg.Log,
-		hosts:  &hostCache{hosts: map[string]hostEntry{}},
 		token:  syscap.NewSystemToken("tenant resolution"),
 		lazy:   syscap.NewSystemToken("request transaction"),
 		system: syscap.NewSystemToken("a module's control-plane routes"),
+	}
+	if cfg.Access != nil {
+		// One door, read per request off the context: the catalogue and the
+		// limiter belong to the API, the reach belongs to the composition, and the
+		// two page and JSON routes call the same command (docs/adr/0007).
+		a.access = &accessDoor{
+			ask: cfg.Access, limiter: cfg.WriteLimiter, record: cfg.Accessed,
+			catalogue: a.Permissions,
+		}
 	}
 	if a.log == nil {
 		a.log = slog.Default()
@@ -349,7 +474,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// answered ahead of the headers was distinguishable from an unmounted address
 	// by five response headers, which is the one fact it exists to hide. See
 	// surfaces.go and headers.go.
-	root.Use(a.requestID, a.surface, a.headers, a.address)
+	root.Use(tracing, a.requestID, a.surface, a.headers, a.address)
 
 	// What chi itself answers when nothing matched, or matched but not for this verb.
 	//
@@ -406,12 +531,56 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
+	// Idempotency last of all, after bodies, because it is the one guard that reads
+	// a body and needs the one the caller got, in that order: bodies is where the
+	// ceiling on a request body is applied and where reading one becomes safe, and
+	// authenticate and authorize are where the caller is named and checked, which a
+	// replay has to satisfy all over again before it is answered. It is below
+	// transaction because the answer it remembers is finalised even further below,
+	// in respond — a guard above the transaction would remember a 200 that the
+	// buffer then replaced with a 500.
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies, a.idempotency)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
 	root.Mount("/", inner)
 	return a, root
+}
+
+// Connect hands an unwired API the two things its deployment opens after its
+// routes are built: the connection every request transaction opens on, and the
+// store a resolved host is believed in. kit/app.Start is its only caller, and the
+// reason it exists is the ordering decision 0074 rule 1 makes: which routes the
+// modules mounted is the last thing a composition can get wrong for free, and the
+// pool and the shared store are the first things it spends. An API therefore
+// registers its routes and answers every gate over them before either is dialled,
+// and the connection arrives here, after the last registration and before anything
+// can listen.
+//
+// Nothing is re-mounted. Both values are read per request and neither while a
+// route is being mounted, so the middleware chain, every operation, every page and
+// every static tree is the one the gates read; the OpenAPI document is unchanged.
+// The in-process store the build was handed is left for its owner to close — it
+// belongs to the build, not to this API — and from this call every host resolution
+// is believed in the store every replica can forget, which is the store the
+// deployment named and not the one a build that might still be refused invented.
+//
+// A nil connection, a nil store and a second call on an API that already has a
+// connection are all refused: the first two describe an API that could only fail
+// closed on every request, and the third is two deployments' connections in one
+// router, one of which somebody closes while the other is still serving.
+func (a *API) Connect(conn *db.Conn, store cache.Cache) error {
+	switch {
+	case conn == nil:
+		return errors.New("httpx.Connect: the connection is required; a request transaction opens on it")
+	case store == nil:
+		return errors.New("httpx.Connect: the store is required; a host resolution this package holds has to be one every replica can forget")
+	case a.opts.Conn != nil:
+		return errors.New("httpx.Connect: this API already has a connection; a second one is a second deployment in one router")
+	}
+	a.opts.Conn = conn
+	a.opts.Cache = store
+	return nil
 }
 
 // methodNotAllowed answers an address that is served but does not take this
@@ -491,6 +660,13 @@ type recordingAdapter struct {
 func (r *recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if r.builtin && op != nil {
 		declare(op, Public())
+	}
+	// The document says what the middleware does, on the same operation both of them
+	// read: a POST or PATCH that can be replayed declares the header that makes it
+	// replayable, and a client reading the document learns the option from the place
+	// it is already reading the request's other parameters.
+	if declaresKey(op) {
+		declareKey(op)
 	}
 	r.api.record(op)
 	r.Adapter.Handle(op, handler)
@@ -646,4 +822,24 @@ func describe(op *huma.Operation) string {
 		return op.Method + " " + op.Path
 	}
 	return op.Method + " " + op.Path + " (" + op.OperationID + ")"
+}
+
+// schemaNamer is huma's own namer with one concession, and the concession is
+// the language overlay's: a translated page's body *is* the page's body — the
+// same items, the same paging, the same total — and the overlay adds a header
+// and answers a query parameter, not a member. Left alone, huma names the
+// anonymous struct behind a translated page after its parent, so the same
+// document shape would be published twice under "PageContentBody" and
+// "TranslatedPageContentBody": a client generator would emit two types for one
+// wire object, and this repository's own OpenAPI gate (rule B3) reads a renamed
+// schema where no member moved. Only unnamed struct hints are rewritten: they
+// are generated from the parent's name and are the overlay's whole footprint,
+// while named types — a TranslateBody that genuinely is a new shape — keep
+// whatever name the type itself states.
+func schemaNamer(t reflect.Type, hint string) string {
+	name := huma.DefaultSchemaNamer(t, hint)
+	if t.Name() == "" {
+		name = strings.TrimPrefix(name, "Translated")
+	}
+	return name
 }

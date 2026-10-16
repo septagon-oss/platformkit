@@ -24,34 +24,88 @@ git cat-file -e "$base^{commit}"
 # ceilings. Removing a bucket or changing what it measures also needs review.
 base_loc="$(git show "$base:loc-budget.json")"
 head_loc="$(cat loc-budget.json)"
-problems="$(jq -nr --argjson base "$base_loc" --argjson head "$head_loc" '
+# A ceiling that moved and a ceiling that no longer measures what it measured are two verdicts, so
+# they are collected apart: the first is a decision an owner can take and a `build(budget):` commit
+# can price, the second is never excused. Every moved ceiling is kept as one `file|name|from|to`
+# row, which is what lets the accept verdict and the refuse verdict say the same two numbers in
+# different words.
+hard_problems="$(jq -nr --argjson base "$base_loc" --argjson head "$head_loc" '
     $base.buckets[] as $before
     | [$head.buckets[] | select(.name == $before.name)] as $after
     | if ($after | length) != 1 then
         "loc-budget.json: bucket \($before.name) was removed or duplicated"
       elif ($before | del(.max)) != ($after[0] | del(.max)) then
         "loc-budget.json: measurement changed for \($before.name)"
-      elif $after[0].max > $before.max then
-        "loc-budget.json: \($before.name) raised from \($before.max) to \($after[0].max)"
       else empty end
+')"
+moved="$(jq -nr --argjson base "$base_loc" --argjson head "$head_loc" '
+    $base.buckets[] as $before
+    | ([$head.buckets[] | select(.name == $before.name)] | .[0]) // empty
+    | select(.max > $before.max)
+    | "loc-budget.json|\($before.name)|\($before.max)|\(.max)"
 ')"
 if git cat-file -e "$base:packages-budget.json" 2>/dev/null; then
 	base_packages="$(git show "$base:packages-budget.json")"
 	head_packages="$(cat packages-budget.json)"
-	package_problem="$(jq -nr --argjson base "$base_packages" --argjson head "$head_packages" '
+	package_moved="$(jq -nr --argjson base "$base_packages" --argjson head "$head_packages" '
         if ($base.packages | type) != "number" or ($head.packages | type) != "number" then
             error("packages-budget.json: packages must be a number")
         elif $head.packages > $base.packages then
-            "packages-budget.json: raised from \($base.packages) to \($head.packages)"
+            "packages-budget.json||\($base.packages)|\($head.packages)"
         else empty end
     ')"
-	if [ -n "$package_problem" ]; then
-		problems="${problems:+$problems$'\n'}$package_problem"
+	if [ -n "$package_moved" ]; then
+		moved="${moved:+$moved$'\n'}$package_moved"
+	fi
+fi
+problems="$hard_problems"
+raised=''
+while IFS='|' read -r file name from to; do
+	[ -n "$file" ] || continue
+	raised="${raised:+$raised$'\n'}$file: ${name:+$name }raised from $from to $to"
+done <<< "$moved"
+if [ -n "$raised" ]; then
+	problems="${problems:+$problems$'\n'}$raised"
+fi
+# CONTRIBUTING.md's "separate owner budget commit before the implementation", made checkable: a raise
+# passes when every commit between the base and HEAD that touches a budget file is a `build(budget):`
+# commit touching nothing else, so the raise stands alone in history where a reviewer reads it. A removed
+# bucket or a changed measurement is never excused this way. CI checks out with fetch-depth 0; history
+# that cannot be read refuses.
+budget_files='loc-budget.json packages-budget.json'
+if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from '; then
+	if ! touched="$(git rev-list --no-merges "$base..HEAD" -- $budget_files 2>/dev/null)"; then
+		echo 'budget ratchet: the history between the base and HEAD cannot be read' >&2
+		exit 2
+	fi
+	unreviewed=''
+	for commit in $touched; do
+		subject="$(git log -1 --format=%s "$commit")"
+		others="$(git diff-tree --no-commit-id --name-only -r "$commit" | grep -vxE 'loc-budget\.json|packages-budget\.json' || true)"
+		if [[ "$subject" != build\(budget\):* ]] || [ -n "$others" ]; then
+			unreviewed="${unreviewed}${unreviewed:+$'\n'}${commit:0:12} ${subject}"
+		fi
+	done
+	if [ -n "$touched" ] && [ -z "$unreviewed" ]; then
+		# An accepted raise is printed in the accept verdict's own words, never in the refusal's. Both
+		# verdicts have to name the same two numbers, so nothing is hidden here; what changed is that only
+		# a refusal still reads "raised from N to N". This step prints the last lines a CI job writes, and
+		# a reader that triages a red run by pattern quotes any line in that shape as one of its failures —
+		# which is how four ceilings an owner had priced came to be reported as refusals of this branch.
+		# A verdict that cannot be told from its opposite in the log is the defect.
+		while IFS='|' read -r file name from to; do
+			[ -n "$file" ] || continue
+			echo "$file: ${name:+$name }ceiling $from -> $to is priced in its own build(budget) commit"
+		done <<< "$moved"
+		echo "budget ratchet: the raises above stand alone in build(budget) commits: $(printf '%s ' $touched | cut -c1-200)"
+		problems=''
+	elif [ -n "$unreviewed" ]; then
+		problems="${problems}"$'\n'"budget ratchet: these commits change a budget file and are not a build(budget) commit touching only budget files:"$'\n'"${unreviewed}"
 	fi
 fi
 if [ -n "$problems" ]; then
 	printf '%s\n' "$problems" >&2
-	echo 'Budget changes require a separate owner review; this change does not preserve the baseline.' >&2
+	echo 'Budget changes require their own build(budget) commit, touching only budget files, reviewed apart from the change; this change does not preserve the baseline.' >&2
 	exit 1
 fi
 echo "budgets preserve the reviewed ceilings at $base"

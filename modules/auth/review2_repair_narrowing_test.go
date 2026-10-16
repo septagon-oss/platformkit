@@ -47,7 +47,7 @@ var (
 // the same run does remove, so the case cannot pass by the repair doing nothing.
 func TestTheRepairLeavesTheAdministratorOfACustomersTenant(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	acme := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 
 	seedForRepair(t, conn, acme)
@@ -85,7 +85,7 @@ func TestTheRepairLeavesTheAdministratorOfACustomersTenant(t *testing.T) {
 // the same run.
 func TestTheRepairLeavesAnAdministratorRowThatLostItsWildcard(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	operator := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
 
 	seedForRepair(t, conn, operator)

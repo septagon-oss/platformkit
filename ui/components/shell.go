@@ -51,7 +51,10 @@ func Shell(p ShellProps, slots ShellSlots) g.Node {
 		h.Div(h.Class(clShellColumn.Compile()),
 			h.Header(h.Class(clShellHeader.Compile()), g.Group(slots.Header)),
 			h.Main(h.ID(target), h.Class(clShellMain.Compile()), g.Group(slots.Main)),
-			h.Footer(h.Class(clShellFooter.Compile()), g.Group(slots.Footer)),
+			// The bound lives on a wrapper rather than on the footer: clShellFooter's top border is the
+			// frame's rule and spans the column, and a max-width on the footer would cut its own rule.
+			h.Footer(h.Class(clShellFooter.Compile()),
+				h.Div(h.Class(clShellFooterMeasure.Compile()), g.Group(slots.Footer))),
 		),
 	)
 	return h.Div(nodes...)
@@ -128,6 +131,23 @@ func FormActions(p FormActionsProps, children ...g.Node) g.Node {
 	nodes := baseAttrs(p.ComponentProps)
 	nodes = append(nodes, classes(clFormActions.Compile(), p.Class))
 	return h.Div(append(nodes, children...)...)
+}
+
+// FormSentenceProps is one sentence of the form's own copy: the consequence a
+// caller states above its button, rather than a field's label or help line.
+type FormSentenceProps struct {
+	ComponentProps
+	Text string
+}
+
+// FormSentence renders that sentence at the form's text scale and the bounded
+// measure every sentence on a generated page keeps. The confirm dialog writes the
+// same sentence into a frame that is already narrow; a form has no frame to
+// borrow, so the measure travels with the sentence and not with the caller.
+func FormSentence(p FormSentenceProps) g.Node {
+	nodes := baseAttrs(p.ComponentProps)
+	nodes = append(nodes, classes(clFormSentence.Compile(), p.Class))
+	return h.P(append(nodes, g.Text(p.Text))...)
 }
 
 // ConfirmDialogProps is the one dialog on the page that every destructive

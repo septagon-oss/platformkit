@@ -33,6 +33,8 @@ package httpx
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -74,6 +76,11 @@ const (
 	OpsRoot           = "/ops"
 	catalogPath       = apiRoot + "/app/resources"
 	publicJSONSegment = "public"
+	// opsJSONSegment is the control plane's segment of the JSON address. It is a
+	// name rather than a literal because the surface question is asked in two places
+	// — here, where the address is composed, and kit/httpx/idempotency.go, which
+	// decides what the document declares and can only read the address.
+	opsJSONSegment = "ops"
 )
 
 // classify is the whole of "which surface is this request on". It reads the
@@ -95,10 +102,20 @@ const (
 //     is safe: it parses no session, sets no cookie, and can hold no route that
 //     needs a principal, because R1 refuses those at mount. A route that lands
 //     here by accident loses powers rather than gaining them.
+//
+// isOpsPath is the whole of "the control plane's own address", said once: the
+// request path reads it to decide which chain to run, and kit/httpx/idempotency.go
+// reads the same sentence to decide what the document declares a header on. Two
+// spellings of it is how a route ends up served under one rule and documented under
+// another.
+func isOpsPath(path string) bool {
+	return path == OpsRoot || strings.HasPrefix(path, OpsRoot+"/") ||
+		strings.HasPrefix(path, apiRoot+"/ops/")
+}
+
 func classify(path string) Surface {
 	switch {
-	case path == OpsRoot || strings.HasPrefix(path, OpsRoot+"/") ||
-		strings.HasPrefix(path, apiRoot+"/ops/"):
+	case isOpsPath(path):
 		return SurfaceOps
 	case path == AppRoot || strings.HasPrefix(path, AppRoot+"/") ||
 		strings.HasPrefix(path, apiRoot+"/app/"):
@@ -330,6 +347,46 @@ func (r *Router) Static(rel string, fsys fs.FS) {
 	r.api.root.Handle(at+"/*", http.StripPrefix(at, r.api.tree(fsys)))
 }
 
+// assetCaching is the static-asset row of docs/cache.md, for one file of a kernel tree.
+//
+// A kernel asset is the same bytes for every person and every tenant of a process,
+// so the session rule does not apply to it, and the surface's own answer was the
+// wrong one twice over: the workspace sent its stylesheet and its controllers
+// no-store, so every page view downloaded them again, and the public face let a
+// cache keep them for a minute with nothing to revalidate against. Now every file
+// carries an ETag that is its content — the same first eight bytes of SHA-256 that
+// ui.Sheet puts in the stylesheet's `?v=` — so a revalidation that finds it unchanged
+// is a 304 (net/http answers If-None-Match from this header), and a request whose
+// `?v=` names exactly those bytes may be kept for a year, immutable, because a
+// different body would have a different address. The hash is taken per request:
+// the files are small and a tree may be a directory that changes under a developer.
+func assetCaching(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) {
+	body, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return // the surface's own answer stands; the file server reports the error
+	}
+	sum := sha256.Sum256(body)
+	tag := hex.EncodeToString(sum[:8])
+	h := w.Header()
+	h.Set("ETag", `"`+tag+`"`)
+	if r.URL.Query().Get("v") == tag {
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		h.Set("Cache-Control", "no-cache")
+	}
+	for writer := w; writer != nil; {
+		if marker, ok := writer.(interface{ markStatic() }); ok {
+			marker.markStatic()
+			break
+		}
+		unwrapper, ok := writer.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		writer = unwrapper.Unwrap()
+	}
+}
+
 // tree is a mounted file tree inside its surface's chain, including where it
 // answers nothing.
 //
@@ -357,6 +414,7 @@ func (a *API) tree(fsys fs.FS) http.Handler {
 			a.fail(w, r, http.StatusNotFound, "nothing is served at this address")
 			return
 		}
+		assetCaching(w, r, fsys, name)
 		files.ServeHTTP(w, r)
 	})
 }
@@ -390,10 +448,15 @@ func (r *Router) staticFault(rel string) string {
 // Routes receives is now the only thing it holds.
 func (r *Router) SystemToken() tenancy.SystemToken { return r.api.SystemToken() }
 
-// InvalidateHost forgets a cached host resolution, so a rename or a suspension
-// takes effect now rather than within the cache's own TTL. The tenant module
-// calls it; nothing else has a host to forget.
-func (r *Router) InvalidateHost(host string) { r.api.InvalidateHost(host) }
+// InvalidateHost forgets cached host resolutions, so a rename, a suspension or a
+// new language declaration takes effect now rather than within the cache's own
+// lifetime. The tenant module calls it; nothing else has a host to forget.
+//
+// However many hosts it names, the call is one Move of the host namespace, because
+// an invalidation that only deletes what is there loses the load that raced it. It
+// returns the store's error: unwinding the committed write that precedes it is the
+// worse outage, and so is answering as though every replica had already forgotten.
+func (r *Router) InvalidateHost(hosts ...string) error { return r.api.InvalidateHost(hosts...) }
 
 // The two prefixes of the table. A surface with no document prefix refuses
 // HTML at the door (R6), which is why the table has a hole in it rather than a
@@ -408,7 +471,7 @@ func (r *Router) jsonPrefix() string {
 		case SurfacePublic:
 			return join(apiRoot, publicJSONSegment)
 		case SurfaceOps:
-			return join(apiRoot, "ops")
+			return join(apiRoot, opsJSONSegment)
 		}
 		return join(apiRoot, "app")
 	}
@@ -416,7 +479,7 @@ func (r *Router) jsonPrefix() string {
 	case SurfacePublic:
 		return join(apiRoot, publicJSONSegment, r.module)
 	case SurfaceOps:
-		return join(apiRoot, "ops", r.module)
+		return join(apiRoot, opsJSONSegment, r.module)
 	}
 	return join(apiRoot, r.module)
 }
@@ -580,7 +643,7 @@ func (a *API) surface(next http.Handler) http.Handler {
 // answer: the verdict is this middleware's and the response is the host's.
 func (a *API) address(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if to, ok := alias(r.URL.Path); ok {
+		if to, ok := a.alias(r.URL.Path); ok {
 			target := to
 			if r.URL.RawQuery != "" {
 				target += "?" + r.URL.RawQuery
@@ -636,7 +699,17 @@ const (
 	publicWriteLimit  = 60
 	publicWriteWindow = time.Minute
 	publicWriteKey    = "httpx/public-write"
+
+	// publicWritePolicy is the same limit under the name the wire gives it. A policy
+	// name is part of what `RateLimit-Policy` promises to keep consistent across a
+	// sequence of responses, so it lives beside the numbers it is the quota of: a
+	// client that sees "public-writes" in one answer and "writes" in the next has been
+	// given two limits rather than one stated twice.
+	publicWritePolicyName = "public-writes"
 )
+
+// publicWritePolicy is the limit above, as a policy the response can name.
+var publicWritePolicy = limitPolicy{publicWritePolicyName, publicWriteLimit, publicWriteWindow}
 
 // MountedRoute is one route as the composition describes it: what a projection,
 // a boot log and a test read to know what is served where. It is a value rather
@@ -648,7 +721,8 @@ type MountedRoute struct {
 	OperationID string
 	Surface     Surface
 	// Auth is the declaration's own rendering: "public", "signed_in",
-	// "permission task:read", "operator_permission tenant:manage".
+	// "any_credential", "permission task:read", "operator_permission
+	// tenant:manage".
 	Auth string
 	// Module is the manifest name the route was mounted beneath.
 	Module string
@@ -763,6 +837,8 @@ func accepted(s Surface, auth Auth) (ok bool, why string) {
 			return false, "is mounted on the Public router and declares signed_in; the public surface resolves no session and sets no cookie, so nobody can satisfy it — mount it on the App router, or declare it Public()"
 		case kindPermission:
 			return false, fmt.Sprintf("is mounted on the Public router and declares permission %s; the public surface resolves no session and sets no cookie, so nobody can satisfy it — mount it on the App router, or declare it Public()", auth.permission)
+		case kindAnyCredential, kindBearerKey:
+			return false, "is mounted on the Public router and declares " + auth.String() + "; the public surface resolves no caller at all, so this door has nobody to admit — mount it on the App router, or declare it Public()"
 		default:
 			return false, fmt.Sprintf("is mounted on the Public router and declares operator_permission %s; the control plane is not a public page — mount it on the Ops router", auth.permission)
 		}
@@ -823,7 +899,7 @@ func (a *API) validateSurfaces() []string {
 		// nothing answers at the old address either. A route mounted there would
 		// be spent ahead of itself — the surfaces middleware answers the redirect
 		// first — so the module would ship a door nobody can open.
-		if to, moved := alias(m.path); moved {
+		if to, moved := a.alias(m.path); moved {
 			out = append(out, "httpx: "+where+" is mounted where the migration table redirects to "+to+
 				"; an alias is a redirect and not a second mount — mount the route at "+to+", or delete the row when the release that needs it is behind you")
 		}

@@ -208,6 +208,11 @@ leave_or_drop() {
 # the unprivileged role row-level security binds, which is why kit/db refuses to open
 # a superuser's connection for it. The migration step opens no application connection
 # at all, so a --dump rehearsal needs only the owner URL.
+#
+# The fourth argument, when given, is appended verbatim. Only the candidate is handed
+# one: the base revision decodes its configuration with KnownFields on and would
+# refuse a key that release never had, so what this release declares stays out of
+# that file.
 write_config() {
 	cat >"$1" <<YAML
 server:
@@ -225,6 +230,9 @@ log:
   # info, which is where the runner says what it applied and how long it took.
   level: "info"
 YAML
+	if [ -n "${4:-}" ]; then
+		printf '%s\n' "$4" >>"$1"
+	fi
 }
 
 stamp="$(date +%s)_${RANDOM}_$$"
@@ -282,7 +290,7 @@ apply_defaults() {
 	# on a cluster with no platformkit_app it skipped every grant, and the step restored,
 	# seeded, applied the release and printed `ok:` over a copy no application connection
 	# could reach — the copy this comment has always said the step is not measuring.
-	# `scripts/review15_rehearsal_dump_test.sh` stage 3 runs exactly that copy. Both
+	# `scripts/rehearsal_dump_test.sh` stage 3 runs exactly that copy. Both
 	# branches create the role before they call this, so a role missing by now is that
 	# promise broken, and a step that cannot build the copy it reports on exits 2.
 	role_exists || die 2 "no platformkit_app role on this cluster and none created: refusing to measure a copy whose tables the application role cannot reach"
@@ -323,7 +331,7 @@ restore() { # $1 = database, $2 = dump file (custom format or plain SQL)
 # file this step exists to price — was then applied to the copy by the binary the step
 # built, and reported under the name of a revision that does not contain it. The report
 # is the artefact a release reads, so it names the tree the run was built from, and
-# `scripts/review5_rehearsal_provenance_test.sh` runs this line over a repository holding
+# `scripts/rehearsal_provenance_test.sh` runs this line over a repository holding
 # one committed file and one uncommitted one. The test is on the captured text rather
 # than `| grep -q .`: this script runs under `pipefail`, and a `git status` whose output
 # fills the pipe before `grep -q` has its answer dies of SIGPIPE (141), which `&&` reads
@@ -344,7 +352,14 @@ if [ -n "$base" ]; then
 	src="$work/base-tree"
 	mkdir -p "$src"
 	git archive "$ref" | tar -x -C "$src"
-	(cd "$src" && go build -o "$work/platformkit-base" ./apps/platformkit) ||
+	# -buildvcs=false, because the exported tree carries no .git of its own and Go's
+	# stamping step dies before the compiler starts: `git rev-parse --git-dir` in the
+	# copy answers "not a git repository" with 128, which `go build` reports as
+	# "error obtaining VCS status" and refuses (measured on v1.1.0 on this machine,
+	# 2026-10-01 — the step had never been reached outside a working tree). The base
+	# binary exists to migrate and bootstrap the copy with that release's own runner;
+	# a build stamp naming *this* checkout would misreport which release built it.
+	(cd "$src" && go build -buildvcs=false -o "$work/platformkit-base" ./apps/platformkit) ||
 		die 2 "the base revision does not build; the copy has to be made by that release's own code, not by this one's"
 	write_config "$work/base.yaml" "$(with_database "$app_url" "$base")" "$(with_database "$admin_url" "$base")"
 	# bootstrap migrates the whole ledger with that revision's runner and then
@@ -422,7 +437,30 @@ watch_started=$(now_ms)
 psql "$run_url" -At -o "$waits" -f "$watch_sql" >/dev/null 2>&1 &
 watcher=$!
 
-write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url"
+write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
+  # The declaration this release asks an installation for, written the way an
+  # operator writes it: hosts and no nats.app, which is what this step has always
+  # handed the candidate, and the shape of a deployment that has not taken a slug.
+  # Read what that does to the one tenant the copy holds rather than assuming it.
+  # The migrate command of apps/platformkit always declares a slug, here the empty
+  # one, so 000043 stamps each row with the empty slug rather than leaving a NULL,
+  # and the empty-slug placement 000060 then finds nothing it may write and refuses
+  # nothing: a boot that named no app asserts nothing about whose anybody is, and a
+  # tenant left app-less belongs to nobody in particular. The guard, and its reason,
+  # are on that file. What this step measures is that upgrade: the release applies
+  # over an app-less database of the previous release size. An operator who names
+  # nats.app and app.hosts gets the placement, and a tenant its declaration cannot
+  # account for gets the sentence 000059 puts there, which names the tenant and
+  # writes nothing.
+  hosts:
+    - "rehearse.localhost"
+# The composition of this release names webhook.Module, and that module refuses to
+# be composed without the key wrapping an endpoint signing secret, so the candidate
+# needs the line. The base revision above is given none: that loader has never heard
+# of the key, and kit/config refuses a key it does not know. Thirty-two bytes of
+# this run, which no receiver anywhere verifies a delivery against.
+webhook:
+  secret_key: "0123456789abcdef0123456789abcdef"'
 set +e
 "$work/platformkit" migrate --drain --config "$work/run.yaml" >"$work/run.log" 2>&1
 code=$?
@@ -542,5 +580,37 @@ if [ "$code" -eq 0 ]; then
 	note "ok: ${applied} file(s) within ${max_file}s each and ${max_lock}ms of sampled lock waits, against a copy of ${base:-the dump}"
 else
 	note "failed: $findings finding(s); exit $code"
+fi
+
+# The receipt. A consumer that pins this module owes the rehearsal — its own
+# migrations run against its own data on this module's upgrade — and the one
+# fact it can hand its CI is that *this revision* was rehearsed. So the step
+# writes that fact where its caller can collect it, and writes it only on the
+# path where it is true. REHEARSE_RECEIPT is unset for a local run and an
+# artifact path in CI; scripts/check_pin_rehearsal.sh is the consumer's side of
+# the bargain and scripts/PIN-REHEARSAL.md is the document. No lock wait is
+# claimed per file, because none was measured per file: the watcher samples the
+# run, so max_lock_ms is the run's and it is named once.
+if [ "$code" -eq 0 ] && [ -n "${REHEARSE_RECEIPT:-}" ]; then
+	files=$(jq -R -r 'fromjson? // empty
+		| select(.msg == "db: applied migration" or .msg == "db: drained data migration")
+		| {owner: .owner, version: (.version | tostring), name: .name,
+		   phase: (.phase // "drain"), seconds: (.duration_ms / 1000)}' \
+		"$work/run.log" | jq -s .)
+	mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
+	jq -n --arg base_ref "$ref" \
+		--arg base_commit "$(git rev-parse --verify --quiet "${ref}^{commit}" || true)" \
+		--arg candidate_commit "$(git rev-parse HEAD)" \
+		--arg seed "$seed" \
+		--argjson files "$files" \
+		--argjson max_lock_ms "$lock_ms" \
+		--argjson samples "$samples" \
+		'{base_ref: (if $base_ref == "" then null else $base_ref end),
+		  base_commit: (if $base_commit == "" then null else $base_commit end),
+		  candidate_commit: $candidate_commit, seed: $seed, files: $files,
+		  max_lock_ms: $max_lock_ms, lock_samples: $samples,
+		  tool: "scripts/rehearse_migrations.sh", exit: 0}' >"$REHEARSE_RECEIPT" ||
+		die 2 "the receipt could not be written to $REHEARSE_RECEIPT"
+	note "receipt: $REHEARSE_RECEIPT for $(git rev-parse --short HEAD)"
 fi
 exit "$code"

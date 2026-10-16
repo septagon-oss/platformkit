@@ -247,7 +247,7 @@ func TestApprovalSignupRefusesAmbiguousOrInvalidComposition(t *testing.T) {
 			deps := auth.Deps{Users: realUsers()}
 			approvalSignup(&deps)
 			configure(&deps)
-			auth.Module(deps)
+			auth.New(deps)
 		}()
 	}
 }

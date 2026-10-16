@@ -75,15 +75,23 @@ func compose(t *testing.T) (config.Config, Options) {
 		// document is the composition's — kit may not import ui — so a test
 		// composition supplies one the way the product supplies screens.Describe.
 		// TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot reads it back.
-		WorkspaceCatalog: func(_ context.Context, resources []httpx.Resource) (any, error) {
+		WorkspaceCatalog: WorkspaceCatalogRoute(func(_ context.Context, resources []httpx.Resource) (*workspaceBody, error) {
 			names := make([]string, 0, len(resources))
 			for _, r := range resources {
 				names = append(names, r.Module+"/"+r.Entity)
 			}
-			return map[string]any{"resources": names}, nil
-		},
+			return &workspaceBody{Resources: names}, nil
+		}),
 	}
 	return cfg, opts
+}
+
+// workspaceBody is this fixture's catalog document. It is a named type rather
+// than a map because the route carries the body's type to the OpenAPI document —
+// which is the whole reason Options.WorkspaceCatalog is a mount and not a
+// function returning `any`.
+type workspaceBody struct {
+	Resources []string `json:"resources"`
 }
 
 // freeAddr picks a port the kernel has just confirmed is free.
@@ -109,8 +117,8 @@ type helloOut struct {
 func hello() module.Module {
 	return module.Module{
 		Name:        "hello",
-		Permissions: []module.Permission{{Key: "note:write"}},
-		Events:      []string{"hello.note_written"},
+		Permissions: []module.Permission{{Key: "note:write", Label: "write notes"}},
+		Declared:    []events.Declared{{Name: "hello.note_written"}},
 		Nav:         []module.NavEntry{{Label: "Notes", Screen: "hello/notes", Permission: "note:write"}},
 		// Each owner starts its own numbering at 1.
 		Migrations: fstest.MapFS{
@@ -154,7 +162,7 @@ func TestBootMigratesAndServes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The probes as an orchestrator sends them: at the pod's address, which
 	// names no tenant, so no transaction is opened at all.
@@ -244,7 +252,7 @@ func TestBootRefusesARouteAndAManifestThatDisagreeAboutTheOperator(t *testing.T)
 			cfg, opts := compose(t)
 			m := module.Module{
 				Name:        "control",
-				Permissions: []module.Permission{{Key: "fleet:manage", Operator: tt.declared}},
+				Permissions: []module.Permission{{Key: "fleet:manage", Operator: tt.declared, Label: "manage the fleet"}},
 				Routes: func(s httpx.Surfaces) {
 					httpx.Register(s.App, huma.Operation{
 						OperationID: "fleet", Method: http.MethodGet, Path: "/fleet",
@@ -364,17 +372,121 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
-func waitFor(t *testing.T, addr string) {
+// The 120 s this bound first carried was itself exceeded on 2026-10-06 — `nothing is listening on
+// 127.0.0.1:43281 after 2m0s` — by a migration the host did not reach in two minutes while eight of
+// this program's suites ran beside it. It is five minutes now, the same room kit/db's bounded tick
+// gives itself: still a sixth of the package's own bound, so a boot that never listens fails the run
+// rather than outliving it, and a boot that is only slow on somebody else's machine stops being the
+// finding. The base this branch was replayed onto fixed the same wait its own way (c439d23, at 3 m)
+// and its run is carried here rather than dropped by the replay: 20 s refused
+// `TestTheWorkerAnswersTheSameProbeShapeAsTheWeb` at head `bfd1681` on 2026-10-06, inside a suite of
+// 129 packages each booting a schema of its own, over a boot whose eighteen migrations had cost 98 ms
+// to 5.620 s apiece. Two machines measured one conclusion; the replay keeps the larger of the two
+// numbers.
+
+// bootWait is how long a fixture waits for a process it started to answer. The
+// number is the machine's, not the kernel's: Run migrates a whole installation
+// before it listens, and a migration of thirty files measured 2.8 s when this
+// package ran alone and over 20 s with three database packages sharing one
+// Postgres — which is why a bound sized for the quiet case reads "nothing is
+// listening" for a process that was still working. Every wall-clock bound in
+// this suite is stated as a constant for the same reason: a wait nobody named is
+// a wait nobody can size, and one that is too small reports the machine rather
+// than the code.
+const bootWait = 5 * time.Minute
+
+// slowBoot is when a wait starts saying something: a boot that takes a tenth of
+// the bound is the machine being asked for more than it can do at once, and the
+// next red run should say how long a green one took.
+const slowBoot = bootWait / 10
+
+// waitFor returns when addr answers. A caller that has a Run channel passes it: a process that has
+// already stopped is not a process that is still booting, and without that channel this helper would
+// sit out its whole bound and then print "nothing is listening" over the error that says why nothing
+// ever would. The channel goes back the way it came before this helper fails: the caller's cleanup
+// reads it to find out what Run said, and a value taken here would leave that read waiting forever —
+// a fixture that turns a failure into a hang is the failure this file exists to stop.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
+	started := time.Now()
+	deadline := started.Add(bootWait)
+	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // one slot was just freed by the read above, so this cannot block
+				t.Fatalf("the process stopped before it listened on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = c.Close()
+			if took := time.Since(started); took > slowBoot {
+				t.Logf("listening after %s: this machine was busy", took.Round(time.Millisecond))
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("nothing is listening on %s", addr)
+	t.Fatalf("nothing is listening on %s after %s (%s): the process is still migrating, or never started",
+		addr, time.Since(started).Round(time.Second), last)
+}
+
+// waitServed is waitFor for a test that goes on to stop the boot it waited for,
+// and the difference matters. freeAddr releases the port it reserves and Run binds
+// it later, so another process can bind it in between and a dial then reports that
+// stranger as this composition having come up. Cancelling on that word stops a boot
+// still queued for the migration advisory lock — a wait bounded only by its own
+// context, by design (kit/db's holdCompositionLock) — and the test reads back
+// `Run: db: migrate: lock: context canceled` from a composition that never got to
+// serve. So wait for an answer only this composition can give: one of its own
+// routes at one of the hosts it resolves. A 404 is a stranger that never mounted
+// it, a refused connection is a boot that has not arrived, and both keep waiting
+// for the 20s the dial is given. Which answer arrives is not this test's question —
+// today the route refuses the anonymous caller this file configures with a 403, and
+// asserting that is the route's own tests' business, not the boot gate's. Like
+// waitFor it takes the caller's Run channel, and for the same reason: a boot that
+// has already stopped is not a boot that is still about to answer, and it is the
+// caller's cleanup that reads what Run said.
+func waitServed(t *testing.T, addr, host, path string, stopped ...chan error) {
+	t.Helper()
+	started := time.Now()
+	deadline := started.Add(bootWait)
+	last := "no answer yet"
+	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // one slot was just freed by the read above, so this cannot block
+				t.Fatalf("the process stopped before it served %s at %s (%s): %v",
+					path, addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
+		req, err := http.NewRequest(http.MethodGet, "http://"+addr+path, nil)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		req.Host = host
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			last = err.Error()
+		} else {
+			_ = res.Body.Close()
+			if res.StatusCode != http.StatusNotFound {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("serving after %s: this machine was busy", took.Round(time.Millisecond))
+				}
+				return
+			}
+			last = fmt.Sprintf("%d", res.StatusCode)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("nothing served %s at %s within %s (last answer: %s)",
+		path, host, time.Since(started).Round(time.Second), last)
 }
 
 func get(t *testing.T, addr, host, path string) (int, string) {
@@ -407,11 +519,11 @@ func (Widget) TableName() string { return "widgets" }
 // manifest is where a subscriber looks.
 func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	cfg, opts := compose(t)
-	shop := func(events []string) module.Module {
+	shop := func(declared []events.Declared) module.Module {
 		return module.Module{
 			Name:        "shop",
-			Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-			Events:      events,
+			Permissions: []module.Permission{{Key: "widget:read", Label: "read widgets"}, {Key: "widget:write", Label: "write widgets"}},
+			Declared:    declared,
 			Routes: func(s httpx.Surfaces) {
 				rest.Spec[*Widget]{
 					Module: "shop", Entity: "widget", Path: "/widgets",
@@ -435,9 +547,11 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 		}
 	}
 
-	// Declaring them is all it takes, and then the composition boots.
+	// Declaring them is all it takes, and then the composition boots — and what
+	// says it booted is this composition answering one of its own routes, not a
+	// socket at its address opening (see waitServed).
 	cfg, opts = compose(t)
-	declared := shop([]string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"})
+	declared := shop(rest.Spec[*Widget]{Module: "shop", Entity: "widget"}.Declared())
 	a, err = New(t.Context(), cfg, []module.Module{declared}, opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -445,10 +559,30 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitServed(t, cfg.Server.Addr, tenantHost, "/api/v1/shop/widgets", stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+
+	// Naming them without naming the payload is enough too. This gate asks only
+	// whether the manifest promised the event; the payload type is what the
+	// outbox checks and the document carries, and a module that emits a payload
+	// the kernel cannot describe still tells a subscriber what will arrive.
+	cfg, opts = compose(t)
+	named := shop(nil)
+	named.Events = []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"}
+	a, err = New(t.Context(), cfg, []module.Module{named}, opts)
+	if err != nil {
+		t.Fatalf("New with a name-only manifest: %v", err)
+	}
+	ctx, cancel = context.WithCancel(t.Context())
+	stopped = make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitServed(t, cfg.Server.Addr, tenantHost, "/api/v1/shop/widgets", stopped)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run with a name-only manifest: %v", err)
 	}
 }
 
@@ -479,8 +613,8 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 	handled := make(chan events.Event, 4)
 	ledger := module.Module{
-		Name:   "ledger",
-		Events: []string{"ledger.entry_written"},
+		Name:     "ledger",
+		Declared: []events.Declared{{Name: "ledger.entry_written"}},
 		Subscriptions: []events.Subscription{{
 			Module: "ledger", Name: "ledger.entry_written",
 			Handler: func(_ context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
@@ -511,7 +645,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// A worker serves the two probes and nothing else.
 	for _, path := range []string{"/health", "/ready"} {
@@ -606,7 +740,7 @@ func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	for path, want := range map[string]string{"/health": `{"status":"ok"}`, "/ready": `{"status":"ok"}`} {
 		code, body := get(t, cfg.Server.Addr, cfg.Server.Addr, path)
@@ -633,8 +767,8 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	cfg, opts := compose(t)
 	widgets := module.Module{
 		Name:        "shop",
-		Permissions: []module.Permission{{Key: "widget:read"}, {Key: "widget:write"}},
-		Events:      []string{"shop.widget.created", "shop.widget.updated", "shop.widget.deleted"},
+		Permissions: []module.Permission{{Key: "widget:read", Label: "read widgets"}, {Key: "widget:write", Label: "write widgets"}},
+		Declared:    []events.Declared{{Name: "shop.widget.created"}, {Name: "shop.widget.updated"}, {Name: "shop.widget.deleted"}},
 		Routes: func(r httpx.Surfaces) {
 			rest.Spec[*Widget]{
 				Module: "shop", Entity: "widget", Path: "/widgets",
@@ -650,7 +784,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The document is for a caller the installation recognises: the resources it
 	// may reach, not everybody's.
@@ -710,8 +844,93 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- b.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/faceless/notice"); code != http.StatusOK {
 		t.Errorf("the workspace route = %d, want 200", code)
+	}
+}
+
+// TestTheBootLineNamesTheEventSchemaCoverage reads the number this pillar is
+// measured by. kit/app/app.go prints event_schema_coverage at boot "because a
+// number nobody can read is a number that drifts back down" — and until this
+// case, no test had ever read it: every fixture here passes
+// slog.DiscardHandler, so the line executed in every boot test and reached
+// nothing. Reading it needs one logger that keeps what it is handed, because
+// Options.Log is used as it arrives (a caller that brings a logger has chosen
+// its own level) rather than re-wrapped at config's level.
+//
+// 3/4 is this composition: the kernel's own platformkit.event_replayed,
+// security.denied and security.access_requested, each covered by a payload type
+// kit/app declares, and hello's hello.note_written, declared with no type, not. A boot whose coverage silently
+// fell to 0/N — a catalogue rebuilt from the wrong list, a DeclareAll that never
+// ran — is the drift the line exists to make visible, and it is now visible here
+// too.
+func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
+	cfg, opts := compose(t)
+	var logs strings.Builder
+	opts.Log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	a, err := New(t.Context(), cfg, []module.Module{hello()}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// The line is buildAPI's, and buildAPI runs inside Run, so the app is
+	// booted, waited for, and stopped before anything reads the buffer — the
+	// logger belongs to the running process, and reading it while it runs is a
+	// race the assertion is not worth.
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr, stopped)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var line string
+	for _, l := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(l, "event_schema_coverage") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatalf("the boot log named no event_schema_coverage:\n%s", logs.String())
+	}
+	if !strings.Contains(line, "event_schema_coverage=3/4") {
+		t.Errorf("the boot line reads %q, want event_schema_coverage=3/4 for the kernel's three covered declarations and one uncovered one", line)
+	}
+}
+
+// TestAModulesMovedAddressIsServedAsARedirect is module.Module.Moved reaching the
+// kernel: a module that moved its route declares the old address in its manifest,
+// and the running application answers there with the kernel's redirect. Nothing
+// in the module handles the old address.
+func TestAModulesMovedAddressIsServedAsARedirect(t *testing.T) {
+	cfg, opts := compose(t)
+	moved := hello()
+	moved.Moved = []module.Move{{From: "/api/v1/greeting", To: "/api/v1/hello"}}
+	a, err := New(t.Context(), cfg, []module.Module{moved}, opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Run(ctx) }()
+	waitFor(t, cfg.Server.Addr, stopped)
+
+	req, _ := http.NewRequest(http.MethodGet, "http://"+cfg.Server.Addr+"/api/v1/greeting?lang=pt", nil)
+	req.Host = tenantHost
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET the old address: %v", err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != "/api/v1/hello?lang=pt" {
+		t.Errorf("the old address = %d to %q, want 302 to /api/v1/hello?lang=pt", res.StatusCode, res.Header.Get("Location"))
+	}
+
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 }

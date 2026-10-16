@@ -7,11 +7,13 @@
 // its service back to main as well as its manifest: main holds the value,
 // because three other things need it.
 //
-// It imports no other module, and the modules above it reach it through hooks
-// (contracts.Hook) rather than the other way round.
+// Its one cross-module import is modules/user/contracts, for the invite route's
+// Inviter; otherwise it is reached through hooks (contracts.Hook), not the reverse.
 package tenant
 
 import (
+	"github.com/septagon-oss/platformkit/kit/appname"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -23,7 +25,7 @@ import (
 // where a customer's administrator holds the wildcard, and a wildcard does not
 // satisfy an operator grant. kit/app checks this against what the routes
 // declare, so the two cannot drift.
-var permissions = []module.Permission{{Key: contracts.PermissionTenantManage, Operator: true}}
+var permissions = []module.Permission{{Key: contracts.PermissionTenantManage, Operator: true, Label: "manage tenants"}}
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
@@ -41,18 +43,54 @@ type Deps struct {
 	// wreckage — and answering 501 to a route that exists is worse than not
 	// having it.
 	Invite contracts.Inviter
+
+	// Languages are the languages the installation's catalogues answer in, and the
+	// most a tenant is ever served in. They do not decide what a new tenant is
+	// served in — a create declares nothing, and a tenant starts out in the one
+	// language its copy is written in — the one language a tenant whose row predates
+	// migrations/000029 is served in too, which its column holds and no row of that
+	// file's is read for. They decide what SetLocale may be told: a
+	// tenant served in a language nobody wrote copy for is a page that declares that
+	// language and shows another one, so the composition, which is the thing that
+	// read the files, says what exists and the command refuses the rest.
+	// The composition reads them off the catalogues it composed
+	// (apps/platformkit/catalog.go); this module names no tag. A composition that
+	// wires no catalogues passes nothing, and then nothing is checked against it.
+	Languages []string
+
+	// App is the composition's own slug — the app every tenant this control plane
+	// writes belongs to, and what every read is scoped to. It is the same value the
+	// event transport, the job lock and the cookie name are formed from
+	// (kit/appname), read from the one setting that names it (nats.app); the empty
+	// Name is the deployment of one app, whose tenants are the ones this module has
+	// always listed.
+	App appname.Name
 }
 
 // Module is the manifest, and the service it is built on.
 //
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
-func Module(deps Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService(deps.OnCreate)
+func New(deps Deps) (contracts.Service, module.Module) {
+	svc := internal.NewService(deps.OnCreate, deps.Languages, deps.App)
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,
-		Events:      []string{contracts.EventCreated, contracts.EventSuspended, contracts.EventHostAdded},
+		Declared: []events.Declared{
+			events.Declare[contracts.Created](contracts.EventCreated),
+			events.Declare[contracts.Suspended](contracts.EventSuspended),
+			events.Declare[contracts.HostAdded](contracts.EventHostAdded),
+			events.Declare[contracts.LocaleSet](contracts.EventLocaleSet),
+			events.Declare[contracts.Renamed](contracts.EventRenamed),
+			events.Declare[contracts.HostRemoved](contracts.EventHostRemoved),
+			events.Declare[contracts.Reactivated](contracts.EventReactivated),
+			events.Declare[contracts.Deleted](contracts.EventDeleted),
+			events.Declare[contracts.LifecycleRecorded](contracts.EventLifecycleRecorded),
+			events.Declare[contracts.OIDCSet](contracts.EventOIDCSet),
+			events.Declare[contracts.OIDCCleared](contracts.EventOIDCCleared),
+			events.Declare[contracts.SAMLSet](contracts.EventSAMLSet),
+			events.Declare[contracts.SAMLCleared](contracts.EventSAMLCleared),
+		},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above
 		// because a module's Events are the ones it owns: kit/app checks a

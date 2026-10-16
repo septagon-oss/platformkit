@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 )
 
@@ -67,11 +68,15 @@ func (f *Fake) Contents() map[uuid.UUID]contracts.Content {
 }
 
 // Publish mirrors internal.Service.Publish.
-func (f *Fake) Publish(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Content, error) {
+func (f *Fake) Publish(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Content, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	c, err := f.get(id)
 	if err != nil {
+		return nil, err
+	}
+	actor, _ := tenancy.ActorFrom(ctx)
+	if err := c.PublishBy(actor); err != nil {
 		return nil, err
 	}
 	switch c.Status {

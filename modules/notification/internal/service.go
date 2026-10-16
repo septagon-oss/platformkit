@@ -47,12 +47,25 @@ func (s *Service) Notify(ctx context.Context, tx db.Tx[db.Tenant], n contracts.N
 	if err != nil {
 		return nil, err
 	}
+	// The in-app channel is the row itself: written is delivered, so it is requested
+	// and sent in the one transaction that wrote it.
+	for _, outcome := range []string{OutcomeRequested, OutcomeSent} {
+		if err := record(tx, row.ID, ChannelInApp, outcome, ""); err != nil {
+			return nil, err
+		}
+	}
 	if !n.Email {
 		return row, nil
 	}
+	if err := record(tx, row.ID, ChannelEmail, OutcomeRequested, ""); err != nil {
+		return nil, err
+	}
 	to, err := address(ctx, tx, s.recipients, row.RecipientID)
-	if err != nil || to == "" {
+	if err != nil {
 		return row, err
+	}
+	if to == "" {
+		return row, record(tx, row.ID, ChannelEmail, OutcomeSuppressed, "the recipient has no email address")
 	}
 	// Two identifiers and nothing else: the worker reads the row back and
 	// resolves the address itself. See contracts.EmailRequested — an outbox row

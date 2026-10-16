@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -31,7 +32,7 @@ import (
 // and that is the second fact the control plane is gated on.
 const installationHost = "platformkit.example"
 
-// surfaces is this file's fixture: one installation, one host per tenant, and an
+// This file is this file's fixture: one installation, one host per tenant, and an
 // authorizer that says yes to everything so that what a case observes is the
 // surface's own decision and not a role's.
 type surfaces struct {
@@ -46,7 +47,8 @@ type surfaces struct {
 
 func newSurfaces(t *testing.T) *surfaces {
 	t.Helper()
-	return newSurfacesWith(t, httpx.Options{})
+	return newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit")})
 }
 
 func newSurfacesWith(t *testing.T, extra httpx.Options) *surfaces {
@@ -55,6 +57,7 @@ func newSurfacesWith(t *testing.T, extra httpx.Options) *surfaces {
 	_ = admin
 	s := &surfaces{who: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}}
 	opts := httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		PublicHost:   host,
 		Installation: installationHost,
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
@@ -105,16 +108,13 @@ type window struct {
 	seen  int
 }
 
-func (w *window) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
+func (w *window) Reserve(_ context.Context, _ string, limit int, _ time.Duration) (bool, int, time.Duration, error) {
 	w.seen++
-	if w.seen > w.allow {
-		return false, time.Minute, nil
-	}
-	return true, 0, nil
-}
-
-func (w *window) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return w.seen, 0, nil
+	// The same three answers the shared counter gives from its one statement: the
+	// verdict, the quota left under the limit it was handed, and the window it was
+	// handed — so a case that states a limit on the wire states one this fake
+	// reported rather than one the case arithmetic invented.
+	return w.seen <= w.allow, max(limit-w.seen, 0), time.Minute, nil
 }
 
 func (w *window) Forget(context.Context, string) error { return nil }
@@ -503,7 +503,8 @@ func TestAPublicSurfaceTakesNobodiesSessionAndSetsNobodiesCookie(t *testing.T) {
 // lock out. A workspace write has one, and is not counted here.
 func TestAnAnonymousWriteIsTheOnlyThingThePublicSurfaceLimits(t *testing.T) {
 	limiter := &window{allow: 2}
-	s := newSurfacesWith(t, httpx.Options{WriteLimiter: limiter})
+	s := newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit"), WriteLimiter: limiter})
 	ran := 0
 	// The public write carries no session: there is none to carry.
 	httpx.Register(s.api.Surfaces("auth").Public, huma.Operation{
@@ -644,23 +645,26 @@ func TestAFileTreeIsRecordedAndDressedByItsSurface(t *testing.T) {
 	if workspace.Code != http.StatusOK || !strings.Contains(workspace.Body.String(), "--a") {
 		t.Fatalf("the workspace's stylesheet = %d %q", workspace.Code, workspace.Body.String())
 	}
-	if got := workspace.Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("a file of the workspace says %q about caching, want nobody to keep it", got)
+	// Caching is the static row of docs/cache.md, not the surface's: a kernel asset is the
+	// same bytes for every person, so it is kept and revalidated against its content ETag
+	// (no-store made every workspace page download it again). Indexing stays the surface's.
+	if got := workspace.Header().Get("Cache-Control"); got != "no-cache" || workspace.Header().Get("ETag") == "" {
+		t.Errorf("a file of the workspace says %q about caching with ETag %q, want no-cache and its content hash",
+			got, workspace.Header().Get("ETag"))
 	}
 	if got := workspace.Header().Get("X-Robots-Tag"); !strings.Contains(got, "noindex") {
 		t.Errorf("a file of the workspace says %q about indexing", got)
 	}
 
-	// The public tree is the other surface's answer: a visitor's stylesheet is
-	// nobody's own, and a face that could not be cached is a face served from
-	// this process forever.
+	// The public tree answers under the same static row; what differs is indexing.
 	visitor := httptest.NewRecorder()
 	s.router.ServeHTTP(visitor, httptest.NewRequest(http.MethodGet, "http://"+host+"/web/sheets/app.css", nil))
 	if visitor.Code != http.StatusOK {
 		t.Fatalf("the public stylesheet = %d", visitor.Code)
 	}
-	if got := visitor.Header().Get("Cache-Control"); got != "public, max-age=60" {
-		t.Errorf("a file of the public face says %q about caching, want it cacheable", got)
+	if got := visitor.Header().Get("Cache-Control"); got != "no-cache" || visitor.Header().Get("ETag") == "" {
+		t.Errorf("a file of the public face says %q about caching with ETag %q, want no-cache and its content hash",
+			got, visitor.Header().Get("ETag"))
 	}
 	if got := visitor.Header().Get("X-Robots-Tag"); got != "" {
 		t.Errorf("a file of the public face is told %q about indexing", got)
@@ -688,20 +692,13 @@ type perKey struct {
 	keys []string
 }
 
-func (p *perKey) Allow(_ context.Context, key string, _ int, _ time.Duration) (bool, time.Duration, error) {
+func (p *perKey) Reserve(_ context.Context, key string, limit int, _ time.Duration) (bool, int, time.Duration, error) {
 	p.keys = append(p.keys, key)
 	if p.seen == nil {
 		p.seen = map[string]int{}
 	}
 	p.seen[key]++
-	if p.seen[key] > 1 {
-		return false, time.Minute, nil
-	}
-	return true, 0, nil
-}
-
-func (p *perKey) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return 0, 0, nil
+	return p.seen[key] <= 1, max(limit-p.seen[key], 0), time.Minute, nil
 }
 func (p *perKey) Forget(context.Context, string) error { return nil }
 
@@ -712,7 +709,8 @@ func (p *perKey) Forget(context.Context, string) error { return nil }
 // refused, and the other tenant's first is not.
 func TestTwoTenantsBehindOneAddressAreCountedApart(t *testing.T) {
 	counted := &perKey{}
-	s := newSurfacesWith(t, httpx.Options{WriteLimiter: counted})
+	s := newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit"), WriteLimiter: counted})
 	httpx.Register(s.api.Surfaces("auth").Public, huma.Operation{
 		OperationID: "register", Method: http.MethodPost, Path: "/register",
 	}, httpx.Public(), func(context.Context, *struct{}) (*body, error) { return &body{}, nil })
@@ -815,5 +813,56 @@ func TestTheCookiePromiseIsThePublicSurfacesOwn(t *testing.T) {
 	workspace := dial(t, s.router, http.MethodGet, host, "/api/v1/auth/login")
 	if got := workspace.Header().Get("Set-Cookie"); !strings.HasPrefix(got, "session=") {
 		t.Errorf("a workspace answer carried %q; the surface that hands out sessions still hands out sessions", got)
+	}
+}
+
+// TestAModulesMovedAddressIsARedirectByTheKernelsRules is module.Module.Moved as the
+// kernel serves it: a composition's own row answers exactly as the kernel's table
+// does — 302 with the remainder and the query kept, 307 for a write, never cached,
+// no body — the most specific row wins over a general one registered before it, and
+// a route mounted where a row redirects is refused at the gate. A module that moves
+// a page writes one row, not a handler for the old address.
+func TestAModulesMovedAddressIsARedirectByTheKernelsRules(t *testing.T) {
+	s := newSurfaces(t)
+	s.api.Alias("/pets", "/app/pets")
+	s.api.Alias("/pets/animals", "/app/pets/animals")
+	for _, m := range []struct{ from, to string }{
+		{"/pets", "/app/pets"},
+		{"/pets/shop", "/app/pets/shop"},
+		{"/pets/animals/42?tab=notes", "/app/pets/animals/42?tab=notes"},
+	} {
+		got := dial(t, s.router, http.MethodGet, host, m.from)
+		if got.Code != http.StatusFound || got.Header().Get("Location") != m.to ||
+			got.Header().Get("Cache-Control") != "no-store" || got.Body.Len() != 0 {
+			t.Errorf("GET %s = %d to %q (%q, %d bytes), want 302 to %q, no-store, no body",
+				m.from, got.Code, got.Header().Get("Location"), got.Header().Get("Cache-Control"), got.Body.Len(), m.to)
+		}
+	}
+	post := httptest.NewRequest(http.MethodPost, "http://"+host+"/pets/animals/42/resolve", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, post)
+	if w.Code != http.StatusTemporaryRedirect || w.Header().Get("Location") != "/app/pets/animals/42/resolve" {
+		t.Errorf("POST to a moved address = %d to %q, want 307 keeping the method", w.Code, w.Header().Get("Location"))
+	}
+	if got := dial(t, s.router, http.MethodGet, host, "/petshop"); got.Code == http.StatusFound {
+		t.Errorf("/petshop was redirected by the /pets row; a row moves a path segment, never a string prefix")
+	}
+
+	other := newSurfaces(t)
+	httpx.Register(other.api.Surfaces("shop").App, huma.Operation{
+		OperationID: "stale", Method: http.MethodGet, Path: "/old",
+	}, httpx.SignedIn(), ok)
+	var at string
+	for _, m := range other.api.Mounted() {
+		if m.Module == "shop" && m.Method == http.MethodGet {
+			at = m.Path
+		}
+	}
+	if at == "" {
+		t.Fatal("the fixture's route was not recorded")
+	}
+	other.api.Alias(at, at+"-new") // a module moved the address the route still mounts at
+	if err := other.api.ValidateDeclarations(); err == nil || !strings.Contains(err.Error(), "redirect") {
+		t.Errorf("a route mounted where a module's row redirects passed the gate: %v", err)
 	}
 }

@@ -24,8 +24,48 @@ import (
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
+// Registration is the way in for somebody the tenant has no account for yet:
+// which form the shell renders and the door that form posts to. Only the
+// composition knows it wired a registration service, so only the composition
+// names this — the same reason it names SignIn rather than writing the auth
+// module's address down here.
+type Registration struct {
+	// Kind is which of the two forms the page renders.
+	Kind RegistrationKind
+	// Address is the composed door the form posts to.
+	Address string
+}
+
+// RegistrationKind is which registration form the shell renders. The two are
+// what ui/assets/js/session.js already distinguishes by name.
+type RegistrationKind int
+
+const (
+	// RegistrationKindEmail asks for an address alone: the tenant then invites
+	// the person, who chooses a password from the mail.
+	RegistrationKindEmail RegistrationKind = iota + 1
+	// RegistrationKindPassword takes a password and its confirmation, and the
+	// account waits for the mailbox link before it can sign in.
+	RegistrationKindPassword
+)
+
+// form is the name the session controller selects this form by.
+func (k RegistrationKind) form() string {
+	if k == RegistrationKindPassword {
+		return "register-password"
+	}
+	return "register"
+}
+
 // brand is what the shell calls itself when the tenant has no name.
 const brand = "PlatformKit"
+
+// chromeTextSize is the one body step the frame's own text takes: the tenant name, the caller and the
+// build stamp are the chrome, and the design floor allows a page two body sizes in total — so three
+// sizes in the chrome alone leaves the page's own copy nothing. `sm` is what two of the three already
+// took, and it is the sidebar's own nav step, which leaves `base` free for the page inside <main>.
+// See modules/admin/internal/frame_chrome_text_test.go.
+const chromeTextSize = "sm"
 
 // Shell is what the manifest hands the implementation.
 type Shell struct {
@@ -36,10 +76,22 @@ type Shell struct {
 	// module's nav entry names. Nil mounts no screen, and then Mount reports
 	// the entry as unserved, which is what it is.
 	Roles Roles
-	Token tenancy.SystemToken
+	// Sessions is the auth module's session list, for the screen it serves at
+	// /app/auth/sessions. That screen declares no nav entry here: kit/module
+	// refuses an entry that names no permission, and the two this module declares
+	// would both be wrong for it — so the product that owns the navigation names
+	// the entry beside the permission it seeds. Nil mounts no screen, and because
+	// nothing declares one, nothing is reported unserved either: a composition
+	// with no auth module has no session list to miss.
+	Sessions Sessions
+	Token    tenancy.SystemToken
 	// SignIn is the auth module's session route, which the sign-in form posts
 	// to. The composition names it; this module only fills the form's action.
 	SignIn string
+	// Registration is the composition saying a stranger may make an account
+	// here. Nil offers no way in but the password, which is the answer for
+	// every composition that wired no registration service.
+	Registration *Registration
 	// Theme is the installation's two palettes: the one thing about the look of
 	// this shell that belongs to whoever runs it. See design.Pair.
 	Theme     design.Pair
@@ -76,6 +128,19 @@ type addresses struct {
 	// namespace, because that is where the workspace puts a module's screens.
 	tenants route
 	roles   route
+	// forgot is this shell's own page — it is the way in, and the way in is the
+	// shell's — and reset belongs to auth, whose link the person arrived by.
+	forgot route
+	reset  route
+	// verify is the other half of a sign-up: the link the confirmation mail
+	// carries. register is the shell's own page — the way in is the shell's.
+	verify   route
+	register route
+	// sessions is another module's screen again, for the same reason: the auth
+	// module names it in its nav, and this is the module that can draw it.
+	sessions      route
+	sessionRevoke route
+	sessionsRest  route
 }
 
 // at composes one address for this module's own router.
@@ -116,14 +181,21 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		dashboardRel = "/dashboard"
 	}
 	a := addresses{
-		workspace: at(app, "/"),
-		dashboard: route{dashboardRel, home.PagePath(dashboardRel)},
-		assets:    at(app, "/assets"),
-		login:     at(app, "/login"),
-		health:    at(app, "/health"),
-		gallery:   at(app, "/_gallery"),
-		tenants:   inNamespace(app, "tenant", "/tenants"),
-		roles:     inNamespace(app, "auth", "/roles"),
+		workspace:     at(app, "/"),
+		dashboard:     route{dashboardRel, home.PagePath(dashboardRel)},
+		assets:        at(app, "/assets"),
+		login:         at(app, "/login"),
+		health:        at(app, "/health"),
+		gallery:       at(app, "/_gallery"),
+		tenants:       inNamespace(app, "tenant", "/tenants"),
+		roles:         inNamespace(app, "auth", "/roles"),
+		forgot:        at(app, "/login/forgot"),
+		reset:         inNamespace(app, "auth", "/reset"),
+		verify:        inNamespace(app, "auth", "/verify-email"),
+		register:      at(app, "/register"),
+		sessions:      inNamespace(app, "auth", "/sessions"),
+		sessionRevoke: inNamespace(app, "auth", "/sessions/revoke"),
+		sessionsRest:  inNamespace(app, "auth", "/sessions/revoke-rest"),
 	}
 	// Static files are outside every middleware chain: a stylesheet has no
 	// tenant, no session and no transaction to pay for.
@@ -138,12 +210,31 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// will record them. A hand-written page counts as much as a generated one,
 	// and there is no second list to keep in step.
 	served := page.Served(s.Recorded())
+	own := ownScreens(served, resources)
 	for _, r := range resources {
-		served = append(served, r.Screen, r.Screen+"/new")
+		// A Spec that offers no list has no screen address, so it serves no path:
+		// recording "" and "/new" would call them addresses something answers.
+		if r.Screen != "" {
+			served = append(served, r.Screen, r.Screen+"/new")
+		}
 	}
 	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
+	if app.Known("auth") {
+		// Both are served only when the auth module is composed: a forgot page
+		// that posts to a route nobody mounted is a door painted on a wall, and
+		// the composition that has no auth module has no password to forget.
+		served = append(served, a.forgot.at, a.reset.at, a.verify.at)
+	}
+	if sh.Registration != nil {
+		// The page is served only where the composition offers a door it posts
+		// to, which is the same rule that keeps the link off the sign-in card.
+		served = append(served, a.register.at)
+	}
 	if sh.Roles != nil {
 		served = append(served, a.roles.at)
+	}
+	if sh.Sessions != nil {
+		served = append(served, a.sessions.at)
 	}
 	nav := page.NewNavigation(sh.Nav, served, s.Required())
 	// A nav entry nothing answers is a mistake in a module's manifest, and it
@@ -163,16 +254,33 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		Tag:       "admin",
 		Back:      a.dashboard.at,
 		BackLabel: "Back to the dashboard",
+		// The whole shell and not only its sign-in page: a person who signs in in
+		// Portuguese and is then handed an English table has not been served in
+		// Portuguese. The generated screens read their labels through the
+		// negotiation this opts them into (ui/screens' screens.* keys), and a
+		// composition that supplies no catalog keeps every one of them in the
+		// language they were written in.
+		Messages: sh.Messages,
+		Locale:   sh.Locale,
 	}
 
 	for _, r := range resources {
+		if own[r.Screen] {
+			// The module wrote this resource's workspace pages itself, and they are what a person is
+			// sent to. Generating a second register at the same addresses is a collision the surface
+			// gate refuses at boot, so the module's own pages stand and the generated ones are not
+			// mounted. The resource keeps its API routes and its catalog entry either way.
+			slog.Default().Info("admin: a module serves its own workspace pages for a resource; the generated screens are not mounted",
+				"module", r.Module, "entity", r.Entity, "screen", r.Screen)
+			continue
+		}
 		screens.Mount(namespace(app, r.Module), shell, opts, r)
 	}
 	// The catalogue as the kernel read it off every manifest, taken here because
 	// this module is composed last and it is therefore complete. The roles
 	// screen offers it as checkboxes; auth checks a write against it. The route
 	// itself is the composition's — see app.Options.WorkspaceCatalog.
-	pages{Shell: sh, shell: shell, at: a, resources: resources, declared: s.Permissions()}.mount(s, home, app)
+	pages{Shell: sh, shell: shell, at: a, nav: nav, resources: resources, declared: s.Permissions()}.mount(s, home, app)
 }
 
 // frame is the admin's arrangement: the sidebar the caller may follow, the
@@ -193,13 +301,16 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 				gallery = err == nil
 			}
 		}
+		// One list of sections for both surfaces: the sidebar from the large breakpoint up, and the
+		// header's disclosure below it, where the sidebar is not shown.
+		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, authorize), r, gallery)
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
-				Sidebar: []g.Node{sidebar(a, nav.Visible(ctx, r.Tenant, authorize), r, gallery)},
-				Header:  header(r),
+				Sidebar: []g.Node{components.Sidebar(navigation)},
+				Header:  header(r, navigation),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
-					Content: brand + " " + version(), Size: "xs", Color: "muted"})},
+					Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"})},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{Title: "Are you sure?"}),
 		})
@@ -210,7 +321,7 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 // two pages about the installation. What the caller may reach is decided
 // before this is called — see page.Navigation.Visible — so this renders a
 // list and hides nothing of its own.
-func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool) g.Node {
+func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool) components.SidebarProps {
 	items := []components.SidebarItem{{Label: "Dashboard", Href: a.dashboard.at, Icon: "gear"}}
 	for _, entry := range visible {
 		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Screen, Icon: "file-text"})
@@ -222,14 +333,15 @@ func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery boo
 	}
 	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the
 	// colour that is legible on it is one the component owns.
-	return components.Sidebar(components.SidebarProps{
+	return components.SidebarProps{
 		Current: r.Path, NavigationLabel: "Admin navigation", Items: items,
 		BrandLabel: fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
-	})
+	}
 }
 
-// header is the tenant, the caller, the theme switch and the way out.
-func header(r page.Request) []g.Node {
+// header is the tenant, the caller, the theme switch and the way out — and, below the large
+// breakpoint where the sidebar is not shown, the disclosure that lists the same sections.
+func header(r page.Request, navigation components.SidebarProps) []g.Node {
 	right := []g.Node{
 		components.ButtonWithSlots(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
@@ -243,7 +355,7 @@ func header(r page.Request) []g.Node {
 		right = append([]g.Node{
 			components.Text(components.TextProps{
 				Content: short(r.Principal.UserID.String()) + " · " + fallback(strings.Join(r.Principal.Roles, ", "), "no roles"),
-				Size:    "sm", Color: "muted"}),
+				Size:    chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
@@ -251,7 +363,10 @@ func header(r page.Request) []g.Node {
 		}))
 	}
 	return []g.Node{
-		components.Text(components.TextProps{Content: fallback(r.Tenant.Name, brand), Weight: "semibold"}),
+		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
+			components.SidebarDisclosure(navigation),
+			components.Text(components.TextProps{
+				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}
 }
@@ -284,4 +399,26 @@ func fallback(value, or string) string {
 		return or
 	}
 	return value
+}
+
+// ownScreens is the resources whose workspace a module already serves: a GET a module recorded at the
+// resource's screen address or anywhere under it (its row, a command's form). It is asked of the recording
+// before this shell adds anything, because the shell is composed last and everything it finds there was
+// mounted by a module.
+func ownScreens(recorded []string, resources []httpx.Resource) map[string]bool {
+	own := map[string]bool{}
+	for _, r := range resources {
+		// No address of its own: beside an empty screen the prefix is "/", every
+		// recorded path starts with it, and the answer would be a lie.
+		if r.Screen == "" {
+			continue
+		}
+		for _, path := range recorded {
+			if path == r.Screen || strings.HasPrefix(path, r.Screen+"/") {
+				own[r.Screen] = true
+				break
+			}
+		}
+	}
+	return own
 }

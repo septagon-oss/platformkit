@@ -39,7 +39,7 @@ var (
 // what it held, and the second's report may not name a role of the first's.
 func TestTheRepairOfOneTenantIsNotTheRepairOfAnother(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	first := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
 	second := tenancy.Tenant{ID: uuid.New(), Slug: "pets", Operator: true}
 
@@ -92,7 +92,7 @@ func TestTheRepairOfOneTenantIsNotTheRepairOfAnother(t *testing.T) {
 // same run has to remove: the case cannot pass by the repair doing nothing.
 func TestTheRepairLeavesAGrantTheSeederNeverWrote(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
 
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
@@ -164,7 +164,7 @@ func TestTheRepairLeavesAGrantTheSeederNeverWrote(t *testing.T) {
 // its job: the administrator's dead grant is named and taken away.
 func TestTheRepairReportsWhenTheApplicationsInitialRolesAreStale(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
 	// The application's initial roles, as they were written when the module was
 	// composed and as an installation seeded before this change still has them.
@@ -205,7 +205,7 @@ func TestTheRepairReportsWhenTheApplicationsInitialRolesAreStale(t *testing.T) {
 // auth.role_set and not two of the same change.
 func TestTwoRepairsOfOneRoleAreOneWrite(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		return auth.SeedRoles(ctx, tx, tenant, repairWas, nil)
@@ -255,7 +255,7 @@ func TestTwoRepairsOfOneRoleAreOneWrite(t *testing.T) {
 // committed without its event — would be worse than either.
 func TestTheRepairIsInTheAuditOrItIsNotAWrite(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	svc, _ := auth.Module(auth.Deps{})
+	svc, _ := auth.New(auth.Deps{})
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "services-law", Operator: true}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		return auth.SeedRoles(ctx, tx, tenant, repairWas, nil)

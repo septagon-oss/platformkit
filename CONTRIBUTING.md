@@ -67,7 +67,8 @@ line is the version this repository is verified with. Make selects that exact
 toolchain for its commands and child scripts, including the formatter; a different
 installed Go does not change the verification version. The Go command downloads the
 selected toolchain if it is not already available.
-From the repository root, start the development PostgreSQL and NATS services:
+From the repository root, start the development PostgreSQL, NATS, Valkey, object
+store and mail catcher services:
 
 ```sh
 docker compose ps
@@ -75,12 +76,28 @@ make up
 make check
 ```
 
-Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` if the default ports are
-in use, retaining those values for every command. Never use production test
-credentials: tests create and remove database schemas. `make down` deletes the
-Compose volumes as well as stopping services; it is not a test step.
+Set `PLATFORMKIT_PG_PORT`, `PLATFORMKIT_NATS_PORT`, `PLATFORMKIT_VALKEY_PORT`,
+`PLATFORMKIT_S3_PORT` and `PLATFORMKIT_MAILPIT_SMTP_PORT` /
+`PLATFORMKIT_MAILPIT_PORT` if the default ports are in use, retaining those values
+for every command. Never use production test credentials: tests create and remove
+database schemas. `make down` deletes the Compose volumes as well as stopping
+services; it is not a test step.
+The Valkey service is optional in a way the others are not: `kit/cache` boots
+without a store, so its adapter's conformance suite skips when nothing answers the
+Valkey port and names the skip, and every other case in `make check` runs either way.
+Exporting `PLATFORMKIT_TEST_VALKEY_URL` yourself runs those cases against what you
+named, and a name that does not answer is a failure.
 Use the [local setup](README.md#try-it-locally) for application development.
 `make run` instead uses `config.yaml`, copied from `config.example.yaml` when absent.
+
+`make trace` starts a third container: an OTLP collector that prints every span and
+metric datapoint it receives to `docker compose logs collector`. Point
+`telemetry.otlp_endpoint` at `localhost:4317` and the application you are working on
+shows its own traces there, which is how a change to `kit/telemetry` is checked
+without a trace backend. It sits behind a Compose profile rather than inside `make up`
+because `make up` is what `make test` and `make check` rest on, and its image cannot
+be pulled on an offline machine; `make down` stops it along with the others.
+`PLATFORMKIT_OTLP_PORT` moves its port the same way the two above do.
 
 `make test` uses pinned gotestsum with Go's package cache. Focus a case with
 `make test TEST_PACKAGES=./modules/task/internal TEST_FLAGS='-run TestConcurrentTaskCommands'`.
@@ -91,9 +108,9 @@ reports, use the gotestsum options documented beside `TEST_OPTIONS` in [Makefile
 The cache cannot observe database or NATS state; after external-input changes,
 run `make test TEST_FLAGS=-count=1`. See [native watch](tools/designexport/openpencil/README.md).
 
-`make check` always runs fresh tests across all packages, regardless of local
-filters, plus build, vet, formatting, budgets, imports, declared-version and
-tenant-setting checks.
+`make check` runs fresh tests across all packages regardless of local filters,
+unless its caller empties `TEST_COUNT` (CI sets nothing, so CI always runs fresh),
+plus build, vet, formatting, budgets, imports, version and tenant-setting checks.
 `make check-race` runs the outbox, the request transaction, the advisory locks,
 the limit counters and the router under the race detector. CI runs `check` and
 `check-race`, so the detector is not something a contributor has to remember; it
@@ -101,8 +118,52 @@ is a separate goal because -race roughly doubles the suite.
 `make e2e` adds browser journeys. Both pass before pushing; `make check`
 passes before committing.
 
-Browser checks also require Node, npm, `psql`, `curl` and Playwright Chromium.
-Install the browser dependencies once, then run with the same service ports:
+### Which tests run where (decision 0088)
+
+Four tiers, and `make check` is the sum of them rather than one of them:
+
+| tier | runs | what it must not run |
+|---|---|---|
+| `make check-push` | build, vet, formatting, the budgets and pins, and the Go cases of the packages a diff reaches — by directory, by owning a changed `testdata/` or embedded file, by import, or by test-only import — that open no stack | anything that opens Postgres, a broker, the object store or the mail catcher — the selector refuses the selection rather than waiting for one |
+| `make check-merge` | `make check-rehearse` and `make check`: the whole suite, the race suite beside it, and the composition journeys inside it | — |
+| `make check-nightly` | `make e2e`, `make mobile-e2e`, `make flakes` | — |
+| the inventory | `make check-test-inventory` re-derives [tests/inventory.json](tests/inventory.json) from the tree | a row with no test, a test with no row, a verdict outside the four, a `merge` naming nothing, a `delete` beside an unmeasured coverage column, a round-named count above its ceiling |
+
+Selection is read out of that table, so no package is in a tier by one rule and
+out of it by another. **Reused** — `tests/inventory.json` and
+`tests/INVENTORY.md` (the specify round's ratified table), `scripts/check_packages.sh`'s
+count-against-ceiling shape, `scripts/check_budget_ratchet_test.sh`'s fixture-tree
+pattern for pinning a checker, `gotest.tools/gotestsum`'s `--jsonfile` and `tool
+slowest` as already pinned in [go.mod](go.mod), `apps/platformkit`'s own harness
+(`configure`/`install`/`compose`/`appOptions`/`start`/`signIn`/`do`) and
+`trailIncluded` for the new journey, and `go list`'s dependency graph for the
+diff's consumers — production importers and, since review 2, the packages whose
+test binary compiles the change — and `go list`'s own package list for the
+package that owns a changed file sitting under a directory of its own, which is
+how a golden and an embedded catalogue reach the tier whose test binary reads
+them. **Added** — `scripts/test_inventory.py`, because the tree holds
+no test register of any kind and 0088 asks for one CI can re-check; the walk of
+`*.test.{js,mjs,ts}` files beside it, because the design tooling's `node --test`
+cases are tests a pull request runs and no Go-shaped walk could count them, their
+round-named ceiling included; and
+`apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go`,
+because the composition refused a plan-gated tenant only in prose until two tenants
+walked one door in one boot. **Made reusable** — a tier selector any later task
+can call (`scripts/test_inventory.py --tier push|merge|nightly --base <ref>`), a
+flake report that turns `make flakes` into the source of the inventory's empty
+`duration` and flake columns, and a fixture-tree pin shape for a checker over tests
+that no longer needs a database to prove what it refuses.
+
+Browser checks also require Node, npm, `psql`, `curl`, Playwright Chromium and `ss` or `lsof`.
+The journeys that open a link the application mails read it from compose.yaml's
+mailpit catcher, so [scripts/e2e.sh](scripts/e2e.sh) refuses a run with nothing
+answering that address rather than letting the journey time out on a mail nobody
+received; `make up` starts it. The two catcher ports name everything else:
+[scripts/e2e.sh](scripts/e2e.sh) derives the address the application dials and the
+address its journeys read from `PLATFORMKIT_MAILPIT_SMTP_PORT` and
+`PLATFORMKIT_MAILPIT_PORT`, so a caller that runs one spec directly reaches the
+catcher its own stack publishes rather than the default port. Install the browser
+dependencies once, then run with the same service ports:
 
 ```sh
 npm --prefix e2e ci
@@ -110,11 +171,11 @@ npm --prefix e2e run install:browsers
 make e2e
 ```
 
-Browser installation may require permission to install system packages.
-The [test script](scripts/e2e.sh) removes its database and uploads, retaining failed
-Playwright results at the printed temporary path. Concurrent runs need distinct
-`PLATFORMKIT_E2E_PORT` values. [Makefile](Makefile) owns the command definitions;
-[RELEASE.md](RELEASE.md) describes the separate publication procedure.
+Browser installation may require permission to install system packages. The [test
+script](scripts/e2e.sh) removes its database and uploads, keeping failed Playwright
+results at the printed path. A run picks a free loopback port, `PLATFORMKIT_E2E_PORT`
+pins one; a taken pin and a port whose listener the run did not start are both refused.
+[Makefile](Makefile) owns the commands; [RELEASE.md](RELEASE.md) the publication procedure.
 
 For a behavior change, demonstrate the failing case and its correction.
 For a refactor, retain the independent behavior tests and explain what
@@ -137,8 +198,12 @@ readable code, delete useful tests or weaken a gate to fit a count.
 
 If a change exceeds a ceiling, first remove what it replaces and separate
 unrelated responsibilities. If the remaining cost is justified, obtain a
-separate owner budget commit before the implementation. State the affected
-bucket, expected cost, benefit and verification.
+separate owner budget commit before the implementation: a commit whose subject
+begins `build(budget):` and which changes only `loc-budget.json` and
+`packages-budget.json`. State the affected bucket, expected cost, benefit and
+verification in its message. The ratchet accepts a raise only when every commit
+on the branch that touches a budget file is such a commit, so the raise stands
+alone in history; a removed bucket or a changed measurement is never accepted.
 `go run ./tools/locbudget --write` lowers ceilings; rebaselining with
 `--round 100` can raise them and requires that review. A branch that expects an
 acceptance round prices that too, because the round arrives with a test file of

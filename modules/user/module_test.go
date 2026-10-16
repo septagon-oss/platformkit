@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -56,13 +57,15 @@ func mount(t *testing.T) chi.Router {
 	t.Helper()
 	_, conn := dbtest.Schema(t, user.Migrations)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: everything{}, Conn: conn, Authorize: everything{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, m := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: administering}})
+	_, m := user.New(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: administering},
+		Granting: &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }}})
 	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -322,7 +325,7 @@ func TestAModuleWithNoRoleSystemIsRefusedAtComposition(t *testing.T) {
 			t.Fatalf("composing without an Administration panicked with %v, want the field named", reason)
 		}
 	}()
-	user.Module(user.Deps{})
+	user.New(user.Deps{Granting: &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }}})
 	t.Fatal("composing without an Administration was allowed")
 }
 

@@ -1,0 +1,31 @@
+{
+  "schema": "platformkit.mobile-flows.v1",
+  "comment": "The declared set of mobile device flows: what the mobile pillar promises, one object each, so the ratio mobile_flow_pass_rate is a quotient of this file and the JUnit the mobile job writes, and not a number somebody remembers. runs names the repository that owns the spec: this one, or platformkit-mobile, whose four flows remain hand-run and are on that repository's own list to put behind the harness scripts/mobile_e2e.sh shows. A flow with runs: platformkit that does not appear in that JUnit as a pass makes the job fail.",
+  "flows": [
+    {
+      "id": "catalog",
+      "spec": "e2e/maestro/catalog.yaml",
+      "runs": "platformkit"
+    },
+    {
+      "id": "sign-in",
+      "spec": "e2e/flows/sign-in.yaml",
+      "runs": "platformkit-mobile"
+    },
+    {
+      "id": "sign-out",
+      "spec": "e2e/flows/sign-out.yaml",
+      "runs": "platformkit-mobile"
+    },
+    {
+      "id": "gallery",
+      "spec": "e2e/flows/gallery.yaml",
+      "runs": "platformkit-mobile"
+    },
+    {
+      "id": "record",
+      "spec": "e2e/flows/record.yaml",
+      "runs": "platformkit-mobile"
+    }
+  ]
+}
