@@ -239,6 +239,9 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 			notification.Module,
 			auth.Module,
 			auth.EmailRegistration,
+			// The media library's chrome, immediately before the module that mounts
+			// the page: the authorizer its controls ask is the auth service above it.
+			media(),
 			file.Module,
 			task.Module,
 			billing.Module,

@@ -35,6 +35,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -799,6 +800,11 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 		// the list below.
 		Installation: a.opts.Installation.Host,
 		WriteLimiter: limit.Postgres(a.held.read),
+		// The memory beside the counter: the same connection the limiter is counted
+		// on, the same detached write, the same reason — a retried write arrives at
+		// whichever replica the load balancer chose, so the record of the first one
+		// has to live somewhere both of them can read.
+		Idempotency: idempotency.Postgres(a.held.read),
 		// Every attributable refusal is an event and, where modules/audit is composed, an
 		// audit row: see recordDenial.
 		Denied: recordDenial(a.held, a.log),
@@ -1107,7 +1113,7 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 }
 
 // kernelJobs is the periodic work the composition owns because no module does: the
-// outbox relay and the two tables the kernel writes that nothing but time makes
+// outbox relay and the three tables the kernel writes that nothing but time makes
 // smaller. A module's own jobs are appended to this list by work; nothing here
 // reaches a module's table.
 func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
@@ -1158,7 +1164,13 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 	// nobody empties grows at somebody else's rate; leaving the purge in
 	// `modules/auth`'s sweep would have made an installation that takes the limit
 	// and not the login page one that never forgets a row.
-	return append(list, jobs.Job{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge})
+	list = append(list, jobs.Job{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge})
+	// The same argument one row over, and the same schedule: a record of a keyed
+	// write holds that caller's own request and answer, and the day the brief
+	// gives it is enforced by this job and nothing else. Leaving it to the hot
+	// path would make a refusal pay for the traffic it is refusing, and leaving
+	// it out entirely would make the table one anybody can grow.
+	return append(list, jobs.Job{Name: "idempotency-purge", Cron: purgeCron, Run: idempotency.Purge})
 }
 
 // ledgerMoveEvery is how often the worker runs the delivery-ledger move on the

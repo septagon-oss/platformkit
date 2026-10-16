@@ -110,22 +110,30 @@ func (w Words) say(aspect, declared string) string {
 	return declared
 }
 
-// Entry is this resource's entry declaration in the request's language. It
-// copies what it changes — the entry hints ride on the registration, shared by
-// every request — and returns the same value untouched when nothing is
-// translated.
+// Entry is this resource's entry declaration in the request's language, and
+// returns the same value untouched when nothing is translated.
+//
+// It starts from the declared value and overwrites the four words and the two
+// label-carrying blocks, because which parts of a reading are words is the
+// translation scheme's business and not this function's: a rebuild that lists
+// fields has to be told, every time, that the next hint a shell reads is not a
+// word, and a hint nobody told it about reaches a served document in one language
+// only. `entity.EntryHints` carries no unexported field and no pointer a caller
+// mutates, so the copy is the whole declaration.
+//
+// The entry hints ride on the registration, shared by every request, so the two
+// values whose labels change — the group, each section — are copied out of the
+// shared value before they are written. Every slice stays shared: nothing here
+// writes one.
 func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 	if w.text == nil {
 		return p
 	}
-	out := entity.EntryHints{
-		Singular: w.say("singular", p.Singular), Plural: w.say("plural", p.Plural),
-		Description: w.say("description", p.Description), Icon: p.Icon,
-		Order: p.Order, PrimaryField: p.PrimaryField, PreviewField: p.PreviewField,
-		SummaryFields: p.SummaryFields, StatusField: p.StatusField,
-		EmptyDescription: w.say("emptyDescription", p.EmptyDescription),
-		Sortable:         p.Sortable,
-	}
+	out := p
+	out.Singular = w.say("singular", p.Singular)
+	out.Plural = w.say("plural", p.Plural)
+	out.Description = w.say("description", p.Description)
+	out.EmptyDescription = w.say("emptyDescription", p.EmptyDescription)
 	if p.Group != nil {
 		group := *p.Group
 		group.Label = w.say("group."+group.Key, group.Label)

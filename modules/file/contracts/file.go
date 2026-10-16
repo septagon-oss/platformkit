@@ -47,6 +47,10 @@ const (
 const (
 	MaxName        = 255
 	MaxContentType = 120
+	// MaxAlt is how much a picture is allowed to say about itself. The column is
+	// varchar(1000) and the entity refuses 1001 characters, so the answer is a
+	// 422 that names the limit and not a constraint violation arriving as a 500.
+	MaxAlt = 1000
 )
 
 // Renderable is the closed set of media types this application will let a
@@ -195,6 +199,15 @@ type File struct {
 	// about it — see the CHECK in migrations/000055, which keeps a file the image
 	// pass never measured from carrying a stamp at all.
 	UnusedSince *time.Time `json:"unusedSince,omitempty" gorm:"column:unused_since" doc:"Since when nothing shows it" readOnly:"true" required:"false" format:"date-time"`
+
+	// Alt is what the picture says about itself, in the words a person chose, and
+	// it is written by one command only — SetAlt — never merged in from a request
+	// body. A file may arrive without it; a body may not be handed the file until
+	// it has it, or until the picture is declared decorative.
+	Alt string `json:"alt" gorm:"column:alt;type:varchar(1000);not null;default:''" maxLength:"1000" doc:"What the image says about itself, empty until somebody captions it"`
+	// Decorative is the person saying this picture carries no information a reader
+	// would want: the alternative to writing alt text, and never both at once.
+	Decorative bool `json:"decorative" gorm:"column:decorative;not null;default:false" doc:"True when the image carries no information a reader would want"`
 }
 
 // TableName pins the table, so the entity and migrations/000019 agree.
@@ -251,6 +264,15 @@ func (f *File) Validate(ctx context.Context) error {
 		return fmt.Errorf("nothing this module's ledger can speak about is stamped: an unstored frame carries no grace period")
 	case f.Size < 0:
 		return fmt.Errorf("a file is not a negative number of bytes")
+	// A caption is the entity's business too: whichever door writes it — SetAlt,
+	// a fixture, an import — the row may not carry words and the claim that there
+	// are none at the same time. The empty-but-not-declarative state is legal to
+	// arrive in and is refused by the commands that leave it, which is what
+	// contracts.AltClaim's own comment says and what SetAlt enforces.
+	case f.Alt != "" && f.Decorative:
+		return fmt.Errorf("a decorative image says nothing about itself, and that one carries %d characters", utf8.RuneCountInString(f.Alt))
+	case utf8.RuneCountInString(f.Alt) > MaxAlt:
+		return fmt.Errorf("an alt text is at most %d characters, and that one is %d", MaxAlt, utf8.RuneCountInString(f.Alt))
 	// The same shape files_dimensions CHECKs: a frame is either unmeasured, in
 	// which case both numbers are 0, or it is measured, in which case neither
 	// side is. A width with no height is a number nobody read.

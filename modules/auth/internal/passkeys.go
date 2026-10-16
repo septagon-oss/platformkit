@@ -472,7 +472,7 @@ func (s *Service) BeginPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant]) (
 // that expects no password — the refusal for that mix-up is the same 401 at the
 // same cost as a bad signature, and it spends nothing.
 func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], ceremony uuid.UUID, response json.RawMessage, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
-	if !s.MayRedeem(ctx, from.IP) {
+	if d := s.MayRedeem(ctx, from.IP); d.Decided() && !d.Allowed {
 		return nil, nil, contracts.ErrTooManyAttempts
 	}
 	r, err := s.passkeyRequest(ctx)

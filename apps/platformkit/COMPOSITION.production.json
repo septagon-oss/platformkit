@@ -17,6 +17,7 @@
         "webcontracts.Links",
         "rest.TranslationSource",
         "admincontracts.Signin",
+        "admincontracts.Pictures",
         "admincontracts.Locale",
         "tenantcontracts.Languages",
         "webhookcontracts.Catalogue"
@@ -212,40 +213,6 @@
       }
     },
     {
-      "name": "file",
-      "provides": [
-        "filecontracts.Service",
-        "richtext.Files",
-        "rest.FileUses",
-        "rest.FileShown"
-      ],
-      "needs": [
-        {
-          "contract": "filecontracts.Storage",
-          "from": "product"
-        },
-        {
-          "contract": "jobs.TenantLister",
-          "from": "tenant"
-        }
-      ],
-      "contributes": [
-        {
-          "contract": "personaldata.Part",
-          "to": [
-            "subject"
-          ]
-        }
-      ],
-      "after": [
-        "product",
-        "tenant"
-      ],
-      "reads": [
-        "config.Files"
-      ]
-    },
-    {
       "name": "task",
       "provides": [
         "taskcontracts.Service"
@@ -438,39 +405,18 @@
       ]
     },
     {
-      "name": "content",
+      "name": "media",
       "provides": [
-        "contentcontracts.Service"
+        "*file.LibraryChrome"
       ],
       "needs": [
         {
-          "contract": "richtext.Files",
-          "from": "file"
-        },
-        {
-          "contract": "rest.FileUses",
-          "from": "file"
-        },
-        {
-          "contract": "rest.Translations",
-          "from": "translation"
-        },
-        {
-          "contract": "rest.FileShown",
-          "from": "file"
-        }
-      ],
-      "contributes": [
-        {
-          "contract": "personaldata.Part",
-          "to": [
-            "subject"
-          ]
+          "contract": "authcontracts.Auth",
+          "from": "auth"
         }
       ],
       "after": [
-        "file",
-        "translation"
+        "auth"
       ]
     },
     {
@@ -523,41 +469,44 @@
       ]
     },
     {
-      "name": "web",
+      "name": "file",
+      "provides": [
+        "filecontracts.Service",
+        "richtext.Files",
+        "rest.FileUses",
+        "rest.FileShown"
+      ],
       "needs": [
         {
-          "contract": "sitecontracts.Service",
-          "from": "site"
+          "contract": "filecontracts.Storage",
+          "from": "product"
         },
         {
-          "contract": "contentcontracts.Service",
-          "from": "content"
-        },
-        {
-          "contract": "richtext.Files",
-          "from": "file"
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
         }
       ],
       "uses": [
         {
-          "contract": "webcontracts.Links",
-          "from": "product"
-        },
+          "contract": "*file.LibraryChrome",
+          "from": "media"
+        }
+      ],
+      "contributes": [
         {
-          "contract": "rest.Translations",
-          "from": "translation"
-        },
-        {
-          "contract": "rest.TranslationSource",
-          "from": "product"
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
         "product",
-        "file",
-        "translation",
-        "content",
-        "site"
+        "tenant",
+        "media"
+      ],
+      "reads": [
+        "config.Files"
       ]
     },
     {
@@ -599,6 +548,80 @@
       "after": [
         "product",
         "access"
+      ]
+    },
+    {
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        },
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.FileShown",
+          "from": "file"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
+      "after": [
+        "file",
+        "translation"
+      ]
+    },
+    {
+      "name": "web",
+      "needs": [
+        {
+          "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "contentcontracts.Service",
+          "from": "content"
+        },
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webcontracts.Links",
+          "from": "product"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product",
+        "file",
+        "translation",
+        "content",
+        "site"
       ]
     },
     {
@@ -670,6 +693,10 @@
       "uses": [
         {
           "contract": "admincontracts.Signin",
+          "from": "product"
+        },
+        {
+          "contract": "admincontracts.Pictures",
           "from": "product"
         },
         {
