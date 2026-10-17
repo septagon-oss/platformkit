@@ -16,7 +16,7 @@ import (
 // with two tenants, which no committed case does: one dead grant in both, and a run
 // must move acme's row and leave globex's alone. See $STATE/REVIEW.md, item 2b.
 func TestTheRepairWalksActiveTenantsAndWritesOnlyWhatItsSeederWrote(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 	conn, err := db.Open(t.Context(), cfg.Database.URL)

@@ -20,7 +20,7 @@ import (
 )
 
 func TestTheRepairCommandCannotTakeALiveOperatorGrant(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {

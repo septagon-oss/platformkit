@@ -15,6 +15,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"net/url"
 	"os"
@@ -50,24 +51,13 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 	baseAdmin := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
 	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
 	name := schemaName(t.Name())
-	schema := quote(name)
-	role := quote(roleOf(t, baseApp))
 
 	admin := OpenFor(t, baseAdmin)
-	run := func(query string) {
-		t.Helper()
+	for _, query := range namespaceStatements(name, roleOf(t, baseApp)) {
 		if _, err := admin.ExecContext(ctx, query); err != nil {
 			t.Fatalf("dbtest: %s: %v", query, err)
 		}
 	}
-	run("DROP SCHEMA IF EXISTS " + schema + " CASCADE")
-	run("CREATE SCHEMA " + schema)
-	run("GRANT USAGE ON SCHEMA " + schema + " TO " + role)
-	// Default privileges hand each table and sequence created in the schema to
-	// the app role as it appears, the same way deploy/postgres/init.sql does for
-	// the public schema.
-	run("ALTER DEFAULT PRIVILEGES IN SCHEMA " + schema + " GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO " + role)
-	run("ALTER DEFAULT PRIVILEGES IN SCHEMA " + schema + " GRANT USAGE, SELECT ON SEQUENCES TO " + role)
 
 	t.Cleanup(func() {
 		cleaner, err := openOwner(baseAdmin)
@@ -75,9 +65,25 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 			return
 		}
 		defer cleaner.Close()
-		_, _ = cleaner.ExecContext(context.WithoutCancel(ctx), "DROP SCHEMA "+schema+" CASCADE")
+		_, _ = cleaner.ExecContext(context.WithoutCancel(ctx), "DROP SCHEMA "+quote(name)+" CASCADE")
 	})
 	return withSchema(t, baseAdmin, name), withSchema(t, baseApp, name)
+}
+
+// namespaceStatements are the statements that make one schema this namespace's own: an empty
+// schema of that name, the application role's USAGE on it, and the default privileges that hand
+// every table and sequence created inside it to that role as it appears, the way
+// deploy/postgres/init.sql does for the public schema. A schema and a role are quoted here and
+// nowhere else, so a caller cannot prepare one namespace two ways.
+func namespaceStatements(schema, role string) []string {
+	s, r := quote(schema), quote(role)
+	return []string{
+		"DROP SCHEMA IF EXISTS " + s + " CASCADE",
+		"CREATE SCHEMA " + s,
+		"GRANT USAGE ON SCHEMA " + s + " TO " + r,
+		"ALTER DEFAULT PRIVILEGES IN SCHEMA " + s + " GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO " + r,
+		"ALTER DEFAULT PRIVILEGES IN SCHEMA " + s + " GRANT USAGE, SELECT ON SEQUENCES TO " + r,
+	}
 }
 
 // Schema creates an isolated database schema with the kernel's tables and the
@@ -311,14 +317,24 @@ func RoleOf(t *testing.T, rawURL string) string {
 
 func roleOf(t testing.TB, rawURL string) string {
 	t.Helper()
+	name, err := loginRole(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
+// loginRole is roleOf's contract with no testing.TB to report to: the role a connection URL logs in
+// as, which is the role a namespace's grants and default privileges name.
+func loginRole(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		t.Fatalf("dbtest: %q is not a URL: %v", rawURL, err)
+		return "", fmt.Errorf("%q is not a URL: %w", rawURL, err)
 	}
 	if u.User == nil || u.User.Username() == "" {
-		t.Fatalf("dbtest: %q names no role", rawURL)
+		return "", fmt.Errorf("%q names no role", rawURL)
 	}
-	return u.User.Username()
+	return u.User.Username(), nil
 }
 
 // withSchema returns rawURL with the test schema as the only search_path. pgx
@@ -335,15 +351,25 @@ func roleOf(t testing.TB, rawURL string) string {
 // connection names exactly this test's own backends, and nobody else's.
 func withSchema(t testing.TB, rawURL, schema string) string {
 	t.Helper()
-	u, err := url.Parse(rawURL)
+	target, err := schemaURL(rawURL, schema)
 	if err != nil {
 		t.Fatalf("dbtest: %q is not a URL: %v", rawURL, err)
+	}
+	return target
+}
+
+// schemaURL is withSchema's contract with no testing.TB to report to: the namespace a pool opened
+// from the URL lands in, and the application_name that says so in pg_stat_activity.
+func schemaURL(rawURL, schema string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
 	}
 	q := u.Query()
 	q.Set("options", "-csearch_path="+schema)
 	q.Set("application_name", schema)
 	u.RawQuery = q.Encode()
-	return u.String()
+	return u.String(), nil
 }
 
 func mustEnv(t testing.TB, name string) string {
@@ -366,8 +392,18 @@ var run = strconv.FormatUint(rand.Uint64(), 36)
 
 // schemaName turns a test name into a Postgres identifier.
 func schemaName(test string) string {
+	name := "t_" + run + "_" + sanitize(test)
+	if len(name) > 63 { // the Postgres identifier limit
+		name = name[:63]
+	}
+	return name
+}
+
+// sanitize is a test name as a Postgres identifier can hold it: lower case, and every character
+// the grammar does not admit become one underscore. Nothing truncates it here, so a caller that
+// has room for the whole name keeps the whole name.
+func sanitize(test string) string {
 	var b strings.Builder
-	b.WriteString("t_" + run + "_")
 	for _, r := range strings.ToLower(test) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
@@ -375,11 +411,7 @@ func schemaName(test string) string {
 			b.WriteByte('_')
 		}
 	}
-	name := b.String()
-	if len(name) > 63 { // the Postgres identifier limit
-		name = name[:63]
-	}
-	return name
+	return b.String()
 }
 
 func quote(id string) string { return `"` + strings.ReplaceAll(id, `"`, `""`) + `"` }

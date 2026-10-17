@@ -33,7 +33,7 @@ import (
 // real hook, and what it is compared against is contracts.SeededRoles over
 // kit/module.Grants of the modules compose returned.
 func TestTheBootstrapSeedsWhatThisFileComposes(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 
