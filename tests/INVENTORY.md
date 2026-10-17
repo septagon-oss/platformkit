@@ -1,17 +1,17 @@
 # Test inventory and verdicts — platformkit (decision 0088)
 
-One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 3282 rows over 1698 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
+One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 3283 rows over 1699 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
 
 ## Scale
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 3282 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1698 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| test rows | 3283 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1699 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
 | Go test functions | 3027 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 61 | filename prefix |
 | rows inside them | 93 | same walk |
-| Playwright specs / Maestro flows / `scripts/` pins / node tests | 91 / 1 / 74 / 89 | same walk |
+| Playwright specs / Maestro flows / `scripts/` pins / node tests | 92 / 1 / 74 / 89 | same walk |
 
 ## Layers and tiers
 
@@ -20,9 +20,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | contract | 20 | push, first | asserts a golden or the published API set |
 | behaviour | 2780 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 390 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
-| journey | 92 | nightly | `e2e/`: browser or device |
+| journey | 93 | nightly | `e2e/`: browser or device |
 
-Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 1 126 rows sit in packages that open nothing, 2 064 in packages that do, 92 in the browser. The push tier's headline counts 1 140 and the merge tier's 2 050: the 14-row difference is the contract-key rows (openapi, asyncapi, golden, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those six files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
+Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 1 126 rows sit in packages that open nothing, 2 064 in packages that do, 93 in the browser. The push tier's headline counts 1 140 and the merge tier's 2 050: the 14-row difference is the contract-key rows (openapi, asyncapi, golden, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those six files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
 
 Of the 1 140, 977 are Go rows, 74 are `scripts/` pins and 89 are `node --test` cases. All three shapes run on a pull request, but not from the same line: the Go rows come out of `--tier push`, the pins are recipe lines of `make check` (which `check-push` runs fewer of, named under `Limits`), and the node cases run in the `editor` job — `npm test` over the tool's own `*.test.mjs`, `npm run test:browser` over `browser/`, and two later steps that pass `editor/*.test.mjs` and `preview/<file>` to the runner directly (`.gitea/workflows/ci.yml:741,779,1044,1073`). The headline is what a pull request runs; the selector's list is what `scripts/check_push_tier.sh` runs, and it answers Go packages only.
 
@@ -46,7 +46,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1471 | 2926 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 1472 | 2927 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 73 | 140 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -118,7 +118,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | apps | 253 | 24 | 28 | 0 |
 | ui | 177 | 10 | 5 | 0 |
 | tools | 94 | 1 | 0 | 0 |
-| e2e | 92 | 5 | 0 | 0 |
+| e2e | 93 | 5 | 0 | 0 |
 | migrations | 15 | 5 | 8 | 0 |
 
 `tools` appears with the design tooling's JavaScript cases: one of the 89, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above (140 keep-rewrite, 216 merge). The table lists the areas that hold a verdict, and three areas the walk counts hold none: `pkit` (65 files), `design` (4 files) and `scripts` (74 files, a count the Scale table already quotes) are every `keep`, so a row for each would carry three zeroes beside a population and tell a reader nothing the `Verdicts` table above does not — the markdown this file holds is that population's count, so a zero row is priced like any other row. `ui`'s merge column falls to 5 because the round-named sheets that carried those verdicts folded into the named pins beside them. The figures in this table re-derive from the same rows; unlike the four sections above they are quoted by hand, and `scripts/inventory_area_totals_match_document_test.py` — a recipe line of `make check` — re-derives them from `inventory.json` and refuses this file when the rows no longer answer them.
@@ -139,7 +139,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 |---|---|---|
 | round-named test files | 61 against a ceiling of 61 | `summary.round_named_ceiling` in `inventory.json`, re-checked by `scripts/check_test_inventory.sh`: `--write --ceiling N` lowers it, and a rise is refused by the same line that prints the count. 64 is the ceiling the naming guard holds (`CENSUS_CEILING` in `scripts/test_comments_explain_what_they_protect_test.sh`), which is this same debt counted over its own population, so the table and the guard refuse a rise at their own census's number and nothing ties the two figures but this row. They do not count the same population: that census, and the loop's gate beside it, match `review` anywhere in a file name, so they hold four files the prefix walk does not — `apps/platformkit/change_review_queue_test.go`, `kit/httpx/refusal_host_form_review7_test.go` and the translation module's two `mark_reviewed_*` pins — and the walk holds one the census never reads, `tools/designexport/openpencil/browser/review_round18_authored_role_read.test.mjs`, whose suffix is not a shape the census takes. Hence 64 answered where the prefix walk counts 61; 64 is what a census-side rise is refused against, and three of those four names say what their files check in the product's own words — a change queue, a copy already marked reviewed — so no rename of one of them is the answer this table holds. The one name that did move is `kit/wire`'s case that a widened kind covers no plan feature the door gained, which `main` filed as `reviewed_widening_gains_no_feature_test.go` after this branch's count was full: the table holds every row that predates `scripts/test_rename_carries_assertions_test.py` at the path the merge answered it under, so the file that arrived beside that pin is the one this branch could still name for its rule, and it is named `an_allowance_pair_over_the_kind_covers_no_feature_the_door_gained_test.go` — the package's own words for the same rule, since the mechanical name the generator proposes (`areviewed_widening_covers_no_feature_the_door_gained_test.go`) keeps the letters both censuses match. The rename is the path alone: the function, its assertions and its message read as `main` wrote them. |
 | `go_test` lines | 187 901 against the 188 400 ceiling | `go run ./tools/locbudget --check`, which reads the ceiling `loc-budget.json` carries for the bucket |
-| inventory rows | 3282 | `scripts/check_test_inventory.sh` re-derives them from the tree |
+| inventory rows | 3283 | `scripts/check_test_inventory.sh` re-derives them from the tree |
 | coverage | unmeasured tree-wide; measured per package for 10 packages here | `make cover` (new): the prune refuses a figure below the recorded one |
 
 ## What CI re-checks, after the tiers
