@@ -584,14 +584,14 @@ effect still needs its provider's idempotency contract.
 
 **Where it lives.** `modules/notification`: `Notification`
 (`modules/notification/contracts/notification.go:29`), the `Notice` a refusal
-raises (`:70`), `RecipientLookup` (`:84`) and `HostLookup` (`:101`) as what it
-needs from other modules, `Mailer` (`:127`) as what it does not, and `Service`
-(`:134`). It ships no `rest.Spec`, and the manifest says why: a Spec's list route
+raises (`:72`), `RecipientLookup` (`:116`) and `HostLookup` (`:133`) as what it
+needs from other modules, `Mailer` (`:179`) as what it does not, and `Service`
+(`:186`). It ships no `rest.Spec`, and the manifest says why: a Spec's list route
 is the whole tenant, and these rows are one person's (`modules/notification/module.go:5`).
 
-**Builds on.** `net/smtp`-shaped SMTP (`NewSMTP`,
-`modules/notification/internal/smtp.go:78`) and one Go template. No mail library,
-and no message catalogue of its own.
+**Builds on.** `github.com/wneessen/go-mail` over SMTP (`gomail.New`,
+`modules/notification/providers/gomail/gomail.go:70`) or the module's own mailbox
+(`modules/notification/mailbox.go:30`), one Go template, no message catalogue.
 
 **How the tenant crosses it.** `notifications.tenant_id` under `ENABLE` and
 `FORCE` with the tenant-match policy
@@ -599,20 +599,20 @@ and no message catalogue of its own.
 the delivery ledger in `000027_notification_deliveries`. An address and a host
 arrive only through the two ports the application implements over the user and
 tenant modules, so this module never names either
-(`modules/notification/module.go:31-44`).
+(`modules/notification/provider.go:29-30`).
 
-**How it is traced and audited.** Its three events
-(`modules/notification/contracts/events.go:22-24`) reach the trail through
+**How it is traced and audited.** Its ten events
+(`modules/notification/contracts/events.go:20-52`) reach the trail through
 `SubscribeAll`; no span of its own.
 
 **How an app extends it.** Implement `Mailer`. The deployment names which sender
-it has (`FromDeployment`, `modules/notification/provider.go:39-42`): SMTP when the
-process names a host, port and from-address, the mailbox when not (`:52-59`), and
-the mailbox is no stub — "it keeps every message and logs each one" (`:23-26`) —
+it has (`FromDeployment`, `modules/notification/provider.go:40-43`): SMTP when the
+process names a host, port and from-address, the mailbox when not (`:60-62`), and
+the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
-(`apps/platformkit/main.go:82`). A refusal a person must see
-raises a `Notice` (`apps/platformkit/product.go:292`). A nil lookup writes every
-row and sends no mail: the notice is the record, the mail is a copy.
+(`apps/platformkit/main.go:84`). A refusal a person must see raises a `Notice`
+(`apps/platformkit/product.go:292`). A nil lookup writes every row and sends no
+mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
 

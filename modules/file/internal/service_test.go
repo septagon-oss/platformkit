@@ -42,7 +42,16 @@ func TestServiceConforms(t *testing.T) {
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(filetest.Fixture{Ctx: ctx, Tx: tx, Service: svc, Storage: store,
 				Keys:      func() []string { return keysUnder(t, dir) },
-				Published: func() []string { return published(t, tx) }})
+				Published: func() []string { return published(t, tx) },
+				// The state no command of this module leaves behind: a file row
+				// removed while a use still names it, which is what the erasure door
+				// and the retention sweep do, and what the suite's own Delete now
+				// refuses to do.
+				Remove: func(id uuid.UUID) {
+					if err := tx.DB().Exec("DELETE FROM files WHERE id = ?", id).Error; err != nil {
+						t.Fatalf("remove %s: %v", id, err)
+					}
+				}})
 			return errRollback
 		})
 		if !errors.Is(err, errRollback) {
