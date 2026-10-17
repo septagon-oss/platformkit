@@ -610,6 +610,14 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# match that parent, and so can hide the branch's own build(budget) commits — is unobservable there.
 	# One throwaway repository, six commits across its two branches, no network, no database, one second.
 	bash scripts/a_branch_that_carries_mains_numbers_keeps_what_it_priced_test.sh
+	# scripts/budget_commits_count_once_test.sh asks the ratchet the question neither case above can: does
+	# one commit that prices both budget files declare its allowance once? Naming a commit is what the walk
+	# above does per filename it edited, so a commit that moves loc-budget.json and packages-budget.json
+	# together can enter the declared growth twice — and neither neighbour sees it: the merge case changes one
+	# budget file per commit and the suite above builds each case from its own base. Doubled, two priced
+	# lines admit four new ones, and a 600-line raise reads as 1,200 and is refused for an owner trailer
+	# nobody owed. Two throwaway repositories, three commits each, no network, no database, one second.
+	bash scripts/budget_commits_count_once_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh

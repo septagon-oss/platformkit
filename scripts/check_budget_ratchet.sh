@@ -98,12 +98,18 @@ fi
 # it did price. What decides whether a commit belongs here is that commit's own diff, which this one call
 # prints for every non-merge commit between the base and HEAD, main's own commits included in no range
 # because the merge base excludes them.
+# One commit is named once, not once per budget file it edits: a commit is asked whether it is a
+# build(budget) commit and what it declares, and a commit that prices lines and packages together edits
+# two files while declaring one line allowance. Duplicated here, its allowance is added twice and its
+# own raise counted twice against the owner's threshold, so two priced lines admit four and a raise of
+# 600 reads as 1,200. The `!seen[sha]++` guard runs only on a budget filename, so a commit that touches
+# neither file still prints nothing.
 budget_files='loc-budget.json packages-budget.json'
 if ! touched="$(git -c color.ui=false log --no-merges --format='commit %H' --name-only "$base..HEAD" 2>/dev/null \
 	| awk -v files="$budget_files" '
 		BEGIN { split(files, names, " "); for (i in names) budget[names[i]] = 1 }
 		/^commit [0-9a-f]{40}$/ { sha = substr($0, 8); next }
-		($0 in budget) { print sha }
+		($0 in budget) && !seen[sha]++ { print sha }
 	')"; then
 	echo 'budget ratchet: the history between the base and HEAD cannot be read' >&2
 	exit 2
