@@ -169,6 +169,23 @@ budget_docs 3 8 && commit 'build(budget): the docs ceiling comes down to what th
 lines a.go 2 && commit 'feat: two lines the lowering did not price'
 expect_merge_base 1 'a lowering declares no growth'
 
+# Two readings of the same pair of commits, on a branch that raised a bucket and then brought it down
+# again: what pays for the lines is the raise it was priced at, or what the budget file last carried for
+# the bucket. The second is what `make check-loc` holds, because a ceiling the file no longer states is a
+# ceiling no reviewer agreed to. So the branch that lowers the bucket it had raised is refused for its
+# growth, and the one that keeps enough of it stands on what is left of the raise.
+fresh_branch raise_then_lower_declares_nothing
+budget 8 docs && commit 'build(budget): go 3 -> 8'
+budget 3 docs && commit 'build(budget): go comes back down to 3'
+lines a.go 2 && commit 'feat: two lines of a raise the branch took back'
+expect_merge_base 1 'a raise the branch lowers back is no longer priced'
+
+fresh_branch lower_keeps_what_is_left
+budget 8 docs && commit 'build(budget): go 3 -> 8'
+lines a.go 4 && commit 'feat: four of the five priced lines'
+budget 7 docs && commit 'build(budget): go 8 -> 7, one line came back out'
+expect_merge_base 0 'the ceiling the branch last wrote is what pays for its growth'
+
 fresh_branch resolution
 on_main main_raises_then_overruns
 git merge -q --no-ff --no-commit origin/main >/dev/null

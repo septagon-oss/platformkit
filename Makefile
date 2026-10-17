@@ -618,6 +618,16 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# lines admit four new ones, and a 600-line raise reads as 1,200 and is refused for an owner trailer
 	# nobody owed. Two throwaway repositories, three commits each, no network, no database, one second.
 	bash scripts/budget_commits_count_once_test.sh
+	# scripts/a_raise_restated_after_a_merge_is_priced_once_test.sh asks the ratchet what a branch declares
+	# when it merges main twice and, after each merge, writes main's loc-budget.json numbers back up to the
+	# ceiling it had priced: one declaration, restated. Measured against the commit before it, each
+	# restatement is a fresh raise, so a 400-line raise buys 1,200 lines and is then refused for three
+	# `Owner-approved:` trailers on a raise that never passed 1,000 lines — and the lax half of the same
+	# history passes 800 lines against 300 priced. Neither neighbour sees the shape: the merge case above
+	# merges once and never re-prices, the count-once case never merges, and the suite at the top of this
+	# list builds every case from one base commit. Two throwaway repositories, eleven commits in each, one
+	# `go build` of the counter and no network, database, browser or listener: two seconds.
+	bash scripts/a_raise_restated_after_a_merge_is_priced_once_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh

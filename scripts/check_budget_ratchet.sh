@@ -92,12 +92,13 @@ fi
 # bucket or a changed measurement is never excused this way. CI checks out with fetch-depth 0; history
 # that cannot be read refuses.
 #
-# The walk names no paths. A path-limited rev-list applies git's history simplification: where a merge's
-# budget files match one parent, git follows that parent alone, so a branch that merges main and carries
-# main's loc-budget.json loses every build(budget) commit on its own side and is then refused for growth
-# it did price. What decides whether a commit belongs here is that commit's own diff, which this one call
-# prints for every non-merge commit between the base and HEAD, main's own commits included in no range
-# because the merge base excludes them.
+# The walk prints no commit before its own children (--topo-order), which is what makes "newest" below
+# mean nearest to HEAD rather than latest by a clock a rebase moved, and it names no paths. A path-limited
+# rev-list applies git's history simplification: where a merge's budget files match one parent, git follows
+# that parent alone, so a branch that merges main and carries main's loc-budget.json loses every
+# build(budget) commit on its own side and is then refused for growth it did price. What decides whether a
+# commit belongs here is that commit's own diff, which this one call prints for every non-merge commit
+# between the base and HEAD, main's own commits included in no range because the merge base excludes them.
 # One commit is named once, not once per budget file it edits: a commit is asked whether it is a
 # build(budget) commit and what it declares, and a commit that prices lines and packages together edits
 # two files while declaring one line allowance. Duplicated here, its allowance is added twice and its
@@ -105,7 +106,7 @@ fi
 # 600 reads as 1,200. The `!seen[sha]++` guard runs only on a budget filename, so a commit that touches
 # neither file still prints nothing.
 budget_files='loc-budget.json packages-budget.json'
-if ! touched="$(git -c color.ui=false log --no-merges --format='commit %H' --name-only "$base..HEAD" 2>/dev/null \
+if ! touched="$(git -c color.ui=false log --no-merges --topo-order --format='commit %H' --name-only "$base..HEAD" 2>/dev/null \
 	| awk -v files="$budget_files" '
 		BEGIN { split(files, names, " "); for (i in names) budget[names[i]] = 1 }
 		/^commit [0-9a-f]{40}$/ { sha = substr($0, 8); next }
@@ -144,26 +145,44 @@ if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from ';
 		problems="${problems}"$'\n'"budget ratchet: these commits change a budget file and are not a build(budget) commit touching only budget files:"$'\n'"${unreviewed}"
 	fi
 fi
-# What this branch declares: each build(budget) commit's own change to each loc-budget.json ceiling, one
-# `commit bucket delta` row apiece. A merge is never walked, so a branch that merges main carries main's
-# numbers and declares nothing by doing so. A row may be negative, and a negative one is not a promise to
-# shrink: the allowance below is a number of lines this branch may add, so only a raise adds to it, and a
-# commit that lowers a ceiling to what the tree actually counts stays the unrefused tidying it is.
-declared=''
+# What this branch declares, one row per bucket: the ceiling its own most recent build(budget) commit
+# wrote for that bucket, less the ceiling main's own history already held at that commit — `git
+# merge-base BASE COMMIT`, which is BASE where the commit descends from the base and the branch's fork
+# point everywhere else. A commit is asked whether it wrote the bucket, in its own diff against its own
+# parent, and what it wrote is measured against main. Measuring it against main rather than against the
+# commit before it is what keeps one declaration one declaration: a branch that merges main carries
+# main's loc-budget.json, the commit after it re-raises main's ceiling to where the branch's own priced
+# ceiling stood, so summing every commit's own delta prices those same lines once per merge, admits
+# growth nothing priced and asks for `Owner-approved:` trailers on a raise that never passed 1,000 lines.
+# A merge is never the declaration, so a raise written only in a merge resolution declares nothing. A
+# lowering declares no growth and is never a refusal — it is the tidying CONTRIBUTING prescribes, not a
+# promise to shrink — but it is the last word on that bucket: the number that pays for a line is the one
+# this branch's budget file last carried for it. A build(budget) commit that arrives on a merged sibling
+# is the branch's own for this: it declares what it wrote, where it was written.
+raised=''
 for commit in $touched; do
 	budget_commit "$commit" && git cat-file -e "$commit:loc-budget.json" 2>/dev/null || continue
-	before="$(git show "$commit^:loc-budget.json" 2>/dev/null || echo '{"buckets": []}')"
-	rows="$(jq -nr --arg c "$commit" --argjson before "$before" --argjson after "$(git show "$commit:loc-budget.json")" '
-	    $after.buckets[] as $a | $before.buckets[] | select(.name == $a.name and .max != $a.max)
-	    | "\($c) \($a.name) \($a.max - .max)"
+	anchor="$(git merge-base "$base" "$commit" 2>/dev/null || printf '%s' "$base")"
+	rows="$(jq -nr --arg c "$commit" \
+		--argjson parent "$(git show "$commit^:loc-budget.json" 2>/dev/null || echo '{"buckets": []}')" \
+		--argjson main "$(git show "$anchor:loc-budget.json" 2>/dev/null || echo '{"buckets": []}')" \
+		--argjson wrote "$(git show "$commit:loc-budget.json")" '
+	    $wrote.buckets[] as $a
+	    | ([$parent.buckets[] | select(.name == $a.name)] | .[0]) as $before
+	    | ([$main.buckets[] | select(.name == $a.name)] | .[0]) as $held
+	    | select($before != null and $held != null and $before.max != $a.max)
+	    | "\($c) \($a.name) \($a.max - $held.max)"
 	')"
-	declared="${declared}${declared:+${rows:+$'\n'}}${rows}"
+	raised="${raised}${raised:+${rows:+$'\n'}}${rows}"
 done
+# The walk is topological and prints the commit nearest HEAD first, so the row that stands for a bucket is
+# the last declaration that bucket's branch of the history reached.
+declared="$(awk '$2 != "" && !seen[$2]++' <<< "$raised")"
 # A raise of more than 1,000 lines in one bucket is the owner's, not only the reviewer's: every commit
 # raising that bucket names the approval in an `Owner-approved:` trailer. The check reads that the
 # claim is recorded where review reads it; it cannot read that the owner made it.
-for bucket in $(awk '$3 > 0 { sum[$2] += $3 } END { for (b in sum) if (sum[b] > 1000) print b }' <<< "$declared"); do
-	for commit in $(awk -v b="$bucket" '$2 == b && $3 > 0 { print $1 }' <<< "$declared"); do
+for bucket in $(awk '$3 > 1000 { print $2 }' <<< "$declared"); do
+	for commit in $(awk -v b="$bucket" '$2 == b && $3 > 0 { print $1 }' <<< "$raised"); do
 		if [ -z "$(git log -1 --format='%(trailers:key=Owner-approved,valueonly)' "$commit" | tr -d '[:space:]')" ]; then
 			problems="${problems:+$problems$'\n'}loc-budget.json: $bucket rises over 1,000 lines on this branch and ${commit:0:12} carries no Owner-approved: trailer"
 		fi
@@ -184,7 +203,8 @@ if [ -n "$merge_base_ref" ]; then
 		exit 2
 	fi
 	while read -r name grew; do
-		allowed="$(awk -v b="$name" '$2 == b && $3 > 0 { sum += $3 } END { print sum + 0 }' <<< "$declared")"
+		allowed="$(awk -v b="$name" '$2 == b && $3 > 0 { print $3 }' <<< "$declared")"
+		[ -n "$allowed" ] || allowed=0
 		if [ "$grew" -gt "$allowed" ]; then
 			problems="${problems:+$problems$'\n'}loc-budget.json: $name grew by $grew lines since the merge base ${base:0:12}; this branch's build(budget) commits declare $allowed"
 		fi

@@ -205,7 +205,11 @@ verification in its message. The ratchet accepts a raise only when every commit
 on the branch that touches a budget file is such a commit, so the raise stands
 alone in history; a removed bucket or a changed measurement is never accepted.
 `make check-loc` holds each bucket's growth since the merge base with
-`origin/main` to the sum of what those commits raise it by. Main's own growth
+`origin/main` to what the last of those commits leaves standing above main's
+own ceiling at the point it was written. One declaration is counted once, not
+once per commit that restates it: a branch that merges main and then re-raises
+main's ceiling to where its own priced ceiling stood has restated the same
+raise, and those lines are bought once. Main's own growth
 is not the branch's: a branch that merges main carries main's numbers unchanged,
 and the merge declares nothing. A raise of over 1,000 lines in one bucket also
 needs an `Owner-approved:` trailer on each commit that raises it.
