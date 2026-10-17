@@ -14,7 +14,7 @@ import (
 // role provisioned exactly as modules/audit/README.md's Provisioning section says,
 // and finds the aged row gone and its mark written.
 func TestTheTrailExpiresWithTheGrantsTheAuditREADMENames(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	admin := dbtest.OpenFor(t, cfg.Database.MigrateURL)
 
