@@ -71,6 +71,17 @@ PLATFORMKIT_VALKEY_PORT ?= 6379
 PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_VALKEY_PORT)' 2>/dev/null && echo redis://localhost:$(PLATFORMKIT_VALKEY_PORT))
 export PLATFORMKIT_TEST_VALKEY_URL
 
+# The secret service kit/secrets' OpenBao adapter speaks, and the token its dev mode
+# answers to. Like PLATFORMKIT_TEST_VALKEY_URL it is exported only when something
+# answers there: kit/secrets boots and runs every case without a server, so a checkout
+# with no OpenBao running takes the named skip rather than a failure, and whoever
+# exports this variable at a store that is not answering gets failures instead — an
+# address you set yourself is a promise.
+PLATFORMKIT_OPENBAO_PORT ?= 8200
+PLATFORMKIT_TEST_OPENBAO_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_OPENBAO_PORT)' 2>/dev/null && echo http://localhost:$(PLATFORMKIT_OPENBAO_PORT))
+export PLATFORMKIT_TEST_OPENBAO_URL
+export PLATFORMKIT_TEST_OPENBAO_TOKEN ?= dev-only-unseal-token
+
 # Local feedback uses Go's package/dependency cache. The full check below runs
 # fresh at TEST_COUNT's default of -count=1, independently of these local
 # selectors or an earlier test goal: only a caller that sets TEST_COUNT itself

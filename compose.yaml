@@ -91,6 +91,31 @@ services:
       timeout: 5s
       retries: 10
 
+  openbao:
+    # The secret service kit/secrets/providers/openbao answers to, and the server
+    # whose conformance run `make check` takes when this is up. Dev mode: unsealed,
+    # in-memory, and holding nothing but what a test mounts, which is the only shape
+    # a secret service may take in a stack that is restarted by `make down`.
+    #
+    # OpenBao rather than Vault because the brief names the open fork, and MPL-2.0
+    # (LICENSE at openbao/openbao) is a licence this stack's policy allows. Pinned by
+    # digest, as SeaweedFS is, so a day's upstream release cannot move the wire this
+    # adapter is tested against. KV v2 is mounted at secret and transit at transit by
+    # the entrypoint below, which is the pair config.Secrets defaults to.
+    image: openbao/openbao@sha256:6d2b93856e3fcf7b18ad855a0b51eaba474dc8b79cf554379ea32034797d2acf
+    command: ["server", "-dev", "-dev-root-token-id", "dev-only-unseal-token", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      BAO_DEV_ROOT_TOKEN_ID: dev-only-unseal-token
+      BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      BAO_ADDR: http://127.0.0.1:8200
+    ports:
+      - "${PLATFORMKIT_OPENBAO_PORT:-8200}:8200"
+    healthcheck:
+      test: ["CMD-SHELL", "bao status -format=json | grep -q '\"initialized\":true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   s3:
     # The S3-compatible object store modules/file's S3 adapter is tested against
     # (file.S3). SeaweedFS because it is Apache-2.0 and its image pulls without a
