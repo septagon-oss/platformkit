@@ -307,12 +307,13 @@ const fileUploadRoute = "/api/v1/file/files"
 const fileImageSrc = "/api/v1/file/files/{file}/content"
 
 // richtextEditor is the server's answer to "what may this field's editor do, and
-// where". An author who is writing has no record yet, so there is nothing to save
-// against and nothing to keep a draft under: the two attributes appear together
-// with the record's id. An entity that keeps no write count has no tag to quote,
-// so the editor saves nothing as the author writes and keeps the draft instead —
-// which is the honest mode, not a degraded one: a conflict panel needs a revision
-// to disagree about.
+// where". An author who is writing has no record yet, so there is nothing to keep
+// a draft under: the draft key appears with the record's id and nowhere else. No
+// write address is offered beside it, because this form is the write: it posts the
+// field and quotes the row's own write count as the condition on that post. A
+// browser handed the same address would PATCH the field as the person types, move
+// the row off the revision the form still carries, and refuse the Save pressed a
+// moment later — keeping no draft in which unsaved words would then live.
 //
 // submitted says this render is the answer to a write that was refused: its
 // controls carry the person's own post rather than the record's text. Nothing
@@ -328,10 +329,6 @@ func richtextEditor(r Resource, row map[string]any, create bool, name string, su
 		return editor
 	}
 	editor.DraftKey = r.API + "/" + id + "/" + name
-	if revision, quoted := revisionCondition(r, row, create); quoted {
-		editor.Endpoint = r.API + "/" + id
-		editor.ETag = `"` + revision + `"`
-	}
 	return editor
 }
 
