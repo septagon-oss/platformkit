@@ -9940,6 +9940,63 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/cache/closed_store_detection_test.go",
+   "id": "kit/cache/closed_store_detection_test.go#TestTheSuiteRefusesAStoreAnEarlierRunClosed",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheSuiteRefusesAStoreAnEarlierRunClosed",
+   "needs_db": false,
+   "pkg": "kit/cache",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/cache/conformance_repetition_test.go",
+   "id": "kit/cache/conformance_repetition_test.go#TestTheSuiteRepeatedUnderOneNameConformsEveryTime",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheSuiteRepeatedUnderOneNameConformsEveryTime",
+   "needs_db": false,
+   "pkg": "kit/cache",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/cache/one_connection_store_test.go",
+   "id": "kit/cache/one_connection_store_test.go#TestAOneConnectionStoreConformsWhenEachCaseHasItsOwnKeyspace",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAOneConnectionStoreConformsWhenEachCaseHasItsOwnKeyspace",
+   "needs_db": false,
+   "pkg": "kit/cache",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/cache/providers/valkey/credential_redaction_test.go",
    "id": "kit/cache/providers/valkey/credential_redaction_test.go#TestARefusedStoreNamesNoPassword",
    "kind": "go",
@@ -64904,7 +64961,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1697,
+  "files": 1700,
   "forge_runs": [
    408,
    413,
@@ -64938,7 +64995,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2778,
+   "behaviour": 2781,
    "composition": 390,
    "contract": 20,
    "journey": 92
@@ -64957,23 +65014,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3280,
+  "rows": 3283,
   "tiers": {
    "merge": 2049,
    "nightly": 92,
-   "push": 1139
+   "push": 1142
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1470,
+   "keep": 1473,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2924,
+   "keep": 2927,
    "keep-rewrite": 140,
    "merge": 216
   }
