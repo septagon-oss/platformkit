@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -187,15 +188,20 @@ func ForgetTenantOnCommit(ctx context.Context, tenant uuid.UUID) {
 // front of a traffic spike is otherwise one lookup per request, all of them
 // asking the same question.
 //
-// The shared lookup carries the drop count it stamped itself with before it asked,
-// so a lookup that overlaps a committed change to its tenant serves the request
-// that waited on it and stops there: see hostCache.put.
+// The shared lookup is joined by generation. A request reads the drop count and
+// joins only a lookup started under that same count, so joining carries a promise
+// the count alone cannot make: no tenant was dropped between the lookup's first
+// look and this request's arrival. A request that arrives after a drop therefore
+// asks its own question and is answered from the committed row, while a request
+// that arrived before the drop may still be answered from the snapshot its lookup
+// read — it began while that was the declaration. The count the lookup carries
+// decides whether its answer may also be remembered: see hostCache.put.
 func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) {
 	if t, ok := a.hosts.get(host); ok {
 		return t, nil
 	}
-	shared, err, _ := a.resolving.Do(host, func() (any, error) {
-		stamped := a.hosts.stamp()
+	stamped := a.hosts.stamp()
+	shared, err, _ := a.resolving.Do(resolutionKey(host, stamped), func() (any, error) {
 		if t, ok := a.hosts.get(host); ok {
 			return hostResolution{tenant: t, stamped: stamped}, nil
 		}
@@ -228,9 +234,16 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 	return t, nil
 }
 
+// resolutionKey names the shared lookup of one host at one drop generation, so a
+// request that arrives after a drop cannot join a lookup that started before it.
+// The separator is a space, which no normalised host name carries: see HostOnly.
+func resolutionKey(host string, generation uint64) string {
+	return host + " " + strconv.FormatUint(generation, 10)
+}
+
 // hostResolution is one answer of the shared lookup, with the drop count the
 // lookup held before it asked. The answer goes to every request that joined the
-// lookup; the stamp decides whether it may also be remembered.
+// lookup at that count; the stamp decides whether it may also be remembered.
 type hostResolution struct {
 	tenant  tenancy.Tenant
 	stamped uint64
