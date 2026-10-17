@@ -91,8 +91,20 @@ fi
 # commit touching nothing else, so the raise stands alone in history where a reviewer reads it. A removed
 # bucket or a changed measurement is never excused this way. CI checks out with fetch-depth 0; history
 # that cannot be read refuses.
+#
+# The walk names no paths. A path-limited rev-list applies git's history simplification: where a merge's
+# budget files match one parent, git follows that parent alone, so a branch that merges main and carries
+# main's loc-budget.json loses every build(budget) commit on its own side and is then refused for growth
+# it did price. What decides whether a commit belongs here is that commit's own diff, which this one call
+# prints for every non-merge commit between the base and HEAD, main's own commits included in no range
+# because the merge base excludes them.
 budget_files='loc-budget.json packages-budget.json'
-if ! touched="$(git rev-list --no-merges "$base..HEAD" -- $budget_files 2>/dev/null)"; then
+if ! touched="$(git -c color.ui=false log --no-merges --format='commit %H' --name-only "$base..HEAD" 2>/dev/null \
+	| awk -v files="$budget_files" '
+		BEGIN { split(files, names, " "); for (i in names) budget[names[i]] = 1 }
+		/^commit [0-9a-f]{40}$/ { sha = substr($0, 8); next }
+		($0 in budget) { print sha }
+	')"; then
 	echo 'budget ratchet: the history between the base and HEAD cannot be read' >&2
 	exit 2
 fi

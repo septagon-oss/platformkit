@@ -601,6 +601,13 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# answers in milliseconds.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/plural_comment_citations_test.py
 	bash scripts/check_budget_ratchet_test.sh
+	# scripts/a_branch_that_carries_mains_numbers_keeps_what_it_priced_test.sh runs the ratchet over a
+	# merge of two branches that each moved the same budget file, the shape a real merge of main takes when
+	# the merge itself carries main's numbers. The suite above builds each case from one base commit and
+	# never merges, so git's history simplification — which follows one parent of a merge whose budget files
+	# match that parent, and so can hide the branch's own build(budget) commits — is unobservable there.
+	# One throwaway repository, six commits across its two branches, no network, no database, one second.
+	bash scripts/a_branch_that_carries_mains_numbers_keeps_what_it_priced_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
