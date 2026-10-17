@@ -113,8 +113,8 @@ func brief(body string) string {
 
 // declaredRoles is every role every composed module declares, in composition
 // order, in the shape auth.SeedRoles writes. It used to be production code:
-// compose filled the personas from it, because the task desk's coordinator is the
-// task module's fact. The list somebody wrote down is roles.go's now, and this is
+// compose filled that list from it, because the task desk's coordinator is
+// the task module's fact. The list somebody wrote down is roles.go's now, and this is
 // the census that keeps the two the same answer — the assertion the derivation
 // used to make, made over the resolved composition instead of a slice a
 // composition function happened to fill.
@@ -136,7 +136,7 @@ func TestEveryRoleEveryComposedModuleDeclaresIsOneThisApplicationSeeds(t *testin
 	_, cfg := configure(t)
 	c := compose(cfg)
 	seeded := map[string]authcontracts.Permissions{}
-	for _, r := range personas {
+	for _, r := range initialRoles {
 		seeded[r.Name] = r.Grants
 	}
 	for _, r := range declaredRoles(c.modules) {

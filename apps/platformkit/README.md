@@ -1,11 +1,14 @@
 # The reference application
 
 `apps/platformkit` is the application the foundation ships and the one every gate
-runs: `platformkit run`, `platformkit start`, `platformkit migrate` and
-`platformkit bootstrap` all go through the one sentence in
+runs: `platformkit run`, `platformkit start`, `platformkit seed`, `platformkit
+migrate` and `platformkit bootstrap` all go through the one sentence in
 [app.go](app.go), and the text `pkit.Server.Explain` answers for it is committed
 beside that file as [COMPOSITION.development.md](COMPOSITION.development.md) and
-[COMPOSITION.production.md](COMPOSITION.production.md). A client's own
+[COMPOSITION.production.md](COMPOSITION.production.md). A sixth command,
+`platformkit repair-roles`, reads that sentence with no process running: it lists,
+or with `--remove` narrows, the grants an older seeder wrote that this composition
+no longer defines ([modules/auth](../../modules/auth/README.md)). A client's own
 composition looks like this one with different modules in `Use` and different
 values in `product`.
 

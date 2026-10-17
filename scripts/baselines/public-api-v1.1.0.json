@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "61ac84c0969b25d5c6a6e6f8dda318da8b69d12f"
+    "candidate": "26ddaa720ae7d4cc7b7044dca85b69b88241066f"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
@@ -28,6 +28,7 @@
     "./modules/audit.Module: changed from func(Deps) github.com/septagon-oss/platformkit/kit/module.Module to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/auth.Deps: old is comparable, new is not",
     "./modules/auth.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/auth/contracts.Auth, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
+    "./modules/auth.SeedRoles: changed from func(context.Context, github.com/septagon-oss/platformkit/kit/db.Tx[github.com/septagon-oss/platformkit/kit/db.System], github.com/septagon-oss/platformkit/kit/tenancy.Tenant, []string, []github.com/septagon-oss/platformkit/modules/auth/contracts.Role) error to func(context.Context, github.com/septagon-oss/platformkit/kit/db.Tx[github.com/septagon-oss/platformkit/kit/db.System], github.com/septagon-oss/platformkit/kit/tenancy.Tenant, []github.com/septagon-oss/platformkit/kit/tenancy.Grant, []github.com/septagon-oss/platformkit/modules/auth/contracts.Role) error",
     "./modules/auth/contracts.(*Limiter).Check: changed from func(context.Context, string, string) Verdict to func(context.Context, string, string) (Verdict, Decision)",
     "./modules/auth/contracts.(*Limiter).Redeemed: changed from func(context.Context, string) bool to func(context.Context, string) Decision",
     "./modules/auth/contracts.(*Limiter).Requested: changed from func(context.Context, string) bool to func(context.Context, string) Decision",
@@ -41,6 +42,7 @@
     "./modules/auth/contracts.Service.RevokeAllSessions: added",
     "./modules/auth/contracts.Service.RevokeSession: added",
     "./modules/auth/contracts.Service.Sessions: added",
+    "./modules/auth/contracts.Service.SetRoleChanged: added",
     "./modules/auth/contracts.Users.ConfirmAddress: added",
     "./modules/auth/contracts.Users.Holders: added",
     "./modules/auth/contracts.VerifyEmailPath: removed",

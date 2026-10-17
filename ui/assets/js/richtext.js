@@ -281,7 +281,12 @@ function positionBubble(control) {
 }
 
 // bindSelectionChrome positions the bubble from this field's browser selection,
-// which can change before the editor's selectionUpdate event arrives.
+// which can change before the editor's selectionUpdate event arrives. The event is
+// the page's, shared by every field on it, so a range outside this field's own
+// surface is not this field's selection and moves nothing. The bubble still follows
+// the editor's state when that re-asserts itself over the browser's range; the one
+// reader that cannot wait for the editor to catch up — the address pasted across
+// words — asks the screen the same question, see selectedWords.
 function bindSelectionChrome(control) {
 	document.addEventListener("selectionchange", () => {
 		const selection = window.getSelection();
@@ -397,27 +402,66 @@ function bindLink(control) {
 	bindPasteLink(control);
 }
 
-// bindPasteLink links the browser's selected words before ProseMirror replaces
-// them with pasted text. Read the DOM range because selectionchange may not yet
-// have updated the editor's selection; a range outside this editor is ignored.
+// bindPasteLink links the selected words before ProseMirror replaces them with the
+// pasted text, and refuses on a read-only editor, which shows a document it does not
+// own. It is a capture-phase listener on the drawn surface rather than the editor's
+// `paste` event: ProseMirror parses a paste as soon as its handlers see it, so the
+// words are gone before a listener downstream could answer. Which words is
+// selectedWords's question, not the editor state's alone — the state can be one flush
+// behind the page, and a paste arriving in the turn after the keystroke that made the
+// range would otherwise read "nothing selected" and lose the words.
 function bindPasteLink(control) {
 	control.surface.addEventListener("paste", (event) => {
 		const text = event.clipboardData ? event.clipboardData.getData("text/plain").trim() : "";
 		if (!isLink(text) || !control.editor.isEditable) return;
-		const selection = window.getSelection();
-		if (!selection || selection.isCollapsed || !selection.rangeCount) return;
-		const range = selection.getRangeAt(0);
-		const view = control.editor.view;
-		if (!view.dom.contains(range.commonAncestorContainer)) return;
-		const from = view.posAtDOM(range.startContainer, range.startOffset);
-		const to = view.posAtDOM(range.endContainer, range.endOffset);
-		if (from === to) return;
-		control.editor.commands.setTextSelection({ from, to });
+		const words = selectedWords(control);
+		if (!words) return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
-		linkSelection(control, text);
+		linkSelection(control, text, words);
 		commit(control);
 	}, true);
+}
+
+// selectedWords answers which words of the document a pasted address belongs to, and
+// answers nothing when nothing is selected. The screen answers first: the browser's
+// live range is what the author sees highlighted, and the editor writes into that
+// range without ever moving it on its own, so reading the document instead of the
+// page can only be answered by what the document was one flush ago. The editor's own
+// selection answers when the page shows none of this field's — see liveWords — because
+// then the document holds the last range this editor was given or took.
+function selectedWords(control) {
+	return liveWords(control) || editorWords(control);
+}
+
+// liveWords reads the range the page draws inside this field, and answers nothing
+// when the page draws none of it: no range at all, a caret, a range belonging to
+// another field — the address popover's own input holds the page's selection while it
+// is open — or words this editor cannot place in its own document.
+function liveWords(control) {
+	const onScreen = window.getSelection();
+	if (!onScreen || !onScreen.rangeCount || onScreen.isCollapsed) return null;
+	const range = onScreen.getRangeAt(0);
+	if (!control.surface.contains(range.commonAncestorContainer)) return null;
+	const start = documentPosition(control.editor.view, range.startContainer, range.startOffset);
+	const end = documentPosition(control.editor.view, range.endContainer, range.endOffset);
+	if (start === null || end === null || start === end) return null;
+	return start < end ? { from: start, to: end } : { from: end, to: start };
+}
+
+// editorWords is the selection the document holds: the author's range once the editor
+// has read the page, and the range a command left behind when the page shows none.
+function editorWords(control) {
+	const selection = control.editor.state.selection;
+	if (selection.empty) return null;
+	return { from: selection.from, to: selection.to };
+}
+
+// documentPosition maps one DOM position into the document, and answers nothing for
+// a node or an offset this editor holds no position for.
+function documentPosition(view, node, offset) {
+	if (!node) return null;
+	try { return view.posAtDOM(node, offset); } catch { return null; }
 }
 
 function isLink(text) {
@@ -454,14 +498,20 @@ function saveLink(control) {
 
 // linkSelection and removeLink are the address applied to a selection. The bundled
 // Link is a bare mark — it carries href and title and ships no setLink command —
-// so the mark is set by name, which is also the only way a mark the editor does
-// not know about could be applied at all.
-function linkSelection(control, href) {
+// so the mark is set by name, which is also the only way a mark the editor does not
+// know about could be applied at all. The caller names a range the editor does not
+// yet hold, and the editor is then told it: the words stay selected on the screen and
+// the next keystroke replaces them as it would have before. A range the editor already
+// holds is its own answer and needs no telling.
+function linkSelection(control, href, range) {
 	const { state } = control.editor;
 	const link = state.schema.marks.link;
-	const { from, to } = state.selection;
-	if (!link || from === to) return;
-	control.editor.view.dispatch(state.tr.addMark(from, to, link.create({ href: href, title: null })).scrollIntoView());
+	const span = range || state.selection;
+	if (!link || span.from === span.to) return;
+	control.editor.view.dispatch(state.tr.addMark(span.from, span.to, link.create({ href: href, title: null })).scrollIntoView());
+	if (range && (state.selection.from !== span.from || state.selection.to !== span.to)) {
+		control.editor.commands.setTextSelection({ from: span.from, to: span.to });
+	}
 }
 
 function removeLink(control) {
