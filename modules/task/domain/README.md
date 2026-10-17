@@ -14,9 +14,11 @@ The caller owns authorization, current-state synchronization, timestamps and
 persistence. A decision is not a committed event. The existing
 [SQL service](../internal/service.go) locks and authorizes first, then applies
 the decision and publishes through the caller's transaction. Its
-[fake](../contracts/tasktest/fake.go) shares the rule but does not model policy,
-transactions or rollback. Cross-module PlatformKit integrations continue to
-use the existing service contracts for those guarantees.
+[fake](../contracts/tasktest/fake.go) shares the rule, and when a composition
+installs one it asks the same policy the service asks and refuses with the same
+sentinel; it models no transaction and no rollback. Cross-module PlatformKit
+integrations continue to use the existing service contracts for those
+guarantees.
 
 Run these local, service-free checks from the foundation repository:
 
