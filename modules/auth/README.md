@@ -17,6 +17,50 @@ rule is `user/contracts.CheckedAdministration`, and
 the user module's floor, not two halves of one.
 `SeedRoles` runs inside tenant creation, so roles exist before the service does.
 
+A grant is only ever as wide as the composition. `SeedRoles` takes the
+application's permission catalogue — `kit/module.Grants` over the modules it
+actually composed — and the operator grants the administrator's role is created
+holding are the operator permissions of those modules and nothing else; an
+initial role naming a permission no composed module defines is refused where it
+used to be written. The refusal arrives at the first tenant provisioned, inside
+that tenant's own creation transaction — it writes no tenant row and emits no
+event — and not at process start: `kit/app` refuses boot for an *operation*
+guarded by an undefined permission and has no line for an initial role, which is
+a value a composition closes over rather than one the kernel can see into. The catalogue used to be a list each application wrote out by
+hand, and no application narrowed it when it dropped a module: one served from
+2026-09-22 20:11 with an administrator holding `billing:catalog`, a permission
+`modules/billing` defines and that installation did not compose, and the only
+thing that ever said so was the hourly sweep below — fourteen identical warnings
+by the next morning, about a grant no route would ever have accepted. Rows
+written by an older seeder are a customer's and are not edited on the way past:
+`auth.RepairSeededRoles` lists them per tenant and removes them when asked,
+taking away only the grants that seeder wrote — `apps/platformkit repair-roles`
+is the door, and `--remove` is the decision. What it subtracts from is the roles
+as they stand *under* the tenant's role lock, which it takes and re-reads before
+it derives anything: subtract from the row as it looked when the walk arrived and
+the command revokes a grant somebody had just made and puts back one they had
+just taken away, and only the second of those is invisible in what it prints.
+What that flag prints is what its transaction wrote: two operators running it at
+once both find the same dead grant, the second finds the row already cleaned when
+it takes the lock and writes nothing at all, and only the run that moved a row
+says it removed anything. A line saying `removed` is a claim about a row. A
+listing stops at the same line, for the same reason: a role holding a dead grant of somebody else's beside the seeder's is
+declined whole — `contracts.CheckedPermissions` refuses the list either write
+would produce — so it is named by neither a listing nor a removal, and a run that
+prints nothing has not proved there is nothing left. A role's name belonging to the
+seeder is not the same as a grant in it being the seeder's: the built-in member
+is seeded holding nothing unless the application's initial roles name it, a
+customer tenant's administrator is seeded the wildcard and nothing else, and a
+permission somebody added through the roles screen stays where it is and goes on
+being reported by the hourly sweep — except in the operator's own administrator
+row while it still holds the wildcard, the one role the seeder writes named
+permissions into, where nothing records who wrote a departed permission and every
+dead grant is taken. See `contracts.SeededGrants` for that rule and for what it
+cannot tell apart. The repair runs one way: an installation that later *adds* a
+module does not gain its operator permissions on roles already seeded, and there
+`repair-roles` has nothing to say — the roles screen adds them, the row still
+holding the wildcard that admits an operator permission.
+
 Compose it after tenants and notification with `auth.Deps`, naming the user
 service, hosts, tenants, the mailer and, when wanted, one of `Registration`,
 `ApprovalRegistration` or `EmailRegistration`; the installation's own OIDC
@@ -31,6 +75,28 @@ stored. Consumers import
 another: which of a tenant's roles grant `role:manage`, which is what
 `modules/user` needs in order to refuse taking its last administrator away.
 [policies/](policies/README.md) shows the optional Topaz policy check.
+
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it
+rebuilt, and the seeded-grant change above composed all of it. **Reused:**
+`module.Permission{Key, Operator}` and the catalogue loop `kit/app` already ran
+over an application's manifests; `contracts.CheckedPermissions`, which is where
+"no module defines it" was already refused, so the seeder gained no rule of its
+own; `internal.Undeclared`, so the repair takes back exactly what the hourly
+sweep names; `internal.SetRole` for the write, with its tenant lock, its
+administration floor and its `auth.role_set` event; and `jobs.PerTenant` for the
+walk. **Added:** `contracts.SeededGrants`, because who wrote a grant is a
+question no existing unit answered, `Service.SetRoleChanged` — the same write and
+the answer it already computed for itself, whether the row changed, which is what
+lets a repair say what it did — and `auth.RepairSeededRoles` with the
+`repair-roles` subcommand as its only caller. **Made reusable:**
+`kit/module.Grants`, the one catalogue of a composition, which was a loop inside
+`kit/app`'s manifest check and is now what an application hands the seeder; that
+loop is gone and its caller moved to `Grants` rather than a second one being
+written. Two other walks of `m.Permissions` remain, and they are different
+questions: `validatePermissions` wants a kind per key and `module.Valid` wants an
+owner and a duplicate check, neither of which `Grants` produces.
 
 ## Authorization
 
@@ -56,11 +122,11 @@ Public faces are registered with `httpx.Public()`: `auth-login`, forgot-password
 
 ### The operator boundary
 
-The module declares no permission with `Operator: true`, and mounts no `OperatorPermission` route. It handles operator permissions of other modules: `contracts.Grants` never lets the `*` wildcard satisfy an operator grant, and `CheckedPermissions` refuses naming one in a non-operator tenant. `SeedRoles` adds the operator permissions passed by the composition to the `admin` role only in the operator tenant.
+The module declares no permission with `Operator: true`, and mounts no `OperatorPermission` route. It handles operator permissions of other modules: `contracts.Grants` never lets the `*` wildcard satisfy an operator grant, and `CheckedPermissions` refuses naming one in a non-operator tenant. `SeedRoles` adds the operator permissions of the composition's own catalogue to the `admin` role only in the operator tenant — the catalogue is `kit/module.Grants` over the modules the application composed, not a list one of them writes out.
 
 ### Provisioning
 
-`SeedRoles` creates `admin` (the `*` wildcard, plus the operator permissions in the operator tenant) and an empty `member` role when a tenant is created. The composition calls it from `seedRoles` in `apps/platformkit/roles.go`, passing `tenant:manage` and `billing:catalog` as operator permissions and its two personas as default roles: `coordinator` (`task:read`, `task:update`) and `observer` (`task:read`). `checkPersonas` refuses to compose when a persona grants a permission no composed module declares, or an operator one. `apps/platformkit/persona_test.go` is the persona proof (decision 0011, item 6). It signs in as admin, coordinator, observer and member, drives seven journeys as each, and asserts which are allowed and which are refused with which code. Roles are then changed through `PUT /api/v1/auth/roles/{name}` or the roles screen, by a holder of `role:manage`. A role in a client's `client.yaml` is not shown by the code read for this section.
+`SeedRoles` creates `admin` (the `*` wildcard, plus the operator permissions in the operator tenant) and an empty `member` role when a tenant is created. The composition calls it from `seedRoles` in `apps/platformkit/roles.go`, passing the catalogue the resolved sentence declares (`composition.catalogue`, which is `module.Grants(c.modules)`) as the permissions and its two initial roles as the defaults: `coordinator` (`task:read`, `task:update`) and `observer` (`task:read`). So `tenant:manage` and `billing:catalog` are in the operator tenant's `admin` role because this application composes `modules/tenant` and `modules/billing`, and an application that composes neither cannot seed them. `checkPersonas` refuses to compose when a persona grants a permission no composed module declares, or an operator one. `apps/platformkit/persona_test.go` is the persona proof (decision 0011, item 6). It signs in as admin, coordinator, observer and member, drives seven journeys as each, and asserts which are allowed and which are refused with which code. Roles are then changed through `PUT /api/v1/auth/roles/{name}` or the roles screen, by a holder of `role:manage`. A role in a client's `client.yaml` is not shown by the code read for this section.
 
 ## Built on what came before
 
@@ -114,6 +180,25 @@ command could only be found on a readable resource; and the fake's token half
 with `authtest.RunTokens`, because no token conformance suite existed. **Made reusable:** `authtest.RunTokens` and its `TokenFixture`, for
 any second implementation of `contracts.Tokens`, and `Principal.TokenID` for any
 later command that must act on the credential rather than on its holder.
+
+For the seeded grant: **Reused:**
+`module.Permission{Key, Operator}` and the catalogue loop `kit/app` already ran
+over an application's manifests; `contracts.CheckedPermissions`, which is where
+"no module defines it" was already refused, so the seeder gained no rule of its
+own; `internal.Undeclared`, so the repair takes back exactly what the hourly
+sweep names; `internal.SetRole` for the write, with its tenant lock, its
+administration floor and its `auth.role_set` event; and `jobs.PerTenant` for the
+walk. **Added:** `contracts.SeededGrants`, because who wrote a grant is a
+question no existing unit answered, `Service.SetRoleChanged` — the same write and
+the answer it already computed for itself, whether the row changed, which is what
+lets a repair say what it did — and `auth.RepairSeededRoles` with the
+`repair-roles` subcommand as its only caller. **Made reusable:**
+`kit/module.Grants`, the one catalogue of a composition, which was a loop inside
+`kit/app`'s manifest check and is now what an application hands the seeder; that
+loop is gone and its caller moved to `Grants` rather than a second one being
+written. Two other walks of `m.Permissions` remain, and they are different
+questions: `validatePermissions` wants a kind per key and `module.Valid` wants an
+owner and a duplicate check, neither of which `Grants` produces.
 
 ## The record a mail leaves
 
