@@ -12211,11 +12211,11 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
-   "file": "kit/db/dbtest/schema_contention_test.go",
-   "id": "kit/db/dbtest/schema_contention_test.go#TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
+   "file": "kit/db/dbtest/postgres_service_settings_test.go",
+   "id": "kit/db/dbtest/postgres_service_settings_test.go#TestEveryPostgresServiceStartsWithoutDurabilityItNeverNeeds",
    "kind": "go",
    "layer": "behaviour",
-   "name": "TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
+   "name": "TestEveryPostgresServiceStartsWithoutDurabilityItNeverNeeds",
    "needs_db": true,
    "pkg": "kit/db/dbtest",
    "round_named": false,
@@ -12230,11 +12230,30 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
-   "file": "kit/db/dbtest/server_capacity_parity_test.go",
-   "id": "kit/db/dbtest/server_capacity_parity_test.go#TestEveryPostgresServiceAllowsTheSameConnectionCount",
+   "file": "kit/db/dbtest/postgres_service_settings_test.go",
+   "id": "kit/db/dbtest/postgres_service_settings_test.go#TestTheSettingsReaderRefusesAWordThatNamesNoSetting",
    "kind": "go",
    "layer": "behaviour",
-   "name": "TestEveryPostgresServiceAllowsTheSameConnectionCount",
+   "name": "TestTheSettingsReaderRefusesAWordThatNamesNoSetting",
+   "needs_db": true,
+   "pkg": "kit/db/dbtest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/dbtest/schema_contention_test.go",
+   "id": "kit/db/dbtest/schema_contention_test.go#TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
    "needs_db": true,
    "pkg": "kit/db/dbtest",
    "round_named": false,
@@ -58063,6 +58082,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/richtext_focus_timer_reads_the_page_test.go",
+   "id": "ui/richtext_focus_timer_reads_the_page_test.go#TestTheServedEditorReadsThePageBeforeItRestoresASelection",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheServedEditorReadsThePageBeforeItRestoresASelection",
+   "needs_db": false,
+   "pkg": "ui",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/adapter_fields_test.go",
    "id": "ui/screens/adapter_fields_test.go#TestTheAdapterCarriesEveryFieldTheRenderersRead",
    "kind": "go",
@@ -61106,6 +61144,26 @@
    "layer": "journey",
    "merge_into": "",
    "name": "the editor on a Portuguese page counts in the words of the Portuguese catalogue",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
+   "file": "e2e/richtext-focus-timer-keeps-a-keyboard-selection.spec.ts",
+   "id": "e2e/richtext-focus-timer-keeps-a-keyboard-selection.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "a focus timer that runs before the page reports a selection leaves that selection alone",
    "needs_db": true,
    "pkg": "e2e",
    "round_named": false,
@@ -65347,7 +65405,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1711,
+  "files": 1713,
   "forge_runs": [
    408,
    413,
@@ -65381,10 +65439,10 @@
    578
   ],
   "layers": {
-   "behaviour": 2797,
+   "behaviour": 2799,
    "composition": 392,
    "contract": 20,
-   "journey": 93
+   "journey": 94
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -65400,23 +65458,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3302,
+  "rows": 3305,
   "tiers": {
-   "merge": 2057,
-   "nightly": 93,
-   "push": 1152
+   "merge": 2058,
+   "nightly": 94,
+   "push": 1153
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1484,
+   "keep": 1486,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2946,
+   "keep": 2949,
    "keep-rewrite": 140,
    "merge": 216
   }

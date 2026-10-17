@@ -9,8 +9,29 @@
 # `make up`: see `make trace`.
 services:
   postgres:
+    # Nothing in this cluster is ever recovered: each package of a suite gets a
+    # database of its own and drops it at its end, `make down` drops the volume,
+    # and the migration rehearsal and the restore drill read a dump rather than a
+    # restarted server. So it does not force its writes to a device. The
+    # PostgreSQL tuning chapter names fsync, synchronous_commit and
+    # full_page_writes for exactly this case
+    # (https://www.postgresql.org/docs/16/non-durability.html, "Non-Durable
+    # Settings"), and one task's test Postgres reached 79 GB of block writes
+    # across its suite runs against the image default: the host IO pressure
+    # beside it is what these three settings remove.
+    #
+    # Development and test only. Nothing here reaches a deployment, whose
+    # database is named by its own configuration, and `platformkit start`'s
+    # embedded Postgres — which holds a person's own data — shares no line with
+    # this file. An abrupt stop of this container can leave the cluster
+    # unreadable; `make down` and `make up` return a fresh one.
+    #
+    # max_connections is not one of those three: it is the one server limit the
+    # suite's pool bounds are priced against, and every cluster of this
+    # repository — this one and each workflow's service container — names the same
+    # number, and a case in kit/db/dbtest refuses the service block that drops it.
     image: postgres:16
-    command: ["postgres", "-c", "max_connections=256"]
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_connections=256"]
     environment:
       POSTGRES_PASSWORD: platformkit
       POSTGRES_DB: platformkit
