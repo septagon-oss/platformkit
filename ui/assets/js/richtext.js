@@ -280,20 +280,8 @@ function positionBubble(control) {
 	updatePressed(control);
 }
 
-// bindSelectionChrome keeps the bubble answering the browser's own selection rather
-// than waiting for the editor to notice one. The editor's selectionUpdate reports
-// what the document decided and when the editor agreed with it; the keyboard's
-// range is real — and reads as real to anything that asks the page — for a moment
-// before that. A person who has selected words and is shown no toolbar has selected
-// nothing as far as this field is concerned, which is this field's failure and not
-// theirs. The listener is the page's, so it asks whether the range is inside this
-// field's own surface before it moves anything: two fields on one page share the one
-// document event, and a selection in the other one is not this one's business.
-//
-// What it does not settle is the editor's half. When the editor later re-asserts its
-// own state over the browser's range, the bubble goes with it, and the paste that
-// decides on the editor's state stands down — the selection-readiness race named in
-// the task's follow-ups, which this listener narrows and does not close.
+// bindSelectionChrome positions the bubble from this field's browser selection,
+// which can change before the editor's selectionUpdate event arrives.
 function bindSelectionChrome(control) {
 	document.addEventListener("selectionchange", () => {
 		const selection = window.getSelection();
@@ -409,17 +397,22 @@ function bindLink(control) {
 	bindPasteLink(control);
 }
 
-// bindPasteLink is the URL-over-a-selection spelling, and it is a capture-phase
-// listener one rung above the element ProseMirror owns — the drawn surface —
-// rather than the editor's `paste` event:
-// ProseMirror parses a paste as soon as its handlers see it and replaces whatever
-// was selected, so the selection the author means to link is gone by the time a
-// listener downstream could answer. Answering before it is the only way to keep
-// the words and add the address.
+// bindPasteLink links the browser's selected words before ProseMirror replaces
+// them with pasted text. Read the DOM range because selectionchange may not yet
+// have updated the editor's selection; a range outside this editor is ignored.
 function bindPasteLink(control) {
 	control.surface.addEventListener("paste", (event) => {
 		const text = event.clipboardData ? event.clipboardData.getData("text/plain").trim() : "";
-		if (!isLink(text) || control.editor.state.selection.empty) return;
+		if (!isLink(text) || !control.editor.isEditable) return;
+		const selection = window.getSelection();
+		if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+		const range = selection.getRangeAt(0);
+		const view = control.editor.view;
+		if (!view.dom.contains(range.commonAncestorContainer)) return;
+		const from = view.posAtDOM(range.startContainer, range.startOffset);
+		const to = view.posAtDOM(range.endContainer, range.endOffset);
+		if (from === to) return;
+		control.editor.commands.setTextSelection({ from, to });
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		linkSelection(control, text);

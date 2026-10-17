@@ -56,6 +56,11 @@ type UsesInput struct {
 	Module, Entity, Field, Locale string
 	Record                        uuid.UUID
 	Files                         []uuid.UUID
+	// Public is the audience this record asserts for what this write files. It is
+	// the record's state and never the request's claim: kit/rest fills it from
+	// Spec.Audience, so no body can make its own images public. False is every
+	// write a Spec with no Audience makes, which is every write there was before it.
+	Public bool
 }
 
 // Spec is one entity's presence in the application: five routes, two
@@ -226,6 +231,24 @@ type Spec[T crud.Entity] struct {
 	// which is the hook this repository was missing.
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
+
+	// Audience says who the record this write is writing is showing its files to —
+	// the one fact a body cannot answer, and the reason it is a function of the
+	// entity rather than a field of the request: an image a draft names stays
+	// private however the caller feels about it.
+	//
+	// It is asked once per write, on the row the transaction already locked, before
+	// anything is filed, and only when the entity has a richtext field. An error
+	// refuses the write: a record whose audience is unknown never has bytes promoted
+	// to public. Nil means the entity has no public face, which is what every Spec
+	// without it means today — the uses it files are private and nothing is
+	// recomputed.
+	//
+	// It is asked here rather than in a hook after the write because the answer has
+	// to be in the one pass over the files the write is already making: a second
+	// pass that upgrades the audience would take a stronger lock on rows it already
+	// key-shared, and two records sharing two files would deadlock taking it.
+	Audience func(ctx context.Context, tx db.Tx[db.Tenant], e T) (bool, error)
 }
 
 // The five operations a Spec may offer, spelled the way the routes that mount
@@ -498,14 +521,14 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	crud.Reset(e)                        // IDs, tenancy and timestamps belong to the server at both doors.
 	s.clearRevision(crud.Fields[T](), e) // and so does the count of this row's writes
 	// The record has to be itself before its own body can be filed. What a body
-	// shows is recorded in prepareRichText below, and a use names the record that
+	// shows is recorded in prepareFiles below, and a use names the record that
 	// shows the file — an id stamped by crud.Create one step later would be filed
 	// under nil, which is the row nobody can link back to or sweep forward. So
 	// the id is chosen here, and Create keeps the id it finds rather than making
 	// another one. Reset already dereferenced the entity, so there is nothing
 	// between these two lines that a nil body could have reached.
 	entity.BaseOf(e).ID = uuid.New()
-	if err := s.prepareRichText(ctx, tx, e, nil); err != nil {
+	if err := s.prepareFiles(ctx, tx, e, nil); err != nil {
 		return e, err
 	}
 	// The trail's field is discarded here for the same reason the id is chosen here:
@@ -599,7 +622,7 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := s.gate(ctx, tx, id, VerbUpdate, "", changed); err != nil {
 		return e, err
 	}
-	if err := s.prepareRichText(ctx, tx, e, columns); err != nil {
+	if err := s.prepareFiles(ctx, tx, e, columns); err != nil {
 		return e, err
 	}
 	// Write only the submitted columns, the timestamp and the row's own revision.
@@ -750,7 +773,7 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// file panel that links to a record no route answers, and — once the release
 	// sweep exists — a file that can never be released because something that no
 	// longer exists is said to be reading it.
-	if err := s.clearRichTextUses(ctx, tx, e); err != nil {
+	if err := s.clearFileUses(ctx, tx, e); err != nil {
 		return e, err
 	}
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
@@ -1062,6 +1085,9 @@ type collectionInput[I any] struct {
 // inside the request's transaction: an event that describes a change that
 // rolled back is never seen, because it rolled back too.
 func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T, hook func(context.Context, db.Tx[db.Tenant], T) error) error {
+	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
+		return err
+	}
 	if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
 		return err
 	}

@@ -118,6 +118,10 @@ func seedCommand(args []string) error {
 			if *dry {
 				plan, err = service.Plan(ctx, tx, selection)
 			} else {
+				ctx, err = app.AdmitCommand(ctx, tx, "seed.apply", db.Now)
+				if err != nil {
+					return err
+				}
 				plan, err = service.Apply(ctx, tx, selection)
 			}
 			return err

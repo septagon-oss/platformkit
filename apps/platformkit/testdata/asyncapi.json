@@ -1564,6 +1564,10 @@
                 },
                 "type": "array"
               },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1643,6 +1647,10 @@
                 },
                 "type": "array"
               },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1721,6 +1729,10 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "coverImageId": {
+                "format": "uuid",
+                "type": "string"
               },
               "createdAt": {
                 "format": "date-time",
@@ -2276,6 +2288,84 @@
       "summary": "Every tenant's delivery of notification.email_requested.",
       "title": "notification.email_requested"
     },
+    "notification.preference_set": {
+      "address": "platformkit.*.notification.preference_set",
+      "description": "Published at platformkit.{tenantId}.notification.preference_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.preference_set": {
+          "contentType": "application/json",
+          "name": "notification.preference_set",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "intent": {
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "recipientId",
+              "channel",
+              "enabled",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.preference_set",
+          "title": "notification.preference_set"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.preference_set.",
+      "title": "notification.preference_set"
+    },
+    "notification.push_requested": {
+      "address": "platformkit.*.notification.push_requested",
+      "description": "Published at platformkit.{tenantId}.notification.push_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.push_requested": {
+          "contentType": "application/json",
+          "name": "notification.push_requested",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "notificationId",
+              "recipientId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.push_requested",
+          "title": "notification.push_requested"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.push_requested.",
+      "title": "notification.push_requested"
+    },
     "notification.read": {
       "address": "platformkit.*.notification.read",
       "description": "Published at platformkit.{tenantId}.notification.read; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -2311,6 +2401,214 @@
       },
       "summary": "Every tenant's delivery of notification.read.",
       "title": "notification.read"
+    },
+    "notification.sender_removed": {
+      "address": "platformkit.*.notification.sender_removed",
+      "description": "Published at platformkit.{tenantId}.notification.sender_removed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.sender_removed": {
+          "contentType": "application/json",
+          "name": "notification.sender_removed",
+          "payload": {
+            "properties": {
+              "actorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "selector": {
+                "type": "string"
+              },
+              "senderId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "senderId",
+              "domain",
+              "selector",
+              "actorId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.sender_removed",
+          "title": "notification.sender_removed"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.sender_removed.",
+      "title": "notification.sender_removed"
+    },
+    "notification.sender_set": {
+      "address": "platformkit.*.notification.sender_set",
+      "description": "Published at platformkit.{tenantId}.notification.sender_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.sender_set": {
+          "contentType": "application/json",
+          "name": "notification.sender_set",
+          "payload": {
+            "properties": {
+              "actorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "selector": {
+                "type": "string"
+              },
+              "senderId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "senderId",
+              "domain",
+              "selector",
+              "status",
+              "actorId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.sender_set",
+          "title": "notification.sender_set"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.sender_set.",
+      "title": "notification.sender_set"
+    },
+    "notification.sender_verified": {
+      "address": "platformkit.*.notification.sender_verified",
+      "description": "Published at platformkit.{tenantId}.notification.sender_verified; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.sender_verified": {
+          "contentType": "application/json",
+          "name": "notification.sender_verified",
+          "payload": {
+            "properties": {
+              "actorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "selector": {
+                "type": "string"
+              },
+              "senderId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "senderId",
+              "domain",
+              "selector",
+              "actorId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.sender_verified",
+          "title": "notification.sender_verified"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.sender_verified.",
+      "title": "notification.sender_verified"
+    },
+    "notification.web_push_requested": {
+      "address": "platformkit.*.notification.web_push_requested",
+      "description": "Published at platformkit.{tenantId}.notification.web_push_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.web_push_requested": {
+          "contentType": "application/json",
+          "name": "notification.web_push_requested",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "notificationId",
+              "recipientId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.web_push_requested",
+          "title": "notification.web_push_requested"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.web_push_requested.",
+      "title": "notification.web_push_requested"
+    },
+    "notification.webhook_requested": {
+      "address": "platformkit.*.notification.webhook_requested",
+      "description": "Published at platformkit.{tenantId}.notification.webhook_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.webhook_requested": {
+          "contentType": "application/json",
+          "name": "notification.webhook_requested",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "notificationId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "notificationId",
+              "recipientId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.webhook_requested",
+          "title": "notification.webhook_requested"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.webhook_requested.",
+      "title": "notification.webhook_requested"
     },
     "platformkit.event_replayed": {
       "address": "platformkit.*.platformkit.event_replayed",
@@ -2348,6 +2646,40 @@
       },
       "summary": "Every tenant's delivery of platformkit.event_replayed.",
       "title": "platformkit.event_replayed"
+    },
+    "platformkit.operation_outcome": {
+      "address": "platformkit.*.platformkit.operation_outcome",
+      "description": "Published at platformkit.{tenantId}.platformkit.operation_outcome; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "platformkit.operation_outcome": {
+          "contentType": "application/json",
+          "name": "platformkit.operation_outcome",
+          "payload": {
+            "properties": {
+              "outcome": {
+                "type": "string"
+              },
+              "ref": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "ref",
+              "revision",
+              "outcome"
+            ],
+            "type": "object"
+          },
+          "summary": "platformkit — platformkit.operation_outcome",
+          "title": "platformkit.operation_outcome"
+        }
+      },
+      "summary": "Every tenant's delivery of platformkit.operation_outcome.",
+      "title": "platformkit.operation_outcome"
     },
     "security.access_requested": {
       "address": "platformkit.*.security.access_requested",
@@ -4542,7 +4874,7 @@
   },
   "defaultContentType": "application/cloudevents+json",
   "info": {
-    "description": "The events this application emits, rendered from the module manifests it was composed from. Every event is a CloudEvents 1.0 envelope with `tenantid` as a required extension attribute, `app` as the publisher's own app (absent for a deployment that hosts one), and `traceparent`/`tracestate` as the distributed tracing extension; the subject is platformkit.\u003ctenantId\u003e.\u003cmodule\u003e.\u003cevent\u003e.",
+    "description": "The events this application emits, rendered from the module manifests it was composed from. Every event is a CloudEvents 1.0 envelope with `tenantid` as a required extension attribute, `app` as the publisher's own app (absent for a deployment that hosts one), and `traceparent`/`tracestate` as the distributed tracing extension. Admitted intents carry `operationid`, `operationref`, `operationtenantid`, optional `operationpersonid` and `operationoutcome`, and `operationrevision`; the subject is platformkit.\u003ctenantId\u003e.\u003cmodule\u003e.\u003cevent\u003e.",
     "title": "PlatformKit events",
     "version": "1.0.0"
   },
@@ -5346,6 +5678,40 @@
         }
       ]
     },
+    "notification.preference_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.preference_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.preference_set/messages/notification.preference_set"
+        }
+      ],
+      "summary": "The notification module publishes notification.preference_set.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
+    "notification.push_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.push_requested"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.push_requested/messages/notification.push_requested"
+        }
+      ],
+      "summary": "The notification module publishes notification.push_requested.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
     "notification.read": {
       "action": "send",
       "channel": {
@@ -5363,6 +5729,91 @@
         }
       ]
     },
+    "notification.sender_removed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.sender_removed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.sender_removed/messages/notification.sender_removed"
+        }
+      ],
+      "summary": "The notification module publishes notification.sender_removed.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
+    "notification.sender_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.sender_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.sender_set/messages/notification.sender_set"
+        }
+      ],
+      "summary": "The notification module publishes notification.sender_set.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
+    "notification.sender_verified": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.sender_verified"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.sender_verified/messages/notification.sender_verified"
+        }
+      ],
+      "summary": "The notification module publishes notification.sender_verified.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
+    "notification.web_push_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.web_push_requested"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.web_push_requested/messages/notification.web_push_requested"
+        }
+      ],
+      "summary": "The notification module publishes notification.web_push_requested.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
+    "notification.webhook_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.webhook_requested"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.webhook_requested/messages/notification.webhook_requested"
+        }
+      ],
+      "summary": "The notification module publishes notification.webhook_requested.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
     "platformkit.event_replayed": {
       "action": "send",
       "channel": {
@@ -5374,6 +5825,23 @@
         }
       ],
       "summary": "The platformkit module publishes platformkit.event_replayed.",
+      "tags": [
+        {
+          "name": "platformkit"
+        }
+      ]
+    },
+    "platformkit.operation_outcome": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/platformkit.operation_outcome"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/platformkit.operation_outcome/messages/platformkit.operation_outcome"
+        }
+      ],
+      "summary": "The platformkit module publishes platformkit.operation_outcome.",
       "tags": [
         {
           "name": "platformkit"

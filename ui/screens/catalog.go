@@ -39,8 +39,35 @@ const CatalogVersion = 2
 // way a browser shell generates them from httpx.Resources, by the same rules.
 type Catalog struct {
 	// Version is CatalogVersion at the moment the document was written.
-	Version   int     `json:"catalogVersion"`
-	Resources []Entry `json:"resources"`
+	Version   int       `json:"catalogVersion"`
+	Resources []Entry   `json:"resources"`
+	Pictures  *Pictures `json:"pictures,omitempty"`
+}
+
+// Pictures is this installation's door to the bytes of a stored picture, said
+// once for the whole document rather than once per field that holds an id.
+//
+// Source is a template and not a base path: the literal `{id}` is replaced with
+// the field's own value — the lower-case hyphenated UUID text — and nothing else
+// in it is substituted. It is published for the same reason `screen`,
+// `write_path` and a command's `path` are: a shell that builds an address out of
+// another component's rules is guessing, and this repository has already paid for
+// one such guess once.
+//
+// Widths is the set of resized variants this door serves, ascending; a request
+// for a width outside it is refused by the door and names the set back. Absent
+// Widths, or a width the picture was never planned at, the answer is the stored
+// frame at its own size. A shell that fetches no variant fetches Source.
+//
+// An absent `pictures` block means this installation composed no module that
+// serves a record's pictures. Every picture field then draws the still state its
+// own renderer chooses — which is an answer, not a mistake, and the reason a
+// resource with a picture column can mount in an installation that has no file
+// module at all. A key is on the wire because somebody declared it, so the
+// composition writes this and a resource-bearing document never invents it.
+type Pictures struct {
+	Source string `json:"source"`
+	Widths []int  `json:"widths,omitempty"`
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
