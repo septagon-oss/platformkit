@@ -349,21 +349,29 @@ func (f *Fake) Roles(_ context.Context, _ db.Tx[db.Tenant]) ([]*contracts.Role, 
 	return out, nil
 }
 
-// SetRole mirrors internal.Service.SetRole, all three refusals included: a
-// permission nothing declares, an operator permission outside the operator's
-// own tenant, and the write that would leave the tenant with nobody able to
-// administer it again. They are what the route promises to refuse, so the fake
-// refuses them — and it refuses them through the same door the service calls,
-// asking the same user fake every consumer of this package already answers with.
+// SetRole mirrors internal.Service.SetRole.
 func (f *Fake) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+	role, _, err := f.SetRoleChanged(ctx, tx, name, permissions, declared)
+	return role, err
+}
+
+// SetRoleChanged mirrors internal.Service.SetRoleChanged, all three refusals
+// included: a permission nothing declares, an operator permission outside the
+// operator's own tenant, and the write that would leave the tenant with nobody
+// able to administer it again. They are what the route promises to refuse, so
+// the fake refuses them — through the same door the service calls, asking the
+// same user fake every consumer of this package already answers with. The answer
+// it reports is the same one the real write gives: the same list again changed no
+// row and records no event.
+func (f *Fake) SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, bool, error) {
 	name, err := contracts.ValidRoleName(name)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	tenant := db.TenantOf(tx)
 	want, err := contracts.CheckedPermissions(permissions, declared, tenant)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	f.mu.Lock()
 	was, existed := f.roles[name]
@@ -392,12 +400,13 @@ func (f *Fake) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, pe
 			// failed refuses the write too and is not this rule refusing.
 			f.record(contracts.EventAdministrationRefused)
 		}
-		return nil, err
+		return nil, false, err
 	}
-	if !same {
-		f.record(contracts.EventRoleSet)
+	if same {
+		return &contracts.Role{TenantID: tenant.ID, Name: name, Grants: want}, false, nil
 	}
-	return &contracts.Role{TenantID: tenant.ID, Name: name, Grants: want}, nil
+	f.record(contracts.EventRoleSet)
+	return &contracts.Role{TenantID: tenant.ID, Name: name, Grants: want}, true, nil
 }
 
 // Purge mirrors internal.Service.Purge over the two maps.
