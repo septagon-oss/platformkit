@@ -58,6 +58,12 @@ else
 	done
 	echo 'ok   a hand-edited generated file or section fails check-generated'
 fi
+# The same refusal in the shape a gate runs it: generate, then ask git whether the tree moved.
+if ${MAKE:-make} -s generate >"$root/out" 2>&1 && git diff --exit-code >"$root/out" 2>&1; then
+	fail 'git diff accepts a tree whose generated files were edited by hand'
+else
+	echo 'ok   make generate followed by git diff --exit-code refuses the hand edit'
+fi
 git reset -q --hard HEAD~1
 
 # The writer refuses a marker it cannot pair, a block it does not render and a block held twice,
