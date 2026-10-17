@@ -219,7 +219,9 @@ generate: ## Rewrite every generated file and section from its inputs, offline
 
 # The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
 # holds generated sections. The diff is against the index, so a regenerated file the author has
-# staged passes and unrelated work is not judged.
+# staged passes and unrelated work is not judged. A writer whose output carries neither marker sits
+# outside this diff: marking what a writer writes is part of writing it, and the whole-tree form,
+# `make generate && git diff --exit-code`, is what catches a marker that was never added.
 check-generated: generate ## Fail when a generated file or section differs from what `make generate` writes
 	git diff --exit-code -- $$(git ls-files | git check-attr --stdin linguist-generated | awk -F': ' '$$3 == "true" { print $$1 }') tests/INVENTORY.md
 
