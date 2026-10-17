@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/septagon-oss/platformkit/pkit"
 	"slices"
 	"testing"
+
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // TestTheWebhookCatalogueNamesWhatTheCompositionEmits is the drift case the port's
