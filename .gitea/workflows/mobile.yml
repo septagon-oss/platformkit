@@ -22,6 +22,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The journey is the only proof this repository has that a device can use the
+  # contract it publishes, and it is the only one that needs a device: the branch
+  # that changed the fetch, the pin or the flow is dispatchable so its author reads
+  # the journey on the runner that has /dev/kvm rather than guessing from `make
+  # check`. Nightly and the public-consumption report declare the same trigger.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -53,14 +59,15 @@ jobs:
       # the mobile owner's: both values are set on the repository, and the harness
       # refuses to run when either is missing rather than downloading something it
       # cannot name. The digest is checked before anything is installed. The URL is
-      # deliberately not a job-level entry: "Fetch the pinned shell build" reads it
-      # from the repository itself, authorises the download with the job's token, and
-      # exports PK_MOBILE_APK as a file:// URL on the job environment. No job-level
-      # entry of that name stands here, and that is the point of the arrangement and
-      # not its mechanism: whether a job's env: outranks a $GITHUB_ENV export is
-      # act_runner's ordering, which nothing in this repository establishes, so a
-      # second PK_MOBILE_APK could outrank the export and hand the harness the
-      # sign-in-gated URL back — the failure this step exists to remove.
+      # deliberately not a job-level entry: "Fetch the pinned shell build through the
+      # forge's API" reads it from the repository itself, resolves the asset it names
+      # through the forge's API with a read-only token, and exports PK_MOBILE_APK as a
+      # file:// URL on the job environment. No job-level entry of that name stands
+      # here, and that is the point of the arrangement and not its mechanism: whether a
+      # job's env: outranks a $GITHUB_ENV export is act_runner's ordering, which nothing
+      # in this repository establishes, so a second PK_MOBILE_APK could outrank the
+      # export and hand the harness the sign-in-gated URL back — the failure this step
+      # exists to remove.
       # scripts/mobile_journey_fetch_test.sh refuses a job-level entry by that name on
       # that reading alone, without waiting for the ordering to be measured.
       PK_MOBILE_APK_SHA256: ${{ vars.PK_MOBILE_APK_SHA256 }}
@@ -244,17 +251,29 @@ jobs:
           tail -40 emulator.log >&2
           exit 1
 
-      - name: Fetch the pinned shell build with the job's token
-        # Gitea answers an anonymous download of a release asset with the sign-in page,
-        # so the harness's plain curl would hash a login page and refuse it on the
-        # digest. The job therefore downloads the pin with its own token into the job's
-        # work directory, checks it against PK_MOBILE_APK_SHA256 here, and hands the
-        # harness a file:// URL it can open without signing in; the harness's own digest
-        # check still runs on that file, so the pin is checked twice and trusted once.
-        # When the variables are unset this refuses naming them, as the harness would:
-        # the download is not the place a missing pin becomes a green step.
+      - name: Fetch the pinned shell build through the forge's API
+        # The forge requires sign-in to read anything at all, and a workflow job's token is a
+        # session on nothing: run 62943 asked the address the pin names with that token and was
+        # answered 404, where the same address turns an unsigned request toward the sign-in page.
+        # A plain curl of the pin therefore either fails outright or saves a login page, which the
+        # harness would hash and refuse on the digest. So this step asks the forge what it holds:
+        # it reads the release the pin's tag names through the API, matches the asset by name, and
+        # downloads the address that release document publishes for it. The credential is
+        # PK_MOBILE_TOKEN, a read-only token for this repository kept as a repository secret, the
+        # shape the phone repository's kernel read settled on; where no such secret is set the step
+        # keeps the job's own token, so a missing secret is a refusal that names the address it
+        # tried rather than a step that never asked. Neither read is accepted on an answer the API
+        # does not give a signed-in reader: text that is not one release document is refused, and
+        # the bytes the digest is computed over are the named asset's or nothing. The digest is
+        # checked here and again in scripts/mobile_e2e.sh, so the pin is checked twice and trusted
+        # once, and nothing is installed unless it matches. When the variables are unset this
+        # refuses naming them, as the harness would: the download is not the place a missing pin
+        # becomes a green step.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Read-only by construction, and scoped to this repository: the step needs one asset of
+          # one release, and a token that could write is a token this job's log could leak. The job
+          # token stays as the fallback so the refusal still names the address it tried.
+          GITHUB_TOKEN: ${{ secrets.PK_MOBILE_TOKEN || secrets.GITHUB_TOKEN }}
           PK_MOBILE_APK: ${{ vars.PK_MOBILE_APK }}
         run: |
           if [ -z "$PK_MOBILE_APK" ] || [ -z "$PK_MOBILE_APK_SHA256" ]; then
@@ -263,12 +282,77 @@ jobs:
           fi
           test -n "$RUNNER_TEMP" || { echo "RUNNER_TEMP is unset: this job has no work directory to fetch the shell build into." >&2; exit 1; }
           dest="$RUNNER_TEMP/shell.apk"
-          if ! curl -fsSL --header "Authorization: token $GITHUB_TOKEN" "$PK_MOBILE_APK" -o "$dest"; then
-            echo "the job could not download PK_MOBILE_APK with its own token: the pin names something this forge will not hand to this job." >&2
+          meta="$RUNNER_TEMP/release.json"
+          # The pin is the address the forge publishes for the asset, and what its API resolves a
+          # release by is owner, repository and tag. Reading those out of the pin here keeps the
+          # mobile owner's one repository variable the only naming of the build: a second variable
+          # pointing at the same asset is the divergence the note on this job's env: refuses.
+          resolved="$(python3 - "$PK_MOBILE_APK" <<'PIN'
+          import sys
+          import urllib.parse
+
+          pin = urllib.parse.urlsplit(sys.argv[1])
+          segs = [urllib.parse.unquote(s) for s in pin.path.split("/") if s]
+          edge = [i for i, s in enumerate(segs[:-1]) if s == "releases" and segs[i + 1] == "download"]
+          if pin.scheme not in ("http", "https") or not pin.netloc or len(segs) < 5 or len(edge) != 1:
+              sys.exit("PK_MOBILE_APK=%s is not an address of the form "
+                       "<forge>/<owner>/<repo>/releases/download/<tag>/<asset>, which is the address "
+                       "a forge publishes for a release asset, so this job cannot resolve the build "
+                       "it names." % sys.argv[1])
+          first, last = edge[0], segs[-1]
+          tag = "/".join(segs[first + 2:-1])
+          if first < 2 or not tag:
+              sys.exit("PK_MOBILE_APK=%s names no owner, repository or tag before its release "
+                       "download address, so this job cannot resolve the build it names." % sys.argv[1])
+          repos = "/".join(urllib.parse.quote(s, safe="") for s in segs[:first])
+          sys.stdout.write("%s\t%s\t%s\n" % (
+              "%s://%s/api/v1/repos/%s/releases/tags/%s" % (
+                  pin.scheme, pin.netloc, repos, urllib.parse.quote(tag, safe="")), last, pin.netloc))
+          PIN
+          )"
+          IFS=$'\t' read -r release_url asset_name forge_host <<<"$resolved"
+          # No -L here, where the download below has it: a redirect would put this header on an
+          # address neither the pin nor this job named, and the API answers a signed-in read of a
+          # release with the document itself, so a redirect is never the shape that works.
+          if ! curl -fsS --header "Authorization: token $GITHUB_TOKEN" "$release_url" -o "$meta"; then
+            echo "the job could not read the release at $release_url to find $asset_name: the API refused this token; set PK_MOBILE_TOKEN on this repository to a read-only token for it." >&2
+            exit 1
+          fi
+          asset_url="$(python3 - "$meta" "$asset_name" "$forge_host" <<'ASSET'
+          import json
+          import sys
+          import urllib.parse
+
+          meta, name, host = sys.argv[1:4]
+          try:
+              with open(meta) as handle:
+                  release = json.load(handle)
+          except ValueError:
+              sys.exit("the release address answered something that is not a release document: a "
+                       "sign-in page is what a forge that requires sign-in answers a read it does "
+                       "not authorise, and no build is in it.")
+          assets = release.get("assets") or []
+          named = [asset for asset in assets if asset.get("name") == name]
+          if len(named) != 1:
+              sys.exit("the release %s carries no single asset named %s (it names: %s): PK_MOBILE_APK "
+                       "names a build this forge does not have under that tag." % (
+                           release.get("tag_name"), name,
+                           ", ".join(str(asset.get("name")) for asset in assets) or "nothing"))
+          published = str(named[0].get("browser_download_url") or "")
+          where = urllib.parse.urlsplit(published)
+          if where.scheme not in ("http", "https") or where.netloc != host:
+              sys.exit("the asset %s is published at %s, which is not the forge PK_MOBILE_APK names "
+                       "(%s): this job sends its token to the forge the pin names and nowhere else." % (
+                           name, published or "nowhere", host))
+          sys.stdout.write(published + "\n")
+          ASSET
+          )"
+          if ! curl -fsSL --header "Authorization: token $GITHUB_TOKEN" "$asset_url" -o "$dest"; then
+            echo "the job could not download $asset_url with its own token: the pin names something this forge will not hand to this job (PK_MOBILE_APK is $PK_MOBILE_APK), and PK_MOBILE_TOKEN, a read-only token for this repository, is the credential the sign-in rule answers." >&2
             exit 1
           fi
           if ! echo "$PK_MOBILE_APK_SHA256  $dest" | sha256sum --check --status; then
-            echo "the file downloaded from $PK_MOBILE_APK is not the build PK_MOBILE_APK_SHA256 names; nothing is installed." >&2
+            echo "the file downloaded from $asset_url is not the build PK_MOBILE_APK_SHA256 names; nothing is installed." >&2
             exit 1
           fi
           echo "PK_MOBILE_APK=file://$dest" >> "$GITHUB_ENV"
