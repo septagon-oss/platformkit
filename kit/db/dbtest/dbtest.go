@@ -236,8 +236,16 @@ func openOwner(rawURL string) (*sql.DB, error) {
 }
 
 // Role creates a login role that owns nothing and holds nothing except what the
-// caller grants it, in the schema URLs made for t, and returns its name and a DSN
-// that lands in that schema.
+// caller grants it, in the installation the given owner connection stands in, and
+// returns its name and a DSN that lands in that installation — the same database and the same
+// namespace the handle reached.
+//
+// The grant is aimed at the database the connection stands in, read from the server, rather than at
+// the database the environment names, because a test may hold a copy of an installation its package
+// prepared (Clone) rather than the one the URLs name. A privilege lives in the database it was
+// granted in, and PostgreSQL refuses to drop a role that still holds one anywhere: a fixture that
+// cleaned up through the environment's own database would revoke nothing, lose the role, and say
+// nothing about either.
 //
 // It exists because the tree has two roles and some rights belong to neither: the
 // owner is a superuser that row-level security does not bind, and the application
@@ -253,10 +261,15 @@ func openOwner(rawURL string) (*sql.DB, error) {
 // PLATFORMKIT_TEST_DATABASE_URL rather than invented: the role is a fixture in a
 // disposable schema, dropped with it, and a second secret in the environment would
 // be a second thing to rotate for no gain.
+//
+// A cleanup this fixture cannot finish is reported rather than swallowed: the role is cluster-wide,
+// so one left behind by a package outlives the database that held it and stands in the way of the
+// next run's grant of the same name.
 func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
 	t.Helper()
 	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
-	schema := DeploymentSchema(t, admin)
+	baseAdmin := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	schema, database := DeploymentSchema(t, admin), sessionDatabase(t, admin)
 	schemaSQL, appPassword := quote(schema), ""
 	if parsed, err := url.Parse(baseApp); err == nil && parsed.User != nil {
 		appPassword, _ = parsed.User.Password()
@@ -279,18 +292,38 @@ func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
 	for _, g := range grants {
 		must("GRANT " + g + " TO " + quote(name))
 	}
-	adminURL := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	grantedIn := aimedAt(t, baseAdmin, database)
 	t.Cleanup(func() {
-		cleaner, err := openOwner(adminURL)
+		cleaner, err := openOwner(grantedIn)
 		if err != nil {
 			return
 		}
 		defer cleaner.Close()
 		ctx := context.WithoutCancel(t.Context())
-		_, _ = cleaner.ExecContext(ctx, "DROP OWNED BY "+quote(name))
-		_, _ = cleaner.ExecContext(ctx, "DROP ROLE IF EXISTS "+quote(name))
+		if _, err := cleaner.ExecContext(ctx, "DROP OWNED BY "+quote(name)); err != nil {
+			t.Errorf("dbtest: revoke what the role %s holds in %s: %v", name, database, err)
+		}
+		if _, err := cleaner.ExecContext(ctx, "DROP ROLE IF EXISTS "+quote(name)); err != nil {
+			t.Errorf("dbtest: the role %s is still there: %v", name, err)
+		}
 	})
-	return name, withSchema(t, swapUser(t, baseApp, name), schema)
+	return name, withSchema(t, swapUser(t, aimedAt(t, baseApp, database), name), schema)
+}
+
+// sessionDatabase is the database an open owner connection stands in, read back through it.
+//
+// It comes from the server for the reason DeploymentSchema reads the namespace from it: a fixture
+// that asks the environment instead names the database the process started on, which is not the one
+// a caller handed a handle opened against a copy of a prepared installation. Both are needed
+// together — a privilege belongs to a database and a namespace — and only the server holds the pair
+// this connection actually reached.
+func sessionDatabase(t testing.TB, admin *sql.DB) string {
+	t.Helper()
+	var database string
+	if err := admin.QueryRowContext(t.Context(), "SELECT current_database()").Scan(&database); err != nil {
+		t.Fatalf("dbtest: read the database this connection lands in: %v", err)
+	}
+	return database
 }
 
 // swapUser returns rawURL with its login role replaced, password kept.
@@ -335,6 +368,16 @@ func loginRole(rawURL string) (string, error) {
 		return "", fmt.Errorf("%q names no role", rawURL)
 	}
 	return u.User.Username(), nil
+}
+
+// aimedAt is intoDatabase with a testing.TB to report a URL it cannot aim at a database.
+func aimedAt(t testing.TB, rawURL, database string) string {
+	t.Helper()
+	target, err := intoDatabase(rawURL, database)
+	if err != nil {
+		t.Fatalf("dbtest: %v", err)
+	}
+	return target
 }
 
 // withSchema returns rawURL with the test schema as the only search_path. pgx
