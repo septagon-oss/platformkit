@@ -13,8 +13,13 @@ import (
 // composition's own audit-retention job, with its own tenant lister, as an expiry
 // role provisioned exactly as modules/audit/README.md's Provisioning section says,
 // and finds the aged row gone and its mark written.
+//
+// It takes a copy of the installation this package's TestMain prepared rather than an empty
+// database of its own, which is what makes it the case that reads the documented grant the way a
+// running installation does: the role is granted in the database the job then connects to, and
+// taken back there when the case ends.
 func TestTheTrailExpiresWithTheGrantsTheAuditREADMENames(t *testing.T) {
-	path, cfg := configureFresh(t)
+	path, cfg := configure(t)
 	install(t, path)
 	admin := dbtest.OpenFor(t, cfg.Database.MigrateURL)
 
