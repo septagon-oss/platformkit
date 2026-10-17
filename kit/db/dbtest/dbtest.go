@@ -25,6 +25,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx"
 
@@ -242,10 +243,12 @@ func openOwner(rawURL string) (*sql.DB, error) {
 // namespace the handle reached.
 //
 // The name is the namespace's with this fixture's prefix on it, and a namespace too long for one
-// PostgreSQL identifier keeps its head and gains a digest of the whole name rather than losing its
-// tail: two installations whose names differ only past the limit — the copies of one prepared
-// installation differ only in how many times their case asked — take two roles, and each grant
-// lands on the installation it was written for.
+// PostgreSQL identifier keeps its head — as much of it as holds whole characters — and gains a
+// digest of the whole name rather than losing its tail: two installations whose names differ only
+// past the limit — the copies of one prepared installation differ only in how many times their case
+// asked — take two roles, and each grant lands on the installation it was written for. The
+// namespace comes back through the owner connection, so that name is built from whatever the caller
+// called its installation, not only from the names this fixture makes for itself.
 //
 // The grant is aimed at the database the connection stands in, read from the server, rather than at
 // the database the environment names, because a test may hold a copy of an installation its package
@@ -470,7 +473,11 @@ func digestOf(name string) string {
 }
 
 // identifier is a name the server will hold as one identifier: within the limit it comes back as it
-// was given, and a longer one keeps its head and ends in a digest of the whole name.
+// was given, and a longer one keeps its head and ends in a digest of the whole name. The head stops
+// at a whole character, because the limit counts bytes and an identifier may hold characters that
+// take several of them: a cut inside one leaves a partial character the server refuses back, so
+// CREATE ROLE answers `invalid byte sequence for encoding "UTF8"` for a namespace this fixture
+// created itself and read back in full. What the shortened head cannot spell, the digest answers.
 //
 // It is for a name built out of another name, where the cut lands where the caller has no more
 // room: Role derives a login role's name from the namespace it holds rights in, so two namespaces
@@ -485,12 +492,17 @@ func identifier(name string) string {
 		return name
 	}
 	tail := "_" + digestOf(name)
-	return name[:identifierLimit-len(tail)] + tail
+	head := identifierLimit - len(tail)
+	// A byte the cut lands on that continues the character before it means the cut is inside it.
+	for head > 0 && !utf8.RuneStart(name[head]) {
+		head--
+	}
+	return name[:head] + tail
 }
 
-// sanitize is a test name as a Postgres identifier can hold it: lower case, and every character
-// the grammar does not admit become one underscore. Nothing truncates it here, so a caller that
-// has room for the whole name keeps the whole name.
+// sanitize is a test name as a Postgres identifier can hold it: lower case, and every character the
+// grammar does not admit becomes one underscore, so what comes back holds one byte per character and
+// a caller may shorten it by bytes. Nothing truncates it here, so a caller with room keeps the name.
 func sanitize(test string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(test) {
