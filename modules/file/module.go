@@ -240,7 +240,12 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Migrations: Migrations.Files,
 		// Bytes go, rows stay, and the certificate names both a subject and an actor.
 		PersonalData: personaldata.Implements(
-			personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name"}},
+			// files.alt (000063) is the sentence somebody typed about a picture, and a
+			// caption is their own words about themselves as much as a file name is — with
+			// the difference that the caption is what a screen reader hands out to whoever
+			// cannot see the picture. It is claimed beside `name` and scrubbed with it, in
+			// the one statement that also moves the row's instant: see personalData.Erase.
+			personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name", "alt"}},
 			personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
 			personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
 			// file_uses (000045) says which record's field displays which file. `record`

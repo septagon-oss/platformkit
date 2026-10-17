@@ -132,12 +132,23 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 // it ("passport-scan.jpg"). Names and reasons are scrubbed across the tenant for the
 // same reason the other modules are: the row that *mentions* this person need not carry
 // their id anywhere.
+//
+// The picture's own alt text goes with the name, and it is the one column here another
+// command guards by the instant the row carries: Service.SetAlt refuses a caption written
+// against a file the caller was not shown, and a form served before the erasure still
+// holds that instant, so an erasure that rewrote alt text in silence would leave the stale
+// form matching and free to write the person's words back over the top of their erasure.
+// So the rewrite of the two columns moves files.updated_at in the same statement — the
+// erasure is a write to the row, and the row's own rule does not except it.
 func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
+	if _, err := personaldata.ScrubTouched(ctx, tx, s, "files", "updated_at",
+		[]string{"name", "alt"}, ""); err != nil {
+		return err
+	}
 	for _, t := range []struct {
 		table   string
 		columns []string
 	}{
-		{"files", []string{"name"}},
 		{"file_holds", []string{"reason"}},
 		{"file_erasures", []string{"reason"}},
 	} {
