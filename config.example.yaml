@@ -197,7 +197,19 @@ auth:
 #   port: 1025
 #   from: "PlatformKit <platformkit@localhost>"
 #
-# The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
+# The password does not belong here at all: kit/secrets reads it, under the name
+# mail.password, from whichever store the secrets block below names — on a laptop that
+# is PLATFORMKIT_MAIL_PASSWORD, exactly the variable this line used to name.
+# Where kit/secrets reads from. Empty adapter is the process's own environment, which
+# is why a deployment that says nothing about secrets still has one. The token is the
+# one secret that cannot arrive through the port, because the port needs it to read the
+# port: secrets.url and secrets.token belong to secrets.adapter openbao, secrets.dir to
+# file, and no secret belongs in this file.
+#
+#   secrets:
+#     adapter: file
+#     dir: /run/secrets/platformkit
+
 mail:
   host: ""
   # Submission with STARTTLS, which is what a modern relay listens on.

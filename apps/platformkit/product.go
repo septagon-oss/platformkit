@@ -43,6 +43,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/secrets"
+	secretsenv "github.com/septagon-oss/platformkit/kit/secrets/providers/env"
+	secretsfile "github.com/septagon-oss/platformkit/kit/secrets/providers/file"
+	secretsbao "github.com/septagon-oss/platformkit/kit/secrets/providers/openbao"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/kit/tenancy/providers/opa"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
@@ -84,6 +88,14 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
 		pkit.Provides[filecontracts.Storage](),
+		// The door to the deployment's secrets, opened once here: which store it is
+		// — the environment, a mounted directory, an OpenBao — is secrets.adapter's
+		// answer, and a module that knew which would know the deployment. Both
+		// halves of the port are put under their own keys, because a module that
+		// reads a secret and a module that seals one are two needs that the same
+		// store answers.
+		pkit.Provides[secrets.Secrets](),
+		pkit.Provides[secrets.Keys](),
 		pkit.Provides[auditcontracts.Plan](),
 		pkit.Provides[tenancy.Policy](),
 		pkit.Provides[sitecontracts.WriteGate](),
@@ -119,6 +131,12 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		// it precisely because it needs nobody and so is built first.
 		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
 		pkit.Put[filecontracts.Storage](w, file.Local(cfg.Files.Dir))
+		store, err := secretStore(cfg)
+		if err != nil {
+			return module.Module{}, err
+		}
+		pkit.Put[secrets.Secrets](w, store)
+		pkit.Put[secrets.Keys](w, store)
 		// The trail is this reference product's worked example of something a plan
 		// includes or does not. The name is the price list's, and it is chosen here
 		// rather than inside the module because which features a product sells is
@@ -309,6 +327,25 @@ var taskPolicy = opa.MustNew("policy/task.rego", "platformkit.task", taskRego)
 // constructor here and nowhere else. See app.Transports.
 func transports() app.Transports {
 	return app.Transports{Memory: memory.New, JetStream: eventnats.Connect}
+}
+
+// secretStore is the one place this application names a secret store. The kernel
+// builds no default the way it builds an in-process cache: here the default is the
+// process's own environment, which opens nothing, so a deployment that says nothing
+// about secrets still has one and is refused for no store it never named.
+//
+// Every adapter secrets.adapter can select is imported here, because a reference
+// application that could name two of three would be a composition that silently
+// cannot run the third.
+func secretStore(cfg config.Config) (secrets.Store, error) {
+	switch cfg.Secrets.Adapter {
+	case "file":
+		return secretsfile.New(cfg.Secrets)
+	case "openbao":
+		return secretsbao.New(cfg.Secrets)
+	default:
+		return secretsenv.FromOS()
+	}
 }
 
 // caches is the one place this application names a value store. cache.adapter
