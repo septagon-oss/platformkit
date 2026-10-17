@@ -436,7 +436,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # promises it makes — the port it refuses, the listener it is willing to serve through, and the port
 # it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
 # here. See scripts/free_port.sh for why the answer is no longer the literal 8099 and why a 200 on
-# /health is not enough to answer it, and scripts/free_port_test.sh for the sixteen cases.
+# /health is not enough to answer it, and scripts/free_port_test.sh for the cases behind each of them.
 #
 # scripts/e2e_guards_run_before_the_gate_test.sh asks a question about check-e2e-guards rather than
 # about gate 10: whether the two port refusals below are run at all, by the goal and by CI, in the
