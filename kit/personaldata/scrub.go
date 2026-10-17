@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -55,10 +56,30 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // the narrower of Subject's two placeholders will not fit, the value is cut to the width
 // from its tail: the erasure keeps the row and loses characters that could not have lived
 // there anyway, which is the smaller of the two losses open to an operation whose whole
-// purpose is to forget. See widths.
+// purpose is to forget. See bounds.
 func Scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, where string, args ...any) (int64, error) {
-	return scrub(ctx, tx, s, "", table, columns, false, where, args)
+	return scrub(ctx, tx, s, guard{}, table, columns, false, where, args)
+}
+
+// ScrubTouched is Scrub for a table whose row names the instant it last changed: the same
+// rewrite, with the same statement moving the column named by stamp to the clock, because
+// a rewrite is a write and a row that says when it last changed has to say when this one
+// happened.
+//
+// files is the table this exists for, and the reason it cannot be left out is the caption
+// form. Service.SetAlt refuses a write whose expected instant no longer matches the row's
+// own, and an erasure that rewrote alt text in silence would leave a form served before it
+// still matching: the next save would write the person's words back over the top of their
+// erasure and the row would report that nobody had touched it since. A counter is advanced
+// and an instant is moved, which is why the two are two entry points and not one flag —
+// there is no way to add one to a timestamp.
+func ScrubTouched(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table, stamp string,
+	columns []string, where string, args ...any) (int64, error) {
+	if !namePattern.MatchString(stamp) {
+		return 0, fmt.Errorf("personaldata: %s.%s is not a column name this scrub will write into SQL", table, stamp)
+	}
+	return scrub(ctx, tx, s, guard{stamp: stamp, at: db.Now()}, table, columns, false, where, args)
 }
 
 // ScrubCounted is Scrub for a table whose row counts its own writes: the same rewrite,
@@ -84,7 +105,7 @@ func ScrubCounted(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table, co
 	if !namePattern.MatchString(counter) {
 		return 0, fmt.Errorf("personaldata: %s.%s is not a column name this scrub will write into SQL", table, counter)
 	}
-	return scrub(ctx, tx, s, counter, table, columns, false, where, args)
+	return scrub(ctx, tx, s, guard{counter: counter}, table, columns, false, where, args)
 }
 
 // ScrubJSON is Scrub for a jsonb column, which is one cast away and no further: the
@@ -100,7 +121,7 @@ func ScrubCounted(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table, co
 // which is the right answer: an erasure that could not read a row cannot certify it.
 func ScrubJSON(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, where string, args ...any) (int64, error) {
-	return scrub(ctx, tx, s, "", table, columns, true, where, args)
+	return scrub(ctx, tx, s, guard{}, table, columns, true, where, args)
 }
 
 // Residue counts the rows of one table that still carry one of the subject's
@@ -121,13 +142,13 @@ func ResidueJSON(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table stri
 	return rows(ctx, tx, s, table, columns, true, where, args)
 }
 
-func scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, counter, table string,
+func scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, g guard, table string,
 	columns []string, isJSON bool, where string, args []any) (int64, error) {
-	holds, err := widths(ctx, tx, table, columns)
+	rooms, err := bounds(ctx, tx, table, columns)
 	if err != nil {
 		return 0, err
 	}
-	q, err := query(s, counter, table, columns, isJSON, holds, where, args)
+	q, err := query(s, g, table, columns, isJSON, rooms, where, args)
 	if err != nil {
 		return 0, err
 	}
@@ -144,10 +165,10 @@ func scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, counter, table s
 
 func rows(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, isJSON bool, where string, args []any) (int64, error) {
-	// No widths and no counter: a count writes nothing, so it has nothing to keep inside
+	// No bounds and no guard: a count writes nothing, so it has nothing to keep inside
 	// a column's width and nothing to advance. The filter it asks with is the one the
 	// rewrite uses, which is the whole point of the re-read.
-	q, err := query(s, "", table, columns, isJSON, nil, where, args)
+	q, err := query(s, guard{}, table, columns, isJSON, nil, where, args)
 	if err != nil {
 		return 0, err
 	}
@@ -278,60 +299,30 @@ func ownRow(table string) string {
 		")) AS named WHERE named.value = ?::text)"
 }
 
-// widths asks the server how many characters each named column's own type holds, and
-// answers nothing for a column that holds any number of them (text, jsonb) or one whose
-// width this server does not carry in its type at all.
-//
-// It has to ask because the rewrite can make a value *longer* than the identifier it
-// replaced: Subject.Token is seventeen characters, and a person's name is often shorter
-// than that. A row whose column already fills its declared width has nowhere for the extra
-// characters to go, the server refuses the statement with "value too long", and the whole
-// erasure dies with it — leaving the person named in every row the transaction did not
-// reach, and a request that fails the same way every time it is retried. So a bounded
-// column is rewritten inside the width the server declares for it.
-//
-// The width is read from the catalog rather than claimed beside the scrub: a claim of a
-// column's width goes stale the day a migration widens the column, and the stale answer
-// truncates text that no longer needs truncating. to_regclass resolves the table the way
-// the UPDATE resolves it, through the session's search_path; counting the bare name across
-// every schema would answer with another table's columns. A width a column carries as a
-// CHECK over an unbounded text column instead of in its type is not seen here, and an
-// erasure of such a row at its ceiling fails loudly rather than silently.
-func widths(ctx context.Context, tx db.Tx[db.Tenant], table string, columns []string) (map[string]int, error) {
-	if len(columns) == 0 {
-		return nil, nil
-	}
-	var found []struct {
-		Name  string
-		Chars *int
-	}
-	err := tx.DB().WithContext(ctx).Raw(`SELECT a.attname::text AS name,
-       CASE WHEN t.typname IN ('varchar', 'bpchar') AND a.atttypmod > 4
-            THEN a.atttypmod - 4 END AS chars
-FROM pg_attribute a
-JOIN pg_type t ON t.oid = a.atttypid
-WHERE a.attrelid = to_regclass(?) AND a.attnum > 0 AND NOT a.attisdropped`, table).Scan(&found).Error
-	if err != nil {
-		return nil, fmt.Errorf("personaldata: the width of %s's columns: %w", table, err)
-	}
-	wanted := make(map[string]bool, len(columns))
-	for _, c := range columns {
-		wanted[c] = true
-	}
-	holds := make(map[string]int, len(columns))
-	for _, f := range found {
-		if f.Chars != nil && wanted[f.Name] {
-			holds[f.Name] = *f.Chars
-		}
-	}
-	return holds, nil
+// guard is the column a row carries so a reader can tell whether the row moved under
+// them, and what this rewrite does to it. A row counts its writes (tasks, change proposals,
+// translations), or it names the instant it last changed (files), or it carries nothing —
+// and the third case is the one where a caller who read the row before the erasure cannot
+// be refused, which is why the first two name their column out loud. See ScrubCounted and
+// ScrubTouched for the two shapes and for the reason they are not one flag.
+type guard struct {
+	// counter is a write count to add one to.
+	counter string
+
+	// stamp is an instant to move to at.
+	stamp string
+
+	// at is the instant written into stamp, read from the kernel's clock by the caller so
+	// that the row disagrees with a form served beforehand by exactly this write.
+	at time.Time
 }
 
 // piece is one fragment of a SET expression and the values its `?` stand for, kept
 // together so the fragments of one expression can be put together in the order that reads
-// as English and still bind in the order the server asks for them. The wide rewrite below
-// appears twice in the finished SQL; a placeholder counted by hand is a value bound one
-// expression away from the pattern that means it.
+// as English and still bind in the order the server asks for them. The wide and narrow
+// rewrites of one column are each written once and referred to by name after that; a
+// placeholder counted by hand is a value bound one expression away from the pattern that
+// means it.
 type piece struct {
 	sql  string
 	args []any
@@ -354,7 +345,7 @@ func bound(parts ...piece) piece {
 // A nil statement with no error is the honest no-op: a person with no email, no name
 // and no handle has no string to hunt, and a table with no text columns to look in has
 // nowhere to hunt — rewriting everything, or nothing, would both be a lie.
-func query(s Subject, counter, table string, columns []string, isJSON bool, holds map[string]int,
+func query(s Subject, g guard, table string, columns []string, isJSON bool, rooms map[string]extent,
 	where string, args []any) (*rewrite, error) {
 	if !namePattern.MatchString(table) {
 		return nil, fmt.Errorf("personaldata: %q is not a table name this scrub will write into SQL", table)
@@ -384,7 +375,7 @@ func query(s Subject, counter, table string, columns []string, isJSON bool, hold
 		}
 		// rewrite is this column's whole chain of replacements, given the placeholder it
 		// leaves behind: the same text at two widths, because a column at its declared
-		// ceiling can hold the narrow one and not the wide one. See widths.
+		// ceiling can hold the narrow one and not the wide one. See bounds.
 		rewrite := func(token string) piece {
 			out := piece{sql: text}
 			for _, m := range ids {
@@ -415,16 +406,10 @@ func query(s Subject, counter, table string, columns []string, isJSON bool, hold
 		}
 		wide := rewrite(s.Token())
 		set := bound(piece{sql: c + " = "}, wide)
-		// A jsonb column carries no width, so the two cases never meet; the guard says so
+		// A jsonb column carries no bound, so the two cases never meet; the guard says so
 		// rather than relying on the catalog never answering for a document column.
-		if width := holds[c]; width > 0 && !isJSON {
-			limit := piece{sql: "?", args: []any{width}}
-			set = bound(piece{sql: c + " = (CASE WHEN length("}, wide,
-				piece{sql: ") <= "}, limit,
-				piece{sql: " THEN "}, wide,
-				piece{sql: " ELSE left("}, rewrite(s.shortToken()),
-				piece{sql: ", "}, limit,
-				piece{sql: ") END)"})
+		if room := rooms[c]; room.room() && !isJSON {
+			set = fits(c, room, wide, rewrite(s.shortToken()))
 		}
 		q.sets = append(q.sets, set.sql)
 		q.args = append(q.args, set.args...)
@@ -442,10 +427,16 @@ func query(s Subject, counter, table string, columns []string, isJSON bool, hold
 		}
 	}
 
-	if counter != "" {
+	if g.counter != "" {
 		// The row's own counter, added to by the server. No value is bound here, so this
 		// half of the SET list cannot move a placeholder out from under an expression.
-		q.sets = append(q.sets, counter+" = "+counter+" + 1")
+		q.sets = append(q.sets, g.counter+" = "+g.counter+" + 1")
+	}
+	if g.stamp != "" {
+		// The row's own instant, moved to the clock the caller was built with. Bound here,
+		// in the same place in the argument list the rest of the SET list sits at.
+		q.sets = append(q.sets, g.stamp+" = ?")
+		q.args = append(q.args, g.at)
 	}
 
 	q.filter = strings.Join(terms, " OR ")
@@ -467,6 +458,61 @@ func query(s Subject, counter, table string, columns []string, isJSON bool, hold
 	q.args = append(q.args, args...)
 	q.args = append(q.args, termArgs...)
 	return q, nil
+}
+
+// fits rewrites one bounded column inside the room the server says it holds: the wide
+// placeholder where it fits, and the narrow one cut down to the room where even that will
+// not go. See bounds for where the room comes from, and Scrub for why the erasure cuts
+// rather than failing.
+//
+// The two rewrites are written once each, into the FROM of a sub-select, and the CASE
+// below reads their names. Writing them out again at the place they are measured would ask
+// the server for the same chain of regexp_replace twice over a column a quarter of a
+// megabyte wide. The room is then applied to what came back: the narrow rewrite is cut to
+// the character bound first, so that where the column also bounds bytes the measurement
+// that decides the second cut is taken on the text that would actually be written.
+func fits(column string, room extent, wide, narrow piece) piece {
+	var when []piece
+	if room.chars > 0 {
+		when = append(when, piece{sql: "length(room.wide) <= ?", args: []any{room.chars}})
+	}
+	if room.octets > 0 {
+		when = append(when, piece{sql: "octet_length(room.wide) <= ?", args: []any{room.octets}})
+	}
+	guards := []piece{{sql: column + " = (SELECT CASE WHEN "}}
+	for _, clause := range when {
+		if len(guards) > 1 {
+			guards = append(guards, piece{sql: " AND "})
+		}
+		guards = append(guards, clause)
+	}
+	cut := narrow
+	if room.chars > 0 {
+		cut = bound(piece{sql: "left("}, narrow, piece{sql: ", ?)", args: []any{room.chars}})
+	}
+	sets := append(guards, piece{sql: " THEN room.wide ELSE "}, shortest(room),
+		piece{sql: " END FROM (SELECT "}, wide,
+		piece{sql: " AS wide, "}, cut,
+		piece{sql: " AS cut) AS room)"},
+	)
+	return bound(sets...)
+}
+
+// shortest is the value to write when the wide placeholder will not fit: the cut the room
+// already took, taken down to the byte bound too where the column carries one. That second
+// cut is measured in characters rather than bytes because these are text columns and a
+// character is what a reader loses: dropping a character drops at least one byte, so
+// dropping as many characters as there are bytes over the bound is the smallest cut that is
+// always enough, and the only one that never touches a character the row was allowed to
+// keep. Where the column bounds characters alone, the cut of the value already answered it.
+func shortest(room extent) piece {
+	if room.octets == 0 {
+		return piece{sql: "room.cut"}
+	}
+	return piece{
+		sql:  "left(room.cut, greatest(length(room.cut) - greatest(octet_length(room.cut) - ?, 0), 0))",
+		args: []any{room.octets},
+	}
 }
 
 // boundedPattern quotes an identifier for Postgres' ARE pattern syntax and puts a word
