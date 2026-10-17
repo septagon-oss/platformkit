@@ -156,9 +156,10 @@ fi
 # growth nothing priced and asks for `Owner-approved:` trailers on a raise that never passed 1,000 lines.
 # A merge is never the declaration, so a raise written only in a merge resolution declares nothing. A
 # lowering declares no growth and is never a refusal — it is the tidying CONTRIBUTING prescribes, not a
-# promise to shrink — but it is the last word on that bucket: the number that pays for a line is the one
-# this branch's budget file last carried for it. A build(budget) commit that arrives on a merged sibling
-# is the branch's own for this: it declares what it wrote, where it was written.
+# promise to shrink. Whether a commit raised its bucket or brought it down is read off its own parent, so
+# the row carries both numbers: what the commit wrote over main's, and whether it raised it. A budget
+# commit that arrives on a merged sibling is the branch's own for this: it declares what it wrote, where
+# it was written.
 raised=''
 for commit in $touched; do
 	budget_commit "$commit" && git cat-file -e "$commit:loc-budget.json" 2>/dev/null || continue
@@ -171,18 +172,24 @@ for commit in $touched; do
 	    | ([$parent.buckets[] | select(.name == $a.name)] | .[0]) as $before
 	    | ([$main.buckets[] | select(.name == $a.name)] | .[0]) as $held
 	    | select($before != null and $held != null and $before.max != $a.max)
-	    | "\($c) \($a.name) \($a.max - $held.max)"
+	    | "\($c) \($a.name) \($a.max - $held.max) \(if $a.max > $before.max then 1 else 0 end)"
 	')"
 	raised="${raised}${raised:+${rows:+$'\n'}}${rows}"
 done
-# The walk is topological and prints the commit nearest HEAD first, so the row that stands for a bucket is
-# the last declaration that bucket's branch of the history reached.
+# Each row is `<commit> <bucket> <lines over main where it was written> <1 when the commit raises the
+# bucket over its own parent, 0 when it brings it down>`. The walk is topological and prints the commit
+# nearest HEAD first, so the row that stands for a bucket is the last declaration that bucket's branch of
+# the history reached.
 declared="$(awk '$2 != "" && !seen[$2]++' <<< "$raised")"
 # A raise of more than 1,000 lines in one bucket is the owner's, not only the reviewer's: every commit
 # raising that bucket names the approval in an `Owner-approved:` trailer. The check reads that the
-# claim is recorded where review reads it; it cannot read that the owner made it.
-for bucket in $(awk '$3 > 1000 { print $2 }' <<< "$declared"); do
-	for commit in $(awk -v b="$bucket" '$2 == b && $3 > 0 { print $1 }' <<< "$raised"); do
+# claim is recorded where review reads it; it cannot read that the owner made it. A commit that brings a
+# ceiling down spends no allocation — it returns lines to the pool — so it never owed a trailer: the raise
+# that took the allocation carries one, and refusing the tidying would hold an allocation open past the
+# day its owner priced it. What asks for the trailer is the largest raise this branch wrote, not the
+# ceiling standing at HEAD, so a lowering cannot disown an approval the raise still needs.
+for bucket in $(awk '$4 == 1 && $3 > 1000 { print $2 }' <<< "$raised" | sort -u); do
+	for commit in $(awk -v b="$bucket" '$2 == b && $4 == 1 { print $1 }' <<< "$raised"); do
 		if [ -z "$(git log -1 --format='%(trailers:key=Owner-approved,valueonly)' "$commit" | tr -d '[:space:]')" ]; then
 			problems="${problems:+$problems$'\n'}loc-budget.json: $bucket rises over 1,000 lines on this branch and ${commit:0:12} carries no Owner-approved: trailer"
 		fi
@@ -203,8 +210,15 @@ if [ -n "$merge_base_ref" ]; then
 		exit 2
 	fi
 	while read -r name grew; do
+		# What pays for a line is the ceiling this branch's budget file last wrote for the bucket, measured
+		# over main's where that commit was written — and never more than the largest ceiling the branch's
+		# own raising commits reached there. A commit that brings a ceiling down returns lines to the pool;
+		# reading it as an allowance would mint credit for a ceiling a merge resolution wrote, and let one
+		# lowering widen an allocation the branch had already priced at something smaller.
 		allowed="$(awk -v b="$name" '$2 == b && $3 > 0 { print $3 }' <<< "$declared")"
 		[ -n "$allowed" ] || allowed=0
+		priced="$(awk -v b="$name" '$2 == b && $4 == 1 && $3 > best { best = $3 } END { print best + 0 }' <<< "$raised")"
+		if [ "$allowed" -gt "$priced" ]; then allowed="$priced"; fi
 		if [ "$grew" -gt "$allowed" ]; then
 			problems="${problems:+$problems$'\n'}loc-budget.json: $name grew by $grew lines since the merge base ${base:0:12}; this branch's build(budget) commits declare $allowed"
 		fi

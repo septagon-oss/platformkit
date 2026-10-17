@@ -628,6 +628,28 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# list builds every case from one base commit. Two throwaway repositories, eleven commits in each, one
 	# `go build` of the counter and no network, database, browser or listener: two seconds.
 	bash scripts/a_raise_restated_after_a_merge_is_priced_once_test.sh
+	# scripts/a_lowering_cannot_price_growth_from_a_merge_resolution_test.sh asks whether bringing a ceiling
+	# down can mint growth credit. The branch merges main with a higher ceiling written only in the
+	# resolution, then lowers that ceiling in a build(budget) commit of its own: a merge declares nothing,
+	# so the lowering has to leave the branch with nothing priced. Neither neighbour above reaches the
+	# shape — the merge case never re-prices and the restated case never lowers. One throwaway repository,
+	# nine commits, no network, no database, one second.
+	bash scripts/a_lowering_cannot_price_growth_from_a_merge_resolution_test.sh
+	# scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh holds the other half of the
+	# same rule: a branch that priced two lines, merged main with a higher ceiling in the resolution and
+	# then lowered it still holds two lines, not eight. Kept apart from the case above on purpose — an
+	# allowance read as "never more than the branch's own raise" passes here while a branch with no raise
+	# at all is granted credit from nothing, and the reverse mistake passes there. Two throwaway
+	# repositories' worth of one history, eleven commits, one `go build` of the counter, no network,
+	# database, browser or listener.
+	bash scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh
+	# scripts/a_lowering_needs_no_new_owner_approval_test.sh asks who owes the `Owner-approved:` trailer of
+	# a bucket standing over 1,000 lines: the commit that raised it, never the one that brings part of it
+	# back. CONTRIBUTING.md permits lowering a ceiling and asks for the trailer on a raise, so returning
+	# 500 unused lines of an approved 2,000 is the tidying that document prescribes — and the ratchet
+	# refuses it in both of its forms, CI's explicit base and `make check-loc`'s merge base, the moment it
+	# reads the lowering as a raise. Two budget commits over one base, no network, no database.
+	bash scripts/a_lowering_needs_no_new_owner_approval_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh

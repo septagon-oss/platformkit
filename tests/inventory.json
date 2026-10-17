@@ -58653,6 +58653,66 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh",
+   "id": "scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_lowering_cannot_expand_a_previously_priced_allocation_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
+   "file": "scripts/a_lowering_cannot_price_growth_from_a_merge_resolution_test.sh",
+   "id": "scripts/a_lowering_cannot_price_growth_from_a_merge_resolution_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_lowering_cannot_price_growth_from_a_merge_resolution_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
+   "file": "scripts/a_lowering_needs_no_new_owner_approval_test.sh",
+   "id": "scripts/a_lowering_needs_no_new_owner_approval_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_lowering_needs_no_new_owner_approval_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/a_raise_restated_after_a_merge_is_priced_once_test.sh",
    "id": "scripts/a_raise_restated_after_a_merge_is_priced_once_test.sh",
    "kind": "shell_pin",
@@ -61840,7 +61900,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1622,
+  "files": 1625,
   "forge_runs": [
    408,
    413,
@@ -61875,7 +61935,7 @@
   ],
   "layers": {
    "behaviour": 2653,
-   "composition": 366,
+   "composition": 369,
    "contract": 20,
    "journey": 88
   },
@@ -61893,23 +61953,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3127,
+  "rows": 3130,
   "tiers": {
    "merge": 1996,
    "nightly": 88,
-   "push": 1043
+   "push": 1046
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1437,
+   "keep": 1440,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2837,
+   "keep": 2840,
    "keep-rewrite": 117,
    "merge": 173
   }
