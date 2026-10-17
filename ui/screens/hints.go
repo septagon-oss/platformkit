@@ -2,6 +2,7 @@ package screens
 
 import (
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
 // hints.go is the entry- and command-level reading contract as the catalogue
@@ -31,6 +32,7 @@ import (
 
 // EntryPresentation is one resource as its author said it reads.
 type EntryPresentation struct {
+	Deck             *DeckPresentation       `json:"deck,omitempty"`
 	Singular         *string                 `json:"singular,omitempty"`
 	Plural           *string                 `json:"plural,omitempty"`
 	Description      *string                 `json:"description,omitempty"`
@@ -84,8 +86,9 @@ func declared[T comparable](value T) *T {
 // deviations is an entry's declaration as the document writes it, and nil for
 // the zero EntryHints — which is what "nobody said anything" looks like on the
 // wire, and the reason an un-hinted entry's bytes do not move.
-func deviations(p entity.EntryHints) *EntryPresentation {
+func deviations(p entity.EntryHints, commands []httpx.Command) *EntryPresentation {
 	out := EntryPresentation{
+		Deck:     deckPresentation(p.Deck, commands),
 		Singular: declared(p.Singular), Plural: declared(p.Plural),
 		Description: declared(p.Description), Icon: declared(p.Icon),
 		Group: p.Group, Order: declared(p.Order),
@@ -121,4 +124,46 @@ func commandDeviations(p entity.CommandHints) *CommandPresentation {
 		return nil
 	}
 	return &out
+}
+
+// DeckPresentation is a list reading with caller-authorized gesture commands.
+// Directions remains an object when the caller may run none of the commands.
+type DeckPresentation struct {
+	Queue      []string                             `json:"queue,omitempty"`
+	Order      string                               `json:"order"`
+	Directions map[string]DeckDirectionPresentation `json:"directions"`
+}
+
+// DeckDirectionPresentation carries either command copy or a down-only skip.
+// Undo capability is omitted until commands can return authoritative undo tokens.
+type DeckDirectionPresentation struct {
+	Command string `json:"command,omitempty"`
+	Label   string `json:"label,omitempty"`
+	Tone    string `json:"tone,omitempty"`
+	Icon    string `json:"icon,omitempty"`
+	Skip    bool   `json:"skip,omitzero"`
+}
+
+func deckPresentation(d *entity.DeckHints, commands []httpx.Command) *DeckPresentation {
+	if d == nil {
+		return nil
+	}
+	d = d.Clone()
+	out := &DeckPresentation{Queue: d.Queue, Order: d.Order, Directions: map[string]DeckDirectionPresentation{}}
+	allowed := map[string]bool{}
+	for _, c := range commands {
+		if !c.Present.System {
+			allowed[c.Verb] = true
+		}
+	}
+	for key, v := range d.Directions {
+		if v.Skip {
+			out.Directions[key] = DeckDirectionPresentation{Skip: true}
+			continue
+		}
+		if allowed[v.Command] {
+			out.Directions[key] = DeckDirectionPresentation{Command: v.Command, Label: v.Label, Tone: v.Tone, Icon: v.Icon}
+		}
+	}
+	return out
 }
