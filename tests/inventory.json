@@ -59044,6 +59044,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/richtext-selection-link-isolation.spec.ts",
+   "id": "e2e/richtext-selection-link-isolation.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "a pasted address leaves the existing link in the stale selection untouched",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/richtext-table-insertion.spec.ts",
    "id": "e2e/richtext-table-insertion.spec.ts",
    "kind": "playwright",
@@ -62851,7 +62871,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1654,
+  "files": 1655,
   "forge_runs": [
    408,
    413,
@@ -62888,7 +62908,7 @@
    "behaviour": 2684,
    "composition": 381,
    "contract": 20,
-   "journey": 91
+   "journey": 92
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -62904,23 +62924,23 @@
   },
   "round_named_ceiling": 37,
   "round_named_files": 37,
-  "rows": 3176,
+  "rows": 3177,
   "tiers": {
    "merge": 2043,
-   "nightly": 91,
+   "nightly": 92,
    "push": 1042
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1451,
+   "keep": 1452,
    "keep-rewrite": 66,
    "merge": 137
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2858,
+   "keep": 2859,
    "keep-rewrite": 133,
    "merge": 185
   }
