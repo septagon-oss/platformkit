@@ -1,0 +1,228 @@
+
+===== 2026-10-16T20:36:42+00:00 =====
+$ make check
+| failure lines above the tail below:
+|     i18n_gate_test.go:130: publish = 409 {"$schema":"https://acme.localhost/schemas/Problem.json","type":"about:blank","title":"Conflict","status":409,"detail":"crud: conflict: the author of this content cannot publish it: publication is another person's decision","instance":"urn:request:8c96a13f-3c
+| # A stated per-package bound, because go test's ten-minute default is not a decision this
+| # repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
+| # installation into a schema of their own; the package measured 407s with three database packages
+| # sharing one Postgres, and the run of 2026-10-06 killed it at 600s while it was still working —
+| # six passing cases then reported as `(unknown)` over a goroutine dump of tests parked in
+| # t.Parallel. A whole-suite run of 2026-10-06 on a host carrying six of this program's suites at
+| # once took `modules/tenant/internal` to 18m37s and `kit/rest` — a package that opens no database
+| # at all — to 20m, and the same five packages that failed there passed in 7m30s of wall clock
+| # against 1m of CPU when nothing else was asking. Thirty minutes is the worst observation here plus
+| # room for a machine doing other things as well. It is not a looser standard: the hang a bound
+| # exists to catch still stops. Behind it the CI job that runs `make check` names 75 minutes for
+| # itself, and the forge has three times cut that job off at about an hour over it — 94d387cc at
+| # 3612s = 60m02s, b6f1e93 at 3612s, cc614f57 at 3609s, all three with 75 in their copy of
+| # .gitea/workflows/ci.yml — so the bound that stops a hung package here is this line's, not the
+| # job's, and the budget a step must fit is the runner's.
+| # The count beside it is TEST_COUNT's (PR #141), and the two are written in this order because
+| # scripts/ci_go_cache_test.sh reads the count variable as it sits directly after the option separator,
+| # so the count goes first and the bound after it. A caller that empties TEST_COUNT for its own cached
+| # runs then loses the count, and the line that comes back carries the bound on its own — two spaces
+| # and all, because make substitutes nothing for an empty variable and leaves the separator on both
+| # sides. The shell folds them; the pin in the arch probe is of the bytes the recipe emits, in the same
+| # shape as the double space that probe already pins in the local goal's line. One caution for whoever
+| # edits this paragraph next: that guard greps this recipe's text, so setting the separator and the
+| # variable side by side anywhere in here would answer it from a comment.
+| # Three files hold this command, and that is the price of a byte pin. The arch probe
+| # scripts/check_architecture_test.sh dry-runs `make check` and `make test` under local selectors and
+| # compares the fresh goal against a byte copy of it; scripts/make_check_count_default_test.sh asks
+| # for the same bytes in CI's own shape, where nothing names TEST_COUNT; and scripts/ci_go_cache_test.sh
+| # refuses a recipe that stops interpolating the count at all. All three were red on 2026-10-06, the day
+| # -timeout=30m joined -count=1 here and nowhere else. Re-pinning is a decision somebody makes
+| # rather than a fix: those cases refuse a re-pin that drops the count, the package pattern or any
+| # stated bound, so what a re-pin may change is everything around the parts that make the run fresh.
+| # The alternative is a fresh gate that narrows because nobody looked at it.
+|     mobile_flows_test.go:136: MAESTRO_JUNIT is unset: no device run happened here. make mobile-e2e runs one and sets it; the mobile job fails without it.
+|     planned_factor_names_its_task_test.go:21: go.mod names a WebAuthn library; the factor is no longer planned
+|     inventory_go_test_ceiling_test.go:54: inventory quotes 172119 against 172119; declared go_test ceiling is 172855
+| (the tail)
+phase=expand duration_ms=1
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=12 name=000012_operator.up.sql phase=expand duration_ms=2
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=20 name=000020_tenant_primary_host.up.sql phase=expand duration_ms=2
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=21 name=000021_limits.up.sql phase=expand duration_ms=3
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=26 name=000026_module_schema.up.sql phase=expand duration_ms=1
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=28 name=000028_outbox_trace.up.sql phase=expand duration_ms=1
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=29 name=000029_tenant_locale.up.sql phase=expand duration_ms=5
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=30 name=000030_tenant_oidc.up.sql phase=expand duration_ms=2
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=34 name=000034_outbox_request.up.sql phase=expand duration_ms=0
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=41 name=000041_outbox_baggage.up.sql phase=expand duration_ms=0
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=43 name=000043_tenant_app.up.sql phase=expand duration_ms=4
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=46 name=000046_tenant_saml.up.sql phase=expand duration_ms=2
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=50 name=000050_tenant_demo.up.sql phase=expand duration_ms=1
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=51 name=000051_seed_keys.up.sql phase=expand duration_ms=6
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=52 name=000052_outbox_attribution.up.sql phase=expand duration_ms=3
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=58 name=000058_ledger_claim_durable_lock.up.sql phase=expand duration_ms=3
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=59 name=000059_tenant_app_refusal.up.sql phase=expand duration_ms=2
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=60 name=000060_tenant_app_place.up.sql phase=data batches=0 duration_ms=6
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=61 name=000061_ledger_placement_declares_its_tenants.up.sql phase=expand duration_ms=1
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=62 name=000062_idempotency.up.sql phase=expand duration_ms=5
+2026/10/16 20:17:56 INFO db: applied migration owner=platformkit version=67 name=000067_operations.up.sql phase=expand duration_ms=5
+    moved_ledger_tenant_write_test.go:25: events: move the delivery ledger: a delivery is mid-claim on ledger-ledger-invoice_issued; no ledger row moved, run it again
+
+DONE 6639 tests, 2 skipped, 2 failures in 675.754s
+npm warn install-scripts 1 package had install scripts blocked because they are not covered by allowScripts:
+npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+test_citation_reader_refuses_missing_reversed_and_outside_ranges (__main__.ArchitecturePillars.test_citation_reader_refuses_missing_reversed_and_outside_ranges) ... ok
+test_each_pillar_answers_the_five_questions_in_order (__main__.ArchitecturePillars.test_each_pillar_answers_the_five_questions_in_order) ... ok
+test_full_and_shorthand_citation_ranges_resolve (__main__.ArchitecturePillars.test_full_and_shorthand_citation_ranges_resolve) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.019s
+
+OK
++ export base 893cf2ae79a7f5b6a9b8618fd3586e237fea85ea
++ export candidate d5a15086867605ac21cdab0e046130622cdf63a6
+make: *** [Makefile:543: check] Error 1
+
+-> exit 2
+$ make check
+| failure lines above the tail below:
+|     i18n_gate_test.go:130: publish = 409 {"$schema":"https://acme.localhost/schemas/Problem.json","type":"about:blank","title":"Conflict","status":409,"detail":"crud: conflict: the author of this content cannot publish it: publication is another person's decision","instance":"urn:request:497a02b8-ab
+| # A stated per-package bound, because go test's ten-minute default is not a decision this
+| # repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
+| # installation into a schema of their own; the package measured 407s with three database packages
+| # sharing one Postgres, and the run of 2026-10-06 killed it at 600s while it was still working —
+| # six passing cases then reported as `(unknown)` over a goroutine dump of tests parked in
+| # t.Parallel. A whole-suite run of 2026-10-06 on a host carrying six of this program's suites at
+| # once took `modules/tenant/internal` to 18m37s and `kit/rest` — a package that opens no database
+| # at all — to 20m, and the same five packages that failed there passed in 7m30s of wall clock
+| # against 1m of CPU when nothing else was asking. Thirty minutes is the worst observation here plus
+| # room for a machine doing other things as well. It is not a looser standard: the hang a bound
+| # exists to catch still stops. Behind it the CI job that runs `make check` names 75 minutes for
+| # itself, and the forge has three times cut that job off at about an hour over it — 94d387cc at
+| # 3612s = 60m02s, b6f1e93 at 3612s, cc614f57 at 3609s, all three with 75 in their copy of
+| # .gitea/workflows/ci.yml — so the bound that stops a hung package here is this line's, not the
+| # job's, and the budget a step must fit is the runner's.
+| # The count beside it is TEST_COUNT's (PR #141), and the two are written in this order because
+| # scripts/ci_go_cache_test.sh reads the count variable as it sits directly after the option separator,
+| # so the count goes first and the bound after it. A caller that empties TEST_COUNT for its own cached
+| # runs then loses the count, and the line that comes back carries the bound on its own — two spaces
+| # and all, because make substitutes nothing for an empty variable and leaves the separator on both
+| # sides. The shell folds them; the pin in the arch probe is of the bytes the recipe emits, in the same
+| # shape as the double space that probe already pins in the local goal's line. One caution for whoever
+| # edits this paragraph next: that guard greps this recipe's text, so setting the separator and the
+| # variable side by side anywhere in here would answer it from a comment.
+| # Three files hold this command, and that is the price of a byte pin. The arch probe
+| # scripts/check_architecture_test.sh dry-runs `make check` and `make test` under local selectors and
+| # compares the fresh goal against a byte copy of it; scripts/make_check_count_default_test.sh asks
+| # for the same bytes in CI's own shape, where nothing names TEST_COUNT; and scripts/ci_go_cache_test.sh
+| # refuses a recipe that stops interpolating the count at all. All three were red on 2026-10-06, the day
+| # -timeout=30m joined -count=1 here and nowhere else. Re-pinning is a decision somebody makes
+| # rather than a fix: those cases refuse a re-pin that drops the count, the package pattern or any
+| # stated bound, so what a re-pin may change is everything around the parts that make the run fresh.
+| # The alternative is a fresh gate that narrows because nobody looked at it.
+| (the tail)
+/filetest (cached)
+✓  modules/file/internal (cached)
+∅  modules/notification
+∅  modules/notification/contracts
+✓  modules/notification/contracts/notificationtest (cached)
+✓  modules/notification/internal (cached)
+✓  modules/site (cached)
+∅  modules/site/contracts
+✓  modules/site/contracts/sitetest (cached)
+✓  modules/site/internal (cached)
+✓  modules/task (cached)
+∅  modules/task/contracts
+✓  modules/task/contracts/tasktest (cached)
+✓  modules/task/domain (cached)
+✓  modules/task/internal (cached)
+✓  modules/tenant (cached)
+∅  modules/tenant/contracts
+✓  modules/tenant/contracts/tenanttest (cached)
+✓  modules/tenant/internal (cached)
+✓  modules/translation (cached)
+∅  modules/translation/contracts
+✓  modules/change (3.002s)
+✓  modules/translation/contracts/translationtest (cached)
+✓  modules/translation/internal (cached)
+✓  modules/user (cached)
+✓  modules/user/contracts (cached)
+✓  modules/user/contracts/usertest (cached)
+✓  modules/web (cached)
+∅  modules/web/contracts
+✓  modules/user/internal (cached)
+✓  modules/web/internal (cached)
+∅  modules/webhook
+✓  modules/webhook/contracts (cached)
+✓  modules/webhook/internal (cached)
+∅  pkit/internal/fixture/admin
+∅  pkit/internal/fixture/admin/contracts
+∅  pkit/internal/fixture/audit
+∅  pkit/internal/fixture/blog
+∅  pkit/internal/fixture/cart
+∅  pkit/internal/fixture/cart/contracts
+∅  pkit/internal/fixture/collectibles
+∅  pkit/internal/fixture/design
+∅  pkit/internal/fixture/homepage
+∅  pkit/internal/fixture/homepage/contracts
+∅  pkit/internal/fixture/payment
+∅  pkit/internal/fixture/payment/contracts
+∅  pkit/internal/fixture/paypal
+∅  pkit/internal/fixture/reports
+∅  pkit/internal/fixture/rewards
+∅  pkit/internal/fixture/shipping
+∅  pkit/internal/fixture/shop
+∅  pkit/internal/fixture/stripe
+∅  pkit/internal/fixture/user
+∅  pkit/internal/fixture/user/contracts
+∅  pkit/internal/fixture/wishlist
+✓  pkit (cached)
+✓  tools/designexport (cached)
+✓  tools/locbudget (cached)
+✓  ui (cached)
+✓  ui/components (cached)
+✓  ui/components/examples (cached)
+✓  ui/css (cached)
+✓  ui/document (cached)
+✓  ui/export (cached)
+✓  ui/forms (cached)
+✓  ui/icon (cached)
+✓  ui/legible (cached)
+✓  ui/page (cached)
+✓  ui/resource (cached)
+✓  ui/screens (cached)
+✓  ui/source (cached)
+✓  ui/style (cached)
+✓  kit/events (1m15.075s)
+✖  apps/platformkit (7m43.721s)
+
+=== Skipped
+=== SKIP: apps/platformkit TestDeclaredMobileFlowsRan (0.00s)
+    mobile_flows_test.go:136: MAESTRO_JUNIT is unset: no device run happened here. make mobile-e2e runs one and sets it; the mobile job fails without it.
+
+=== SKIP: modules/auth TestAPlannedFactorNamesTheTaskThatFinishesIt (0.00s)
+    planned_factor_names_its_task_test.go:21: go.mod names a WebAuthn library; the factor is no longer planned
+
+=== Failed
+=== FAIL: apps/platformkit TestTheInventoryQuotesItsDeclaredGoTestCeiling (0.00s)
+    inventory_go_test_ceiling_test.go:54: inventory quotes 172119 against 172119; declared go_test ceiling is 172855
+
+DONE 6639 tests, 2 skipped, 1 failure in 463.721s
+npm warn install-scripts 1 package had install scripts blocked because they are not covered by allowScripts:
+npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+test_citation_reader_refuses_missing_reversed_and_outside_ranges (__main__.ArchitecturePillars.test_citation_reader_refuses_missing_reversed_and_outside_ranges) ... ok
+test_each_pillar_answers_the_five_questions_in_order (__main__.ArchitecturePillars.test_each_pillar_answers_the_five_questions_in_order) ... ok
+test_full_and_shorthand_citation_ranges_resolve (__main__.ArchitecturePillars.test_full_and_shorthand_citation_ranges_resolve) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.020s
+
+OK
++ export base 893cf2ae79a7f5b6a9b8618fd3586e237fea85ea
++ export candidate d5a15086867605ac21cdab0e046130622cdf63a6
+make: *** [Makefile:543: check] Error 1
+
+-> exit 2
+$ python3 /home/jplr/.local/share/pkit-999/gates/commits_gate.py . origin/main
+commit gate: ok (2 commits, 2 authored)
+
+-> exit 0
