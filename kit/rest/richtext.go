@@ -87,7 +87,7 @@ func (s Spec[T]) prepareFiles(ctx context.Context, tx db.Tx[db.Tenant], e T, col
 		}})
 	}
 	for _, field := range crud.Fields[T]() {
-		if !entity.PicturesAre(field.Present) ||
+		if field.Type == entity.TypePicture || !entity.PicturesAre(field.Present) ||
 			(columns != nil && !slices.Contains(columns, field.Column)) {
 			continue
 		}
@@ -249,7 +249,7 @@ func (s Spec[T]) clearFileUses(ctx context.Context, tx db.Tx[db.Tenant], e T) er
 		return err
 	}
 	for _, field := range crud.Fields[T]() {
-		if field.Widget != "richtext" && !entity.PicturesAre(field.Present) {
+		if field.Type == entity.TypePicture || (field.Widget != "richtext" && !entity.PicturesAre(field.Present)) {
 			continue
 		}
 		if err := s.recordUses(ctx, tx, e, field, nil, false); err != nil {

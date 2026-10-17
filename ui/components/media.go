@@ -60,7 +60,11 @@ func Media(p MediaProps) g.Node {
 	default:
 		return mediaAbsent(p, status)
 	}
-	attrs := []g.Node{g.Attr("src", p.Src), g.Attr("alt", p.Alt)}
+	alt := p.Alt
+	if p.Decorative {
+		alt = ""
+	}
+	attrs := []g.Node{g.Attr("src", p.Src), g.Attr("alt", alt)}
 	if p.Width > 0 && p.Height > 0 {
 		attrs = append(attrs, g.Attr("width", strconv.Itoa(p.Width)), g.Attr("height", strconv.Itoa(p.Height)))
 	}

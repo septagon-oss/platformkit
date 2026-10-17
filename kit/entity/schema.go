@@ -396,7 +396,7 @@ func derive(t reflect.Type) []Field {
 			Type:     kind,
 			Elem:     elem,
 			Required: has(sf.Tag.Get("validate"), "required"),
-			ReadOnly: declaredBy(t, sf) == baseType,
+			ReadOnly: declaredBy(t, sf) == baseType || (kind == TypePicture && sf.Tag.Get("readOnly") == "true"),
 			Default:  sf.Tag.Get("default"),
 			Doc:      sf.Tag.Get("doc"),
 			Index:    sf.Index,
@@ -542,6 +542,8 @@ func scalar(t reflect.Type, tag reflect.StructTag) (FieldType, bool) {
 		t = t.Elem()
 	}
 	switch t {
+	case reflect.TypeFor[Picture]():
+		return TypePicture, true
 	case uuidType:
 		return TypeUUID, true
 	case timeType:
