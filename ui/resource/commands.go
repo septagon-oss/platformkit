@@ -186,8 +186,12 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 		}
 		controls = append(controls, controlWords(arguments, f, "", "", false))
 	}
+	// Outline, so the screen's one filled action stays its toolbar's — Edit on a
+	// record, New on a list. A filled submit per command put three brand-filled
+	// buttons above the fold of a record with several commands, and the design
+	// floor allows one. Outline has no fill in either theme.
 	controls = append(controls, components.Button(components.ButtonProps{
-		Label: button, Type: "submit", Size: "md",
+		Label: button, Type: "submit", Variant: "outline", Size: "md",
 	}))
 	return components.Form(components.FormProps{Action: c.Action(item), Label: label}, controls...)
 }
