@@ -93,6 +93,8 @@ type Shell struct {
 	// composition names it for the same reason it names SignIn: the door belongs
 	// to the module that stores the bytes. Empty draws the plain value.
 	PictureSource string
+	// ComposedSource is the composed-picture address with a {reference} placeholder.
+	ComposedSource string
 	// Registration is the composition saying a stranger may make an account
 	// here. Nil offers no way in but the password, which is the answer for
 	// every composition that wired no registration service.
@@ -208,7 +210,8 @@ func Mount(s httpx.Surfaces, sh Shell) {
 
 	opts := screens.Options{
 		Workspace: a.workspace.at, Home: "Dashboard",
-		PictureSource: sh.PictureSource,
+		PictureSource:  sh.PictureSource,
+		ComposedSource: sh.ComposedSource,
 	}
 	resources := s.Resources()
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Screen < resources[j].Screen })

@@ -127,6 +127,9 @@ func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) stri
 		if f.Type == entity.TypeList {
 			return fmt.Sprintf("sortable %q is a list, which is not something to sort on", field)
 		}
+		if f.Type == entity.TypePicture {
+			return fmt.Sprintf("sortable %q is a derived picture, which cannot be sorted", field)
+		}
 		if f.Presentation.Hidden() {
 			return fmt.Sprintf("sortable %q names a hidden field; a column nobody sees is not a column to order by", field)
 		}
