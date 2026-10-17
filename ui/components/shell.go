@@ -35,6 +35,15 @@ type ShellSlots struct {
 	Footer  []g.Node
 }
 
+// Standalone renders an access or recovery page outside the signed-in shell.
+// The top inset keeps the form clear of the viewport edge without centering a
+// long form beyond reach on a small screen or when the keyboard is open.
+func Standalone(p ComponentProps, children ...g.Node) g.Node {
+	nodes := append(baseAttrs(p), classes(clStandalone.Compile(), p.Class))
+	return h.Main(append(nodes, Container(ContainerProps{MaxWidth: "sm"},
+		Stack(StackProps{Gap: "6"}, children...)))...)
+}
+
 // Shell renders the frame: a skip link, then a row of the sidebar and a column
 // of header, main and footer. The sidebar hides itself below the large
 // breakpoint, so a narrow window is one column and no script decided that.

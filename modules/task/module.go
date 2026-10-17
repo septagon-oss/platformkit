@@ -94,10 +94,12 @@ var Spec = rest.Spec[*contracts.Task]{
 	// served under is derived from this resource's own address — see
 	// ui/resource/hints.go — which is why no `en.json` exists to keep it in step.
 	Present: entity.EntryHints{
-		Singular: "task",
-		Plural:   "tasks",
-		Icon:     "task",
-		Group:    &entity.ResourceGroup{Key: "work", Label: "Work"},
+		Description:      "Set priorities, assign work and keep track of what is due.",
+		EmptyDescription: "Create a task to give the work a clear next step.",
+		Singular:         "task",
+		Plural:           "tasks",
+		Icon:             "task",
+		Group:            &entity.ResourceGroup{Key: "work", Label: "Work"},
 		// The row says its title, and its status; the two business fields a person
 		// weighs it against are what it costs to wait and when.
 		PrimaryField:  "title",

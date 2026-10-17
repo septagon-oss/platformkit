@@ -162,6 +162,7 @@
   "presentation": {
     "singular": "tarefa",
     "plural": "tarefas",
+    "description": "Defina prioridades, atribua trabalho e acompanhe os prazos.",
     "icon": "task",
     "group": {
       "key": "work",
@@ -174,6 +175,7 @@
       "dueAt"
     ],
     "statusField": "status",
+    "emptyDescription": "Crie uma tarefa para definir o próximo passo do trabalho.",
     "sortable": [
       "title",
       "dueAt",

@@ -1,4 +1,44 @@
-# Tenant component galleries
+# Administration workspace
+
+This module owns the shared web workspace, access pages and operator navigation.
+Applications supply modules, permissions and resource presentation at composition;
+the shell draws only destinations the current tenant and role may open.
+
+## Find the right experience
+
+| Experience | Starting point and next action |
+|---|---|
+| Sign in and recover access | The access page names the workspace and keeps its form and recovery links together. Password, passkey and email-link controllers retain their existing routes. |
+| Tenant administration | Dashboard names the tenant and groups available tools. Counts describe that workspace; they are not installation-wide analytics. |
+| Platform operations | Dashboard prioritizes the tenant directory. The operator label stays in the header; open a tenant's host to work in its separate scope. |
+| People, work, content and billing | Resource lists use the owner's names, primary field, summaries, status and empty-state guidance. Open a named record before editing or running its authorized commands. |
+| Roles | Read the access summary, expand the role, then save its permissions. The existing last-administrator refusal still protects access. |
+| Personal sessions | Sessions appears when the composition supplies a session store. It lists the signed-in person's sessions, independently of administrative permissions. |
+| Health and developer tools | Health reports observed checks. Component galleries remain subject to both permission and tenant composition. |
+
+The same authorized navigation drives desktop and mobile. Platform operations,
+workspace tools, system support, developer tools and personal access remain distinct.
+Application-specific workspaces such as file management and review queues retain
+their own routes and composition; this shell does not replace their workflows.
+
+## Give a resource a useful reading
+
+Declare `Present` on the existing resource specification. `Group` and `Icon` guide
+workspace organization. `Singular`, `Plural` and `Description` name the experience;
+`PrimaryField` names a record. A nonempty `SummaryFields` selects compact list
+columns beside the primary, status and thumbnail fields. Hidden and detail-only fields stay
+off the list. Without summaries the existing visible columns remain available.
+`EmptyDescription` explains the next step without inventing a control or permission.
+Declared strings use the existing `Words` translation seam, including form names.
+
+The owners are [workspace composition](internal/workspace.go),
+[resource rendering](../../ui/resource/reading.go) and the shared
+[components](../../ui/components/README.md). To verify an integration, follow the
+[browser setup](../../CONTRIBUTING.md#verify-at-the-relevant-boundary) and run the
+admin workspace and role journeys against a disposable reference application.
+These checks cover the shared flows, not every product's custom workspace.
+
+## Tenant component galleries
 
 The admin module serves the interactive gallery at `/app/admin/_gallery`. Sign in
 with `gallery:read` (included by the administrator's wildcard). The default
@@ -81,7 +121,7 @@ with no permission, because these are the caller's own rows. It renders through 
 them — a composition without a session store mounts no screen and answers 404, rather than a page with
 nothing in it. The screen's own words and why a ref never appears as row text are modules/auth's
 (`modules/auth/README.md`); this module owns only that it is drawn inside the shell's chrome. It carries no
-sidebar entry, because `kit/module.Validate` refuses a nav entry that names no permission.
+module navigation declaration; the shell adds it under Your account when the session store is supplied.
 
 ## Authorization
 
