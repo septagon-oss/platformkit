@@ -124,3 +124,14 @@ func TestMediaCaptionIsAcaptionNotAltText(t *testing.T) {
 		t.Errorf("the caption was folded into alt, so it is read once and cannot be returned to:\n%s", html)
 	}
 }
+
+func TestDecorativeMediaDoesNotRepeatItsVisibleName(t *testing.T) {
+	decorative := renderMedia(t, components.Media(components.MediaProps{Src: "/picture", Alt: "Geometry", Decorative: true}))
+	if !strings.Contains(decorative, `alt=""`) || strings.Contains(decorative, `alt="Geometry"`) {
+		t.Fatalf("decorative image repeats its name: %s", decorative)
+	}
+	informative := renderMedia(t, components.Media(components.MediaProps{Src: "/picture", Alt: "Geometry"}))
+	if !strings.Contains(informative, `alt="Geometry"`) {
+		t.Fatalf("informative image lost its name: %s", informative)
+	}
+}
