@@ -12092,11 +12092,11 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
-   "file": "kit/db/dbtest/schema_contention_test.go",
-   "id": "kit/db/dbtest/schema_contention_test.go#TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
+   "file": "kit/db/dbtest/postgres_service_settings_test.go",
+   "id": "kit/db/dbtest/postgres_service_settings_test.go#TestEveryPostgresServiceStartsWithoutDurabilityItNeverNeeds",
    "kind": "go",
    "layer": "behaviour",
-   "name": "TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
+   "name": "TestEveryPostgresServiceStartsWithoutDurabilityItNeverNeeds",
    "needs_db": true,
    "pkg": "kit/db/dbtest",
    "round_named": false,
@@ -12111,11 +12111,30 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
-   "file": "kit/db/dbtest/server_capacity_parity_test.go",
-   "id": "kit/db/dbtest/server_capacity_parity_test.go#TestEveryPostgresServiceAllowsTheSameConnectionCount",
+   "file": "kit/db/dbtest/postgres_service_settings_test.go",
+   "id": "kit/db/dbtest/postgres_service_settings_test.go#TestTheSettingsReaderRefusesAWordThatNamesNoSetting",
    "kind": "go",
    "layer": "behaviour",
-   "name": "TestEveryPostgresServiceAllowsTheSameConnectionCount",
+   "name": "TestTheSettingsReaderRefusesAWordThatNamesNoSetting",
+   "needs_db": true,
+   "pkg": "kit/db/dbtest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/dbtest/schema_contention_test.go",
+   "id": "kit/db/dbtest/schema_contention_test.go#TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestSchemaMigratesWhileAnotherCaseHoldsAWriteOpen",
    "needs_db": true,
    "pkg": "kit/db/dbtest",
    "round_named": false,
@@ -64938,7 +64957,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2778,
+   "behaviour": 2779,
    "composition": 390,
    "contract": 20,
    "journey": 92
@@ -64957,9 +64976,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3280,
+  "rows": 3281,
   "tiers": {
-   "merge": 2049,
+   "merge": 2050,
    "nightly": 92,
    "push": 1139
   },
@@ -64973,7 +64992,7 @@
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2924,
+   "keep": 2925,
    "keep-rewrite": 140,
    "merge": 216
   }
