@@ -25474,6 +25474,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/command_argument_derived_ownership_test.go",
+   "id": "kit/rest/command_argument_derived_ownership_test.go#TestCommandOwnershipFollowsPromotedAndShadowedFields",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestCommandOwnershipFollowsPromotedAndShadowedFields",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/command_argument_fault_test.go",
    "id": "kit/rest/command_argument_fault_test.go#TestCommandArgumentOwnershipUsesMetadataAndFieldOrder",
    "kind": "go",
@@ -65133,7 +65152,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1704,
+  "files": 1705,
   "forge_runs": [
    408,
    413,
@@ -65167,7 +65186,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2789,
+   "behaviour": 2790,
    "composition": 390,
    "contract": 20,
    "journey": 93
@@ -65186,9 +65205,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3292,
+  "rows": 3293,
   "tiers": {
-   "merge": 2056,
+   "merge": 2057,
    "nightly": 93,
    "push": 1143
   },
@@ -65196,13 +65215,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1477,
+   "keep": 1478,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2936,
+   "keep": 2937,
    "keep-rewrite": 140,
    "merge": 216
   }
