@@ -70,7 +70,7 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 	run("ALTER DEFAULT PRIVILEGES IN SCHEMA " + schema + " GRANT USAGE, SELECT ON SEQUENCES TO " + role)
 
 	t.Cleanup(func() {
-		cleaner, err := sql.Open("pgx", baseAdmin)
+		cleaner, err := openOwner(baseAdmin)
 		if err != nil {
 			return
 		}
@@ -199,7 +199,8 @@ func DeploymentSchema(t testing.TB, admin *sql.DB) string {
 	return schema.String
 }
 
-// Open is a database/sql pool on rawURL, closed when the test ends.
+// Open returns an owner pool on rawURL with four open connections and one idle
+// connection, closed when the test ends. An invalid URL fails the test.
 func Open(t *testing.T, rawURL string) *sql.DB {
 	t.Helper()
 	return OpenFor(t, rawURL)
@@ -208,12 +209,24 @@ func Open(t *testing.T, rawURL string) *sql.DB {
 // OpenFor is Open for tests and benchmarks, with the same automatic cleanup.
 func OpenFor(t testing.TB, rawURL string) *sql.DB {
 	t.Helper()
-	pool, err := sql.Open("pgx", rawURL)
+	pool, err := openOwner(rawURL)
 	if err != nil {
 		t.Fatalf("dbtest: open %q: %v", rawURL, err)
 	}
 	t.Cleanup(func() { _ = pool.Close() })
 	return pool
+}
+
+// openOwner bounds assertion, setup and cleanup pools alike. Four connections
+// permit a held lock, a concurrent writer and an observer with one slot to spare.
+func openOwner(rawURL string) (*sql.DB, error) {
+	pool, err := sql.Open("pgx", rawURL)
+	if err != nil {
+		return nil, err
+	}
+	pool.SetMaxOpenConns(4)
+	pool.SetMaxIdleConns(1)
+	return pool, nil
 }
 
 // Role creates a login role that owns nothing and holds nothing except what the
@@ -262,7 +275,7 @@ func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
 	}
 	adminURL := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
 	t.Cleanup(func() {
-		cleaner, err := sql.Open("pgx", adminURL)
+		cleaner, err := openOwner(adminURL)
 		if err != nil {
 			return
 		}

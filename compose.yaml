@@ -10,6 +10,7 @@
 services:
   postgres:
     image: postgres:16
+    command: ["postgres", "-c", "max_connections=256"]
     environment:
       POSTGRES_PASSWORD: platformkit
       POSTGRES_DB: platformkit

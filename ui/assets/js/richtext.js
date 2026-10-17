@@ -280,21 +280,13 @@ function positionBubble(control) {
 	updatePressed(control);
 }
 
-// bindSelectionChrome keeps the bubble answering the browser's own selection rather
-// than waiting for the editor to notice one. The editor's selectionUpdate reports
-// what the document decided and when the editor agreed with it; the keyboard's
-// range is real — and reads as real to anything that asks the page — for a moment
-// before that. A person who has selected words and is shown no toolbar has selected
-// nothing as far as this field is concerned, which is this field's failure and not
-// theirs. The listener is the page's, so it asks whether the range is inside this
-// field's own surface before it moves anything: two fields on one page share the one
-// document event, and a selection in the other one is not this one's business.
-//
-// What it does not settle is the editor's half. When the editor later re-asserts its
-// own state over the browser's range, the bubble goes with it. The one reader that
-// could not wait for that half to arrive — the address pasted across words — asks
-// this same question of the screen rather than of the editor's state; see
-// selectedWords.
+// bindSelectionChrome positions the bubble from this field's browser selection,
+// which can change before the editor's selectionUpdate event arrives. The event is
+// the page's, shared by every field on it, so a range outside this field's own
+// surface is not this field's selection and moves nothing. The bubble still follows
+// the editor's state when that re-asserts itself over the browser's range; the one
+// reader that cannot wait for the editor to catch up — the address pasted across
+// words — asks the screen the same question, see selectedWords.
 function bindSelectionChrome(control) {
 	document.addEventListener("selectionchange", () => {
 		const selection = window.getSelection();
@@ -410,22 +402,19 @@ function bindLink(control) {
 	bindPasteLink(control);
 }
 
-// bindPasteLink is the URL-over-a-selection spelling, and it is a capture-phase
-// listener one rung above the element ProseMirror owns — the drawn surface —
-// rather than the editor's `paste` event:
-// ProseMirror parses a paste as soon as its handlers see it and replaces whatever
-// was selected, so the selection the author means to link is gone by the time a
-// listener downstream could answer. Answering before it is the only way to keep
-// the words and add the address. Which words is selectedWords's question, and not
-// the editor state's alone: the state can be one flush behind the page, and a paste
-// that reaches this listener in the turn after the keystroke that made the range —
-// Shift+Home and Ctrl+V, which is how a person pastes over words — would otherwise
-// read "nothing selected", drop the address onto the caret and lose the words the
-// author meant to keep.
+// bindPasteLink links the selected words before ProseMirror replaces them with the
+// pasted text, and refuses on a read-only editor, which shows a document it does not
+// own. It is a capture-phase listener on the drawn surface rather than the editor's
+// `paste` event: ProseMirror parses a paste as soon as its handlers see it, so the
+// words are gone before a listener downstream could answer. Which words is
+// selectedWords's question, not the editor state's alone — the state can be one flush
+// behind the page, and a paste arriving in the turn after the keystroke that made the
+// range would otherwise read "nothing selected" and lose the words.
 function bindPasteLink(control) {
 	control.surface.addEventListener("paste", (event) => {
 		const text = event.clipboardData ? event.clipboardData.getData("text/plain").trim() : "";
-		const words = isLink(text) ? selectedWords(control) : null;
+		if (!isLink(text) || !control.editor.isEditable) return;
+		const words = selectedWords(control);
 		if (!words) return;
 		event.preventDefault();
 		event.stopImmediatePropagation();
