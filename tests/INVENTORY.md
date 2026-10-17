@@ -1,14 +1,14 @@
 # Test inventory and verdicts — platformkit (decision 0088)
 
-One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 3286 rows over 1701 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
+One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 3292 rows over 1704 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
 
 ## Scale
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 3286 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1701 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 3030 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 3292 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1704 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 3036 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 61 | filename prefix |
 | rows inside them | 93 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 92 / 1 / 74 / 89 | same walk |
@@ -18,11 +18,11 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 20 | push, first | asserts a golden or the published API set |
-| behaviour | 2783 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| behaviour | 2789 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 390 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
 | journey | 93 | nightly | `e2e/`: browser or device |
 
-Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 1 129 rows sit in packages that open nothing, 2 064 in packages that do, 93 in the browser. The push tier's headline counts 1 143 and the merge tier's 2 050: the 14-row difference is the contract-key rows (openapi, asyncapi, golden, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those six files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
+Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 1 129 rows sit in packages that open nothing, 2 070 in packages that do, 93 in the browser. The push tier's headline counts 1 143 and the merge tier's 2 056: the 14-row difference is the contract-key rows (openapi, asyncapi, golden, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those six files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
 
 Of the 1 143, 980 are Go rows, 74 are `scripts/` pins and 89 are `node --test` cases. All three shapes run on a pull request, but not from the same line: the Go rows come out of `--tier push`, the pins are recipe lines of `make check` (which `check-push` runs fewer of, named under `Limits`), and the node cases run in the `editor` job — `npm test` over the tool's own `*.test.mjs`, `npm run test:browser` over `browser/`, and two later steps that pass `editor/*.test.mjs` and `preview/<file>` to the runner directly (`.gitea/workflows/ci.yml:741,779,1044,1073`). The headline is what a pull request runs; the selector's list is what `scripts/check_push_tier.sh` runs, and it answers Go packages only.
 
@@ -46,7 +46,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1474 | 2930 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 1477 | 2936 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 73 | 140 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -113,7 +113,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 
 | area | files | keep-rewrite | merge | delete |
 |---|---|---|---|---|
-| kit | 495 | 67 | 139 | 0 |
+| kit | 497 | 67 | 139 | 0 |
 | modules | 429 | 28 | 36 | 0 |
 | apps | 253 | 24 | 28 | 0 |
 | ui | 179 | 10 | 5 | 0 |
@@ -121,7 +121,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | e2e | 93 | 5 | 0 | 0 |
 | migrations | 15 | 5 | 8 | 0 |
 
-`tools` appears with the design tooling's JavaScript cases: one of the 89, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above (140 keep-rewrite, 216 merge). The table lists the areas that hold a verdict, and three areas the walk counts hold none: `pkit` (65 files), `design` (4 files) and `scripts` (74 files, a count the Scale table already quotes) are every `keep`, so a row for each would carry three zeroes beside a population and tell a reader nothing the `Verdicts` table above does not — the markdown this file holds is that population's count, so a zero row is priced like any other row. `ui`'s merge column falls to 5 because the round-named sheets that carried those verdicts folded into the named pins beside them. The figures in this table re-derive from the same rows; unlike the four sections above they are quoted by hand, and `scripts/inventory_area_totals_match_document_test.py` — a recipe line of `make check` — re-derives them from `inventory.json` and refuses this file when the rows no longer answer them.
+`tools` appears with the design tooling's JavaScript cases: one of the 89, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above (140 keep-rewrite, 216 merge). The table lists the areas that hold a verdict, and three areas the walk counts hold none: `pkit` (66 files), `design` (4 files) and `scripts` (74 files, a count the Scale table already quotes) are every `keep`, so a row for each would carry three zeroes beside a population and tell a reader nothing the `Verdicts` table above does not — the markdown this file holds is that population's count, so a zero row is priced like any other row. `ui`'s merge column falls to 5 because the round-named sheets that carried those verdicts folded into the named pins beside them. The figures in this table re-derive from the same rows; unlike the four sections above they are quoted by hand, and `scripts/inventory_area_totals_match_document_test.py` — a recipe line of `make check` — re-derives them from `inventory.json` and refuses this file when the rows no longer answer them.
 
 ## The four composition journeys (0088 layer 3)
 
