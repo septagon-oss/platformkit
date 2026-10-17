@@ -57135,6 +57135,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/command_controls_floor_test.go",
+   "id": "ui/resource/command_controls_floor_test.go#TestQuietCommandControlsKeepTheirNativeSubmitAndAccessibleName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestQuietCommandControlsKeepTheirNativeSubmitAndAccessibleName",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/command_help_language_test.go",
    "id": "ui/resource/command_help_language_test.go#TestCommandHelpUsesItsOwnTranslationAndFallsBackToItsDeclaration",
    "kind": "go",
@@ -57311,6 +57330,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestEveryEntryHintThatIsNotAWordReachesTheTranslatedEntry",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/resource/generated_screen_floor_test.go",
+   "id": "ui/resource/generated_screen_floor_test.go#TestAGeneratedScreenFillsOneActionAndBoundsItsBodySizes",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGeneratedScreenFillsOneActionAndBoundsItsBodySizes",
    "needs_db": false,
    "pkg": "ui/resource",
    "round_named": false,
@@ -59439,6 +59477,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestSemanticColorsResolveBothModesAndCallerPalette",
+   "needs_db": false,
+   "pkg": "ui/style",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/style/semantic_colors_test.go",
+   "id": "ui/style/semantic_colors_test.go#TestGeneratedScreenTextPairsMeetTheContrastFloor",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestGeneratedScreenTextPairsMeetTheContrastFloor",
    "needs_db": false,
    "pkg": "ui/style",
    "round_named": false,
@@ -65143,7 +65200,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1708,
+  "files": 1710,
   "forge_runs": [
    408,
    413,
@@ -65177,7 +65234,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2787,
+   "behaviour": 2790,
    "composition": 392,
    "contract": 20,
    "journey": 93
@@ -65196,23 +65253,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3292,
+  "rows": 3295,
   "tiers": {
    "merge": 2057,
    "nightly": 93,
-   "push": 1142
+   "push": 1145
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1481,
+   "keep": 1483,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2936,
+   "keep": 2939,
    "keep-rewrite": 140,
    "merge": 216
   }
