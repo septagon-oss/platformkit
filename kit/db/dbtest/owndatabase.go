@@ -2,7 +2,6 @@ package dbtest
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
@@ -42,7 +41,7 @@ func RunInOwnDatabase(m *testing.M) (code int) {
 		return m.Run()
 	}
 	adminURL := os.Getenv(names[0])
-	admin, err := sql.Open("pgx", adminURL)
+	admin, err := openOwner(adminURL)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "dbtest: own database: the owner URL cannot be opened")
 		return 1
@@ -133,7 +132,7 @@ const (
 )
 
 func removeOwnDatabase(adminURL, database string) error {
-	admin, err := sql.Open("pgx", adminURL)
+	admin, err := openOwner(adminURL)
 	if err != nil {
 		return err
 	}
