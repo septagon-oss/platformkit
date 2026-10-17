@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math/rand/v2"
 	"net/url"
 	"os"
@@ -240,6 +241,12 @@ func openOwner(rawURL string) (*sql.DB, error) {
 // returns its name and a DSN that lands in that installation — the same database and the same
 // namespace the handle reached.
 //
+// The name is the namespace's with this fixture's prefix on it, and a namespace too long for one
+// PostgreSQL identifier keeps its head and gains a digest of the whole name rather than losing its
+// tail: two installations whose names differ only past the limit — the copies of one prepared
+// installation differ only in how many times their case asked — take two roles, and each grant
+// lands on the installation it was written for.
+//
 // The grant is aimed at the database the connection stands in, read from the server, rather than at
 // the database the environment names, because a test may hold a copy of an installation its package
 // prepared (Clone) rather than the one the URLs name. A privilege lives in the database it was
@@ -274,10 +281,7 @@ func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
 	if parsed, err := url.Parse(baseApp); err == nil && parsed.User != nil {
 		appPassword, _ = parsed.User.Password()
 	}
-	name = "r_" + strings.TrimPrefix(schema, "t_")
-	if len(name) > 63 {
-		name = name[:63]
-	}
+	name = identifier(rolePrefix + strings.TrimPrefix(schema, "t_"))
 	must := func(query string) {
 		t.Helper()
 		if _, err := admin.ExecContext(t.Context(), query); err != nil {
@@ -436,10 +440,52 @@ var run = strconv.FormatUint(rand.Uint64(), 36)
 // schemaName turns a test name into a Postgres identifier.
 func schemaName(test string) string {
 	name := "t_" + run + "_" + sanitize(test)
-	if len(name) > 63 { // the Postgres identifier limit
-		name = name[:63]
+	if len(name) > identifierLimit { // the Postgres identifier limit
+		name = name[:identifierLimit]
 	}
 	return name
+}
+
+// identifierLimit is how many bytes one PostgreSQL identifier may hold: NAMEDATALEN minus one. The
+// server shortens anything longer to this without saying so, which is why a name built out of
+// another name is shortened here, where the reason can be written down.
+const identifierLimit = 63
+
+// rolePrefix is what a login role this fixture creates is named after the namespace it holds rights
+// in: prefix the namespace and you have the role, which is what lets a person reading pg_roles and
+// pg_stat_activity match a session to its installation without asking. Clone leaves this much room
+// in a namespace of its own for the same reason: a namespace that fills the identifier limit would
+// leave the role named after it nothing.
+const rolePrefix = "r_"
+
+// digestWidth is the characters a digest answers in. It is a constant because the two places that
+// reserve room for one inside an identifier do so before they know the name.
+const digestWidth = 8
+
+// digestOf is fnv-1a of a name, as the eight hex digits an identifier can carry beside a cut.
+func digestOf(name string) string {
+	digest := fnv.New32a()
+	_, _ = digest.Write([]byte(name))
+	return fmt.Sprintf("%0*x", digestWidth, digest.Sum32())
+}
+
+// identifier is a name the server will hold as one identifier: within the limit it comes back as it
+// was given, and a longer one keeps its head and ends in a digest of the whole name.
+//
+// It is for a name built out of another name, where the cut lands where the caller has no more
+// room: Role derives a login role's name from the namespace it holds rights in, so two namespaces
+// that differ only past the limit — the copies of one prepared installation, which differ only in
+// how many times their case asked — would arrive at the cluster as one role name. The second CREATE
+// ROLE is then refused as already existing, and its grants would have landed on the installation
+// that got there first. Cutting at the limit instead is what did that; PostgreSQL shortens in
+// silence, so nothing else said so. The digest is over the whole name, so one name answers one
+// identifier every time: a caller that has to spell its role out in a GRANT derives it twice.
+func identifier(name string) string {
+	if len(name) <= identifierLimit {
+		return name
+	}
+	tail := "_" + digestOf(name)
+	return name[:identifierLimit-len(tail)] + tail
 }
 
 // sanitize is a test name as a Postgres identifier can hold it: lower case, and every character
