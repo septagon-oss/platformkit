@@ -75,6 +75,12 @@ import (
 // no Storybook provider, and the shell's gallery answers Core to the operator
 // alone rather than the app lying about having a gallery.
 func product(cfg config.Config) *pkit.Module {
+	return productPictures(cfg, admincontracts.Pictures{Source: filecontracts.PictureSource})
+}
+
+// productPictures uses the application's declared picture doors in its ordinary
+// provider, so fixture and production compositions share the same typed wiring.
+func productPictures(cfg config.Config, pictures admincontracts.Pictures) *pkit.Module {
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
@@ -185,7 +191,7 @@ func product(cfg config.Config) *pkit.Module {
 		// generated screens fetch through it; the door is the file module's and the
 		// document is the kernel's, so this composition is the only party that has met
 		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
-		pkit.Put[admincontracts.Pictures](w, admincontracts.Pictures{Source: filecontracts.PictureSource})
+		pkit.Put[admincontracts.Pictures](w, pictures)
 		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
