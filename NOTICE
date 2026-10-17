@@ -311,6 +311,14 @@ one command, and it is a release precondition:
   go install github.com/google/go-licenses@latest
   go-licenses report ./...
 
+One dependency is named by a port's own explanation, so it is named here too:
+
+  github.com/SherClockHolmes/webpush-go v1.4.0 — Copyright (c) 2016 Ethan Holmes,
+  under the MIT licence. kit/push's Web Push adapter is its only importer: the
+  adapter is the port's judgement about which HTTP answer means a subscription is
+  gone, and the library is RFC 8291's encryption and RFC 8292's JWT, which this
+  repository does not rewrite.
+
 --------------------------------------------------------------------------------
 Shared calendar/map assets — FullCalendar Standard 7.1.0 and Leaflet 1.9.4
 
