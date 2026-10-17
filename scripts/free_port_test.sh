@@ -4,7 +4,7 @@
 # "may I serve here" is never taken from a stranger's listener, so who holds a port is
 # read from the socket and the machine that reads it has proved it can; the browser run
 # at the end of scripts/e2e.sh is told which port the application was actually given;
-# and the CI job that asks these questions installs the tool the answer comes from.
+# and the CI jobs that ask these questions install the tool the answer comes from.
 #
 # Node is the tool under test here, so it is a prerequisite and not something this
 # case installs — which is how scripts/e2e.sh treats it for the same reason.
@@ -194,36 +194,87 @@ else
 	echo "ok   gate 10 carries no literal default port"
 fi
 
-# 6. And the machine that runs these cases has to have been given the tool. 3a and 3c
-#    are asked of ss or lsof, and the CI job that runs this file pins an image that
-#    ships neither: gitea/runner-images:ubuntu-24.04@sha256:e77e2b1ebba51adb… is the
-#    digest job 49823 of run 49357 names when it creates the container, and running this
-#    file inside that digest (2026-10-04) printed four `ok` lines and then died here at
-#    3a with exit 2. Three of that job's steps ask the question — `make check` runs this
-#    file, and `make check-e2e-guards` and `make e2e` run scripts/e2e.sh, which asks it
-#    of itself and refuses the whole browser run on a machine that cannot answer — so
-#    the job buys the tool before the first of them. This is the case that refuses the
-#    edit that forgets it, which is the shape the failure had: a red gate whose cause
-#    lives in a workflow file nobody was reading.
-ci="$root/.gitea/workflows/ci.yml"
-installed="$(grep -nE 'apt-get install' "$ci" | head -1 | cut -d: -f1 || true)"
-asks="$(grep -nE '^[[:space:]]+run: make (check|check-e2e-guards|e2e)$' "$ci" | head -1 | cut -d: -f1 || true)"
-if [ -z "$installed" ] || [ -z "$asks" ]; then
-	echo "FAIL: ci.yml must install the probe and run a step that needs it (install line '$installed', first step that asks '$asks')"
-	failures=$((failures + 1))
-elif ! sed -n "${installed}p" "$ci" | grep -qE '(^|[[:space:]])(iproute2|lsof)([[:space:]]|$)'; then
-	echo "FAIL: ci.yml installs no tool that can say whose socket it is, so 3a, check-e2e-guards and make e2e refuse; the line reads:"
-	printf '    %s\n' "$(sed -n "${installed}p" "$ci")"
-	failures=$((failures + 1))
-elif [ "$installed" -ge "$asks" ]; then
-	echo "FAIL: ci.yml installs the socket probe at line $installed, at or after the step that needs an answer at $asks"
+# 6. And the machine that runs these cases has to have been given the tool. 3a and 3c are asked of ss
+#    or lsof, and the CI jobs that ask them run on images that ship neither: ci.yml's is measured in the
+#    comment over its install line, and the device journey's job runs scripts/mobile_e2e.sh, whose
+#    wait_healthy reads the socket table to decide whether a /health answer came from the application it
+#    started. The two jobs differ in what an unanswered question costs. Gate 10 refuses its whole run on
+#    a machine that cannot attribute a listener; the device journey carries no such refusal of its own
+#    and prints an accusation about somebody else owning its port. So both jobs buy the tool ahead of
+#    the first step that needs an answer, and the journey's job is asked the question rather than told
+#    the answer: its probe step is run below, as the job runs it, against socket tables that answer in
+#    each of the three ways a machine can answer.
+for wf in ci mobile; do
+	wfpath="$root/.gitea/workflows/$wf.yml"
+	installed="$(grep -nE 'apt-get install' "$wfpath" | head -1 | cut -d: -f1 || true)"
+	asks="$(grep -nE '^[[:space:]]+run: make (check|check-e2e-guards|e2e|mobile-e2e)$' "$wfpath" | head -1 | cut -d: -f1 || true)"
+	if [ -z "$installed" ] || [ -z "$asks" ]; then
+		echo "FAIL: $wf.yml must install the probe and run a step that needs it (install line '$installed', first step that asks '$asks')"
+		failures=$((failures + 1))
+	elif ! sed -n "${installed}p" "$wfpath" | grep -qE '(^|[[:space:]])(iproute2|lsof)([[:space:]]|$)'; then
+		echo "FAIL: $wf.yml installs no tool that can say whose socket it is, so a journey it serves refuses; the line reads:"
+		printf '    %s\n' "$(sed -n "${installed}p" "$wfpath")"
+		failures=$((failures + 1))
+	elif [ "$installed" -ge "$asks" ]; then
+		echo "FAIL: $wf.yml installs the socket probe at line $installed, at or after the step that needs an answer at $asks"
+		failures=$((failures + 1))
+	else
+		echo "ok   $wf.yml installs a socket probe (line $installed) ahead of the first step that asks whose listener it is ($asks)"
+	fi
+done
+
+# The device journey's job then gets its own receipt run here: the workflow step that asks the socket
+# table about a listener the step started itself is extracted and executed the way the job executes it,
+# and against two tables that cannot answer. A stripped `ss` which exits 0 printing nothing is the
+# shape a container with no readable /proc takes, and port_listeners answers that successfully with an
+# empty list — so the question is never whether the probe succeeded, only whether it named the pid.
+# Both silences have to refuse: a journey whose runner cannot attribute a socket is refused by
+# scripts/mobile_e2e.sh for somebody else's listener, which is the wrong thing to accuse it of.
+probe_step="$(awk '
+	/^      - name: The socket probe/ { keep = 1; next }
+	keep && /^      - / { exit }
+	keep && /^        run: \|$/ { inrun = 1; next }
+	keep && inrun { sub(/^          /, ""); print }
+' "$root/.gitea/workflows/mobile.yml")"
+if [ -z "$probe_step" ]; then
+	echo "FAIL: mobile.yml carries no step that asks the socket table about a listener of its own, so the journey's job trusts an answer nobody proved it could give"
 	failures=$((failures + 1))
 else
-	echo "ok   ci.yml installs a socket probe (line $installed) ahead of the first step that asks whose listener it is ($asks)"
+	got=0
+	(cd "$root" && bash -e -c "$probe_step" >/dev/null 2>&1) || got=$?
+	check "the journey's job attributes a listener it started itself" 0 "$got"
+
+	silent="$(mktemp -d)"
+	printf '#!/bin/sh\nexit 0\n' >"$silent/ss"
+	printf '#!/bin/sh\nexit 1\n' >"$silent/lsof"
+	chmod +x "$silent/ss" "$silent/lsof"
+	got=0
+	(cd "$root" && PATH="$silent:$PATH" bash -e -c "$probe_step" >/dev/null 2>&1) || got=$?
+	if [ "$got" = 0 ]; then
+		echo "FAIL: the journey's job passed with a socket probe that answers nothing, which is the silence a device run reads as somebody else owning its port"
+		failures=$((failures + 1))
+	else
+		echo "ok   the journey's job refuses a probe that answers nothing (exit $got)"
+	fi
+
+	bare="$(mktemp -d)"
+	for tool in bash grep sed sort head sleep mktemp python3 rm; do
+		here="$(command -v "$tool" 2>/dev/null)" || continue
+		ln -s "$here" "$bare/$tool"
+	done
+	got=0
+	(cd "$root" && PATH="$bare" bash -e -c "$probe_step" >/dev/null 2>&1) || got=$?
+	if [ "$got" = 0 ]; then
+		echo "FAIL: the journey's job passed on a runner with neither ss nor lsof, which is the image the guard exists for"
+		failures=$((failures + 1))
+	else
+		echo "ok   the journey's job refuses a runner with no socket probe at all (exit $got)"
+	fi
+	rm -rf "$silent" "$bare"
 fi
 
 if [ "$failures" -ne 0 ]; then
 	echo "free port: $failures case(s) failed" >&2
 	exit 1
 fi
-echo "free port: an allocation is bindable, a held port is refused before anything is touched, the listener is named by pid before the answer is trusted, the browser is told which port it got, and the CI job installs the tool that answers"
+echo "free port: an allocation is bindable, a held port is refused before anything is touched, the listener is named by pid before the answer is trusted, the browser is told which port it got, and the CI jobs install the tool that answers"
