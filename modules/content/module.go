@@ -122,6 +122,14 @@ var Spec = rest.Spec[*contracts.Content]{
 		ThumbnailField: "coverImageId",
 		SummaryFields:  []string{"kind"},
 		Sortable:       []string{"title", "publishedAt", "updatedAt"},
+		Deck: &entity.DeckHints{
+			Queue: []string{"status:draft"}, Order: "updatedAt",
+			Directions: map[string]entity.DeckDirection{
+				"right": {Command: "publish", Label: "Publish", Tone: "success", Icon: "document"},
+				"left":  {Command: "archive", Label: "Archive", Tone: "warning", Icon: "folder"},
+				"down":  {Skip: true},
+			},
+		},
 	},
 }
 
