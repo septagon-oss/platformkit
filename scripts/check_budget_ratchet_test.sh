@@ -150,6 +150,25 @@ budget 5 docs && commit 'build(budget): go 3 -> 5'
 lines a.go 4 && commit 'feat: four lines against two priced'
 expect_merge_base 1 'growth beyond a declared raise is refused'
 
+# A ceiling that comes down is tidying, not a promise to shrink. The branch that lowers one to what its
+# own tree counts grows by nothing, so the ratchet accepts the commit that priced it; and the same
+# lowering buys no room to grow, because an allowance is what the branch raised, never the sum of what it
+# moved. Reading a signed lowering against the allowance refused the rebaseline command CONTRIBUTING
+# prescribes, on a branch whose code had not moved at all.
+budget_docs() { # budget_docs <go max> <docs max> — the two ceilings of `budget 3 docs`, each given
+	printf '{"buckets": [{"name": "go", "suffixes": [".go"], "max": %s}, {"name": "docs", "suffixes": [".txt"], "max": %s}]}\n' "$1" "$2" > loc-budget.json
+	echo '{"packages": 5}' > packages-budget.json
+}
+
+fresh_branch lowering_prices_nothing
+budget_docs 3 8 && commit 'build(budget): the docs ceiling comes down to what the tree counts'
+expect_merge_base 0 'a build(budget) commit that only lowers a ceiling is never a refusal'
+
+fresh_branch lowering_buys_nothing
+budget_docs 3 8 && commit 'build(budget): the docs ceiling comes down to what the tree counts'
+lines a.go 2 && commit 'feat: two lines the lowering did not price'
+expect_merge_base 1 'a lowering declares no growth'
+
 fresh_branch resolution
 on_main main_raises_then_overruns
 git merge -q --no-ff --no-commit origin/main >/dev/null

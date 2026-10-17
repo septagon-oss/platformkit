@@ -138,9 +138,11 @@ if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from ';
 		problems="${problems}"$'\n'"budget ratchet: these commits change a budget file and are not a build(budget) commit touching only budget files:"$'\n'"${unreviewed}"
 	fi
 fi
-# What this branch declares: each build(budget) commit's own signed change to each loc-budget.json
-# ceiling, one `commit bucket delta` row apiece. A merge is never walked, so a branch that merges main
-# carries main's numbers and declares nothing by doing so.
+# What this branch declares: each build(budget) commit's own change to each loc-budget.json ceiling, one
+# `commit bucket delta` row apiece. A merge is never walked, so a branch that merges main carries main's
+# numbers and declares nothing by doing so. A row may be negative, and a negative one is not a promise to
+# shrink: the allowance below is a number of lines this branch may add, so only a raise adds to it, and a
+# commit that lowers a ceiling to what the tree actually counts stays the unrefused tidying it is.
 declared=''
 for commit in $touched; do
 	budget_commit "$commit" && git cat-file -e "$commit:loc-budget.json" 2>/dev/null || continue
@@ -176,7 +178,7 @@ if [ -n "$merge_base_ref" ]; then
 		exit 2
 	fi
 	while read -r name grew; do
-		allowed="$(awk -v b="$name" '$2 == b { sum += $3 } END { print sum + 0 }' <<< "$declared")"
+		allowed="$(awk -v b="$name" '$2 == b && $3 > 0 { sum += $3 } END { print sum + 0 }' <<< "$declared")"
 		if [ "$grew" -gt "$allowed" ]; then
 			problems="${problems:+$problems$'\n'}loc-budget.json: $name grew by $grew lines since the merge base ${base:0:12}; this branch's build(budget) commits declare $allowed"
 		fi
