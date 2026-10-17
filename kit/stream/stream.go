@@ -52,7 +52,10 @@ type Limits struct {
 	// MaxTopics is how many topics one connection may watch.
 	MaxTopics int
 	// MaxPerPrincipal is how many connections one person may hold in this
-	// process — a browser opens one per tab.
+	// process in one tenant — a browser opens one per tab. A person in two
+	// tenants has two sets of tabs, so the count is theirs per tenant: the
+	// ceiling stops one browser opening many streams, it does not stop one
+	// account signing in to two.
 	MaxPerPrincipal int
 	// MaxPerTenant is how many connections one tenant may hold in this process.
 	// A cluster of N replicas admits N times this number, which is why it is
@@ -102,6 +105,12 @@ type Clock interface{ Now() time.Time }
 // fault: a connection that cannot be re-checked stays up and asks again at the next
 // heartbeat, because the alternative is that a four-second outage drops every live
 // connection in the tenant.
+//
+// Every connection is asked, at connect and at every heartbeat, whatever its topics
+// carry: grants is empty for one that watches only topics any signed-in person may
+// watch, and the answer that matters then is SignedIn. The ctx handed over carries no
+// transaction of the request's, so an implementation that opens one with db.Run
+// opens one of its own and ends it inside the call.
 type Authority interface {
 	Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, grants []string) (Renewal, error)
 }
@@ -143,7 +152,7 @@ type Hub struct {
 	mu           sync.Mutex
 	watches      map[watchKey]*watch
 	perTenant    map[uuid.UUID]int
-	perPrincipal map[uuid.UUID]int
+	perPrincipal map[seatKey]int
 }
 
 type watchKey struct {
@@ -151,9 +160,22 @@ type watchKey struct {
 	event  string
 }
 
+// seatKey is one person's slots in one tenant. The ceiling counts this person's
+// tabs, and a tab is opened inside a tenant: two tenants of one account are two
+// browsers' worth of connections, not one that has spent its share.
+type seatKey struct {
+	tenant uuid.UUID
+	user   uuid.UUID
+}
+
 // watch is one (tenant, event) observation shared by every connection in the hub
 // that asked for it. conns is read under the hub's mutex and never while a notice
 // is being handed to anyone.
+//
+// stop ends the observation and the context it was opened on, so it belongs to the
+// watch and not to any one of the connections sharing it: the last one to leave is
+// the one that stops it, and the one that happened to open it is only whoever got
+// there first.
 type watch struct {
 	stop  func()
 	conns map[*connection]struct{}
@@ -227,7 +249,7 @@ func New(d Deps) *Hub {
 		log:          log,
 		watches:      map[watchKey]*watch{},
 		perTenant:    map[uuid.UUID]int{},
-		perPrincipal: map[uuid.UUID]int{},
+		perPrincipal: map[seatKey]int{},
 	}
 }
 
@@ -275,8 +297,37 @@ type Request struct {
 	Topics []string
 }
 
+// The reason codes a stream refusal is answered with, in the shape every other
+// refusal in this kernel wears: "CODE: the sentence". A code is what makes a refusal
+// findable by something other than its prose — ui/page's catalogue looks a refusal's
+// sentence up by code, and one that is only a sentence is a sentence in one language.
+// These three name this endpoint's own verdicts; the three that answer a guard's own
+// question reuse that guard's code (httpx.CodeAnonymous, CodeDenied,
+// CodeLimitExhausted), because the refusal is the same answer arrived at again.
+//
+// None of the three has a row in that catalogue, for the reason two of httpx's codes
+// do not either: every sentence they carry names something the caller has to have —
+// the topic, the count, the ceiling — and the translation mechanism replaces a
+// sentence rather than interpolating an argument, so a translated one would drop it.
+const (
+	// CodeAskInvalid is an ask this endpoint cannot answer as written: a topic that
+	// is not an event name, no topic at all, or more topics than one connection may
+	// hold. What is wrong is in the caller's own request.
+	CodeAskInvalid = "STREAM_ASK_INVALID"
+	// CodeTopicUndeclared is a topic no composed module declares a stream for. It
+	// names the topic it could not find, which is the difference between this
+	// refusal and one a caller can act on.
+	CodeTopicUndeclared = "STREAM_TOPIC_UNDECLARED"
+	// CodeUnavailable is this seam's own fault rather than the caller's: a writer
+	// that cannot flush, a broker that would not take the observation, an authority
+	// that could not answer this caller's question. The caller did nothing wrong, so
+	// the sentence says what will not work rather than what to change.
+	CodeUnavailable = "STREAM_UNAVAILABLE"
+)
+
 // Refusal is a connection the hub would not take, and the answer it owes: the
-// status, the sentence for the problem document, and the wait when the answer is
+// status, the sentence for the problem document (its own reason code first, the
+// way every other refusal here is written), and the wait when the answer is
 // that the tenant or the person is at their ceiling.
 //
 // A Refusal is returned only while nothing of the response has reached the wire,
@@ -307,20 +358,22 @@ func (h *Hub) Serve(ctx context.Context, w http.ResponseWriter, req Request) err
 		h.log.ErrorContext(ctx, "stream: the response cannot be flushed, so no stream begins",
 			"tenant", req.Tenant.ID, "user", req.Principal.UserID, "writer", fmt.Sprintf("%T", w))
 		return &Refusal{Status: http.StatusInternalServerError,
-			Detail: "this response cannot be streamed: the writer in front of it cannot be flushed"}
+			Detail: CodeUnavailable + ": this response cannot be streamed: the writer in front of it cannot be flushed"}
 	}
 	if req.HTTP == nil {
-		return &Refusal{Status: http.StatusInternalServerError, Detail: "the stream has no request to re-check its session against"}
+		return &Refusal{Status: http.StatusInternalServerError,
+			Detail: CodeUnavailable + ": the stream has no request to re-check its session against"}
 	}
 	names, bad := normalise(req.Topics)
 	switch {
 	case bad != "":
-		return &Refusal{Status: http.StatusBadRequest, Detail: fmt.Sprintf("%q is not an event name", bad)}
+		return &Refusal{Status: http.StatusBadRequest,
+			Detail: CodeAskInvalid + fmt.Sprintf(": %q is not an event name", bad)}
 	case len(names) == 0:
-		return &Refusal{Status: http.StatusBadRequest, Detail: "a connection watches at least one topic"}
+		return &Refusal{Status: http.StatusBadRequest, Detail: CodeAskInvalid + ": a connection watches at least one topic"}
 	case len(names) > h.limits.MaxTopics:
 		return &Refusal{Status: http.StatusBadRequest,
-			Detail: fmt.Sprintf("a connection watches at most %d topics; %d were asked for", h.limits.MaxTopics, len(names))}
+			Detail: CodeAskInvalid + fmt.Sprintf(": a connection watches at most %d topics; %d were asked for", h.limits.MaxTopics, len(names))}
 	}
 	topics := make([]Topic, 0, len(names))
 	for _, name := range names {
@@ -328,11 +381,14 @@ func (h *Hub) Serve(ctx context.Context, w http.ResponseWriter, req Request) err
 		if !ok {
 			h.refused(ctx, req, names, "the topic is not streamed here")
 			return &Refusal{Status: http.StatusForbidden,
-				Detail: fmt.Sprintf("the topic %s is not streamed by this application", name)}
+				Detail: CodeTopicUndeclared + fmt.Sprintf(": the topic %s is not streamed by this application", name)}
 		}
 		topics = append(topics, t)
 	}
-	if err := h.admit(ctx, req, topics); err != nil {
+	sctx, cancel := context.WithCancel(db.Detached(ctx))
+	defer cancel()
+
+	if err := h.admit(sctx, req, topics); err != nil {
 		h.refused(ctx, req, names, "the policy refused")
 		return err
 	}
@@ -344,15 +400,12 @@ func (h *Hub) Serve(ctx context.Context, w http.ResponseWriter, req Request) err
 	}
 	defer h.release(c)
 
-	sctx, cancel := context.WithCancel(db.Detached(ctx))
-	defer cancel()
-
 	for _, t := range topics {
 		if err := h.watchTopic(sctx, c, t); err != nil {
 			h.log.ErrorContext(ctx, "stream: the events transport would not observe a topic",
 				"tenant", req.Tenant.ID, "user", req.Principal.UserID, "topic", t.Event, "error", err)
 			return &Refusal{Status: http.StatusInternalServerError,
-				Detail: fmt.Sprintf("this application cannot watch %s right now", t.Event)}
+				Detail: CodeUnavailable + fmt.Sprintf(": this application cannot watch %s right now", t.Event)}
 		}
 	}
 
@@ -388,26 +441,34 @@ func normalise(raw []string) (names []string, bad string) {
 	return names, ""
 }
 
-// admit asks, before any byte, the one question a topic cannot answer for itself:
-// does this caller hold the grant this topic's policy names. A topic whose policy
-// names nobody's grant but "signed in" has nothing to ask, and a StreamRecipient
-// topic is filtered per notice rather than per connection, so neither is here.
+// admit asks, before any byte, what the topics themselves cannot answer: whether a
+// session still answers for this caller, and whether this caller holds each grant a
+// topic's policy names. Both are asked of every connection, including one whose
+// topics name nobody's grant: the session question is the same question either way,
+// and a topic a caller may watch for being signed in is still a topic a person who is
+// nobody here may not watch.
 //
 // It is asked of the same Authority the heartbeat asks, so the connect decision and
 // the re-check are one decision made twice rather than two implementations that can
 // drift.
+//
+// The transaction it opens is the connection's own, which is what the Detached is
+// for. The request that arrived has already been answered as far as the guards are
+// concerned: kit/httpx commits their transaction before the handler runs, and for a
+// streamed response it does so precisely because a stream outlives a query. Handing
+// that context to the Authority would leave it holding the request's own Pending —
+// spent, still reachable, and able to open again — and the transaction it opened
+// would then be ended by the request rather than by this call, which is a pool
+// connection pinned idle in a transaction for the life of the stream.
 func (h *Hub) admit(ctx context.Context, req Request, topics []Topic) error {
-	grants := grantsOf(topics)
-	if len(grants) == 0 {
-		return nil
-	}
-	renewal, err := h.authority.Renew(ctx, req.Tenant, req.HTTP, grants)
+	renewal, err := h.authority.Renew(db.Detached(ctx), req.Tenant, req.HTTP, grantsOf(topics))
 	if err != nil {
 		return &Refusal{Status: http.StatusServiceUnavailable,
-			Detail: "this application cannot check what this caller may watch right now"}
+			Detail: CodeUnavailable + ": this application cannot check what this caller may watch right now"}
 	}
 	if !renewal.SignedIn {
-		return &Refusal{Status: http.StatusForbidden, Detail: "no session answers for this caller"}
+		return &Refusal{Status: http.StatusForbidden,
+			Detail: httpx.CodeAnonymous + ": no session answers for this caller"}
 	}
 	for _, t := range topics {
 		if t.Policy.Kind() != module.KindGrant {
@@ -415,26 +476,28 @@ func (h *Hub) admit(ctx context.Context, req Request, topics []Topic) error {
 		}
 		if slices.Contains(renewal.Refused, t.Policy.Grant()) {
 			return &Refusal{Status: http.StatusForbidden,
-				Detail: fmt.Sprintf("the topic %s requires %s, which this caller does not hold", t.Event, t.Policy.Grant())}
+				Detail: httpx.CodeDenied + fmt.Sprintf(": the topic %s requires %s, which this caller does not hold", t.Event, t.Policy.Grant())}
 		}
 	}
 	return nil
 }
 
-// register takes one connection's slots. The count and the check are one critical
-// section, so two connections racing for the last slot cannot both take it.
+// register takes one connection's slots: this person's share of them in this
+// tenant, and this tenant's share of the process. The count and the check are one
+// critical section, so two connections racing for the last slot cannot both take it.
 func (h *Hub) register(req Request, topics []Topic) (*connection, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.perPrincipal[req.Principal.UserID] >= h.limits.MaxPerPrincipal {
+	seat := seatKey{tenant: req.Tenant.ID, user: req.Principal.UserID}
+	if h.perPrincipal[seat] >= h.limits.MaxPerPrincipal {
 		return nil, &Refusal{Status: http.StatusTooManyRequests, RetryAfter: h.limits.RetryAfter,
-			Detail: fmt.Sprintf("this caller already holds %d live connections; close one before opening another", h.limits.MaxPerPrincipal)}
+			Detail: httpx.CodeLimitExhausted + fmt.Sprintf(": this caller already holds %d live connections in this tenant; close one before opening another", h.limits.MaxPerPrincipal)}
 	}
 	if h.perTenant[req.Tenant.ID] >= h.limits.MaxPerTenant {
 		return nil, &Refusal{Status: http.StatusTooManyRequests, RetryAfter: h.limits.RetryAfter,
-			Detail: fmt.Sprintf("this tenant already holds %d live connections in this process", h.limits.MaxPerTenant)}
+			Detail: httpx.CodeLimitExhausted + fmt.Sprintf(": this tenant already holds %d live connections in this process", h.limits.MaxPerTenant)}
 	}
-	h.perPrincipal[req.Principal.UserID]++
+	h.perPrincipal[seat]++
 	h.perTenant[req.Tenant.ID]++
 	c := &connection{
 		user:       req.Principal.UserID,
@@ -453,6 +516,15 @@ func (h *Hub) register(req Request, topics []Topic) (*connection, error) {
 // watchTopic takes the shared observation of one (tenant, event), or joins the one
 // another connection of this hub already holds. The mutex is never held across
 // Observe: a broker round trip belongs to no critical section.
+//
+// The observation is opened on a context of the watch's own life rather than on the
+// connection that happened to ask first. A transport ends an observation when the
+// context it was handed ends, and a watch outlives whichever connection opened it:
+// an observation bound to the first connection's context would go silent for every
+// other connection of that (tenant, event) the moment that one hung up, while this
+// hub still believed the watch was live. The cancel belongs to the watch, goes with
+// its stop, and is what keeps the transport's own watcher on that context from
+// outliving the observation.
 func (h *Hub) watchTopic(ctx context.Context, c *connection, t Topic) error {
 	key := watchKey{tenant: c.tenant.ID, event: t.Event}
 	h.mu.Lock()
@@ -463,11 +535,17 @@ func (h *Hub) watchTopic(ctx context.Context, c *connection, t Topic) error {
 	}
 	h.mu.Unlock()
 
-	stop, err := h.transport.Observe(ctx, c.tenant.ID, t.Event, func(ev transport.Event) {
+	life, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stop, err := h.transport.Observe(life, c.tenant.ID, t.Event, func(ev transport.Event) {
 		h.deliver(key, ev)
 	})
 	if err != nil {
+		cancel()
 		return err
+	}
+	leave := func() {
+		cancel()
+		stop()
 	}
 
 	h.mu.Lock()
@@ -477,10 +555,10 @@ func (h *Hub) watchTopic(ctx context.Context, c *connection, t Topic) error {
 	if w, ok := h.watches[key]; ok {
 		w.conns[c] = struct{}{}
 		h.mu.Unlock()
-		stop()
+		leave()
 		return nil
 	}
-	h.watches[key] = &watch{stop: stop, conns: map[*connection]struct{}{c: {}}}
+	h.watches[key] = &watch{stop: leave, conns: map[*connection]struct{}{c: {}}}
 	h.mu.Unlock()
 	return nil
 }
@@ -533,8 +611,18 @@ func (h *Hub) deliver(key watchKey, ev transport.Event) {
 				default:
 				}
 			}
-			for len(target.c.notices) > 0 {
-				<-target.c.notices
+			// Each receive is guarded by a default rather than by a length check,
+			// because this runs on the goroutine of whoever published the event: between
+			// "there is something in there" and "I took it" the connection's own writer
+			// may have taken the last one, and a publisher waiting on a queue that has
+			// just gone empty is a slow reader stalling the writer of the event.
+		drain:
+			for {
+				select {
+				case <-target.c.notices:
+				default:
+					break drain
+				}
 			}
 		}
 	}
@@ -579,8 +667,9 @@ func namedUser(payload []byte, field string) (uuid.UUID, bool) {
 // no broker round trip belongs in a critical section.
 func (h *Hub) release(c *connection) {
 	h.mu.Lock()
-	if h.perPrincipal[c.user]--; h.perPrincipal[c.user] <= 0 {
-		delete(h.perPrincipal, c.user)
+	seat := seatKey{tenant: c.tenant.ID, user: c.user}
+	if h.perPrincipal[seat]--; h.perPrincipal[seat] <= 0 {
+		delete(h.perPrincipal, seat)
 	}
 	if h.perTenant[c.tenant.ID]--; h.perTenant[c.tenant.ID] <= 0 {
 		delete(h.perTenant, c.tenant.ID)

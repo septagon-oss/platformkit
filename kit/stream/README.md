@@ -61,14 +61,38 @@ fact that something happened, not a unit of work. `kit/events/transport/observet
 runs the same six cases against both providers.
 
 One `Observe` per (tenant, event) per process, reference-counted by the connections
-sharing it and stopped when the last one leaves.
+sharing it and stopped when the last one leaves. The observation belongs to the watch,
+not to whichever connection opened it: the hub opens it on a context of the watch's own
+life and stops it with the last departure, so a tab closing takes nobody else's notices
+with it.
+
+## What a refusal says, and where the address came from
+
+Every refusal is a `kit/problem` document whose `detail` carries a reason code first,
+the way every other refusal here does: `STREAM_ASK_INVALID` for an ask this endpoint
+cannot answer as written, `STREAM_TOPIC_UNDECLARED` for a topic no composed module
+declares, `STREAM_UNAVAILABLE` for this seam's own fault (a writer that cannot flush, a
+broker that would not take the observation, an authority that could not answer). The
+three that answer a guard's own question reuse the guard's code — `AUTH_ANONYMOUS`,
+`AUTH_DENIED`, `LIMIT_EXHAUSTED` — because the refusal is the same answer arrived at
+again, and a code that meant two things would be worse than no code.
+
+The served address is `/api/v1/app/stream` where the brief said `/api/v1/stream`, and
+the `app` segment is the surface saying what it is: the route is mounted on the App
+surface (`httpx.Surfaces("")`, `kernel.App`) beside the access-request route the kernel
+already mounts, behind a session, and an address that did not say so would be the one
+App route whose address did not. Its `Cache-Control` is `no-store` rather than
+the brief's `no-cache` for the same kind of reason — the App surface replaces a
+storable value under a session (`kit/httpx`'s caching rule) and a stream with no end
+has nothing to revalidate. Both are the brief's letter, not its intent; whoever reads
+the brief should read this paragraph with it.
 
 ## The bounds, and what they count
 
 | | Value | When hit |
 | --- | --- | --- |
 | topics per connection | 8 | 400 |
-| connections per person, per process | 3 | 429 + `Retry-After` |
+| connections per person per tenant, per process | 3 | 429 + `Retry-After` |
 | connections per tenant, per process | `server.streams.max_per_tenant`, default 500 | 429 + `Retry-After` |
 | undelivered notices per connection | 64 | the queue is dropped and **one** `resync` is sent |
 | one write | 5 s, set again before every write | the connection closes |
@@ -80,7 +104,10 @@ other replicas. A cluster-wide cap is the follow-up, and until it exists this is
 the number means — say so to whoever asks for a plan feature built on it.
 
 A revoked grant drops that topic with `event: dropped` and leaves the connection up;
-an ended session closes it. A database that will not answer the heartbeat does neither:
+an ended session closes it — at the next heartbeat, whatever the connection watches:
+the session is asked again for a topic any signed-in person may watch exactly as it is
+for one that names a grant, because a person who signed out is nobody's recipient. A
+database that will not answer the heartbeat does neither:
 the outage is logged and the next tick asks again.
 
 ## The transaction, which is never the request's
@@ -97,6 +124,48 @@ pool connection for as long as a browser kept a tab open.
 between a handler and the connection both answer `Flush`, so a stream served over a
 proxy that buffers whole answers would believe its frames were arriving. The answer to
 a writer that cannot flush is a 500 and no bytes, never a committed 200.
+
+## The pillar contract, eight lines (decision 0064)
+
+1. **Tenant-first.** The boundary is the address: `Observe` is given the tenant id and
+   filters that tenant's one exact subject, and the provider runs
+   `transport.AddressMismatch` on the routed address before the notice is handed over.
+   The tenant comes from `tenancy.FromContext` and nothing on the query can name one.
+2. **One process, many tenants.** No package-level state: the watches, the per-tenant
+   count and the per-person count live in the `*Hub` one composition builds, so two
+   compositions in one process get two hubs. The two ceilings are explicitly per
+   process, and the section above says what that means.
+3. **Audited.** Nothing here changes state, so the honest answer is that a seam that
+   writes no row writes no audit trail: no claim is taken, no revision is checked, no
+   row is inserted, and no test reads a record back that nothing wrote. What is kept
+   instead is the log: every accept, refusal, dropped topic, closed connection and
+   undeliverable notice is one line carrying tenant, user, topics and the request id.
+4. **Traceable.** The connection's context derives from the request's, so it carries
+   the span, the request id and the baggage `httpx` installs; every log line is a
+   `slog.*Context` call on a context that holds them. A notice carries the publisher's
+   trace context on the event and no identity beyond its own id — frames carry no
+   position the server would have to honour, which is a decision, not an omission.
+5. **Standard-first.** Server-Sent Events as HTML Living Standard §9.2.7 defines them
+   (`retry`, comment lines, `event`/`data`/`id`, the blank-line terminator), and RFC
+   9457 problem documents for every refusal. What the standard offers and this declines
+   is `Last-Event-ID` replay, declined by never writing an `id` a server would owe
+   rather than by redefining the format.
+6. **Core stays core.** Everything is in `kit/` — the transport's `Observe`, both
+   providers, `kit/module`, `kit/httpx`, `kit/app` — as declared types and one mount.
+   No event name, no client, no sector and no number a customer asked for appears in
+   it; a product's modules declare `Streams` and compose the route the kernel mounts.
+7. **Web and mobile.** Same endpoint, same `resync` contract, and the same limit: no
+   resume, because replay is unbuilt. A mobile client that reconnects is told to
+   refetch rather than given a position, so it is never left holding a screen it cannot
+   trust; the client itself, and the live-region flow that would exercise it, are the
+   product's task named in `Named follow-ups`.
+8. **Measurably better.** This repository has no `tools/pillars.py`, so there is no
+   indicator to name and no number to invent. The measurements this seam moves are its
+   own two budgets, and `BenchmarkFanOutTimePerNoticeForOneThousandConnections`, which
+   reports `ns/connection` and `notices/s` for one publish to a thousand connections of
+   one tenant, with no threshold asserted — a ceiling chosen before anything was
+   measured protects nobody. The reading and its host go in the report of the round
+   that runs it.
 
 ## Named follow-ups
 

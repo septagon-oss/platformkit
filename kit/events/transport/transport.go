@@ -186,7 +186,11 @@ type Transport interface {
 	// There is no history: an observation started after a publish cannot see it, and
 	// a notice that was dropped in flight is not owed. stop withdraws the
 	// observation; it is idempotent, safe to call concurrently and never blocks on a
-	// delivery, though a delivery already in flight may still begin. A non-nil error
+	// delivery, though a delivery already in flight may still begin. stop is the only
+	// withdrawal a caller may rely on: a provider may end an observation early once
+	// the context it was given is done, so a caller that shares one observation over
+	// several of its own callers passes a context of the shared life rather than of
+	// whichever one asked first, and ends the observation with stop. A non-nil error
 	// means nothing will ever be delivered — a broker that would not take the
 	// consumer, a context already cancelled.
 	Observe(ctx context.Context, tenantID uuid.UUID, name string, fn func(Event)) (stop func(), err error)

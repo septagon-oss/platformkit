@@ -222,6 +222,14 @@ func (h *Hub) loop(ctx context.Context, rc *http.ResponseController, w http.Resp
 // once and a stream has to keep asking for as long as it outlives its own request. A
 // grant withdrawn withdraws that topic and leaves the rest; an ended session ends the
 // connection; the database's own failure is neither, and is asked again next tick.
+//
+// Both questions are asked of every connection, whatever its topics' policies. Which
+// topics a caller may watch is not a fact that outlives the caller: a person who
+// signed out, whose session was revoked or who left the tenant is nobody to this
+// tenant's notices, whether the topic they watch names a grant, names a recipient or
+// asks for nothing but a session. Asking only when a grant is named would make the
+// cheapest topics — the ones every signed-in person may watch — the only ones that
+// can outlive the session that admitted them.
 func (h *Hub) beat(ctx context.Context, rc *http.ResponseController, w http.ResponseWriter, c *connection) error {
 	h.mu.Lock()
 	topics := make([]Topic, 0, len(c.topics))
@@ -230,26 +238,24 @@ func (h *Hub) beat(ctx context.Context, rc *http.ResponseController, w http.Resp
 	}
 	h.mu.Unlock()
 
-	if grants := grantsOf(topics); len(grants) > 0 {
-		renewal, err := h.authority.Renew(ctx, c.tenant, c.request, grants)
-		switch {
-		case err != nil:
-			// An outage is never an allowance, and never a reason to drop every
-			// live connection in the tenant: nothing is delivered differently until
-			// the next tick asks again.
-			h.log.ErrorContext(ctx, "stream: the heartbeat could not re-check this connection",
-				"tenant", c.tenant, "user", c.user, "error", err)
-		case !renewal.SignedIn:
-			_ = h.comment(w, rc, c, closing)
-			return errSessionEnded
-		case len(renewal.Refused) > 0:
-			for _, t := range topics {
-				if t.Policy.Kind() != module.KindGrant || !slices.Contains(renewal.Refused, t.Policy.Grant()) {
-					continue
-				}
-				if err := h.withdraw(c, t, w, rc); err != nil {
-					return err
-				}
+	renewal, err := h.authority.Renew(ctx, c.tenant, c.request, grantsOf(topics))
+	switch {
+	case err != nil:
+		// An outage is never an allowance, and never a reason to drop every
+		// live connection in the tenant: nothing is delivered differently until
+		// the next tick asks again.
+		h.log.ErrorContext(ctx, "stream: the heartbeat could not re-check this connection",
+			"tenant", c.tenant, "user", c.user, "error", err)
+	case !renewal.SignedIn:
+		_ = h.comment(w, rc, c, closing)
+		return errSessionEnded
+	case len(renewal.Refused) > 0:
+		for _, t := range topics {
+			if t.Policy.Kind() != module.KindGrant || !slices.Contains(renewal.Refused, t.Policy.Grant()) {
+				continue
+			}
+			if err := h.withdraw(c, t, w, rc); err != nil {
+				return err
 			}
 		}
 	}

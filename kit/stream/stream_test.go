@@ -85,6 +85,15 @@ func (r *recorder) written() string {
 	return r.body.String()
 }
 
+// flushed is the count of flushes, read under the same lock that writes it: a case
+// waiting for a connection to open is reading it while the connection's own
+// goroutine is the one incrementing it.
+func (r *recorder) flushed() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.flushes
+}
+
 // plainWriter is a response with no flusher anywhere under it — the shape of a proxy
 // that buffers whole answers in front of this process.
 type plainWriter struct {
@@ -290,7 +299,7 @@ func (f *fixture) open(t *testing.T, req Request) *live {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- f.hub.Serve(ctx, w, req) }()
-	if !until(func() bool { return w.flushes > 0 }) {
+	if !until(func() bool { return w.flushed() > 0 }) {
 		t.Fatalf("the connection never opened: %v", <-done)
 	}
 	return &live{w: w, done: done, stop: cancel}
