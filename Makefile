@@ -748,6 +748,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# Playwright. This case asks the script itself, in under a second, with no stack.
 	bash scripts/e2e_mail_address_test.sh
 	bash scripts/free_port_test.sh
+	# scripts/mobile_listener_attribution_test.py asks the journey's receipt step the question the
+	# planted-silence cases cannot: whether the socket table of the machine running this answers with
+	# the exact pid of the listener the step itself started. It runs the committed step body with one
+	# reader on PATH at a time, ss, then lsof where the host carries it, refuses a reader that answers
+	# with some other pid sharing the true one's prefix, and asks two steps to name their own listeners
+	# at once. No node, no container and no real wait: it starts one loopback server per case and kills
+	# its process group whether the case passed or refused.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_attribution_test.py
 	# Which failures of the API gate's one network step are worth another try. The target
 	# itself is the last prerequisite; this case is the bound on its retry, so it runs with
 	# the rest of the script cases and needs no stack, no proxy and no tree but this one.
