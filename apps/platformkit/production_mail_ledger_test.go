@@ -9,7 +9,7 @@ import (
 )
 
 func TestProductionAuthUsesTheDeliveryLedger(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	deployment := pkit.Deployment{Environment: pkit.Production, Config: cfg}
 	plan, err := sentencesOf(cfg).Plan(deployment)
 	if err != nil {
