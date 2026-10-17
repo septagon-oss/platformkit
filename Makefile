@@ -460,20 +460,10 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
 # history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
 #
-# scripts/mobile_journey_fetch_test.sh runs the journey job's own download step, as the workflow
-# file states it, against a server on localhost that behaves like this forge: a 200 and a sign-in
-# page to an anonymous request, the build to one carrying the job's token. It refuses each way the
-# journey was wrong or is one edit away from being wrong — the job not on the label that has a
-# device, a second job taking that label, a fetch step not given the job's token, a job-level
-# PK_MOBILE_APK competing with the step's file:// export — and then asks the harness's own curl and
-# sha256sum to open what the step exported. It is here rather than only in the mobile job because
-# every one of those is a fact about a workflow file, which `check` already reads for its two other
-# such facts above, and because the mobile job is the worst place to learn them: the journey has no
-# device when they are wrong, and 40 minutes to find that out. It needs python3, curl and sha256sum
-# — and PyYAML, which the job image does not ship: measured 2026-10-05 by running this file inside
-# the digest ci.yml names (gitea/runner-images:ubuntu-24.04@sha256:e77e2b1e…), where it died at
-# `ModuleNotFoundError: No module named 'yaml'` and answered `ok` once that package came in on the
-# line that installs the socket probe. ci.yml carries it for that reason. Both files, 0.2s.
+# The mobile fetch case runs the workflow step against a local forge and checks the digest
+# and file:// handoff. The precedence case keeps the repository secret ahead of the job token:
+# putting the job token first prevents the fetch from using the repository credential.
+# Both need PyYAML, which CI installs before this gate.
 #
 # scripts/ci_go_cache_test.sh asks the same kind of question about the Go build cache T-0277 gave the
 # two kernel Go jobs: which key each one restores under, and what may never be true about it. Both of
@@ -596,6 +586,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	bash scripts/applied_migration_merge_base_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
+	bash scripts/mobile_journey_fetch_token_precedence_test.sh
 	bash scripts/ci_go_cache_test.sh
 	# scripts/ci_browser_host_share_test.sh asks the two browser suites of the workflow the question
 	# their refusals cannot answer from inside a runner: does a step that starts a Chromium ask the host
