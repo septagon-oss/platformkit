@@ -443,6 +443,11 @@ func (a *App) Explain(d Deployment) (string, error) {
 		noun = "module"
 	}
 	fmt.Fprintf(&b, "pkit: %s in %s builds %d %s.\n", a.name, d.Environment, len(doc.Modules), noun)
+	// One sentence for the profile and one per seam, before anything about a module:
+	// what the deployment runs its infrastructure on is a fact about the deployment,
+	// and a reader who wants to know whether the bytes go to a bucket should not have
+	// to find the module that reads the setting first.
+	saySeams(&b, doc.Cloud)
 	for _, r := range doc.Roles {
 		held := "nothing"
 		if len(r.Grants) > 0 {

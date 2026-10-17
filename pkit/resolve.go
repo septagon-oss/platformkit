@@ -56,6 +56,7 @@ type plan struct {
 	last         *Module                    // the module that runs after everything
 	cfg          config.Config              // the deployment's configuration, read by Config
 	reads        map[*Module][]reflect.Type // which section each built module asked Config for
+	cloud        cloudPlan                  // what the deployment's configuration answers about its seams
 }
 
 type choice struct {
@@ -417,6 +418,16 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 				}
 			}
 		}
+	}
+
+	// What the deployment's configuration answers about its seams, and what it
+	// still owes the cloud profile it named. Read here rather than at Build because
+	// it is a problem with the deployment in the same sense a missing input is one,
+	// and a person who is told about both at once fixes one file once.
+	if envKnown {
+		cloud, cloudIssues := resolveCloud(d)
+		p.cloud = cloud
+		issues = append(issues, cloudIssues...)
 	}
 
 	// Contributors and takers, read off the survivors.

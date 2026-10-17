@@ -31,6 +31,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
@@ -333,6 +334,14 @@ func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.
 	p, err := a.Plan(d)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	// What the cloud profile has to say about this deployment, said once, here, and
+	// nowhere else: Plan and Explain are readings, and a reading that logged would
+	// make the composition file a client of the log sink. Nothing has been opened at
+	// this point, so a boot the engine goes on to refuse still heard its own
+	// configuration described back to it.
+	for _, w := range p.plan.cloud.warnings {
+		slog.WarnContext(ctx, fmt.Sprintf("pkit: %s: %s", a.name, w))
 	}
 	a.buildMu.Lock()
 	defer a.buildMu.Unlock()
