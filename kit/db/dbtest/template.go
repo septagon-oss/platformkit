@@ -114,9 +114,12 @@ const askRoom = 4
 // cuts a long test name and two cases cut at the same character would otherwise share a database.
 func cloneName(test string) string {
 	// One PostgreSQL identifier, minus this process's prefix, run id, separators and digest, minus
-	// the room a second ask under the same name needs: PostgreSQL shortens a long identifier to 63
-	// characters without saying so, and two names shortened to the same 63 would be one database.
-	budget := 63 - len("pkc_") - len(run) - 2 - 8 - askRoom
+	// the room a second ask under the same name needs, minus the two characters the login role this
+	// namespace names costs: Role derives a role name from the namespace by prefixing it, so a
+	// namespace that fills the identifier limit leaves its role short of the limit by that much, and
+	// two copies whose namespaces differ only in the ask number would be one role. PostgreSQL
+	// shortens a long identifier without saying so; this budget is what stops it having to.
+	budget := identifierLimit - len("pkc_") - len(run) - 2 - digestWidth - askRoom - len(rolePrefix)
 	name := sanitize(test)
 	if len(name) > budget {
 		name = name[:budget]
