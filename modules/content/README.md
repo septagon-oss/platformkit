@@ -123,3 +123,26 @@ None. No permission in `permissions` sets `Operator: true`, and the module regis
 The code names no role. A composition grants `content:read` to people who may see the content list, and `content:manage` to people who may edit and publish.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module, so the exact file is not documented here.
+
+## Composition
+
+**Reused** — `entity.EntryHints`, `rest.Spec`, `httpx.Resource.CommandsFor`, the
+localized `ui/screens` catalogue, and Content's existing `publish` and `archive`
+commands carry the draft review deck. Existing picture and card hints supply
+its cover, title, status and summary.
+**Added** — the shared deck hint describes the queue and directions because the
+existing primary-command hint cannot express a filtered review queue with
+multiple actions. Content declares `status:draft`, ascending `updatedAt`, right
+Publish, left Archive and down local skip. Tasks have no matching pair of
+argument-free person-facing commands; Content's two existing commands both take
+a draft out of the queue without adding lifecycle operations.
+**Made reusable** — any list resource may declare the same validated, localized,
+permission-filtered review contract and invoke its defaulted row commands
+through the existing REST adapters.
+
+`content:read` callers retain the deck with only down skip when they lack
+`content:manage`. Archive's existing confirmation and publication's authorship
+rule still apply. This delivery declares a catalogue hint; generated web pages
+continue to use their existing presentation, and swipe rendering belongs to the
+client. A fresh review session rebuilds its queue from the list; local skip does
+not write a timestamp, reserve a row or emit an event.

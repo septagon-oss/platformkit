@@ -1,0 +1,300 @@
+{
+  "module": "content",
+  "entity": "content",
+  "path": "/api/v1/content/contents",
+  "fields": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "readOnly": true
+    },
+    {
+      "name": "createdAt",
+      "type": "time",
+      "readOnly": true
+    },
+    {
+      "name": "updatedAt",
+      "type": "time",
+      "readOnly": true
+    },
+    {
+      "name": "slug",
+      "type": "string",
+      "maxLength": 200,
+      "required": true,
+      "doc": "URL name, unique within the tenant",
+      "presentation": {
+        "label": "Address name",
+        "help": "Used to build this page's web address"
+      }
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "maxLength": 200,
+      "required": true,
+      "doc": "Headline",
+      "translatable": true
+    },
+    {
+      "name": "body",
+      "type": "text",
+      "widget": "richtext",
+      "maxLength": 262144,
+      "hideList": true,
+      "doc": "The content itself, in Markdown",
+      "translatable": true
+    },
+    {
+      "name": "coverImageId",
+      "type": "uuid",
+      "present": "image",
+      "doc": "File id of the cover picture",
+      "presentation": {
+        "label": "Cover",
+        "help": "File id of the cover picture"
+      }
+    },
+    {
+      "name": "kind",
+      "type": "string",
+      "widget": "select",
+      "enum": [
+        "page",
+        "post"
+      ],
+      "default": "post",
+      "doc": "page or post",
+      "presentation": {
+        "label": "Type"
+      }
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "widget": "select",
+      "enum": [
+        "draft",
+        "published",
+        "archived"
+      ],
+      "default": "draft",
+      "doc": "Lifecycle state",
+      "presentation": {
+        "enumTones": {
+          "archived": "neutral",
+          "draft": "neutral",
+          "published": "success"
+        }
+      }
+    },
+    {
+      "name": "publishedAt",
+      "type": "time",
+      "widget": "datetime",
+      "doc": "When this was published",
+      "presentation": {
+        "label": "Published"
+      }
+    },
+    {
+      "name": "author",
+      "type": "uuid",
+      "doc": "The user who created this",
+      "presentation": {
+        "visibility": "detail",
+        "reference": {
+          "resource": "user/user"
+        }
+      }
+    }
+  ],
+  "presentation": {
+    "deck": {
+      "queue": [
+        "status:draft"
+      ],
+      "order": "updatedAt",
+      "directions": {
+        "down": {
+          "skip": true
+        },
+        "left": {
+          "command": "archive",
+          "label": "Archive",
+          "tone": "warning",
+          "icon": "folder"
+        },
+        "right": {
+          "command": "publish",
+          "label": "Publish",
+          "tone": "success",
+          "icon": "document"
+        }
+      }
+    },
+    "singular": "page",
+    "plural": "pages",
+    "icon": "document",
+    "group": {
+      "key": "content",
+      "label": "Content"
+    },
+    "primaryField": "title",
+    "summaryFields": [
+      "kind"
+    ],
+    "statusField": "status",
+    "sortable": [
+      "title",
+      "publishedAt",
+      "updatedAt"
+    ],
+    "coverField": "coverImageId",
+    "thumbnailField": "coverImageId"
+  },
+  "screen": "/app/content/contents",
+  "immutable": [
+    "status",
+    "publishedAt",
+    "author"
+  ],
+  "writable": true,
+  "commands": [
+    {
+      "verb": "translate",
+      "summary": "Translate a content",
+      "description": "Writes this language's text of the named fields, stamped as typed by a person. The record's own fields are untouched.",
+      "fields": [
+        {
+          "name": "lang",
+          "type": "string",
+          "doc": "The language being written: a tag this tenant is served in, other than its own"
+        },
+        {
+          "name": "values",
+          "type": "map",
+          "elem": "string",
+          "keys": [
+            {
+              "name": "title",
+              "label": "Title",
+              "widget": "text"
+            },
+            {
+              "name": "body",
+              "label": "Body",
+              "widget": "textarea"
+            }
+          ],
+          "doc": "The text of each translatable field, keyed by field name"
+        },
+        {
+          "name": "expected",
+          "type": "map",
+          "elem": "int",
+          "keys": [
+            {
+              "name": "title",
+              "label": "Title",
+              "widget": "hidden",
+              "from": "revision"
+            },
+            {
+              "name": "body",
+              "label": "Body",
+              "widget": "hidden",
+              "from": "revision"
+            }
+          ],
+          "doc": "Each field's revision as read; 0 for a field with no translation yet"
+        }
+      ]
+    },
+    {
+      "verb": "review-translation",
+      "summary": "Mark a content's translation reviewed",
+      "description": "Names the fields a person has checked against the source. A field whose source has moved since it was translated is refused.",
+      "fields": [
+        {
+          "name": "lang",
+          "type": "string",
+          "doc": "The language this acts on: a tag this tenant is served in, other than its own"
+        },
+        {
+          "name": "fields",
+          "type": "list",
+          "elem": "string",
+          "doc": "The field names; empty for every translatable field of the record"
+        }
+      ]
+    },
+    {
+      "verb": "suggest-translation",
+      "summary": "Ask the machine for a draft of a content",
+      "description": "Saves the machine's text as a draft nobody has reviewed; it is never served publicly until a person marks it reviewed. Refuses, writing nothing, when the installation names no machine translator.",
+      "fields": [
+        {
+          "name": "lang",
+          "type": "string",
+          "doc": "The language this acts on: a tag this tenant is served in, other than its own"
+        },
+        {
+          "name": "fields",
+          "type": "list",
+          "elem": "string",
+          "doc": "The field names; empty for every translatable field of the record"
+        }
+      ]
+    },
+    {
+      "verb": "untranslate",
+      "summary": "Remove a content's translation",
+      "description": "Deletes this language's rows for the named fields, or for every field when none is named. The record itself is untouched.",
+      "fields": [
+        {
+          "name": "lang",
+          "type": "string",
+          "doc": "The language this acts on: a tag this tenant is served in, other than its own"
+        },
+        {
+          "name": "fields",
+          "type": "list",
+          "elem": "string",
+          "doc": "The field names; empty for every translatable field of the record"
+        }
+      ]
+    },
+    {
+      "verb": "publish",
+      "summary": "Publish content",
+      "description": "Serves it to anybody, and records when. Publishing what is already published changes nothing; the publication time does not move.",
+      "presentation": {
+        "label": "Publish"
+      }
+    },
+    {
+      "verb": "unpublish",
+      "summary": "Unpublish content",
+      "description": "Takes it back to a draft, from published or from archived, and clears the publication time.",
+      "presentation": {
+        "label": "Unpublish"
+      }
+    },
+    {
+      "verb": "archive",
+      "summary": "Archive content",
+      "description": "Keeps it and serves it to nobody. Archiving twice changes nothing.",
+      "presentation": {
+        "label": "Archive",
+        "destructive": true,
+        "confirmation": {
+          "title": "Archive this page?",
+          "body": "It stops being served. You can publish it again later.",
+          "confirmLabel": "Archive"
+        }
+      }
+    }
+  ]
+}
