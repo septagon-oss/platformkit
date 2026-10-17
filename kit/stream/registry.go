@@ -15,6 +15,14 @@ type Topic struct {
 	Event string
 	// Policy is the module's own answer to who may watch this event.
 	Policy module.StreamPolicy
+	// Operator is the answer of the module that *defines* the policy's permission —
+	// module.Permission.Operator — and false for a topic whose policy names no
+	// permission at all. It is carried here because a stream must ask the same
+	// question the route guard asks, and the guard asks it of the declaration: an
+	// operator permission streamed to a customer's tenant is the same escalation
+	// whether it arrives as a write, a page or a frame, and the one fact that decides
+	// it lives in the manifest and not in the tenant's roles.
+	Operator bool
 	// Module is the manifest that declared it, for the log line that names where
 	// a topic came from.
 	Module string
@@ -34,11 +42,25 @@ type Registry struct {
 // composes. Two modules cannot declare one event — module.Validate refuses an
 // event outside its emitter's namespace — so the map has no collision to resolve
 // and this function has no failure to return.
+//
+// A stream's policy names a permission and does not say what kind it is, so the
+// declaration that defines it is read for that: the permission is the whole
+// composition's catalogue, exactly as module.Validate reads it and exactly as
+// httpx.Declare publishes it.
 func NewRegistry(mods []module.Module) *Registry {
+	operator := map[string]bool{}
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			operator[p.Key] = p.Operator
+		}
+	}
 	r := &Registry{byEvent: map[string]Topic{}}
 	for _, m := range mods {
 		for _, s := range m.Streams {
-			r.byEvent[s.Event] = Topic{Event: s.Event, Policy: s.Policy, Module: m.Name}
+			r.byEvent[s.Event] = Topic{
+				Event: s.Event, Policy: s.Policy, Module: m.Name,
+				Operator: operator[s.Policy.Grant()],
+			}
 		}
 	}
 	return r

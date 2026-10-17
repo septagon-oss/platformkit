@@ -118,8 +118,15 @@ func mountStream(api *httpx.API, hub func() (*stream.Hub, error), log *slog.Logg
 // the request's guards asked once. It is not a second session reader and not a second
 // policy engine: it calls the composition's own Options.Authenticate and
 // Options.Authorize, and the only thing it adds is the transaction they have to run in
-// — a connection outlives the request that opened it, so the transaction that
-// recognised that caller is long gone.
+// — a connection outlives the request that recognised that caller, so the transaction
+// that recognised it is long gone.
+//
+// The questions are asked of the principal this call just recognised, and not of the
+// one the connection was opened as. The session behind a live connection is a row that
+// other work changes: its roles, and whether it still exists at all. Handing the
+// authorizer the context that carries the connect-time principal would ask "what may
+// this person do" and answer it with the roles they had when the stream began, which
+// is the window a revoked grant should not have.
 type streamAuthority struct {
 	// conn is the composition's connection, asked for each time it is needed: the
 	// one place that knows whether this process holds one yet.
@@ -128,14 +135,14 @@ type streamAuthority struct {
 	authorize    httpx.Authorizer
 }
 
-func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, grants []string) (stream.Renewal, error) {
+func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, asks []stream.Grant) (stream.Renewal, error) {
 	var out stream.Renewal
 	conn, ok := s.conn(ctx)
 	if !ok {
 		return out, errors.New("app: this process holds no connection to re-check a live connection against")
 	}
 	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, stillSignedIn, err := s.authenticate(ctx, tx, r)
+		principal, stillSignedIn, err := s.authenticate(ctx, tx, r)
 		if err != nil {
 			return err
 		}
@@ -144,13 +151,21 @@ func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *ht
 			return nil
 		}
 		out.SignedIn = true
-		for _, grant := range grants {
-			allowed, err := s.authorize.Allowed(ctx, tenant, tenancy.Grant{Permission: grant})
+		// Every grant is now asked of the caller this transaction just recognised: the
+		// authorizer reads the principal on its context, which is the only way it has to
+		// know whose roles to resolve.
+		ctx = tenancy.WithPrincipal(ctx, principal)
+		for _, ask := range asks {
+			// The declaration's operator flag travels with the question, as it does at
+			// the route guard, so an authorizer that reads it reads the same grant the
+			// manifest wrote. A tenant that is not the operator's never gets asked at
+			// all: kit/stream answers that half from the declaration and the tenant.
+			allowed, err := s.authorize.Allowed(ctx, tenant, tenancy.Grant{Permission: ask.Permission, Operator: ask.Operator})
 			if err != nil {
 				return err
 			}
 			if !allowed {
-				out.Refused = append(out.Refused, grant)
+				out.Refused = append(out.Refused, ask.Permission)
 			}
 		}
 		return nil

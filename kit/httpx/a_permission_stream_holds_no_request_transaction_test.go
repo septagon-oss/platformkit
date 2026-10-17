@@ -24,7 +24,7 @@ import (
 // short transaction of its own, opened with db.Run on the context it was handed.
 type shortTxAuthority struct{ conn *db.Conn }
 
-func (a shortTxAuthority) Renew(ctx context.Context, _ tenancy.Tenant, _ *http.Request, _ []string) (stream.Renewal, error) {
+func (a shortTxAuthority) Renew(ctx context.Context, _ tenancy.Tenant, _ *http.Request, _ []stream.Grant) (stream.Renewal, error) {
 	err := db.Run(ctx, a.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		return tx.DB().Exec("SELECT 1").Error
 	})

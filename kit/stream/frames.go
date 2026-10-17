@@ -204,6 +204,16 @@ func (h *Hub) loop(ctx context.Context, rc *http.ResponseController, w http.Resp
 				return err
 			}
 		case n := <-c.notices:
+			// A topic withdrawn while one of its notices was already queued is a notice
+			// for a grant this caller no longer holds. The queue is not drained on a
+			// withdrawal — only this goroutine writes the response, so only this
+			// goroutine can decide what did not go out — and the check belongs at the
+			// moment of the write rather than at the moment of the queueing: a frame on
+			// its way to a connection that may no longer read it is the leak, not a
+			// notice sitting in a queue nobody is reading.
+			if !h.watching(c, n.Topic) {
+				continue
+			}
 			if err := h.write(w, rc, c, frame{id: n.ID, event: n.Topic, data: noticeData{Time: stamp(n.At)}}.bytes()); err != nil {
 				return err
 			}
@@ -238,7 +248,8 @@ func (h *Hub) beat(ctx context.Context, rc *http.ResponseController, w http.Resp
 	}
 	h.mu.Unlock()
 
-	renewal, err := h.authority.Renew(ctx, c.tenant, c.request, grantsOf(topics))
+	asks, outside := askable(c.tenant, topics)
+	renewal, err := h.authority.Renew(ctx, c.tenant, c.request, asks)
 	switch {
 	case err != nil:
 		// An outage is never an allowance, and never a reason to drop every
@@ -249,14 +260,23 @@ func (h *Hub) beat(ctx context.Context, rc *http.ResponseController, w http.Resp
 	case !renewal.SignedIn:
 		_ = h.comment(w, rc, c, closing)
 		return errSessionEnded
-	case len(renewal.Refused) > 0:
-		for _, t := range topics {
-			if t.Policy.Kind() != module.KindGrant || !slices.Contains(renewal.Refused, t.Policy.Grant()) {
-				continue
-			}
-			if err := h.withdraw(c, t, w, rc); err != nil {
-				return err
-			}
+	}
+	// What this tenant may not exercise at all is withdrawn whatever the authorizer
+	// answered, and it needs no answer to be withdrawn: the fact is the declaration's
+	// and the tenant's, and a tenant promoted to the operator's own and back down
+	// while a connection is live is the one case where it was true when the connection
+	// was admitted. The grants the caller has lost are the other half of the same
+	// withdrawal.
+	for _, t := range topics {
+		if t.Policy.Kind() != module.KindGrant {
+			continue
+		}
+		grant := t.Policy.Grant()
+		if !slices.Contains(outside, grant) && !slices.Contains(renewal.Refused, grant) {
+			continue
+		}
+		if err := h.withdraw(c, t, w, rc); err != nil {
+			return err
 		}
 	}
 	return h.comment(w, rc, c, ping)

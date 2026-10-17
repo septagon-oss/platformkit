@@ -107,12 +107,34 @@ type Clock interface{ Now() time.Time }
 // connection in the tenant.
 //
 // Every connection is asked, at connect and at every heartbeat, whatever its topics
-// carry: grants is empty for one that watches only topics any signed-in person may
+// carry: asks is empty for one that watches only topics any signed-in person may
 // watch, and the answer that matters then is SignedIn. The ctx handed over carries no
 // transaction of the request's, so an implementation that opens one with db.Run
 // opens one of its own and ends it inside the call.
+//
+// Each ask carries the declaring manifest's half of the question with it, because
+// "does this caller hold this grant" is only half of "may this caller do this": see
+// Grant. A grant the connection's own tenant may not exercise at all is never asked
+// of it — the hub answers that from the declaration and the tenant, as the request
+// guard does, and asking a customer's authorizer about the operator's own permission
+// would hand it a question it has no answer to.
 type Authority interface {
-	Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, grants []string) (Renewal, error)
+	Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, asks []Grant) (Renewal, error)
+}
+
+// Grant is one grant a connection's topic policies name, asked the way the route
+// guard asks it. It is a struct and not a bare token for the reason tenancy.Grant
+// is: "does this caller hold it" and "is this a tenant entitled to hold it at all"
+// are two questions, the second is answered before the first is asked, and the answer
+// to the second is in the manifest that declared the permission and nowhere in the
+// caller or the tenant's roles.
+type Grant struct {
+	// Permission is the token, spelled as the manifest that defines it spells it.
+	Permission string
+	// Operator is the declaring module's module.Permission.Operator: this is the
+	// installation's own permission, and a tenant that is not the operator's cannot
+	// exercise it however its roles are written.
+	Operator bool
 }
 
 // Renewal is one answer to Authority.Renew.
@@ -151,6 +173,7 @@ type Hub struct {
 
 	mu           sync.Mutex
 	watches      map[watchKey]*watch
+	dialling     map[watchKey]chan struct{}
 	perTenant    map[uuid.UUID]int
 	perPrincipal map[seatKey]int
 }
@@ -248,6 +271,7 @@ func New(d Deps) *Hub {
 		clock:        clock,
 		log:          log,
 		watches:      map[watchKey]*watch{},
+		dialling:     map[watchKey]chan struct{}{},
 		perTenant:    map[uuid.UUID]int{},
 		perPrincipal: map[seatKey]int{},
 	}
@@ -452,6 +476,14 @@ func normalise(raw []string) (names []string, bad string) {
 // the re-check are one decision made twice rather than two implementations that can
 // drift.
 //
+// The tenant's own boundary is answered first, and without asking: a permission the
+// declaring module marked as the operator's is refused a tenant that is not the
+// operator's before that tenant's authorizer is consulted, because its answer is
+// about that tenant's roles and the question is not. This is httpx's order — the
+// declaration, then the tenant, then the authorizer — and a stream that asked in a
+// different order would let an operator permission reach a customer as soon as it was
+// streamed.
+//
 // The transaction it opens is the connection's own, which is what the Detached is
 // for. The request that arrived has already been answered as far as the guards are
 // concerned: kit/httpx commits their transaction before the handler runs, and for a
@@ -461,7 +493,12 @@ func normalise(raw []string) (names []string, bad string) {
 // would then be ended by the request rather than by this call, which is a pool
 // connection pinned idle in a transaction for the life of the stream.
 func (h *Hub) admit(ctx context.Context, req Request, topics []Topic) error {
-	renewal, err := h.authority.Renew(db.Detached(ctx), req.Tenant, req.HTTP, grantsOf(topics))
+	asks, outside := askable(req.Tenant, topics)
+	if len(outside) > 0 {
+		return &Refusal{Status: http.StatusForbidden,
+			Detail: httpx.CodeNotOperator + fmt.Sprintf(": the topic %s requires %s, which is the operator's and this is not the operator's tenant", named(topics, outside[0]), outside[0])}
+	}
+	renewal, err := h.authority.Renew(db.Detached(ctx), req.Tenant, req.HTTP, asks)
 	if err != nil {
 		return &Refusal{Status: http.StatusServiceUnavailable,
 			Detail: CodeUnavailable + ": this application cannot check what this caller may watch right now"}
@@ -480,6 +517,17 @@ func (h *Hub) admit(ctx context.Context, req Request, topics []Topic) error {
 		}
 	}
 	return nil
+}
+
+// named is the first topic whose policy names this grant, for the refusal that has to
+// say which topic it refused.
+func named(topics []Topic, grant string) string {
+	for _, t := range topics {
+		if t.Policy.Kind() == module.KindGrant && t.Policy.Grant() == grant {
+			return t.Event
+		}
+	}
+	return ""
 }
 
 // register takes one connection's slots: this person's share of them in this
@@ -514,7 +562,8 @@ func (h *Hub) register(req Request, topics []Topic) (*connection, error) {
 }
 
 // watchTopic takes the shared observation of one (tenant, event), or joins the one
-// another connection of this hub already holds. The mutex is never held across
+// another connection of this hub already holds — including one still being opened,
+// which is the case that makes this a wait rather than a check. The mutex is never held across
 // Observe: a broker round trip belongs to no critical section.
 //
 // The observation is opened on a context of the watch's own life rather than on the
@@ -525,41 +574,82 @@ func (h *Hub) register(req Request, topics []Topic) (*connection, error) {
 // hub still believed the watch was live. The cancel belongs to the watch, goes with
 // its stop, and is what keeps the transport's own watcher on that context from
 // outliving the observation.
+//
+// The mutex is never held across Observe, and what it does hold is the decision to
+// dial. Per key, only one connection is ever told to dial: two observations of one
+// address both left installed would each hand this hub the same event, and the hub
+// would queue it twice — a duplicated notice is a client told to refetch twice over
+// one thing that happened. Stopping the loser is not the answer: the provider holds
+// the callback from the moment Observe returns, and a delivery already running is not
+// recalled by a stop that has not been called yet. So the loser is never dialled.
 func (h *Hub) watchTopic(ctx context.Context, c *connection, t Topic) error {
 	key := watchKey{tenant: c.tenant.ID, event: t.Event}
-	h.mu.Lock()
-	if w, ok := h.watches[key]; ok {
-		w.conns[c] = struct{}{}
-		h.mu.Unlock()
-		return nil
-	}
-	h.mu.Unlock()
-
-	life, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	stop, err := h.transport.Observe(life, c.tenant.ID, t.Event, func(ev transport.Event) {
-		h.deliver(key, ev)
-	})
-	if err != nil {
-		cancel()
+	dial, err := h.reserveWatch(ctx, key, c)
+	if err != nil || !dial {
 		return err
 	}
+	return h.dialWatch(ctx, key, c)
+}
+
+// reserveWatch answers one connection's ask for one watch key: it takes the
+// connection's place in a live watch and reports false, or reports true to the one
+// connection that is to open it. A failed dial leaves no watch and no slot behind, so
+// a connection that waited takes its own turn rather than inheriting a failure that
+// was somebody else's round trip.
+func (h *Hub) reserveWatch(ctx context.Context, key watchKey, c *connection) (dial bool, err error) {
+	h.mu.Lock()
+	w, live := h.watches[key]
+	opening, dialling := h.dialling[key]
+	if live {
+		w.conns[c] = struct{}{}
+		h.mu.Unlock()
+		return false, nil
+	}
+	if dialling {
+		// Waiting is the whole cost of opening an address once. Whoever dialled owns
+		// the round trip; this connection asks again the moment it ends, and joins the
+		// watch it installed — or takes its turn if there is nothing to join.
+		h.mu.Unlock()
+		select {
+		case <-opening:
+			return h.reserveWatch(ctx, key, c)
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
+	}
+	h.dialling[key] = make(chan struct{})
+	h.mu.Unlock()
+	return true, nil
+}
+
+// dialWatch opens one address through the transport and installs the watch that every
+// connection waiting on it will join. The slot taken by reserveWatch is what makes
+// this the only writer for the key, so the map holds one observation per address no
+// matter how many connections arrived at it at once.
+func (h *Hub) dialWatch(ctx context.Context, key watchKey, c *connection) error {
+	life, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stop, err := h.transport.Observe(life, key.tenant, key.event, func(ev transport.Event) {
+		h.deliver(key, ev)
+	})
 	leave := func() {
 		cancel()
 		stop()
 	}
 
 	h.mu.Lock()
-	// A second Observe for one key is a race between two connections opening the
-	// same watch at once. The loser's observation is stopped rather than left to
-	// double every notice the winner's delivers; the race costs one consumer.
-	if w, ok := h.watches[key]; ok {
-		w.conns[c] = struct{}{}
-		h.mu.Unlock()
-		leave()
-		return nil
+	defer h.mu.Unlock()
+	if opening, ok := h.dialling[key]; ok {
+		delete(h.dialling, key)
+		close(opening)
+	}
+	if err != nil {
+		// The context this watch would have lived on is the only thing it held, and it
+		// goes with the failure: a transport that refused the consumer keeps no
+		// observation, and nothing of this one is left running.
+		cancel()
+		return err
 	}
 	h.watches[key] = &watch{stop: leave, conns: map[*connection]struct{}{c: {}}}
-	h.mu.Unlock()
 	return nil
 }
 
@@ -626,6 +716,17 @@ func (h *Hub) deliver(key watchKey, ev transport.Event) {
 			}
 		}
 	}
+}
+
+// watching reports whether this connection still holds one topic. It is the question
+// a notice has to pass on its way to the wire, and it is asked under the same mutex as
+// the withdrawal that would take the topic away, so a frame for a grant the caller has
+// lost cannot slip past the decision that withdrew it.
+func (h *Hub) watching(c *connection, event string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := c.topics[event]
+	return ok
 }
 
 // maySee applies a topic's per-notice filter. Only StreamRecipient has one: the
@@ -702,7 +803,9 @@ func (h *Hub) dropWatch(key watchKey, c *connection) (func(), bool) {
 }
 
 // withdraw drops one topic of a live connection: its frame goes out, its watch is
-// released, and the connection itself ends when nothing is left to watch.
+// released, and the connection itself ends when nothing is left to watch. What it does
+// not do is drain the connection's queue — the notices already there belong to a
+// writer that has not decided what to send, and loop drops them at the write.
 func (h *Hub) withdraw(c *connection, t Topic, w http.ResponseWriter, rc *http.ResponseController) error {
 	h.mu.Lock()
 	delete(c.topics, t.Event)
@@ -721,18 +824,41 @@ func (h *Hub) withdraw(c *connection, t Topic, w http.ResponseWriter, rc *http.R
 	return nil
 }
 
-func grantsOf(topics []Topic) []string {
-	var grants []string
+func grantsOf(topics []Topic) []Grant {
+	var out []Grant
+	add := func(g Grant) {
+		for _, has := range out {
+			if has.Permission == g.Permission {
+				return
+			}
+		}
+		out = append(out, g)
+	}
 	for _, t := range topics {
 		if t.Policy.Kind() != module.KindGrant {
 			continue
 		}
-		if slices.Contains(grants, t.Policy.Grant()) {
+		add(Grant{Permission: t.Policy.Grant(), Operator: t.Operator})
+	}
+	return out
+}
+
+// askable splits one connection's topics into the grants its tenant's authorizer may
+// be asked about, and the grants that tenant may not exercise at all. The second half
+// is the declaration's operator boundary, and it is answered here rather than by the
+// caller for the same reason the connect check asks the same Authority the heartbeat
+// does: the two decisions are one decision, and a tenant's authorizer answering about
+// a permission that is not the tenant's is a question it cannot answer honestly — the
+// module's own authorizer reads its tenant's roles and reads them as its tenant's.
+func askable(tenant tenancy.Tenant, topics []Topic) (asks []Grant, outside []string) {
+	for _, g := range grantsOf(topics) {
+		if g.Operator && !tenant.Operator {
+			outside = append(outside, g.Permission)
 			continue
 		}
-		grants = append(grants, t.Policy.Grant())
+		asks = append(asks, g)
 	}
-	return grants
+	return asks, outside
 }
 
 // refused is the log line behind every refusal: who asked, what for, and the fact

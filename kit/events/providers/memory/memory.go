@@ -53,11 +53,24 @@ type observerKey struct {
 	name   string
 }
 
-// observation is one watch. It holds no channel and no done: an observation is
-// answered by nothing, which is what keeps a browser from being able to fail a
-// publish or hold it open.
+// observation is one watch: the notice goes to a queue this transport owns and the
+// watch's own goroutine reads it, so a callback that does not return can neither
+// hold a publication open nor fail one.
+//
+// The queue is bounded by the same number a subscription's is, and a notice that
+// finds it full is dropped: the contract this transport answers to is "a delivery
+// that cannot be handed over is lost", and the alternative — an unbounded queue, or
+// a publish that waits — is a browser's stalled reader becoming the outbox relay's
+// stalled reader. A watch that loses notices is a watch whose caller is told it is
+// not current, which is what transport.Observe's resync is for.
 type observation struct {
-	fn func(transport.Event)
+	queue chan transport.Event
+	// closing is the cancellation of the context the observation was opened on.
+	// It is what ends the delivering goroutine when the caller withdraws by context
+	// rather than by stop, and closing it twice is the panic this design cannot have.
+	closing <-chan struct{}
+	once    sync.Once
+	stop    chan struct{}
 }
 
 type localSubscription struct {
@@ -100,27 +113,68 @@ func (m *memory) Publish(ctx context.Context, ev transport.Event) error {
 		}
 	}
 	// Last, after every handler reported success: a notice is the fact that this
-	// event happened, and an event whose handling failed the publish did not. On the
-	// publisher's goroutine, because nothing waits for an observer and an observer
-	// that blocks must not be able to delay a publish either — the recover below is
-	// the other half of the same promise: a panic in a watch is the watch's, and a
-	// publish that failed because a browser's frame writer panicked is the failure
-	// this prevents. The consequence is honest and stated in Observe: in-process
-	// notices are as prompt as this process's handlers.
+	// event happened, and an event whose handling failed the publish did not. Handed
+	// to each watch's own queue rather than called here, because the durable work
+	// above is what Publish is for and a watch is what it is beside: an observation
+	// that stops returning is a browser that stopped reading, and the transport's
+	// promise — fn runs on a goroutine the transport owns, and a transport never
+	// waits for it — is what keeps that browser from holding the outbox relay open.
+	// The consequence is honest and stated in Observe: in-process notices are as
+	// prompt as this process's delivery goroutines are.
 	for _, o := range watching {
-		m.notify(ctx, o, ev)
+		o.offer(ctx, ev)
 	}
 	return nil
 }
 
-func (m *memory) notify(ctx context.Context, o *observation, ev transport.Event) {
+// offer hands one notice to one watch and does not wait for it: the send that finds
+// the queue full drops this notice, and the watch keeps its place in line for the
+// next one.
+func (o *observation) offer(ctx context.Context, ev transport.Event) {
+	select {
+	case o.queue <- ev:
+	default:
+		// One line per dropped notice, which is one line per event a watch was too
+		// slow for: the alternative is a stream that says nothing while it goes stale.
+		slog.WarnContext(ctx, "events: an observation was behind; the notice was dropped",
+			"event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "queue", cap(o.queue))
+	}
+}
+
+// run is the goroutine an observation owns. It delivers alone, so one publish reaches
+// one watch once, and it ends when the watch is withdrawn by either door its caller
+// has: the context it was opened on, or its stop function. A panic inside the
+// callback is the callback's and ends this watch — the publish that caused it already
+// returned, and a watch cannot be asked to recover on the transport's behalf.
+func (o *observation) run(ctx context.Context, fn func(transport.Event)) {
+	for {
+		var ev transport.Event
+		select {
+		case ev = <-o.queue:
+		case <-o.closing:
+			return
+		case <-o.stop:
+			return
+		}
+		if handedOver(ctx, ev, fn) {
+			return
+		}
+	}
+}
+
+// handedOver delivers one notice and reports whether the watch should go on: false
+// unless the callback panicked, which is the one failure a watch is not asked to get
+// over.
+func handedOver(ctx context.Context, ev transport.Event, fn func(transport.Event)) (stop bool) {
 	defer func() {
 		if v := recover(); v != nil {
-			slog.ErrorContext(ctx, "events: an observation panicked; the notice was dropped",
+			slog.ErrorContext(ctx, "events: an observation panicked; no further notice reaches this watch",
 				"event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "panic", v)
+			stop = true
 		}
 	}()
-	o.fn(ev)
+	fn(ev)
+	return false
 }
 
 // Observe watches one tenant's one event inside this process. Routing is by the
@@ -129,29 +183,34 @@ func (m *memory) notify(ctx context.Context, o *observation, ev transport.Event)
 // filtered out of it. The observation shares this transport's fate with the
 // publishers of one process, which is what a notice means here: the durable
 // claims, the retries and the replay belong to Subscribe.
-func (m *memory) Observe(_ context.Context, tenantID uuid.UUID, name string, fn func(transport.Event)) (func(), error) {
+//
+// fn runs on a goroutine this transport opens here and on no other, and it is never
+// waited for: Publish returns once the notice is queued. A watch that reads slower
+// than this process publishes loses notices at its own queue's length, and a watch
+// that stops losing them is a watch whose caller has to be told it is not current —
+// transport.Observe promises a dropped notice is not owed.
+func (m *memory) Observe(ctx context.Context, tenantID uuid.UUID, name string, fn func(transport.Event)) (func(), error) {
 	key := observerKey{tenant: tenantID, name: name}
-	o := &observation{fn: fn}
+	o := &observation{queue: make(chan transport.Event, queue), closing: ctx.Done(), stop: make(chan struct{})}
 	m.mu.Lock()
 	m.observers[key] = append(m.observers[key], o)
 	m.mu.Unlock()
-	var once sync.Once
+	go o.run(ctx, fn)
 	return func() {
-		once.Do(func() {
-			m.mu.Lock()
-			defer m.mu.Unlock()
-			var kept []*observation
-			for _, existing := range m.observers[key] {
-				if existing != o {
-					kept = append(kept, existing)
-				}
+		o.once.Do(func() { close(o.stop) })
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		var kept []*observation
+		for _, existing := range m.observers[key] {
+			if existing != o {
+				kept = append(kept, existing)
 			}
-			if len(kept) == 0 {
-				delete(m.observers, key)
-				return
-			}
-			m.observers[key] = kept
-		})
+		}
+		if len(kept) == 0 {
+			delete(m.observers, key)
+			return
+		}
+		m.observers[key] = kept
 	}, nil
 }
 
