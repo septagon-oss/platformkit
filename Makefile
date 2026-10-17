@@ -122,8 +122,9 @@ build: ## Compile every package (a check; `make image` builds the artifact)
 # every caller of this one is a person or a gate waiting for an answer rather than a coin toss. `check`'s bound is the
 # number, not a new one; it sits before $(TEST_FLAGS) so a caller that passes its own -timeout wins,
 # and scripts/check_architecture_test.sh pins this line byte for byte beside `check`'s own.
+# Four package processes share the test server; dbtest bounds each owner pool.
 test: ## Test selected packages, reusing successful results when inputs match
-	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m $(TEST_FLAGS)
+	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m -p=4 $(TEST_FLAGS)
 
 vet: ## Run go vet
 	go vet ./...
@@ -407,7 +408,7 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 # scripts/race_binary_timeout_test.py asks the test binary what it was given, and
 # scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) -timeout=30m -p=4 $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
@@ -540,7 +541,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# rather than a fix: those cases refuse a re-pin that drops the count, the package pattern or any
 	# stated bound, so what a re-pin may change is everything around the parts that make the run fresh.
 	# The alternative is a fresh gate that narrows because nobody looked at it.
-	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m
+	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m -p=4
 	bash scripts/check_architecture_test.sh
 	# scripts/provenance_case_paths_test.sh asks whether the provenance cases the architecture gate runs
 	# are still the files it invokes. The gate keeps that list in one `for provenance_case in …; do`
