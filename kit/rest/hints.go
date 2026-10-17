@@ -26,6 +26,9 @@ import (
 // entryHintFault names what an entry's own hints get wrong, and "" when they are
 // coherent. Every refusal is a mount-time panic, like the rest of check.
 func (s Spec[T]) entryHintFault() string {
+	if s.Present.Deck != nil && (!s.offers(List)) {
+		return "deck requires a list resource"
+	}
 	if bad := entryHintsFault(s.Entity, s.Present, crud.Fields[T]()); bad != "" {
 		return bad
 	}
@@ -158,7 +161,7 @@ func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) stri
 			return fmt.Sprintf("trendField %q is a %s; a day breakdown reads a column of days", p.TrendField, f.Type)
 		}
 	}
-	return ""
+	return entity.DeckFault(p, fields)
 }
 
 // bounds is one field's declared window: the two instants it is bounded by, when
@@ -546,54 +549,10 @@ func CheckReferences(resources []httpx.Resource) string {
 	return ""
 }
 
-// CheckRowHints is the boot gate for the entry hints that speak of a row and a
-// verb: it answers whether a resource's `primaryCommand` names a command this
-// resource actually mounts, and one a swipe could run, and "" when they all do.
-//
-// It is asked at the same moment as CheckReferences, and for the same reason:
-// `entryHintsFault` runs in a Spec's own mount check, where no command exists yet
-// — commands arrive later, through a separate registration — so the first site
-// where an entry's declaration and its resource's verbs are in hand together is
-// the one that has the whole resource list. The refusal stays out of the command's
-// own gate, which runs from the verb's side and could never see a verb that was
-// never mounted.
-//
-// Three things make a mounted verb one a row cannot swipe to: it asks for values,
-// which a swipe sends none of (an argument is declared before the route is, so
-// this reads the fields a map-only argument would have produced and is not
-// satisfied by one that hides them), it is a system verb, which no person is
-// offered and which mounts no browser route at all, or it runs over the whole
-// collection, where a swipe names one row.
+// CheckRowHints checks row-action declarations against the complete registration.
+// It delegates to the same gate used by API.ValidateDeclarations before boot.
 func CheckRowHints(resources []httpx.Resource) string {
-	for _, r := range resources {
-		if r.Present.PrimaryCommand == "" {
-			continue
-		}
-		owner := resourceAddress(r.Module, r.Entity)
-		verb, found := namedCommand(r.Commands, r.Present.PrimaryCommand)
-		if !found {
-			return fmt.Sprintf("%s primaryCommand %q is not a command of %s", owner, r.Present.PrimaryCommand, r.Entity)
-		}
-		switch {
-		case len(verb.Fields) > 0:
-			return fmt.Sprintf("%s primaryCommand %q takes arguments; a row's swipe sends none", owner, verb.Verb)
-		case verb.Present.System:
-			return fmt.Sprintf("%s primaryCommand %q is a system command; no person is offered it", owner, verb.Verb)
-		case verb.Collection:
-			return fmt.Sprintf("%s primaryCommand %q runs on the collection; a row's swipe names one row", owner, verb.Verb)
-		}
-	}
-	return ""
-}
-
-// namedCommand is the verb a hint names, if this resource mounts one at all.
-func namedCommand(commands []httpx.Command, verb string) (httpx.Command, bool) {
-	for _, c := range commands {
-		if c.Verb == verb {
-			return c, true
-		}
-	}
-	return httpx.Command{}, false
+	return httpx.CheckRowHints(resources)
 }
 
 // unresolvedReference names the first field that points beyond the composition,

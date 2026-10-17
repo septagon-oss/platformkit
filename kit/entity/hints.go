@@ -155,6 +155,7 @@ type EntryHints struct {
 	Sections         []EntitySection
 	EmptyDescription string
 	Sortable         []string
+	Deck             *DeckHints
 	// Highlight is the one sub-count a card may wear beside its total, and
 	// TrendField names this entity's own timestamp field to break the last two
 	// weeks into days. Both are questions about rows the list already reads, so
