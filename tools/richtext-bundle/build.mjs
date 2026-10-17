@@ -13,6 +13,9 @@
 //   code esbuild actually put in the bundle — read off the build's own metafile,
 //   not off a hand-maintained list — so a dependency added to entry.js arrives
 //   with its notice in the same build.
+//
+// One file of the dependency tree is changed on the way in, by the plugin below.
+// Everything else in the output is the bytes npm installed.
 import { build } from "esbuild";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -29,6 +32,46 @@ mkdirSync(outDir, { recursive: true });
 const bundlePath = join(outDir, "editor.js");
 const licencePath = join(outDir, "LICENSE.md");
 
+// prosemirror-view's focus handler schedules a timer that, 20 ms after a focus it did
+// not already hold, writes the editor's own selection into the page wherever the two
+// disagree. The timer undoes a browser that parks the caret at the start of the
+// document on focus. It cannot tell that park from a range a keyboard made a moment
+// earlier, which the DOM observer has not read yet, and the write leaves the author
+// holding no selection at all.
+//
+// Reading the page first costs nothing: the observer's flush takes a range inside this
+// view through its own guards and, having taken it, no longer finds the two
+// disagreeing, so the write is skipped. Where the page holds nothing this view can
+// read, the write happens as it does upstream.
+//
+// The upstream text is matched verbatim and the build refuses unless it appears exactly
+// once, so a prosemirror-view bump re-decides this patch rather than shipping without it.
+const upstreamFocusRestore =
+  "            if (view.docView && view.hasFocus() && !view.domObserver.currentSelection.eq(view.domSelectionRange()))\n" +
+  "                selectionToDOM(view);";
+const readThePageFirst =
+  "            if (view.docView && view.hasFocus()) {\n" +
+  "                view.domObserver.forceFlush();\n" +
+  "                view.domObserver.flush();\n" +
+  "            }\n";
+
+const focusReadsThePage = {
+  name: "focus-reads-the-page",
+  setup(plugin) {
+    plugin.onLoad({ filter: /(^|[\\/])prosemirror-view[\\/]dist[\\/]index\.js$/ }, ({ path }) => {
+      const source = readFileSync(path, "utf8");
+      const hits = source.split(upstreamFocusRestore).length - 1;
+      if (hits !== 1) {
+        throw new Error(
+          `the focus restore this build reads before writing was found ${hits} times in ${path}; ` +
+            "prosemirror-view moved and the patch in build.mjs has to be re-decided against it",
+        );
+      }
+      return { contents: source.replace(upstreamFocusRestore, readThePageFirst + upstreamFocusRestore), loader: "js" };
+    });
+  },
+};
+
 const result = await build({
   absWorkingDir: here,
   bundle: true,
@@ -40,6 +83,7 @@ const result = await build({
   minify: true,
   outfile: bundlePath,
   platform: "browser",
+  plugins: [focusReadsThePage],
   target: "es2022",
 });
 
