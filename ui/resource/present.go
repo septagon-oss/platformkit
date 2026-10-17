@@ -15,9 +15,8 @@ package resource
 // column kept off the row.
 //
 // A picture is fetched, never embedded: the address comes from Options.Pictures
-// and the bytes are the file module's own door, guarded by its own permission, so
-// a cell that could inline the bytes would be a cell that knows more about access
-// than the route does.
+// and the bytes come from the declared delivery door after its access checks.
+// The cell renders no inline document and makes no source access decision.
 //
 // What is *not* here: the detail screen. components.DetailItem.Value is a string,
 // so a description list cannot carry a disc or a photo, and changing it is a
@@ -76,6 +75,15 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 			id = firstID(text)
 		}
 		src := o.pictureSource(id)
+		if f.Type == entity.TypePicture {
+			src = ""
+			if _, err := entity.PictureKey(entity.Picture(id)); err == nil && o.ComposedSource != "" {
+				src = strings.ReplaceAll(o.ComposedSource, "{reference}", id)
+			}
+			if blank || src == "" {
+				return g.Text("—")
+			}
+		}
 		if blank || id == "" || src == "" {
 			return nil
 		}
@@ -106,8 +114,6 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 	// vocabulary at mount. It returns the plain value rather than panicking because
 	// List is also called directly, by tests and by the design export, and a
 	// renderer that panics there is one nobody can extend.
-	// TestEveryPresentationNameInTheVocabularyComposesSomething is what stops an
-	// entry arriving in kit/entity without a case in this switch.
 	return nil
 }
 

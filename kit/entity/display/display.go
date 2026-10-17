@@ -27,6 +27,13 @@ import (
 // business, and confusing the two is how a form posts back "Yes".
 func Text(v any) string {
 	switch typed := v.(type) {
+	case entity.Picture:
+		return string(typed)
+	case *entity.Picture:
+		if typed == nil {
+			return ""
+		}
+		return string(*typed)
 	case string:
 		return typed
 	case bool:

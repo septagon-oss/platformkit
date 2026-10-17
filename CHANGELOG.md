@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**Composed pictures have a private image door.** `modules/picture` validates inert
+SVG templates and complete values, authorizes each read in the request tenant
+transaction, and serves derived `entity.Picture` references through generated
+lists. The resource catalog advances from version 2 to 3 for the new scalar and
+optional `pictures.composedSource`; native shells must add authenticated SVG
+decoding before displaying it. Stored-file UUID images retain their meaning.
+
 **A `widget:richtext` field is an editor now, and still a textarea.** The field
 draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
 link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
