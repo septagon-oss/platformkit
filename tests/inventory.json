@@ -12215,6 +12215,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/nested_tenant_view_lifetime_test.go",
+   "id": "kit/db/nested_tenant_view_lifetime_test.go#TestANestedTenantViewEndsWithItsProvisioningCallback",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestANestedTenantViewEndsWithItsProvisioningCallback",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 7,
    "evidence": "reaches nothing its sibling alter_actions_test.go does not reach",
    "file": "kit/db/plain_index_build_excused_only_file_creates_test.go",
@@ -12286,6 +12305,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/provisioning_operation_context_test.go",
+   "id": "kit/db/provisioning_operation_context_test.go#TestProvisioningOperationsKeepTheirCallerContextAndCallbackLifetime",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestProvisioningOperationsKeepTheirCallerContextAndCallbackLifetime",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "merge",
    "unique_lines": null,
    "unique_reach": [],
@@ -59865,7 +59903,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1544,
+  "files": 1546,
   "forge_runs": [
    408,
    413,
@@ -59899,7 +59937,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2564,
+   "behaviour": 2566,
    "composition": 353,
    "contract": 19,
    "journey": 88
@@ -59918,9 +59956,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3024,
+  "rows": 3026,
   "tiers": {
-   "merge": 1913,
+   "merge": 1915,
    "nightly": 88,
    "push": 1023
   },
@@ -59928,13 +59966,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1359,
+   "keep": 1361,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2734,
+   "keep": 2736,
    "keep-rewrite": 117,
    "merge": 173
   }

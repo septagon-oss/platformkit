@@ -77,6 +77,7 @@ type openTx struct {
 	system bool
 	tenant tenancy.Tenant
 	span   trace.Span
+	view   *tenantView
 }
 
 type txKey struct{}
@@ -137,6 +138,9 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 	if cur, ok := current(ctx); ok {
 		if cur.system || cur.tenant.ID != t.ID {
 			return ErrScopeMismatch
+		}
+		if cur.view != nil {
+			ctx = cur.view.bind(ctx)
 		}
 		return fn(ctx, Tx[Tenant]{db: operation(cur.db, cur.span, ctx), scope: Tenant{tenant: t}})
 	}

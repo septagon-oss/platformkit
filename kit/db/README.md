@@ -302,6 +302,11 @@ transaction span, and the shared handle is never changed. An operation ending st
 and nothing else. If PostgreSQL aborted the transaction underneath — a statement cancelled mid-way —
 nothing later commits it: there are no savepoints.
 
+`InTenant` also bounds its borrowed handles to the provisioning callback. Nested `Run` calls
+retain that restriction even when their caller uses `context.WithoutCancel`: their own deadlines
+and values still apply, but every borrowed handle is cancelled before system access is restored.
+A saved callback context cannot open a fresh usable handle after the callback has returned.
+
 What follows from that:
 
 | Event | Outcome |
