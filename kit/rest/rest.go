@@ -498,6 +498,9 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		if field.Widget == "richtext" {
 			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")
 		}
+		if field.Type == entity.TypePicture {
+			httpx.SetFieldPicture[T](read, field.Name)
+		}
 	}
 	if s.offers(httpx.CRUDUpdate) {
 		var writable []crud.Field
@@ -1265,6 +1268,14 @@ func (s Spec[T]) check() {
 		bad = presentationFault(crud.Fields[T]())
 	}
 	if bad == "" {
+		for _, f := range crud.Fields[T]() {
+			if f.Type == entity.TypePicture && (s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate)) && !slices.Contains(s.Immutable, f.Name) {
+				bad = fmt.Sprintf("picture field %q must be Immutable", f.Name)
+				break
+			}
+		}
+	}
+	if bad == "" {
 		bad = s.entryHintFault()
 	}
 	if bad == "" {
@@ -1747,7 +1758,7 @@ func immutableRefusal(name string) error {
 func names(fields []crud.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.Type != crud.TypeList {
+		if f.Type != crud.TypeList && f.Type != entity.TypePicture {
 			out = append(out, f.Name)
 		}
 	}

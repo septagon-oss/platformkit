@@ -79,8 +79,9 @@ type Declaration struct {
 // Provides says the module is the one T of the app, unless the app chooses another.
 func Provides[T any]() Declaration { return Declaration{kind: provides, key: reflect.TypeFor[T]()} }
 
-// Needs says the module cannot be built without T, and is built after it. A
-// slice, Needs[[]E], takes every contribution of E, zero or more.
+// Needs says the module cannot be built without T, and is built after it. An
+// unnamed slice, Needs[[]E], takes every contribution of E, zero or more.
+// A named slice is one contract value, supplied by its declared provider.
 func Needs[T any]() Declaration { return need[T](needs) }
 
 // Optional says the module uses T only if the app composes it.
@@ -88,7 +89,7 @@ func Optional[T any]() Declaration { return need[T](optional) }
 
 func need[T any](k kind) Declaration {
 	t := reflect.TypeFor[T]()
-	if t.Kind() == reflect.Slice {
+	if t.Kind() == reflect.Slice && t.Name() == "" {
 		return Declaration{kind: k, key: t.Elem(), many: true}
 	}
 	return Declaration{kind: k, key: t}
