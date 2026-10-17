@@ -37,7 +37,8 @@ func TestAPrimaryCommandARowCannotSwipeIsRefusedNamingIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := spec
 			s.Present = entity.EntryHints{PrimaryCommand: tc.primary}
-			api, _, _ := mount(t, s)
+			api, _ := patchDocumentAPI()
+			s.Mount(api.Surfaces(s.Module))
 			surfaces := api.Surfaces(s.Module)
 			rest.Command(surfaces, s, "archive", "Archive", "Archive the task.", nil, run, rest.CommandOptions{})
 			rest.Command(surfaces, s, "explain", "Explain", "Explain the task.", nil, withReason, rest.CommandOptions{})
