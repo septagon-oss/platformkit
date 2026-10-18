@@ -139,3 +139,26 @@ content are provisioned by `user`, `auth` and `site` when the tenant is created,
 and `roles.go` is the list of who the first person is. What `product` decides at
 composition is which storage backend, mailer and payment gateway a tenant's first
 administrator will find.
+
+## The test installation
+
+Three sentences, for the next person who changes how this package gets a database.
+
+**Reused** — `kit/db/dbtest`'s `RunInOwnDatabase` for the package's own database, `URLs` and `Open`
+for a case's namespace and handles, this package's own `bootstrap`, `install`, `compose` and `start`
+for what a case stands on, unchanged. **Added** — one prepared installation per package
+(`dbtest.RunInOwnDatabaseWithTemplate`, run by `main_test.go`'s `prepareInstallation`) that a case
+copies instead of reinstalling (`dbtest.Clone`, taken by `configure`), because two hundred cases were
+each paying the composition's whole migration at one database-wide advisory lock, and no existing
+unit handed out an installation that was already made; a case for which installing *is* the claim
+takes `configureFresh` and installs in full. **Made reusable** — the template-and-copy primitive
+itself, the namespace statements `URLsFor` and the template now share, and a parity case that says a
+copy answers what a fresh install answers, which is what lets the rest of the package take the copy.
+
+A copy is named after the case that took it, and the number a case that asks twice needs is part of
+that name: `dbtest.Role` names the login role it creates after the namespace the copy lives in, so a
+namespace that filled PostgreSQL's identifier limit would have named two copies' roles the same and
+the second grant would have landed on the first copy's database. The budget in `dbtest.cloneName`
+leaves room for the prefix and the ask number, and `dbtest.identifier` keeps the tail of a name the
+server would otherwise cut — the contract is on `Role`, and
+`TestEachRepeatedCopyCanHoldAnIndependentRoleInItsOwnDatabase` is the case.
