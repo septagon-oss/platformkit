@@ -21,6 +21,7 @@ pkit: seam flags runs configuration (kernel; not a cloud seam).
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
+pkit: product.Module reads config.Files.
 pkit: product.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: product.Module contributes one changecontracts.SubjectBinding to change.Module.
 pkit: seed.Module needs no other module.

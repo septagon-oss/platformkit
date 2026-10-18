@@ -248,9 +248,17 @@ func cellNamed(c *Config, cell CloudCell) bool {
 // deployment that picked a profile and did not finish it, and it answers all of
 // them at once rather than the first: the fix is one file with several lines in
 // it, and a boot that names one per run is a boot nobody finishes.
+//
+// A seam the deployment answered with another adapter demands nothing. The
+// deployment overrode the profile there and runs something else, so the settings
+// that adapter would have needed are not needs of this deployment — a profile may
+// replace a deployment's answer only where the deployment left it open.
 func (c Config) CloudUnmet(profile string) []string {
 	var unmet []string
 	for _, cell := range cloudProfiles[profile] {
+		if cellOverridden(&c, cell) {
+			continue
+		}
 		for _, name := range cell.Required {
 			if f := stringKey(&c, name); f == nil || *f == "" {
 				unmet = append(unmet, name)
@@ -258,6 +266,24 @@ func (c Config) CloudUnmet(profile string) []string {
 		}
 	}
 	return unmet
+}
+
+// cellOverridden reports whether this configuration names an adapter for the
+// seam the cell writes that is not the adapter the cell writes. The check is on
+// what the deployment wrote, not on what the profile filled: a cell that wrote
+// its own answer leaves that answer in the key, and a cell whose seam nobody
+// answered leaves the key empty — neither is an override.
+//
+// A cell that writes no adapter demands what every deployment needs (a mail host
+// is a mail host whichever cache runs) and can never be overridden here.
+func cellOverridden(c *Config, cell CloudCell) bool {
+	for _, w := range cell.Sets {
+		f := stringKey(c, w.Key)
+		if f != nil && *f != "" && *f != w.Value {
+			return true
+		}
+	}
+	return false
 }
 
 // stringKey is where a key name reaches a Config: the same table an override and

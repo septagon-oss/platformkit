@@ -342,20 +342,40 @@ func (a *App) inspect(d Deployment) (*plan, []module.Module, map[*Module]map[any
 		return p, nil, nil, issues, joinIssues(a.name, issues)
 	}
 	w := &Wiring{plan: p, values: map[*Module]map[any][]any{}, skin: a.recordedSkin()}
+	// A module whose build refused put none of what it declared, so every module
+	// downstream of it would build over a hole: pkit.Get answers the zero value of a
+	// contract nobody put, and a module that guards its own Deps answers that with a
+	// panic — the sentence a deployment would then hear would name its own mistake as
+	// a wiring fault, or name nothing. resolve's rule for a plan that does not resolve
+	// is the rule here: a follow-on problem caused by a module that could not be built
+	// is suppressed, so one mistake stays one sentence. Build order is topological, so
+	// marking the module that failed and skipping what waits on it reaches the whole
+	// downstream of it in this one pass.
+	broken := map[*Module]bool{}
 	for _, m := range p.order {
+		if waitedOnBroken(p, m, broken) {
+			// Nothing was put here either, so whatever waits on this module is waiting
+			// on a hole as well: the mark carries down the order.
+			broken[m] = true
+			continue
+		}
 		w.at, w.errs = m, nil
 		manifest, err := m.build(w)
 		if err != nil {
 			w.errs = append(w.errs, fmt.Errorf("%s: %w", m.name, err))
+			broken[m] = true
 		}
 		for _, dl := range m.decls {
 			switch put := len(w.values[m][dl.key]); {
 			case dl.kind == provides && put != 1:
 				w.errs = append(w.errs, fmt.Errorf("%s declares it provides %s and did not put it once", m.name, contract(dl.key)))
+				broken[m] = true
 			case dl.kind == contributes && put == 0:
 				w.errs = append(w.errs, fmt.Errorf("%s declares it contributes one %s and did not put one: put one in Build, or do not declare it", m.name, contract(dl.key)))
+				broken[m] = true
 			case dl.kind == contributes && put > 1:
 				w.errs = append(w.errs, fmt.Errorf("%s declares it contributes one %s and put %d: a module contributes the one %s it is", m.name, contract(dl.key), put, contract(dl.key)))
+				broken[m] = true
 			}
 		}
 		for _, e := range w.errs {
@@ -379,6 +399,20 @@ func (a *App) inspect(d Deployment) (*plan, []module.Module, map[*Module]map[any
 		return p, nil, nil, issues, joinIssues(a.name, issues)
 	}
 	return p, w.built, w.values, issues, nil
+}
+
+// waitedOnBroken answers whether one of this module's own build dependencies
+// refused to build: the resolver ordered it after a module that put nothing, so its
+// build would read a contract nobody supplied. The plan's dependency list is the
+// suppliers named in the module's own declarations, which is the same set pkit.Get
+// would hand it.
+func waitedOnBroken(p *plan, m *Module, broken map[*Module]bool) bool {
+	for _, dep := range p.deps[m] {
+		if broken[dep] {
+			return true
+		}
+	}
+	return false
 }
 
 // joinIssues answers the list of problems the way it has always been answered:

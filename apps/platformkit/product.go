@@ -108,10 +108,14 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 	}
 	return pkit.NewModule("product", func(w *pkit.Wiring) (module.Module, error) {
 		installed := catalogues()
-		// The bytes go wherever the deployment said they go. A store the deployment
-		// named an address for but cannot reach is refused here, at the composition,
-		// rather than at the first upload an hour into the boot.
-		store, err := objectStore(cfg)
+		// The bytes go wherever the deployment said they go, read off the configuration
+		// the profile resolved rather than the one this function was handed: a profile
+		// that picked the object store picks it for this product too, and a store built
+		// from the settings as they arrived would be a different store from the one
+		// Explain names. A store missing an input its adapter cannot do without is
+		// refused here, before any effect; whether the address answers is asked of the
+		// first upload, because nothing here dials (see objectStore).
+		store, err := objectStore(pkit.Config(w, func(c config.Config) config.Files { return c.Files }))
 		if err != nil {
 			return module.Module{}, err
 		}
@@ -235,22 +239,27 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 // branched on the profile would be a product with a vendor in it — and one that
 // disagreed with its own configuration whenever an operator overrode the profile.
 //
+// What it refuses is the input its adapter cannot build without: an endpoint and a
+// bucket. It asks nothing of the network — construction is not readiness, and
+// whether the address answers is what the first Put finds out, or /ready once the
+// installation asks it.
+//
 // An empty scheme means https, which is what config.Load already settled; http is
 // the one spelling that has to be written down on purpose, because a store inside a
 // private network is real and a store on the public internet reached in plain text
 // is not.
-func objectStore(cfg config.Config) (filecontracts.Storage, error) {
-	if cfg.Files.Store != config.StoreS3 {
-		return file.Local(cfg.Files.Dir), nil
+func objectStore(files config.Files) (filecontracts.Storage, error) {
+	if files.Store != config.StoreS3 {
+		return file.Local(files.Dir), nil
 	}
 	return file.S3(file.S3Config{
-		Endpoint:     cfg.Files.S3.Endpoint,
-		Bucket:       cfg.Files.S3.Bucket,
-		AccessKey:    cfg.Files.S3.AccessKey,
-		SecretKey:    cfg.Files.S3.SecretKey,
-		Region:       cfg.Files.S3.Region,
-		Secure:       cfg.Files.S3.Scheme != config.S3SchemeHTTP,
-		BucketLookup: cfg.Files.S3.BucketLookup,
+		Endpoint:     files.S3.Endpoint,
+		Bucket:       files.S3.Bucket,
+		AccessKey:    files.S3.AccessKey,
+		SecretKey:    files.S3.SecretKey,
+		Region:       files.S3.Region,
+		Secure:       files.S3.Scheme != config.S3SchemeHTTP,
+		BucketLookup: files.S3.BucketLookup,
 	})
 }
 

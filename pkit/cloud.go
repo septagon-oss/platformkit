@@ -287,11 +287,10 @@ func resolveCloud(d Deployment) (cloudPlan, []issue) {
 	if err := config.ValidateProfile(d.Config.Cloud.Profile); err != nil {
 		return p, []issue{{method: "Deployment", err: err}}
 	}
-	// The configuration is read as the profile resolves it, not as it arrived: a
-	// Config built in Go never passed through Load, and the same deployment must not
-	// answer two ways depending on how it reached the process. The step is idempotent,
-	// so a configuration that came from a file is unchanged by reading it again.
-	d.Config = config.ApplyCloudProfile(d.Config)
+	// The configuration arrives as the profile resolved it: resolve applies the
+	// profile once, before any module reads a setting, so the seams answered here are
+	// the settings the composition builds itself from rather than a second reading of
+	// them. See resolve.
 	warn := d.Environment == Development
 	profile := d.Config.Cloud.Profile
 	if profile == "" {
@@ -318,7 +317,10 @@ func resolveCloud(d Deployment) (cloudPlan, []issue) {
 	// the disk. Both sentences are collected, because under azure they have one
 	// fix and the deployment should hear both.
 	if d.Config.Files.Store != config.StoreS3 {
-		if profile == config.ProfileAzure {
+		// The azure sentence is about a store nobody chose: an empty files.store is the
+		// disk the profile was never allowed to name, and a disk the deployment named
+		// itself is the deployment's own answer, which no profile contradicts.
+		if profile == config.ProfileAzure && d.Config.Files.Store == "" {
 			if warn {
 				p.warnings = append(p.warnings, azureStorageSentence)
 			} else {

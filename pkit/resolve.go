@@ -91,6 +91,16 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 		fail(method, format, args...)
 	}
 
+	// The cloud profile is resolved here, once, before anything reads a setting, so
+	// the sections modules read, the implementation a FromDeployment picks, the
+	// configuration the engine starts on and the seams Describe prints are one answer
+	// rather than four readings of one file. A Config built in Go never passed through
+	// Load, and resolving the profile only where the seams are answered would leave a
+	// deployment described from settings the composition never used. An unknown
+	// profile name fills nothing here and is refused below, with every other problem
+	// the deployment has.
+	d.Config = config.ApplyCloudProfile(d.Config)
+
 	p := &plan{
 		from:         map[edge]*Module{},
 		deps:         map[*Module][]*Module{},

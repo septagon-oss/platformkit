@@ -374,15 +374,19 @@ func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.
 // startEngine is the engine's own constructor with the deployment's process
 // fields filled in: the role, the two transport seams, the cache constructors and
 // the installation's host. They come from the Deployment rather than the App
-// because they are what a process knows and a composition does not.
+// because they are what a process knows and a composition does not. The
+// configuration comes from the plan, because that is the one the cloud profile
+// resolved and the modules read: an engine started on the settings as they arrived
+// would run a different transport, cache and store from the ones Explain names.
 func (a *App) startEngine(ctx context.Context, p *Planned, d Deployment, role app.Role) (*app.App, error) {
 	opts := p.options
 	opts.Role = role
 	opts.Transports = d.Transports
 	opts.Transport = d.Transport
 	opts.Caches = d.Caches
-	opts.Installation = app.Installation{Host: d.Config.Server.InstallationHost}
-	return app.New(ctx, d.Config, p.built, opts)
+	cfg := p.plan.cfg
+	opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
+	return app.New(ctx, cfg, p.built, opts)
 }
 
 // Runtime is a built application whose listener belongs to its caller. Build is

@@ -35,6 +35,9 @@
             "change"
           ]
         }
+      ],
+      "reads": [
+        "config.Files"
       ]
     },
     {
