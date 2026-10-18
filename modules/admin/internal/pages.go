@@ -20,14 +20,15 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
-// writtenHere is the language of the copy written in this file. Every word on the
-// pages below is a Go string rather than a catalogue key, so each says which
-// language it is in rather than wearing the request's: document.View.Language
-// exists for exactly that, and a page that declared a language its sentences are
-// not written in would send a screen reader off with the wrong voice and tell a
-// translation tool the work is done. A page whose copy comes from a catalogue says
-// nothing here and takes the language that was negotiated — see signIn, which
-// reads its labels out of admin.login.* and declares nothing.
+// writtenHere is the language of the copy written in this file. A page every word
+// of which is a Go string says which language that is, rather than wearing the
+// request's: document.View.Language exists for exactly that, and a page that
+// declared a language its sentences are not written in would send a screen reader
+// off with the wrong voice and tell a translation tool the work is done. A page
+// whose copy comes from a catalogue says nothing here and takes the language that
+// was negotiated — see signIn, which reads its labels out of admin.login.*, and the
+// dashboard and the health page, which read theirs out of admin.dashboard.* and
+// admin.health.*.
 const writtenHere = "en"
 
 // pages are the screens no schema describes: the way in, the way around, and
@@ -62,8 +63,8 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 		})
 
 	page.Serve(app, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: p.at.health.rel, Summary: "Health"},
-		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return healthPage(checks(ctx)), nil
+		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return healthPage(checks(ctx), r.Locale), nil
 		})
 
 	p.mountGallery(app)
@@ -581,24 +582,20 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, selected *page.L
 			failed = append(failed, c.name)
 		}
 	}
-	tone, message := "success", "Every check passes."
+	tone, message := "success", said("healthy", "Every check passes.")
 	if len(failed) > 0 {
-		tone, message = "danger", "Not ready: "+strings.Join(failed, ", ")
+		tone, message = "danger", said("not_ready", "Not ready: %s", strings.Join(failed, ", "))
 	}
-	// Language says what this page's words are written in, which is not the
-	// request's language: every word on this page — the title, the subtitle, the
-	// health alert, the counts under the cards — is a Go string in this file, and no
-	// catalogue is consulted for any of them. A page declares the language of the
-	// copy it shows (see document.View.Language, and the refusal page in ui/document
-	// which says the same about its own words), so a browser, a screen reader and a
-	// translation tool are told the truth: this one is English, whichever language
-	// the tenant is served in. The day any of this copy goes into a catalogue, this
-	// line goes with it.
-	return page.View{Title: "Dashboard", Body: []g.Node{
+	// Nothing on this page is a Go sentence standing in the reader's place: the
+	// heading, the health alert and the cards are asked of admin.dashboard.*, the
+	// count and the noun beside it by the reader's own cardinal rule. A page whose
+	// copy comes from a catalogue declares no language of its own and takes the one
+	// that was negotiated — see document.View.Language and writtenHere.
+	return page.View{Title: said("title", "Dashboard"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Dashboard", Subtitle: "What this tenant has, and whether the instance is well."}),
+			Title: said("title", "Dashboard"), Subtitle: said("subtitle", "What this tenant has, and whether the instance is well.")}),
 		components.Alert(components.AlertProps{Tone: tone, Message: message, Bordered: true}),
-		p.contents(ctx, t, cards),
+		p.contents(ctx, t, cards, said),
 	}}
 }
 
@@ -614,15 +611,15 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, selected *page.L
 // asks the Authorizer the routes enforce with, so a page cannot name a door that
 // answers 403. Where the role opens nothing at all the page says so, and says who
 // can change it, which is a fact a person can act on; an empty grid is not.
-func (p pages) contents(ctx context.Context, t tenancy.Tenant, cards []g.Node) g.Node {
+func (p pages) contents(ctx context.Context, t tenancy.Tenant, cards []g.Node, said func(key, fallback string, args ...any) string) g.Node {
 	if len(cards) > 0 {
 		return components.Grid(components.GridProps{Columns: "3", Gap: "4"}, cards...)
 	}
 	visible := p.nav.Visible(ctx, t, p.Authorize)
 	if len(visible) == 0 {
 		return components.EmptyState(components.EmptyStateProps{
-			Title:       "No screens open yet",
-			Description: "Your role in this tenant opens no page. An administrator can grant it the permissions you need.",
+			Title:       said("no_screens_title", "No screens open yet"),
+			Description: said("no_screens_body", "Your role in this tenant opens no page. An administrator can grant it the permissions you need."),
 			Bordered:    true,
 		})
 	}
@@ -631,8 +628,8 @@ func (p pages) contents(ctx context.Context, t tenancy.Tenant, cards []g.Node) g
 		ops = append(ops, components.Link(components.LinkProps{Href: e.Screen, Label: e.Label}))
 	}
 	return components.EmptyStateWithSlots(components.EmptyStateProps{
-		Title:       "What your role opens",
-		Description: "This tenant holds nothing this role can count. These screens are yours.",
+		Title:       said("opens_title", "What your role opens"),
+		Description: said("opens_body", "This tenant holds nothing this role can count. These screens are yours."),
 		Bordered:    true,
 	}, components.EmptyStateSlots{Actions: ops})
 }
@@ -640,24 +637,32 @@ func (p pages) contents(ctx context.Context, t tenancy.Tenant, cards []g.Node) g
 // healthPage is the readiness probe with names on it. /ready answers 200 or 503
 // and names what failed; this shows the same checks one at a time, which is
 // what somebody looking at a broken deployment needs.
-func healthPage(results []result) page.View {
+func healthPage(results []result, selected *page.Locale) page.View {
+	text := func(key, fallback string) string {
+		if selected == nil {
+			return fallback
+		}
+		return selected.Text("admin.health."+key, fallback)
+	}
 	rows := make([]components.TableRow, 0, len(results))
 	for _, c := range results {
-		state, tone := "ok", "success"
+		state, tone := text("ok", "OK"), "success"
 		if c.err != nil {
-			state, tone = "failing", "danger"
+			state, tone = text("failing", "Failing"), "danger"
 		}
 		rows = append(rows, components.TableRow{ID: c.name, Cells: map[string]any{
 			"check": c.name, "state": state, "tone": tone,
 		}})
 	}
-	return page.View{Title: "Health", Language: writtenHere, Body: []g.Node{
+	// The check's own name — `database`, `events` — is the identifier the probe
+	// answers with and is printed as it is written; the words around it are copy.
+	return page.View{Title: text("title", "Health"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Health", Subtitle: "The checks behind /ready, one at a time."}),
+			Title: text("title", "Health"), Subtitle: text("subtitle", "The checks behind /ready, one at a time.")}),
 		components.TableWithSlots(components.TableProps{
 			Columns: []components.TableColumn{
-				{Key: "check", Label: "Check", Primary: true},
-				{Key: "state", Label: "State"},
+				{Key: "check", Label: text("check", "Check"), Primary: true},
+				{Key: "state", Label: text("state", "State")},
 			},
 			Rows: rows,
 		}, components.TableSlots{
