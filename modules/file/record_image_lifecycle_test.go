@@ -108,11 +108,23 @@ func TestDeletingARecordEndsUsesEvenWhenItsImageWasRemoved(t *testing.T) {
 			}
 			if removeImage {
 				status, body, _ = send(t, router, http.MethodDelete, files+"/"+uploaded.ID.String(), true)
-				// Refusing deletion of a used image also preserves the lifecycle.
-				if status != http.StatusNoContent && status != http.StatusConflict {
-					t.Fatalf("delete image = %d %s, want deleted or refused as in use", status, body)
+				// Not "deleted or refused": a record still showing the picture is the
+				// refusal, and it names how many records do, because the person told has
+				// to go and stop showing it. Deleting anyway is the hole this case exists
+				// to keep shut.
+				if status != http.StatusConflict {
+					t.Fatalf("delete image a record still shows = %d %s, want 409", status, body)
 				}
-				t.Logf("delete image = %d", status)
+				if !strings.Contains(body, "1 record") {
+					t.Errorf("the refusal is %s, want it to name the one record showing the file", body)
+				}
+				var kept int
+				if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM files WHERE id = $1", uploaded.ID).Scan(&kept); err != nil {
+					t.Fatal(err)
+				}
+				if kept != 1 {
+					t.Errorf("the refusal left %d file rows, want the one it started with", kept)
+				}
 			}
 			status, body, _ = send(t, router, http.MethodDelete, "/api/v1/content/images/"+record.ID.String(), true)
 			if status != http.StatusNoContent {

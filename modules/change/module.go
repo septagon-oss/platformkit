@@ -91,7 +91,7 @@ func New(deps Deps) module.Module {
 			Person:    "proposer",
 			About:     []string{"reviewer"},
 			Text:      []string{"summary", "comment", "diff"},
-			NotPerson: []string{"subject_id"},
+			NotPerson: []string{"subject_id", "operation_ref"},
 		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,

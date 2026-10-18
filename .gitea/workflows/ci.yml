@@ -98,6 +98,13 @@ jobs:
         env:
           POSTGRES_PASSWORD: platformkit
           POSTGRES_DB: platformkit
+          # This cluster is created for the job and deleted with it, so it does not
+          # force its writes to a device: the same three settings compose.yaml names
+          # on its server's command line, whose comment says why. initdb writes them
+          # into the configuration of the data directory this job creates and never
+          # reuses, which is the carrier a service container has and a developer's
+          # persistent volume must not rely on.
+          POSTGRES_INITDB_ARGS: "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=256"
         options: >-
           --health-cmd "pg_isready -U postgres -d platformkit"
           --health-interval 5s
@@ -147,7 +154,7 @@ jobs:
           echo "removed $swept container(s) created more than ${SWEEP_OLDER_THAN}s ago"
 
       # Full history, and this is the only job that owes it: the budget verdict at the foot of the job
-      # walks `git rev-list $base..HEAD` over the commits that touched a ceiling
+      # walks `git log --no-merges $base..HEAD` over the commits that touched a ceiling
       # (scripts/check_budget_ratchet.sh), so a shallow fetch here would read that verdict green
       # across commits nobody fetched. `scripts/ci_checkout_history_test.sh` pins both halves — this
       # line stays deep while that walk exists, and no other job goes deep without one.
@@ -579,6 +586,32 @@ jobs:
           PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
         run: make check-e2e-guards
 
+      # Gate 10, and the third browser suite of this workflow to be asked of the host.
+      #
+      # It refuses the way the other two used to: a browser death and no assertion. Job 70995 lost
+      # `shared families: en / dark accessible defaults and narrow reflow` with `frame.evaluate:
+      # Target crashed` inside AxeBuilder 7.7 s into a case that measures 7.3 s on a development box,
+      # having passed `en / light` twelve seconds earlier in the same test and passing `pt-PT / light`
+      # and `pt-PT / dark` after it — 280 cases green, one renderer dead. Run 68125 lost the same file
+      # one locale over (`pt-PT / light`), on a head this branch shares nothing with, and the two
+      # other `make e2e` refusals in the runs read beside it (`richtext-editor-keyboard-surface` at
+      # job 70210, two `richtext` drafts at job 69185) name no death and no repeated file. What the
+      # crash-shaped pair has in common with the four that ended the `design` step above is that gate
+      # 10 starts 281 tests in one Chromium on a runner one of three shares, and asks that host
+      # nothing. And the tree was never the difference: this forge ran the refused commit again — run
+      # 69869, attempt 2, same head, no line of source between them — and its `make e2e` step
+      # completed success over all 281 cases.
+      #
+      # So it asks, in the two lines scripts/ci_browser_host_share.sh exists to be called with: a
+      # core before the first page, and the sampler around the suite. The bound is 600 s against this
+      # job's own 75 — job 70995 held `make e2e` from 09:18:28 to 09:30:17 inside a job that began at
+      # 09:13:55, so ten minutes of waiting leaves the whole run inside the ceiling the file already
+      # names, and the budget verdict still runs after it. Passing the bound, the suite starts anyway
+      # and says so. Nothing here retries, skips, narrows or reorders a case: the same 281 journeys
+      # still have to pass, and one that fails on a host with a free share still fails this job. What
+      # the sampler adds is the reading the two deaths could not be charged to — this container's own
+      # memory ceiling and the peak of the `/dev/shm` pool a renderer's frame buffers live in, over
+      # the eleven minutes gate 10 runs.
       - name: make e2e
         # The catcher this job started earlier, under the alias its network gives it
         # (`Start the mail catcher`, beside the object store). scripts/e2e.sh refuses
@@ -588,7 +621,9 @@ jobs:
           PLATFORMKIT_E2E_MAIL_HOST: mailpit
           PLATFORMKIT_E2E_MAIL_PORT: '1025'
           PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
-        run: make e2e
+        run: |
+          bash scripts/ci_browser_host_share.sh wait 600
+          bash scripts/ci_browser_host_share.sh watch 30 make e2e
 
       # Last, and deliberately. A ceiling that rose is a decision for an owner
       # to review, not a reason to stop the job before it has said whether the

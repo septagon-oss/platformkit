@@ -7,6 +7,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
+	gomail "github.com/septagon-oss/platformkit/modules/notification/providers/gomail"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -58,9 +59,11 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	// this line can build.
 	var mailer contracts.Mailer
 	if w.Implementation() == "smtp" {
-		mailer = SMTP(Mail{
+		// The carrier is its own package so the SDK stays out of internal/ and
+		// contracts/; this pick is the only thing in the module that reads it.
+		mailer = gomail.New(gomail.Config{
 			Host: mail.Host, Port: mail.Port, Username: mail.Username,
-			Password: mail.Password, From: mail.From,
+			Password: mail.Password, EnvelopeFrom: mail.From,
 		})
 	} else {
 		mailer = NewMailbox()

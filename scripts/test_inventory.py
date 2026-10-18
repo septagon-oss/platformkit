@@ -710,7 +710,7 @@ def main():
               % (summary["rows"], added, summary["files"], summary["round_named_files"], summary["round_named_ceiling"],
                  " ".join("%s=%d" % (k, v) for k, v in summary["verdict_files"].items())))
         if added:
-            print("%d new row(s): tests/INVENTORY.md still quotes the old figures — update its Scale, Layers and tiers and Verdicts cells." % added, file=sys.stderr)
+            print("%d new row(s): tests/INVENTORY.md quotes figures the new rows do not answer — run `make generate`." % added, file=sys.stderr)
         return 0
     failures, total, fresh = check(old, md_path, rows)
     return report(failures, total, fresh, bool(md_path))
@@ -719,5 +719,7 @@ def main():
 # The refusal is the answer: --check's exit status is the verdict CI acts on, and check_push_tier.sh
 # reads the selection's status before it reads the selection. A bare call here threw the value away and
 # every path exited 0, so a refused table and a refused selection both looked green to the gate that
-# asked.
-sys.exit(main())
+# asked. The guard is what lets scripts/inventory_figures.py import load and expected_figures without
+# running a check as a side effect of importing one.
+if __name__ == "__main__":
+    sys.exit(main())

@@ -134,6 +134,21 @@ type Options struct {
 	// comes from that request's own Host header, never from this.
 	PublicHost string
 
+	// JSONMediaTypes are the media types this composition reads and writes as
+	// JSON, beside application/json. A protocol that defines its own type —
+	// SCIM says application/scim+json — arrives with a Content-Type the API has
+	// never heard of, and huma answers a body it cannot parse with 415 before
+	// any route runs: the door exists and refuses every client that speaks it.
+	// Registering the type here is the one place that can be said, because it is
+	// the composition that knows which protocols it serves, not a module that
+	// would have to reach the API to say so.
+	//
+	// Each entry has to be a media type of the form type/subtype or
+	// type/subtype+suffix; anything else refuses the build. What is registered is
+	// JSON — the same encoder and decoder application/json uses — so the type
+	// changes the wire's name and never its grammar.
+	JSONMediaTypes []string
+
 	// Docs serves /openapi.json, /openapi.yaml and /docs. They are public and
 	// unauthenticated by construction, and they publish every route and every
 	// permission the application has, which is a map worth having before an
@@ -260,6 +275,11 @@ type Options struct {
 	// kit/idempotency is that store; what this package does is decide which requests
 	// are keyed and what each disposition answers with.
 	Idempotency idempotency.Store
+	// Operations enables durable admission for every unsafe route. Nil retains
+	// the lightweight standalone router; kit/app always supplies the SQL owner.
+	Operations idempotency.Operations
+	// Clock supplies UTC operation instants; nil resolves to db.Now.
+	Clock func() time.Time
 
 	// Access is the sequel to a refusal: who to tell when a person asks for the
 	// grant they were refused, and how. Nil draws no ask control on the refusal
@@ -388,6 +408,14 @@ type API struct {
 	refusals []string
 	homes    map[Surface]string
 	known    map[string]bool
+	// addresses are the protocol addresses modules declared with Router.At, and
+	// frozen says the mount gate has read the table. Both are written only while
+	// Routes runs and read under the same mutex beside them. The freeze is what
+	// makes the answer validateSurfaces checked every route against the answer
+	// the middleware gives the request: nothing declares an address after the
+	// gate has read the table, so the two cannot hold different opinions.
+	addresses []addressClaim
+	frozen    bool
 	// opsHost is Options.Installation normalised once, so the gate that runs on
 	// every request compares two already-normalised strings.
 	opsHost string
@@ -406,6 +434,9 @@ var errorShape sync.Once
 // rather than hidden because static assets and the server itself need it; every
 // route that is an API operation goes through Register.
 func New(cfg Options) (*API, *chi.Mux) {
+	if cfg.Clock == nil {
+		cfg.Clock = db.Now
+	}
 	switch {
 	case cfg.Tenants == nil:
 		panic("httpx.New: Options.Tenants is required; every request resolves a tenant from its host")
@@ -427,6 +458,17 @@ func New(cfg Options) (*API, *chi.Mux) {
 
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
 	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
+	// The extra JSON media types go into the same map the defaults went into,
+	// bound to the same format: parsing and rendering stay JSON's, and the type
+	// name is what a protocol client negotiated for.
+	var badMediaTypes []string
+	for _, mt := range cfg.JSONMediaTypes {
+		if !validJSONMediaType(mt) {
+			badMediaTypes = append(badMediaTypes, mt)
+			continue
+		}
+		config.Formats[mt] = huma.DefaultJSONFormat
+	}
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}
 	}
@@ -445,6 +487,12 @@ func New(cfg Options) (*API, *chi.Mux) {
 		token:  syscap.NewSystemToken("tenant resolution"),
 		lazy:   syscap.NewSystemToken("request transaction"),
 		system: syscap.NewSystemToken("a module's control-plane routes"),
+	}
+	// A media type the composition cannot name is a refusal, not a guess: an
+	// entry of the wrong shape registers nothing, and a protocol whose clients
+	// send the type the composition meant would meet a 415 nobody can explain.
+	for _, mt := range badMediaTypes {
+		a.noteRefusal(fmt.Sprintf("httpx: Options.JSONMediaTypes holds %q; a media type is type/subtype or type/subtype+suffix, in lower case", mt))
 	}
 	if cfg.Access != nil {
 		// One door, read per request off the context: the catalogue and the
@@ -531,6 +579,10 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
+	// writeLimits sits between the permission guard and the body reader: a caller
+	// who may not perform the write never spends the allowance, and a refused one
+	// has cost the process nothing but the count, because no byte of the request
+	// had been read and the guards' transaction rolls back untouched.
 	// Idempotency last of all, after bodies, because it is the one guard that reads
 	// a body and needs the one the caller got, in that order: bodies is where the
 	// ceiling on a request body is applied and where reading one becomes safe, and
@@ -539,7 +591,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// transaction because the answer it remembers is finalised even further below,
 	// in respond — a guard above the transaction would remember a 200 that the
 	// buffer then replaced with a 500.
-	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies, a.idempotency)
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.writeLimits, a.bodies, a.idempotency)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
@@ -709,10 +761,10 @@ func (a *API) ValidateDeclarations() error {
 			op.Extensions = map[string]any{}
 		}
 		if _, ok := op.Extensions[SurfaceExtension]; !ok {
-			op.Extensions[SurfaceExtension] = string(classify(op.Path))
+			op.Extensions[SurfaceExtension] = string(a.surfaceOf(op.Path))
 		}
 	}
-	var bad, unanswerable []string
+	var bad, unanswerable, uncountable []string
 	for _, op := range a.Recorded() {
 		auth, ok := declarationOf(op)
 		if !ok {
@@ -722,6 +774,14 @@ func (a *API) ValidateDeclarations() error {
 		if auth.Feature() != "" && a.opts.Entitle == nil {
 			unanswerable = append(unanswerable, describe(op)+" needs the "+auth.Feature()+" feature")
 		}
+		if why := checkWriteLimits(describe(op), op); why != "" {
+			uncountable = append(uncountable, why)
+		}
+	}
+	if len(uncountable) > 0 {
+		sort.Strings(uncountable)
+		return fmt.Errorf("httpx: %d operation(s) declare a counted write this kernel cannot count:\n  %s",
+			len(uncountable), strings.Join(uncountable, "\n  "))
 	}
 	if len(unanswerable) > 0 {
 		sort.Strings(unanswerable)

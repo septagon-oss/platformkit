@@ -95,12 +95,14 @@ func New(deps Deps) module.Module {
 		PersonalData: personaldata.Implements(personaldata.Table{
 			Name:   "audit_events",
 			Person: "actor",
-			// The person a run served without signing in: a uuid that names a
-			// person the trail is about, and an erasure that left it behind would
-			// keep pointing at the person it says it forgot.
-			About:     []string{"initiator"},
-			Text:      []string{"payload"},
-			NotPerson: []string{"event_id", "records"},
+			// The person a run served without signing in, and the person the
+			// admitted operation names as its own: a uuid that names a person the
+			// trail is about, and an erasure that left it behind would keep pointing
+			// at the person it says it forgot.
+			About: []string{"initiator", "operation_person_id"},
+			Text:  []string{"payload"},
+			// The operation record and the tenant it ran under: rows, not people.
+			NotPerson: []string{"event_id", "records", "operation_ref", "operation_tenant_id"},
 		}),
 		Permissions: permissions,
 		// None, and the absence is the decision: see the package comment.

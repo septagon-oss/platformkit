@@ -132,7 +132,7 @@ func TestEveryPersonaCanDoItsJourneysAndIsRefusedTheOthers(t *testing.T) {
 	}
 
 	acme := acmeTenant(t, cfg)
-	for _, p := range personas {
+	for _, p := range initialRoles {
 		if _, ok := table[p.Name]; !ok {
 			t.Errorf("persona %q is seeded and has no row in this table; every persona's journeys are proven", p.Name)
 		}
@@ -210,10 +210,10 @@ func provisionAs(t *testing.T, cfg config.Config, c composition, tenantID uuid.U
 // is the stronger of the two, so the assertion is the same and the message is a
 // sentence a person can act on.
 //
-// The composition is built before the role list is touched, because compose fills
-// personas from what the composed manifests declare (declaredRoles) rather than
-// from a literal this file writes: a list injected before the compose would be a
-// list compose overwrites. What is refused, and every word the refusal has to
+// The composition is built before the role list is touched, because the census
+// reads the roles off what the composed manifests declare (declaredRoles) rather
+// than from a literal this file writes: a list injected before the compose would
+// be a list compose overwrites. What is refused, and every word the refusal has to
 // say, is the same as it was.
 func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 	_, cfg := configure(t)
@@ -226,10 +226,10 @@ func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 		})
 		return err
 	}
-	saved := personas
-	t.Cleanup(func() { personas = saved })
+	saved := initialRoles
+	t.Cleanup(func() { initialRoles = saved })
 	for _, grant := range []string{"invoice:approve", "tenant:manage"} {
-		personas = []authcontracts.Role{{Name: "clerk", Grants: authcontracts.Permissions{grant}}}
+		initialRoles = []authcontracts.Role{{Name: "clerk", Grants: authcontracts.Permissions{grant}}}
 		err := plan()
 		switch {
 		case err == nil:
@@ -244,8 +244,8 @@ func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 	// one seedRoles writes into a new tenant. Read off the composition rather than
 	// from whatever the previous case left in the global, so this asks about the
 	// list a person is actually seeded with.
-	personas = declaredRoles(composed.modules)
+	initialRoles = declaredRoles(composed.modules)
 	if err := plan(); err != nil {
-		t.Errorf("the shipped personas are refused: %v", err)
+		t.Errorf("the shipped initial roles are refused: %v", err)
 	}
 }

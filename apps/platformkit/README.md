@@ -1,11 +1,14 @@
 # The reference application
 
 `apps/platformkit` is the application the foundation ships and the one every gate
-runs: `platformkit run`, `platformkit start`, `platformkit migrate` and
-`platformkit bootstrap` all go through the one sentence in
+runs: `platformkit run`, `platformkit start`, `platformkit seed`, `platformkit
+migrate` and `platformkit bootstrap` all go through the one sentence in
 [app.go](app.go), and the text `pkit.Server.Explain` answers for it is committed
 beside that file as [COMPOSITION.development.md](COMPOSITION.development.md) and
-[COMPOSITION.production.md](COMPOSITION.production.md). A client's own
+[COMPOSITION.production.md](COMPOSITION.production.md). A sixth command,
+`platformkit repair-roles`, reads that sentence with no process running: it lists,
+or with `--remove` narrows, the grants an older seeder wrote that this composition
+no longer defines ([modules/auth](../../modules/auth/README.md)). A client's own
 composition looks like this one with different modules in `Use` and different
 values in `product`.
 
@@ -51,8 +54,8 @@ which `FromDeployment` implementations its deployment has inputs for; and
 `reference.describe`, which commits what the resolved composition says as
 [COMPOSITION.development.json](COMPOSITION.development.json) and
 [COMPOSITION.production.json](COMPOSITION.production.json) beside the text file,
-named by `platformkit.composition.v1` and refused on drift by the same
-`UPDATE_GOLDEN` check — names only, so a machine can read what this installation
+named by `platformkit.composition.v1`, written by `make generate` and refused on
+drift by the same check — names only, so a machine can read what this installation
 is composed of without reading a configuration value out of it.
 
 The one edge no module declares is `user`'s promotion check, answered by the auth
@@ -136,3 +139,26 @@ content are provisioned by `user`, `auth` and `site` when the tenant is created,
 and `roles.go` is the list of who the first person is. What `product` decides at
 composition is which storage backend, mailer and payment gateway a tenant's first
 administrator will find.
+
+## The test installation
+
+Three sentences, for the next person who changes how this package gets a database.
+
+**Reused** — `kit/db/dbtest`'s `RunInOwnDatabase` for the package's own database, `URLs` and `Open`
+for a case's namespace and handles, this package's own `bootstrap`, `install`, `compose` and `start`
+for what a case stands on, unchanged. **Added** — one prepared installation per package
+(`dbtest.RunInOwnDatabaseWithTemplate`, run by `main_test.go`'s `prepareInstallation`) that a case
+copies instead of reinstalling (`dbtest.Clone`, taken by `configure`), because two hundred cases were
+each paying the composition's whole migration at one database-wide advisory lock, and no existing
+unit handed out an installation that was already made; a case for which installing *is* the claim
+takes `configureFresh` and installs in full. **Made reusable** — the template-and-copy primitive
+itself, the namespace statements `URLsFor` and the template now share, and a parity case that says a
+copy answers what a fresh install answers, which is what lets the rest of the package take the copy.
+
+A copy is named after the case that took it, and the number a case that asks twice needs is part of
+that name: `dbtest.Role` names the login role it creates after the namespace the copy lives in, so a
+namespace that filled PostgreSQL's identifier limit would have named two copies' roles the same and
+the second grant would have landed on the first copy's database. The budget in `dbtest.cloneName`
+leaves room for the prefix and the ask number, and `dbtest.identifier` keeps the tail of a name the
+server would otherwise cut — the contract is on `Role`, and
+`TestEachRepeatedCopyCanHoldAnIndependentRoleInItsOwnDatabase` is the case.
