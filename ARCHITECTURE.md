@@ -51,6 +51,19 @@ applications run on this foundation revision. The public tests linked here prove
 foundation mechanisms, not execution of the four products. Older consumer wiring
 is historical evidence; new composition uses the typed declarations below.
 
+A resource grant decides who may reach a door. The domain's eligibility,
+ownership and revision checks decide whether this actor may do this act now, so
+in every scenario below neither one stands in for the other.
+
+**Reused** — pkit's resolver and its cycle walk (`cycleThrough` over the
+`from`/`contributors` maps in [resolve.go](pkit/resolve.go)), the existing
+composition and Describe fixtures, and the resource, content, operation and
+migration owners each row below names. **Added** — the declared contract and
+supplier on each edge of a cycle refusal, because a module path alone does not
+say which declaration to remove, and this baseline. **Made reusable** — that
+edge explanation, which Validate, Build, Explain and Describe return alike
+because all four resolve through the same plan.
+
 | Scenario | Observed contract, transaction owner and visible result | Constraint exposed by the consumer |
 |---|---|---|
 | Publishing | A curriculum service imports immutable source digests, reviews a revision, then publishes its active pointer and event in the tenant transaction. Staff actions reach that service through a declared operation; lesson pages render Markdown, while completions retain their content digest. This is distinct from editing a Content page. | Releasing an unreviewed revision is refused; editing released source in place must not rewrite existing completion evidence. The traced service checks publication state but does not internally recheck the manage grant or take an expected revision, and some refusals return a loaded revision. Authority and empty refusal results remain required, unproved behavior. |
