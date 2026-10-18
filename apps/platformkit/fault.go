@@ -137,30 +137,18 @@ func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
 	return page.Bare(body)
 }
 
-func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
-	return page.FaultHandler(page.Shell{
-		Chrome:    faultChrome(),
-		Frame:     faultFrame,
-		Back:      pinnedHome,
-		BackLabel: "Back to the workspace",
-		// Who may hand out what the page refused, as a role and never as a name:
-		// the grant that gates role management is the auth module's fact, and its
-		// label is that module's words, read off the manifest that defines it.
-		Granter: granter,
-		// The ask door exists in this composition, so the refusal page may offer
-		// it. A product that wired no AskForAccess leaves this empty and the page
-		// draws no button — the kernel never offers a door it has not mounted.
-		Ask: pinnedAsk,
-		// The catalogues this application already composed. Without them the shell
-		// is what ui/page/fault.go documents as "a shell that ships no catalog":
-		// refusalLocale negotiates from nothing, the guard's English line is shown,
-		// and the refusal sentences this repository ships are copy nothing reads at
-		// the application that shipped them. The line is what the page is rendered
-		// *with* — a person refused by a guard ahead of routing is refused by this
-		// shell, not by the ones page.Serve mounts — and TestPinnedAddresses and the
-		// refusal cases here are asked of the page this literal builds.
-		Messages: messages,
-	})
+// faultPage is the kernel's refusal renderer for this application. It is drawn from
+// the same shell as the two ask pages that follow a refusal, because a person who
+// was refused and a person who is asking are the same person at two moments of one
+// visit, and two shells drift.
+//
+// locale is what makes the refusal the reader's own language rather than the
+// deployment's: the guard's page is composed with the sentence, ahead of every
+// service, so the answer arrives late (see pageLocale). Without it a person who
+// chose Portuguese is refused in English by the one page nobody can pre-render for
+// them.
+func faultPage(messages page.Messages, granter page.Granter, locale func(context.Context, page.Request) string) httpx.Fault {
+	return page.FaultHandler(faultShell(messages, granter, locale))
 }
 
 // workspaceCatalog is the mount for the document a native shell reads to know what
@@ -289,14 +277,32 @@ func workspaceFace(routes ...func(api *httpx.API)) func(api *httpx.API) {
 // same catalogue and the same way on as the refusal page they follow, built once
 // per composition. One page per shell, and the shell is this file's to build —
 // the admin module builds its own, for the screens it mounts.
-func faultShell(messages page.Messages, granter page.Granter) page.Shell {
+func faultShell(messages page.Messages, granter page.Granter, locale func(context.Context, page.Request) string) page.Shell {
 	return page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
-		Granter:   granter,
-		Ask:       pinnedAsk,
-		Messages:  messages,
+		// Who may hand out what the page refused, as a role and never as a name:
+		// the grant that gates role management is the auth module's fact, and its
+		// label is that module's words, read off the manifest that defines it.
+		Granter: granter,
+		// The ask door exists in this composition, so the refusal page may offer
+		// it. A product that wired no AskForAccess leaves this empty and the page
+		// draws no button — the kernel never offers a door it has not mounted.
+		Ask: pinnedAsk,
+		// The catalogues this application already composed. Without them the shell
+		// is what ui/page/fault.go documents as "a shell that ships no catalog":
+		// refusalLocale negotiates from nothing, the guard's English line is shown,
+		// and the refusal sentences this repository ships are copy nothing reads at
+		// the application that shipped them. The line is what the page is rendered
+		// *with* — a person refused by a guard ahead of routing is refused by this
+		// shell, not by the ones page.Serve mounts — and TestPinnedAddresses and the
+		// refusal cases here are asked of the page this literal builds.
+		Messages: messages,
+		// Whose language those catalogue entries are read in: the same resolver the
+		// module shells are given, so a refusal is not the one page that ignores a
+		// choice the person already made.
+		Locale: locale,
 	}
 }
