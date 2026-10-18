@@ -110,6 +110,18 @@ documents this repository checks in, the mobile flows — working. `If-Match` is
 resource whose entity carries no write count there is no tag to quote, and the request is
 refused rather than silently unwritten.
 
+`Command` also checks `entity.ServerOwned` over its derived argument fields before
+registering any command or operation. An integer JSON field named `revision`, or
+a read-only field contributed by an embedded `Base`, panics with the resource,
+verb and first offending JSON field named. Hidden, system, collection and operator
+commands follow the same rule. Use `IfRevision int64` tagged `json:"ifRevision"`
+for an observed revision, then map it to the domain condition inside the callback.
+The callback still owns authorization, tenant scope and revision checks in its
+transaction. This declaration check runs during route composition in `App.Build`,
+before deployment effects; `Validate`, `Explain` and `Describe` do not run routes.
+It covers the fields the schema derives, without inspecting nested payloads or
+map keys. Accepted commands retain their existing JSON decoding and error mapping.
+
 That compare is `crud.RecheckTenant`, and it lives in
 [kit/crud](../crud/crud.go) because the rule already lived there, inside
 `Update`. A second compare in `kit/rest` — that package reading the row's
@@ -125,6 +137,31 @@ sentence is a door that crashes the request that asks it.
 Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the
 development database: `make up`, then `make test TEST_PACKAGES=./kit/rest`.
+
+## Composition (command argument ownership)
+
+**Reused** — `Command`, `commandFault`, `crud.FieldsOf` and `entity.ServerOwned`
+provide the declaration boundary, field metadata and ownership rule.
+**Added** — the ownership check and corrective diagnostic at command declaration,
+because runtime merge refusal cannot prevent an unusable command from composing.
+**Made reusable** — declaration, JSON and application-build conformance cases
+exercise the same guard for every module's command inputs.
+
+## Composition (T-0360)
+
+**Reused** — the richtext pass that already parsed every field of a save before any of it
+was written, the one transaction that save runs in, and `FileUses` as it stood: a port
+that files one field's uses for one record. **Added** — `Spec.Audience`, a record's answer
+to "is this body served to somebody who has not signed in", asked once per write from the
+row the write already holds and never from the body being saved; `FileUsesOrder` with
+`SaveUses`, the optional half of that port that is told the whole save — every richtext
+field of it, or nothing at all for a record being deleted — before its first field is
+filed; and `recordLocale`, which is one answer at the save door and at the delete. **Made
+reusable** — the save-wide lock order is kit/rest's to offer and the ledger's to decide:
+a resource with two richtext fields gets it by wiring a recorder that answers, which is
+what two records sharing two pictures in each other's field order would otherwise lose to
+Postgres (SQLSTATE 40P01), and a case in this package's own tests holds the order the kit
+owes that recorder.
 
 ## Composition (T-0185)
 

@@ -1,0 +1,11 @@
+{
+  "permission.sender:manage": {
+    "references": [
+      "modules/notification/module.go"
+    ],
+    "translation": "gerir o endereço de envio do tenant",
+    "plural": {
+      "": "gerir o endereço de envio do tenant"
+    }
+  }
+}

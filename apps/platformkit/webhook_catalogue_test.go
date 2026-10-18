@@ -1,12 +1,9 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
-	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -26,14 +23,7 @@ import (
 // `EventTypes()` that asked them at run time would be a second composition hidden
 // inside a port.
 func TestTheWebhookCatalogueNamesWhatTheCompositionEmits(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(compositionConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := referenceCompositionConfig(t)
 	r := composeReference(cfg, pkit.Development)
 
 	var emitted []string

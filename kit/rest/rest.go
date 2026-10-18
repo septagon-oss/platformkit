@@ -56,6 +56,11 @@ type UsesInput struct {
 	Module, Entity, Field, Locale string
 	Record                        uuid.UUID
 	Files                         []uuid.UUID
+	// Public is the audience this record asserts for what this write files. It is
+	// the record's state and never the request's claim: kit/rest fills it from
+	// Spec.Audience, so no body can make its own images public. False is every
+	// write a Spec with no Audience makes, which is every write there was before it.
+	Public bool
 }
 
 // Spec is one entity's presence in the application: five routes, two
@@ -226,6 +231,24 @@ type Spec[T crud.Entity] struct {
 	// which is the hook this repository was missing.
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
+
+	// Audience says who the record this write is writing is showing its files to —
+	// the one fact a body cannot answer, and the reason it is a function of the
+	// entity rather than a field of the request: an image a draft names stays
+	// private however the caller feels about it.
+	//
+	// It is asked once per write, on the row the transaction already locked, before
+	// anything is filed, and only when the entity has a richtext field. An error
+	// refuses the write: a record whose audience is unknown never has bytes promoted
+	// to public. Nil means the entity has no public face, which is what every Spec
+	// without it means today — the uses it files are private and nothing is
+	// recomputed.
+	//
+	// It is asked here rather than in a hook after the write because the answer has
+	// to be in the one pass over the files the write is already making: a second
+	// pass that upgrades the audience would take a stronger lock on rows it already
+	// key-shared, and two records sharing two files would deadlock taking it.
+	Audience func(ctx context.Context, tx db.Tx[db.Tenant], e T) (bool, error)
 }
 
 // The five operations a Spec may offer, spelled the way the routes that mount
@@ -871,6 +894,11 @@ type CommandOptions struct {
 // case. A command whose argument is missing is refused by run, with
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
+//
+// Command panics before registration if I's derived fields include a server-owned
+// field, as defined by entity.ServerOwned, regardless of surface or presentation.
+// Use a caller-owned name such as ifRevision for an observed revision and map it
+// to the domain condition in run; do not embed the stored row or Base in I.
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
@@ -1062,6 +1090,9 @@ type collectionInput[I any] struct {
 // inside the request's transaction: an event that describes a change that
 // rolled back is never seen, because it rolled back too.
 func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T, hook func(context.Context, db.Tx[db.Tenant], T) error) error {
+	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
+		return err
+	}
 	if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
 		return err
 	}

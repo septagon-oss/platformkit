@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/change/contracts"
 )
@@ -143,6 +146,13 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 		State:         contracts.StateProposed,
 		Revision:      1,
 	}
+	if op, ok := request.OperationFrom(ctx); ok {
+		ref, err := uuid.Parse(op.Ref)
+		if err != nil {
+			return nil, crud.ErrInvalid
+		}
+		row.OperationRef = &ref
+	}
 	if err := s.insert(ctx, tx, row); err != nil {
 		// The unique index over an open proposal is the answer to the race the
 		// duplicate check above cannot see: two inserts at once. Postgres reports the
@@ -157,6 +167,12 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 			return s.oneOpinion(proposer, existing)
 		}
 		return nil, err
+	}
+	if op, ok := request.OperationFrom(ctx); ok {
+		if err := events.RecordOutcome(ctx, tx, op.Revision, request.PendingApproval, request.OperationTime(ctx, at)); err != nil {
+			return nil, err
+		}
+		request.DeferOperation(ctx)
 	}
 	return row, events.Publish(ctx, tx, contracts.EventProposed, contracts.Proposed{
 		ProposalID: row.ID, SubjectModule: row.SubjectModule, SubjectEntity: row.SubjectEntity,
@@ -266,6 +282,14 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 	if err := crud.Update(ctx, tx, row, "state", "verdict", "comment", "reviewer", "reviewed_at", "revision", "updated_at"); err != nil {
 		return nil, err
 	}
+	if verdict == contracts.VerdictDeclined {
+		if _, err := s.original(ctx, tx, row, request.Failed, at); err != nil {
+			return nil, err
+		}
+	}
+	if err := events.Succeed(ctx, tx, at); err != nil {
+		return nil, err
+	}
 	return row, events.Publish(ctx, tx, contracts.EventReviewed, contracts.Reviewed{
 		ProposalID: row.ID, Verdict: verdict, Reviewer: reviewer, Proposer: row.Proposer,
 		Comment: row.Comment, State: row.State, At: at,
@@ -325,7 +349,11 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", crud.ErrConflict, err)
 	}
-	newRevision, err := subject.Save(ctx, tx, merged)
+	originCtx, err := s.original(ctx, tx, row, request.Succeeded, db.Now())
+	if err != nil {
+		return nil, err
+	}
+	newRevision, err := subject.Save(originCtx, tx, merged)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +364,10 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	if err := crud.Update(ctx, tx, row, "state", "applied_revision", "revision", "updated_at"); err != nil {
 		return nil, err
 	}
-	return row, events.Publish(ctx, tx, contracts.EventApplied, contracts.Applied{
+	if err := events.Succeed(ctx, tx, at); err != nil {
+		return nil, err
+	}
+	return row, events.Publish(originCtx, tx, contracts.EventApplied, contracts.Applied{
 		ProposalID: row.ID, SubjectModule: row.SubjectModule, SubjectEntity: row.SubjectEntity,
 		SubjectID: row.SubjectID, Reviewer: deref(row.Reviewer), Proposer: row.Proposer,
 		BaseRevision: row.BaseRevision, NewRevision: newRevision, DiffDigest: row.DiffDigest, At: at,
@@ -372,6 +403,12 @@ func (s *Service) Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	row.State = contracts.StateWithdrawn
 	row.Revision++
 	if err := crud.Update(ctx, tx, row, "state", "revision", "updated_at"); err != nil {
+		return nil, err
+	}
+	if _, err := s.original(ctx, tx, row, request.Failed, at); err != nil {
+		return nil, err
+	}
+	if err := events.Succeed(ctx, tx, at); err != nil {
 		return nil, err
 	}
 	return row, events.Publish(ctx, tx, contracts.EventWithdrawn, contracts.Withdrawn{
@@ -443,4 +480,32 @@ func deref(id *uuid.UUID) uuid.UUID {
 		return uuid.Nil
 	}
 	return *id
+}
+
+// original completes the linked intent under the current actor, after domain
+// locks. The applying command keeps a distinct receipt and outcome event.
+func (s *Service) original(ctx context.Context, tx db.Tx[db.Tenant], row *contracts.Proposal, outcome request.Outcome, at time.Time) (context.Context, error) {
+	if row.OperationRef == nil {
+		return ctx, nil
+	}
+	refs := []uuid.UUID{*row.OperationRef}
+	if op, ok := request.OperationFrom(ctx); ok {
+		ref, err := uuid.Parse(op.Ref)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	if err := idempotency.LockReceipts(tx, refs...); err != nil {
+		return nil, err
+	}
+	r, err := idempotency.Origin(tx, *row.OperationRef)
+	if err != nil {
+		return nil, err
+	}
+	original := request.WithOperation(ctx, r.Operation())
+	if err := events.RecordOutcome(original, tx, r.Revision, outcome, request.OperationTime(ctx, at)); err != nil {
+		return nil, err
+	}
+	return original, nil
 }

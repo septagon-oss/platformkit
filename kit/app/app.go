@@ -62,6 +62,9 @@ const (
 // who is calling, and what they may do — plus the role, the event transport
 // constructors, the tenant list the periodic jobs walk, and where to log.
 type Options struct {
+	// Clock supplies operation admission, completion and retention instants.
+	// Nil uses db.Now; constructors resolve it before composing routes.
+	Clock     func() time.Time
 	Tenants   httpx.TenantLoader
 	Authorize httpx.Authorizer
 	// Entitle answers what a tenant's plan includes, for the operations whose
@@ -113,6 +116,16 @@ type Options struct {
 	// nothing serves, and boot says so: a control plane nobody can reach is a
 	// decision, and a silent one is a surprise during the incident it was for.
 	Installation Installation
+
+	// JSONMediaTypes are the media types this installation reads and writes as
+	// JSON, beside application/json. A protocol that names its own type arrives
+	// with a Content-Type the API has never been told about, and refuses to parse
+	// anything carrying it, so which types are JSON is a fact about what the
+	// installation serves and belongs with the rest of those facts.
+	//
+	// httpx.Options.JSONMediaTypes is where it is spent; see that field for why a
+	// module cannot say it itself.
+	JSONMediaTypes []string
 
 	// WorkspaceCatalog mounts the catalog route the kernel owns the address of,
 	// /api/v1/app/resources: the resources this caller may reach, as a document.
@@ -340,6 +353,9 @@ func level(name string) slog.Level {
 // error it can return is a wiring mistake, so they all surface before anything
 // is opened, listened on or migrated.
 func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Options) (*App, error) {
+	if opts.Clock == nil {
+		opts.Clock = db.Now
+	}
 	switch {
 	case opts.Tenants == nil:
 		return nil, errors.New("app: Options.Tenants is required")
@@ -779,16 +795,17 @@ func useJetStream(mode string, role Role) (bool, error) {
 // could not.
 func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
-		Unwired:      true,
-		Cache:        store,
-		PublicHost:   a.cfg.Server.PublicHost,
-		Docs:         a.cfg.Server.Docs,
-		Tenants:      a.opts.Tenants,
-		Authorize:    a.opts.Authorize,
-		Entitle:      a.opts.Entitle,
-		Authenticate: a.opts.Authenticate,
-		Fault:        a.opts.Fault,
-		Log:          a.log,
+		Unwired:        true,
+		Cache:          store,
+		PublicHost:     a.cfg.Server.PublicHost,
+		Docs:           a.cfg.Server.Docs,
+		Tenants:        a.opts.Tenants,
+		Authorize:      a.opts.Authorize,
+		Entitle:        a.opts.Entitle,
+		Authenticate:   a.opts.Authenticate,
+		JSONMediaTypes: a.opts.JSONMediaTypes,
+		Fault:          a.opts.Fault,
+		Log:            a.log,
 		// The ceiling on the one route that reads its own request. Every other
 		// body is bounded at httpx.MaxBodyBytes, and a schema'd one is bounded
 		// by huma as well.
@@ -805,6 +822,8 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 		// whichever replica the load balancer chose, so the record of the first one
 		// has to live somewhere both of them can read.
 		Idempotency: idempotency.Postgres(a.held.read),
+		Operations:  idempotency.PostgresOperations(),
+		Clock:       a.opts.Clock,
 		// Every attributable refusal is an event and, where modules/audit is composed, an
 		// audit row: see recordDenial.
 		Denied: recordDenial(a.held, a.log),
@@ -815,14 +834,11 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 
 	// The catalogue before the routes: a module that validates a permission
 	// somebody typed asks the kernel for the list, and Routes is the one moment
-	// it is being wired and the whole composition is known.
-	var catalogue []tenancy.Grant
-	for _, m := range a.mods {
-		for _, p := range m.Permissions {
-			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
-		}
-	}
-	api.Declare(catalogue)
+	// it is being wired and the whole composition is known. It is
+	// module.Grants and not a loop written here, because a composition seeding
+	// a tenant's roles needs the same list before it opens a database, and two
+	// copies of it are two answers to one question.
+	api.Declare(module.Grants(a.mods))
 
 	for _, m := range a.mods {
 		// A moved address is registered before any route, so the surface gate below
@@ -863,6 +879,7 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	// connection rather than one captured here, because this line runs in a boot
 	// that has not opened its pool yet and /ready is only ever asked of a boot
 	// that has.
+	mountOperations(api, a.opts.Clock)
 	health.Register(api, []health.Check{health.DatabaseCheckThrough(a.held.read)}, a.reports...)
 
 	// The gates. An operation that declares no authorization, one guarded by a
@@ -1116,7 +1133,11 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 // outbox relay and the three tables the kernel writes that nothing but time makes
 // smaller. A module's own jobs are appended to this list by work; nothing here
 // reaches a module's table.
-func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
+func kernelJobs(transport events.Transport, app appname.Name, clocks ...func() time.Time) []jobs.Job {
+	now := db.Now
+	if len(clocks) > 0 && clocks[0] != nil {
+		now = clocks[0]
+	}
 	list := []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
@@ -1170,7 +1191,7 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 	// gives it is enforced by this job and nothing else. Leaving it to the hot
 	// path would make a refusal pay for the traffic it is refusing, and leaving
 	// it out entirely would make the table one anybody can grow.
-	return append(list, jobs.Job{Name: "idempotency-purge", Cron: purgeCron, Run: idempotency.Purge})
+	return append(list, jobs.Job{Name: "idempotency-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error { return idempotency.PurgeAt(ctx, conn, now()) }})
 }
 
 // ledgerMoveEvery is how often the worker runs the delivery-ledger move on the
@@ -1257,7 +1278,7 @@ func (a *App) drainMigrations() jobs.Job {
 // module's subscriptions. probes is the handler it serves, or nil when the web half
 // of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := append(kernelJobs(transport, a.opts.App), a.drainMigrations())
+	scheduled := append(kernelJobs(transport, a.opts.App, a.opts.Clock), a.drainMigrations())
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)
@@ -1403,6 +1424,7 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 // kernelJobs above; two lines, one rule.
 func kernelModule(app appname.Name) module.Module {
 	declared := []events.Declared{
+		events.Declare[events.OperationOutcome](events.EventOperationOutcome),
 		events.Declare[events.ReplayRecord](events.EventReplayed),
 		events.Declare[Denied](EventDenied),
 		events.Declare[AccessRequested](EventAccessRequested),

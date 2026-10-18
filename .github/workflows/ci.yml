@@ -29,6 +29,13 @@ jobs:
         env:
           POSTGRES_PASSWORD: platformkit
           POSTGRES_DB: platformkit
+          # This cluster is created for the job and deleted with it, so it does not
+          # force its writes to a device: the same three settings compose.yaml names
+          # on its server's command line, whose comment says why. initdb writes them
+          # into the configuration of the data directory this job creates and never
+          # reuses, which is the carrier a service container has and a developer's
+          # persistent volume must not rely on.
+          POSTGRES_INITDB_ARGS: "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=256"
         ports:
           - 5432:5432
         options: >-
@@ -40,8 +47,11 @@ jobs:
       # Every action is pinned by commit, with the version it was beside it. A
       # tag on somebody else's repository is a pointer they can move, and an
       # action that moves is arbitrary code in a job holding this repository's
-      # token. release.yml pins the same way and RELEASE.md says so.
+      # token. release.yml pins the same way and RELEASE.md says so. Every commit,
+      # because `make check-loc` reads the merge base with origin/main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

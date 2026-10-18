@@ -17,6 +17,9 @@
 package content
 
 import (
+	"context"
+
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -78,6 +81,14 @@ var Spec = rest.Spec[*contracts.Content]{
 	// it; author belongs to the create that stamped it from the caller, and a
 	// patch that could rewrite it would forge a byline.
 	Immutable: []string{"status", "publishedAt", "author"},
+	// Audience is the one fact a body cannot answer and the one content owns: a page
+	// shows its pictures to anybody exactly when it is published. It reads the row
+	// this transaction already locked and merged, so it costs no query, and status is
+	// immutable just above, so a merged row cannot be claiming a lifecycle this write
+	// moved. A create arrives with the default status, which files a draft's uses.
+	Audience: func(_ context.Context, _ db.Tx[db.Tenant], c *contracts.Content) (bool, error) {
+		return c.Status == contracts.StatusPublished, nil
+	},
 	// Nothing here publishes from a hook, so there is nothing for a Spec to
 	// declare on the write routes' behalf. The lifecycle's three events are
 	// declared by the three commands that publish them, in internal/handler.go.

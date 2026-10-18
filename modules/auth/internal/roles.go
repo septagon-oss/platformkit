@@ -43,7 +43,12 @@ import (
 //
 // This is the only advisory lock any path through this file takes, and it is
 // taken before the first read and before any row lock — the write below is what
-// takes the roles row. The user module's delete route locks the subject row
+// takes the roles row. internal.readUnderRoleLock is the one other taker: the
+// repair reads a roles row unlocked to find out whether this tenant holds a dead
+// grant at all, and then takes this lock, reads again and derives its write from
+// that second read — so a healthy installation is never made to queue behind a
+// repair that changes nothing, and the read that decides a write is still one
+// taken under the lock. The user module's delete route locks the subject row
 // first, because kit/rest reads and locks it before any hook runs, and takes
 // this lock after. The two orders are opposite and that is fine, because no
 // transaction wants both in a way that can wait.
@@ -60,6 +65,29 @@ func administrationLock(tenant tenancy.Tenant) string {
 	return "administration/" + tenant.ID.String()
 }
 
+// lockTenantRoles takes this tenant's administration lock for the current
+// transaction, and is the one way anything in this package asks for it: every
+// path that needs the lock holds the same key through the same call. It is a
+// transaction lock — pg_advisory_xact_lock is held until this transaction commits
+// or rolls back — so the reads that follow it and the write that follows those
+// are one step, and no other transaction can move this tenant's roles between
+// them. Asking again in one transaction is free, because PostgreSQL grants a
+// transaction a lock it already holds: a path that locked and then writes through
+// SetRoleChanged waits for nobody but itself.
+//
+// What the lock buys, and what it does not, is administrationLock's business. An
+// earlier lock in a transaction opens no cycle this one closed, as long as the
+// path takes no row lock first, which nothing here does. What it costs is that
+// everything after it is inside the lock, which is why a caller that might not
+// write at all does not ask until it knows it will.
+func lockTenantRoles(ctx context.Context, tx db.Tx[db.Tenant], tenant tenancy.Tenant) error {
+	if err := tx.DB().WithContext(ctx).
+		Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, administrationLock(tenant)).Error; err != nil {
+		return fmt.Errorf("auth: lock this tenant's roles: %w", err)
+	}
+	return nil
+}
+
 // Roles is every role in this tenant, in name order, under the tenant's own
 // policy — so this is the same query from every host and answers about one
 // customer whichever administrator asks.
@@ -73,6 +101,25 @@ func (s *Service) Roles(_ context.Context, tx db.Tx[db.Tenant]) ([]*contracts.Ro
 
 // SetRole writes what a role grants, creating it if it is new.
 //
+// It is SetRoleChanged with the one answer withheld. A caller that reports what
+// it changed — the repair, which prints "removed" — needs that answer, and a
+// caller that renders the role the route was about does not.
+func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+	role, _, err := s.SetRoleChanged(ctx, tx, name, permissions, declared)
+	return role, err
+}
+
+// SetRoleChanged is the write behind SetRole, and it reports whether this call
+// changed a row.
+//
+// The write already knows: it re-reads the role under the tenant's lock and
+// does nothing when the row holds the list it was handed, so that a retried
+// click appears once in an audit. Until now that knowledge stopped there, which
+// made the second answer free for a caller that has to say what it wrote — and
+// it has to say it about a row rather than about its own arithmetic: a line
+// saying "removed" is a claim that this call moved something, which is exactly
+// the one fact only this write can supply. RepairSeededRoles is that caller.
+//
 // Every permission is checked against the list the application declares, which
 // the caller is handed by the kernel. A role naming a permission nothing
 // defines is a grant that can never be exercised and reads, to whoever wrote
@@ -83,15 +130,15 @@ func (s *Service) Roles(_ context.Context, tx db.Tx[db.Tenant]) ([]*contracts.Ro
 // sharper reason: the kernel would refuse every request under it anyway, so
 // writing one is either a misunderstanding of what the permission is or an
 // attempt to grant the installation to a customer. Both are 422s.
-func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+func (s *Service) SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, bool, error) {
 	name, err := contracts.ValidRoleName(name)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	tenant := db.TenantOf(tx)
 	want, err := contracts.CheckedPermissions(permissions, declared, tenant)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Everything below reads this tenant's roles and then writes one, and the
@@ -118,9 +165,8 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 	// one's key. Row-level security confines the transaction either way, so the
 	// cost of a collision is waiting and never reading; it is still one
 	// customer's administrator held up by another's.
-	if err := tx.DB().WithContext(ctx).
-		Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, administrationLock(tenant)).Error; err != nil {
-		return nil, fmt.Errorf("auth: lock this tenant's roles: %w", err)
+	if err := lockTenantRoles(ctx, tx, tenant); err != nil {
+		return nil, false, err
 	}
 
 	var was contracts.Permissions
@@ -131,8 +177,8 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 		if slices.Equal([]string(was), []string(want)) {
 			// The same list again changes nothing and publishes nothing: a
 			// retried click must not appear twice in an audit of who was given
-			// what.
-			return role, nil
+			// what. That is also the whole answer to "what did you change": no.
+			return role, false, nil
 		}
 	case !errors.Is(err, crud.ErrNotFound):
 		// A role nobody has yet is the ordinary case and reads as not found.
@@ -141,7 +187,7 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 		// nothing was leaving, and the write went ahead regardless. A guard
 		// whose precondition is a read nobody looked at is a guard that passes
 		// by accident.
-		return nil, fmt.Errorf("auth: read the role %q: %w", name, err)
+		return nil, false, fmt.Errorf("auth: read the role %q: %w", name, err)
 	}
 	// The one write a tenant cannot undo from inside the product, which is one
 	// rule the user module owns and this module asks through the door above. The
@@ -152,6 +198,18 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 	}, func(names []string) ([]uuid.UUID, error) {
 		// Who holds a name is the user module's column, asked in this tenant's
 		// transaction under the key this file already holds, read-only.
+		//
+		// A service built with no user module at all answers "nobody", which is the
+		// truth about it rather than a default: pkit refuses a composition of this
+		// module that does not provide authcontracts.Users (modules/auth/provider.go),
+		// so an empty collaborator is a service someone assembled by hand, and the
+		// installation it belongs to has no people to hold a role. The rule behind
+		// this door reads an empty answer as "this write found nobody" and refuses
+		// only the write that leaves no granting role at all — see
+		// usercontracts.CheckedAdministration, which is where that line is drawn.
+		if s.users == nil {
+			return nil, nil
+		}
 		return s.users.Holders(ctx, tx, names)
 	}); err != nil {
 		if errors.Is(err, crud.ErrInvalid) {
@@ -160,7 +218,7 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 			// a lockout attempt on the trail every time a query failed.
 			s.recordRefusal(ctx, name, was, want)
 		}
-		return nil, err
+		return nil, false, err
 	}
 	at := db.Now()
 	role.Grants, role.UpdatedAt = want, at
@@ -172,11 +230,16 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 			" ON CONFLICT (tenant_id, name) DO UPDATE SET permissions = EXCLUDED.permissions, updated_at = EXCLUDED.updated_at",
 		tenant.ID, name, want, role.CreatedAt, at).Error
 	if err != nil {
-		return nil, fmt.Errorf("auth: write the role %s: %w", name, err)
+		return nil, false, fmt.Errorf("auth: write the role %s: %w", name, err)
 	}
-	return role, events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
+	if err := events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
 		Role: name, Was: was, Now: want, At: at,
-	})
+	}); err != nil {
+		// State and outbox row commit together or neither does, and a change
+		// that will not be committed changed nothing.
+		return nil, false, err
+	}
+	return role, true, nil
 }
 
 // recordRefusal puts a write the last-administrator rule stopped on the trail,
@@ -221,14 +284,22 @@ func (s *Service) recordRefusal(ctx context.Context, name string, was, want cont
 // Undeclared reports, for one tenant, every role row naming a permission the
 // application does not define.
 //
-// The hourly sweep is its one caller, once per tenant, inside that tenant's own
-// transaction; it logs what it finds. It is a warning and not a refusal: the
-// rows belong to customers and were legal when they were written — a module
-// removed from a composition takes its permissions with it — so a sweep that
-// refused would turn dropping a module into an installation somebody has to
-// repair by hand. What it buys is that "this role grants nothing and nobody can
-// see why" is a line in the log within the hour of the deploy that caused it
-// rather than a support conversation months later.
+// It has two callers and they read one list for different reasons. The hourly
+// sweep runs it once per tenant, inside that tenant's own transaction, and logs
+// everything it finds; RepairSeededRoles runs it and then narrows what it finds
+// to the grants this module's own seeder wrote, which is the only part an
+// operator can ask to have taken away. A run of that repair which is going to
+// write asks twice: once with an unlocked read, to find out whether this tenant
+// holds anything to take at all, and once under the tenant's role lock, whose
+// answer is the one it derives its write from.
+//
+// What this function answers is a warning and not a refusal: the rows belong to
+// customers and were legal when they were written — a module removed from a
+// composition takes its permissions with it — so a sweep that refused would turn
+// dropping a module into an installation somebody has to repair by hand. What it
+// buys is that "this role grants nothing and nobody can see why" is a line in the
+// log within the hour of the deploy that caused it rather than a support
+// conversation months later.
 func Undeclared(roles []*contracts.Role, declared []tenancy.Grant) map[string][]string {
 	known := make(map[string]bool, len(declared)+1)
 	known[contracts.Wildcard] = true

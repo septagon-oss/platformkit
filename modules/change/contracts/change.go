@@ -99,6 +99,8 @@ var (
 // second person" once two people hold the grant.
 type Proposal struct {
 	crud.Base
+	// OperationRef is a server-owned originating intent; historical proposals are unbound.
+	OperationRef *uuid.UUID `json:"-"`
 
 	// SubjectModule, SubjectEntity and SubjectID name the row this diff would
 	// alter. They are three columns and no foreign key, for the reason modules/task

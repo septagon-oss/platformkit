@@ -51,6 +51,9 @@ func (a *API) respond(next http.Handler) http.Handler {
 					a.fail(b, r, http.StatusInternalServerError, "")
 				}
 			}
+			if n, ok := operationNote(r.Context()); ok && n.failureErr != nil && b.reset() {
+				a.fail(b, r, http.StatusServiceUnavailable, "")
+			}
 			// A 429 that named no wait is a refusal that tells a client nothing it can
 			// act on, and this is the last moment its headers are still ours. The guard
 			// that decided a limit already named the window; a handler that counted
