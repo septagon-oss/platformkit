@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/stream"
@@ -191,17 +193,88 @@ func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *ht
 	return out, err
 }
 
-// streamHub builds this composition's hub once. The transport is opened here rather
-// than at the boot because a process that serves no live connection should not dial
-// a broker for one — and because the failure, if there is one, is a 500 that names
-// the broker rather than a boot that died on a listener nobody was using.
+// heldTransport is the event transport this composition's live connections watch,
+// handed over the way heldConn hands the connection: the door is mounted by New,
+// long before anything is opened, and what it is to watch is settled later, by
+// Start, because the bus worth watching is the one the composition's own relay
+// publishes the outbox onto.
+//
+// One transport is the point, not one dial saved. The in-process transport delivers
+// inside one process, so a transport the door dials for itself is a bus nobody ever
+// publishes to: the connection would open, send its resync, and be told nothing
+// forever. Over a broker two dials still reach the same subjects, which is why the
+// mistake is invisible in the deployment that names one and total in the default.
+//
+// fill hands over the transport Start opened, which that Runtime owns and closes.
+// open is for the role with no worker half, which has none to be handed and still
+// needs one to watch, and what this holder dials is what release gives back.
+type heldTransport struct {
+	mu       sync.Mutex
+	observed events.Transport
+	// owned is what open dialled, and so the only thing release may close.
+	owned    events.Transport
+	released bool
+}
+
+// fill is Start's handover, the last thing it does before a Runtime can serve.
+func (h *heldTransport) fill(transport events.Transport) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.observed = transport
+}
+
+// open answers the question the live door asks: which transport to watch. build is
+// transport(), the constructor the worker half is opened with, and it runs at most
+// once per composition — a second connection watches what the first was given, and
+// a composition that was handed one never calls build. A failed dial is answered to
+// the caller waiting for a connection and retried by nobody: streamHub holds that
+// answer for the life of the process, as it held the boot's would have been.
+func (h *heldTransport) open(build func() (events.Transport, error)) (events.Transport, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.released {
+		return nil, errors.New("app: this composition's Runtime is closed, and a live connection needs one that is open")
+	}
+	if h.observed != nil {
+		return h.observed, nil
+	}
+	if h.owned == nil {
+		transport, err := build()
+		if err != nil {
+			return nil, err
+		}
+		h.owned = transport
+	}
+	return h.owned, nil
+}
+
+// release closes what this holder dialled and nothing else: the Runtime closes the
+// transport it opened, and the door of another role only ever watches that one.
+func (h *heldTransport) release() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.released = true
+	owned := h.owned
+	h.observed, h.owned = nil, nil
+	if closer, ok := owned.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
+// streamHub builds this composition's hub once. The transport is asked for here
+// rather than at the boot because a process that serves no live connection should
+// not dial a broker for one — and because the failure, if there is one, is a 500
+// that names the broker rather than a boot that died on a listener nobody was
+// using. A composition with a worker half has its transport already, opened by
+// Start, and watches that one; only a web-role process dials here (heldTransport).
 func (a *App) streamHub(registry *stream.Registry) func() (*stream.Hub, error) {
 	var once sync.Once
 	var built *stream.Hub
 	var err error
 	return func() (*stream.Hub, error) {
 		once.Do(func() {
-			transport, transportErr := a.transport()
+			transport, transportErr := a.observed.open(a.transport)
 			if transportErr != nil {
 				err = transportErr
 				return

@@ -266,6 +266,12 @@ type App struct {
 	// — and each of them asks this for the connection on the request that needs it.
 	held *heldConn
 
+	// observed is the event transport this composition's live connections watch:
+	// Start's, handed over the same way, and otherwise the one the live door dials
+	// for a role that runs no worker half. It is one transport rather than one per
+	// connection because the outbox relay publishes on one — see heldTransport.
+	observed *heldTransport
+
 	// measurement is this deployment's telemetry, planned here and installed by a
 	// Start that got all the way through. Batched spans and the last metric interval
 	// have to be pushed before the process is gone, because a collector nobody told
@@ -536,7 +542,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log, declared: declared,
 		declaredRelease: declaredRelease,
-		held:            &heldConn{}, measurement: measurement, reports: reports}, nil
+		held:            &heldConn{}, observed: &heldTransport{}, measurement: measurement, reports: reports}, nil
 }
 
 // heldConn is the application connection of a composition that builds its routes
