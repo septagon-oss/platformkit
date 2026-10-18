@@ -856,6 +856,15 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# subprocess calls answered from memory, so they need no network and no second tree.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
+	# The other half of that ordering, which nobody had asked. Gate 10 runs `make e2e` inside
+	# scripts/ci_browser_host_share.sh's sampler, and the sampler's whole contract is that it
+	# hands the suite's status back; a step line that swallowed it — `|| true`, a pipe into
+	# something that succeeds, continue-on-error — would leave the job green over a browser
+	# suite that died, and the case above reads only the step's name. This one runs the step's
+	# own run block the way a runner runs it, from a copy of the tree's shape, with `make`
+	# answering 3 and the host wait bounded at zero, so no node, browser or database starts, and
+	# shows the same reading telling a swallowed status from the real step in three planted ways.
+	bash scripts/e2e_gate_answers_with_its_suite_status_test.sh
 	# scripts/test_inventory.py feeds two gates — `check-test-inventory` above and the push tier's
 	# selection in scripts/check_push_tier.sh — and until review 1 neither could fail, because the
 	# tool returned its refusal and the script discarded it. The six cases below are what keeps that
@@ -886,6 +895,14 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# A generated file or section edited by hand, or a marker the writer cannot pair, is refused by
 	# check-generated; this case proves it in a copy of the tree, never in this checkout.
 	bash scripts/a_hand_edited_generated_file_fails_the_regeneration_check_test.sh
+	# Whether either goal still asks at all. `check` and `check-push` name `check-generated`,
+	# which runs both writers and then diffs with --exit-code, and both CI workflows run `make
+	# check`; the case above calls the goal itself, so it cannot notice a goal that lost the
+	# prerequisite or a diff that lost its exit status, and `go tool gotestsum` sees neither
+	# goal. This one dry-runs both goals for the two writers and then the diff, in order, and
+	# refuses each of those four losses — every edit made to a copy of this Makefile in a
+	# temporary directory, never to this checkout's.
+	bash scripts/the_check_goals_regenerate_before_they_diff_test.sh
 	# scripts/e2e_guards_run_before_the_gate_test.sh above asks one goal whether it still runs the two
 	# subjects it exists for. These two ask that question of `check` itself, whose two source gates are
 	# prerequisites, and a prerequisite that leaves the list leaves nothing else red:
