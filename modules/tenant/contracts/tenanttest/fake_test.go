@@ -16,16 +16,31 @@ import (
 // rules internal/service_test.go proves the real service keeps.
 func TestFakeConforms(t *testing.T) {
 	tenanttest.RunService(t, func(t *testing.T, run func(tenanttest.Fixture)) {
-		fake := tenanttest.NewFake()
+		// One fixture per case, and it is an installed control plane: the tenant
+		// Bootstrap creates is the scope every lifecycle verb mirrors its audit row
+		// into, and a verb that cannot write that row writes nothing, so a world
+		// without it is one no case can run in. The creation that installed it is
+		// the fixture's own doing rather than something the case asserts, which is
+		// why Installed returns the event it published instead of leaving it in the
+		// log the case reads.
+		//
+		// It also carries the self-only half: the committed world a case seeds and
+		// then acts inside, and the door the tenant's own language command rechecks,
+		// because the shared suite refuses to run those cases against a harness that
+		// wired neither. The fake's "committed world" is the same map, and that is
+		// the point: the case cannot tell them apart. What the case does have to see
+		// is a context naming the tenant the seed created — the fake takes its
+		// subject from the request, exactly as the service takes it from the row
+		// row-level security leaves visible — and the same event list both harnesses
+		// report, so the suite's filter decides both implementations.
+		fake, operator, _ := tenanttest.Installed()
 		run(tenanttest.Fixture{
-			Ctx: t.Context(), Service: fake, Published: fake.Published,
-			LocaleDoor: fake.AllowSetOwnLocale,
-			// The fake's "committed world" is the same map, and that is the point:
-			// the case cannot tell them apart. What the case does have to see is a
-			// context naming the tenant the seed created — the fake takes its subject
-			// from the request, exactly as the service takes it from the row
-			// row-level security leaves visible — and the same event list both
-			// harnesses report, so the suite's filter decides both implementations.
+			Ctx: trace.With(t.Context(), trace.New()), Service: fake,
+			Operator:        operator.ID,
+			Published:       fake.Published,
+			PublishedScopes: fake.PublishedScopes,
+			PublishedTraces: fake.PublishedTraces,
+			LocaleDoor:      fake.AllowSetOwnLocale,
 			OwnWorld: func(seed func(context.Context, db.Tx[db.System]) (*contracts.Tenant, error), body func(tenanttest.Own) error) error {
 				created, err := seed(t.Context(), db.Tx[db.System]{})
 				if err != nil {
@@ -36,19 +51,6 @@ func TestFakeConforms(t *testing.T) {
 					Published: fake.Published,
 				})
 			},
-		})
-		// An installed control plane: the case's world has the tenant Bootstrap
-		// creates, because a lifecycle verb that cannot write the operator's audit
-		// row writes nothing, and the creation that installed it is the fixture's
-		// own doing rather than something the case asserts.
-		fake, operator, _ := tenanttest.Installed()
-		run(tenanttest.Fixture{
-			Ctx:             trace.With(t.Context(), trace.New()),
-			Service:         fake,
-			Operator:        operator.ID,
-			Published:       fake.Published,
-			PublishedScopes: fake.PublishedScopes,
-			PublishedTraces: fake.PublishedTraces,
 		})
 	})
 }
