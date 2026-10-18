@@ -15225,6 +15225,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/designconfig/dependency_boundary_test.go",
+   "id": "kit/designconfig/dependency_boundary_test.go#TestTheLoaderImportsOnlyDesignAndYAML",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheLoaderImportsOnlyDesignAndYAML",
+   "needs_db": false,
+   "pkg": "kit/designconfig",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/designconfig/designconfig_test.go",
    "id": "kit/designconfig/designconfig_test.go#TestLoadClientDesignReadsTheSeedAndItsOverrides",
    "kind": "go",
@@ -15420,6 +15439,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestClientDesignRefusesUnreadDocuments",
+   "needs_db": false,
+   "pkg": "kit/designconfig",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/designconfig/register_refusal_preserves_clients_test.go",
+   "id": "kit/designconfig/register_refusal_preserves_clients_test.go#TestARefusedIdentityLeavesBothRegisteredClientsUnchanged",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedIdentityLeavesBothRegisteredClientsUnchanged",
    "needs_db": false,
    "pkg": "kit/designconfig",
    "round_named": false,
@@ -67796,7 +67834,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1761,
+  "files": 1763,
   "forge_runs": [
    408,
    413,
@@ -67830,7 +67868,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2910,
+   "behaviour": 2912,
    "composition": 397,
    "contract": 20,
    "journey": 93
@@ -67849,23 +67887,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 3420,
+  "rows": 3422,
   "tiers": {
    "merge": 2074,
    "nightly": 93,
-   "push": 1253
+   "push": 1255
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1516,
+   "keep": 1518,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3034,
+   "keep": 3036,
    "keep-rewrite": 170,
    "merge": 216
   }
