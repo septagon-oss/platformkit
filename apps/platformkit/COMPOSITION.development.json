@@ -176,6 +176,12 @@
           "from": "tenant"
         }
       ],
+      "uses": [
+        {
+          "contract": "push.Adapters",
+          "from": ""
+        }
+      ],
       "after": [
         "user",
         "tenant"
