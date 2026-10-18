@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -69,16 +70,19 @@ func mountDefaultCommand[I any, T crud.Entity](router *httpx.Router, op huma.Ope
 	prepare func(map[string]any) (I, error), answer func(context.Context, db.Tx[db.Tenant], uuid.UUID, *I) (T, error),
 ) {
 	invoke := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *defaultCommandBody[I]) (T, error) {
-		in, err := prepare(nil)
-		if err != nil {
-			var zero T
-			return zero, err
-		}
+		var values map[string]any
 		if body != nil {
-			if err := json.Unmarshal(body.raw, &in); err != nil {
+			decoder := json.NewDecoder(bytes.NewReader(body.raw))
+			decoder.UseNumber()
+			if err := decoder.Decode(&values); err != nil {
 				var zero T
 				return zero, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 			}
+		}
+		in, err := prepare(values)
+		if err != nil {
+			var zero T
+			return zero, err
 		}
 		return answer(ctx, tx, id, &in)
 	}
