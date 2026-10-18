@@ -190,8 +190,12 @@ type DayCount struct {
 
 // CountDays breaks this tenant's live rows into the UTC days of one timestamp
 // column inside [from, to). It names only the days it answered: turning a day the
-// query did not name into a zero is the reader's, and an empty result is a real
-// answer about an empty window.
+// query did not name into a zero is the reader's.
+//
+// A window with no rows in it answers an empty slice, never nil: nil is the shape
+// of a read that never happened, and a reader that has to tell "nothing in the
+// window" apart from "nobody looked" is a reader drawing a gap where the answer
+// was "none".
 //
 // The truncation is `AT TIME ZONE 'UTC'` and not a bare date_trunc: on a
 // timestamptz, date_trunc truncates in the session's own zone, and nothing here
@@ -215,6 +219,12 @@ func CountDays[T Entity](tx db.Tx[db.Tenant], field string, from, to time.Time) 
 		Group(day).Order(day).Scan(&rows).Error
 	if err != nil {
 		return nil, Classify(err)
+	}
+	if rows == nil {
+		// gorm's Scan leaves the destination untouched when the query answered no
+		// row at all, so an empty window would otherwise come back in the shape of
+		// a read that never ran.
+		rows = []DayCount{}
 	}
 	for i, row := range rows {
 		rows[i].Day = row.Day.UTC()

@@ -38,20 +38,14 @@ func open(title string, due time.Time) *Task {
 	return &Task{Base: crud.Base{ID: uuid.New()}, Title: title, DueAt: &at}
 }
 
-// dayStart is the instant that opens the UTC day the time falls in.
-func dayStart(t time.Time) time.Time {
-	y, m, d := t.UTC().Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-}
-
-// TestADayWindowCountsWhatItsBoundsAdmitAndNothingElse counts one tenant's tasks
-// whose due instants sit on yesterday, today, tomorrow and next week. The window
-// is today: the half-open pair `>= today AND < tomorrow` is what the task module
-// declares, and a total that came back as 4 would be the card saying "Due today"
-// over the whole list.
+// TestADayWindowCountsWhatItsPredicatesAdmitAndNothingElse counts one tenant's
+// tasks whose due instants sit on yesterday, today, tomorrow and next week. The
+// window is today: the half-open pair `>= today AND < tomorrow` is what the task
+// module declares, and a total that came back as 4 would be the card saying "Due
+// today" over the whole list.
 func TestADayWindowCountsWhatItsPredicatesAdmitAndNothingElse(t *testing.T) {
 	conn := setup(t)
-	day := dayStart(time.Now().UTC())
+	day := crud.DayStart(time.Now().UTC())
 	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
 		for _, e := range []*Task{
 			open("yesterday", day.Add(-20*time.Hour)),
@@ -89,17 +83,25 @@ func TestADayWindowCountsWhatItsPredicatesAdmitAndNothingElse(t *testing.T) {
 	})
 }
 
-// TestAWindowedCountSeesNoOtherTenant'sRows is the same question at two hosts: the
+// TestAWindowedCountSeesNoOtherTenant is the same question at two hosts: the
 // narrowing is a predicate and never a tenant, and row-level security is what
-// keeps one customer's card free of another's rows.
+// keeps one customer's card free of another's rows. Both hosts answer the window,
+// because the only way to see acme's row in globex's number is to ask for the
+// number each one owes.
 func TestAWindowedCountSeesNoOtherTenant(t *testing.T) {
 	conn := setup(t)
-	day := dayStart(time.Now().UTC())
+	day := crud.DayStart(time.Now().UTC())
 	where := crud.Where{{Field: "dueAt", Op: crud.OpGte, Value: day}, {Field: "dueAt", Op: crud.OpLt, Value: day.Add(24 * time.Hour)}}
+	windowed := map[string]int64{}
 	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
 		if err := crud.Create[*Task](ctx, tx, open("acme today", day.Add(8*time.Hour))); err != nil {
 			t.Fatalf("seed acme: %v", err)
 		}
+		got, err := crud.CountWhere[*Task](tx, where)
+		if err != nil {
+			t.Fatalf("count acme's window: %v", err)
+		}
+		windowed[acme.Slug] = got
 	})
 	as(t, conn, globex, func(ctx context.Context, tx db.Tx[db.Tenant]) {
 		for i := range 3 {
@@ -116,10 +118,15 @@ func TestAWindowedCountSeesNoOtherTenant(t *testing.T) {
 		if total != 3 {
 			t.Errorf("globex counts %d rows and sees acme's, want its own 3", total)
 		}
-		if _, err := crud.CountWhere[*Task](tx, where); err != nil {
-			t.Errorf("the windowed count at globex: %v", err)
+		got, err := crud.CountWhere[*Task](tx, where)
+		if err != nil {
+			t.Fatalf("count globex's window: %v", err)
 		}
+		windowed[globex.Slug] = got
 	})
+	if windowed["acme"] != 1 || windowed["globex"] != 3 {
+		t.Errorf("the same window answers acme %d and globex %d, want the 1 row each tenant holds in it", windowed["acme"], windowed["globex"])
+	}
 }
 
 // TestADayBucketIsAUTCDayUnderAnySessionTimeZone is the exact bug in the exact
@@ -130,7 +137,7 @@ func TestAWindowedCountSeesNoOtherTenant(t *testing.T) {
 // fourteen numbers must not move.
 func TestADayBucketIsAUTCDayUnderAnySessionTimeZone(t *testing.T) {
 	conn := setup(t)
-	day := dayStart(time.Now().UTC())
+	day := crud.DayStart(time.Now().UTC())
 	// One row late in the UTC day — 22:00, which is 19:00 in São Paulo and so
 	// belongs to the same calendar day there, and one early — 01:00, which is
 	// 22:00 of the day before there and would fall into the wrong bucket.
@@ -180,7 +187,30 @@ func TestADayBucketIsAUTCDayUnderAnySessionTimeZone(t *testing.T) {
 	}
 }
 
-// TestADayBreakRefusesAFieldThatIsNoDay and TestAPredicateNamingNoFieldAreRefused
+// TestADayBreakOfAnEmptyWindowIsAnAnswerAndNotAnAbsence asks the grouped read for
+// a window holding no row at all. A brand-new tenant has an empty fortnight and
+// the card owes it fourteen zeros, so the read has to come back having answered:
+// an empty slice says "nothing in the window", and nil is the shape of a read that
+// never happened — the two are the difference this document keeps between an empty
+// desk and a desk nobody counted.
+func TestADayBreakOfAnEmptyWindowIsAnAnswerAndNotAnAbsence(t *testing.T) {
+	conn := setup(t)
+	day := crud.DayStart(time.Now().UTC())
+	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
+		counted, err := crud.CountDays[*Task](tx, "dueAt", day.Add(-13*24*time.Hour), day.Add(24*time.Hour))
+		if err != nil {
+			t.Fatalf("break an empty window into days: %v", err)
+		}
+		if counted == nil {
+			t.Fatalf("an empty window answered nil, which is the shape of a read that never ran")
+		}
+		if len(counted) != 0 {
+			t.Errorf("an empty window names %d days: %v", len(counted), counted)
+		}
+	})
+}
+
+// TestADayBreakRefusesAFieldThatIsNoDay and TestAPredicateNamingNoFieldIsRefusedAndNotIgnored
 // keep the two ways a declaration can name nothing as refusals rather than as the
 // whole table: an unfiltered total under a label is the wrong number a card could
 // only ever repeat.
@@ -217,7 +247,7 @@ func TestAResolvedDeclarationCountsTodaysRows(t *testing.T) {
 	if _, ok := crud.FieldNamed(crud.Fields[*Task](), "dueAt"); !ok {
 		t.Fatalf("the fixture entity has no dueAt field to declare a window with")
 	}
-	day := dayStart(time.Now().UTC())
+	day := crud.DayStart(time.Now().UTC())
 	as(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
 		if err := crud.Create[*Task](ctx, tx, open("due today", day.Add(6*time.Hour))); err != nil {
 			t.Fatalf("seed: %v", err)

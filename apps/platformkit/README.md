@@ -83,9 +83,39 @@ partial index, `due_at` having never been read as a range before. **Made
 reusable** — the predicate grammar (`crud.Ops`, `Predicate`, `Where`) with the one
 coercion table `Coerce`, which `?filter=` now shares with a declared value, the
 anchor resolution (`Declared`, `DayStart`) that lets a declaration name "today"
-instead of a date, a second worked `/api/v1/app` mount whose body type reaches the
-OpenAPI document, and the `summaryBudget` shape: a bounded run of reads whose
-unfinished entries are absent rather than zero.
+instead of a date, and a second worked `/api/v1/app` mount whose body type reaches
+the OpenAPI document.
+
+What the counting door does not do, stated here because a shell reading
+`/summary` decides what to draw from it:
+
+- **The budget bounds the wait, not the query.** `summaryBudget` is a deadline on
+  the parts of a request that carry it — the store round trips and the read-guard
+  decision. The counts run in the request's own transaction, whose session was
+  opened before that deadline existed and whose reads take no context, so a
+  statement is cut short by the installation's `database.statement_timeout` and by
+  nothing in this file.
+- **A card costs one statement per question it declares**, not one per card: the
+  task card asks a total, a sub-count and a daily series, so three.
+- **"Due today" is a window on `dueAt` and nothing else.** A task resolved or
+  closed during the same day is still counted in it, because the grammar has no
+  `ne` or `in` and the task entity's own `doneValues` vocabulary has no way to
+  reach a declared filter. The brief specified the window; narrowing it to open
+  work is the module's, and the operator it needs is not written here.
+- **"Today" is the UTC day**, not the person's, and no locale or time zone enters
+  the cache key — which is also why the body carries no word.
+- **One cache key per tenant and resource** is sound while a read grant is
+  tenant-wide, which every grant in this installation is. An authorizer that ever
+  decides per row makes that count the wrong answer, and the key would have to name
+  the grant set or the document would go uncached.
+- **A resource that carries no count closure has no number, permanently.** `file`
+  registers its routes and its own library page by hand and names no `Count`, so
+  its card is absent for every caller, including an administrator — which is the
+  truth rather than a zero, and is the file module's to add over the rows its page
+  lists.
+- **The count is the whole live set**, never the open one: the "total open" the
+  brief first asked for is not answered here, because "open" is a set of statuses
+  no shared module may name.
 
 ## What lives where
 

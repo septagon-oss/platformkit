@@ -59,12 +59,14 @@ const (
 	// another module's namespace, for a card that refreshes on every foreground.
 	summaryTTL = 15 * time.Second
 
-	// summaryBudget bounds one request's whole run of counts. A statement that
-	// runs out of it is cancelled at the database, and a cancelled statement
-	// aborts the request's transaction as surely as a refused one does, so the
-	// budget buys a bounded wait rather than a partial body: past it the document
-	// is answered from what was already counted or cached and the rest is not
-	// asked, and the request itself ends as the database failure it is.
+	// summaryBudget bounds the parts of one request that take this context: the
+	// store reads, which on a remote store are a round trip per entry, and the
+	// read-guard decision asked of every resource. It bounds no statement — the
+	// transaction opened on the request's own context before this deadline existed
+	// and crud's reads take no context of their own, so a query is cut short by the
+	// installation's statement_timeout and by nothing here. Past it the rest of the
+	// list is not asked and its entries carry no number, which is the absence the
+	// body already uses for a count nobody gave.
 	summaryBudget = 5 * time.Second
 
 	// summaryNamespace is this document's scope inside the shared store. A
@@ -101,9 +103,12 @@ type summaryDocument struct {
 // never the body. A body would key one caller's resource list — a fact about
 // grants — and would re-answer every resource to refresh one.
 type summaryAnswers struct {
-	Total     *int64          `json:"total,omitempty"`
-	Highlight *int64          `json:"highlight,omitempty"`
-	Days      []crud.DayCount `json:"days,omitempty"`
+	Total     *int64 `json:"total,omitempty"`
+	Highlight *int64 `json:"highlight,omitempty"`
+	// Days carries no omitempty: an empty slice is the answer a quiet window
+	// deserves and has to survive the round trip, while a window nobody counted
+	// stays null and reads back as the absence it is.
+	Days []crud.DayCount `json:"days"`
 }
 
 func (f *summaryFace) mount(api *httpx.API) {
@@ -130,11 +135,15 @@ func (f *summaryFace) mount(api *httpx.API) {
 
 // answer is the read: one transaction — the request's own, so row-level security
 // scopes every statement with no help from here, and there is no parameter with
-// which to name another tenant — one clock, and at most one statement per question
-// each entry declares.
+// which to name another tenant — one clock, and one statement per question each
+// entry declares: a card that declares a total, a sub-count and a daily series
+// costs three, because a total and a sub-count of the same rows narrow differently
+// and no one read answers both.
 func (f *summaryFace) answer(ctx context.Context) (*screens.Summary, error) {
-	tx, ok := httpx.TxFrom(ctx)
-	if !ok {
+	// The transaction is only checked for being there. Every read goes through the
+	// resource's own closures, which resolve it from this same context, so a
+	// tenant scope cannot be named here even by omission.
+	if _, ok := httpx.TxFrom(ctx); !ok {
 		return nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
 	}
 	tenant, ok := tenancy.FromContext(ctx)
@@ -154,7 +163,7 @@ func (f *summaryFace) answer(ctx context.Context) (*screens.Summary, error) {
 		if r.CommandsOnly || !r.Offers(httpx.CRUDList) || !r.Readable(asked) {
 			continue
 		}
-		got, ok, spent := f.countOne(asked, tx, tenant.ID, r, asOf)
+		got, ok, spent := f.countOne(asked, tenant.ID, r, asOf)
 		if spent {
 			// A statement Postgres refused leaves this transaction aborted, so the
 			// rest of the questions would each fail for the first one's reason and
@@ -172,8 +181,10 @@ func (f *summaryFace) answer(ctx context.Context) (*screens.Summary, error) {
 // them, and from the resource's own guarded closures otherwise. Its second answer
 // is "nothing was answered", which writes nothing; its third is "the database
 // refused a statement", which means this request's transaction is spent and no
-// further question should be asked of it.
-func (f *summaryFace) countOne(ctx context.Context, tx db.Tx[db.Tenant], tenant uuid.UUID,
+// further question should be asked of it. It is handed no transaction: the
+// closures read through the request's own, which is what keeps the tenant scope
+// out of this file.
+func (f *summaryFace) countOne(ctx context.Context, tenant uuid.UUID,
 	r httpx.Resource, asOf time.Time) (screens.Answers, bool, bool) {
 	// A declared sub-count or trend is resolved against a UTC day, so the day
 	// belongs in the name: at midnight the key moves rather than one day's window
