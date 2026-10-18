@@ -1,0 +1,25 @@
+server:
+  addr: ":8080"
+  public_host: "platformkit.localhost"
+  installation_host: "installation.platformkit.localhost"
+  docs: true
+database:
+  url: "postgres://platformkit_app:platformkit@localhost:5432/platformkit?sslmode=disable"
+  migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable"
+nats:
+  url: "nats://localhost:4222"
+log:
+  level: "info"
+files:
+  dir: "data/files"
+# The key that wraps each webhook endpoint's signing secret. This one is the
+# fixture's, thirty-two characters of nothing; a deployment puts its own in
+# PLATFORMKIT_WEBHOOK_SECRET_KEY and a laptop copies the example's.
+webhook:
+  secret_key: "0123456789abcdef0123456789abcdef"
+auth:
+  oidc:
+    issuer: ""
+    client_id: ""
+    client_secret: ""
+    redirect_path: ""
