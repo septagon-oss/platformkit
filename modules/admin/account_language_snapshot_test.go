@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -77,6 +78,7 @@ func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: tenants, Conn: conn, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: person.ID, Roles: []string{"admin"}}, true, nil
