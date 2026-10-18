@@ -129,16 +129,19 @@ func (h *Hub) open(w http.ResponseWriter, rc *http.ResponseController, c *connec
 
 // write is one frame, one deadline and one flush.
 //
-// The deadline goes before every write, because a deadline set once at open bounds
-// the connection's life and not the write, and a stream is meant to outlive a slow
-// frame. The flush is where a stream either works or finds out it does not:
-// http.ResponseController asks for FlushError before Flusher, so an error inside a
-// wrapper that withholds cookies or applies a cache policy comes back here instead
-// of being reported as success.
+// The deadline goes before every write and goes back the moment the flush answers,
+// because a deadline is a lifetime and this one belongs to the write: armed once at
+// open it bounds the connection's life, and left armed after the write it bounds the
+// silence between frames, which for an idle connection is exactly the interval the
+// heartbeat exists to fill. The flush is where a stream either works or finds out it
+// does not: http.ResponseController asks for FlushError before Flusher, so an error
+// inside a wrapper that withholds cookies or applies a cache policy comes back here
+// instead of being reported as success.
 func (h *Hub) write(w http.ResponseWriter, rc *http.ResponseController, c *connection, body []byte) error {
 	if err := h.bound(rc, w, c); err != nil {
 		return err
 	}
+	defer h.unbound(rc, c)
 	if _, err := w.Write(body); err != nil {
 		return fmt.Errorf("stream: the frame did not reach the connection: %w", err)
 	}
@@ -154,17 +157,19 @@ func (h *Hub) comment(w http.ResponseWriter, rc *http.ResponseController, c *con
 	if err := h.bound(rc, w, c); err != nil {
 		return err
 	}
+	defer h.unbound(rc, c)
 	if _, err := w.Write([]byte(line)); err != nil {
 		return err
 	}
 	return rc.Flush()
 }
 
-// bound sets the write deadline of one write. A writer with no deadlines is not a
-// writer that failed — a buffered response, a test recorder — so the fact is said
-// once per connection, the call is skipped from then on, and the connection is ended
-// by a failed flush alone. Anything stricter would close every stream served through
-// such a writer, including the ones this package's own cases run.
+// bound arms the write deadline of one write, which unbound takes back when that
+// write is over. A writer with no deadlines is not a writer that failed — a buffered
+// response, a test recorder — so the fact is said once per connection, the call is
+// skipped from then on, and the connection is ended by a failed flush alone. Anything
+// stricter would close every stream served through such a writer, including the ones
+// this package's own cases run.
 func (h *Hub) bound(rc *http.ResponseController, w http.ResponseWriter, c *connection) error {
 	if c.unbounded {
 		return nil
@@ -180,6 +185,23 @@ func (h *Hub) bound(rc *http.ResponseController, w http.ResponseWriter, c *conne
 	h.log.InfoContext(context.Background(), "stream: this writer has no write deadlines; the connection is bounded by its flushes",
 		"writer", fmt.Sprintf("%T", w))
 	return nil
+}
+
+// unbound takes back the deadline of the write that just ended, so the only interval
+// a write deadline ever bounds is one frame's reach to the wire. What a deadline the
+// server keeps armed between writes bounds instead is the connection's idleness: an
+// HTTP/2 stream with nothing to write for longer than WriteDeadline is reset by the
+// server — INTERNAL_ERROR to a client still listening — however healthy it is, and a
+// heartbeat arriving after the expiry arrives on a stream that no longer exists.
+//
+// A failure here is a writer already going away, which is the same condition the next
+// write reports for itself, so nothing is logged and nothing is answered: the frames
+// this connection did write are already on the wire.
+func (h *Hub) unbound(rc *http.ResponseController, c *connection) {
+	if c.unbounded {
+		return
+	}
+	_ = rc.SetWriteDeadline(time.Time{})
 }
 
 // loop is the connection: forward notices, re-ask the guards' questions at every

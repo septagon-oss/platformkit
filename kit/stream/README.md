@@ -56,9 +56,10 @@ non-durable, at-most-once observation. The **tenant boundary is the address** â€
 filter is that tenant's one subject, and the provider still compares the address the
 broker routed by against the document (`transport.AddressMismatch`) before `fn` runs,
 so the tenant is decided by routing and not by what a document claims. Nothing is
-claimed, nothing is retried, and the outbox stays the durable path: a notice is the
-fact that something happened, not a unit of work. `kit/events/transport/observetest`
-runs the same six cases against both providers.
+claimed, nothing is retried and nothing is acknowledged: the watch's consumer answers
+nothing, so the broker has no window to time out and one publish reaches one callback
+once. The outbox stays the durable path â€” a notice is a fact, not a unit of work.
+`kit/events/transport/observetest` runs the same six cases against both providers.
 
 One `Observe` per (tenant, event) per process, reference-counted by the connections
 sharing it and stopped when the last one leaves. The observation belongs to the watch,
@@ -95,7 +96,7 @@ the brief should read this paragraph with it.
 | connections per person per tenant, per process | 3 | 429 + `Retry-After` |
 | connections per tenant, per process | `server.streams.max_per_tenant`, default 500 | 429 + `Retry-After` |
 | undelivered notices per connection | 64 | the queue is dropped and **one** `resync` is sent |
-| one write | 5 s, set again before every write | the connection closes |
+| one write | 5 s, armed before the write and released when its flush answers | the connection closes |
 | heartbeat | 15 s | a comment, and the session and every topic's policy re-checked |
 
 **Both connection ceilings count one process.** A deployment behind a load balancer

@@ -64,9 +64,10 @@ type Limits struct {
 	// Queue is how many undelivered notices one connection may hold before it is
 	// a connection that is not keeping up.
 	Queue int
-	// WriteDeadline bounds one write, and is set again before every write: a
-	// deadline set once at open would be the connection's lifetime, and a stream
-	// is meant to outlive a slow frame.
+	// WriteDeadline bounds one write. It is armed before the write and taken back
+	// when the write and its flush are done, because a deadline is a lifetime: armed
+	// once at open it bounds the connection rather than the frame, and left armed it
+	// bounds the silence between frames, which is the thing a stream outlives.
 	WriteDeadline time.Duration
 	// Heartbeat is how often an idle connection says something, and the moment
 	// the session and every topic's policy are asked again.

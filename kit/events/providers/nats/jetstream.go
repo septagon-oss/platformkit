@@ -185,15 +185,22 @@ func group(durable string) string { return durable }
 // subscription beside it), no acknowledgement ladder to climb, no stored position
 // to resume.
 //
-// DeliverNew and ManualAck are named rather than left to the library's defaults,
-// which are DeliverAll and AckExplicit: a consumer that replayed the stream would
-// hand a browser events it is not owed and that this method's contract says it
-// never sees. The filter is the subscribe subject — nats.go writes it into the
-// consumer configuration it is about to create, and there is no separate option
-// for it in this release — which is why Observe passes the exact address rather
-// than a wildcard.
+// DeliverNew and AckNone are named rather than left to the library's defaults, which
+// are DeliverAll and AckExplicit, and each answers one half of the promise Observe
+// makes. A consumer that replayed the stream would hand a browser events it is not
+// owed and that this method's contract says it never sees. A consumer that
+// acknowledges is worse: the server restarts the ack window of every message it has
+// sent and not heard back about, and a callback queue that is still inside an earlier
+// delivery cannot answer the later one, so the broker redelivers a message whose
+// callback has not started yet — one publish reaching the same observer twice. An
+// observation's contract is at most once per publish and no retry, and no-ack is the
+// only consumer policy that keeps it however slow the callback is: what a watch loses
+// is the notice, never a duplicate of it. The filter is the subscribe subject —
+// nats.go writes it into the consumer configuration it is about to create, and there
+// is no separate option for it in this release — which is why Observe passes the exact
+// address rather than a wildcard.
 func watching() []nats.SubOpt {
-	return []nats.SubOpt{nats.BindStream(stream), nats.DeliverNew(), nats.ManualAck()}
+	return []nats.SubOpt{nats.BindStream(stream), nats.DeliverNew(), nats.AckNone()}
 }
 
 // stream brings the stored stream into line with what this code asks for, the
@@ -427,7 +434,10 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 // It asks for no durable name, no ack ladder and no stored position, so it can
 // create, update or delete nothing a durable subscription owns: the claim ledger
 // that makes a redelivery safe does not exist for a watch, which is why a notice
-// this process could not deliver is not something it will ever be handed again.
+// this process could not deliver is not something it will ever be handed again — the
+// consumer acknowledges nothing, so the broker has no window to time out and no
+// reason to send one message to the same callback twice.
+//
 // The broker's own buffer bounds nothing here — no MaxPending is set — because the
 // queue that decides whether a connection is alive is kit/stream's per-connection
 // one: a subscriber that cannot keep up is dropped by that bound and not by the
@@ -442,11 +452,10 @@ func (j *jetstream) Observe(ctx context.Context, tenantID uuid.UUID, name string
 	subject := transport.AppSubject(j.app, tenantID, name)
 	sub, err := j.js.Subscribe(subject, func(msg *nats.Msg) {
 		var ev transport.Event
-		// An undecodable body is terminated the same way the durable path ends one:
-		// nothing redelivers a message this process can never read.
+		// An undecodable body is dropped, which is the whole of the handling it gets:
+		// this consumer acknowledges nothing, so nothing comes back to be read again.
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
 			slog.ErrorContext(ctx, "events: undecodable message", "subject", msg.Subject, "error", err)
-			_ = msg.Ack()
 			return
 		}
 		// The filter fixed the name and the tenant, because this is an exact subject
@@ -457,14 +466,11 @@ func (j *jetstream) Observe(ctx context.Context, tenantID uuid.UUID, name string
 		if err := transport.AddressMismatch(j.app, msg.Subject, ev); err != nil {
 			slog.ErrorContext(ctx, "events: message at an address its document does not claim",
 				"subject", msg.Subject, "event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "error", err)
-			_ = msg.Ack()
 			return
 		}
-		// The server would redeliver an unacked message to this same ephemeral
-		// consumer, which for a notice means the same frame twice. Answer every
-		// delivery, and answer it before fn: an observation that panicked or was
-		// dropped would otherwise be retried, and nothing retries an observation.
-		_ = msg.Ack()
+		// Nothing is acknowledged and nothing is asked for: an observation dropped
+		// here is a notice the client is told to refetch rather than one this process
+		// owes, and an ack would be the broker's licence to deliver it a second time.
 		defer func() {
 			if v := recover(); v != nil {
 				slog.ErrorContext(ctx, "events: an observation panicked; the notice was dropped",
