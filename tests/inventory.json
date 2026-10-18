@@ -7065,6 +7065,44 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/app/a_live_connection_watches_the_transport_its_composition_publishes_on_test.go",
+   "id": "kit/app/a_live_connection_watches_the_transport_its_composition_publishes_on_test.go#TestTheLiveDoorDeliversTheOutboxEventItsOwnRelayPublished",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheLiveDoorDeliversTheOutboxEventItsOwnRelayPublished",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/app/a_live_connection_watches_the_transport_its_composition_publishes_on_test.go",
+   "id": "kit/app/a_live_connection_watches_the_transport_its_composition_publishes_on_test.go#TestACompositionDialsOneTransportForItsRelayAndItsLiveDoor",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACompositionDialsOneTransportForItsRelayAndItsLiveDoor",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/app/an_app_that_names_nothing_has_no_ledger_of_its_own_to_move_test.go",
    "id": "kit/app/an_app_that_names_nothing_has_no_ledger_of_its_own_to_move_test.go#TestTheKernelDeclaresTheMoveOnlyForAnAppThatNamesItself",
    "kind": "go",
@@ -8112,6 +8150,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/app/memory_stream_outbox_test.go",
+   "id": "kit/app/memory_stream_outbox_test.go#TestTheDefaultMemoryStreamReceivesCommittedOutboxEvents",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheDefaultMemoryStreamReceivesCommittedOutboxEvents",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "merge",
    "unique_lines": null,
    "unique_reach": [],
@@ -59873,7 +59930,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1541,
+  "files": 1543,
   "forge_runs": [
    408,
    413,
@@ -59907,7 +59964,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2566,
+   "behaviour": 2569,
    "composition": 351,
    "contract": 19,
    "journey": 88
@@ -59926,9 +59983,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3024,
+  "rows": 3027,
   "tiers": {
-   "merge": 1913,
+   "merge": 1916,
    "nightly": 88,
    "push": 1023
   },
@@ -59936,13 +59993,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1356,
+   "keep": 1358,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2734,
+   "keep": 2737,
    "keep-rewrite": 117,
    "merge": 173
   }
