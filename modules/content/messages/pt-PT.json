@@ -500,5 +500,140 @@
     "plural": {
       "": "conteúdo arquivado não é publicado a partir do arquivo; despublique-o primeiro"
     }
+  },
+  "hints.content/content.field.title.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "T\u00edtulo",
+    "plural": {
+      "": "T\u00edtulo"
+    }
+  },
+  "hints.content/content.field.title.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "O que uma lista e um cabe\u00e7alho mostram",
+    "plural": {
+      "": "O que uma lista e um cabe\u00e7alho mostram"
+    }
+  },
+  "hints.content/content.field.body.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Corpo",
+    "plural": {
+      "": "Corpo"
+    }
+  },
+  "hints.content/content.field.body.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "O conte\u00fado em si, em Markdown",
+    "plural": {
+      "": "O conte\u00fado em si, em Markdown"
+    }
+  },
+  "hints.content/content.field.kind.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "P\u00e1gina ou publica\u00e7\u00e3o",
+    "plural": {
+      "": "P\u00e1gina ou publica\u00e7\u00e3o"
+    }
+  },
+  "hints.content/content.field.status.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "hints.content/content.field.status.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Estado do ciclo de vida",
+    "plural": {
+      "": "Estado do ciclo de vida"
+    }
+  },
+  "hints.content/content.enum.status.draft": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Rascunho",
+    "plural": {
+      "": "Rascunho"
+    }
+  },
+  "hints.content/content.enum.status.published": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publicado",
+    "plural": {
+      "": "Publicado"
+    }
+  },
+  "hints.content/content.enum.status.archived": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivado",
+    "plural": {
+      "": "Arquivado"
+    }
+  },
+  "hints.content/content.enum.kind.page": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "P\u00e1gina",
+    "plural": {
+      "": "P\u00e1gina"
+    }
+  },
+  "hints.content/content.enum.kind.post": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publica\u00e7\u00e3o",
+    "plural": {
+      "": "Publica\u00e7\u00e3o"
+    }
+  },
+  "hints.content/content.field.publishedAt.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Momento em que foi publicado",
+    "plural": {
+      "": "Momento em que foi publicado"
+    }
+  },
+  "hints.content/content.field.author.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Autor",
+    "plural": {
+      "": "Autor"
+    }
+  },
+  "hints.content/content.field.author.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "O utilizador que criou este conte\u00fado",
+    "plural": {
+      "": "O utilizador que criou este conte\u00fado"
+    }
   }
 }

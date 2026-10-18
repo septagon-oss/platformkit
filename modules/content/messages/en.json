@@ -500,5 +500,140 @@
     "plural": {
       "": "page"
     }
+  },
+  "hints.content/content.field.title.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Title",
+    "plural": {
+      "": "Title"
+    }
+  },
+  "hints.content/content.field.title.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Headline",
+    "plural": {
+      "": "Headline"
+    }
+  },
+  "hints.content/content.field.body.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Body",
+    "plural": {
+      "": "Body"
+    }
+  },
+  "hints.content/content.field.body.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "The content itself in Markdown",
+    "plural": {
+      "": "The content itself in Markdown"
+    }
+  },
+  "hints.content/content.field.kind.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Page or post",
+    "plural": {
+      "": "Page or post"
+    }
+  },
+  "hints.content/content.field.status.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Status",
+    "plural": {
+      "": "Status"
+    }
+  },
+  "hints.content/content.field.status.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Lifecycle state",
+    "plural": {
+      "": "Lifecycle state"
+    }
+  },
+  "hints.content/content.enum.status.draft": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Draft",
+    "plural": {
+      "": "Draft"
+    }
+  },
+  "hints.content/content.enum.status.published": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Published",
+    "plural": {
+      "": "Published"
+    }
+  },
+  "hints.content/content.enum.status.archived": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Archived",
+    "plural": {
+      "": "Archived"
+    }
+  },
+  "hints.content/content.enum.kind.page": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Page",
+    "plural": {
+      "": "Page"
+    }
+  },
+  "hints.content/content.enum.kind.post": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Post",
+    "plural": {
+      "": "Post"
+    }
+  },
+  "hints.content/content.field.publishedAt.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "When this was published",
+    "plural": {
+      "": "When this was published"
+    }
+  },
+  "hints.content/content.field.author.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Author",
+    "plural": {
+      "": "Author"
+    }
+  },
+  "hints.content/content.field.author.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "The user who created this",
+    "plural": {
+      "": "The user who created this"
+    }
   }
 }
