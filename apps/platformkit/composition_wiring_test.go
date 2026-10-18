@@ -13,8 +13,6 @@ package main
 // Build, which these cases read rather than assert around.
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -43,14 +41,7 @@ func sentencesOf(cfg config.Config, without ...string) *pkit.App {
 }
 
 func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(compositionConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := referenceCompositionConfig(t)
 	r := composeReference(cfg, pkit.Development)
 	// Every module the sentence names is one the resolver placed, and every
 	// module the resolver placed is one the sentence named: Use is the whole of
