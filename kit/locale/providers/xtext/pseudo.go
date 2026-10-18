@@ -66,6 +66,19 @@ func (p pseudoCatalog) Languages() []string {
 	return append(p.Catalog.Languages(), p.tag)
 }
 
+// Carries answers [Carrier] for the composition the debugging language was added to,
+// so wrapping a catalogue does not mute the question. The derived language holds the
+// base language's own copy, so it carries exactly what the base carries; a base that
+// cannot say answers nothing, which is the same honest answer [Load]'s catalogue gives
+// for a language nobody loaded.
+func (p pseudoCatalog) Carries(language, key string) bool {
+	if sameLanguage(language, p.tag) {
+		language = p.base
+	}
+	carrier, ok := p.Catalog.(Carrier)
+	return ok && carrier.Carries(language, key)
+}
+
 // Select answers in the pseudo-locale when the caller asked for it and the language
 // the composition would otherwise answer in is the one it is derived from. The
 // second condition is what keeps a Portuguese tenant from being rendered in accented
