@@ -19,8 +19,9 @@ pkit: seed.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: user.Module is built after product.Module.
 pkit: user.Module needs usercontracts.Administration from product.Module.
 pkit: user.Module needs usercontracts.Granting from product.Module.
+pkit: user.Module needs usercontracts.LocalePolicy from product.Module.
 pkit: user.Module defines the permission user:read, user:manage and user:approve.
-pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.administration_refused, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
+pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.language_set, user.administration_refused, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
 pkit: translation.Module is built after product.Module.
 pkit: translation.Module needs rest.TranslationSource from product.Module.
 pkit: translation.Module emits translation.updated.
@@ -31,10 +32,11 @@ pkit: site.Module emits site.settings_updated.
 pkit: tenant.Module is built after product.Module, user.Module and seed.Module.
 pkit: tenant.Module needs tenantcontracts.Inviter from user.Module.
 pkit: tenant.Module takes every tenantcontracts.Hook from product.Module and seed.Module.
+pkit: tenant.Module needs tenantcontracts.LocaleManager from product.Module.
 pkit: tenant.Module uses tenantcontracts.Languages from product.Module.
 pkit: tenant.Module reads config.NATS.
 pkit: tenant.Module reads config.Server.
-pkit: tenant.Module defines the permission tenant:manage.
+pkit: tenant.Module defines the permission tenant:manage and tenant:locale_manage.
 pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.renamed, tenant.host_removed, tenant.reactivated, tenant.deleted, tenant.lifecycle_recorded, tenant.oidc_set, tenant.oidc_cleared, tenant.saml_set and tenant.saml_cleared.
 pkit: emailregistration.Module is built after user.Module.
 pkit: emailregistration.Module needs usercontracts.Service from user.Module.
@@ -92,9 +94,10 @@ pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth
 pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_unverified, auth.no_link_requested and auth.verification_requested.
 pkit: media.Module is built after auth.Module.
 pkit: media.Module needs authcontracts.Auth from auth.Module.
-pkit: access.Module is built after product.Module, user.Module, notification.Module, auth.Module and site.Module.
+pkit: access.Module is built after product.Module, user.Module, tenant.Module, notification.Module, auth.Module and site.Module.
 pkit: access.Module needs usercontracts.Service from user.Module.
 pkit: access.Module needs notificationcontracts.Service from notification.Module.
+pkit: access.Module needs tenantcontracts.Service from tenant.Module.
 pkit: access.Module needs sitecontracts.Service from site.Module.
 pkit: access.Module needs sitecontracts.LockedReader from site.Module.
 pkit: access.Module needs usercontracts.Granting from product.Module.
@@ -134,8 +137,11 @@ pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
 pkit: admin.Module uses admincontracts.Pictures from product.Module.
-pkit: admin.Module uses admincontracts.Locale from product.Module.
+pkit: admin.Module uses admincontracts.Locale from access.Module.
 pkit: admin.Module could use admincontracts.Storybook; platformkit composes no provider, so it will not.
+pkit: admin.Module uses admincontracts.AccountLanguage from access.Module.
+pkit: admin.Module uses admincontracts.AccountLanguageVersion from access.Module.
+pkit: admin.Module uses tenantcontracts.Languages from product.Module.
 pkit: admin.Module runs after everything and saw every other module's manifest.
 pkit: admin.Module defines the permission gallery:read.
 pkit: tenant.Module provides httpx.TenantLoader; no module in platformkit needs it.

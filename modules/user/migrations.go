@@ -20,16 +20,18 @@ var schema embed.FS
 var Migrations = db.MigrationSource{
 	Owner:  "user",
 	Files:  db.Sub(schema, "migrations"),
-	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25, 72, 73}}},
-	// 000072 and 000073 join the list for the reason the paragraph above gives: the
-	// upgrade fixture replays every file of this composition under the one old owner,
-	// so a module file not adopted here is a file an existing installation is refused
-	// at. Their numbers are 72 and 73 rather than the 30 and 32 they were first
-	// written as, because an adopted version is matched on owner and version: as 30,
-	// this list would find the kernel's own 000030_tenant_oidc on an installation that
-	// had applied it and refuse the upgrade over a file it had never seen. A new file
-	// of this composition takes a number above every file in it, wherever it lives
-	// (apps/platformkit/app_test.go counts them).
+	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25}}},
+	// 000072 and 000073 are deliberately absent from that list. They are files
+	// this release ships new, not history the foundation applied, and an adoption
+	// is a claim about the old ledger: apps/platformkit's upgrade fixture builds
+	// its old installation out of every version up to the highest adopted one, so
+	// naming 72 and 73 here would drag every post-split file of every owner below
+	// them into a ledger that never saw them — and their numbers are 72 and 73
+	// rather than the 30 and 32 they were first written as because an adoption
+	// also matches on owner and version: 30 here would find the kernel's own
+	// 000030_tenant_oidc and refuse the upgrade over a file this module had never
+	// shown. A new file takes a number above every file in the composition,
+	// wherever it lives (apps/platformkit/app_test.go counts them).
 	//
 	// 000025 indexes users twice in a file that does not create it. Applied, so
 	// unmarkable; the guard takes version 26 onwards.
