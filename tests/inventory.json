@@ -66528,7 +66528,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1714,
+  "files": 1764,
   "forge_runs": [
    408,
    413,
@@ -66562,10 +66562,10 @@
    578
   ],
   "layers": {
-   "behaviour": 2796,
-   "composition": 397,
+   "behaviour": 2838,
+   "composition": 408,
    "contract": 20,
-   "journey": 93
+   "journey": 99
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -66581,23 +66581,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3306,
+  "rows": 3365,
   "tiers": {
-   "merge": 2070,
-   "nightly": 93,
-   "push": 1143
+   "merge": 2120,
+   "nightly": 99,
+   "push": 1146
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1487,
+   "keep": 1537,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2950,
+   "keep": 3009,
    "keep-rewrite": 140,
    "merge": 216
   }
