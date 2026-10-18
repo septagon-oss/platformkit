@@ -756,6 +756,15 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# at once. No node, no container and no real wait: it starts one loopback server per case and kills
 	# its process group whether the case passed or refused.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_attribution_test.py
+	# Whether the job would run that step at all. scripts/free_port_test.sh reads the receipt step's own
+	# policy keys — no `if:`, and no `continue-on-error:` other than the literal `false` — and this case is
+	# the check on that reading: it plants each weakening in a copy of the workflow and runs the whole
+	# guard over the copy, which must lose the verdict while keeping the commands that just passed, so a
+	# refusal belongs to the declaration and not to a step whose body went missing with it. The accepted
+	# forms — no condition, and the explicit `continue-on-error: false` — are run beside them, so a guard
+	# that hardened into a refusal of any line under a step's name fails here. Four runs of the guard, so
+	# a few seconds more than its own line, and still no stack, no container and no device.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_step_policy_test.py
 	# Which failures of the API gate's one network step are worth another try. The target
 	# itself is the last prerequisite; this case is the bound on its retry, so it runs with
 	# the rest of the script cases and needs no stack, no proxy and no tree but this one.
