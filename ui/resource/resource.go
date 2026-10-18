@@ -250,6 +250,14 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		item = at + "/" + display.Text(row["id"])
 	}
 	named := label(row, readable(r.Schema.Fields))
+	if r.Singleton {
+		// A singleton is one row nobody chose, so it is called what the resource is
+		// called. Naming it after the first field that happens to hold a value made
+		// the site's settings page titled after its home slug — a value on the page
+		// read out as the page's name, in whichever language the row happens to be
+		// written in and in none the reader asked for.
+		named = o.noun(r, 1)
+	}
 	var actions []g.Node
 	if writable {
 		if r.offers("update") {
