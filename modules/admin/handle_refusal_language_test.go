@@ -25,7 +25,7 @@ import (
 func userLanguageRouter(t *testing.T) (*sql.DB, http.Handler) {
 	t.Helper()
 	owner, conn := dbtest.Schema(t, user.Migrations)
-	_, users := user.Module(user.Deps{
+	_, users := user.New(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: func(context.Context, db.Tx[db.Tenant]) ([]string, error) {
 			return []string{"admin"}, nil
 		}},
@@ -43,7 +43,7 @@ func userLanguageRouter(t *testing.T) (*sql.DB, http.Handler) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	shell := admin.Module(admin.Deps{
+	shell := admin.New(admin.Deps{
 		Modules: []module.Module{users}, Authorize: caller{}, SignIn: "/api/v1/auth/login",
 		Messages: xtext.Load("en", admin.Catalogue(), user.Catalogue(), page.Catalogue(),
 			xtext.Source{Name: "resource", FS: resource.Catalogues()}),

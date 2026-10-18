@@ -7,11 +7,12 @@
 // its service back to main as well as its manifest: main holds the value,
 // because three other things need it.
 //
-// It imports no other module, and the modules above it reach it through hooks
-// (contracts.Hook) rather than the other way round.
+// Its one cross-module import is modules/user/contracts, for the invite route's
+// Inviter; otherwise it is reached through hooks (contracts.Hook), not the reverse.
 package tenant
 
 import (
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -67,17 +68,26 @@ type Deps struct {
 	// (apps/platformkit/catalog.go); this module names no tag. A composition that
 	// wires no catalogues passes nothing, and then nothing is checked against it.
 	Languages []string
+
+	// App is the composition's own slug — the app every tenant this control plane
+	// writes belongs to, and what every read is scoped to. It is the same value the
+	// event transport, the job lock and the cookie name are formed from
+	// (kit/appname), read from the one setting that names it (nats.app); the empty
+	// Name is the deployment of one app, whose tenants are the ones this module has
+	// always listed.
+	App appname.Name
 }
 
-// Module is the manifest, and the service it is built on.
+// New is the manifest, and the service it is built on. provider.go is what calls
+// it for an application that names tenant.Module in Use.
 //
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.LocaleManager == nil {
-		panic("tenant.Module: Deps.LocaleManager is nil; the self-service language command would have no authorizer to ask")
+		panic("tenant.New: Deps.LocaleManager is nil; the self-service language command would have no authorizer to ask")
 	}
-	svc := internal.NewServiceWithLocaleManager(deps.OnCreate, deps.Languages, deps.LocaleManager)
+	svc := internal.NewServiceWithLocaleManager(deps.OnCreate, deps.Languages, deps.App, deps.LocaleManager)
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,
@@ -86,6 +96,15 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.Suspended](contracts.EventSuspended),
 			events.Declare[contracts.HostAdded](contracts.EventHostAdded),
 			events.Declare[contracts.LocaleSet](contracts.EventLocaleSet),
+			events.Declare[contracts.Renamed](contracts.EventRenamed),
+			events.Declare[contracts.HostRemoved](contracts.EventHostRemoved),
+			events.Declare[contracts.Reactivated](contracts.EventReactivated),
+			events.Declare[contracts.Deleted](contracts.EventDeleted),
+			events.Declare[contracts.LifecycleRecorded](contracts.EventLifecycleRecorded),
+			events.Declare[contracts.OIDCSet](contracts.EventOIDCSet),
+			events.Declare[contracts.OIDCCleared](contracts.EventOIDCCleared),
+			events.Declare[contracts.SAMLSet](contracts.EventSAMLSet),
+			events.Declare[contracts.SAMLCleared](contracts.EventSAMLCleared),
 		},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above

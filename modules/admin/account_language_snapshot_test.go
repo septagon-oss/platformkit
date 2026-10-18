@@ -40,10 +40,10 @@ func (a countedAccountUsers) ChooseAt(ctx context.Context, tx db.Tx[db.Tenant], 
 
 func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 	owner, conn := dbtest.Schema(t, user.Migrations)
-	tenants, _ := tenant.Module(tenant.Deps{
+	tenants, _ := tenant.New(tenant.Deps{
 		Languages: []string{"en", "pt-PT"}, LocaleManager: tenanttest.NewFake(),
 	})
-	users, _ := user.Module(user.Deps{
+	users, _ := user.New(user.Deps{
 		LocalePolicy: tenants,
 		Administration: &usercontracts.AdministrationFunc{Ask: func(context.Context, db.Tx[db.Tenant]) ([]string, error) {
 			return []string{"admin"}, nil
@@ -84,7 +84,7 @@ func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	account := countedAccountUsers{accountUsers{users}}
-	shell := admin.Module(admin.Deps{SignIn: "/api/v1/auth/login", Authorize: caller{}, Language: account,
+	shell := admin.New(admin.Deps{SignIn: "/api/v1/auth/login", Authorize: caller{}, Language: account,
 		LanguageVersion: account, Messages: xtext.Load("en", admin.Catalogue())})
 	var grants []tenancy.Grant
 	for _, permission := range shell.Permissions {

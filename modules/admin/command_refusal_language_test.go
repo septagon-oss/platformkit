@@ -32,8 +32,8 @@ func taskLanguageRouter(t *testing.T) (*sql.DB, http.Handler) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	tasks := task.Module(task.Deps{})
-	shell := admin.Module(admin.Deps{
+	tasks := task.New(task.Deps{})
+	shell := admin.New(admin.Deps{
 		Modules: []module.Module{tasks}, Authorize: caller{}, SignIn: "/api/v1/auth/login",
 		Messages: xtext.Load("en", admin.Catalogue(), task.Catalogue(), page.Catalogue(),
 			xtext.Source{Name: "resource", FS: resource.Catalogues()}),

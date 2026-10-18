@@ -3,8 +3,13 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -24,6 +29,10 @@ import (
 const (
 	path       = "/files"
 	publicPath = "/files/{id}"
+	// usesRoute is this module's own read of "who shows this file", and the
+	// address a refused delete points its caller at. One spelling for the route
+	// and for the pointer, so the two cannot disagree about where it lives.
+	usesRoute = path + "/{id}/uses"
 )
 
 // streams is the kernel's mark for a route that reads the request itself, and
@@ -31,27 +40,71 @@ const (
 // a two-value call.
 var streams, streaming = httpx.StreamedBody()
 
+// limits is the kernel's mark for an operation whose writes are counted, and
+// countedUploads its two windows: 60 a minute for one person is more than a page
+// of pictures dragged in at once and less than a script's steady rate, and 300 a
+// minute for one tenant is a fuse beside the decode bound rather than a working
+// limit. Both are constants beside the route that declares them, in the precedent
+// of the public surface's own allowance.
+const (
+	uploadsPerActor     = 60
+	uploadsActorWindow  = "1m"
+	uploadsPerTenant    = 300
+	uploadsTenantWindow = "1m"
+)
+
+var limits, countedUploads = httpx.WriteLimits(
+	httpx.WriteLimit{Per: httpx.LimitPerActor, Limit: uploadsPerActor, Window: uploadsActorWindow},
+	httpx.WriteLimit{Per: httpx.LimitPerTenant, Limit: uploadsPerTenant, Window: uploadsTenantWindow},
+)
+
+// door is what these routes ask of the service: every command of contracts.Service
+// and the width door beside it. The two are one object at every composition — the
+// SQL service answers both — and are named together here rather than on
+// contracts.Service, because the width door is only ever this module's own route and
+// an exported interface that gains a method is a break for anybody outside this
+// repository who implemented the old one. See contracts.WidthOpener.
+type door interface {
+	contracts.Service
+	contracts.WidthOpener
+	contracts.Library
+}
+
 var faults = []int{
 	http.StatusNotFound, http.StatusRequestEntityTooLarge,
 	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 }
 
-// RegisterRoutes mounts the six routes a file has.
+// RegisterRoutes mounts every operation a file has: the list, one read, the
+// upload, the content door twice (GET and HEAD), the public door twice, the
+// delete, the grant, the uses, the hold placed and released, the subject
+// erasure, the meter, and the caption at both of its doors.
 //
 // There is no rest.Spec, and the reason is one sentence: a Spec's create route
 // takes a JSON body, and a file arrives as bytes. The list and the read below
 // are the two Spec routes that would have made sense, written out; the create
-// is a multipart upload, the update does not exist because a file's bytes are
-// what they are, and the delete has an event to publish that the generic one
-// could not carry.
-func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
+// is a multipart upload; the bytes are never updated, because a file's bytes are
+// what they are and a new picture is a new digest under a new key; and the delete
+// has an event to publish that the generic one could not carry. The two
+// operations at the end write no bytes: a caption and a meter reading are the
+// facts about a file a person edits and reads every day, and both answers come
+// out of the service rather than out of a screen.
+func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 	app, public := surfaces.App, surfaces.Public
+	// The address the door below is mounted at, prefix included. A refusal that
+	// sends a caller somewhere has to name where that thing is served, and only
+	// the router knows: the module owns "/files/{id}/uses" while the surface owns
+	// the /api/v1/<module> in front of it. Composing it here rather than writing
+	// the whole address out is what keeps this module free of a prefix literal it
+	// could easily get wrong — an address assembled from the relative path alone
+	// is one a caller follows into a 404.
+	usesAt := app.Path(usesRoute)
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-list",
 		Method:      http.MethodGet,
 		Path:        path,
 		Summary:     "List files",
-		Description: "The tenant's files, newest first. The bytes are at /{id}/content.",
+		Description: "The tenant's files, newest first, filtered by name, media family and whether anything still shows them. The bytes are at /{id}/content.",
 		Tags:        []string{"file"},
 		Errors:      faults,
 	}, httpx.Permission(contracts.PermissionFileRead),
@@ -60,7 +113,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 			if err != nil {
 				return nil, err
 			}
-			items, total, err := crud.List[*contracts.File](tx, crud.Query{Limit: in.Limit, Offset: in.Offset, Sort: in.Sort})
+			items, total, err := svc.Search(ctx, tx, contracts.LibraryQuery{
+				Name: in.Q, Family: in.Type, Unused: in.Unused,
+				Sort: in.Sort, Limit: in.Limit, Offset: in.Offset,
+			})
 			if err != nil {
 				return nil, fault(err)
 			}
@@ -68,6 +124,80 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 			out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, in.Limit, in.Offset
 			return out, nil
 		})
+
+	// The meter, beside the refusal it is the same number as. It is file:read and
+	// never anonymous: an anonymous caller learning how much of a quota is left is
+	// what contracts.ErrQuota's own comment refuses a status of its own for, and a
+	// member of the tenant asking about that tenant's own disk is a different
+	// question with a different answer.
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-quota-read",
+		Method:      http.MethodGet,
+		Path:        "/quota",
+		Summary:     "Read this tenant's storage meter",
+		Description: "What the tenant is holding, what it was given, and what is left — the same sum an upload is refused against, taken without the upload lock, so it is the number as of this request and not a promise about the next one. An installation with no ceiling answers unlimited.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *quotaInput) (*rest.Item[*contracts.Quota], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			q, err := svc.Quota(ctx, tx)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.Quota]{Body: q}, nil
+		})
+
+	// The caption, at the two doors that perform it.
+	//
+	// PUT is this module's own spelling, and PUT rather than PATCH because the pair
+	// (alt, decorative) is the whole of what a caption claims: writing it is a
+	// replacement of a claim and not a partial edit of one, the revision travels in
+	// the body for the reason contracts.Library states, and the answer is the row
+	// that carries the new claim.
+	//
+	// POST {id}/alt is the door the typed catalog sends a caller to. httpx.Command
+	// documents a row command as POST {Path}/{id}/{Verb}, and that derivation is what
+	// a client which never compiled against this module performs whenever the entry
+	// prints no path of its own — so the verb catalog.go declares has to answer where
+	// the document points, or the catalog offers a door that only the browser it was
+	// hand-written for can open. One handler, one guard and one service call behind
+	// both; two operation ids because the document names each door once, and an id a
+	// generated client calls is the one thing in the document that cannot be renamed
+	// without breaking whoever called it first.
+	caption := func(ctx context.Context, in *altInput) (*rest.Item[*contracts.File], error) {
+		if in.Body == nil {
+			return nil, problem.New(http.StatusUnprocessableEntity, "an alt text, or the claim that the image is decorative")
+		}
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		f, err := svc.SetAlt(ctx, tx, in.ID, in.Body.Alt, in.Body.Decorative, in.Body.ExpectedUpdatedAt)
+		if err != nil {
+			return nil, fault(err)
+		}
+		return &rest.Item[*contracts.File]{Body: f}, nil
+	}
+	for _, door := range []struct{ operation, method string }{
+		{"file-file-alt", http.MethodPut},
+		{"file-file-alt-command", http.MethodPost},
+	} {
+		httpx.Register(app, huma.Operation{
+			OperationID:   door.operation,
+			Method:        door.method,
+			Path:          path + "/{id}/alt",
+			Summary:       "Write what a file says about itself",
+			Description:   "Alt text, or the claim that the image is decorative and says nothing. A file that is empty and not decorative is refused with 422, and one whose updatedAt has moved past expectedUpdatedAt is refused with 409 and stays exactly as it was. PUT is the whole claim written at once; POST is the same write at the address the catalog's caption command names.",
+			Tags:          []string{"file"},
+			DefaultStatus: http.StatusOK,
+			Errors:        append(slices.Clone(faults), http.StatusConflict),
+			Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventAltered}},
+		}, httpx.Permission(contracts.PermissionFileManage), caption)
+	}
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-read",
@@ -98,14 +228,24 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 		Description:   "A multipart form with one file part. The bytes are streamed to storage as they arrive, hashed and counted on the way past; an upload larger than this deployment accepts is refused with 413 and nothing is kept.",
 		Tags:          []string{"file"},
 		DefaultStatus: http.StatusCreated,
-		Errors:        faults,
+		Errors:        append(slices.Clone(faults), http.StatusTooManyRequests),
 		// The second extension is what tells the kernel this route reads its
 		// own request: no schema means no ceiling of huma's, so the kernel
 		// gives it files.max_bytes and a multipart envelope instead of the
 		// megabyte every other route gets. See httpx.StreamedBody.
+		//
+		// The third counts its writes, per person and per tenant: a page's
+		// worth of pictures dragged in at once stays well inside the first, and
+		// the second is a fuse rather than a working limit — an installation
+		// whose decode bound is one frame per core cannot serve a tenant's 300
+		// uploads a minute anyway, and the number that arrives first should be
+		// the one answering Retry-After. Both are constants beside the route, in
+		// the precedent of the public surface's own allowance; a deployment that
+		// needs other numbers is the product's decision, not this module's.
 		Extensions: map[string]any{
 			httpx.EventsExtension: []string{contracts.EventUploaded},
 			streams:               streaming,
+			limits:                countedUploads,
 		},
 		// Declared by hand, with no schema, which is what keeps huma from
 		// reading the body: a schema here would make it decode the whole form
@@ -122,11 +262,22 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 				return nil, err
 			}
 			up.Visibility = in.Visibility
+			up.Kind = in.Kind
+			up.Image = in.Image
 			// transaction and not transaction(ctx): the per-request transaction
 			// is lazy, and this route is the one that must not open it before
 			// the body has arrived. See contracts.Tx.
 			f, err := svc.Upload(ctx, transaction, up)
 			if err != nil {
+				// Every frame slot was taken for longer than this route will wait.
+				// The answer then has to say when to come back, and the honest
+				// figure is the wait this refusal already cost: a caller that
+				// guesses either hammers a saturated machine or sits out a minute
+				// for a slot that freed in seconds. The hint goes on the response,
+				// where a retry reads it, and not into the sentence.
+				if errors.Is(err, contracts.ErrBusyDecoding) {
+					httpx.RetryAfter(ctx, decodeUploadWait)
+				}
 				return nil, fault(err)
 			}
 			return &rest.Item[*contracts.File]{Body: f}, nil
@@ -146,8 +297,8 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 			Tags:        []string{"file"},
 			Errors:      faults,
 		}, httpx.Permission(contracts.PermissionFileRead),
-			func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
-				return download(ctx, svc, in.ID, false)
+			func(ctx context.Context, in *contentInput) (*huma.StreamResponse, error) {
+				return download(ctx, svc, in.ID, false, in.Width)
 			})
 	}
 
@@ -164,11 +315,11 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 			Description: "The bytes of a file whose visibility is public. Anything else is a 404, so an anonymous caller learns nothing about what this tenant has.",
 			Tags:        []string{"file"},
 			Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
-		}, httpx.Public(), func(ctx context.Context, in *idInput) (*huma.StreamResponse, error) {
+		}, httpx.Public(), func(ctx context.Context, in *contentInput) (*huma.StreamResponse, error) {
 			if _, ok := tenancy.FromContext(ctx); !ok {
 				return nil, problem.NotFound("no site is served at this host")
 			}
-			return download(ctx, svc, in.ID, true)
+			return download(ctx, svc, in.ID, true, in.Width)
 		})
 	}
 
@@ -177,10 +328,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 		Method:        http.MethodDelete,
 		Path:          path + "/{id}",
 		Summary:       "Delete a file",
-		Description:   "Removes the record now and the bytes once this commits: a blob delete cannot be rolled back, so it is done by whoever handles file.deleted.",
+		Description:   "Removes the record now and the bytes once this commits: a blob delete cannot be rolled back, so it is done by whoever handles file.deleted. A file under a live hold is refused with 409 and nothing is written.",
 		Tags:          []string{"file"},
 		DefaultStatus: http.StatusNoContent,
-		Errors:        faults,
+		Errors:        append(slices.Clone(faults), http.StatusConflict),
 		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventDeleted}},
 	}, httpx.Permission(contracts.PermissionFileManage),
 		func(ctx context.Context, in *idInput) (*struct{}, error) {
@@ -189,10 +340,140 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 				return nil, err
 			}
 			if _, err := svc.Delete(ctx, tx, in.ID); err != nil {
+				// A refusal that names a count is worth sending the caller the
+				// address that lists them: what to do next is edit or remove those
+				// records, and where they are is this module's own read.
+				refused := new(contracts.InUse)
+				if errors.As(err, &refused) {
+					return nil, problem.Conflict(fmt.Sprintf("%s; their uses are at %s",
+						err, strings.Replace(usesAt, "{id}", in.ID.String(), 1)))
+				}
 				return nil, fault(err)
 			}
 			return nil, nil
 		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-grant",
+		Method:      http.MethodGet,
+		Path:        path + "/{id}/grant",
+		Summary:     "Mint a time-limited URL for a private file",
+		Description: "A URL that serves the bytes until it expires, with no request to this application in the path. A public file is refused: it already has an open door. A store that cannot sign one is refused with 501.",
+		Tags:        []string{"file"},
+		Errors:      append(slices.Clone(faults), http.StatusNotImplemented),
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *grantInput) (*rest.Item[*contracts.Grant], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			grant, err := svc.Grant(ctx, tx, in.ID, in.Expires)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.Grant]{Body: grant}, nil
+		})
+
+	// Who reads this file. The ids are read back through the same policy that
+	// decided the file was readable at all, so an answer here is scoped to the
+	// caller by the database and not by a filter this handler wrote.
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-uses",
+		Method:      http.MethodGet,
+		Path:        usesRoute,
+		Summary:     "List the records that reference a file",
+		Description: "Which record's field, in which locale, shows this file's image — the records a library's details panel links to. A file nobody shows answers an empty list; a file this caller may not read answers 404.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *idInput) (*rest.Item[[]contracts.UseRow], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			uses, err := svc.Uses(ctx, tx, in.ID)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[[]contracts.UseRow]{Body: uses}, nil
+		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-retain",
+		Method:      http.MethodPost,
+		Path:        path + "/{id}/hold",
+		Summary:     "Place or replace a retention hold",
+		Description: "Keeps one file past whatever its retention class says. An until in the past is refused: a hold that has already expired holds nothing.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRetained}},
+	}, httpx.Permission(contracts.PermissionFileRetain),
+		func(ctx context.Context, in *retainInput) (*rest.Item[*contracts.Hold], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			var until *time.Time
+			reason := ""
+			if in.Body != nil {
+				until, reason = in.Body.Until, in.Body.Reason
+			}
+			hold, err := svc.Retain(ctx, tx, in.ID, until, reason)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.Hold]{Body: hold}, nil
+		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID:   "file-file-release",
+		Method:        http.MethodDelete,
+		Path:          path + "/{id}/hold",
+		Summary:       "Release a retention hold",
+		Description:   "The file goes back to its class's policy. No hold is not an error.",
+		Tags:          []string{"file"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        faults,
+		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventReleased}},
+	}, httpx.Permission(contracts.PermissionFileRetain),
+		func(ctx context.Context, in *idInput) (*struct{}, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := svc.Release(ctx, tx, in.ID); err != nil {
+				return nil, fault(err)
+			}
+			return nil, nil
+		})
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-erase",
+		Method:      http.MethodPost,
+		Path:        path + "/erase",
+		Summary:     "Erase a subject's files",
+		Description: "Removes every file this subject uploaded and the bytes beside each one, and leaves one proof row per blob with the digest that is gone and the reason it was asked for. One held file refuses the whole erasure with 409 and names it; a subject with no files answers a receipt of zero and writes nothing.",
+		Tags:        []string{"file"},
+		Errors:      append(slices.Clone(faults), http.StatusConflict),
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventDeleted, contracts.EventErased}},
+	}, httpx.Permission(contracts.PermissionFileErase),
+		func(ctx context.Context, in *eraseInput) (*rest.Item[*contracts.ErasureReceipt], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			subject, reason := uuid.Nil, ""
+			if in.Body != nil {
+				subject, reason = in.Body.Subject, in.Body.Reason
+			}
+			receipt, err := svc.EraseSubject(ctx, tx, subject, reason)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.ErasureReceipt]{Body: receipt}, nil
+		})
+
+	catalog(surfaces, svc)
 }
 
 // arriving is the file part of a multipart request, as a reader nothing has
@@ -245,11 +526,18 @@ func arriving(ctx context.Context) (contracts.Upload, error) {
 // to be unique and it is what a generated client calls the method.
 var suffix = map[string]string{http.MethodGet: "", http.MethodHead: "-head"}
 
-// download answers with the bytes. The response is a stream rather than a body
-// huma marshals, so a large file is not copied through a buffer on its way out;
-// kit/httpx holds a response until the transaction commits and gives up on that
-// past two megabytes, which is where a download stops being something worth
-// holding.
+// download answers with the bytes, at one width or at none. The response is a
+// stream rather than a body huma marshals, so a large file is not copied through
+// a buffer on its way out; kit/httpx holds a response until the transaction
+// commits and gives up on that past two megabytes, which is where a download
+// stops being something worth holding.
+//
+// A width is the srcset's candidate, named by number in the query: the same
+// address, one object. An unknown width is refused by name rather than answered
+// with the nearest one, because only this kernel's own srcset builds these URLs
+// and an odd value is a caller bug; a width the plan has not built is a 404 and
+// never the original, which would make one address two objects and every cache in
+// front of this process a liar about which one it holds.
 //
 // The disposition is the security decision, and it is a closed allow-list: a
 // stored type this application will render is served inline, and everything
@@ -259,17 +547,32 @@ var suffix = map[string]string{http.MethodGet: "", http.MethodHead: "-head"}
 // browser will run a script inside, and whatever the next browser adds. An
 // uploaded page served inline is stored cross-site scripting on the tenant's
 // own origin, with the tenant's own cookies, which is what the review found.
-func download(ctx context.Context, svc contracts.Opener, id uuid.UUID, anonymous bool) (*huma.StreamResponse, error) {
+func download(ctx context.Context, svc contracts.WidthOpener, id uuid.UUID, anonymous bool, width int) (*huma.StreamResponse, error) {
+	if width > 0 && !slices.Contains(contracts.VariantWidthSet, width) {
+		return nil, problem.New(http.StatusUnprocessableEntity,
+			fmt.Sprintf("this deployment serves images at %s pixels wide, not %d",
+				strings.Join(widths(), " or "), width))
+	}
 	tx, err := transaction(ctx)
 	if err != nil {
 		return nil, err
 	}
-	f, body, err := svc.Open(ctx, tx, id, anonymous)
+	f, body, err := svc.OpenWidth(ctx, tx, id, anonymous, width)
 	if err != nil {
 		return nil, fault(err)
 	}
 	r, _ := httpx.RequestFrom(ctx)
 	return contracts.ContentResponse(r, f, body, contracts.Inline), nil
+}
+
+// widths is the sentence the refusal above names the served set with, so the 422
+// carries the answer rather than only the refusal.
+func widths() []string {
+	out := make([]string, 0, len(contracts.VariantWidthSet))
+	for _, w := range contracts.VariantWidthSet {
+		out = append(out, strconv.Itoa(w))
+	}
+	return out
 }
 
 // transaction is the request's, or a 503 saying why there is none.
@@ -285,20 +588,146 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 // else does: an upload past the limit is 413, which is the only answer a caller
 // can act on by sending something smaller.
 func fault(err error) error {
-	if errors.Is(err, contracts.ErrTooLarge) || errors.Is(err, contracts.ErrQuota) {
+	switch {
+	case errors.Is(err, contracts.ErrTooLarge), errors.Is(err, contracts.ErrQuota):
 		return problem.New(http.StatusRequestEntityTooLarge, err.Error())
+	// A frame over the pixel ceiling is the same remedy as a file over the byte
+	// limit — send something smaller — so it joins the 413 above rather than
+	// inventing a status this route has never declared. A file offered as an
+	// image that no decoder reads is the request's to fix, which is what 422
+	// means; 415 would be truer to the media type and less true to the answer,
+	// because the bytes are fine as the document they were not offered as.
+	case errors.Is(err, contracts.ErrTooManyPixels), errors.Is(err, contracts.ErrNotImage):
+		return problem.New(http.StatusUnprocessableEntity, err.Error())
+	// A caller asked for an expiry this module will not sign, or a grant for a
+	// file anybody can already read. Both are the request's to fix, which is
+	// what 422 means, and rest.Fault has no way to know that a sentinel this
+	// module invented is not an outage.
+	case errors.Is(err, contracts.ErrInvalidExpiry), errors.Is(err, contracts.ErrPublicFile),
+		errors.Is(err, contracts.ErrInvalidKey):
+		return problem.New(http.StatusUnprocessableEntity, err.Error())
+	// The store this deployment wired cannot sign. Nothing in the request
+	// changes that, so it is not a 4xx, and it is not a 500 either: nothing is
+	// broken, this capability was simply not wired.
+	case errors.Is(err, contracts.ErrNotSignable):
+		return problem.New(http.StatusNotImplemented, err.Error())
+	// A hold is why this removal did not happen, and it is the caller's to act
+	// on — release the hold or stop asking — which makes it a conflict and not
+	// an outage. rest.Fault's ErrConflict arm cannot see it: this sentinel is
+	// the module's, and nothing about it says the kernel's word for "those two
+	// states cannot both be true". A file the ledger still shows is refused the same
+	// way for the same reason, and the routes that refuse say 409 in their
+	// declarations, and this is where that promise is kept.
+	case errors.Is(err, contracts.ErrHeld), errors.Is(err, contracts.ErrInUse):
+		return problem.Conflict(err.Error())
+	// Every image slot is taken. Nothing in the request is wrong and nothing is
+	// broken, so it is neither a 4xx nor a 500: it is the answer that says ask
+	// again, and the route that refused puts the Retry-After beside it — the wait
+	// is the gate's fact and the response is the request's.
+	case errors.Is(err, contracts.ErrBusyDecoding):
+		return problem.New(http.StatusServiceUnavailable, err.Error())
+	// The caller is recognised and their own credential says no. That is a refusal of the
+	// request as it stands, not of the row, and it is not correctable by anything the
+	// caller has: a 403 names the permission and stops there.
+	case errors.Is(err, contracts.ErrNotPermitted):
+		return problem.New(http.StatusForbidden, err.Error())
+	default:
+		return rest.Fault(err)
 	}
-	return rest.Fault(err)
 }
 
 type idInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"The file's id"`
 }
 
+// contentInput is a door that can be asked for one width of a picture. The zero
+// is the bare address — the frame as stored — so no existing URL, test or client
+// changes shape; a number outside contracts.VariantWidthSet is refused by name
+// rather than answered with the nearest one, because only this kernel's own
+// srcset composes these URLs.
+type contentInput struct {
+	ID    uuid.UUID `path:"id" format:"uuid" doc:"The file's id"`
+	Width int       `query:"w" doc:"Serve this planned width rather than the stored frame" example:"960"`
+}
+
+// grantInput is a download link with an expiry. The zero is
+// contracts.DefaultGrantExpiry and not a default tag, so that a caller that
+// named nothing and a caller that named fifteen minutes are the same request
+// rather than one that kit/httpx has to know about.
+type grantInput struct {
+	ID      uuid.UUID     `path:"id" format:"uuid" doc:"The file's id"`
+	Expires time.Duration `query:"expires" default:"0" doc:"How long the URL lives, as a Go duration; at most 24h"`
+}
+
+// retainInput is the hold's body beside the file it names. The body is a
+// pointer to its own struct and not flat fields on this one, which is how
+// kit/rest spells a command body (commandInput) and not a style choice: huma
+// reads a body from a nested struct field, and the JSON fields of a struct that
+// also carries a path tag are no body at all — a route written that way answers
+// every request as though the caller had sent nothing, and says so in a schema
+// whose request body has no properties in it.
+type retainInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"The file to hold"`
+	Body *retainBody
+}
+
+type retainBody struct {
+	// The two bounds are the column's own: file_holds.reason is CHECKed not empty
+	// and contracts.MaxHoldReason is the width the entity refuses to go past. They
+	// are written here in the schema's literals because a struct tag cannot name a
+	// constant — the same reason eraseBody carries its 500 — and they are written
+	// at all because a schema that promises no width tells a caller a 4 kB sentence
+	// is a request, and the answer they get is a 422 about somebody else's column.
+	Until  *time.Time `json:"until,omitempty" format:"date-time" doc:"When the hold expires; omit to hold until released" required:"false"`
+	Reason string     `json:"reason" minLength:"1" maxLength:"500" doc:"Why it is held" example:"court order 2026-0412"`
+}
+
+type eraseInput struct {
+	Body *eraseBody
+}
+
+type eraseBody struct {
+	Subject uuid.UUID `json:"subject" format:"uuid" doc:"The subject whose files are being erased"`
+	Reason  string    `json:"reason" maxLength:"500" doc:"Why, for the audit trail: kept with every removal this erasure makes, in the work order and in the proof row beside the digest"`
+}
+
 type listInput struct {
 	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
 	Offset int    `query:"offset" minimum:"0" doc:"Rows to skip"`
-	Sort   string `query:"sort" doc:"A field name, or a field name prefixed with - for descending"`
+	Sort   string `query:"sort" doc:"One of -createdAt, createdAt, name, -name, size, -size"`
+	// Q, Type and Unused are the library's three filters. They are read by
+	// contracts.LibraryQuery, which is the one place their grammar lives, so the
+	// grid's own page and this door cannot disagree about what "unused" means.
+	Q    string `query:"q" maxLength:"64" doc:"A name to look for, matched case-insensitively"`
+	Type string `query:"type" default:"all" doc:"all, image, document or video"`
+	// Unused is the ledger's own answer: 1 keeps the files something stopped
+	// showing, which is the set the release sweep will remove once the grace runs.
+	Unused bool `query:"unused" default:"false" doc:"Only the files nothing shows any more"`
+}
+
+// quotaInput is the meter's request: it asks one question and the answer is the
+// tenant's own disk, which is why the door is file:read and not anonymous.
+type quotaInput struct{}
+
+// altInput is one file's caption being written, with the instant the caller was
+// shown. The revision is required rather than optional: a caption typed over
+// three minutes of somebody else's edit is worth a re-read, and a PUT that
+// silently overwrote it would make the number the panel carried meaningless.
+type altInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid"`
+	Body *altBody
+}
+
+type altBody struct {
+	// 1000 is contracts.MaxAlt, and the same limit the textarea carries: a schema
+	// that promises no width tells a caller a wall of text is a request and they
+	// get a 422 about somebody else's column instead.
+	Alt        string `json:"alt" maxLength:"1000" doc:"What the image says about itself; empty only when it is declared decorative" required:"false"`
+	Decorative bool   `json:"decorative" doc:"True when the image carries no information a reader would want" required:"false"`
+	// The row's own updatedAt, as it was read. A timestamp and not a counter,
+	// because a file carries one already and a second clock on the same row is a
+	// second thing to be wrong about.
+	ExpectedUpdatedAt time.Time `json:"expectedUpdatedAt" format:"date-time" doc:"The updatedAt the caller was shown"`
 }
 
 // uploadInput is everything about an upload that is not the bytes. Visibility
@@ -308,4 +737,15 @@ type listInput struct {
 // made in the URL.
 type uploadInput struct {
 	Visibility string `query:"visibility" enum:"private,public" default:"private" doc:"Who may read the file once it is stored"`
+	// Kind is the retention class the product is filing this under. It is a
+	// query parameter for the same reason visibility is: a form field can
+	// arrive after the file part, and a class the sweep reads has to be decided
+	// before the bytes are stored. An empty kind means no class, and a file with
+	// no class is never swept.
+	Kind string `query:"kind" default:"" maxLength:"32" doc:"Retention class, as the product names it"`
+	// Image is the caller saying this part is an image: the media library and
+	// the editor's image field set it, and it is what turns a file no decoder
+	// reads into a refusal rather than an attachment. It is a query parameter
+	// for the same reason the two above are.
+	Image bool `query:"image" default:"false" doc:"Treat these bytes as an image: measure the frame, and refuse what no decoder reads"`
 }

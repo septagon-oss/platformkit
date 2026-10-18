@@ -18,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/fault"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -176,7 +177,19 @@ func (s *Service) OwnLanguage(ctx context.Context, tx db.Tx[db.Tenant]) (contrac
 
 // Invite creates a user with no password and publishes the invitation. Auth's
 // subscriber sends the link through the delivery capability the app supplies;
-// redeeming it lets the recipient choose their password.
+// redeeming it lets the recipient choose their password. The event carries the
+// address this call was answered at, because that subscriber runs in the worker,
+// after the call that asked is gone, and a set-password link that drops the port
+// it was asked at opens a server that is not this one.
+//
+// "The call that asked" includes the call that asked *this* one. A stranger's
+// email-only sign-up reaches no account, and it is a subscription — no request left
+// on its context, the request that made it long gone — that calls Invite to create
+// the account and raise this event. The address survives that far because
+// httpx.ServedFrom answers from the event being handled whenever no request is
+// being served, which is what a handler that read a `served` address out of an
+// outbox row restores onto its own context. An invitation asked by nothing at all —
+// the bootstrap, a replay — carries nothing, as it always did.
 func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*contracts.User, error) {
 	u := &contracts.User{Email: email, DisplayName: displayName, Status: contracts.StatusInvited}
 	if err := crud.Create(ctx, tx, u); err != nil {
@@ -184,6 +197,7 @@ func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displa
 	}
 	return u, events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
+		Served: httpx.ServedFrom(ctx),
 	})
 }
 
@@ -230,7 +244,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	want := normalise(roles)
+	want := contracts.CanonicalRoles(roles)
 	was := slices.Clone([]string(u.Roles))
 	if slices.Equal(was, want) {
 		return u, nil
@@ -258,7 +272,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	}
 	after := *u
 	after.Roles = want
-	if err := s.floor(ctx, tx, u, &after); err != nil {
+	if err := s.floor(ctx, tx, attemptRoles, u, &after); err != nil {
 		return nil, err
 	}
 	u.Roles = want
@@ -379,7 +393,7 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	}
 	after := *u
 	after.Status = contracts.StatusInactive
-	if err := s.floor(ctx, tx, u, &after); err != nil {
+	if err := s.floor(ctx, tx, attemptStatus, u, &after); err != nil {
 		return nil, err
 	}
 	u.Status = contracts.StatusInactive
@@ -400,7 +414,7 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*co
 func (s *Service) ByEmail(_ context.Context, tx db.Tx[db.Tenant], email string) (*contracts.User, error) {
 	var u contracts.User
 	err := tx.DB().Where("lower(email) = ? AND deleted_at IS NULL",
-		strings.ToLower(strings.TrimSpace(email))).Take(&u).Error
+		contracts.CanonicalEmail(email)).Take(&u).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, crud.ErrNotFound
 	}
@@ -433,7 +447,7 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	at := db.Now()
 	u := &contracts.User{
 		Email: email, DisplayName: displayName, Status: status,
-		Roles: normalise(roles), PasswordHash: hash,
+		Roles: contracts.CanonicalRoles(roles), PasswordHash: hash,
 	}
 	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, at, at
 	if err := u.Validate(ctx); err != nil {
@@ -442,21 +456,16 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	if err := tx.DB().Create(u).Error; err != nil {
 		return nil, fmt.Errorf("user: provision %s: %w", u.Email, err)
 	}
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
+	}
 	return u, events.PublishFor(ctx, tx, tenantID, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: at,
+		Served: httpx.ServedFrom(ctx),
 	})
 }
 
-// normalise is the stored form of a role set: trimmed, lower-cased, deduplicated
-// and sorted. Sorted, so that "the same roles in another order" is the same
-// value and SetRoles can tell that nothing changed.
-func normalise(roles []string) contracts.Roles {
-	out := make(contracts.Roles, 0, len(roles))
-	for _, r := range roles {
-		if r = strings.ToLower(strings.TrimSpace(r)); r != "" && !slices.Contains(out, r) {
-			out = append(out, r)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
+// The stored form of a role set — trimmed, lower-cased, deduplicated and sorted,
+// so "the same roles in another order" is the same value and SetRoles can tell
+// that nothing changed — is contracts.CanonicalRoles: the entity's own rule, read
+// by the callers that have to meet the row a list names rather than repeated here.

@@ -7,10 +7,10 @@ package main
 // tenant and only them, the grant happens through the link the notice carries,
 // and the retry that follows succeeds.
 //
-// Every earlier refusal test in this directory asks one part — the language
-// (review_r6, review_r7, review_round4), the shape of the problem document,
-// the host and tenant resolution. None walked the whole page: none signed the
-// refused person back in after somebody granted what the page had named.
+// Every earlier refusal test in this directory asks one part — the language the
+// refusal is answered in, the shape of the problem document, the host and tenant
+// resolution. None walked the whole page: none signed the refused person back in
+// after somebody granted what the page had named.
 
 import (
 	"encoding/json"
@@ -90,9 +90,7 @@ func TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted(t *testing
 		}
 		return false
 	})
-	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/public/auth/verify-email", `{"token":"`+link+`"}`); code != http.StatusOK && code != http.StatusAccepted {
-		t.Fatalf("confirming the mailbox link = %d %s", code, body)
-	}
+	confirmMailboxLink(t, cfg, acmeHost, link)
 	member := signIn(t, cfg, acmeHost, askMemberEmail, askMemberPassword)
 	memberID := userIDOf(t, cfg, askMemberEmail)
 

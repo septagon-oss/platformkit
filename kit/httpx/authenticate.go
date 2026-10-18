@@ -42,6 +42,18 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 		next(ctx)
 		return
 	}
+	if ambiguousCredential(r) {
+		// Both credentials at once is not a caller who is more signed in. Which
+		// one the caller meant is not the kernel's to guess, and the safe answer
+		// to an ambiguous credential is none: the request goes on as anonymous,
+		// which means it is refused by whatever guard the operation declares
+		// rather than by a coin toss here. Logged, because a client doing this is
+		// a client with a bug worth finding.
+		a.rlog(ctx.Context()).WarnContext(ctx.Context(),
+			"httpx: a request presented both a session cookie and a bearer token; answering as anonymous")
+		next(ctx)
+		return
+	}
 	tx, ok := TxFrom(ctx.Context())
 	if !ok {
 		// No tenant, or no transaction. Either way there is nowhere to look the
@@ -69,16 +81,28 @@ func (a *API) authenticate(ctx huma.Context, next func(huma.Context)) {
 }
 
 // credentialed reports whether the request presents something the application
-// could recognise, which today is the session cookie and nothing else.
+// could recognise: the session cookie, or a bearer token.
 //
-// It used to accept an Authorization header too, which was a query for every
-// request carrying one and a recognition for none: nothing here issues a bearer
-// token, so the hook could only answer "not signed in" and the only effect was
-// a transaction the request did not need. When something issues bearers, this
-// is where they are let in.
+// The Authorization header used to be accepted here and did nothing, which was a
+// transaction for every request carrying one and a recognition for none — the
+// hook had no bearer to look up, so the only answer was "not signed in". It is
+// accepted now because modules/auth mints bearer tokens and can name the person
+// one belongs to. No cookie is ever set, rotated or cleared by a request that
+// arrived on a bearer: the token is the caller's own proof of intent, which is
+// why csrf.go needs no change for it either — its gate is the session cookie.
 func credentialed(r *http.Request) bool {
-	_, ok := SessionCookieOf(r)
-	return ok
+	_, cookie := SessionCookieOf(r)
+	_, bearer := BearerOf(r)
+	return cookie || bearer
+}
+
+// ambiguousCredential reports whether one request carries two different kinds of
+// credential at once. Two of the same kind is not ambiguity: a cookie replayed by
+// an old proxy and the cookie the app just set are the same thing.
+func ambiguousCredential(r *http.Request) bool {
+	_, cookie := SessionCookieOf(r)
+	_, bearer := BearerOf(r)
+	return cookie && bearer
 }
 
 // ConnFrom is the application connection this request is served on.

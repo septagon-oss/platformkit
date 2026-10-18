@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -102,8 +103,13 @@ func TestServiceConforms(t *testing.T) {
 			// order the map was walked in.
 			allowGranting.allow(true)
 			spoken.serve(usertest.Served)
+			// httpx.WithConn because one refusal is written outside this transaction:
+			// the record of a refused last-administrator write needs the request's pool
+			// connection to exist at all (internal's recordRefusal). The fixture and its
+			// delete stand-in take one context, as a request hands one to its hooks.
+			requestCtx := httpx.WithConn(ctx, conn)
 			run(usertest.Fixture{
-				Ctx: ctx, Tx: tx, Service: svc,
+				Ctx: requestCtx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
 				Granting:  allowGranting.allow,
 				// The same two doors the fake is handed: the principal the kernel
@@ -133,7 +139,7 @@ func TestServiceConforms(t *testing.T) {
 						if err := crud.Delete[*contracts.User](tx, id, true); err != nil {
 							return err
 						}
-						return svc.RefuseLastAdministrator(ctx, tx, u)
+						return svc.RefuseLastAdministrator(requestCtx, tx, u)
 					}()
 					if err != nil {
 						if back := tx.DB().RollbackTo("beforedelete").Error; back != nil {

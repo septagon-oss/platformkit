@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -16,7 +17,7 @@ import (
 
 func TestRemovingTheLastTenantLanguageWritesNothing(t *testing.T) {
 	owner, conn := dbtest.Schema(t)
-	svc := internal.NewServiceWithLocaleManager(nil, []string{"en", "pt-PT"}, allowedLocaleManager{})
+	svc := internal.NewServiceWithLocaleManager(nil, []string{"en", "pt-PT"}, appname.Name("PlatformKit"), allowedLocaleManager{})
 	var tenant *contracts.Tenant
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error

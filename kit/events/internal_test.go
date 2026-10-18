@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"os"
 	"slices"
 	"strings"
@@ -120,7 +121,7 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	// This run's own subject and consumer: the stream is shared with every
 	// other run.
 	name := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "") + ".happened"
-	transport, err := provider.JetStream(url)
+	transport, err := provider.JetStream(appname.Name(""), url)
 	if err != nil {
 		t.Fatalf("JetStream: %v", err)
 	}
@@ -312,7 +313,7 @@ func jetstreamForTest(t *testing.T) (Transport, nats.JetStreamContext) {
 	if url == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
-	transport, err := provider.JetStream(url)
+	transport, err := provider.JetStream(appname.Name(""), url)
 	if err != nil {
 		t.Fatalf("JetStream(%s): %v", url, err)
 	}
@@ -535,9 +536,27 @@ func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
 			if err := Relay(finish, conn, transport); err != nil {
 				t.Fatal(err)
 			}
+			// The committed child is the fact under test, and it becomes true when
+			// Postgres commits it, not when this test next looks. At restart=false
+			// nothing ever cancelled that delivery: the pass ended, its transaction
+			// carried on, and its commit races this read — a pass that finds the
+			// parent row still locked by the cancelled pass's own transaction skips
+			// it with SKIP LOCKED and returns nil without waiting for anything.
+			// The window the pass was given is the window the commit is given, and
+			// the assertion on the other side of it is the same number as before.
 			var completed int
-			if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil || completed != 1 {
-				t.Fatalf("committed child events=%d, want 1: %v", completed, err)
+			settle := time.Now().Add(3 * time.Second)
+			for {
+				if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil {
+					t.Fatalf("committed child events: %v", err)
+				}
+				if completed >= 1 || !time.Now().Before(settle) {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if completed != 1 {
+				t.Fatalf("committed child events=%d, want 1", completed)
 			}
 		})
 	}
@@ -571,7 +590,7 @@ func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
 	// A lost acknowledgment of successful work must not turn it into failure.
 	completed := Event{ID: uuid.New(), TenantID: ev.TenantID, Name: ev.Name}
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := claim(tx, completed.ID, durable)
+		_, err := claim(tx, completed.ID, durable, "")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -620,7 +639,7 @@ func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		first, err := claim(tx, legacy, durable)
+		first, err := claim(tx, legacy, durable, "")
 		if first {
 			t.Error("legacy terminal event was claimed for handling again")
 		}

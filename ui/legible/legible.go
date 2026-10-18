@@ -1,0 +1,309 @@
+// Package legible reads a served document and says which of its strings a
+// localisation formatter reached.
+//
+// It is the measuring half of the pseudo-locale gate: [Scan] hands back every
+// string a person could read in a response body, each one tagged as copy a
+// catalogue answered or not, [MarkDatum] adds what the application itself holds as
+// a value a person typed, and [Exempt] answers what the gate may not count as
+// copy — an id, an amount, a timestamp, a file name. [Report] prints the whole
+// verdict, named strings and declined strings together. Neither holds a page list,
+// a route, a tenant or a module name: a rule that exempted by position would report
+// a flattering number that no change could lower, so the predicate looks only at what
+// a string *is*, and what it cannot tell from the string it is told.
+//
+// The package reads documents and never writes one. It parses with
+// golang.org/x/net/html and starts no services.
+package legible
+
+import (
+	"bytes"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"golang.org/x/net/html"
+)
+
+// String is one string a person reads in a served document.
+type String struct {
+	// Path locates the string in the document, element by element from the root:
+	// `html[1] > body[2] > main[1] > div[1]`. A text node's path is its parent's
+	// with `#text` on the end. The index counts *element* siblings, so a text node
+	// or a comment moving cannot renumber a path a reviewer diffed.
+	Path string
+	// Text is the string as it reads once the parser resolved its character
+	// references, with the whitespace of the source left in.
+	Text string
+	// Attribute names the attribute the string came from — `alt`, `title`,
+	// `aria-label`, `placeholder`. Empty means a text node.
+	Attribute string
+	// Reached says the string carries the pseudo-locale's mark, and so went through
+	// a catalogue. A string that merely looks accented does not count; the mark is
+	// what the provider that produced it says is a mark (see Reached).
+	Reached bool
+	// Datum says this application holds the string as something a person typed — a
+	// task's title, a page's body, a plan's name — because MarkDatum was handed the
+	// value. Such a string is a sentence, and so is never copy: no catalogue can hold
+	// what a row stores. Only the write that stored it can say, which is why this
+	// arrives as data rather than being guessed from the string's shape.
+	Datum bool
+}
+
+// Reached decides whether one collected string came from a catalogue. The
+// pseudo-locale provider owns that shape — it wrote it — so the scan is handed the
+// decision rather than a second copy of the delimiters, and this package names no
+// locale at all.
+type Reached func(text string) bool
+
+// Attributes are the element attributes whose value a person reads. The set is the
+// gate's: a replacement string, a caption, an accessible name, a prompt.
+var Attributes = []string{"alt", "title", "aria-label", "placeholder"}
+
+// skip lists the elements whose children are not a document's copy. `<title>` is
+// absent on purpose: what a tab says is copy, and `aria-hidden` is absent too —
+// hiding a node from assistive technology does not make an English label
+// translatable, and honouring it would hand out a way to switch this gate off.
+var skip = map[string]bool{"script": true, "style": true, "template": true, "noscript": true}
+
+// Scan collects every string a person reads in one response body. It is a pure
+// function of the bytes it was handed — no clock, no locale, no file — so a case
+// can assert the whole list against a literal.
+//
+// reached may be nil, which collects everything as unreached: useful for a caller
+// that wants the strings and not the verdict.
+func Scan(body []byte, reached Reached) ([]String, error) {
+	document, err := html.Parse(bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("legible: the document cannot be parsed: %w", err)
+	}
+	var out []String
+	var walk func(node *html.Node, path string)
+	walk = func(node *html.Node, path string) {
+		switch node.Type {
+		case html.TextNode:
+			if canon(node.Data) != "" {
+				out = append(out, String{Path: path + "#text", Text: node.Data,
+					Reached: reaches(reached, node.Data)})
+			}
+		case html.ElementNode:
+			for _, attribute := range Attributes {
+				for _, have := range node.Attr {
+					if have.Key != attribute || canon(have.Val) == "" {
+						continue
+					}
+					out = append(out, String{Path: path, Text: have.Val, Attribute: attribute,
+						Reached: reaches(reached, have.Val)})
+				}
+			}
+		}
+		if node.Type == html.ElementNode && skip[node.Data] {
+			return
+		}
+		for i, child := 0, node.FirstChild; child != nil; child = child.NextSibling {
+			next := path
+			if child.Type == html.ElementNode {
+				i++
+				next = step(path, child.Data, i)
+			}
+			walk(child, next)
+		}
+	}
+	// Walking from the document node puts the root element at `html[1]`, which is
+	// how every path here is spelled: no path starts above the root element.
+	walk(document, "")
+	return out, nil
+}
+
+// MarkDatum tags the collected strings that read back as one of the given values —
+// the sentences a person typed into this application, handed over by whoever wrote
+// them. Copy and data are both sentences, so no rule over a string's shape tells them
+// apart: "Pump room inspection" and "Back to the workspace" are the same kind of text
+// and only one of them can ever join a catalogue. The caller that stored the first is
+// the only witness the second has, so a gate hands over what it typed through the same
+// doors a person uses.
+//
+// A value matches the whole string, whitespace folded, never a word inside it:
+// exempting every line that mentions a task's title would exempt the sentence written
+// around it, which is copy. The one place a value is allowed to match *part* of a
+// string is a node the frame composed out of values and the page's own words joined by
+// a separator — a tab title is "<page> · <installation>" and HTML lets a `<title>` hold
+// no element to keep them apart, so the scan sees the pair as one string. Such a node
+// is decided part by part, and that is why MarkDatum is handed the same [Reached]
+// decision [Scan] was: every part either marked copy, a value stored here or a shape
+// [Exempt] recognises leaves nothing a translator was asked for, and the node counts
+// as reached where its copy reached or as a datum where it is all data. One part that
+// is none of the three leaves the node a violation: that part is the copy this reports.
+func MarkDatum(collected []String, reached Reached, values []string) []String {
+	if len(values) == 0 {
+		return collected
+	}
+	typed := make(map[string]bool, len(values))
+	for _, value := range values {
+		if key := canon(value); key != "" {
+			typed[key] = true
+		}
+	}
+	out := make([]String, len(collected))
+	for i, s := range collected {
+		text := canon(s.Text)
+		s.Datum = typed[text]
+		if !s.Datum {
+			if datum, isReached := composed(joinedParts(text, reached), typed, reached); datum || isReached {
+				s.Datum, s.Reached = datum, isReached
+			}
+		}
+		out[i] = s
+	}
+	return out
+}
+
+// composed is the verdict on a node the frame joined: a datum when every part is a
+// value stored here or a shape no translator is asked for, reached when one part is
+// mark-carrying copy and the rest are accounted for, and neither the moment a part is
+// unexplained — an unmarked word is copy this application never sent to a catalogue.
+func composed(parts []string, typed map[string]bool, reached Reached) (datum, isReached bool) {
+	if len(parts) < 2 {
+		return false, false
+	}
+	for _, part := range parts {
+		switch {
+		case reaches(reached, part):
+			isReached = true
+		case typed[part], Exempt(part):
+		default:
+			return false, false
+		}
+	}
+	return !isReached, isReached
+}
+
+// joinSplit is the frame's separator with a space each side — the glyph a page puts
+// *between* two things it has joined into one node. A separator with no space is inside
+// a word (`and/or`), and stays part of it.
+var joinSplit = regexp.MustCompile(`\s[` + separators + `]\s+`)
+
+// joinedParts cuts a canonical string at the separators that stand between its parts,
+// and never inside a run the marking holds together. The mark is the boundary between
+// copy and everything else, and a sentence may hold one of the same glyphs between its
+// own words: the tab of a task titled "New task — urgent" reads
+// `⟦Ñëŵ ŧàsk — ürgèñţ⟧ · Tenant Name`, where the dash belongs to the title and not to
+// the join. Cutting there would hand [composed] half a marked sentence, which explains
+// nothing and so condemns the whole node — the copy would be reported as unreachable
+// the moment a person put a dash in a title. So a piece that does not read as marked
+// copy takes the pieces after it only until the span does read as marked, which is the
+// one test a separator inside a sentence cannot pass on its own, and a piece no span
+// accounts for stays a piece of the join for [composed] to decide on its own.
+func joinedParts(text string, reached Reached) []string {
+	joins := joinSplit.FindAllStringIndex(text, -1)
+	if len(joins) == 0 {
+		return nil
+	}
+	pieces := len(joins) + 1
+	// edge[2p] to edge[2p+1] is piece p; edge[2p+1] to edge[2p+2] is the join after it.
+	edge := make([]int, 0, 2*pieces)
+	edge = append(edge, 0)
+	for _, join := range joins {
+		edge = append(edge, join[0], join[1])
+	}
+	edge = append(edge, len(text))
+	out := make([]string, 0, pieces)
+	for p, next := 0, 0; p < pieces; p = next + 1 {
+		start, end, merged := edge[2*p], edge[2*p+1], p
+		for q := p + 1; q < pieces && !reaches(reached, text[start:end]); q++ {
+			if end = edge[2*q+1]; reaches(reached, text[start:end]) {
+				merged = q
+			}
+		}
+		if merged == p {
+			end = edge[2*p+1]
+		}
+		next = merged
+		if part := text[start:end]; part != "" {
+			out = append(out, part)
+		}
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
+}
+
+// Violations are the strings a person reads that went around the catalogue: not
+// marked, not the kind of string that is data rather than copy, and not a value this
+// application stores. They are the denominator's other half, and the list a
+// translation task works through.
+func Violations(collected []String) []String {
+	var out []String
+	for _, s := range collected {
+		if !s.Reached && !s.Datum && !Exempt(s.Text) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// Exempted are the unmarked strings the number does not count — ids, amounts,
+// timestamps, and the values MarkDatum recognised. They are never hidden from a
+// reviewer: Report prints them, because a number that quietly chose not to count
+// something is not a measurement.
+func Exempted(collected []String) []String {
+	var out []String
+	for _, s := range collected {
+		if !s.Reached && (s.Datum || Exempt(s.Text)) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// Report renders one document's strings as lines, labelled by whatever the caller
+// calls the document — the gate names one `GET /app/task/tasks/{id}` — and never by
+// anything read off the page, because an attribution a document could write about
+// itself is one a page could fake.
+//
+// The first list names every string that went around a catalogue as
+// `TEXT <label> <path> "text"`; the second names every string the number declined to
+// count as `DATA <label> <path> "text" <why>`, where why is `typed here` for a value
+// the application stores and `data` for a shape Exempt recognised. In document order,
+// so a reviewer reads a page top to bottom.
+func Report(label string, collected []String) (unreachable, declined []string) {
+	for _, s := range collected {
+		switch {
+		case s.Reached:
+		case s.Datum:
+			declined = append(declined, line("DATA", label, s, "typed here"))
+		case Exempt(s.Text):
+			declined = append(declined, line("DATA", label, s, "data"))
+		default:
+			unreachable = append(unreachable, line("TEXT", label, s, ""))
+		}
+	}
+	return unreachable, declined
+}
+
+// line is one report line: its kind, the document, the path, the text quoted with its
+// whitespace flattened, the attribute it came from when it came from one, and — for a
+// DATA line — the rule that declined to count it.
+func line(kind, label string, s String, why string) string {
+	out := kind + " " + label + " " + s.Path + " \"" + strings.Join(strings.Fields(s.Text), " ") + "\""
+	if s.Attribute != "" {
+		out += " in " + s.Attribute
+	}
+	if why != "" {
+		out += " " + why
+	}
+	return out
+}
+
+func step(path, name string, index int) string {
+	mark := name + "[" + strconv.Itoa(index) + "]"
+	if path == "" {
+		return mark
+	}
+	return path + " > " + mark
+}
+
+func reaches(reached Reached, text string) bool {
+	return reached != nil && reached(canon(text))
+}

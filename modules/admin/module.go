@@ -5,13 +5,14 @@
 // detail and form come from an entity's schema, and kit/httpx carries that
 // schema for every resource kit/rest mounted. The generated screens are
 // ui/screens'; this module composes them with its own chrome, frame and
-// navigation, adds the six pages no schema describes — the dashboard, the
-// health page, the sign-in page, the gallery, the tenant switcher and the roles
-// screen — and serves the same knowledge as JSON at the workspace catalog route for
-// a shell that is not a browser. A seventh hand-written page arrives only when
-// an interaction cannot be derived, which is what the roles screen is: a role is
-// keyed by its name rather than by an id, and a generated screen's item path is
-// a UUID.
+// navigation, adds the seven pages no schema describes — the dashboard, the
+// health page, the sign-in page, the gallery, the tenant switcher, the roles
+// screen and the session list — and serves the same knowledge as JSON at the
+// workspace catalog route for a shell that is not a browser. A further
+// hand-written page arrives only when an interaction cannot be derived, which
+// is what the two that are not generated from a resource are: a role is keyed by
+// its name rather than by an id, and a session by a ref, and a generated
+// screen's item path is a UUID.
 //
 // It is composed last, and that is load-bearing rather than tidy: kit/app calls
 // each module's Routes in composition order, so a module mounted after this one
@@ -46,6 +47,26 @@ type AccountLanguageVersion = internal.AccountLanguageVersion
 // and the name beside the Deps field that takes it.
 type Roles = internal.Roles
 
+// Sessions is what the shell needs of the auth module to draw that module's
+// sessions screen. See internal.Sessions.
+type Sessions = internal.Sessions
+
+// Registration is the shell's offer of a way in for a person with no account:
+// which form the page renders, and the door it posts to. See Deps.Registration.
+type Registration = internal.Registration
+
+// RegistrationKind is which registration form the shell renders.
+type RegistrationKind = internal.RegistrationKind
+
+const (
+	// RegistrationKindEmail asks for an address alone; the person is then
+	// invited and chooses a password from the mail.
+	RegistrationKindEmail = internal.RegistrationKindEmail
+	// RegistrationKindPassword takes a password and its confirmation, and the
+	// account waits for the mailbox link before it can sign in.
+	RegistrationKindPassword = internal.RegistrationKindPassword
+)
+
 // Deps is what the shell cannot make for itself.
 type Deps struct {
 	// Modules is the composition, for navigation. The shell draws the sidebar
@@ -61,6 +82,23 @@ type Deps struct {
 	// shell naming another module's door, so the composition names it, and
 	// apps/platformkit's test asks the running server that it answers.
 	SignIn string
+
+	// PictureSource is the address template a generated `present:image` cell
+	// fetches its bytes from, `{id}` standing for the file id the field holds —
+	// the same template the workspace catalogue publishes as `pictures.source`.
+	// Unwired, every picture cell draws the plain value it drew before picture
+	// fields existed: a shell with no file module has no door to name. See
+	// admincontracts.Pictures.
+	PictureSource string
+
+	// Registration is the composition saying that a person with no account may
+	// make one. Nil — the default — means the sign-in page shows the password
+	// door and nothing else: offering a form that posts to a route nobody
+	// mounted is a door painted on a wall, which is the same argument that keeps
+	// the forgot page off a composition with no auth module. Only the
+	// composition knows whether it wired a registration service, so only the
+	// composition sets this.
+	Registration *Registration
 
 	// Authorize is the same value the kernel enforces with. The sidebar shows a
 	// link only when the caller may follow it, and asking the authorizer is
@@ -96,6 +134,13 @@ type Deps struct {
 	// composition read them off the catalogues it composed. See internal.Shell.
 	Installed []string
 
+	// Sessions is the auth module's session list and its two revocations, for
+	// the screen that module serves at /app/auth/sessions. That screen declares
+	// no nav entry — kit/module refuses an entry naming no permission, and the
+	// product's navigation names it instead — so, unlike Roles, a nil here mounts
+	// nothing and reports nothing: no composition is missing an entry.
+	Sessions Sessions
+
 	// Theme is the installation's two palettes. The zero value is the palette
 	// this repository ships; a client with its own colours sets this and
 	// changes nothing else, because every rule above the tokens is written in
@@ -125,7 +170,7 @@ const PermissionGalleryRead = "gallery:read"
 // switcher's and the roles screen's included, which is what keeps a screen and
 // its module's API refusing the same callers. It declares neither events nor a
 // navigation entry of its own.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
 		Permissions:   []module.Permission{{Key: PermissionGalleryRead, Label: "read the component gallery"}},
@@ -149,11 +194,14 @@ func Module(deps Deps) module.Module {
 				Storybook:       deps.Storybook,
 				Messages:        deps.Messages,
 				Locale:          deps.Locale,
+				Sessions:        deps.Sessions,
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
-				Token:  s.SystemToken(),
-				SignIn: deps.SignIn,
+				Token:         s.SystemToken(),
+				SignIn:        deps.SignIn,
+				PictureSource: deps.PictureSource,
+				Registration:  deps.Registration,
 			})
 		},
 	}

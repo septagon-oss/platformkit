@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -78,8 +79,17 @@ func mountOn(t *testing.T, conn *db.Conn, oidc auth.OIDC) (chi.Router, *db.Conn,
 
 func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool, configure ...func(*auth.Deps)) (chi.Router, *db.Conn, contracts.Auth) {
 	t.Helper()
+	router, conn2, svc, _ := mountRecorded(t, conn, oidc, registration, configure...)
+	return router, conn2, svc
+}
+
+// mountRecorded is mountConfigured keeping the kernel, for the one question a
+// router cannot answer: what did the composition mount, on which surface, under
+// which declaration. See surface_test.go.
+func mountRecorded(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool, configure ...func(*auth.Deps)) (chi.Router, *db.Conn, contracts.Auth, *httpx.API) {
+	t.Helper()
 	mailbox, notices = &authtest.Mailbox{}, &authtest.Notices{}
-	users, userModule := user.Module(user.Deps{
+	users, userModule := user.New(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
 		Granting:       allowGranting,
 		LocalePolicy:   &usercontracts.LocalePolicyFunc{Ask: speaksEnglish},
@@ -95,11 +105,12 @@ func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration b
 	for _, change := range configure {
 		change(&deps)
 	}
-	svc, authModule := auth.Module(deps)
+	svc, authModule := auth.New(deps)
 	subs = authModule.Subscriptions
 	seed(t, conn, acme)
 
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: site{}, Conn: conn,
 		Authorize: svc, Authenticate: svc.Authenticate,
 		Log: slog.New(slog.DiscardHandler),
@@ -119,7 +130,7 @@ func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration b
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
-	return router, conn, svc
+	return router, conn, svc, api
 }
 
 // person invites somebody and gives them a password, through the user module.
@@ -599,7 +610,7 @@ func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
 		t.Fatalf("the request path sent %d messages; it sends none", len(got))
 	}
 	worker(t, conn)
-	sent := mailbox.Sent()
+	sent := linksMailed()
 	if len(sent) != 1 {
 		t.Fatalf("%d links were mailed, want one — for the address that is here", len(sent))
 	}

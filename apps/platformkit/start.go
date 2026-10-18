@@ -41,6 +41,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // The first tenant. The host is what the browser types, and .localhost
@@ -87,12 +88,12 @@ func startApp(args []string) error {
 		return err
 	}
 
-	c := compose(cfg)
+	c := composeReference(cfg, pkit.Development)
 	password, err := generatePassword()
 	if err != nil {
 		return err
 	}
-	err = app.Bootstrap(ctx, cfg, c.modules, func(ctx context.Context, tx db.Tx[db.System]) error {
+	err = app.Bootstrap(ctx, cfg, c.plan().Modules(), func(ctx context.Context, tx db.Tx[db.System]) error {
 		t, err := tenant.Bootstrap(ctx, tx, c.tenants, tenantcontracts.NewTenant{
 			Slug: startTenant, Name: "PlatformKit", Host: startHost,
 		})
@@ -114,12 +115,8 @@ func startApp(args []string) error {
 		return err
 	}
 
-	a, err := app.New(ctx, cfg, c.modules, appOptions(cfg, c, app.All))
-	if err != nil {
-		return err
-	}
 	fmt.Fprintf(os.Stderr, "  site   http://%s/\n  admin  http://%s/app/admin/login\n  api    http://%s/docs\n\n", cfg.Server.PublicHost, cfg.Server.PublicHost, cfg.Server.PublicHost)
-	return a.Run(ctx)
+	return c.app.Run(ctx, c.once, app.All)
 }
 
 // startConfig is the development configuration with the database's port in
@@ -142,8 +139,28 @@ func startConfig(data, addr string, pgPort int) config.Config {
 		Mail:     config.Mail{Port: 587},
 		Audit:    config.Audit{RetentionDays: 365},
 		Files:    config.Files{Dir: filepath.Join(data, "files"), MaxBytes: 25 << 20, QuotaBytes: 1 << 30},
+		Webhook:  config.Webhook{SecretKey: startWebhookKey},
 	}
 }
+
+// startWebhookKey is the key the start command wraps every endpoint's signing
+// secret with, and the value config.example.yaml carries for `make run`:
+// apps/platformkit/start_webhook_test.go reads that file and refuses the two
+// spellings once they disagree, because an installation that migrated its
+// endpoints under one key and restarted with the other cannot open the secrets it
+// already wrapped. modules/webhook refuses to be composed without a key, and this
+// command has no secret store in front of it, so it carries the laptop's own —
+// the value is not a secret and is not meant to be one, for the reason the
+// database password in the two URLs above is not: it is this machine's default,
+// and a key anybody can read protects nothing anybody cares about.
+//
+// It is read from nowhere else, not even the environment kit/config hands out for
+// it: a command whose whole configuration is written here would otherwise hold one
+// field that came from outside the file, and a reader would have to know which.
+// A deployment does not run this command; it has a config.yaml of its own, its key
+// in PLATFORMKIT_WEBHOOK_SECRET_KEY, and whoever can read that can also restore the
+// database the key opens.
+const startWebhookKey = "0123456789abcdef0123456789abcdef"
 
 // startPostgres runs PostgreSQL 16 — the version the Compose stack runs — with
 // its binaries cached per user and its data under the data directory, so a

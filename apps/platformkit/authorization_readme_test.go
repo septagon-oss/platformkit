@@ -18,12 +18,35 @@ var authorizationQuestions = []string{
 	"### Provisioning",
 }
 
-// TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions is T-0116's gate:
+// TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions is a gate:
 // a module README without its Authorization section is refused, and the section is
 // read against the manifest rather than trusted — every permission key the module
 // declares must be named in its Permissions subsection, and every operator-only key
 // in its operator-boundary subsection. So the documentation of who may do what
 // cannot drift from the declaration the kernel enforces.
+// declaredElsewhere is the census's one exception, written down rather than
+// guessed: five of the modules the reference composition names are not a
+// directory of their own under modules/, so the README that answers for them is
+// not the one the rule `modules/<name>/README.md` would find. `product` and
+// `access` are declared by this application in product.go and `media` in
+// library.go, and their answers belong in this application's own README: all three
+// are this product's own module rather than a capability, and `media` declares no
+// permission and mounts no route — it hands the media library this app's chrome and
+// this app's authorizer, which is a fact about the installation;
+// `emailregistration` is the registration policy the auth package declares beside
+// its module, so the auth README answers for it; `seed` is the kernel's
+// provisioning mechanism and lives in kit/, because it names no domain, so its
+// answers sit beside its code.
+// Every other name the composition resolves is a directory, and a kernel module
+// that grows a README-less sibling still fails here.
+var declaredElsewhere = map[string]string{
+	"product":           "README.md",
+	"access":            "README.md",
+	"media":             "README.md",
+	"emailregistration": filepath.Join("..", "..", "modules", "auth", "README.md"),
+	"seed":              filepath.Join("..", "..", "kit", "seed", "README.md"),
+}
+
 func TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions(t *testing.T) {
 	_, cfg := configure(t)
 	c := compose(cfg)
@@ -32,7 +55,10 @@ func TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions(t *testing
 	}
 	for _, m := range c.modules {
 		t.Run(m.Name, func(t *testing.T) {
-			path := filepath.Join("..", "..", "modules", m.Name, "README.md")
+			path, listed := declaredElsewhere[m.Name]
+			if !listed {
+				path = filepath.Join("..", "..", "modules", m.Name, "README.md")
+			}
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("%s: %v — every composed module has a README", path, err)

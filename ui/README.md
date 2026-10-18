@@ -17,7 +17,7 @@ explains the boundaries; this page maps the packages and the rules the gates enf
 | [ui/document](document/document.go) | Chrome, a plain Request, View, `Document`, `Render`, the recovery notices: an HTML document as values. | kit/locale, ui, ui/components/examples. |
 | [ui/resource](resource/resource.go) | List, detail and form screens rendered from an entity schema and plain rows. | kit/entity, kit/entity/display, ui/forms, ui/document. |
 | [ui/page](page/README.md) | The typed Request, `Serve`, `Render` into an `httpx.Page`, navigation, the locale seam; aliases the document types. | kit/httpx, ui/document. |
-| [ui/screens](screens/render.go) | The screens of an `httpx.Resource` behind `page.Serve` — the seven of a collection, the two of a resource that is not one, and one POST per declared command — and the resource catalog; aliases the renderers. | kit/rest, ui/page, ui/resource. |
+| [ui/screens](screens/render.go) | The screens of an `httpx.Resource` behind `page.Serve` — up to the seven of a collection, fewer where its operation set withholds a verb, the two of a resource that is not one, and one POST per declared command — and the resource catalog; aliases the renderers. | kit/rest, ui/page, ui/resource. |
 | [ui/export](export/README.md) | Snapshots, DTCG tokens, proposals, the Storybook composition. | ui, ui/components/examples. |
 | [ui/source](source/source.go) | Development-time persistence of proposals into Go source. | ui/export, go/packages, dst. |
 | [ui/storybook](storybook/README.md) | The optional Storybook.js build (Node). | An `export.Export` snapshot. |
@@ -38,8 +38,10 @@ and refuses growth beyond these recorded closures:
 - `ui/page` and `ui/screens` are the adapters and are gated at the adapter
   closure, which reaches kit/db and net/http through kit/httpx; neither may
   import `ui/export` or `ui/source`. What needs the kernel stays there: the
-  local-path check on a sign-in link, the nonce on an inline script, the
-  guarded closures of an `httpx.Resource`.
+  local-path check on a sign-in link, the nonce on an inline script, a view's
+  `RunsWASM` declaration (the kernel's `httpx.AllowWASM`, called for the rendered
+  view and for no refusal or redirect), the guarded closures of an
+  `httpx.Resource`.
 - `ui/components` never imports `ui/components/examples`: a renderer needs no
   reflection. `ui` never imports `ui/export`: a shell needs no design tooling.
 
@@ -81,6 +83,66 @@ review reads:
   now exported, documented and read by the gate instead of recopied into it,
   beside `components.ClassLists()`, which the class vocabulary is computed from
   rather than copied out of a rendered sheet.
+
+## The frame's floor
+
+The four refusals every client's design gate reported on every generated page
+were drawn here, so the cure is here too.
+
+- **Reused** — `style.FgOnInverse`/`style.FgPrimary` chosen by the flavour the
+  sidebar already branches on, `style.MaxWScaled(style.MaxWSM)` (the bound
+  `document.Bare` and the reference app's fault page already chose),
+  `components.Text`'s own size vocabulary, and the gate's own probe as
+  `e2e/refusal-floor.spec.ts` transcribes it. That bound is carried by
+  the two sentences under a control (`clHelp`, `clFieldErr`) and by the wrapper
+  inside the footer — never by the field's own flex column (`clFieldWrap`),
+  because the design tool projects no composition whose sizing is constrained of
+  its own accord: a max-width there took every client's Input, Select, Textarea,
+  Checkbox and Form out of their design document — 44 refusals in the tool's own
+  suite at the refused head, and 74 more for text that broke mid-word, below.
+  An unbounded help line measured
+  189ch on every generated record page that documents a field; a paragraph is
+  what the floor measures and what the projection carries.
+- **Added** — `BreakAnywhere` (`overflow-wrap: anywhere`), which the vocabulary
+  lacked and `break-words` is not: it is the value that takes part in intrinsic
+  min-content sizing, so a name that is one token stops setting the width of the
+  column it sits in. It sits on the frame's content region (`clShellMain`), and
+  inherits to every heading, breadcrumb and cell below it, rather than on the
+  Heading or Breadcrumb component: the tool builds text only where the element
+  itself computes ordinary line breaking, so the rule belongs to the page, which
+  is the thing that was scrolling sideways. `BreakNormal` is its opt-out, and one
+  region takes it: the table. A cell that broke anywhere let the longest token in
+  any column set how narrow every other column became — on a generated list at
+  320px the row link's target fell to an 18px band, under the 24px the
+  accessibility audit enforces — and a table too wide for the page is already
+  reached by scrolling its own named region. And one `sm` step for everything the
+  frame draws outside `<main>`, because a page is allowed two body sizes and the
+  chrome took three.
+- **Made reusable** — `e2e/design_floor.ts`: the floor's eight rules, the
+  chrome's `<p>` set (header and footer, found from `main`'s parent, no
+  data-attribute invented for the shell), the brand link's own contrast and a
+  diagnostic that names the element behind a refusal, for every spec written from
+  now on; and `ui:"display"`, the field tag by which an entity says what its rows
+  are called, read by `ui/resource` and refused at mount by `kit/rest`.
+
+## Generated command controls
+
+Generated resource commands use outline buttons so the toolbar's Edit or New
+action remains the screen's filled action; each command retains its named native
+POST form and submit button.
+
+- **Reused** — the existing `components.Button` outline variant, `design.ResolveColors`,
+  shipped palettes and resource rendering fixtures.
+- **Added** — the outline choice for generated command submits and assertions for
+  action prominence, label contrast, paragraph sizes and native submission.
+- **Made reusable** — every application using `ui/screens` inherits the command
+  styling through `ui/resource` without changing its resource declarations.
+
+The assertions live in [resource](resource/generated_screen_floor_test.go),
+[command controls](resource/command_controls_floor_test.go) and
+[style](style/semantic_colors_test.go); run `go test ./ui/resource ./ui/style`.
+The paragraph-size assertion covers the resource body; complete frame sizing and
+product palettes still need browser measurements of the composed screen.
 
 ## Next action
 

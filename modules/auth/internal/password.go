@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -15,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -54,8 +56,9 @@ func (s *Service) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userI
 // mistypes their own address is told nothing, and the mail that does not arrive
 // is the message.
 func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
+	r, _ := httpx.RequestFrom(ctx)
 	return events.Publish(ctx, tx, contracts.EventResetRequested, contracts.ResetRequested{
-		Email: contracts.EmailKey(email), At: db.Now(),
+		Email: contracts.EmailKey(email), At: db.Now(), Served: httpx.ServedAuthority(r),
 	})
 }
 
@@ -66,6 +69,18 @@ func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string)
 // composition with no mailer, a person who was sent a link a moment ago: none
 // of those is a failure the outbox should retry four times and dead-letter, and
 // none of them is anything a stranger gets to measure.
+//
+// The no-account branches send no mail and leave no record. The public delivery door
+// is pinned to what one link is the whole of — a known and an unknown forgotten-
+// password request cause one message between them (review 1's case), so an unknown
+// address causes none, and the door that answered "that mail was refused" about one
+// caller and "that call caused no mail at all" about the other would be saying which
+// address has an account in the shape of its silence. This flow therefore mails to
+// accounts it found and nothing otherwise, and the door keeps its refusals to itself
+// (internal/mailDeliveryKinds, contracts.MailReport). The record of a refused link is
+// still written for the operator, which is what the ledger is for; what is withheld
+// is the public read of it, and the neutral acknowledgment is the whole of what a
+// stranger is told either way.
 func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
 	user, err := s.users.ByEmail(ctx, tx, email)
 	switch {
@@ -75,6 +90,7 @@ func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string
 		return err
 	case user.Status != usercontracts.StatusInvited && user.Status != usercontracts.StatusActive:
 		// Recovery cannot bypass a required approval or restore a deactivated account.
+		// The address is answered exactly as an address nobody has is.
 		return nil
 	}
 	return s.offer(ctx, tx, user, resetSubject, resetBody)
@@ -101,7 +117,31 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 	return s.offer(ctx, tx, user, inviteSubject, inviteBody)
 }
 
-// offer mints the token, raises the notice, and sends the mail.
+// offer mints the token, sends the mail, and puts the credential back if the
+// transport refused it.
+//
+// # Where the row sits, relative to the mail
+//
+// The row is written before the message is handed over, and a refused send puts it
+// back rather than letting the attempt roll back — the attempt commits now, because
+// the record of the refusal is written in the same transaction and a record that
+// rolled back with the failure is a failure nobody can see.
+//
+// Both halves of that are load-bearing. A mailbox that already shows a link with no
+// row behind it is a link that does not work yet: apps/platformkit's four-eyes
+// journey redeems the token the moment the mail appears. And a committed failure may
+// not hold a live credential nobody was sent — which is what the restore is for, and
+// it leaves recent() counting the link that actually left, so the person can ask
+// again at once instead of being answered by a cap they were never mailed under. And
+// because the upsert replaces whatever row this attempt found, a refused resend would
+// otherwise destroy the link the person was sent five minutes ago — which is why the
+// restore writes the old hash, timestamp and expiry back rather than only deleting.
+//
+// The transport is the last thing before the commit that a successful attempt makes:
+// one statement, the record of the send, runs after it. That is deliberate. A mail the
+// person can already read in their mailbox is a link they may use at once, and every
+// statement this transaction still owes is a moment in which that link answers "those
+// credentials are not right".
 //
 // # Where the secret is, and where it is not
 //
@@ -131,19 +171,94 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // these mails still has one that works. recent() is the other half of that —
 // one link per person per ResetInterval, so an address somebody types
 // repeatedly is one mail and not twenty.
+// passwordLock serialises the two things that must not happen twice for one
+// person: sending a second link inside the cap, and minting a token a concurrent
+// attempt is about to replace. It is the same advisory lock verificationLock takes
+// (verification.go), keyed the same way, and it is taken before recent() because
+// recent() is a read: two attempts that both read "no link yet" would both mail.
+// The key includes the tenant even though table visibility is already RLS-bound.
+func passwordLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
+	key := "auth/password/" + db.TenantOf(tx).ID.String() + "/" + id.String()
+	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+		return fmt.Errorf("auth: lock a password link: %w", err)
+	}
+	return nil
+}
+
+// pendingLink is the credential row as one attempt found it, so that the attempt
+// can put it back. The zero value means there was none.
+type pendingLink struct {
+	hash    contracts.Digest
+	created time.Time
+	expires time.Time
+	there   bool
+}
+
+// pendingLinkOf reads the one outstanding link a person holds. It is called under
+// the advisory lock, and it is the whole reason the lock is held across the send:
+// a refused attempt has to restore this value rather than delete "the" row, because
+// the row it replaced may be the only link that person has.
+func pendingLinkOf(tx db.Tx[db.Tenant], table string, id uuid.UUID) (pendingLink, error) {
+	var out pendingLink
+	err := tx.DB().Raw("SELECT token_hash, created_at, expires_at FROM "+table+
+		" WHERE tenant_id = ? AND user_id = ?", db.TenantOf(tx).ID, id).Row().
+		Scan(&out.hash, &out.created, &out.expires)
+	switch {
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
+		return out, nil
+	case err != nil:
+		return out, fmt.Errorf("auth: read the outstanding link in %s: %w", table, err)
+	}
+	out.there = true
+	return out, nil
+}
+
+// restoreLink puts a person's credential row back the way this attempt found it.
+// Two wrongs are refused here: leaving a live token that nobody was sent, and
+// deleting the link that person was sent five minutes ago because a mail server
+// refused them a second one.
+func restoreLink(tx db.Tx[db.Tenant], table string, id uuid.UUID, was pendingLink) error {
+	if !was.there {
+		err := tx.DB().Exec("DELETE FROM "+table+" WHERE tenant_id = ? AND user_id = ?",
+			db.TenantOf(tx).ID, id).Error
+		if err != nil {
+			return fmt.Errorf("auth: withdraw the link nobody was sent: %w", err)
+		}
+		return nil
+	}
+	err := tx.DB().Exec("UPDATE "+table+" SET token_hash = ?, created_at = ?, expires_at = ?"+
+		" WHERE tenant_id = ? AND user_id = ?",
+		was.hash, was.created, was.expires, db.TenantOf(tx).ID, id).Error
+	if err != nil {
+		return fmt.Errorf("auth: restore the link this attempt replaced: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if s.mail.Mailer == nil {
 		// A composition with no mailer writes no token either: a link nobody is
-		// sent is a live credential in a table for an hour, for nothing.
+		// sent is a live credential in a table for an hour, for nothing. It leaves
+		// a suppressed record, because the deployment rather than the caller is
+		// what has to learn that no transport is wired.
 		slog.WarnContext(ctx, "auth: no mailer is wired, so no set-password link was sent", "user", user.ID)
-		return nil
+		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+			notificationcontracts.MailSuppressed, "no mail transport is wired")
+	}
+	// Before the cap, so that an attempt waiting here reads the one that holds the
+	// lock's committed token row instead of mailing the person twice.
+	if err := passwordLock(tx, user.ID); err != nil {
+		return err
 	}
 	recent, err := s.recent(tx, user.ID)
 	if err != nil || recent {
 		return err
 	}
-	token := secret()
-	at := db.Now()
+	was, err := pendingLinkOf(tx, "password_tokens", user.ID)
+	if err != nil {
+		return err
+	}
+	token, at := secret(), db.Now()
 	err = tx.DB().Exec(
 		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,"+
@@ -152,9 +267,32 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if err != nil {
 		return fmt.Errorf("auth: issue a password token: %w", err)
 	}
+	base, err := s.baseURL(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base, token)); err != nil {
+		// The row goes back the way it came, and the attempt is acknowledged rather
+		// than retried: the record of a refused mail is written in this transaction,
+		// so this transaction has to commit for the record to exist (SPECIFY §3). A
+		// committed failure may not hold a credential nobody was sent — which is what
+		// the restore is for, and it also leaves the cap counting the link that was
+		// really sent rather than this one, so the person can ask again at once.
+		if err := restoreLink(tx, "password_tokens", user.ID, was); err != nil {
+			return err
+		}
+		// And no notice is raised beside it: the in-app copy says "the link is in
+		// the email this raised", and a committed sentence that promises a mail the
+		// transport refused is the same lie the record exists to make impossible.
+		// Before this branch's acknowledged failure the notice rolled back with the
+		// attempt; raising it after the send is what keeps that promise now.
+		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+			notificationcontracts.MailFailed, err.Error(), token, string(contracts.Hash(token)))
+	}
 	if s.notify != nil {
-		// A path, and one with no query on it: the notification module refuses
-		// an absolute link, and this one is not a credential at all.
+		// Only now, and only because the transport took the message: a path, and one
+		// with no query on it, because the notification module refuses an absolute
+		// link and this one is not a credential at all.
 		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
 			Recipient: user.ID, Title: title,
 			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
@@ -164,23 +302,23 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 			return err
 		}
 	}
-	return s.send(ctx, tx, user, title, body, token)
+	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, notificationcontracts.MailSent, "")
 }
 
-// send renders the one message this module writes and hands it to the mail
-// server. The link is absolute and on the recipient's own tenant's host,
-// because a mail client has no base to resolve a path against and one
-// customer's people must not be sent to another's front door.
-func (s *Service) send(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body, token string) error {
-	base, err := s.baseURL(ctx, tx)
-	if err != nil {
-		return err
-	}
-	return s.mail.Mailer.Send(ctx, notificationcontracts.Message{
-		To: user.Email, Subject: title,
+// mailMessage renders the one message this module writes. The link is absolute
+// and on the recipient's own tenant's host, because a mail client has no base to
+// resolve a path against and one customer's people must not be sent to another's
+// front door.
+//
+// The token is in this string and in nothing it returns to: the caller hands it
+// straight to the mail server, and the record written beside the send names no
+// subject, body, link or credential.
+func mailMessage(to, title, body, base, token string) notificationcontracts.Message {
+	return notificationcontracts.Message{
+		To: to, Subject: title,
 		Body: body + "\n\n" + base + ResetPath + "?token=" + token +
 			"\n\nThe link works once and stops working in an hour.",
-	})
+	}
 }
 
 // baseURL is the scheme and host this tenant's people reach the application at.
@@ -201,7 +339,15 @@ func (s *Service) baseURL(ctx context.Context, tx db.Tx[db.Tenant]) (string, err
 	if s.mail.Secure {
 		scheme = "https"
 	}
-	return scheme + "://" + host, nil
+	base := scheme + "://" + host
+	// The port the request that raised this link was served at, when there was one
+	// and when it is a port on this host of record: a development installation
+	// serves a tenant at its name and a port, and a link that drops the port opens
+	// a different server, or none. See served.go.
+	if port := servedPort(ctx, host); port != "" {
+		base += ":" + port
+	}
+	return base, nil
 }
 
 // recent reports whether this person was sent a link inside ResetInterval.
@@ -228,17 +374,35 @@ func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 // purge's maxAge already uses.
 var resetInterval = fmt.Sprintf("%d seconds", int(contracts.ResetInterval.Seconds()))
 
-// Reset consumes a token, sets the password and ends every session.
+// Reset consumes a token, sets the password, ends every session, and lets the
+// browser that spent the link in.
 //
-// Every one, including any the caller holds: whoever is resetting a password
-// has already shown they were not relying on a session, and whoever else held
-// one may be the reason it is being reset. The row is deleted rather than
-// flagged, so "used once" is the row being gone — two requests racing on one
-// token is one DELETE returning a row and one returning none, decided by
-// Postgres rather than by a read and a write this code would have to get right.
-func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error {
+// Every session that existed when the link was spent ends, including any the
+// caller holds: whoever is resetting a password has already shown they were not
+// relying on a session, and whoever else held one may be the reason it is being
+// reset. The row is deleted rather than flagged, so "used once" is the row being
+// gone — two requests racing on one token is one DELETE returning a row and one
+// returning none, decided by Postgres rather than by a read and a write this code
+// would have to get right.
+//
+// The session that comes back is opened after that sweep rather than before it,
+// which is the order the whole answer depends on: opening one first would have it
+// deleted by the revocation that follows, and a link that set a password and then
+// signed nobody in is the half-journey the front door was scored zero on — the
+// invited person who chose a password in the page the mail opened and then had to
+// sign in anyway. The method it records is "reset", not "password": what this
+// person spent was a token, and the trail says what was spent.
+//
+// nil and no error is the one account this leaves signed out: a person who
+// enrolled a second factor. Their password is still set and their other sessions
+// still ended — a dead phone must not lock anybody out of their own account — but
+// the first half of a sign-in does not open a session on an account that answers
+// with two, and a mailed link is a weaker first half than a password. They are
+// sent to the sign-in page to finish the sign-in the way the account asks for.
+func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+	from contracts.Client) (*contracts.Session, error) {
 	if token == "" {
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	}
 	// The lookup is by the hash of what was presented, which is a primary-key
 	// probe on a value an attacker cannot steer: the token is 256 bits of
@@ -253,19 +417,34 @@ func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, passwor
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
 		// An unknown token, a spent one and an expired one are one answer, for
 		// the reason Login's three refusals are one answer.
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	case err != nil:
-		return fmt.Errorf("auth: consume a password token: %w", err)
+		return nil, fmt.Errorf("auth: consume a password token: %w", err)
 	}
 	if err := s.users.SetPassword(ctx, tx, userID, password); err != nil {
-		return err
+		return nil, err
 	}
 	if err := s.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
-		return err
+		return nil, err
 	}
-	return events.Publish(ctx, tx, contracts.EventPasswordReset, contracts.PasswordReset{
+	if err := events.Publish(ctx, tx, contracts.EventPasswordReset, contracts.PasswordReset{
 		UserID: userID, At: db.Now(),
-	})
+	}); err != nil {
+		return nil, err
+	}
+	answersWith, err := s.factorEnrolled(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if answersWith {
+		return nil, nil
+	}
+	person, err := s.users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := s.open(ctx, tx, person, from, "reset")
+	return session, err
 }
 
 // The two messages. They are here rather than in a template because the
@@ -278,10 +457,23 @@ const (
 	resetBody     = "Somebody asked to reset the password for this address. If it was not you, ignore this message and nothing changes."
 )
 
-// ResetPath is where the link points. It is a path within the application, so a
-// notice can never send a tenant's people somewhere else, and the host the mail
-// turns it into is that tenant's own.
-const ResetPath = "/auth/reset"
+// ResetPath is where the link points, and it is the workspace address rather than
+// a bare path: the page that reads the token lives under the workspace prefix the
+// kernel composes (httpx.Workspace), in the namespace this module's screens are
+// mounted at. The bare "/auth/reset" this constant used to carry was an address no
+// route answered — the API sits at /api/v1/auth/password/reset and the shell served
+// no page at all — so an invitation mail and a reset mail each carried a link that
+// opened nothing, which is the academy finding in one line. The host in front of it
+// is still the tenant's own, from the host of record, never a configured port.
+var ResetPath = httpx.Workspace("/auth/reset")
+
+// VerifyEmailPath is the confirmation link a sign-up mail carries, and it is the
+// workspace screen the shell mounts for it — the same correction ResetPath got.
+// The bare "/auth/verify-email" this used to be an address no route answered:
+// the API door is /api/v1/public/auth/verify-email and the page sits under the
+// workspace prefix, so a person who signed up was mailed a link to a 404 and
+// could not activate the account they had just made.
+var VerifyEmailPath = httpx.Workspace("/auth/verify-email")
 
 // secret is 32 bytes of crypto/rand, base64url. It only has to be unguessable
 // and unique, and it is never stored: the row holds its hash.

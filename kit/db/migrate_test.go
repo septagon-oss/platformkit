@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"io/fs"
+	"net/url"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -269,17 +270,140 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 	}
 }
 
+// cancellationCompositionKey is the first half of kit/db's composition key
+// (kit/db/migrate.go: compositionLockKey), spelled out here rather than borrowed from
+// another file's declaration so this case stands on its own. The lock is the two-key
+// one: since main's 5605448 a run takes (compositionLockKey, the OID of the namespace
+// it resolves to), because one history table belongs to one namespace, and review3_guard_floor_test.go
+// and composition_lock_rehold_test.go hold and release that pair. A session holding
+// the bare key blocks nothing, which is why this case names the pair too.
+const cancellationCompositionKey = 7240101
+
+// cancellationNamespaceLock is the acquisition and its inverse, asked of the session
+// this case runs them on: `current_schema()` there is the schema dbtest opened for
+// this test, which is the schema the run under test migrates, so the two of them want
+// one and the same lock.
+const (
+	cancellationNamespaceLock   = "SELECT pg_advisory_lock($1::int, to_regnamespace(current_schema())::oid::int)"
+	cancellationNamespaceUnlock = "SELECT pg_advisory_unlock($1::int, to_regnamespace(current_schema())::oid::int)"
+)
+
+// cancellationKeyWaiter counts the sessions of this test's own schema that are
+// queued for the composition lock and not yet granted one, and
+// cancellationKeyHolder the ones that hold one. pg_locks spells a two-key advisory
+// lock as classid = the first key and objid = the second (measured on the development
+// Postgres: a holder of pg_advisory_lock(7240101, 84) appears as classid 7240101,
+// objid 84), so the second half names this schema's own namespace. `application_name =
+// current_setting('search_path')` is dbtest's own address scheme: every URL it hands
+// out wears the test's schema, so these two questions are about this test's backends
+// and not about every other package running beside it.
+const (
+	cancellationKeyWaiter = `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+		WHERE l.locktype = 'advisory' AND l.classid = 7240101
+		AND l.objid = to_regnamespace(current_schema())::oid AND NOT l.granted
+		AND a.application_name = current_setting('search_path')`
+
+	cancellationKeyHolder = `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+		WHERE l.locktype = 'advisory' AND l.classid = 7240101
+		AND l.objid = to_regnamespace(current_schema())::oid AND l.granted
+		AND a.application_name = current_setting('search_path')`
+)
+
+// takeCompositionKey holds the composition key on a session of this test's own, and
+// returns the function that hands it back. The session is renamed: the runs this case
+// starts wear the test's schema, and the hand-off below has to be able to tell its own
+// runs from the session standing in the queue beside them.
+//
+// The queue for this key belongs to this namespace — the second half of the lock is
+// this schema's OID, so a run of another package's schema is not standing in it — and
+// what this case can still queue behind is another session of its own schema, which is
+// what the two cases that hold the key on purpose
+// (review3_guard_floor_test.go, composition_lock_rehold_test.go) do. So getting
+// the key is a wait in a queue this test does not control, which is why the bound is the
+// five minutes review3_guard_floor_test.go gives its own acquisition: losing a fair race
+// here says nothing about the behaviour under test.
+func takeCompositionKey(t *testing.T, migrateURL string) func() {
+	t.Helper()
+	holderURL, err := url.Parse(migrateURL)
+	if err != nil {
+		t.Fatalf("dbtest handed out %q, which is not a URL: %v", migrateURL, err)
+	}
+	q := holderURL.Query()
+	q.Set("application_name", "migrate-cancellation-holder")
+	holderURL.RawQuery = q.Encode()
+	pool := dbtest.Open(t, holderURL.String())
+	conn, err := pool.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acquire, cancelAcquire := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancelAcquire()
+	if _, err := conn.ExecContext(acquire, cancellationNamespaceLock, cancellationCompositionKey); err != nil {
+		t.Fatalf("the composition key was not free to hold within five minutes: %v", err)
+	}
+	handed := false
+	handBack := func() {
+		if handed {
+			return
+		}
+		handed = true
+		release, cancelRelease := context.WithTimeout(context.WithoutCancel(t.Context()), 10*time.Second)
+		defer cancelRelease()
+		if _, err := conn.ExecContext(release, cancellationNamespaceUnlock, cancellationCompositionKey); err != nil {
+			t.Errorf("handing the composition key back: %v", err)
+		}
+		_ = conn.Close()
+	}
+	t.Cleanup(handBack)
+	return handBack
+}
+
+// handKeyToTheRun waits until the server's lock table shows a session of this test's
+// schema queued for the composition key — the run the case just started, because the
+// session holding it out of the way wears another name and nobody else's run appears
+// under this schema — and then hands the key back. The server's lock queue is fair, so
+// the waiter it has seen is the next grantee whoever else arrives afterwards: this is
+// the run getting its turn, not the run outwaiting the queue.
+//
+// The run ending before it ever queued is reported as that, with its own error, rather
+// than as a timeout on a hand-off that could not happen.
+func handKeyToTheRun(t *testing.T, admin sqlDB, handBack func(), failed <-chan error) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		var waiting int
+		scan(t, admin, cancellationKeyWaiter, &waiting)
+		if waiting > 0 {
+			handBack()
+			return
+		}
+		select {
+		case err := <-failed:
+			handBack()
+			t.Fatalf("the run ended before it ever queued for the composition key: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			handBack()
+			t.Fatal("no run of this schema ever queued for the composition key within two minutes")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	files := fstest.MapFS{
 		"1_slow.up.sql": {Data: []byte("CREATE TABLE slow (value int); SELECT pg_sleep(30)")},
 	}
 	source := db.MigrationSource{Owner: "slow", Files: files}
+	admin := dbtest.Open(t, migrateURL)
+	key := takeCompositionKey(t, migrateURL)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- db.Migrate(ctx, migrateURL, source) }()
-	admin := dbtest.Open(t, migrateURL)
+	handKeyToTheRun(t, admin, key, done)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		var sleeping bool
@@ -298,10 +422,32 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	if err := <-done; err == nil {
 		t.Fatal("migration ignored cancellation")
 	}
+	// The release is what this case is about, so it is read directly rather than
+	// inferred from what the next run manages: no session of this schema holds the key
+	// any more. The bound is this case's own and no other package's queue reaches it; it
+	// is forty-five seconds because the statement the cancelled run sits in sleeps thirty,
+	// and a session whose cancel request never lands is reaped only once that statement
+	// ends. What the bound refuses is a run that came back from Migrate holding the key.
+	released := time.Now().Add(45 * time.Second)
+	for {
+		var held int
+		scan(t, admin, cancellationKeyHolder, &held)
+		if held == 0 {
+			break
+		}
+		if time.Now().After(released) {
+			t.Fatal("the cancelled run's session still holds the composition key after forty-five seconds")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	files["1_slow.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE slow (value int); INSERT INTO slow VALUES (1)")}
-	retry, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	retry, stop := context.WithTimeout(t.Context(), 30*time.Second)
 	defer stop()
-	if err := db.Migrate(retry, migrateURL, source); err != nil {
+	key = takeCompositionKey(t, migrateURL)
+	retried := make(chan error, 1)
+	go func() { retried <- db.Migrate(retry, migrateURL, source) }()
+	handKeyToTheRun(t, admin, key, retried)
+	if err := <-retried; err != nil {
 		t.Fatalf("retry after cancellation: %v", err)
 	}
 	var value int

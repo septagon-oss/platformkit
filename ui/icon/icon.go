@@ -82,7 +82,16 @@ const caretDown = `<path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0
 // aliases are the names other vocabularies use for these glyphs, so a caller
 // that asks for "search" or "chevron-down" is not told there is no such icon.
 var aliases = map[string]string{
-	"alert":                  "warning",
+	"alert": "warning",
+	// The six names entity.Icons needs that this set already draws. Each names a
+	// body and never another alias, because Resolve consults aliases once and then
+	// bodies: an alias to an alias answers Fallback.
+	"task":                   "check-circle",
+	"person":                 "user",
+	"people":                 "user",
+	"settings":               "gear",
+	"plan":                   "file-text",
+	"message":                "chats",
 	"chat-bubble-left-right": "chats",
 	"chevron-down":           "caret-down",
 	"cog":                    "gear",

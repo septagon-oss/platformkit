@@ -1,11 +1,137 @@
 {
-  "permission.content:read": {
+  "hints.content/content.command.archive.confirmation.body": {
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "ler conteúdos",
+    "translation": "Deixa de ser exibida. Pode voltar a publicá-la mais tarde.",
     "plural": {
-      "": "ler conteúdos"
+      "": "Deixa de ser exibida. Pode voltar a publicá-la mais tarde."
+    }
+  },
+  "hints.content/content.command.archive.confirmation.confirmLabel": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar",
+    "plural": {
+      "": "Arquivar"
+    }
+  },
+  "hints.content/content.command.archive.confirmation.title": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar esta página?",
+    "plural": {
+      "": "Arquivar esta página?"
+    }
+  },
+  "hints.content/content.command.archive.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar",
+    "plural": {
+      "": "Arquivar"
+    }
+  },
+  "hints.content/content.command.publish.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publicar",
+    "plural": {
+      "": "Publicar"
+    }
+  },
+  "hints.content/content.command.unpublish.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Despublicar",
+    "plural": {
+      "": "Despublicar"
+    }
+  },
+  "hints.content/content.field.coverImageId.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "ID do ficheiro da imagem de capa",
+    "plural": {
+      "": "ID do ficheiro da imagem de capa"
+    }
+  },
+  "hints.content/content.field.coverImageId.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Capa",
+    "plural": {
+      "": "Capa"
+    }
+  },
+  "hints.content/content.field.kind.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Tipo",
+    "plural": {
+      "": "Tipo"
+    }
+  },
+  "hints.content/content.field.publishedAt.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publicada",
+    "plural": {
+      "": "Publicada"
+    }
+  },
+  "hints.content/content.field.slug.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Usado para montar o endereço web desta página",
+    "plural": {
+      "": "Usado para montar o endereço web desta página"
+    }
+  },
+  "hints.content/content.field.slug.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Nome do endereço",
+    "plural": {
+      "": "Nome do endereço"
+    }
+  },
+  "hints.content/content.group.content": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Conteúdo",
+    "plural": {
+      "": "Conteúdo"
+    }
+  },
+  "hints.content/content.plural": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "páginas",
+    "plural": {
+      "": "páginas"
+    }
+  },
+  "hints.content/content.singular": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "página",
+    "plural": {
+      "": "página"
     }
   },
   "permission.content:manage": {
@@ -15,6 +141,15 @@
     "translation": "gerir conteúdos",
     "plural": {
       "": "gerir conteúdos"
+    }
+  },
+  "permission.content:read": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "ler conteúdos",
+    "plural": {
+      "": "ler conteúdos"
     }
   },
   "resource.content.content": {
@@ -316,9 +451,9 @@
     "references": [
       "modules/content/contracts/content.go"
     ],
-    "translation": "um corpo tem no máximo %d bytes, e este tem %d; um documento mais longo do que isso é um ficheiro e não uma página",
+    "translation": "um corpo tem no máximo %d caracteres Markdown",
     "plural": {
-      "": "um corpo tem no máximo %d bytes, e este tem %d; um documento mais longo do que isso é um ficheiro e não uma página"
+      "": "um corpo tem no máximo %d caracteres Markdown"
     }
   },
   "invalid.content.kind": {

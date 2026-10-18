@@ -30,8 +30,8 @@ func TestContentValidationSpeaksTheRequestsLanguage(t *testing.T) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, contents := content.Module(content.Deps{})
-	shell := admin.Module(admin.Deps{
+	_, contents := content.New(content.Deps{})
+	shell := admin.New(admin.Deps{
 		Modules: []module.Module{contents}, Authorize: caller{}, SignIn: "/api/v1/auth/login",
 		Messages: xtext.Load("en", admin.Catalogue(), content.Catalogue(), page.Catalogue(),
 			xtext.Source{Name: "resource", FS: resource.Catalogues()}),

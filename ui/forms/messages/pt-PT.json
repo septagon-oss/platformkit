@@ -1,0 +1,464 @@
+{
+  "forms.richtext.help": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Ajuda de formatação"
+  },
+  "forms.richtext.paragraphs": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Parágrafos: deixe uma linha em branco; uma quebra de linha forçada termina com \\."
+  },
+  "forms.richtext.headings": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Títulos: de ## a ####."
+  },
+  "forms.richtext.marks": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Negrito **texto**, itálico *texto*, riscado ~~texto~~, código em linha `código`."
+  },
+  "forms.richtext.links": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Ligações: [rótulo](https://example.com) ou [rótulo](/pagina)."
+  },
+  "forms.richtext.lists": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Listas: - item, 1. item ou - [ ] tarefa; até três níveis."
+  },
+  "forms.richtext.blocks": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Citação: > texto; código: ```linguagem; separador: ---."
+  },
+  "forms.richtext.tables": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Tabelas: | título | com uma linha | --- | de separação."
+  },
+  "forms.richtext.images": {
+    "references": [
+      "ui/forms/control.go"
+    ],
+    "translation": "Imagens: ![texto alternativo](pk-file:uuid \"legenda\") isolada numa linha. Carregue primeiro o ficheiro."
+  },
+  "forms.richtext.toolbar": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Formatação"
+  },
+  "forms.richtext.bubble": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Formatar selecção"
+  },
+  "forms.richtext.menu": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Inserir um bloco"
+  },
+  "forms.richtext.surface": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Conteúdo"
+  },
+  "forms.richtext.more": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Mais formatação"
+  },
+  "forms.richtext.bold": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Negrito"
+  },
+  "forms.richtext.italic": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Itálico"
+  },
+  "forms.richtext.link": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Ligação"
+  },
+  "forms.richtext.bulletList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Lista com marcas"
+  },
+  "forms.richtext.orderedList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Lista numerada"
+  },
+  "forms.richtext.taskList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Lista de tarefas"
+  },
+  "forms.richtext.quote": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Citação"
+  },
+  "forms.richtext.code": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Código em linha"
+  },
+  "forms.richtext.strike": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Rasurado"
+  },
+  "forms.richtext.codeBlock": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Bloco de código"
+  },
+  "forms.richtext.table": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Tabela"
+  },
+  "forms.richtext.heading1": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Título 1"
+  },
+  "forms.richtext.heading2": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Título 2"
+  },
+  "forms.richtext.heading3": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Título 3"
+  },
+  "forms.richtext.paragraph": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Texto"
+  },
+  "forms.richtext.image": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Imagem"
+  },
+  "forms.richtext.rule": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Separador"
+  },
+  "forms.richtext.undo": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Anular"
+  },
+  "forms.richtext.redo": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Repetir"
+  },
+  "forms.richtext.preview": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Pré-visualização como publicado"
+  },
+  "forms.richtext.menu.bulletList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Lista sem ordem de itens"
+  },
+  "forms.richtext.menu.orderedList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Lista numerada de um em um"
+  },
+  "forms.richtext.menu.taskList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Caixas que se podem assinalar"
+  },
+  "forms.richtext.menu.quote": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Uma passagem escrita por outra pessoa"
+  },
+  "forms.richtext.menu.codeBlock": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Texto monoespaçado, sem formatação"
+  },
+  "forms.richtext.menu.table": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Linhas e colunas de valores curtos"
+  },
+  "forms.richtext.menu.heading1": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "O título de uma secção"
+  },
+  "forms.richtext.menu.heading2": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Uma secção dentro de outra"
+  },
+  "forms.richtext.menu.heading3": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "O título de uma subsecção"
+  },
+  "forms.richtext.menu.paragraph": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Um parágrafo normal"
+  },
+  "forms.richtext.menu.image": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Carregar uma imagem deste dispositivo, ou colar uma"
+  },
+  "forms.richtext.menu.rule": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Uma linha através da página"
+  },
+  "forms.richtext.menu.preview": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A página tal como o servidor a apresenta"
+  },
+  "forms.richtext.linkAddress": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Endereço"
+  },
+  "forms.richtext.linkSave": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Guardar ligação"
+  },
+  "forms.richtext.linkRemove": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Remover ligação"
+  },
+  "forms.richtext.draftFound": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Uma versão deste dispositivo não foi guardada."
+  },
+  "forms.richtext.draftRestore": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Repor a versão não guardada"
+  },
+  "forms.richtext.draftDiscard": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Descartar"
+  },
+  "forms.richtext.words": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "{count} palavras"
+  },
+  "forms.richtext.word.saving": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A guardar"
+  },
+  "forms.richtext.word.saved": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Guardado"
+  },
+  "forms.richtext.word.dirty": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Ainda não guardado"
+  },
+  "forms.richtext.word.drafted": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Guardado neste dispositivo"
+  },
+  "forms.richtext.word.offline": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Não guardado — sem ligação"
+  },
+  "forms.richtext.uploading": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A carregar"
+  },
+  "forms.richtext.failed": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Falha ao carregar"
+  },
+  "forms.richtext.retry": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Repetir tentativa"
+  },
+  "forms.richtext.choose": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Escolher outro ficheiro"
+  },
+  "forms.richtext.refused": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Não guardado"
+  },
+  "forms.richtext.noDraft": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Este navegador não guarda versões"
+  },
+  "forms.richtext.badLink": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Esse endereço não é uma ligação que esta página possa publicar."
+  },
+  "forms.richtext.previewNote": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Pré-visualização do editor. Apenas a página publicada é a apresentação do servidor."
+  },
+  "forms.richtext.altRequired": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Descreva a imagem ou diga que é decorativa."
+  },
+  "forms.richtext.altGone": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Esta imagem já não está no documento."
+  },
+  "forms.richtext.altTitle": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Texto alternativo"
+  },
+  "forms.richtext.decorative": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Decorativo"
+  },
+  "forms.richtext.save": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Guardar"
+  },
+  "forms.richtext.choices": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Escolhas"
+  },
+  "forms.richtext.conflict": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Alterado por outra pessoa — comparar"
+  },
+  "forms.richtext.keep": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Manter o meu"
+  },
+  "forms.richtext.theirs": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Aceitar o outro"
+  },
+  "forms.richtext.merge": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Juntar à mão"
+  }
+}

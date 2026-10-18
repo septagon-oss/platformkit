@@ -3,12 +3,15 @@
 # document describes it; this job proves a signed-in device can use what it read,
 # which nothing else here can.
 #
-# Why this runner and not a hosted farm: the label's host was measured to carry
-# /dev/kvm world-readable, an x86_64 system image and an AVD, while GitHub's
-# ubuntu-24.04 image lists command-line tools and platform-tools and no emulator
-# package and no system image at all. A hosted farm needs an account, a secret and a
-# queue outside this loop, to prove one flow. Both facts are recorded in the task's
-# specify note with the command that found each.
+# Why this runner and not a hosted farm: the journey needs a device. The label is
+# pkit-ci-android, whose job image (pkit-ci-android:2026-10-05) keeps the Android SDK at
+# /opt/android-sdk — with adb in platform-tools and the emulator beside it — the Android
+# 35 x86_64 Google APIs AVD, and Maestro at /opt/maestro, on a host that passes
+# /dev/kvm into the job container. GitHub's ubuntu-24.04 image, by contrast, lists
+# command-line tools and platform-tools and no emulator package and no system image at
+# all, and a hosted farm needs an account, a secret and a queue outside this loop, to
+# prove one flow. The probe below is the check on that claim: an image that stops
+# carrying these fails this job naming the tool it could not find.
 #
 # Nothing here continues on error. A journey that quietly skipped would leave
 # mobile_flow_pass_rate reading like a number nobody earned, which is the failure the
@@ -19,6 +22,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The journey is the only proof this repository has that a device can use the
+  # contract it publishes, and it is the only one that needs a device: the branch
+  # that changed the fetch, the pin or the flow is dispatchable so its author reads
+  # the journey on the runner that has /dev/kvm rather than guessing from `make
+  # check`. Nightly and the public-consumption report declare the same trigger.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,7 +41,7 @@ concurrency:
 jobs:
   journey:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: pkit-ci-linux-amd64
+    runs-on: pkit-ci-android
     timeout-minutes: 40
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
@@ -49,8 +58,18 @@ jobs:
       # Which shell build the kernel tests against, and how often that pin moves, is
       # the mobile owner's: both values are set on the repository, and the harness
       # refuses to run when either is missing rather than downloading something it
-      # cannot name. The digest is checked before anything is installed.
-      PK_MOBILE_APK: ${{ vars.PK_MOBILE_APK }}
+      # cannot name. The digest is checked before anything is installed. The URL is
+      # deliberately not a job-level entry: "Fetch the pinned shell build through the
+      # forge's API" reads it from the repository itself, resolves the asset it names
+      # through the forge's API with a read-only token, and exports PK_MOBILE_APK as a
+      # file:// URL on the job environment. No job-level entry of that name stands
+      # here, and that is the point of the arrangement and not its mechanism: whether a
+      # job's env: outranks a $GITHUB_ENV export is act_runner's ordering, which nothing
+      # in this repository establishes, so a second PK_MOBILE_APK could outrank the
+      # export and hand the harness the sign-in-gated URL back — the failure this step
+      # exists to remove.
+      # scripts/mobile_journey_fetch_test.sh refuses a job-level entry by that name on
+      # that reading alone, without waiting for the ordering to be measured.
       PK_MOBILE_APK_SHA256: ${{ vars.PK_MOBILE_APK_SHA256 }}
       PK_MOBILE_AVD: ${{ vars.PK_MOBILE_AVD }}
       # Where the harness leaves the report so this job can print it: the journey's own
@@ -62,15 +81,70 @@ jobs:
         env:
           POSTGRES_PASSWORD: platformkit
           POSTGRES_DB: platformkit
+          # This cluster is created for the job and deleted with it, so it does not
+          # force its writes to a device: the same three settings compose.yaml names
+          # on its server's command line, whose comment says why. initdb writes them
+          # into the configuration of the data directory this job creates and never
+          # reuses, which is the carrier a service container has and a developer's
+          # persistent volume must not rely on.
+          POSTGRES_INITDB_ARGS: "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=256"
         options: >-
           --health-cmd "pg_isready -U postgres -d platformkit"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     steps:
+      # First, and on purpose. A job this runner kills - a cancelled run, a ceiling reached, the
+      # lost-execution shape the header of this file describes - never reaches the `if: always()`
+      # cleanup at the end, so the containers it started stay on that host holding memory, and a
+      # runner holding a running container never reads idle. 2026-10-06 counted 13 SeaweedFS
+      # containers between the three kernel runners, some 19 hours old, each from a job that had
+      # ended long before; the ones over three hours old were removed by hand, and while they stood,
+      # the runners could not be restarted for reading busy.
+      #
+      # Every container this program starts by hand carries `--label pkit.ci.run=<run id>`, so this
+      # step finds them with `docker ps -aq --filter label=pkit.ci.run`. `-a`, not `-q`: the
+      # running-only filter does not see a stopped container, and a SeaweedFS whose process died is
+      # stopped, still on disk, still holding the memory its data directory took. Measured on this
+      # host's daemon (Docker 29.8.2) with two labelled containers, one created and never started
+      # and one started and let exit: `docker ps -q --filter label=pkit.ci.run` listed neither once
+      # both had stopped, `docker ps -aq --filter label=pkit.ci.run` listed both.
+      #
+      # The age bound is more than twice this job's own 40-minute ceiling, so no live job's container is in range. The
+      # label is a namespace the whole program shares, and a sweep here reaches every container on
+      # this daemon that carries it, including another repository's CI started with the same label;
+      # the bound is what makes that safe, and it holds only while every job that uses the label has
+      # a ceiling below half of it. `docker inspect -f '{{.Created}}'` is UTC to the nanosecond and
+      # GNU `date -u -d` parses it.
+      #
+      # Best-effort, and it never fails the job: a container that vanishes between the listing and
+      # the removal, or one another job is winning the race for, is not this job's failure, and a
+      # runner with nothing to sweep is the normal case, not a finding.
+      - name: Remove containers a killed job left on this runner
+        env:
+          SWEEP_OLDER_THAN: '10800'
+        run: |
+          cutoff=$(( $(date -u +%s) - SWEEP_OLDER_THAN ))
+          swept=0
+          for id in $(docker ps -aq --filter label=pkit.ci.run); do
+            created=$(docker inspect -f '{{.Created}}' "$id" 2>/dev/null) || continue
+            epoch=$(date -u -d "$created" +%s 2>/dev/null) || continue
+            [ "$epoch" -le "$cutoff" ] || continue
+            docker rm -f "$id" >/dev/null 2>&1 || continue
+            echo "swept $id created $created"
+            swept=$(( swept + 1 ))
+          done
+          echo "removed $swept container(s) created more than ${SWEEP_OLDER_THAN}s ago"
+
+      # One commit, for the reason ci.yml's `design` job now gives at length: this job's steps are apt,
+      # docker, an emulator and one goal, `make mobile-e2e`, which is one line calling
+      # scripts/mobile_e2e.sh, and that script names no git object (grep -rnwi git answers 0 lines).
+      # The fetch `fetch-depth: 0` asks for is unbounded and this job's ceiling is 40 minutes, so a
+      # slow forge took the journey with it; scripts/ci_checkout_history_test.sh keeps the two claims
+      # pinned. Not run here: the journey needs this host's emulator, and no device ran in this round.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -80,9 +154,13 @@ jobs:
 
       - name: Name what this host owes a device journey
         # First, and it is the step that decides whether the rest can mean anything.
-        # An emulator, adb and Maestro come with the runner image or with the runner
-        # label; saying which one is missing is worth more than a red test two minutes
-        # later, and more than a green job that ran nothing.
+        # This job runs on the pkit-ci-android label, whose image keeps adb and the
+        # emulator under /opt/android-sdk (ANDROID_HOME) and Maestro under
+        # /opt/maestro/bin (MAESTRO_HOME), and puts all three on PATH; the search below
+        # still walks the older prefixes, because a developer's machine keeps the SDK
+        # wherever its installer put it and exports nothing. Saying which tool is missing
+        # is worth more than a red test two minutes later, and more than a green job that
+        # ran nothing.
         run: |
           for dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk"; do
             [ -n "$dir" ] || continue
@@ -92,9 +170,11 @@ jobs:
           done
           # The same prefixes scripts/mobile_e2e.sh searches, and for the same
           # reason: Maestro is a launch script plus a lib directory, so a host that
-          # has it keeps it under a tools prefix of its own with nothing exported on
-          # PATH. A probe narrower than the harness's own search would refuse this
-          # job for a tool the journey would have found.
+          # has it keeps it under a tools prefix of its own — $MAESTRO_HOME on this
+          # image, ~/.local/share/platformkit-tools on the machine that installed it —
+          # and a CI shell does not always have that prefix on PATH. A probe narrower
+          # than the harness's own search would refuse this job for a tool the journey
+          # would have found.
           for dir in "${MAESTRO_HOME:-}" "${MAESTRO_HOME:+$MAESTRO_HOME/bin}" "${XDG_DATA_HOME:-$HOME/.local/share}/platformkit-tools/maestro/bin"; do
             [ -n "$dir" ] || continue
             [ -x "$dir/maestro" ] && PATH="$dir:$PATH"
@@ -107,7 +187,7 @@ jobs:
           [ -r /dev/kvm ] || missing+=("/dev/kvm (readable)")
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "This runner cannot run the device journey; missing: ${missing[*]}" >&2
-            echo "Label: pkit-ci-linux-amd64. Either the image gains them or the flow" >&2
+            echo "Label: pkit-ci-android. Either the image gains them or the flow" >&2
             echo "moves to a runner that has them; it does not get skipped." >&2
             exit 1
           fi
@@ -119,11 +199,17 @@ jobs:
           adb version
           emulator -version | head -3
 
+      # The same retry the kernel's check job asks for, and the same measured reason: `apt-get update`
+      # ends this step under `bash -e`, so a mirror mid-sync leaves this job no `psql` and the role
+      # below never gets prepared. scripts/ci_apt_index.sh holds why a retry is the answer; this is the
+      # line that stops the journey's job from being the one half of the program that still pays a
+      # mirror's bad minute in full. scripts/ci_apt_index_test.sh runs this body against a stub apt-get
+      # that refuses the way the mirror refused.
       - name: Install the database client and prepare the role
         env:
           PGPASSWORD: platformkit
         run: |
-          apt-get update
+          bash scripts/ci_apt_index.sh
           apt-get install --yes --no-install-recommends postgresql-client
           psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
 
@@ -131,9 +217,14 @@ jobs:
         id: nats
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          # Named after the run, as ci.yml's services are: this job's cleanup reads
+          # steps.nats.outputs.container, which is exactly the handle a job cut off mid-step never
+          # writes, and the journey's ceiling is 40 minutes of emulator.
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-nats
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias nats \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias nats \
             nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
             --jetstream --http_port 8222)
           echo "container=$container" >> "$GITHUB_OUTPUT"
@@ -166,6 +257,112 @@ jobs:
           tail -40 emulator.log >&2
           exit 1
 
+      - name: Fetch the pinned shell build through the forge's API
+        # The forge requires sign-in to read anything at all, and a workflow job's token is a
+        # session on nothing: run 62943 asked the address the pin names with that token and was
+        # answered 404, where the same address turns an unsigned request toward the sign-in page.
+        # A plain curl of the pin therefore either fails outright or saves a login page, which the
+        # harness would hash and refuse on the digest. So this step asks the forge what it holds:
+        # it reads the release the pin's tag names through the API, matches the asset by name, and
+        # downloads the address that release document publishes for it. The credential is
+        # PK_MOBILE_TOKEN, a read-only token for this repository kept as a repository secret, the
+        # shape the phone repository's kernel read settled on; where no such secret is set the step
+        # keeps the job's own token, so a missing secret is a refusal that names the address it
+        # tried rather than a step that never asked. Neither read is accepted on an answer the API
+        # does not give a signed-in reader: text that is not one release document is refused, and
+        # the bytes the digest is computed over are the named asset's or nothing. The digest is
+        # checked here and again in scripts/mobile_e2e.sh, so the pin is checked twice and trusted
+        # once, and nothing is installed unless it matches. When the variables are unset this
+        # refuses naming them, as the harness would: the download is not the place a missing pin
+        # becomes a green step.
+        env:
+          # Read-only by construction, and scoped to this repository: the step needs one asset of
+          # one release, and a token that could write is a token this job's log could leak. The job
+          # token stays as the fallback so the refusal still names the address it tried.
+          GITHUB_TOKEN: ${{ secrets.PK_MOBILE_TOKEN || secrets.GITHUB_TOKEN }}
+          PK_MOBILE_APK: ${{ vars.PK_MOBILE_APK }}
+        run: |
+          if [ -z "$PK_MOBILE_APK" ] || [ -z "$PK_MOBILE_APK_SHA256" ]; then
+            echo "mobile-e2e: PK_MOBILE_APK and PK_MOBILE_APK_SHA256 are both required: which shell build this journey runs against is the mobile owner's to name, and an unpinned download is not a test." >&2
+            exit 1
+          fi
+          test -n "$RUNNER_TEMP" || { echo "RUNNER_TEMP is unset: this job has no work directory to fetch the shell build into." >&2; exit 1; }
+          dest="$RUNNER_TEMP/shell.apk"
+          meta="$RUNNER_TEMP/release.json"
+          # The pin is the address the forge publishes for the asset, and what its API resolves a
+          # release by is owner, repository and tag. Reading those out of the pin here keeps the
+          # mobile owner's one repository variable the only naming of the build: a second variable
+          # pointing at the same asset is the divergence the note on this job's env: refuses.
+          resolved="$(python3 - "$PK_MOBILE_APK" <<'PIN'
+          import sys
+          import urllib.parse
+
+          pin = urllib.parse.urlsplit(sys.argv[1])
+          segs = [urllib.parse.unquote(s) for s in pin.path.split("/") if s]
+          edge = [i for i, s in enumerate(segs[:-1]) if s == "releases" and segs[i + 1] == "download"]
+          if pin.scheme not in ("http", "https") or not pin.netloc or len(segs) < 5 or len(edge) != 1:
+              sys.exit("PK_MOBILE_APK=%s is not an address of the form "
+                       "<forge>/<owner>/<repo>/releases/download/<tag>/<asset>, which is the address "
+                       "a forge publishes for a release asset, so this job cannot resolve the build "
+                       "it names." % sys.argv[1])
+          first, last = edge[0], segs[-1]
+          tag = "/".join(segs[first + 2:-1])
+          if first < 2 or not tag:
+              sys.exit("PK_MOBILE_APK=%s names no owner, repository or tag before its release "
+                       "download address, so this job cannot resolve the build it names." % sys.argv[1])
+          repos = "/".join(urllib.parse.quote(s, safe="") for s in segs[:first])
+          sys.stdout.write("%s\t%s\t%s\n" % (
+              "%s://%s/api/v1/repos/%s/releases/tags/%s" % (
+                  pin.scheme, pin.netloc, repos, urllib.parse.quote(tag, safe="")), last, pin.netloc))
+          PIN
+          )"
+          IFS=$'\t' read -r release_url asset_name forge_host <<<"$resolved"
+          # No -L here, where the download below has it: a redirect would put this header on an
+          # address neither the pin nor this job named, and the API answers a signed-in read of a
+          # release with the document itself, so a redirect is never the shape that works.
+          if ! curl -fsS --header "Authorization: token $GITHUB_TOKEN" "$release_url" -o "$meta"; then
+            echo "the job could not read the release at $release_url to find $asset_name: the API refused this token; set PK_MOBILE_TOKEN on this repository to a read-only token for it." >&2
+            exit 1
+          fi
+          asset_url="$(python3 - "$meta" "$asset_name" "$forge_host" <<'ASSET'
+          import json
+          import sys
+          import urllib.parse
+
+          meta, name, host = sys.argv[1:4]
+          try:
+              with open(meta) as handle:
+                  release = json.load(handle)
+          except ValueError:
+              sys.exit("the release address answered something that is not a release document: a "
+                       "sign-in page is what a forge that requires sign-in answers a read it does "
+                       "not authorise, and no build is in it.")
+          assets = release.get("assets") or []
+          named = [asset for asset in assets if asset.get("name") == name]
+          if len(named) != 1:
+              sys.exit("the release %s carries no single asset named %s (it names: %s): PK_MOBILE_APK "
+                       "names a build this forge does not have under that tag." % (
+                           release.get("tag_name"), name,
+                           ", ".join(str(asset.get("name")) for asset in assets) or "nothing"))
+          published = str(named[0].get("browser_download_url") or "")
+          where = urllib.parse.urlsplit(published)
+          if where.scheme not in ("http", "https") or where.netloc != host:
+              sys.exit("the asset %s is published at %s, which is not the forge PK_MOBILE_APK names "
+                       "(%s): this job sends its token to the forge the pin names and nowhere else." % (
+                           name, published or "nowhere", host))
+          sys.stdout.write(published + "\n")
+          ASSET
+          )"
+          if ! curl -fsSL --header "Authorization: token $GITHUB_TOKEN" "$asset_url" -o "$dest"; then
+            echo "the job could not download $asset_url with its own token: the pin names something this forge will not hand to this job (PK_MOBILE_APK is $PK_MOBILE_APK), and PK_MOBILE_TOKEN, a read-only token for this repository, is the credential the sign-in rule answers." >&2
+            exit 1
+          fi
+          if ! echo "$PK_MOBILE_APK_SHA256  $dest" | sha256sum --check --status; then
+            echo "the file downloaded from $asset_url is not the build PK_MOBILE_APK_SHA256 names; nothing is installed." >&2
+            exit 1
+          fi
+          echo "PK_MOBILE_APK=file://$dest" >> "$GITHUB_ENV"
+
       - name: make mobile-e2e
         run: make mobile-e2e
 
@@ -184,9 +381,16 @@ jobs:
         env:
           EMULATOR_PID: ${{ steps.emulator.outputs.pid }}
           NATS_CONTAINER: ${{ steps.nats.outputs.container }}
+          NATS_NAME: platformkit-${{ github.run_id }}-nats
         run: |
           status=0
           if [ -n "$EMULATOR_PID" ]; then kill "$EMULATOR_PID" 2>/dev/null || true; fi
-          if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
+          # Both handles reach the same container: the id this job's step recorded, when it finished
+          # writing it, and the name the run cannot lose. The step output alone was the leak.
+          for handle in "$NATS_CONTAINER" "$NATS_NAME"; do
+            [ -n "$handle" ] || continue
+            docker inspect "$handle" >/dev/null 2>&1 || continue
+            docker rm -f "$handle" || status=1
+          done
           pkill -f 'emulator -avd' 2>/dev/null || true
           exit "$status"

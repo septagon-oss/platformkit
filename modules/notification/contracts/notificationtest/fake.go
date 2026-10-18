@@ -21,6 +21,13 @@ import (
 // It ignores the transaction it is handed, which is the honest limit of it:
 // nothing here commits, so it cannot tell a caller that a write did not.
 type Fake struct {
+	// FakeMailLedger is the same fake's answer to the other half of Service: the
+	// record of a mail that left with no notice behind it. It is embedded rather
+	// than reached through a field because contracts.Service embeds the port, so a
+	// consumer that takes a Fake can be handed to any caller that takes the
+	// service — which is the whole use of a fake.
+	*FakeMailLedger
+
 	mu    sync.Mutex
 	rows  []contracts.Notification
 	names []string
@@ -32,9 +39,9 @@ type Fake struct {
 }
 
 // NewFake returns an empty store in which Ada has an address and Bob does not,
-// which is what the conformance suite's two cases are about.
+// which is what the conformance suite's two cases are about, and no mail ledger.
 func NewFake() *Fake {
-	return &Fake{addresses: map[uuid.UUID]string{Ada: AdaEmail}}
+	return &Fake{addresses: map[uuid.UUID]string{Ada: AdaEmail}, FakeMailLedger: NewFakeMailLedger()}
 }
 
 var _ contracts.Service = (*Fake)(nil)
@@ -60,7 +67,7 @@ func (f *Fake) Notify(ctx context.Context, _ db.Tx[db.Tenant], n contracts.Notic
 	row.ID, row.CreatedAt, row.UpdatedAt = uuid.New(), db.Now(), db.Now()
 	f.rows = append(f.rows, *row)
 	f.names = append(f.names, contracts.EventCreated)
-	if n.Email && f.addresses[n.Recipient] != "" {
+	if n.Ceiling().HasChannel(contracts.ChannelEmail) && f.addresses[n.Recipient] != "" {
 		f.names = append(f.names, contracts.EventEmailRequested)
 	}
 	return row, nil

@@ -25,7 +25,7 @@ import (
 
 func TestBillingPlanRefusalsSpeakPortugueseAndPreserveRows(t *testing.T) {
 	owner, conn := dbtest.Schema(t, billing.Migrations)
-	_, plans := billing.Module(billing.Deps{Payments: billing.Manual()})
+	_, plans := billing.New(billing.Deps{Payments: billing.Manual()})
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Installation: operatorHost,
 		Tenants: caller{}, Conn: conn, Authorize: caller{},
@@ -34,7 +34,7 @@ func TestBillingPlanRefusalsSpeakPortugueseAndPreserveRows(t *testing.T) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	shell := admin.Module(admin.Deps{
+	shell := admin.New(admin.Deps{
 		Modules: []module.Module{plans}, Authorize: caller{}, SignIn: "/api/v1/auth/login",
 		Messages: xtext.Load("en", admin.Catalogue(), billing.Catalogue(), page.Catalogue(),
 			xtext.Source{Name: "resource", FS: resource.Catalogues()}),

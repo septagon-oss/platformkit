@@ -7,11 +7,17 @@ the document at [testdata/openapi.json](../../apps/platformkit/testdata/openapi.
 gated by [openapi_contract_test.go](../../apps/platformkit/openapi_contract_test.go).
 
 ```sh
-make mobile-e2e                  # needs a device, the shell's pinned APK, and the tools below
-PK_MOBILE_APK=https://…/shell.apk \
-PK_MOBILE_APK_SHA256=<64 hex> \
-PK_MOBILE_AVD=<avd name> \
-make mobile-e2e
+# The forge requires sign-in to read a release at all: an anonymous read of the download
+# address is turned toward the sign-in page, and a workflow job's own token is nobody to it.
+# The job's "Fetch the pinned shell build through the forge's API" step therefore resolves the
+# pinned tag through the API and downloads the address that release document publishes for the
+# asset, with PK_MOBILE_TOKEN — a read-only token for this repository, kept as a repository
+# secret. The same two reads, by hand:
+curl -fsS -H "Authorization: token $FORGE_TOKEN" \
+	"$FORGE/api/v1/repos/<owner>/<repo>/releases/tags/<tag>" |
+	python3 -c 'import json,sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"] == "<asset>"))'
+curl -fsSL -H "Authorization: token $FORGE_TOKEN" -o shell.apk '<the address it printed>'
+PK_MOBILE_APK="file://$PWD/shell.apk" PK_MOBILE_APK_SHA256=<64 hex> PK_MOBILE_AVD=<avd name> make mobile-e2e
 ```
 
 `PK_MOBILE_APK` and `PK_MOBILE_APK_SHA256` are both required: the kernel does not build
@@ -25,7 +31,9 @@ for*: `adb` and `emulator` are searched under `$ANDROID_HOME`, `$ANDROID_SDK_ROO
 `~/Android/Sdk`, and `maestro` under `$MAESTRO_HOME`, under the tools prefix this
 repository's own tooling installs into (`~/.local/share/platformkit-tools/maestro/bin`)
 and on `PATH`. A tool that exists and is not looked for is a journey that reports
-itself impossible, so the search scope is part of the claim.
+itself impossible, so the search scope is part of the claim. The job is dispatchable
+as well as run on `main`, so the branch that changed the fetch, the pin or the flow can
+ask the runner that owns a device for a journey rather than guess from `make check`.
 
 ## The declared set, and the number
 
@@ -109,13 +117,13 @@ so they survive its next merge.
 ## Reused, added, made reusable
 
 **Reused** — `apps/platformkit/asyncapi_test.go`'s golden-and-ratio shape,
-`ui/screens.Describe` as the body of the address the flow taps, and the shell's own
-`testID`s, unmodified, at its pinned revision. **Copied, not sourced** — `scripts/e2e.sh`'s
-fixture (its own database, `bootstrap --tenant e2e --host localhost --language pt-PT`,
-the built binary on a port, a trap that tears down whichever step failed) is
-re-implemented in `scripts/mobile_e2e.sh`: 56 identical non-comment lines, and neither
-script sources the other, so the next change to that boot sequence is a change in two
-files until somebody lifts it into an owner of its own. **Added** — one flow of our own, because
+`ui/screens.Describe` as the body of the address the flow taps, and the shell's own `testID`s,
+unmodified, at its pinned revision. **Copied, not sourced** — `scripts/e2e.sh`'s fixture (its own
+database, `bootstrap --tenant e2e --host localhost --language pt-PT`, the built binary on a port,
+a trap that tears down whichever step failed) is re-implemented in `scripts/mobile_e2e.sh`: 47
+identical non-comment lines (52 before the readiness wait became a `serving` call of its own, 56
+before `run_app` took a password), and neither script sources the other, so a change to that boot
+is a change in two files until somebody lifts it into an owner of its own. **Added** — one flow of our own, because
 no unit in either repository could state the claim that a device which signed in can
 read this catalog and draw the screen its entry named: the shell's four flows exercise
 the shell, and this repository had no device, no flow and no runner step at all. **Made

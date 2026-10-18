@@ -282,3 +282,63 @@ test('verification refuses nonlocal actions and response redirects, and falls ba
   }
   expect(external).toBe(0);
 });
+
+// The acknowledgment above is deliberately neutral about the address, which leaves
+// the person with a sentence that is true whether or not anything was mailed. The
+// delivery record (modules/notification/contracts.MailLedger, read by
+// modules/auth's auth-mail-delivery door with the X-Request-ID the call was already
+// answered with) is the one thing that lets the shell take the sentence back when a
+// transport refused the mail. The two cases below are the whole of the shell's
+// reading: a refusal it must say, and a `pending` it must not.
+//
+// The door itself is stubbed, and that is the honest shape of this proof: what is
+// being tested is the shell's sentence, and no application the harness boots has a
+// refusing SMTP server (see the Limits of modules/auth/README.md). That the door
+// answers `failed` only when a row says so, and answers `pending` for a mail that
+// went out, is proven at the route by modules/auth/internal/mail_delivery_test.go.
+async function mailForm(page: Page, state: string, asked: string[]) {
+  await page.route('**/api/v1/auth/register', route => route.fulfill({
+    status: 202, contentType: 'application/json', body: '{}',
+    headers: { 'x-request-id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+  }));
+  await page.route('**/api/v1/auth/mail-delivery', route => {
+    asked.push(JSON.stringify(route.request().postDataJSON()));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ state }) });
+  });
+  await specimen(page, 'register-password');
+  await signup(page, randomUUID());
+  await submit(page);
+  await expect(page.locator('[data-auth-message]')).toHaveText(success);
+}
+
+test('a refused delivery record takes the acknowledgment back, without moving focus a second later', async ({ page }) => {
+  test.setTimeout(45_000);
+  const asked: string[] = [];
+  await mailForm(page, 'failed', asked);
+  const acknowledgment = page.locator('[data-auth-message]');
+  // The record is read with the id this call was answered with, at the door beside
+  // the endpoint just posted to: no new token and no path the page has to be told.
+  // The acknowledgment takes focus when it appears. It is the correction that must
+  // not take it a second time, so focus is put down first and then watched.
+  await acknowledgment.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.waitForRequest(r => r.method() === 'POST' && r.url().endsWith('/api/v1/auth/mail-delivery'));
+  await expect.poll(() => asked).toEqual(['{"requestId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}']);
+  await expect(acknowledgment).toContainText('could not be sent');
+  // A correction that arrives on its own, seconds after the person stopped waiting,
+  // is announced by the live region and must not pull focus out from under them.
+  await expect(acknowledgment).not.toBeFocused();
+});
+
+test('a pending delivery record leaves the neutral acknowledgment standing', async ({ page }) => {
+  test.setTimeout(45_000);
+  const asked: string[] = [];
+  await mailForm(page, 'pending', asked);
+  const acknowledgment = page.locator('[data-auth-message]');
+  await page.waitForRequest(r => r.method() === 'POST' && r.url().endsWith('/api/v1/auth/mail-delivery'));
+  // The whole ladder runs — a first ask that says nothing is followed by the second,
+  // and nothing that either says changes the sentence. "We did not learn that it
+  // failed" is not a claim that it worked, in either direction.
+  await page.waitForTimeout(8_000);
+  expect(asked.length).toBe(2);
+  await expect(acknowledgment).toHaveText(success);
+});

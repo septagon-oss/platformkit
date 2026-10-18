@@ -31,7 +31,7 @@ import (
 // hour whom it has already refused.
 func TestTheRunnerPurgesTheCounterTableItWrites(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
-	purge := kernelJob(t, kernelJobs(memory.New()), "limit-purge")
+	purge := kernelJob(t, kernelJobs(memory.New(), ""), "limit-purge")
 
 	// One spent window and one open one, both written the way a request writes one:
 	// on the request's own connection, under a tenant's context, through the limiter
@@ -39,7 +39,7 @@ func TestTheRunnerPurgesTheCounterTableItWrites(t *testing.T) {
 	count := func(name string) {
 		t.Helper()
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New(), Slug: name}), conn)
-		if _, _, err := limit.Postgres(httpx.ConnFrom).Allow(ctx, name, 3, time.Minute); err != nil {
+		if _, _, _, err := limit.Postgres(httpx.ConnFrom).Reserve(ctx, name, 3, time.Minute); err != nil {
 			t.Fatalf("count a %s window: %v", name, err)
 		}
 	}

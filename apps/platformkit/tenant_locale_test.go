@@ -2,7 +2,7 @@ package main
 
 // The tenant's own languages, at the reference application.
 //
-// `Done when` for T-0111 asks for a tenant whose default is pt-PT rendering the
+// The brief asked for a tenant whose default is pt-PT rendering the
 // admin shell in Portuguese in a test. The case worth writing is the one with no
 // `Accept-Language` in it at all: a page that translated when the browser asked in
 // Portuguese proved only the negotiation that already existed. The claim this

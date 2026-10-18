@@ -7,7 +7,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -43,6 +42,12 @@ import (
 //     stops working, and the honest failure mode of a limit is the traffic it
 //     lets through, not the traffic it invents refusals for.
 //
+// That is row four, and the only world it applies in. An attempt the counter did
+// not record — because this key's row was still busy, or because the wall ran out
+// first — arrives as ok false with no error at all, and is refused below like any
+// other spent window. kit/limit/README.md owns the four outcomes; this comment no
+// longer restates them.
+//
 // The refusal is answered through refuse, because the caller this limit exists
 // for has no account to be locked out of and no terminal to read a code in: they
 // are at a form in a browser, and the answer they are given is a page that says
@@ -61,21 +66,36 @@ func (a *API) publicWrites(ctx huma.Context, next func(huma.Context)) {
 	// the difference between a bounded set of counters and one per slug anybody
 	// types into a public address.
 	t, _ := tenancy.FromContext(ctx.Context())
-	key := publicWriteKey + " " + t.Slug + " " + ctx.Method() + " " + routeOf(ctx) + " " + clientAddress(r)
-	ok, retryAfter, err := a.opts.WriteLimiter.Allow(context.WithoutCancel(ctx.Context()), key, publicWriteLimit, publicWriteWindow)
+	key := publicWriteKey + " " + t.Slug + " " + ctx.Method() + " " + routeOf(ctx) + " " + ClientAddr(r)
+	allowed, remaining, retryAfter, err := a.opts.WriteLimiter.Reserve(context.WithoutCancel(ctx.Context()), key, publicWriteLimit, publicWriteWindow)
 	if err != nil {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the public write limit could not be read; proceeding",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 		next(ctx)
 		return
 	}
-	if ok {
+	// Both fields go on every answer this limit applies to and not only the refusal:
+	// the whole point of stating a limit on the wire is that a client backs off before
+	// it runs out rather than after, and a client that only hears the number when it
+	// is refused has already spent the traffic the header exists to save.
+	//
+	// The policy line costs no statement — it is the name, quota and window this guard
+	// was built with. The rate line is what the counter itself reported, and it is the
+	// same reading that decided this answer: Reserve records the event and returns the
+	// quota left and the window left from that one statement, so the number a caller
+	// is given is the number that was true of their own attempt rather than one taken
+	// from the row after another request had moved it. That is the whole of why this
+	// port has one method: a `Count` after the decision is a second look at a row that
+	// has had other writers since, and a limit stated from it is a guess.
+	sayPolicy(ctx, publicWritePolicy)
+	sayAnswer(ctx, measured{policy: publicWritePolicy, remaining: remaining, left: retryAfter})
+	if allowed {
 		next(ctx)
 		return
 	}
 	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: public write refused by the limit",
 		"method", ctx.Method(), "path", ctx.URL().Path, "tenant", t.Slug)
-	ctx.SetHeader("Retry-After", strconv.Itoa(max(1, int(retryAfter.Seconds()))))
+	sayRetryAfter(ctx, retryAfter)
 	a.refuse(ctx, http.StatusTooManyRequests, CodeLimitExhausted+": too many anonymous submissions from this address")
 }
 
@@ -90,11 +110,17 @@ func routeOf(ctx huma.Context) string {
 	return ctx.URL().Path
 }
 
-// clientAddress is the peer address of the request, which is the only address
-// here that a caller cannot write: no X-Forwarded-For, for the reason the auth
-// module gives for the same rule. A deployment behind a proxy that rewrites
-// RemoteAddr gets the right one anyway.
-func clientAddress(r *http.Request) string {
+// ClientAddr is the peer address of the request, which is the only address here
+// that a caller cannot write: no X-Forwarded-For, for the reason the auth module
+// gives for the same rule. A deployment behind a proxy that rewrites RemoteAddr
+// gets the right one anyway.
+//
+// It is exported, and it is the only parser of an address in the tree, because
+// two were written to that rule independently (this one and
+// modules/auth/internal/kernel.go's) and a rule with two implementations is a
+// rule one of them will break. kit/request cannot own it: parsing net/http here
+// is what keeps net/http out of the closure of every worker that publishes.
+func ClientAddr(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

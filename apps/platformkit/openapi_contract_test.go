@@ -9,7 +9,7 @@ package main
 // What a golden cannot do on its own is refuse a *breaking* change: UPDATE_GOLDEN=1
 // rewrites whatever it is handed, and the shape a build already installed in a
 // pocket parses does not care what was convenient to regenerate. So the pair is
-// diffed by the rules in wire_compatibility_test.go before the flag is honoured,
+// diffed by the rules in kit/wire before the flag is honoured,
 // and those rules refuse the regeneration, not the change.
 //
 // UPDATE_GOLDEN=1 go test ./apps/platformkit -run OpenAPI rewrites the document.
@@ -26,6 +26,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/module"
+	wiregate "github.com/septagon-oss/platformkit/kit/wire"
 )
 
 const openapiGolden = "testdata/openapi.json"
@@ -48,9 +49,10 @@ const contractHost = "platformkit.example"
 // into a 404 with an application behind it that cannot be fixed, which is what
 // kit/httpx/aliases.go refuses for a route.
 //
-// The bearer exchange (T-0117) and the push registration (T-0113) are not in the
-// list because nothing answers at either address yet: each joins in the same commit
-// that mounts its door. That is what makes this list a gate and not a wish list.
+// The push registration is not in the list because nothing answers at that
+// address yet; it joins in the same commit that mounts its door. The bearer key
+// answered from the commit that mounted it, so it is in the list below.
+// That is what makes this list a gate and not a wish list.
 var deviceContractPaths = []struct {
 	operation string // the operationId the golden publishes
 	method    string
@@ -58,12 +60,32 @@ var deviceContractPaths = []struct {
 	// anonymous says the door answers for a caller nobody has recognised; the
 	// others are read with the composition's own administrator.
 	anonymous bool
+	// body is what the probe sends, empty for the reads. A write needs one to be a
+	// probe at all: the case refuses the 404 of an address nobody mounted, and an
+	// address that answers 422 to nothing at all is the same hole wearing a hat.
+	body string
 }{
-	{operation: "auth-login", method: http.MethodPost, path: "/api/v1/auth/login", anonymous: true},
+	{operation: "auth-login", method: http.MethodPost, path: "/api/v1/auth/login", anonymous: true,
+		body: `{"email":"` + adminEmail + `","password":"` + adminPass + `"}`},
 	{operation: "auth-me", method: http.MethodGet, path: "/api/v1/auth/me"},
 	{operation: "auth-logout", method: http.MethodPost, path: "/api/v1/auth/logout"},
 	{operation: "app-resources", method: http.MethodGet, path: "/api/v1/app/resources"},
+	// The workspace's face, which a shell reads *before* it can authenticate: it is
+	// the one address in this list a caller reaches with no credential at all, and
+	// it joined in the round that mounted it rather than the round that documented
+	// it, which is what keeps the list a gate.
+	{operation: "app-connection", method: http.MethodGet, path: "/api/v1/app/connection", anonymous: true},
 	{operation: "audit-event-list", method: http.MethodGet, path: "/api/v1/audit/events"},
+	// The bearer key a shell presents instead of a session cookie. It joined this
+	// list in the commit that mounted its door (auth-token-issue): a device
+	// that authenticates with a key has to mint one somewhere first, and the address
+	// it mints it at is part of what a generated client needs to exist at.
+	{operation: "auth-token-issue", method: http.MethodPost, path: "/api/v1/auth/tokens",
+		body: `{"name":"The device","scopes":["task:read"]}`},
+	// The door a device signs out through, by retiring the key it holds. The
+	// probe is the administrator's session, which the command refuses with 403:
+	// the address answers, and nothing is revoked.
+	{operation: "auth-token-revoke-self", method: http.MethodPost, path: "/api/v1/auth/tokens/revoke-self"},
 }
 
 // TestTheOpenAPIDocumentIsTheCompositionServed is the golden and the gate.
@@ -79,27 +101,7 @@ func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET /openapi.json = %d %s, want 200: the reference composition serves its document", code, body)
 	}
-	served := []byte(body)
-
-	if os.Getenv("UPDATE_GOLDEN") != "" {
-		// The refusal runs before the rewrite. A break cannot be laundered by
-		// regenerating the file it breaks, and there is no second variable to set:
-		// an escape hatch a tired person can pull is the same failure as a golden
-		// nobody regenerates.
-		refuseWireBreak(t, mustReadOpenAPIGolden(t), served)
-		if err := os.WriteFile(openapiGolden, served, 0o644); err != nil {
-			t.Fatalf("write %s: %v", openapiGolden, err)
-		}
-		t.Logf("rewrote %s", openapiGolden)
-		return
-	}
-
-	golden := mustReadOpenAPIGolden(t)
-	refuseWireBreak(t, golden, served)
-	if string(golden) != string(served) {
-		t.Fatalf("%s is stale; run with UPDATE_GOLDEN=1.\nfirst difference at byte %d",
-			openapiGolden, firstDifference(golden, served))
-	}
+	wiregate.GoldenWithAllowances(t, openapiGolden, func() []byte { return []byte(body) }, wireAuthorizationAllowances())
 }
 
 // TestTheCatalogOperationDescribesWhatAShellParses is the hole this delivery
@@ -111,7 +113,7 @@ func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 // This case reads the checked-in artefact, so what keeps it honest is the pair of
 // cases that read the running process: TestTheOpenAPIDocumentIsTheCompositionServed
 // boots the composition through appOptions and compares, and
-// review_round3_composition_publishes_its_own_contract_test.go reads the document
+// composition_publishes_its_own_contract_test.go reads the document
 // that process answers with and names the JSON key that is missing when the type is
 // erased. A composition that loses the type is red there; a case that reads only
 // this file would have stayed green beside a binary publishing {"schema":{}}.
@@ -146,10 +148,18 @@ func TestTheCatalogOperationDescribesWhatAShellParses(t *testing.T) {
 	if entry == nil {
 		t.Fatal("the catalog document's resources are not an array of objects")
 	}
-	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton"} {
+	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton", "operations", "presentation"} {
 		if _, ok := wireMap(entry["properties"])[name]; !ok {
 			t.Errorf("a catalog entry in the published document has no %q: a generated screen would read a field the contract never mentions", name)
 		}
+	}
+	// `presentation` is the one key of these an entry may omit, and the document
+	// has to say so: a shell that required it would refuse every resource whose
+	// author said nothing about how it reads, which is every resource written
+	// before the key existed. TestThePresentationKeysAreNeverRequired reads the
+	// same artefact for the other half — that no hint is required anywhere.
+	if required := wireStringList(entry["required"]); slices.Contains(required, "presentation") {
+		t.Errorf("a catalog entry requires %v; an entry nobody hinted prints no presentation block at all", required)
 	}
 }
 
@@ -169,11 +179,7 @@ func TestEveryDeviceContractAddressAnswers(t *testing.T) {
 		if want.anonymous {
 			client = nil
 		}
-		body := ""
-		if want.operation == "auth-login" {
-			body = `{"email":"` + adminEmail + `","password":"` + adminPass + `"}`
-		}
-		code, answer := do(t, cfg, client, want.method, acmeHost, want.path, body)
+		code, answer := do(t, cfg, client, want.method, acmeHost, want.path, want.body)
 		// Anything but the answer of an address nobody mounted. A 401 or a 403 is a
 		// door refusing a caller, which is a door; the 404 this case refuses is a hole.
 		if code == http.StatusNotFound || strings.Contains(answer, "nothing is served at this address") {
@@ -283,6 +289,15 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 		{"a route's authorization changes", "B6", nil, func(t *testing.T, doc map[string]any) {
 			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "public"
 		}},
+		{"the catalog door narrows back to a browser's credential", "B6", nil, func(t *testing.T, doc map[string]any) {
+			// The widening the rule allows, run backwards: any_credential is the door
+			// as mounted (httpx.AnyCredential), and signed_in is what it was before
+			// any bearer key was admitted. Read as a change from the golden to this, it is a door
+			// that stops admitting a bearer key, which is exactly what an installed
+			// client holding one was promised. B6 refuses it, and refuses it whichever
+			// way the pair is read.
+			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "signed_in"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reference := golden
@@ -299,26 +314,95 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 		})
 	}
 
-	// The two changes a delivery is allowed to make on its own: a new address, and a
-	// new optional field on a document a shell already reads. Both are what
-	// ui/screens/catalog.go promises beside CatalogVersion — additive, optional, and
-	// never a change of meaning — so a composition that grows must not fight the gate.
+	// The plan feature a declaration names with .Needing is part of what the door is:
+	// kit/httpx marshals it beside the permission and asks the tenant's plan for it at
+	// request time. So dropping, adding or renaming it changes the declaration the
+	// reviewer read in /openapi.json, and B6 refuses it while the permission stayed put —
+	// naming the operation and both spellings, so the person who sees the refusal knows
+	// which door and which plan moved. What these cases refuse is a changed document: that
+	// a tenant whose plan lacks the feature is answered 402 is kit/httpx's decision at
+	// request time, tested there, and nothing here boots a process to claim it.
 	for _, tc := range []struct {
-		name  string
-		after func(t *testing.T, doc map[string]any)
+		name          string
+		before, after func(t *testing.T, doc map[string]any)
+		want          string
 	}{
-		{"a new optional field on a catalog entry", func(t *testing.T, doc map[string]any) {
+		{"a plan feature leaves an audited read", nil, func(t *testing.T, doc map[string]any) {
+			delete(wireAt(t, doc, "paths:/api/v1/audit/events:get:x-platformkit-auth"), "feature")
+		}, "B6 (breaking): GET /api/v1/audit/events (audit-event-list) is authorized kind=permission permission=audit:read where it was kind=permission permission=audit:read feature=audit-trail"},
+		{"an audited read moves to another plan feature", nil, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/audit/events:get:x-platformkit-auth")["feature"] = "enterprise"
+		}, "B6 (breaking): GET /api/v1/audit/events (audit-event-list) is authorized kind=permission permission=audit:read feature=enterprise where it was kind=permission permission=audit:read feature=audit-trail"},
+		{"a write starts demanding a plan feature it never named", nil, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/task/tasks:post:x-platformkit-auth")["feature"] = "pro"
+		}, "B6 (breaking): POST /api/v1/task/tasks (task-task-create) is authorized kind=permission permission=task:update feature=pro where it was kind=permission permission=task:update"},
+		// The composition's one reviewed pair is `kind=signed_in` to `kind=any_credential`.
+		// Read against a door that also carries a plan feature, it names neither side: the
+		// widening stands, the feature is unreviewed, and the pair covers none of it.
+		{"a reviewed widening cannot carry a feature it never named", func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/auth/me:get:x-platformkit-auth")["feature"] = "audit-trail"
+		}, func(t *testing.T, doc map[string]any) {
+			// The door as the reviewed pair describes it: the wider kind, and no feature,
+			// which is what a delivery that only meant to widen would publish. Read the way
+			// this gate read a declaration before the fix — kind and permission only — this is
+			// the reviewed pair, and the feature disappears into a widening about nothing.
+			wireAt(t, doc, "paths:/api/v1/auth/me:get")["x-platformkit-auth"] = map[string]any{"kind": "any_credential"}
+		}, "B6 (breaking): GET /api/v1/auth/me (auth-me) is authorized kind=any_credential where it was kind=signed_in feature=audit-trail"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reference := golden
+			if tc.before != nil {
+				reference = wireMutated(t, golden, tc.before)
+			}
+			problems := breakingWireChanges(t, reference, wireMutated(t, reference, tc.after))
+			if len(problems) != 1 {
+				t.Fatalf("the gate said %q, want the one refusal below", problems)
+			}
+			if !strings.Contains(problems[0], tc.want) {
+				t.Errorf("the gate said %q, which is not %q", problems[0], tc.want)
+			}
+		})
+	}
+
+	// The changes a delivery is allowed to make on its own: a new address, a new
+	// optional field on a document a shell already reads, and a door that admits
+	// every credential it admitted and one more. The first two are what
+	// ui/screens/catalog.go promises beside CatalogVersion — additive, optional, and
+	// never a change of meaning — and the third is the one pair in
+	// widenableAuthorization; a composition that grows must not fight the gate.
+	// `before` is the golden as the older document, so a case can state both sides.
+	for _, tc := range []struct {
+		name   string
+		before func(t *testing.T, doc map[string]any)
+		after  func(t *testing.T, doc map[string]any)
+	}{
+		{"a new optional field on a catalog entry", nil, func(t *testing.T, doc map[string]any) {
 			wireAt(t, doc, "components:schemas:Entry:properties")["device_label"] = map[string]any{"type": "string"}
 		}},
-		{"a new address answering a new operation", func(t *testing.T, doc map[string]any) {
+		{"a new address answering a new operation", nil, func(t *testing.T, doc map[string]any) {
 			wireMap(doc["paths"])["/api/v1/app/devices"] = map[string]any{"post": map[string]any{
 				"operationId": "app-device-register",
 				"responses":   map[string]any{"204": map[string]any{"description": "No Content"}},
 			}}
 		}},
+		{"a signed-in door widens to any credential", func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "signed_in"
+		}, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "any_credential"
+		}},
+		{"the whole document re-rendered with its keys in another order", nil, func(t *testing.T, doc map[string]any) {
+			// Nothing is done to it: rendering the parsed golden again writes every object's
+			// keys in sorted order, so the bytes move and no declaration does. The 119 doors
+			// this document publishes are the 119 the golden publishes, and the identity that
+			// now reads a plan feature out of them reads it from both sides the same way.
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if problems := breakingWireChanges(t, golden, wireMutated(t, golden, tc.after)); len(problems) != 0 {
+			reference := golden
+			if tc.before != nil {
+				reference = wireMutated(t, golden, tc.before)
+			}
+			if problems := breakingWireChanges(t, reference, wireMutated(t, reference, tc.after)); len(problems) != 0 {
 				t.Errorf("an additive change was refused: %q", problems)
 			}
 		})
@@ -351,31 +435,6 @@ func wireAt(t *testing.T, doc map[string]any, address string) map[string]any {
 		node = child
 	}
 	return node
-}
-
-// refuseWireBreak reports every rule the pair violates — all of them, so one run
-// names everything a delivery broke rather than the first thing it broke — and then
-// stops the test. Stopping it is the point: the only caller that would otherwise go
-// on is the regeneration, and a rewrite that follows a refusal is the refusal's
-// opposite. Reporting with t.Error alone let the UPDATE_GOLDEN branch fall through
-// to os.WriteFile, so the flag wrote the document it had just named broken, and the
-// next run — the one make check does, with no flag and no message — compared the
-// served document against the broken file and called them equal. That measured
-// sequence is pinned by review_round1_wire_break_laundering_test.go.
-//
-// Nothing overrides a refusal, including UPDATE_GOLDEN=1. A planned break ships the
-// way this file's header and wire_compatibility_test.go say: land the new address,
-// register the old one as an alias row, delete that row a release later.
-func refuseWireBreak(t *testing.T, golden, served []byte) {
-	t.Helper()
-	problems := breakingWireChanges(t, golden, served)
-	for _, problem := range problems {
-		t.Error(problem)
-	}
-	if len(problems) > 0 {
-		t.Fatalf("%s is left as it was: the rules above stand, and UPDATE_GOLDEN=1 regenerates a document that is stale, never one that is broken",
-			openapiGolden)
-	}
 }
 
 func mustReadOpenAPIGolden(t *testing.T) []byte {

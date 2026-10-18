@@ -65,6 +65,14 @@ type Granter struct{ Permission, Label string }
 type Route struct {
 	ID, Method, Path, Summary string
 	Errors                    []int
+	// StreamsBody marks the page that reads the request itself — a person
+	// submitting a file, and nothing else in this repository today — so that the
+	// kernel bounds that request by the deployment's upload ceiling rather than by
+	// the megabyte every other one gets, and commits the guard's transaction before
+	// the bytes start arriving rather than holding it open while they trickle in.
+	// See httpx.StreamedBody. A page that sets it declares no body field: nothing
+	// above it is going to decode one.
+	StreamsBody bool
 }
 
 // Handler is a page. It reads through ctx and knows the caller through r; what
@@ -92,6 +100,10 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 	op := huma.Operation{
 		OperationID: rt.ID, Method: rt.Method, Path: rt.Path, Summary: rt.Summary,
 		Tags: []string{s.Tag}, Errors: rt.Errors,
+	}
+	if rt.StreamsBody {
+		key, streamed := httpx.StreamedBody()
+		op.Extensions = map[string]any{key: streamed}
 	}
 	if s.Chrome.SignIn != "" {
 		httpx.SignIn(&op, s.Chrome.SignIn)
@@ -157,6 +169,13 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			}
 		}
 		applyPrivacy(out, v.Sensitive)
+		if v.RunsWASM {
+			// Read from the view that was actually rendered: a handler that refused
+			// answers with the kernel's fault page, which instantiates nothing, and a
+			// redirect returned above this line — so neither carries the token, and no
+			// branch here has to know that a refusal cleared the declaration.
+			httpx.AllowWASM(ctx)
+		}
 		if v.Revalidate && !v.Sensitive && httpx.SurfaceOf(ctx) == httpx.SurfacePublic {
 			// "Ask first" rather than "do not store": the copy may still be kept and
 			// revalidated, and the one thing that cannot happen is a cache answering a

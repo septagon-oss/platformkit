@@ -34,9 +34,25 @@
 // # Application controllers
 //
 // htmx is vendored, minified, under its MIT licence, and it is the only
-// third-party script in application pages. The optional Storybook.js development
+// eagerly loaded third-party script. Calendar and map engines load on demand. The optional Storybook.js development
 // interface is built separately under ui/storybook and served through authorization.
 // The application enhancements live in assets/js, listed in Controllers.
+//
+// # The rich text editor bundle
+//
+// assets/richtext/editor.js is the headless editor a rich text field mounts:
+// Tiptap and its official Markdown extension, built to one minified module by
+// the node project under tools/richtext-bundle and committed, so building this
+// repository needs no package registry. It is no one's controller: a page loads
+// it as an ES module, and only where a rich text field renders, so the bytes
+// stay off every page without one. Its licences travel beside it.
+//
+// The directory is not named vendor, and check-richtext-bundle refuses one
+// anywhere in the tree: a Go module zip omits every file below a directory named
+// vendor that holds a directory of its own, so bytes committed there arrive at no
+// consumer, and the //go:embed line below then fails the build of every package
+// that imports ui — in a client's checkout, where ui is resolved by version, and
+// nowhere else.
 //
 // # What is not here
 //
@@ -63,7 +79,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-//go:embed assets/js/*.js
+//go:embed assets/js/*.js assets/css/*.css assets/richtext/*.js
 var scripts embed.FS
 
 // Controllers are the browser scripts a page loads, in order. The list is here
@@ -71,14 +87,17 @@ var scripts embed.FS
 // JavaScript is there" is answered by reading one slice.
 //
 // htmx is first because the others configure it. The remaining scripts enhance
-// themes, requests, confirmation, sign-in, component interaction and gallery controls.
+// themes, requests, confirmation, sign-in, passkey ceremonies, component
+// interaction and gallery controls.
 var Controllers = []string{
 	"htmx.min.js",
 	"htmx-config.js",
 	"theme.js",
 	"confirm.js",
 	"session.js",
+	"passkeys.js",
 	"components.js",
+	"specialists.js",
 	"gallery.js",
 }
 
@@ -698,12 +717,21 @@ func base() *css.Sheet {
 // component's markup asks for is still the last word about that class.
 func componentState() *css.Sheet {
 	s := css.NewSheet()
+	s.Merge(components.ProseStyle())
+	// The rich text field's chrome, and the published page's own prose rules
+	// inside its editing surface: what an author formats is dressed the way the
+	// reader will see it.
+	s.Merge(richTextChrome())
+	s.Merge(components.ProseStyleFor(`[data-richtext-surface] [contenteditable="true"]`))
 	v := func(name string) css.Value { return css.VarRef(name, "") }
 	// Component layout utilities must respect Hidden. Keep the override scoped
 	// so consumer HTML can reveal its own hidden content in print styles.
 	s.Select("[data-component][hidden]", css.Decl("display", css.Literal("none !important")))
 	s.Select("[data-component=button]", css.Decl("border-radius", v("pk-radius-button")))
 	s.Select("[data-component=card]", css.Decl("border-radius", v("pk-radius-card")))
+	// Text measure belongs to the components, including full-width Gallery previews.
+	s.Select("[data-component=alert] p, [data-component=data-list] p, [data-component=timeline] p",
+		css.Decl("max-width", css.Literal("37.5em")), css.Decl("overflow-wrap", css.Literal("anywhere")))
 	s.Select("[data-modal-panel]", css.Decl("border-radius", v("pk-radius-modal")))
 	// A native checkbox owns value and keyboard state. Its projected indicator
 	// follows the input even without JavaScript and after native form reset.
@@ -750,6 +778,7 @@ func componentState() *css.Sheet {
 		css.Decl("background", css.Literal("transparent")), css.Decl("color", css.Literal("inherit")))
 	s.Select("dialog[data-component=modal]:not([open])", css.Decl("display", css.Literal("none")))
 	s.Select("dialog[data-component=modal]::backdrop", css.Decl("background", css.Literal("transparent")))
+	sharedComponentRules(s)
 	return s
 }
 

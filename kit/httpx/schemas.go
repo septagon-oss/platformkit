@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -49,7 +50,15 @@ type Resource struct {
 	// mounts and links from. The composed addresses are Schema.Path — the API's
 	// own, on the surface the reads are on — and Screen below.
 	Module, Entity, Path string
-	Name                 entity.Name
+	// Name is what the resource is called, in the product's words and in both
+	// numbers. The kernel renders it — an index page's title, a form's own
+	// heading, a row's link — so the one declaration is what both the API
+	// document and the screens are written in.
+	//
+	// It is not derivable from Entity, which is a slug, or from Schema, which is
+	// field types: "workstream" humanizes to "Workstream", not to "Work stream",
+	// and neither says that its plural is "workstreams".
+	Name entity.Name
 	// Screen is the workspace address of the generated screens: /app/<module>
 	// /<entity>. The kernel composed it at registration, from the module, the
 	// path and the surface a page can exist on, which is why neither the
@@ -76,9 +85,46 @@ type Resource struct {
 	// resource closures carry the same declaration, so customer wildcards
 	// cannot bypass the operator boundary. See docs/adr/0008.
 	OperatorWrite bool
+	// ReadBy and WriteBy are the declarations this resource's reads and writes
+	// answer to. The zero value means "derive them from Read and Write and the
+	// two operator flags", which is every resource written so far; a resource
+	// whose guard is not a plain permission — httpx.SignedIn(), a permission that
+	// also needs a plan feature — states it here, and kit/rest refuses a Spec
+	// that spells the same guard both ways.
+	ReadBy, WriteBy Auth
+	// Operations is which of the five routes kit/rest actually mounted. Empty
+	// means all five. A shell that rendered a door per verb — New, Edit, Delete —
+	// reads this, and a door behind which no route answers is not a door.
+	Operations []CRUD
+	// CommandsOnly says the resource mounts none of the five and exists for its
+	// commands alone: Offers answers false for every verb, and the catalogue
+	// lists it, with `operations: []`, to a caller who may call one of them and
+	// to nobody else. Operations is then ignored.
+	CommandsOnly bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
-	Schema    entity.Schema
+	// Present is what this resource's author said about how it reads. It is the
+	// carrier between kit/rest, which validates a declaration at mount, and
+	// ui/screens, which writes it into the catalogue: the two never see each
+	// other, and a hint that reached one and not the other is a decision nobody
+	// honours. Zero means nothing was declared, which is every resource written
+	// before this field existed.
+	Present entity.EntryHints
+	Schema  entity.Schema
+	// RichTextFiles is the request-scoped image port for generated detail views.
+	RichTextFiles richtext.Files `json:"-"`
+	// Locales answers one record's standing in each language this tenant speaks
+	// besides its own, for the generated record screen to show. It is wired by
+	// kit/rest for a Spec that declares a translatable field and its translation
+	// port, and by nobody else: a resource whose entity translates nothing leaves
+	// it nil, and its screens say nothing about languages they know nothing about.
+	//
+	// It is a closure beside the five, the way RichTextFiles is a port beside them,
+	// because the answer needs the request's own tenant transaction and only the
+	// side that mounted the routes has that: a screen that computed completeness
+	// for itself would be a second implementation of a rule the read doors already
+	// own, and the first one to drift.
+	Locales func(ctx context.Context, id uuid.UUID) ([]entity.LocaleState, error) `json:"-"`
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command
@@ -98,11 +144,13 @@ type Resource struct {
 	Update func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error)
 	Delete func(ctx context.Context, id uuid.UUID) error
 
-	// may is the authorization the closures above carry, installed by
-	// RegisterResource. It is unexported because only this package may fill it
-	// in: a Resource built anywhere else is unguarded until it is registered,
-	// and registering is the only way anything can obtain one.
-	may func(ctx context.Context, g tenancy.Grant) error
+	// mayDeclare is the whole authorization a declaration asks, installed by
+	// RegisterResource: the same method the six closures below call, so a door,
+	// a catalogue entry and a route cannot ask one declaration two different
+	// questions. It is unexported because only this package may fill it in: a
+	// Resource built anywhere else is unguarded until it is registered, and
+	// registering is the only way anything can obtain one.
+	mayDeclare func(ctx context.Context, a Auth) error
 }
 
 // Command is one lifecycle route on a resource, as kit/rest.Command mounted
@@ -140,6 +188,11 @@ type Command struct {
 	// that verb with 405. See screens.Command.Method.
 	Method string
 	Fields []entity.Field
+	// Present is how this command's author described it: the word on the button,
+	// whether it is the one to offer, what a person reads before it runs. Carried
+	// to the shells by the same hop that carries Fields, and validated by
+	// kit/rest before any route for it is mounted.
+	Present entity.CommandHints
 	// Run performs the command with the values a caller submitted, inside the
 	// request's own transaction, and is the closure the command's HTTP route
 	// calls. It has to be here because docs/adr/0007 promises a derived screen
@@ -161,8 +214,9 @@ type Command struct {
 //
 // Each is answered the way the request middleware answers it — public admits
 // everybody, signed-in a recognised caller, a permission the Authorizer's
-// question — so the catalog cannot promise a door the API would refuse. An
-// undeclared Auth admits nobody, as at the route.
+// question, and the plan feature either of those may name the Entitler's — so
+// the catalog cannot promise a door the API would refuse. An undeclared Auth
+// admits nobody, as at the route.
 func (r Resource) CommandsFor(ctx context.Context) []Command {
 	var out []Command
 	// One answer per distinct declaration, not per command: the commands of a
@@ -182,33 +236,55 @@ func (r Resource) CommandsFor(ctx context.Context) []Command {
 	return out
 }
 
+// mayUse is a door's answer to a declaration, and it is mayDeclare's answer:
+// the grant, then the plan feature, in the order the route's middleware asks
+// them. They are one call and not two lookalikes, which is what makes a page's
+// door, the catalogue's entry and the address behind both refuse the same caller
+// for the same reason. What differs is only who writes the refusal.
 func (r Resource) mayUse(ctx context.Context, a Auth) bool {
-	if r.may == nil || !a.Declared() {
+	if r.mayDeclare == nil || !a.Declared() {
+		// An undeclared Auth admits nobody, at the door exactly as at the route.
 		return false
 	}
-	switch a.kind {
-	case kindPublic:
-		return true
-	case kindSignedIn:
-		return recognised(ctx)
-	}
-	g, asks := a.grant()
-	return asks && r.allowed(ctx, g)
+	return r.mayDeclare(ctx, a) == nil
 }
 
-// Readable reports whether the caller in ctx holds this resource's Read
-// permission. Use it to decide whether to show navigation; operations already
-// carry their own guard and need no preceding Readable check.
-func (r Resource) Readable(ctx context.Context) bool {
-	return r.allowed(ctx, r.read())
-}
+// Readable reports whether this caller may use this resource's reads. Use it to
+// decide whether to show navigation; operations already carry their own guard
+// and need no preceding Readable check.
+//
+// It asks the same question the request middleware asks and the commands below
+// ask — mayUse, which answers public, signed-in, a permission and the plan
+// feature either may name, from one declaration — because a resource guarded by
+// something that is not a permission is readable by exactly the callers its guard
+// admits. A signed-in resource is therefore readable by every member of the
+// tenant, which is what keeps it in the catalogue at all: Describe drops what
+// this answers no to, and a document that dropped the one resource every member
+// may reach would describe nothing. A tenant whose plan lacks the feature a guard
+// names is dropped with it, because every address its entry would name answers
+// 402, and that is the same sentence this package refuses a New button for.
+func (r Resource) Readable(ctx context.Context) bool { return r.mayUse(ctx, r.ReadAuth()) }
 
-// Writable reports whether the caller in ctx holds this resource's Write
-// permission, in a tenant that may exercise it.
-func (r Resource) Writable(ctx context.Context) bool { return r.allowed(ctx, r.write()) }
+// Writable reports whether this caller may use this resource's writes, in a
+// tenant that may exercise them. See Readable for why it is asked of the
+// declaration rather than of a permission name.
+func (r Resource) Writable(ctx context.Context) bool { return r.mayUse(ctx, r.WriteAuth()) }
 
 // ReadAuth carries the same read declaration as the guarded resource closures.
+//
+// A declared ReadBy is the whole answer; otherwise the permission and the two
+// operator flags say it, which is what every resource written so far meant. A
+// resource with neither — a value written by hand, no guard at all — answers the
+// zero Auth rather than panicking on an empty permission, because the zero Auth
+// means "undeclared", which is what ValidateDeclarations refuses and what
+// mayUse, and so every door in front of it, answers "nobody" to.
 func (r Resource) ReadAuth() Auth {
+	if r.ReadBy.Declared() {
+		return r.ReadBy
+	}
+	if !ValidPermission(r.Read) {
+		return Auth{}
+	}
 	if r.OperatorRead {
 		return OperatorPermission(r.Read)
 	}
@@ -217,24 +293,18 @@ func (r Resource) ReadAuth() Auth {
 
 // WriteAuth is the declaration a page that mounts a write route carries, so a
 // screen and the API it stands in front of cannot disagree about which kind of
-// permission this is.
+// guard this is. See ReadAuth for the two ways it can be stated.
 func (r Resource) WriteAuth() Auth {
+	if r.WriteBy.Declared() {
+		return r.WriteBy
+	}
+	if !ValidPermission(r.Write) {
+		return Auth{}
+	}
 	if r.OperatorWrite {
 		return OperatorPermission(r.Write)
 	}
 	return Permission(r.Write)
-}
-
-func (r Resource) write() tenancy.Grant {
-	return tenancy.Grant{Permission: r.Write, Operator: r.OperatorWrite}
-}
-
-func (r Resource) read() tenancy.Grant {
-	return tenancy.Grant{Permission: r.Read, Operator: r.OperatorRead}
-}
-
-func (r Resource) allowed(ctx context.Context, g tenancy.Grant) bool {
-	return r.may != nil && r.may(ctx, g) == nil
 }
 
 // RegisterResource records a resource, with this API's authorization wrapped
@@ -255,12 +325,15 @@ func (a *API) RegisterResource(r Resource) {
 	a.resources = append(a.resources, r)
 }
 
-// guard returns r with its closures behind the two permissions it
-// declares: Read for count/list/get, Write for the three writes. The
-// same pairing the routes declare, from the same two fields.
+// guard returns r with its closures behind the two declarations it
+// carries: the read guard for count/list/get, the write guard for the three
+// writes. The same pairing the routes declare, read through the same methods a
+// page and the catalogue ask, so a resource cannot guard its routes one way and
+// its closures another.
 func (a *API) guard(r Resource) Resource {
 	list, get, create, update, remove := r.List, r.Get, r.Create, r.Update, r.Delete
-	r.may = a.may
+	read, write := r.ReadAuth(), r.WriteAuth()
+	r.mayDeclare = a.mayDeclare
 	count := r.Count
 	if count == nil && list != nil {
 		count = func(ctx context.Context) (int64, error) {
@@ -270,7 +343,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if count != nil {
 		r.Count = func(ctx context.Context) (int64, error) {
-			if err := a.may(ctx, r.read()); err != nil {
+			if err := a.mayDeclare(ctx, read); err != nil {
 				return 0, err
 			}
 			return count(ctx)
@@ -278,7 +351,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if list != nil {
 		r.List = func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
-			if err := a.may(ctx, r.read()); err != nil {
+			if err := a.mayDeclare(ctx, read); err != nil {
 				return nil, 0, err
 			}
 			return list(ctx, q)
@@ -286,7 +359,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if get != nil {
 		r.Get = func(ctx context.Context, id uuid.UUID) (map[string]any, error) {
-			if err := a.may(ctx, r.read()); err != nil {
+			if err := a.mayDeclare(ctx, read); err != nil {
 				return nil, err
 			}
 			return get(ctx, id)
@@ -294,7 +367,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if create != nil {
 		r.Create = func(ctx context.Context, values map[string]any) (map[string]any, error) {
-			if err := a.may(ctx, r.write()); err != nil {
+			if err := a.mayDeclare(ctx, write); err != nil {
 				return nil, err
 			}
 			return create(ctx, values)
@@ -302,7 +375,7 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if update != nil {
 		r.Update = func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {
-			if err := a.may(ctx, r.write()); err != nil {
+			if err := a.mayDeclare(ctx, write); err != nil {
 				return nil, err
 			}
 			return update(ctx, id, values)
@@ -310,13 +383,79 @@ func (a *API) guard(r Resource) Resource {
 	}
 	if remove != nil {
 		r.Delete = func(ctx context.Context, id uuid.UUID) error {
-			if err := a.may(ctx, r.write()); err != nil {
+			if err := a.mayDeclare(ctx, write); err != nil {
 				return err
 			}
 			return remove(ctx, id)
 		}
 	}
 	return r
+}
+
+// mayDeclare asks every question one declaration states, in process: the grant
+// or the membership, and then the plan feature, in the order the request
+// middleware asks them. It is `may` reached through a declaration rather than a
+// grant name, so that a resource guarded by httpx.SignedIn() guards its closures
+// with the same question its routes ask — "is there a caller, in this tenant" —
+// rather than with the empty permission its Read and Write fields never got.
+//
+// The plan question is here rather than left to the middleware of whatever route
+// the caller arrived at, because a closure is not only ever reached from its own
+// route: modules/admin's dashboard card calls `Resource.Count` beneath the
+// dashboard's guard, and a module's own page calls `List` beneath its own. A
+// closure that asked the grant and not the plan read past the plan the same
+// declaration states — and the doors above are the same call, so the catalogue,
+// the navigation and the drawn button ask it too.
+func (a *API) mayDeclare(ctx context.Context, auth Auth) error {
+	if err := a.declaredGrant(ctx, auth); err != nil {
+		return err
+	}
+	if ok, status, code, detail := a.planDecision(ctx, auth); !ok {
+		if code == "" {
+			return problem.New(status, detail)
+		}
+		return problem.New(status, code+": "+detail)
+	}
+	return nil
+}
+
+// declaredGrant is the first half of a declaration: what the caller is, or holds.
+func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
+	if auth.kind == kindPublic {
+		return nil
+	}
+	g, asks := auth.grant()
+	if !asks {
+		// signed_in, any_credential, bearer_key, or a guard nobody declared.
+		// Membership is the whole answer for the first two — with the ceiling rule
+		// below between them — a key is for the third, and the last is refused the
+		// way the middleware refuses it: an undeclared guard admits nobody.
+		if _, hasTenant := tenancy.FromContext(ctx); !hasTenant {
+			return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
+		}
+		if !recognised(ctx) {
+			return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
+		}
+		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential && auth.kind != kindBearerKey {
+			return problem.New(http.StatusForbidden, CodeUndeclared+": this operation declares no authorization")
+		}
+		if p, _ := tenancy.PrincipalFrom(ctx); auth.kind == kindBearerKey && p.TokenID == uuid.Nil {
+			return problem.New(http.StatusForbidden, CodeDenied+": this acts on the key that authenticated the request, and a session carries none")
+		}
+		// The middleware's ceiling rule, asked of the same two declarations here: a
+		// signed-in closure spends the caller's whole authority, so a credential that
+		// carries its own ceiling may not stand in for it, while AnyCredential spends
+		// none and the ceiling that arrived is already the whole answer. A closure
+		// that let the first through would answer in-process what its own route
+		// refuses at the address. See AnyCredential and the first branch of authorize.
+		if auth.kind == kindSignedIn {
+			if p, _ := tenancy.PrincipalFrom(ctx); p.Permissions != nil {
+				return problem.New(http.StatusForbidden, CodeDenied+": this credential carries its own scope, and this operation answers only to its holder")
+			}
+		}
+		return nil
+	}
+	return a.may(ctx, g)
 }
 
 // may asks the same Authorizer the middleware asks, in the tenant the request

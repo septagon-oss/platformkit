@@ -40,7 +40,7 @@ func TestTenantLanguagesHaveAnAppAPICommand(t *testing.T) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, manifest := tenant.Module(tenant.Deps{LocaleManager: languageRouteManager{}, Languages: []string{"en", "pt-PT"}})
+	_, manifest := tenant.New(tenant.Deps{LocaleManager: languageRouteManager{}, Languages: []string{"en", "pt-PT"}})
 	manifest.Routes(api.Surfaces("tenant"))
 	route := false
 	for _, op := range api.Recorded() {

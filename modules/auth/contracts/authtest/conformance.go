@@ -4,6 +4,7 @@ package authtest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -216,7 +217,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"a session opened for somebody already recognised is a session": func(t *testing.T, f Fixture) {
 			id := f.User("ada@acme.example.com", Password, contracts.RoleAdmin)
-			session, identity, err := f.Service.Open(f.Ctx, f.Tx, id, nobody)
+			session, identity, err := f.Service.Open(f.Ctx, f.Tx, id, nobody, contracts.ViaOIDC)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -227,7 +228,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			// password is checked, and an account that is not active is still
 			// refused.
 			invited := f.User("invited@acme.example.com", "")
-			if _, _, err := f.Service.Open(f.Ctx, f.Tx, invited, nobody); !errors.Is(err, contracts.ErrCredentials) {
+			if _, _, err := f.Service.Open(f.Ctx, f.Tx, invited, nobody, contracts.ViaOIDC); !errors.Is(err, contracts.ErrCredentials) {
 				t.Errorf("Open for somebody who has not accepted their invitation = %v, want ErrCredentials", err)
 			}
 			published(t, f, contracts.EventLoggedIn)
@@ -264,6 +265,12 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", "a different passphrase", nobody); err != nil {
 				t.Errorf("the new password does not work: %v", err)
 			}
+			// And the machines the change signed out are on the trail: one
+			// auth.session_revoked per row its own revocation removed, between the
+			// two sign-ins it belongs to. The wrong-password attempt above published
+			// nothing, so the only names here are the logins and the one revocation.
+			published(t, f, contracts.EventLoggedIn, contracts.EventLoggedIn,
+				contracts.EventSessionRevoked, contracts.EventLoggedIn)
 		},
 
 		"asking to reset a password does the same work whoever asks": func(t *testing.T, f Fixture) {
@@ -287,7 +294,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
-		"the worker looks the address up, and mails only somebody who is here": func(t *testing.T, f Fixture) {
+		"the worker looks the address up, and mails a link only to somebody who is here": func(t *testing.T, f Fixture) {
 			f.User("ada@acme.example.com", Password)
 			for _, address := range []string{"ada@acme.example.com", "nobody@acme.example.com"} {
 				if err := f.Service.Reissue(f.Ctx, f.Tx, address); err != nil {
@@ -295,11 +302,29 @@ func cases() map[string]func(*testing.T, Fixture) {
 				}
 			}
 			sent := mailed(f)
-			if len(sent) != 1 {
-				t.Fatalf("Reissue sent %d messages, want one — for the address that is here", len(sent))
+			// One credential left, for the address that is here. The other message is
+			// the sentence that says no link was sent to the address that is not — a
+			// message every implementation of this contract owes a request that names
+			// an address, because the public delivery door answers a caller only from
+			// the record its own call caused. It carries nothing, which is what the
+			// loop below is for.
+			var links []notificationcontracts.Message
+			for _, m := range sent {
+				if TokenIn(m.Body) != "" {
+					links = append(links, m)
+				}
 			}
+			if len(links) != 1 {
+				t.Fatalf("Reissue mailed %d credentials, want one — for the address that is here", len(links))
+			}
+			sent = links
 			if sent[0].To != "ada@acme.example.com" || TokenIn(sent[0].Body) == "" {
 				t.Errorf("the message is %+v, want one to Ada carrying a token", sent[0])
+			}
+			for _, m := range mailed(f) {
+				if m.To != "ada@acme.example.com" && TokenIn(m.Body) != "" {
+					t.Errorf("a credential left for %s, which has no account to hold it: %q", m.To, m.Subject)
+				}
 			}
 			// And the notice raised beside it carries no token. A notification
 			// is an ordinary row — listed by a route, readable by anybody who
@@ -331,7 +356,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
-		"the link sets a password once, and ends every session": func(t *testing.T, f Fixture) {
+		"the link sets a password once, ends every session it found and signs this browser in": func(t *testing.T, f Fixture) {
 			id := f.User("ada@acme.example.com", Password)
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody); err != nil {
 				t.Fatalf("Login: %v", err)
@@ -345,20 +370,31 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			token := TokenIn(sent[0].Body)
 
-			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a different passphrase"); err != nil {
+			session, err := f.Service.Reset(f.Ctx, f.Tx, token, "a different passphrase", nobody)
+			if err != nil {
 				t.Fatalf("Reset: %v", err)
 			}
-			if got := sessions(f, id); got != 0 {
-				t.Errorf("%d sessions survived a reset; a reset ends every one", got)
+			if session == nil {
+				t.Fatal("Reset opened no session: the person who spent the link is back at the sign-in form")
+			}
+			// One, and it is this one. The session the Login above opened is gone —
+			// the internal service's own case refuses that row by asking it (/me with
+			// the session that was live before the reset) — and what remains is the one
+			// the link itself opened. A reset that signed this browser in without ending
+			// the others would answer the same count, which is why the count is not the
+			// whole of the promise and the contract's sentence says both halves.
+			if got := sessions(f, id); got != 1 {
+				t.Errorf("%d sessions after a reset, want the one it opened", got)
 			}
 			// Once. The row is deleted rather than flagged, so the second
 			// attempt is refused by the same answer an invented token gets.
 			for _, second := range []string{token, "not a token at all", ""} {
-				if err := f.Service.Reset(f.Ctx, f.Tx, second, "another passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+				if _, err := f.Service.Reset(f.Ctx, f.Tx, second, "another passphrase", nobody); !errors.Is(err, contracts.ErrCredentials) {
 					t.Errorf("Reset(%q) = %v, want ErrCredentials", second, err)
 				}
 			}
-			published(t, f, contracts.EventLoggedIn, contracts.EventPasswordReset)
+			published(t, f, contracts.EventLoggedIn, contracts.EventSessionRevoked,
+				contracts.EventPasswordReset, contracts.EventLoggedIn)
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", "a different passphrase", nobody); err != nil {
 				t.Errorf("the reset password does not work: %v", err)
 			}
@@ -377,7 +413,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			// And the link works: an invitation and a reset are one mechanism.
 			token := TokenIn(mailed(f)[0].Body)
-			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a chosen passphrase"); err != nil {
+			if _, err := f.Service.Reset(f.Ctx, f.Tx, token, "a chosen passphrase", nobody); err != nil {
 				t.Fatalf("Reset with an invitation's token: %v", err)
 			}
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "invited@acme.example.com", "a chosen passphrase", nobody); err != nil {
@@ -432,6 +468,32 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Fatalf("invalid role name = %v, want ErrInvalid", err)
 			}
 			published(t, f, contracts.EventRoleSet)
+		},
+
+		"the role write says whether the row changed": func(t *testing.T, f Fixture) {
+			// SetRoleChanged is SetRole plus the one answer SetRole computes for
+			// itself and keeps: whether this call moved a row. The caller that
+			// needs it is modules/auth's repair, whose command prints "removed" —
+			// and prints it from an answer the write already had rather than from
+			// its own subtraction, because only the write knows whether a row moved.
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read"}, Declared); err != nil || !changed {
+				t.Errorf("writing a new role: changed=%v (%v), want true", changed, err)
+			}
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read"}, Declared); err != nil || changed {
+				t.Errorf("the same list again: changed=%v (%v), want false", changed, err)
+			}
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read", "widget:manage"}, Declared); err != nil || !changed {
+				t.Errorf("a different list: changed=%v (%v), want true", changed, err)
+			}
+			// The refusals answer the same way they do for SetRole, with nothing
+			// changed: this method adds an answer and takes no rule away.
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read", "ghost:read"}, Declared); !errors.Is(err, crud.ErrInvalid) || changed {
+				t.Errorf("a permission nothing defines: changed=%v (%v), want false and ErrInvalid", changed, err)
+			}
 		},
 
 		"the last role that can administer roles cannot be emptied": func(t *testing.T, f Fixture) {
@@ -517,6 +579,143 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Errorf("the refusal does not name the permission: %v", err)
 			}
 			published(t, f)
+		},
+
+		"a sessions list names each session by its ref and never by its id": func(t *testing.T, f Fixture) {
+			id := f.User("ada@acme.example.com", Password, contracts.RoleMember)
+			laptop := contracts.Client{UserAgent: "Mozilla/5.0 (laptop)", IP: "203.0.113.1"}
+			phone := contracts.Client{UserAgent: "Mozilla/5.0 (phone)", IP: "198.51.100.7"}
+			first, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, laptop)
+			if err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+			second, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, phone)
+			if err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+			list, err := f.Service.Sessions(f.Ctx, f.Tx, id, first.ID)
+			if err != nil {
+				t.Fatalf("Sessions: %v", err)
+			}
+			if len(list) != 2 {
+				t.Fatalf("the list has %d rows, want the two sessions this person has", len(list))
+			}
+			seen := map[string]*contracts.SessionListing{}
+			for _, row := range list {
+				if _, err := contracts.SessionRefOf(row.Ref); err != nil {
+					t.Errorf("the ref %q is not one this module would issue: %v", row.Ref, err)
+				}
+				if row.UserAgent == "" || row.IP == "" {
+					t.Errorf("%s carries no agent or address: %+v", row.Ref, row)
+				}
+				seen[row.Ref] = row
+			}
+			// The entry the person is reading the list from says so, and the other
+			// does not: a page cannot warn without it.
+			if !seen[contracts.SessionRef(first.ID)].Current {
+				t.Errorf("the session making the request is not marked current")
+			}
+			if seen[contracts.SessionRef(second.ID)].Current {
+				t.Errorf("a session other than the caller's is marked current")
+			}
+			// The property the type exists for: a list a person reads must not be
+			// a set of live cookies. The id is what the cookie carries.
+			body, err := json.Marshal(list)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			for _, s := range []*contracts.Session{first, second} {
+				if strings.Contains(string(body), s.ID.String()) {
+					t.Errorf("the list carries the session id %s, which is a credential", s.ID)
+				}
+			}
+			published(t, f, contracts.EventLoggedIn, contracts.EventLoggedIn)
+		},
+
+		"a ref revokes that session and leaves the others": func(t *testing.T, f Fixture) {
+			id := f.User("ada@acme.example.com", Password, contracts.RoleMember)
+			mine, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody)
+			if err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+			other, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password,
+				contracts.Client{UserAgent: "conformance two", IP: "198.51.100.7"})
+			if err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+			if err := f.Service.RevokeSession(f.Ctx, f.Tx, id, contracts.SessionRef(other.ID)); err != nil {
+				t.Fatalf("RevokeSession: %v", err)
+			}
+			if _, err := f.Service.Identify(f.Ctx, f.Tx, other.ID, nobody); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("the revoked session still identifies: %v", err)
+			}
+			if _, err := f.Service.Identify(f.Ctx, f.Tx, mine.ID, nobody); err != nil {
+				t.Errorf("the session nobody named is gone too: %v", err)
+			}
+			if got := sessions(f, id); got != 1 {
+				t.Errorf("%d sessions remain, want the one the caller is asking from", got)
+			}
+			published(t, f, contracts.EventLoggedIn, contracts.EventLoggedIn, contracts.EventSessionRevoked)
+		},
+
+		"revoking everything ends the caller's own session too": func(t *testing.T, f Fixture) {
+			id := f.User("ada@acme.example.com", Password, contracts.RoleMember)
+			mine, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody)
+			if err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+			gone, err := f.Service.RevokeAllSessions(f.Ctx, f.Tx, id)
+			if err != nil {
+				t.Fatalf("RevokeAllSessions: %v", err)
+			}
+			if gone != 1 {
+				t.Errorf("%d sessions ended, want the one that existed", gone)
+			}
+			// Unlike ChangePassword's keep there is no exception: "everywhere"
+			// includes the machine asking.
+			if _, err := f.Service.Identify(f.Ctx, f.Tx, mine.ID, nobody); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("the caller's own session survived: %v", err)
+			}
+			if got := sessions(f, id); got != 0 {
+				t.Errorf("%d sessions remain, want none", got)
+			}
+			// Revoking what is already gone is not an error and says nothing: the
+			// caller wanted them out and they are.
+			if again, err := f.Service.RevokeAllSessions(f.Ctx, f.Tx, id); err != nil || again != 0 {
+				t.Errorf("revoking nothing ended %d and returned %v, want 0 and no error", again, err)
+			}
+			published(t, f, contracts.EventLoggedIn, contracts.EventSessionRevoked)
+		},
+
+		"a ref that is nobody's revokes nothing and publishes nothing": func(t *testing.T, f Fixture) {
+			id := f.User("ada@acme.example.com", Password, contracts.RoleMember)
+			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody); err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+			bob := f.User("bob@acme.example.com", Password, contracts.RoleMember)
+			_, _, err := f.Service.Login(f.Ctx, f.Tx, "bob@acme.example.com", Password,
+				contracts.Client{UserAgent: "somebody else", IP: "198.51.100.9"})
+			if err != nil {
+				t.Fatalf("Login as somebody else: %v", err)
+			}
+			list, err := f.Service.Sessions(f.Ctx, f.Tx, bob, uuid.Nil)
+			if err != nil {
+				t.Fatalf("Sessions: %v", err)
+			}
+			if len(list) != 1 {
+				t.Fatalf("somebody else has %d listed sessions, want their own one", len(list))
+			}
+			// Three shapes of "not yours": never issued, not a ref at all, and
+			// another person's here. One answer each, and no write for any of them.
+			for _, ref := range []string{contracts.SessionRef(uuid.New()), "not-a-ref", list[0].Ref} {
+				if err := f.Service.RevokeSession(f.Ctx, f.Tx, id, ref); !errors.Is(err, crud.ErrNotFound) {
+					t.Errorf("RevokeSession(%q) = %v, want ErrNotFound", ref, err)
+				}
+			}
+			if got := sessions(f, bob); got != 1 {
+				t.Errorf("somebody else holds %d sessions after a stranger tried to revoke them, want 1", got)
+			}
+			published(t, f, contracts.EventLoggedIn, contracts.EventLoggedIn)
 		},
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/trace"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts/tenanttest"
 )
@@ -36,6 +37,19 @@ func TestFakeConforms(t *testing.T) {
 				})
 			},
 		})
+		// An installed control plane: the case's world has the tenant Bootstrap
+		// creates, because a lifecycle verb that cannot write the operator's audit
+		// row writes nothing, and the creation that installed it is the fixture's
+		// own doing rather than something the case asserts.
+		fake, operator, _ := tenanttest.Installed()
+		run(tenanttest.Fixture{
+			Ctx:             trace.With(t.Context(), trace.New()),
+			Service:         fake,
+			Operator:        operator.ID,
+			Published:       fake.Published,
+			PublishedScopes: fake.PublishedScopes,
+			PublishedTraces: fake.PublishedTraces,
+		})
 	})
 }
 
@@ -44,7 +58,7 @@ func TestFakeConforms(t *testing.T) {
 // something the interface can express, so it is checked here and again against
 // the real service.
 func TestTheCreateHookRunsInsideCreate(t *testing.T) {
-	fake := tenanttest.NewFake()
+	fake, _, _ := tenanttest.Installed()
 	var seen []string
 	fake.Hooks = []contracts.Hook{
 		func(_ context.Context, _ db.Tx[db.System], created *contracts.Tenant) error {

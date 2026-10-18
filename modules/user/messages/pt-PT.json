@@ -1,11 +1,155 @@
 {
-  "permission.user:read": {
+  "hints.user/user.command.approve-registration.label": {
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "ler pessoas",
+    "translation": "Aprovar",
     "plural": {
-      "": "ler pessoas"
+      "": "Aprovar"
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.body": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Ela não poderá entrar. Um administrador pode reativá-la.",
+    "plural": {
+      "": "Ela não poderá entrar. Um administrador pode reativá-la."
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.confirmLabel": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Desativar",
+    "plural": {
+      "": "Desativar"
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.title": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Desativar esta pessoa?",
+    "plural": {
+      "": "Desativar esta pessoa?"
+    }
+  },
+  "hints.user/user.command.deactivate.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Desativar",
+    "plural": {
+      "": "Desativar"
+    }
+  },
+  "hints.user/user.command.handle.field.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome de utilizador",
+    "plural": {
+      "": "Nome de utilizador"
+    }
+  },
+  "hints.user/user.command.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Definir nome de utilizador",
+    "plural": {
+      "": "Definir nome de utilizador"
+    }
+  },
+  "hints.user/user.command.roles.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Alterar funções",
+    "plural": {
+      "": "Alterar funções"
+    }
+  },
+  "hints.user/user.command.set-password.field.password.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nova palavra-passe",
+    "plural": {
+      "": "Nova palavra-passe"
+    }
+  },
+  "hints.user/user.command.set-password.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Definir palavra-passe",
+    "plural": {
+      "": "Definir palavra-passe"
+    }
+  },
+  "hints.user/user.field.displayName.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome",
+    "plural": {
+      "": "Nome"
+    }
+  },
+  "hints.user/user.field.handle.help": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome em minúsculas pelo qual esta pessoa atende nesta organização",
+    "plural": {
+      "": "Nome em minúsculas pelo qual esta pessoa atende nesta organização"
+    }
+  },
+  "hints.user/user.field.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome de utilizador",
+    "plural": {
+      "": "Nome de utilizador"
+    }
+  },
+  "hints.user/user.group.people": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Pessoas",
+    "plural": {
+      "": "Pessoas"
+    }
+  },
+  "hints.user/user.plural": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "pessoas",
+    "plural": {
+      "": "pessoas"
+    }
+  },
+  "hints.user/user.singular": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "pessoa",
+    "plural": {
+      "": "pessoa"
+    }
+  },
+  "permission.user:approve": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "aprovar novas contas",
+    "plural": {
+      "": "aprovar novas contas"
     }
   },
   "permission.user:manage": {
@@ -17,13 +161,13 @@
       "": "gerir pessoas"
     }
   },
-  "permission.user:approve": {
+  "permission.user:read": {
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "aprovar novas contas",
+    "translation": "ler pessoas",
     "plural": {
-      "": "aprovar novas contas"
+      "": "ler pessoas"
     }
   },
   "resource.user.user": {

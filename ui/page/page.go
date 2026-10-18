@@ -112,7 +112,18 @@ func Bare(body []g.Node) g.Node { return document.Bare(body) }
 // prefix this source owns, with net/http's name as the readable fallback — so a shell
 // with no catalogue is headed exactly as it always was, and one that ships Portuguese
 // says what the status is called in the language the page is written in.
-func Fault(loc *Locale, status int, detail, back, backLabel string) View {
+//
+// The language is an argument of FaultIn, not of Fault: an application that renders a
+// refusal in its own words compiles against Fault, and a shell that speaks the reader's
+// language asks the form below. Fault with no locale is the page it always was —
+// net/http's name for the verdict, the caller's own words for the sentence.
+func Fault(status int, detail, back, backLabel string) View {
+	return FaultIn(nil, status, detail, back, backLabel)
+}
+
+// FaultIn is Fault in the reader's language: the verdict's name asked of that
+// language's catalogue, with net/http's name for a shell that ships none.
+func FaultIn(loc *Locale, status int, detail, back, backLabel string) View {
 	return document.Fault(status, faultTitle(loc, status), detail, back, backLabel)
 }
 

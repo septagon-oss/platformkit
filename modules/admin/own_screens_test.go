@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -20,7 +21,7 @@ import (
 )
 
 // TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister is the collision the pets client
-// could not boot through (T-0126): a module that writes its own working page for a resource, at the
+// could not boot through: a module that writes its own working page for a resource, at the
 // address the kernel composes for that resource's screens, and the shell composed after it
 // generating a register at the same addresses. The surface gate refuses two routes at one method and
 // path, so the application did not start. The module's page is what its people are sent to; the
@@ -31,6 +32,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 		t.Fatalf("create the tables: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
 		Installation: operatorHost,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
@@ -59,7 +61,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 		Declared:    plans.Declared(),
 		Routes:      func(s httpx.Surfaces) { plans.Mount(s) },
 	}
-	shell := admin.Module(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: caller{}, SignIn: "/api/v1/auth/login"})
+	shell := admin.New(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: caller{}, SignIn: "/api/v1/auth/login"})
 	var declared []tenancy.Grant
 	for _, m := range []module.Module{notes, catalogue, shell} {
 		for _, p := range m.Permissions {

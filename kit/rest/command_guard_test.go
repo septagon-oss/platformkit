@@ -1,15 +1,16 @@
 package rest_test
 
-// This file exists because of a review, and says so.
+// A mounted command carries the command's own guard, and a screen shows only what its
+// caller may do. One command answers through two doors — the screen's form post and the
+// API's JSON post — so the promise is worth exactly what the guard behind both is worth.
+// The failure that hides here is the worst one available in a permissions system: a door
+// that is invisible and still open. Hiding a control is presentation; refusing the route
+// is authorisation; a page looks the same either way to whoever wrote it.
 //
-// The commit that mounted commands onto screens claimed each route carries "the
-// command's own guard", and that the screen shows only what its caller may do. Both
-// sentences were written by the person who wrote the code, and no test asked a caller
-// who does not hold the grant what they actually receive. The claim was a description
-// of intent, not a verified behaviour, and the class of bug it hides is the worst one
-// available in a permissions system: a door that is invisible and still open.
-//
-// So: three questions, each answerable only by running the mounted application.
+// So: what a caller who does not hold the grant is offered, what the same caller can
+// post anyway through each door in its own encoding, and what a mount does when a
+// command is named after a verb a screen already serves. Each is answerable only by
+// running the mounted application — an authorizer stubbed to refuse agrees in advance.
 
 import (
 	"context"
@@ -159,10 +160,11 @@ func TestACallerWithoutTheGuardCannotPostTheDoorAnyway(t *testing.T) {
 
 // TestACommandNamedAfterAScreenVerbRefusesToMount. The screens mount list, new, read,
 // edit, update and delete; a command carrying one of those verbs adds a second route
-// over a path shape that already has one. Album once shipped unable to mount at all
-// because two routes shared an operation id, and the audit that found it never called
-// Routes. The refusal is in the mount so the class is closed rather than the instance,
-// and this test is here so the refusal is not a comment.
+// over a path shape that already has one, and two routes sharing an operation id is a
+// mount that fails rather than a screen that looks wrong — the whole application
+// refuses to start, which no caller's request ever reaches. The refusal is in the mount
+// so the class is closed rather than the instance, and this test is here so the refusal
+// is not a comment.
 func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 	panicked := ""
 	defer func() {
@@ -189,7 +191,8 @@ func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 	}
 }
 
-// TestAReaderIsNotOfferedTheWriteDoors is the second finding from the same review. The
+// TestAReaderIsNotOfferedTheWriteDoors asks a caller without the write permission what
+// their list looks like. The
 // list screen has taken a `writable bool` since before this branch existed, and its
 // comment claims "a person who may not is not shown a form that would refuse them" —
 // but no test asked a caller without the write permission what their list looked like.
