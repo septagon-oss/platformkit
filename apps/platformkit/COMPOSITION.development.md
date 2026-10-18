@@ -41,11 +41,12 @@ pkit: emailregistration.Module needs usercontracts.Service from user.Module.
 pkit: notification.Module is built after user.Module and tenant.Module.
 pkit: notification.Module needs notificationcontracts.RecipientLookup from user.Module.
 pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Module.
+pkit: notification.Module could use push.Adapters; platformkit composes no provider, so it will not.
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
 pkit: notification.Module runs on mailbox, which the deployment picked.
 pkit: notification.Module defines the permission sender:manage.
-pkit: notification.Module emits notification.created, notification.email_requested, notification.read, notification.push_requested, notification.web_push_requested, notification.webhook_requested, notification.preference_set, notification.sender_set, notification.sender_verified and notification.sender_removed.
+pkit: notification.Module emits notification.created, notification.email_requested, notification.read, notification.push_requested, notification.web_push_requested, notification.webhook_requested, notification.preference_set, notification.sender_set, notification.sender_verified, notification.sender_removed, notification.device_registered and notification.device_removed.
 pkit: notification.Module handles notification.email_requested.
 pkit: task.Module is built after product.Module and tenant.Module.
 pkit: task.Module needs jobs.TenantLister from tenant.Module.
