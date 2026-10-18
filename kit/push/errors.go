@@ -55,16 +55,29 @@ func Redact(err error, secrets ...string) error {
 	if err == nil {
 		return nil
 	}
-	msg := err.Error()
-	for _, secret := range secrets {
-		if secret != "" {
-			msg = strings.ReplaceAll(msg, secret, Redacted)
-		}
-	}
+	msg := Scrub(err.Error(), secrets...)
 	if msg == err.Error() {
 		return err
 	}
 	return &redacted{msg: msg, err: err}
+}
+
+// Scrub is Redact's rule told of a sentence rather than an error: every
+// occurrence of each secret in text comes back as Redacted.
+//
+// It exists because cutting a secret out of a text and shortening that text are
+// two operations that must happen in this order. An adapter that shortens a
+// provider's refusal to a ledger-sized sentence — which is what a provider
+// sentence costs the row that records it — has to cut the credentials while the
+// sentence is still whole, because a shortened secret is a secret with a prefix
+// nobody can match any more: long enough to use, too short to find again.
+func Scrub(text string, secrets ...string) string {
+	for _, secret := range secrets {
+		if secret != "" {
+			text = strings.ReplaceAll(text, secret, Redacted)
+		}
+	}
+	return text
 }
 
 // redacted is an error with its text rewritten and its identity kept.

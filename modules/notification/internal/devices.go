@@ -70,7 +70,7 @@ func (s DeviceStore) RegisterDevice(ctx context.Context, tx db.Tx[db.Tenant], re
 	if err := owning(ctx, recipient); err != nil {
 		return nil, err
 	}
-	if err := s.carries(in.Platform); err != nil {
+	if err := s.carries(in); err != nil {
 		return nil, err
 	}
 	row, err := s.live(tx, in.Platform, in.Token)
@@ -81,14 +81,10 @@ func (s DeviceStore) RegisterDevice(ctx context.Context, tx db.Tx[db.Tenant], re
 		return s.settle(ctx, tx, row, recipient)
 	}
 	row = &contracts.Device{RecipientID: recipient, Platform: in.Platform, Token: in.Token}
-	if err := crud.Create(ctx, tx, row); err != nil {
+	if err := s.insert(ctx, tx, row); err != nil {
 		if !errors.Is(err, crud.ErrConflict) {
 			return nil, err
 		}
-		// Somebody else wrote this token between the read and the insert. Their
-		// row is the answer either way, so it is read back and settled the same
-		// way a found row is — and if it still cannot be read, the conflict is
-		// returned rather than swallowed.
 		// Somebody else wrote this token between the read and the insert. Their
 		// row is the answer either way, so it is read back and settled the same
 		// way a found row is — and a conflict with no row to read back is returned
@@ -107,18 +103,59 @@ func (s DeviceStore) RegisterDevice(ctx context.Context, tx db.Tx[db.Tenant], re
 	})
 }
 
-// carries is the deployment's answer about a platform, asked of the adapters this
-// installation was built with: an unknown spelling and a platform it carries no
-// adapter for are both refused before a row exists, because a device nobody can
-// send to is a row that fails every notice to that person and a token a client
-// believes is registered.
-func (s DeviceStore) carries(platform push.Platform) error {
-	if err := platform.Validate(); err != nil {
+// insert is this command's one write, behind a savepoint, because the answer to
+// a lost race with another registration of the same token is a sentence this
+// transaction has to go on reading after it. A duplicate of the live-token key is
+// a PostgreSQL error, and a PostgreSQL error leaves the transaction answering
+// nothing at all until it ends — so the read-back that owes the caller the
+// committed device would come back "current transaction is aborted", and a
+// client retrying a registration it had in fact already made would be told an
+// internal error and get no device. The savepoint is the half-rollback that keeps
+// the transaction usable: on the way out the row is either written or unwound,
+// and the command still has a transaction to read the winner's row in.
+//
+// The name is a literal and the savepoint is never released: Postgres discards
+// what is still open at commit, and a second registration in one request
+// transaction nests a savepoint of the same name, which ROLLBACK TO resolves to
+// the inner one.
+func (DeviceStore) insert(ctx context.Context, tx db.Tx[db.Tenant], row *contracts.Device) error {
+	if err := tx.DB().SavePoint("notification_device_register").Error; err != nil {
+		return err
+	}
+	created := crud.Create(ctx, tx, row)
+	if created == nil {
+		return nil
+	}
+	if back := tx.DB().RollbackTo("notification_device_register").Error; back != nil {
+		// The insert failed and its unwind failed with it, which leaves the
+		// transaction aborted and nothing above it able to commit: the unwind's
+		// error is the one worth naming, and the insert's is the reason it happened.
+		return fmt.Errorf("%w (the failed registration: %v)", back, created)
+	}
+	return created
+}
+
+// carries is the deployment's answer about one device, asked of the adapters this
+// installation was built with, and it is asked before a row exists. An unknown
+// platform spelling and a platform it carries no adapter for are both refused
+// because a device nobody can send to is a row that fails every notice to that
+// person; and so is a token that adapter refuses to carry, which is the question
+// only the adapter can answer — the platform's token grammar, a subscription that
+// is not a subscription, a key nothing can be encrypted for. A stored address an
+// adapter will not carry fails every later notice to that person with an error no
+// retry changes, and the person's client would have no way to learn that the
+// token it holds is the problem.
+func (s DeviceStore) carries(in contracts.DeviceInput) error {
+	if err := in.Platform.Validate(); err != nil {
 		return fmt.Errorf("%w: %w", crud.ErrInvalid, err)
 	}
-	if s.Adapters.Get(platform) == nil {
+	adapter := s.Adapters.Get(in.Platform)
+	if adapter == nil {
 		return fmt.Errorf("%w: notification: this installation carries no %s push, so nothing could ever be sent to that device",
-			crud.ErrInvalid, platform)
+			crud.ErrInvalid, in.Platform)
+	}
+	if err := adapter.Validate(in.Token); err != nil {
+		return fmt.Errorf("%w: notification: that token is not one this installation can carry: %w", crud.ErrInvalid, err)
 	}
 	return nil
 }
@@ -158,11 +195,20 @@ func (s DeviceStore) ListDevices(ctx context.Context, tx db.Tx[db.Tenant], recip
 // soft-deleted and the event says who did it. An id that is not the caller's live
 // device — never existed, already gone, or somebody else's — is ErrNotFound, so
 // the route stays SignedIn and a probe learns nothing about anybody else's phone.
+//
+// The row is read under its write lock, and the ownership question is asked of
+// what that locked read answered. "Is this device yours" is a question about the
+// row as it is when the deletion is written, not as it was when the read began:
+// a device that moves to another person while this command waits behind their
+// write would otherwise be deleted by the person who no longer holds the token,
+// which is both a refusal that destroys and a device_removed event for a thing
+// the caller has no claim on. The lock is held to the end of the transaction, so
+// the answer cannot move between the read and the delete either.
 func (s DeviceStore) RemoveDevice(ctx context.Context, tx db.Tx[db.Tenant], id, recipient uuid.UUID) error {
 	if err := owning(ctx, recipient); err != nil {
 		return err
 	}
-	row, err := crud.Get[*contracts.Device](tx, id)
+	row, err := crud.GetForUpdate[*contracts.Device](tx, id)
 	if err != nil {
 		return err
 	}

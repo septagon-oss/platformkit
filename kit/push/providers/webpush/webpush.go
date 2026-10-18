@@ -17,6 +17,7 @@ package webpush
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -104,7 +105,8 @@ type subscription struct {
 // long to be one, not a JSON object, an endpoint that is not an https URL (a
 // browser only ever hands out an https endpoint, so anything else was typed), or
 // a key that could not be encrypted with — missing, not base64 in either
-// spelling the library reads, or of a length no browser's key has.
+// spelling the library reads, of a length no browser's key has, or a public point
+// that is not on the curve the encryption happens on.
 func (a *adapter) Validate(token string) error {
 	if token == "" {
 		return fmt.Errorf("%w: an empty subscription addresses no device", push.ErrMalformed)
@@ -132,6 +134,15 @@ func (a *adapter) Validate(token string) error {
 	if len(raw) != publicKeySize || raw[0] != 0x04 {
 		return keyWrongSize("p256dh", len(raw))
 	}
+	// Shape is not substance. Sixty-five bytes with the right prefix can still
+	// name no key: an x that is not on P-256 has no shared secret with anybody,
+	// and a push service cannot decrypt what was encrypted for it. The sender
+	// this package sends with discovers that mid-send, in its own words, which is
+	// a retryable-looking failure for input no retry can improve — so the point
+	// is checked here, where a unusable subscription is still malformed input.
+	if _, err := ecdh.P256().NewPublicKey(raw); err != nil {
+		return keyUnusable("p256dh", err)
+	}
 	return nil
 }
 
@@ -158,6 +169,10 @@ func keyRefused(field string, err error) error {
 
 func keyWrongSize(field string, got int) error {
 	return fmt.Errorf("%w: the subscription's %s decodes to %d bytes, which is no browser's key", push.ErrMalformed, field, got)
+}
+
+func keyUnusable(field string, err error) error {
+	return fmt.Errorf("%w: the subscription's %s is not a key anything can be encrypted for: %v", push.ErrMalformed, field, err)
 }
 
 func decode(token string) (*subscription, error) {
