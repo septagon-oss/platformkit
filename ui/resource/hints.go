@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"cmp"
 	"maps"
 	"time"
 
@@ -102,19 +103,45 @@ func (w Words) Section(sec entity.EntitySection) entity.EntitySection {
 	return sec
 }
 
+// ownedKey is a module's own spelling of one word of its own entity:
+// `field.<module>.<entity>.<field>`, `field.<module>.<entity>.<field>.help`,
+// `enum.<module>.<entity>.<value>`. It exists beside Key, not instead of it: Key
+// names a reading the entity *declared* in a `ui:` tag, and this names the words a
+// schema carries in a field name and a Doc comment, which are copy the module wrote
+// too and which its translator keeps in the module's own catalogue.
+func (w Words) ownedKey(kind, name string) string {
+	return kind + "." + w.schema.Module + "." + w.schema.Entity + "." + name
+}
+
 // say is the fallback rule in one place, so two call sites cannot write it
 // differently: the translation, unless it comes back empty, in which case the
 // declared word. `xtext` cannot answer empty (its loader refuses a copy whose
 // translation is blank), so this guard is against a foreign Formatter, and the
 // cost of not having it is a label that reads as nothing.
 func (w Words) say(aspect, declared string) string {
+	return w.sayOwned(aspect, "", declared)
+}
+
+// sayOwned is say for the aspects whose word a module may also hold under its own
+// key: the declared key is asked first, so a `ui:` tag's words are translated as
+// they always were, and what comes back unanswered is offered to the module's
+// catalogue before the literal. One nested lookup is all the ordering this needs:
+// a catalogue that answers the declared key never shows the other answer, and one
+// that answers nothing there leaves the module's own translation in place.
+func (w Words) sayOwned(aspect, owned, declared string) string {
 	if declared == "" || w.text == nil {
 		return declared
 	}
-	if out := w.text(w.Key(aspect), declared); out != "" {
-		return out
+	out := w.text(w.Key(aspect), declared)
+	if owned != "" && out == declared {
+		if said := w.text(owned, declared); said != "" && said != declared {
+			return said
+		}
 	}
-	return declared
+	if out == "" {
+		return declared
+	}
+	return out
 }
 
 // Entry is this resource's entry declaration in the request's language, and
@@ -204,34 +231,31 @@ func (w Words) Command(verb string, p entity.CommandHints) entity.CommandHints {
 }
 
 // FieldLabel is what a control, a header and a term call this field, in this
-// request's language: the declared label translated, and the words
-// display.FieldLabel computes (Humanize of the name) left alone, because nobody
-// wrote a string here to translate.
+// request's language: the label the entity declared if it declared one and the
+// words display.FieldLabel computes (Humanize of the name) if it did not, and in
+// either case asked of the catalogue — first under the declared key, then under the
+// module's own — because a field name and a Doc comment are words the module wrote.
 func (w Words) FieldLabel(f entity.Field) string {
-	if f.Presentation.Label == "" {
-		return display.FieldLabel(f)
-	}
-	return w.say("field."+f.Name+".label", f.Presentation.Label)
+	return w.sayOwned("field."+f.Name+".label", w.ownedKey("field", f.Name),
+		cmp.Or(f.Presentation.Label, display.FieldLabel(f)))
 }
 
-// FieldHelp is the line under a control, in this request's language. An
-// undeclared help line is the field's own Doc, which is a developer sentence no
-// copy table holds until its author declares a `help:` of their own.
+// FieldHelp is the line under a control, in this request's language: the declared
+// help line, or the field's own Doc comment where its author wrote no `help:` of
+// their own, asked of the catalogue either way. A Doc comment is a sentence a
+// person reads under the control, and the module's catalogue is where its
+// translator can reach it.
 func (w Words) FieldHelp(f entity.Field) string {
-	if f.Presentation.Help == "" {
-		return display.FieldHelp(f)
-	}
-	return w.say("field."+f.Name+".help", f.Presentation.Help)
+	return w.sayOwned("field."+f.Name+".help", w.ownedKey("field", f.Name+".help"),
+		cmp.Or(f.Presentation.Help, display.FieldHelp(f)))
 }
 
 // EnumWord is one enum value as its field's author named it, in this request's
-// language. The tone of that value is not a word and is never translated.
+// language, and the value's own spelling where no word was declared. The tone of
+// that value is not a word and is never translated.
 func (w Words) EnumWord(f entity.Field, value string) string {
-	word := f.Presentation.EnumLabels[value]
-	if word == "" {
-		return display.EnumWord(f, value)
-	}
-	return w.say("enum."+f.Name+"."+value, word)
+	return w.sayOwned("enum."+f.Name+"."+value, w.ownedKey("enum", value),
+		cmp.Or(f.Presentation.EnumLabels[value], display.EnumWord(f, value)))
 }
 
 // Value is a field's value as a screen shows it, in this request's language: the
