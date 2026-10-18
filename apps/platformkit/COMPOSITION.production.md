@@ -44,7 +44,8 @@ pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Mod
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
 pkit: notification.Module runs on none, which the deployment picked.
-pkit: notification.Module emits notification.created, notification.email_requested and notification.read.
+pkit: notification.Module defines the permission sender:manage.
+pkit: notification.Module emits notification.created, notification.email_requested, notification.read, notification.push_requested, notification.web_push_requested, notification.webhook_requested, notification.preference_set, notification.sender_set, notification.sender_verified and notification.sender_removed.
 pkit: notification.Module handles notification.email_requested.
 pkit: task.Module is built after product.Module and tenant.Module.
 pkit: task.Module needs jobs.TenantLister from tenant.Module.
@@ -133,6 +134,7 @@ pkit: web.Module uses rest.TranslationSource from product.Module.
 pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
+pkit: admin.Module uses admincontracts.Pictures from product.Module.
 pkit: admin.Module uses admincontracts.Locale from product.Module.
 pkit: admin.Module could use admincontracts.Storybook; platformkit composes no provider, so it will not.
 pkit: admin.Module runs after everything and saw every other module's manifest.

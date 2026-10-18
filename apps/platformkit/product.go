@@ -74,7 +74,12 @@ import (
 // at package scope cannot: an installation with no storybook directory composes
 // no Storybook provider, and the shell's gallery answers Core to the operator
 // alone rather than the app lying about having a gallery.
-func product(cfg config.Config) *pkit.Module {
+//
+// `grants` is the permission catalogue's empty holder, contributed to the roles
+// hook below: this module builds first, so it is the one that can name the hook,
+// and the catalogue the hook seeds from belongs to the resolution this module's
+// own manifest is a part of. See lateCatalogue.
+func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
@@ -91,6 +96,7 @@ func product(cfg config.Config) *pkit.Module {
 		pkit.Provides[webcontracts.Links](),
 		pkit.Provides[rest.TranslationSource](),
 		pkit.Provides[admincontracts.Signin](),
+		pkit.Provides[admincontracts.Pictures](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
 		pkit.Provides[authcontracts.ConfirmationChrome](),
@@ -180,6 +186,12 @@ func product(cfg config.Config) *pkit.Module {
 				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI,
 			},
 		})
+		// Where a stored picture's bytes are fetched from. The workspace catalogue
+		// publishes this same address to a shell that is not a browser, and the
+		// generated screens fetch through it; the door is the file module's and the
+		// document is the kernel's, so this composition is the only party that has met
+		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
+		pkit.Put[admincontracts.Pictures](w, admincontracts.Pictures{Source: filecontracts.PictureSource})
 		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
@@ -196,7 +208,7 @@ func product(cfg config.Config) *pkit.Module {
 		pkit.Put[authcontracts.ConfirmationChrome](w, authcontracts.ConfirmationChrome{
 			Assets: pinnedAssets, SignIn: pinnedSignIn,
 		})
-		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(seedRoles))
+		pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
 		// Which event names may be put on a webhook endpoint is this file's fact:
 		// the modules that emit them are composed by this file, and the module that
 		// checks a subscription against them cannot enumerate them. The literal is
@@ -383,8 +395,9 @@ func (a accessReach) Tell(ctx context.Context, tx db.Tx[db.Tenant], n httpx.Acce
 		Title:     "Access requested",
 		Body: fmt.Sprintf("%s asked for %s, at %s. Their roles are on the person's page.",
 			n.Requester, n.Permission, n.RefusedPath),
-		Link:  pinnedUsers + "/" + n.Requester.String(),
-		Email: false,
+		Link: pinnedUsers + "/" + n.Requester.String(),
+		// No Wants: its zero value is in-app alone, which is what an access
+		// request is - a note for somebody who is already in the application.
 	})
 	return err
 }

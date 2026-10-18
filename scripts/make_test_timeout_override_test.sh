@@ -15,13 +15,13 @@ test_command() {
 }
 
 default="$(test_command)"
-if [[ "$default" != "go tool gotestsum  --packages='./...' -- -timeout=30m" ]]; then
+if [[ "$default" != "go tool gotestsum  --packages='./...' -- -timeout=30m -p=4" ]]; then
 	printf 'FAIL: the local suite lost its stated default timeout: %s\n' "$default" >&2
 	exit 1
 fi
 
 override="$(test_command TEST_PACKAGES='./design' TEST_FLAGS='-timeout=17s -run Selected')"
-if [[ "$override" != "go tool gotestsum  --packages='./design' -- -timeout=30m -timeout=17s -run Selected" ]]; then
+if [[ "$override" != "go tool gotestsum  --packages='./design' -- -timeout=30m -p=4 -timeout=17s -run Selected" ]]; then
 	printf 'FAIL: the caller timeout must follow the default so Go uses the caller value: %s\n' "$override" >&2
 	exit 1
 fi

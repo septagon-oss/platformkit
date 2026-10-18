@@ -125,6 +125,25 @@ were drawn here, so the cure is here too.
   now on; and `ui:"display"`, the field tag by which an entity says what its rows
   are called, read by `ui/resource` and refused at mount by `kit/rest`.
 
+## Generated command controls
+
+Generated resource commands use outline buttons so the toolbar's Edit or New
+action remains the screen's filled action; each command retains its named native
+POST form and submit button.
+
+- **Reused** — the existing `components.Button` outline variant, `design.ResolveColors`,
+  shipped palettes and resource rendering fixtures.
+- **Added** — the outline choice for generated command submits and assertions for
+  action prominence, label contrast, paragraph sizes and native submission.
+- **Made reusable** — every application using `ui/screens` inherits the command
+  styling through `ui/resource` without changing its resource declarations.
+
+The assertions live in [resource](resource/generated_screen_floor_test.go),
+[command controls](resource/command_controls_floor_test.go) and
+[style](style/semantic_colors_test.go); run `go test ./ui/resource ./ui/style`.
+The paragraph-size assertion covers the resource body; complete frame sizing and
+product palettes still need browser measurements of the composed screen.
+
 ## Next action
 
 To serve a page, compose the stylesheet once with `ui.Compose`, mount

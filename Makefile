@@ -122,8 +122,9 @@ build: ## Compile every package (a check; `make image` builds the artifact)
 # every caller of this one is a person or a gate waiting for an answer rather than a coin toss. `check`'s bound is the
 # number, not a new one; it sits before $(TEST_FLAGS) so a caller that passes its own -timeout wins,
 # and scripts/check_architecture_test.sh pins this line byte for byte beside `check`'s own.
+# Four package processes share the test server; dbtest bounds each owner pool.
 test: ## Test selected packages, reusing successful results when inputs match
-	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m $(TEST_FLAGS)
+	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m -p=4 $(TEST_FLAGS)
 
 vet: ## Run go vet
 	go vet ./...
@@ -408,7 +409,7 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 # scripts/race_binary_timeout_test.py asks the test binary what it was given, and
 # scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) -timeout=30m -p=4 $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
@@ -453,20 +454,10 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
 # history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
 #
-# scripts/mobile_journey_fetch_test.sh runs the journey job's own download step, as the workflow
-# file states it, against a server on localhost that behaves like this forge: a 200 and a sign-in
-# page to an anonymous request, the build to one carrying the job's token. It refuses each way the
-# journey was wrong or is one edit away from being wrong — the job not on the label that has a
-# device, a second job taking that label, a fetch step not given the job's token, a job-level
-# PK_MOBILE_APK competing with the step's file:// export — and then asks the harness's own curl and
-# sha256sum to open what the step exported. It is here rather than only in the mobile job because
-# every one of those is a fact about a workflow file, which `check` already reads for its two other
-# such facts above, and because the mobile job is the worst place to learn them: the journey has no
-# device when they are wrong, and 40 minutes to find that out. It needs python3, curl and sha256sum
-# — and PyYAML, which the job image does not ship: measured 2026-10-05 by running this file inside
-# the digest ci.yml names (gitea/runner-images:ubuntu-24.04@sha256:e77e2b1e…), where it died at
-# `ModuleNotFoundError: No module named 'yaml'` and answered `ok` once that package came in on the
-# line that installs the socket probe. ci.yml carries it for that reason. Both files, 0.2s.
+# The mobile fetch case runs the workflow step against a local forge and checks the digest
+# and file:// handoff. The precedence case keeps the repository secret ahead of the job token:
+# putting the job token first prevents the fetch from using the repository credential.
+# Both need PyYAML, which CI installs before this gate.
 #
 # scripts/ci_go_cache_test.sh asks the same kind of question about the Go build cache T-0277 gave the
 # two kernel Go jobs: which key each one restores under, and what may never be true about it. Both of
@@ -541,7 +532,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# rather than a fix: those cases refuse a re-pin that drops the count, the package pattern or any
 	# stated bound, so what a re-pin may change is everything around the parts that make the run fresh.
 	# The alternative is a fresh gate that narrows because nobody looked at it.
-	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m
+	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m -p=4
 	bash scripts/check_architecture_test.sh
 	# scripts/provenance_case_paths_test.sh asks whether the provenance cases the architecture gate runs
 	# are still the files it invokes. The gate keeps that list in one `for provenance_case in …; do`
@@ -587,6 +578,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
+	bash scripts/mobile_journey_fetch_token_precedence_test.sh
 	bash scripts/ci_go_cache_test.sh
 	# scripts/ci_browser_host_share_test.sh asks the two browser suites of the workflow the question
 	# their refusals cannot answer from inside a runner: does a step that starts a Chromium ask the host
@@ -895,8 +887,13 @@ trace: ## Start the local OTLP collector that prints every span it receives
 	  || { echo "collector is not up at 127.0.0.1:$(PLATFORMKIT_OTLP_PORT); its own log:"; docker compose --profile telemetry logs --tail 20 collector; exit 1; }
 	@echo "collector up on 127.0.0.1:$(PLATFORMKIT_OTLP_PORT): point telemetry.otlp_endpoint at that host:port and read spans with 'docker compose logs -f collector'"
 
-# The profile is named here as well, because `down` is the file's teardown: a
-# goal that stopped two containers and left a third holding port 4317 would half
-# finish the one job it has. It stays destructive of volumes, as before.
-down: ## Stop Postgres, NATS, Valkey, the object store, the mail catcher and the collector, and drop their volumes
-	docker compose --profile telemetry down -v
+# Every profile is named here as well, because `down` is the file's teardown: a goal
+# that stopped four containers and left a fifth holding a port would half finish the
+# one job it has. That is measured here and not taken from a comment: a `down` naming
+# one profile and not the other does not stop the other's container, prints
+# `Network … Resource is still in use`, and exits 0 — so a stack that had ever started
+# the candidate store would leak one container every time it tore itself down, which is
+# the cost this repository is trying to shrink rather than add. It stays destructive of
+# volumes, as before.
+down: ## Stop Postgres, NATS, Valkey, the object stores, the mail catcher and the collector, and drop their volumes
+	docker compose --profile telemetry --profile floci down -v

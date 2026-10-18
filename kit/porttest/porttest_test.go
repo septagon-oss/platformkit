@@ -1,0 +1,653 @@
+package porttest
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
+)
+
+// The generated suite against a fake that is right. It is the positive control
+// and it is also the readable half of this file: the names below are the cases
+// every port of this shape now owes its consumers.
+func TestRunPassesAFakeThatIsRight(t *testing.T) {
+	Run(t, noteSuite(knobs{}))
+}
+
+func TestNamesAreUnchanged(t *testing.T) {
+	want := []string{
+		"File: the operation says what it did",
+		"File: the same command twice writes nothing and says nothing",
+		"File: an unknown row is not found",
+		"File: a caller with no grant is refused and writes nothing",
+		"File: a revision the row is not at is refused and writes nothing",
+		"File: another tenant cannot reach the row",
+		"a sealed note is not filed twice",
+		"the note carries the day it was filed",
+	}
+	got := Names(noteSuite(knobs{}))
+	if len(got) != len(want) {
+		t.Fatalf("the suite runs %d cases:\n%s\nwant %d:\n%s",
+			len(got), strings.Join(got, "\n"), len(want), strings.Join(want, "\n"))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("case %d is %q, want %q; a case name is a requirement's evidence", i, got[i], want[i])
+		}
+	}
+}
+
+// The three mutation proofs: a broken fake, and the generated case that bites.
+
+func TestRefusalCaseFailsWhenTheWriteLands(t *testing.T) {
+	// The module's own case is left out here: it reports through the testing.T
+	// it was handed, as a hand-written case does, and this test is about the
+	// cases the harness generates.
+	suite := noteSuite(knobs{writeFirst: true})
+	suite.Own = nil
+	log := watch(t, suite)
+	log.mustFail(t, "File: a caller with no grant is refused and writes nothing", "a refused call wrote")
+	log.mustFail(t, "a sealed note is not filed twice", "a refused call wrote")
+}
+
+func TestRetryCaseFailsWhenTheSecondCallEmits(t *testing.T) {
+	log := watch(t, noteSuite(knobs{emitAlways: true}))
+	log.mustFail(t, "File: the same command twice writes nothing and says nothing", "so it says nothing")
+	log.mustPassApartFrom(t, "File: the same command twice writes nothing and says nothing")
+}
+
+func TestRetryCaseFailsWhenTheSecondCallAnswersARowNothingWrote(t *testing.T) {
+	log := watch(t, noteSuite(knobs{answerMoves: true}))
+	log.mustFail(t, "File: the same command twice writes nothing and says nothing", "a row nothing wrote")
+	log.mustPassApartFrom(t, "File: the same command twice writes nothing and says nothing")
+}
+
+func TestTenantCaseFailsWhenTheStoreIsShared(t *testing.T) {
+	log := watch(t, noteSuite(knobs{oneTenant: true}))
+	log.mustFail(t, "File: another tenant cannot reach the row", "was not refused")
+	log.mustPassApartFrom(t, "File: another tenant cannot reach the row")
+}
+
+// TestTenantCaseFailsWhenTheRefusalTookTheRowAwayFromItsOwner is the tenant
+// case's own mutation proof, and the reason the store answers it rather than the
+// description.
+//
+// The Snapshot below reads through the other tenant's context, which is what a
+// description whose Provoke moves the world ends up doing: the refusal answered,
+// the row is gone from the tenant that owns it, and either side of the refused
+// call the snapshot renders the same nothing, because the visitor never saw the
+// row to begin with. "A refused call wrote nothing" is then written from the far
+// side of the wall, and only the store — which cannot be moved into another
+// tenant's by a closure — can say the row it held is gone.
+func TestTenantCaseFailsWhenTheRefusalTookTheRowAwayFromItsOwner(t *testing.T) {
+	suite := noteSuite(knobs{erases: true})
+	suite.Own = nil
+	suite.Ops[0].Snapshot = func(t *testing.T, w world, row uuid.UUID) string {
+		t.Helper()
+		stored, err := w.service.Note(w.elsewhere, row)
+		if err != nil {
+			return "no such note"
+		}
+		return fmt.Sprintf("filed=%v sealed=%v rev=%d", stored.Filed, stored.Sealed, stored.Rev)
+	}
+	const name = "File: " + string(Elsewhere)
+	log := watch(t, suite)
+	log.mustFail(t, name, "still be there for the tenant that owns it")
+	// The snapshot above reads through the visitor's context, which makes it blind
+	// to the note in every case and not only this one, so the harness now says so
+	// wherever a "writes nothing" assertion rests on it. The witness's own message
+	// above stays the tenant case's alone: it is the only case that asks the store.
+	for _, blind := range []string{
+		"File: " + string(Retry), "File: " + string(Unknown), "File: " + string(Denied),
+		"File: " + string(Stale), "a sealed note is not filed twice",
+	} {
+		log.mustFail(t, blind, "render the row the case names")
+	}
+	log.mustPassApartFrom(t, name, "File: "+string(Retry), "File: "+string(Unknown),
+		"File: "+string(Denied), "File: "+string(Stale), "a sealed note is not filed twice")
+}
+
+// TestTenantCaseFailsWhenTheRowWasTakenAwayDuringProvoke pins the window the
+// tenant case watches: from the moment the row is seeded, and not from the moment
+// the refused call is about to run. Provoke's documented job is to move the world,
+// and moving a world runs the implementation — so a row taken away there is the
+// same defect with the refused call left out, and a watch that started after it
+// would report the case green because the refusal still answers correctly.
+func TestTenantCaseFailsWhenTheRowWasTakenAwayDuringProvoke(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Own = nil
+	for i, r := range suite.Ops[0].Refusals {
+		if r.Kind == Elsewhere {
+			r.Provoke = func(t *testing.T, w world, row uuid.UUID) uuid.UUID {
+				t.Helper()
+				w.service.rows.Delete(w.ctx, row) // the setup runs, as Provoke may
+				return row
+			}
+			suite.Ops[0].Refusals[i] = r
+		}
+	}
+	const name = "File: " + string(Elsewhere)
+	log := watch(t, suite)
+	log.mustFail(t, name, "still be there for the tenant that owns it")
+	log.mustPassApartFrom(t, name)
+}
+
+// TestRunFailsEveryCaseWhoseSnapshotCannotSeeTheRow is the same hole as the one
+// 32aee9b closed, one field over. An answer that rendered nothing made the retry
+// compare two empty strings; a Snapshot that cannot tell the seeded row from a row
+// nobody seeded makes "writes nothing" compare two renderings nothing can move,
+// in the retry and in every refusal at once, and the fake under it is not even
+// wrong. The success case is silent below on purpose: it asserts the events and no
+// snapshot, so nothing about this rendering is owed there.
+func TestRunFailsEveryCaseWhoseSnapshotCannotSeeTheRow(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Own = nil
+	suite.Ops[0].Snapshot = func(*testing.T, world, uuid.UUID) string { return "no such note" }
+	log := watch(t, suite)
+	for _, blind := range []string{
+		"File: " + string(Retry), "File: " + string(Unknown), "File: " + string(Denied),
+		"File: " + string(Stale), "File: " + string(Elsewhere), "a sealed note is not filed twice",
+	} {
+		log.mustFail(t, blind, "render the row the case names")
+	}
+	if said := log.failures("File: " + string(Success)); len(said) > 0 {
+		t.Errorf("%q failed: %v; the success asserts what the call published, and no snapshot", "File: "+string(Success), said)
+	}
+	log.mustPassApartFrom(t, "File: "+string(Retry), "File: "+string(Unknown), "File: "+string(Denied),
+		"File: "+string(Stale), "File: "+string(Elsewhere), "a sealed note is not filed twice")
+}
+
+// TestRowBlindSuccessFailsWhenTheSnapshotCannotMove pays for the exemption the row
+// witness grants a per-tenant singleton. A row Ready does not name is not asked of
+// the Snapshot, because there is no row argument for it to read, and the one question
+// a rendering with no row argument can still answer is asked of the success case
+// instead: did it move across a call the description records as a write. A description
+// that renders a constant is refused there, because every "writes nothing" comparison
+// that rendering feeds is then one nothing can move. Delete the check in success and
+// this case reports green a port whose Snapshot renders one fixed string, which is a
+// singleton port with no assertion left in it.
+func TestRowBlindSuccessFailsWhenTheSnapshotCannotMove(t *testing.T) {
+	suite := rowBlindSuite(knobs{})
+	suite.Ops[0].Snapshot = func(*testing.T, world, uuid.UUID) string { return "nothing stored" }
+	watch(t, suite).mustFail(t, rowBlindSuccess, `compares two renderings nothing can move`)
+}
+
+// The floor: what Run refuses to run at all, before any case.
+
+func TestRunRefusesAMutatingOpWithNoUnknownCaseAndNoReason(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Refusals = withoutKind(suite.Ops[0].Refusals, Unknown)
+	watch(t, suite).mustRefuseTheSuite(t, "owes \"an unknown row is not found\" and neither describes it nor says why not")
+}
+
+func TestRunAcceptsASkipWithAReason(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Refusals = withoutKind(suite.Ops[0].Refusals, Unknown)
+	suite.Ops[0].Skip = map[Kind]string{Unknown: "the id comes from the route, which kit/rest has already resolved"}
+	log := watch(t, suite)
+	log.mustPassApartFrom(t)
+	if ran := log.names(); len(ran) != 7 {
+		t.Errorf("the suite ran %d cases, want the seven that are left: %v", len(ran), ran)
+	}
+}
+
+func TestRunRefusesASkipWithNoReason(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Refusals = withoutKind(suite.Ops[0].Refusals, Unknown)
+	suite.Ops[0].Skip = map[Kind]string{Unknown: ""}
+	watch(t, suite).mustRefuseTheSuite(t, "with no reason; the reason is the case")
+}
+
+func TestRunRefusesASkipForACaseThatIsDescribed(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Skip = map[Kind]string{Unknown: "the route resolves the id"}
+	watch(t, suite).mustRefuseTheSuite(t, "is described and skipped")
+}
+
+func TestRunRefusesTwoOpsWithOneName(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Ops = append(suite.Ops, suite.Ops[0])
+	watch(t, suite).mustRefuseTheSuite(t, "two operations named \"File\"")
+}
+
+// TestRunRunsEveryRefusalADescriptionMakes is the positive half of the promise
+// that no case is lost. Two refusals of one floor Kind — the same refusal owed
+// from two states, which is how a module writes "a resolved task cannot be
+// assigned" and "a closed task cannot be assigned" as two entries — are two
+// cases. Planning the first of each Kind ran one and dropped the other out of a
+// green suite: `problems` refuses two refusals sharing a name and a floor refusal
+// carries none, so the entries differed only in a sentence nobody compared, and
+// `Names` reported the shortened list, so the pin a module keeps pinned the loss.
+func TestRunRunsEveryRefusalADescriptionMakes(t *testing.T) {
+	const (
+		fromAFreshNote  = "File: an unknown row is not found on a fresh note"
+		fromASealedNote = "File: an unknown row is not found on a sealed note"
+	)
+	suite := noteSuite(knobs{})
+	first, second := suite.Ops[0].Refusals[0], suite.Ops[0].Refusals[0]
+	first.Name, second.Name = fromAFreshNote, fromASealedNote
+	suite.Ops[0].Refusals = append([]Refusal[world]{first, second}, suite.Ops[0].Refusals[1:]...)
+	log := watch(t, suite)
+	log.mustPassApartFrom(t)
+	for _, want := range []string{fromAFreshNote, fromASealedNote} {
+		if !slices.Contains(log.names(), want) {
+			t.Errorf("%q was described and never ran: %v", want, log.names())
+		}
+	}
+	// The unnamed shape is the same loss with less cover: two refusals of one Kind
+	// with no name of their own would run under one name, which is a case a
+	// requirements index cannot point at, so the floor refuses the description.
+	dup := noteSuite(knobs{})
+	dup.Ops[0].Refusals = append([]Refusal[world]{dup.Ops[0].Refusals[0]}, dup.Ops[0].Refusals...)
+	watch(t, dup).mustRefuseTheSuite(t, "two cases would run under the name")
+}
+
+// TestTheSharedNameRefusalSaysWhichFieldSharedTheSentence is the witness the fix to
+// review 10's second finding owes itself. The floor already refused two cases under
+// one sentence; what it said named the collision and not the cause. Both refusals
+// took the sentence `Op.Names` files under their Kind, which means "the case of this
+// Kind" and is one sentence per Kind only while at most one refusal of that Kind
+// carries none of its own — so the field to edit is that map entry, and a module
+// author handed "two cases share a name" has to rediscover it.
+func TestTheSharedNameRefusalSaysWhichFieldSharedTheSentence(t *testing.T) {
+	const sentence = "File: nobody's note is nobody's note"
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Names = map[Kind]string{Unknown: sentence}
+	suite.Ops[0].Refusals = append([]Refusal[world]{suite.Ops[0].Refusals[0]}, suite.Ops[0].Refusals...)
+	log := watch(t, suite)
+	log.mustRefuseTheSuite(t, "two cases would run under the name")
+	said := strings.Join(log.failures(""), "\n")
+	for _, want := range []string{"2 refusals of File", "Op.Names", "an unknown row is not found", "Refusal.Name"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the refusal says %q nowhere: %v", want, said)
+		}
+	}
+}
+
+// TestRunRefusesANameNoCaseRunsUnder is the other half of the field's own rule — a
+// field no case reads does not belong in the description. Op.Names is keyed by Kind,
+// so a sentence can be filed under a shape no case of the operation runs: a refusal
+// it neither describes nor owes, a retry it skips, the empty Kind, or a refusal that
+// answers with its own Refusal.Name, which wins. In every one of those the case runs
+// under the harness's words while the sentence the module wrote — which is what a
+// requirements index in a client repository points at — reaches nothing.
+func TestRunRefusesANameNoCaseRunsUnder(t *testing.T) {
+	for _, tc := range []struct {
+		what   string
+		file   func(*Suite[world])
+		refuse string
+	}{
+		{"a refusal the operation declines", func(s *Suite[world]) {
+			s.Ops[0].Refusals = withoutKind(s.Ops[0].Refusals, Unknown)
+			s.Ops[0].Skip = map[Kind]string{Unknown: "the id comes from the route, which kit/rest has already resolved"}
+			s.Ops[0].Names = map[Kind]string{Unknown: "File: nobody's note is nobody's note"}
+		}, "names the case it calls \"an unknown row is not found\" as \"File: nobody's note is nobody's note\" and no case runs under that name"},
+		{"a refusal that names itself", func(s *Suite[world]) {
+			s.Ops[0].Refusals[0].Name = "File: a note nobody filed is not a note"
+			s.Ops[0].Names = map[Kind]string{Unknown: "File: nobody's note is nobody's note"}
+		}, "no case runs under that name"},
+		{"a retry the operation skips", func(s *Suite[world]) {
+			s.Ops[0].Skip = map[Kind]string{Retry: "the command is a create with no idempotency key to repeat"}
+			s.Ops[0].Names = map[Kind]string{Retry: "File: filing it twice files it once"}
+		}, "no case runs under that name"},
+		{"the empty Kind, which names no shape of the floor", func(s *Suite[world]) {
+			s.Ops[0].Names = map[Kind]string{Named: "a sealed note is not filed twice"}
+		}, "files \"a sealed note is not filed twice\" under the empty Kind"},
+		{"an empty sentence, which names no case", func(s *Suite[world]) {
+			s.Ops[0].Names = map[Kind]string{Success: ""}
+		}, "carries an empty sentence under"},
+	} {
+		suite := noteSuite(knobs{})
+		tc.file(&suite)
+		t.Run(tc.what, func(t *testing.T) {
+			watch(t, suite).mustRefuseTheSuite(t, tc.refuse)
+		})
+	}
+}
+
+// TestAFloorRefusalNamedByItsOperationRunsUnderThatName is the cure the last test
+// refuses an unread name for: a sentence the module files under a refusal Kind is
+// the name that case runs under, where the map's key type and the README table both
+// put it. Refusal.Name still wins — the test above refuses the sentence that loses.
+func TestAFloorRefusalNamedByItsOperationRunsUnderThatName(t *testing.T) {
+	const sentence = "File: nobody's note is nobody's note"
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Names = map[Kind]string{Unknown: sentence}
+	log := watch(t, suite)
+	log.mustPassApartFrom(t)
+	if !slices.Contains(log.names(), sentence) {
+		t.Errorf("the module's sentence for the unknown-row case never reached a case name: %v", log.names())
+	}
+	if slices.Contains(log.names(), "File: an unknown row is not found") {
+		t.Errorf("the case ran under the harness's words beside the module's, so one refusal is two cases: %v", log.names())
+	}
+}
+
+func TestRunRefusesAnOwnCaseWithNoBecause(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Own[0].Because = ""
+	watch(t, suite).mustRefuseTheSuite(t, "is hand-written and says no reason")
+}
+
+func TestRunRefusesAMutatingOpWithNoSnapshot(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Snapshot = nil
+	watch(t, suite).mustRefuseTheSuite(t, "is unassertable without one")
+}
+
+// TestRunRefusesARefusalThatNamesAClassTheSuiteCannotClassify closes the same hole
+// in the class: World.Refused asks it through Suite.Classify, so a suite that names
+// a class on its refusals and then classifies nothing skipped the assertion in
+// silence and stayed green — the harness had a rule for a refusal with no Is and
+// none for the one party that could answer what class an error is in.
+func TestRunRefusesARefusalThatNamesAClassTheSuiteCannotClassify(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Classify = nil
+	watch(t, suite).mustRefuseTheSuite(t, "names the class correctable and the suite classifies nothing")
+}
+
+func TestRunRefusesARefusalWithNoIs(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Ops[0].Refusals[0].Is = nil
+	watch(t, suite).mustRefuseTheSuite(t, "what counts as that refusal is the port's own answer")
+}
+
+func TestRunRefusesAWorldThatHandsBackAZeroFixture(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.World = func(_ *testing.T, run func(world)) { run(world{}) }
+	log := watch(t, suite)
+	log.mustFail(t, "File: the operation says what it did", "zero fixture")
+}
+
+// The plumbing a module's fake embeds.
+
+func TestStorePanicsOutsideATenant(t *testing.T) {
+	store := NewStore(func(n note) uuid.UUID { return n.ID })
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Error("a store read outside a tenant answered; house rule 1 has no door that takes a tenant as an argument")
+		}
+	}()
+	store.Get(context.Background(), uuid.New())
+}
+
+func TestStoreHandsOutCopies(t *testing.T) {
+	ctx, store := oneTenantContext(), NewStore(func(n note) uuid.UUID { return n.ID })
+	row := note{Title: "the minutes"}
+	row.ID = uuid.New()
+	store.Put(ctx, row)
+
+	got, err := store.Get(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	got.Title = "somebody else's minutes"
+	if got.Title != "somebody else's minutes" {
+		t.Fatal("the row the store handed out could not be written to at all")
+	}
+	again, err := store.Get(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("Get again: %v", err)
+	}
+	if again.Title != "the minutes" {
+		t.Errorf("the store holds %q; a caller that mutates what it was handed cannot reach into the store", again.Title)
+	}
+}
+
+func TestStoreListsInInsertionOrder(t *testing.T) {
+	ctx, store := oneTenantContext(), NewStore(func(n note) uuid.UUID { return n.ID })
+	var titles []string
+	for _, title := range []string{"first", "second", "third", "fourth", "fifth"} {
+		row := note{Title: title}
+		row.ID = uuid.New()
+		store.Put(ctx, row)
+		titles = append(titles, title)
+	}
+	var got []string
+	for _, row := range store.All(ctx) {
+		got = append(got, row.Title)
+	}
+	if strings.Join(got, ",") != strings.Join(titles, ",") {
+		t.Errorf("the store lists %v, want %v; a list case cannot pass by luck", got, titles)
+	}
+}
+
+func TestStoreKeepsAnotherTenantsRowOutOfReach(t *testing.T) {
+	store := NewStore(func(n note) uuid.UUID { return n.ID })
+	here, there := oneTenantContext(), oneTenantContext()
+	row := note{Title: "the minutes"}
+	row.ID = uuid.New()
+	store.Put(here, row)
+
+	if _, err := store.Get(there, row.ID); !errors.Is(err, crud.ErrNotFound) {
+		t.Errorf("another tenant's read answered %v, want ErrNotFound; a row somebody else holds is not found either", err)
+	}
+	if rows := store.All(there); len(rows) != 0 {
+		t.Errorf("another tenant lists %d rows", len(rows))
+	}
+}
+
+func TestSeedRefusesARowValidateRefuses(t *testing.T) {
+	ctx := oneTenantContext()
+	fake := NewFake(time.Now(), nil)
+	store := NewStore(func(n note) uuid.UUID { return n.ID })
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Error("a note with no title was seeded; a fixture that seeds a row the database would refuse tests the fake's tolerance")
+		}
+	}()
+	Seed(ctx, fake, store, note{})
+}
+
+func TestRecorderRefusesAnUndeclaredEvent(t *testing.T) {
+	fake := NewFake(time.Now(), []string{"note.filed"})
+	if err := fake.Events.Emit("note.filed"); err != nil {
+		t.Fatalf("a declared event: %v", err)
+	}
+	if err := fake.Events.Emit("note.shredded"); err == nil {
+		t.Error("an undeclared event was recorded; an event a module never declared is a subscriber nobody wrote")
+	}
+	if got := fake.Events.Names(); len(got) != 1 || got[0] != "note.filed" {
+		t.Errorf("the recorder holds %v, want the one declared event", got)
+	}
+	if fake.Events.Count() != 1 {
+		t.Errorf("Count is %d, want 1", fake.Events.Count())
+	}
+}
+
+func TestClockIsUTC(t *testing.T) {
+	somewhere := time.FixedZone("UTC+7", 7*60*60)
+	clock := NewClock(time.Date(2026, 9, 26, 9, 0, 0, 0, somewhere))
+	if got := clock.Now(); got.Location() != time.UTC {
+		t.Errorf("the clock reads %v in %v, want UTC", got, got.Location())
+	}
+	clock.Advance(90 * time.Minute)
+	if got, want := clock.Now(), time.Date(2026, 9, 26, 3, 30, 0, 0, time.UTC); !got.Equal(want) {
+		t.Errorf("after an hour and a half the clock reads %v, want %v", got, want)
+	}
+	clock.Set(time.Date(2027, 1, 1, 0, 0, 0, 0, somewhere))
+	if got := clock.Now(); got.Location() != time.UTC {
+		t.Errorf("a clock set from another zone reads %v in %v", got, got.Location())
+	}
+}
+
+func TestDoRefusesACallerWhoHoldsNothingBeforeItReads(t *testing.T) {
+	ctx := oneTenantContext()
+	fake := NewFake(time.Now(), []string{"note.filed"})
+	store := NewStore(func(n note) uuid.UUID { return n.ID })
+	// No row and no grant: the grant is the first thing a command checks, so
+	// the answer is the denial and not "no such row".
+	_, err := Do(ctx, fake, store, Command[note]{
+		Permission: filePermission,
+		Denied:     errDenied,
+		Row:        uuid.New(),
+		Apply:      func(*note) []string { return []string{"note.filed"} },
+	})
+	if !errors.Is(err, errDenied) {
+		t.Errorf("Do answered %v, want the module's denial; a command that reads before it checks the grant tells a stranger the row exists", err)
+	}
+	if fake.Events.Count() != 0 {
+		t.Error("a refused command published something")
+	}
+}
+
+func TestDoRefusesAnUndeclaredEventWithoutWriting(t *testing.T) {
+	ctx := oneTenantContext()
+	fake := NewFake(time.Now(), []string{"note.filed"})
+	store := NewStore(func(n note) uuid.UUID { return n.ID })
+	row := Seed(ctx, fake, store, note{Title: "the minutes"})
+
+	_, err := Do(ctx, fake, store, Command[note]{
+		Row:   row,
+		Apply: func(n *note) []string { n.Filed = true; return []string{"note.shredded"} },
+	})
+	if err == nil {
+		t.Fatal("an undeclared event was published")
+	}
+	stored, err := store.Get(ctx, row)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.Filed {
+		t.Error("the row was written and the event was not; domain state and what the command says commit together")
+	}
+}
+
+// The test reporter. Run reports through a narrow interface so this file can
+// watch a generated case fail without failing the test that is watching.
+
+type transcript struct {
+	mu     sync.Mutex
+	order  []string
+	failed map[string][]string
+}
+
+type watcher struct {
+	t    *testing.T
+	name string
+	log  *transcript
+}
+
+func watch(t *testing.T, s Suite[world]) *transcript {
+	t.Helper()
+	log := &transcript{failed: map[string][]string{}}
+	run(watcher{t: t, log: log}, s)
+	return log
+}
+
+func (w watcher) T() *testing.T { return w.t }
+func (w watcher) Helper()       {}
+
+func (w watcher) Errorf(format string, args ...any) {
+	w.log.mu.Lock()
+	defer w.log.mu.Unlock()
+	w.log.failed[w.name] = append(w.log.failed[w.name], fmt.Sprintf(format, args...))
+}
+
+func (w watcher) Run(name string, f func(reporter)) bool {
+	w.log.mu.Lock()
+	w.log.order = append(w.log.order, name)
+	w.log.mu.Unlock()
+	f(watcher{t: w.t, name: name, log: w.log})
+	return len(w.log.failures(name)) == 0
+}
+
+func (tr *transcript) failures(name string) []string {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.failed[name]
+}
+
+func (tr *transcript) names() []string {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.order
+}
+
+// mustFail is the assertion every mutation proof makes: this case failed, and it
+// failed for the reason the harness is supposed to give.
+func (tr *transcript) mustFail(t *testing.T, name, because string) {
+	t.Helper()
+	said := tr.failures(name)
+	if len(said) == 0 {
+		t.Fatalf("%q passed against a fake that is wrong; it ran %v", name, tr.names())
+	}
+	if !strings.Contains(strings.Join(said, "\n"), because) {
+		t.Errorf("%q failed with %v, and none of it says %q", name, said, because)
+	}
+}
+
+// mustPassApartFrom is the other half of a mutation proof: one broken thing
+// fails one case, so a harness cannot pass this file by failing everything.
+func (tr *transcript) mustPassApartFrom(t *testing.T, expected ...string) {
+	t.Helper()
+	for _, name := range tr.names() {
+		if len(tr.failures(name)) == 0 {
+			continue
+		}
+		if !slices.Contains(expected, name) {
+			t.Errorf("%q also failed: %v", name, tr.failures(name))
+		}
+	}
+	if suite := tr.failures(""); len(suite) > 0 {
+		t.Errorf("the suite itself was refused: %v", suite)
+	}
+}
+
+// mustRefuseTheSuite is the floor: the description was refused before a case
+// ran, and the refusal said which correction to make.
+func (tr *transcript) mustRefuseTheSuite(t *testing.T, because string) {
+	t.Helper()
+	said := tr.failures("")
+	if len(said) == 0 {
+		t.Fatalf("the suite ran: %v", tr.names())
+	}
+	if !strings.Contains(strings.Join(said, "\n"), because) {
+		t.Errorf("the suite was refused with %v, and none of it says %q", said, because)
+	}
+	if ran := tr.names(); len(ran) > 0 {
+		t.Errorf("%d cases ran under a description that was refused: %v", len(ran), ran)
+	}
+}
+
+func withoutKind[W any](refusals []Refusal[W], kind Kind) []Refusal[W] {
+	var out []Refusal[W]
+	for _, r := range refusals {
+		if r.Kind != kind {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func oneTenantContext() context.Context {
+	return tenancy.WithTenant(context.Background(), tenancy.Tenant{ID: uuid.New(), Slug: "here"})
+}
+
+// TestRetryCaseFailsWhenTheAnswerRendersNothing is the same regression with a
+// different shape. Deleting the comparison between the two answers is a diff
+// somebody reads; emptying an operation's rendering is not, and it leaves the
+// retry comparing two empty strings, which is green whatever the port answered.
+// A mutating operation that renders nothing is refused out loud for that reason.
+func TestRetryCaseFailsWhenTheAnswerRendersNothing(t *testing.T) {
+	suite := noteSuite(knobs{})
+	suite.Own = nil
+	op := suite.Ops[0]
+	op.Call = func(w world, row uuid.UUID) (string, error) {
+		_, err := w.service.File(w.ctx, row, revisionOf(w, row))
+		return "", err
+	}
+	suite.Ops[0] = op
+	log := watch(t, suite)
+	log.mustFail(t, "File: the same command twice writes nothing and says nothing", "two empty strings")
+	log.mustPassApartFrom(t, "File: the same command twice writes nothing and says nothing")
+}
