@@ -183,6 +183,10 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	// reach an ask has here, which the access module fills once the two services
 	// it joins exist, and the shell the ask's two pages are drawn in, which is
 	// filled below from the skin the resolved composition answered with.
+	// The language edges no module may declare as a need, made before the sentence so
+	// the caller can fill them from the resolved plan and the sentence can hand the
+	// same holders to the modules. See latePorts.
+	ports := newLatePorts()
 	once := pkit.Deployment{
 		Environment: env,
 		Config:      cfg,
@@ -190,7 +194,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell, provision, grants, face := sentence(cfg, served)
+	a, ask, shell, provision, grants, face := sentence(cfg, served, ports)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -221,7 +225,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	// would otherwise keep advertising a door it stopped mounting, which is the
 	// same lie the ask above is built to avoid.
 	c.passwordDoor = c.auth != nil
-	*shell = faultShell(c.messages, c.granter)
+	*shell = faultShell(c.messages, c.granter, ports.chrome.Locale)
 	// The seed's tenant-creation hook, filled from the plan the sentence resolved
 	// to. It is another of the values this file fills after the resolution, beside
 	// the shell above, the face below and the reach the access module fills, and it
@@ -266,11 +270,13 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 // `served` is the copy that one sentence is worded from: for every caller in this
 // binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
 // different value to name, and sentences is what everybody else calls.
-func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace) {
+//
+// `ports` arrives from the caller rather than being made here because two readers
+// need the one value: the modules, which the access build fills them for, and the
+// chrome of the caller that resolves the plan — the refusal page and the ask pages
+// are worded in the language the same build discovered.
+func sentence(cfg config.Config, served pkit.Catalogue, ports *latePorts, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace) {
 	ask, shell, provision, grants, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}
-	// The two language edges no module may declare as a need: the product puts each
-	// holder and the access module fills it. See latePorts.
-	ports := newLatePorts()
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg, grants, ports),
@@ -308,7 +314,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 		Theme(design.Default()).
 		Languages(served).
 		Home(pinnedHome).
-		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
+		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s), ports.chrome.Locale) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
 		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
@@ -319,7 +325,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 // with no opinion about the words — including the cases that take a module out of
 // the list to ask what the composition resolves to without its provider.
 func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace) {
-	return sentence(cfg, catalogues(), without...)
+	return sentence(cfg, catalogues(), newLatePorts(), without...)
 }
 
 // omitted takes the names a case asked to leave out of the list. It exists for

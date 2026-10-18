@@ -258,7 +258,13 @@ func access(ask *accessReach, ports *latePorts) *pkit.Module {
 		// here rather than by the product because the answer reads the user service,
 		// and the account control beside it writes through the same service — one
 		// fact, one owner, reached from the two doors a person uses it through.
-		pkit.Put[admincontracts.Locale](w, accountLocale{users: users}.Locale)
+		//
+		// The same answer goes to the chrome holder: the page a guard renders ahead
+		// of any module is composed with the sentence, so it cannot read this port and
+		// is given the late holder instead (see pageLocale).
+		resolve := accountLocale{users: users}.Locale
+		ports.chrome.resolve = resolve
+		pkit.Put[admincontracts.Locale](w, resolve)
 		pkit.Put[admincontracts.AccountLanguage](w, accountLanguage{users: users})
 		pkit.Put[admincontracts.AccountLanguageVersion](w, accountLanguage{users: users})
 		// Recipients joins the two modules that each own half the answer. Tell

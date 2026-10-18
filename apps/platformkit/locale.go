@@ -169,22 +169,43 @@ func (m *tenantLocaleManager) MaySetOwnLocale(ctx context.Context, _ db.Tx[db.Te
 	return m.auth.Allowed(ctx, who, tenancy.Grant{Permission: tenantcontracts.PermissionLocaleManage})
 }
 
-// latePorts are the two language edges this product answers for its own modules,
-// both of them late-bound because the service that answers is built after the
-// module that reads it: which languages a person may choose is the control plane's
-// fact and the control plane needs the user service first, and who may set a
-// tenant's languages is the authorizer's answer and the authorizer is built from
-// every module including the tenant one.
+// pageLocale is the language the pages this application draws for a person a guard
+// refused are worded in.
 //
-// They are one value because they are one decision: the product puts both holders
+// It is the same answer the module shells get — accountLocale, the person's own
+// durable choice first, the sign-in link's `?lang=` after it — held late because the
+// refusal page is composed with the sentence, before any service exists, and the
+// answer reads the user service. Until the access module fills it, the page falls
+// back to the half of the answer that needs no caller, which is what it did before
+// the choice existed at all.
+type pageLocale struct{ resolve func(context.Context, page.Request) string }
+
+func (l *pageLocale) Locale(ctx context.Context, r page.Request) string {
+	if l.resolve == nil {
+		return loginLocale(ctx, r)
+	}
+	return l.resolve(ctx, r)
+}
+
+// latePorts are the language edges this product answers for its own modules and
+// chrome, all of them late-bound because the service that answers is built after
+// the reader: which languages a person may choose is the control plane's
+// fact and the control plane needs the user service first, who may set a
+// tenant's languages is the authorizer's answer and the authorizer is built from
+// every module including the tenant one, and the language a refusal page is
+// worded in reads the same user service the guard's page is composed before.
+//
+// They are one value because they are one decision: the product puts every holder
 // needing nobody, and the access module — the first build that has met the control
-// plane and the authorizer — fills them. Neither edge is a declared need in either
-// direction, because the graph they would make is the cycle pkit refuses.
+// plane, the authorizer and the user service — fills them. No edge here is a
+// declared need in either direction, because the graph they would make is the
+// cycle pkit refuses.
 type latePorts struct {
 	locales     *tenantLocales
 	localeGrant *tenantLocaleManager
+	chrome      *pageLocale
 }
 
 func newLatePorts() *latePorts {
-	return &latePorts{locales: &tenantLocales{}, localeGrant: &tenantLocaleManager{}}
+	return &latePorts{locales: &tenantLocales{}, localeGrant: &tenantLocaleManager{}, chrome: &pageLocale{}}
 }
