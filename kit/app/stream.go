@@ -133,9 +133,27 @@ type streamAuthority struct {
 	conn         func(context.Context) (*db.Conn, bool)
 	authenticate func(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error)
 	authorize    httpx.Authorizer
+	// catalogue is the composition's permissions as its manifests declared them — the
+	// list httpx.Declare receives. The stream asks about a permission token and the
+	// authorizer's question is a grant, and the one fact between the two spellings is
+	// module.Permission.Operator: an authorizer that reads it must read the flag the
+	// manifest wrote and not the zero value beside a token that has none.
+	catalogue []tenancy.Grant
 }
 
-func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, asks []stream.Grant) (stream.Renewal, error) {
+// grantOf is the catalogue's answer to what kind of permission this token is: false
+// for a token no composed module declared, which no ask of this kernel's can name — a
+// topic no module streams is refused before anyone is asked.
+func (s streamAuthority) grantOf(permission string) tenancy.Grant {
+	for _, g := range s.catalogue {
+		if g.Permission == permission {
+			return tenancy.Grant{Permission: permission, Operator: g.Operator}
+		}
+	}
+	return tenancy.Grant{Permission: permission}
+}
+
+func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, asks []string) (stream.Renewal, error) {
 	var out stream.Renewal
 	conn, ok := s.conn(ctx)
 	if !ok {
@@ -156,16 +174,16 @@ func (s streamAuthority) Renew(ctx context.Context, tenant tenancy.Tenant, r *ht
 		// know whose roles to resolve.
 		ctx = tenancy.WithPrincipal(ctx, principal)
 		for _, ask := range asks {
-			// The declaration's operator flag travels with the question, as it does at
-			// the route guard, so an authorizer that reads it reads the same grant the
-			// manifest wrote. A tenant that is not the operator's never gets asked at
-			// all: kit/stream answers that half from the declaration and the tenant.
-			allowed, err := s.authorize.Allowed(ctx, tenant, tenancy.Grant{Permission: ask.Permission, Operator: ask.Operator})
+			// The grant asked is the one the catalogue names, operator flag and all, as
+			// it is at the route guard. A tenant that is not the operator's is never
+			// asked about the operator's own permission at all: kit/stream answers that
+			// half from the declaration and the tenant, before this call.
+			allowed, err := s.authorize.Allowed(ctx, tenant, s.grantOf(ask))
 			if err != nil {
 				return err
 			}
 			if !allowed {
-				out.Refused = append(out.Refused, ask.Permission)
+				out.Refused = append(out.Refused, ask)
 			}
 		}
 		return nil
@@ -193,7 +211,7 @@ func (a *App) streamHub(registry *stream.Registry) func() (*stream.Hub, error) {
 			built = stream.New(stream.Deps{
 				Transport: transport,
 				Registry:  registry,
-				Authority: streamAuthority{conn: a.held.read, authenticate: a.opts.Authenticate, authorize: a.opts.Authorize},
+				Authority: streamAuthority{conn: a.held.read, authenticate: a.opts.Authenticate, authorize: a.opts.Authorize, catalogue: a.permissionCatalogue()},
 				Limits:    limits,
 				Log:       a.log,
 			})

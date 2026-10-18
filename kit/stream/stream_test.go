@@ -216,7 +216,7 @@ type fakeAuthority struct {
 	calls   int
 }
 
-func (f *fakeAuthority) Renew(context.Context, tenancy.Tenant, *http.Request, []Grant) (Renewal, error) {
+func (f *fakeAuthority) Renew(context.Context, tenancy.Tenant, *http.Request, []string) (Renewal, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++

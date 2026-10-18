@@ -112,29 +112,14 @@ type Clock interface{ Now() time.Time }
 // transaction of the request's, so an implementation that opens one with db.Run
 // opens one of its own and ends it inside the call.
 //
-// Each ask carries the declaring manifest's half of the question with it, because
-// "does this caller hold this grant" is only half of "may this caller do this": see
-// Grant. A grant the connection's own tenant may not exercise at all is never asked
-// of it — the hub answers that from the declaration and the tenant, as the request
-// guard does, and asking a customer's authorizer about the operator's own permission
-// would hand it a question it has no answer to.
+// asks names each distinct permission the topics' policies name, spelled as the
+// manifest that defines it spells it, and Refused answers in the same spelling. The
+// other half of the route guard's question — whether this tenant may hold the
+// permission at all, which module.Permission.Operator answers — is answered by the hub
+// from the declaration before any ask leaves: what reaches an implementation is what
+// that tenant may exercise, and the composition asks about it as it declares it.
 type Authority interface {
-	Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, asks []Grant) (Renewal, error)
-}
-
-// Grant is one grant a connection's topic policies name, asked the way the route
-// guard asks it. It is a struct and not a bare token for the reason tenancy.Grant
-// is: "does this caller hold it" and "is this a tenant entitled to hold it at all"
-// are two questions, the second is answered before the first is asked, and the answer
-// to the second is in the manifest that declared the permission and nowhere in the
-// caller or the tenant's roles.
-type Grant struct {
-	// Permission is the token, spelled as the manifest that defines it spells it.
-	Permission string
-	// Operator is the declaring module's module.Permission.Operator: this is the
-	// installation's own permission, and a tenant that is not the operator's cannot
-	// exercise it however its roles are written.
-	Operator bool
+	Renew(ctx context.Context, tenant tenancy.Tenant, r *http.Request, asks []string) (Renewal, error)
 }
 
 // Renewal is one answer to Authority.Renew.
@@ -824,39 +809,28 @@ func (h *Hub) withdraw(c *connection, t Topic, w http.ResponseWriter, rc *http.R
 	return nil
 }
 
-func grantsOf(topics []Topic) []Grant {
-	var out []Grant
-	add := func(g Grant) {
-		for _, has := range out {
-			if has.Permission == g.Permission {
-				return
-			}
-		}
-		out = append(out, g)
-	}
+// askable splits one connection's topics into the permissions its tenant's authorizer
+// may be asked about, and the permissions that tenant may not exercise at all. The
+// second half is the declaration's operator boundary, and it is answered here rather
+// than by the caller for the same reason the connect check asks the same Authority the
+// heartbeat does: the two decisions are one decision, and a tenant's authorizer
+// answering about a permission that is not the tenant's is a question it cannot answer
+// honestly — the module's own authorizer reads its tenant's roles and reads them as
+// its tenant's. One permission is one question however many topics name it.
+func askable(tenant tenancy.Tenant, topics []Topic) (asks []string, outside []string) {
 	for _, t := range topics {
 		if t.Policy.Kind() != module.KindGrant {
 			continue
 		}
-		add(Grant{Permission: t.Policy.Grant(), Operator: t.Operator})
-	}
-	return out
-}
-
-// askable splits one connection's topics into the grants its tenant's authorizer may
-// be asked about, and the grants that tenant may not exercise at all. The second half
-// is the declaration's operator boundary, and it is answered here rather than by the
-// caller for the same reason the connect check asks the same Authority the heartbeat
-// does: the two decisions are one decision, and a tenant's authorizer answering about
-// a permission that is not the tenant's is a question it cannot answer honestly — the
-// module's own authorizer reads its tenant's roles and reads them as its tenant's.
-func askable(tenant tenancy.Tenant, topics []Topic) (asks []Grant, outside []string) {
-	for _, g := range grantsOf(topics) {
-		if g.Operator && !tenant.Operator {
-			outside = append(outside, g.Permission)
+		grant := t.Policy.Grant()
+		if slices.Contains(asks, grant) || slices.Contains(outside, grant) {
 			continue
 		}
-		asks = append(asks, g)
+		if t.Operator && !tenant.Operator {
+			outside = append(outside, grant)
+			continue
+		}
+		asks = append(asks, grant)
 	}
 	return asks, outside
 }

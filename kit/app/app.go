@@ -770,6 +770,20 @@ func useJetStream(mode string, role Role) (bool, error) {
 // the one part of a composition those calls can run differently, and what it wrote
 // first is what every later one is judged to.
 //
+// permissionCatalogue is every permission the composed manifests declared, in the
+// spelling the kernel publishes them in: httpx.Declare receives this list, and the
+// live door asks its authorizer with a grant of the same shape, so a permission read
+// as a stream is asked about with the operator flag it carries at its own route.
+func (a *App) permissionCatalogue() []tenancy.Grant {
+	var out []tenancy.Grant
+	for _, m := range a.mods {
+		for _, p := range m.Permissions {
+			out = append(out, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
+		}
+	}
+	return out
+}
+
 // Every pass sees what every other sees, because a module's Routes is handed
 // httpx.Surfaces and nothing else: the composition's recorded shape —
 // Resources, Permissions, Recorded, Mounted — a SystemToken, which is a capability
@@ -817,13 +831,7 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	// The catalogue before the routes: a module that validates a permission
 	// somebody typed asks the kernel for the list, and Routes is the one moment
 	// it is being wired and the whole composition is known.
-	var catalogue []tenancy.Grant
-	for _, m := range a.mods {
-		for _, p := range m.Permissions {
-			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
-		}
-	}
-	api.Declare(catalogue)
+	api.Declare(a.permissionCatalogue())
 
 	for _, m := range a.mods {
 		// A moved address is registered before any route, so the surface gate below
