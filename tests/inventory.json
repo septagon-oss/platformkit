@@ -28341,6 +28341,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/command_default_replacement_test.go",
+   "id": "kit/rest/command_default_replacement_test.go#TestExplicitEmptyMapReplacesCommandDefaultThroughBothAdapters",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestExplicitEmptyMapReplacesCommandDefaultThroughBothAdapters",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/command_defaults_test.go",
    "id": "kit/rest/command_defaults_test.go#TestCommandDefaultsRefuseUndecodableTypedDeclarations",
    "kind": "go",
@@ -28716,6 +28735,44 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/deck_command_authorization_test.go",
+   "id": "kit/rest/deck_command_authorization_test.go#TestDeckCommandClosureRefusesTheSameMissingGrantAsItsRoute",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestDeckCommandClosureRefusesTheSameMissingGrantAsItsRoute",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/deck_input_schema_test.go",
+   "id": "kit/rest/deck_input_schema_test.go#TestDeckRefusesPromotedArgumentsWithDistinctJSONNames",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestDeckRefusesPromotedArgumentsWithDistinctJSONNames",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
    "verdict": "keep"
   },
   {
@@ -72465,7 +72522,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1935,
+  "files": 1938,
   "forge_runs": [
    408,
    413,
@@ -72499,7 +72556,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3121,
+   "behaviour": 3124,
    "composition": 432,
    "contract": 21,
    "journey": 97
@@ -72518,9 +72575,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3671,
+  "rows": 3674,
   "tiers": {
-   "merge": 2332,
+   "merge": 2335,
    "nightly": 97,
    "push": 1242
   },
@@ -72528,13 +72585,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1708,
+   "keep": 1711,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3315,
+   "keep": 3318,
    "keep-rewrite": 140,
    "merge": 216
   }

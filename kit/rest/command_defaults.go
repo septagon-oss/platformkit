@@ -60,20 +60,36 @@ func inputSchemaFault(in reflect.Type, fields []crud.Field) string {
 	if in.Kind() != reflect.Struct {
 		return "input is not a declared struct"
 	}
-	for _, sf := range reflect.VisibleFields(in) {
-		if !sf.IsExported() || jsonNameOf(sf) == "-" {
+	// Go name collisions can hide promoted fields from VisibleFields even when
+	// distinct JSON tags expose them. Walk embeddings without that name filter.
+	pending := []reflect.Type{in}
+	seen := map[reflect.Type]bool{}
+	for len(pending) > 0 {
+		typ := pending[0]
+		pending = pending[1:]
+		if seen[typ] {
 			continue
 		}
-		name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
-		embedded := sf.Type
-		if embedded.Kind() == reflect.Pointer {
-			embedded = embedded.Elem()
-		}
-		if sf.Anonymous && name == "" && embedded.Kind() == reflect.Struct {
-			continue
-		}
-		if _, ok := entity.FieldNamed(fields, jsonNameOf(sf)); !ok {
-			return fmt.Sprintf("argument %q is absent from the input schema", jsonNameOf(sf))
+		seen[typ] = true
+		for i := range typ.NumField() {
+			sf := typ.Field(i)
+			if jsonNameOf(sf) == "-" {
+				continue
+			}
+			name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+			embedded := sf.Type
+			if embedded.Kind() == reflect.Pointer {
+				embedded = embedded.Elem()
+			}
+			if sf.Anonymous && name == "" && embedded.Kind() == reflect.Struct {
+				pending = append(pending, embedded)
+				continue
+			}
+			if sf.IsExported() {
+				if _, ok := entity.FieldNamed(fields, jsonNameOf(sf)); !ok {
+					return fmt.Sprintf("argument %q is absent from the input schema", jsonNameOf(sf))
+				}
+			}
 		}
 	}
 	return ""
