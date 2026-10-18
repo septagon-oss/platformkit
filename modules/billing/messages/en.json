@@ -382,5 +382,86 @@
     "plural": {
       "": "this subscription owes for the period ending %s; it is settled before the plan changes"
     }
+  },
+  "hints.billing/plan.enum.interval.month": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Monthly",
+    "plural": {
+      "": "Monthly"
+    }
+  },
+  "hints.billing/plan.enum.interval.year": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Yearly",
+    "plural": {
+      "": "Yearly"
+    }
+  },
+  "hints.billing/plan.field.features.help": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "What a person gets on this plan",
+    "plural": {
+      "": "What a person gets on this plan"
+    }
+  },
+  "hints.billing/plan.field.features.label": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Includes",
+    "plural": {
+      "": "Includes"
+    }
+  },
+  "hints.billing/plan.field.interval.label": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Billing period",
+    "plural": {
+      "": "Billing period"
+    }
+  },
+  "hints.billing/plan.field.priceCents.label": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Price",
+    "plural": {
+      "": "Price"
+    }
+  },
+  "hints.billing/plan.group.billing": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Billing",
+    "plural": {
+      "": "Billing"
+    }
+  },
+  "hints.billing/plan.plural": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "plans",
+    "plural": {
+      "": "plans"
+    }
+  },
+  "hints.billing/plan.singular": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "plan",
+    "plural": {
+      "": "plan"
+    }
   }
 }

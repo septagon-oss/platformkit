@@ -402,5 +402,149 @@
     "plural": {
       "": "role %q is not a lower-case identifier"
     }
+  },
+  "hints.user/user.command.approve-registration.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Approve",
+    "plural": {
+      "": "Approve"
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.body": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "They will not be able to sign in. An administrator can reactivate them.",
+    "plural": {
+      "": "They will not be able to sign in. An administrator can reactivate them."
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.confirmLabel": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Deactivate",
+    "plural": {
+      "": "Deactivate"
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.title": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Deactivate this person?",
+    "plural": {
+      "": "Deactivate this person?"
+    }
+  },
+  "hints.user/user.command.deactivate.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Deactivate",
+    "plural": {
+      "": "Deactivate"
+    }
+  },
+  "hints.user/user.command.handle.field.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Username",
+    "plural": {
+      "": "Username"
+    }
+  },
+  "hints.user/user.command.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Set username",
+    "plural": {
+      "": "Set username"
+    }
+  },
+  "hints.user/user.command.roles.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Change roles",
+    "plural": {
+      "": "Change roles"
+    }
+  },
+  "hints.user/user.command.set-password.field.password.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "New password",
+    "plural": {
+      "": "New password"
+    }
+  },
+  "hints.user/user.command.set-password.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Set password",
+    "plural": {
+      "": "Set password"
+    }
+  },
+  "hints.user/user.field.displayName.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Name",
+    "plural": {
+      "": "Name"
+    }
+  },
+  "hints.user/user.field.handle.help": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Lower-case name this person answers to in this tenant",
+    "plural": {
+      "": "Lower-case name this person answers to in this tenant"
+    }
+  },
+  "hints.user/user.field.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Username",
+    "plural": {
+      "": "Username"
+    }
+  },
+  "hints.user/user.group.people": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "People",
+    "plural": {
+      "": "People"
+    }
+  },
+  "hints.user/user.plural": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "people",
+    "plural": {
+      "": "people"
+    }
+  },
+  "hints.user/user.singular": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "person",
+    "plural": {
+      "": "person"
+    }
   }
 }

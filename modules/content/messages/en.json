@@ -365,5 +365,140 @@
     "plural": {
       "": "archived content is not published from the archive; unpublish it first"
     }
+  },
+  "hints.content/content.command.archive.confirmation.body": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "It stops being served. You can publish it again later.",
+    "plural": {
+      "": "It stops being served. You can publish it again later."
+    }
+  },
+  "hints.content/content.command.archive.confirmation.confirmLabel": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Archive",
+    "plural": {
+      "": "Archive"
+    }
+  },
+  "hints.content/content.command.archive.confirmation.title": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Archive this page?",
+    "plural": {
+      "": "Archive this page?"
+    }
+  },
+  "hints.content/content.command.archive.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Archive",
+    "plural": {
+      "": "Archive"
+    }
+  },
+  "hints.content/content.command.publish.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publish",
+    "plural": {
+      "": "Publish"
+    }
+  },
+  "hints.content/content.command.unpublish.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Unpublish",
+    "plural": {
+      "": "Unpublish"
+    }
+  },
+  "hints.content/content.field.coverImageId.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "File id of the cover picture",
+    "plural": {
+      "": "File id of the cover picture"
+    }
+  },
+  "hints.content/content.field.coverImageId.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Cover",
+    "plural": {
+      "": "Cover"
+    }
+  },
+  "hints.content/content.field.kind.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Type",
+    "plural": {
+      "": "Type"
+    }
+  },
+  "hints.content/content.field.publishedAt.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Published",
+    "plural": {
+      "": "Published"
+    }
+  },
+  "hints.content/content.field.slug.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Used to build this page's web address",
+    "plural": {
+      "": "Used to build this page's web address"
+    }
+  },
+  "hints.content/content.field.slug.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Address name",
+    "plural": {
+      "": "Address name"
+    }
+  },
+  "hints.content/content.group.content": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Content",
+    "plural": {
+      "": "Content"
+    }
+  },
+  "hints.content/content.plural": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "pages",
+    "plural": {
+      "": "pages"
+    }
+  },
+  "hints.content/content.singular": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "page",
+    "plural": {
+      "": "page"
+    }
   }
 }

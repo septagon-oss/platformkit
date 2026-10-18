@@ -30,7 +30,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await page.getByLabel('Title').fill(title);
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Inspect the supply hose');
-  await page.getByLabel('Due At').fill('2026-12-01T14:30');
+  await page.getByLabel('Due', { exact: true }).fill('2026-12-01T14:30');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // The write redirects to the row it created.
@@ -48,7 +48,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await expect(page.getByLabel('Due', { exact: true })).not.toHaveValue('');
   await page.getByLabel('Title').fill(renamed);
   await page.getByLabel('Description').fill('');
-  await page.getByLabel('Due At').fill('');
+  await page.getByLabel('Due', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page).toHaveURL(row);
   await expect(page.getByRole('heading', { name: renamed })).toBeVisible();

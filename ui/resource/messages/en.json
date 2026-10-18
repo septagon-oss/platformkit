@@ -278,5 +278,23 @@
     "plural": {
       "": "A record already uses one of these values. Change the duplicate value and try again."
     }
+  },
+  "screens.page": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Go to page %s",
+    "plural": {
+      "": "Go to page %s"
+    }
+  },
+  "screens.current_page": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Page %s, current page",
+    "plural": {
+      "": "Page %s, current page"
+    }
   }
 }
