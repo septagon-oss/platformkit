@@ -30,7 +30,7 @@ import (
 // list, so the case fails the same way whether the command prints nothing, the
 // wrong thing or the right thing about a row it did not change.
 func TestTheRepairCommandListsBeforeItRemoves(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 
