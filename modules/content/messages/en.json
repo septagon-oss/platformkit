@@ -316,9 +316,9 @@
     "references": [
       "modules/content/contracts/content.go"
     ],
-    "translation": "a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page",
+    "translation": "a body is at most %d Markdown characters",
     "plural": {
-      "": "a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page"
+      "": "a body is at most %d Markdown characters"
     }
   },
   "invalid.content.kind": {

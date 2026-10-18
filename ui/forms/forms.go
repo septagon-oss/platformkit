@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 )
 
 // Field presents an existing entity definition. Label and Options supply display
@@ -22,12 +23,55 @@ import (
 type Field struct {
 	Definition entity.Field
 	Label      string
-	// Help is the note under the control. Empty says "use the field's own Doc",
-	// which is what a form rendered without a catalog writes; a screen that
-	// negotiates a language passes the same sentence in that language, because a
-	// person reading a form in Portuguese reads its notes in Portuguese too.
+	// Help is the line under the control: what resource.Words.FieldHelp answers for
+	// the field — the author's declared `help:` when they wrote one, in the
+	// request's language, the field's Doc when they did not. Empty falls back to
+	// Doc, so a caller that projects no reading words at the control (a design
+	// export, a test) reads what it always read. The label beside it and this line
+	// are the same request's two words: a caller that translates one translates
+	// both.
 	Help    string
 	Options []components.SelectOption
+	// Editor carries what a widget:richtext field's chrome needs beyond the
+	// field: the record's own address and the revision this form quotes, the key
+	// an unsaved draft is kept under, the route an image is uploaded to and the
+	// deployment's stated ceiling for one.
+	//
+	// Each is decided by whoever draws the form — ui/resource for a generated
+	// screen — and each is absent rather than guessed when it cannot be known:
+	// no Endpoint means no autosave and a draft kept on this device instead, no
+	// DraftKey means nothing is kept at all (a new record has no key to be kept
+	// under), no FileUpload means the session may not upload and the image entry
+	// is not drawn. A control the browser assembled out of guesses is a control
+	// that fails at the server instead of where the person can see why.
+	Editor Editor
+}
+
+// Editor is the rich text field's server-side answer to "what may this browser
+// do, and where". Empty fields mean the feature is off for this field; the glue
+// reads the attributes this data is drawn into and never invents a URL, a key or
+// a permission of its own.
+type Editor struct {
+	// Endpoint is the record's own REST address, and ETag the quoted revision this
+	// form was drawn from. Both empty means the resource takes no expected
+	// version, so the editor saves nothing as the author writes.
+	Endpoint, ETag string
+	// DraftKey is where an unsaved draft is kept in this browser, composed here
+	// from the tenant, the resource, the record and the field — never by the page.
+	DraftKey string
+	// FileUpload is the route an image is posted to, and Limits the sentence that
+	// states the formats and the ceiling before any refusal.
+	FileUpload, Limits string
+	// ImageSrc is where one stored file's bytes are read back, with {file} standing
+	// for the id an upload returned: the address the editor draws a picture from
+	// while the document keeps the pk-file reference it posts. Empty means no
+	// preview is drawn and a reference shows as it was written.
+	ImageSrc string
+	// Submitted says this render is the answer to a write the server refused, so its
+	// controls hold what the person posted rather than what the record holds. The
+	// browser keeps an unsaved draft through such a page: an echo of a refused
+	// submission is no evidence that anything was saved.
+	Submitted bool
 }
 
 // Model contains a form's already-read values and already-decided field errors.
@@ -58,6 +102,7 @@ type Options struct {
 	// field, given once for the whole form and handed to every control — see
 	// Notes.
 	Notes Notes
+	Text  func(key, fallback string) string
 }
 
 // The three sentences this package writes beside a control, spelled once here so
@@ -189,11 +234,27 @@ func example(id string, model Model, options Options) examples.Example {
 		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
 			components.AlertProps{Tone: "danger", Title: cmp.Or(options.FailureTitle, "That could not be saved"), Message: model.Detail, Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node)
+		var links []g.Node
+		richtextError := false
+		for _, field := range model.Fields {
+			if message := model.Errors[field.Definition.Name]; message != "" {
+				richtextError = richtextError || field.Definition.Widget == "richtext"
+				id := options.Namespace + "-field-" + hex.EncodeToString([]byte(field.Definition.Name))
+				links = append(links, h.Li(h.A(h.Href("#"+id), g.Text(cmp.Or(field.Label, field.Definition.Name)+": "+message))))
+			}
+		}
+		if len(links) > 0 && richtextError {
+			body = append(body, h.Nav(g.Attr("aria-label", "Fields to correct"), h.Ul(links...)))
+		}
 	}
 	for _, field := range model.Fields {
 		f := field.Definition
 		immutable := slices.Contains(model.Immutable, f.Name)
-		if f.ReadOnly || (model.Create && immutable) {
+		// Nothing the server owns renders a control. Base's four because a form
+		// cannot name them, and the row's own write count because a control that
+		// posted back the number it rendered would move the row to that number —
+		// which is the one thing the stale-write refusal is built on.
+		if entity.ServerOwned(f) || (model.Create && immutable) {
 			continue
 		}
 		value, present := model.Values[f.Name]
@@ -204,7 +265,7 @@ func example(id string, model Model, options Options) examples.Example {
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
 			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
-			Value: value, Error: model.Errors[f.Name], Immutable: immutable}))
+			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Text: options.Text}))
 	}
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
@@ -239,7 +300,7 @@ func example(id string, model Model, options Options) examples.Example {
 func rendersFile(model Model) bool {
 	for _, field := range model.Fields {
 		f := field.Definition
-		if f.ReadOnly || (model.Create && slices.Contains(model.Immutable, f.Name)) {
+		if entity.ServerOwned(f) || (model.Create && slices.Contains(model.Immutable, f.Name)) {
 			continue
 		}
 		if f.Widget == "file" {

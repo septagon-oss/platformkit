@@ -159,6 +159,7 @@ func galleryPreview(r page.Request, book export.Storybook, example examples.Exam
 		h.TitleEl(g.Text(example.Name)), h.StyleEl(g.Raw(string(sheet.Body))),
 		h.Script(h.Src(assets+"/js/htmx.min.js"), g.Attr("defer")),
 		h.Script(h.Src(assets+"/js/components.js"), g.Attr("defer")),
+		h.Script(h.Src(assets+"/js/specialists.js"), g.Attr("defer")),
 		h.Script(h.Src(assets+"/js/confirm.js"), g.Attr("defer")),
 		h.Script(h.Src(assets+"/js/gallery-preview.js"), g.Attr("defer"))),
 		h.Body(h.Div(h.Style("padding:1.5rem"), galleryPreviewContent(r, example))))
@@ -175,7 +176,7 @@ func galleryPreview(r page.Request, book export.Storybook, example examples.Exam
 	}
 	// Enforce isolation on the direct URL too. Only the widget scripts execute;
 	// sample forms, HTMX requests and nested frames cannot reach application data.
-	out.ContentSecurityPolicy = "sandbox allow-scripts; default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+	out.ContentSecurityPolicy = "sandbox allow-scripts; default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
 	out.FrameOptions = "SAMEORIGIN"
 	out.CacheControl = "no-store"
 	return out, nil

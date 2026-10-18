@@ -10,6 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task"
 )
 
@@ -22,7 +23,7 @@ func TestDashboardNumbersUseTheReadersLocale(t *testing.T) {
 	for _, tag := range []string{"en", "pt-PT"} {
 		t.Run(tag, func(t *testing.T) {
 			selected := catalog.Select(tag)
-			view := p.dashboard(t.Context(), &selected)
+			view := p.dashboard(t.Context(), tenancy.Tenant{}, &selected)
 			body := render(t, g.Group(view.Body))
 			noun := selected.Plural("resource.task.task", 12345, "Task", "Tasks")
 			want := selected.Text("dashboard_count_number", "%d", 12345) + " " + noun

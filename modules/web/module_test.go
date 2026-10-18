@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -49,6 +50,7 @@ func site(t *testing.T) (http.Handler, *sitetest.Fake, *contenttest.Fake) {
 	t.Helper()
 	_, app := dbtest.Schema(t, content.Migrations, sitemodule.Migrations)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: tenants{}, Conn: app, Authorize: tenants{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{}, false, nil
@@ -56,7 +58,7 @@ func site(t *testing.T) (http.Handler, *sitetest.Fake, *contenttest.Fake) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	settings, contents := sitetest.NewFake(), contenttest.NewFake()
-	m := web.Module(web.Deps{
+	m := web.New(web.Deps{
 		Site: settings, Content: contents, Theme: design.Default(),
 		// Two addresses this module links and does not own: the workspace's
 		// sign-in page and the file module's public door. The composition names
@@ -104,10 +106,14 @@ func TestAFreshSiteSaysSoAndPointsAtTheAdmin(t *testing.T) {
 
 func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 	h, settings, contents := site(t)
-	ctx := t.Context()
+	// The tenant the request below resolves by host. Both fakes keep their rows in
+	// the caller's tenant — which is what row-level security gives the real
+	// services — so a fixture that seeds as itself and serves as Acme would seed
+	// a row no reader reaches.
+	ctx := tenancy.WithTenant(t.Context(), acme)
 	if _, err := settings.Save(ctx, db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{
 		Title: "Acme Journal", Tagline: "Notes from the workshop", HomeSlug: "welcome",
-		Theme: "dark", PrimaryColor: "#c0ffee",
+		Theme: "dark", PrimaryColor: "#b45309",
 		Nav: sitecontracts.Nav{{Label: "About", Path: "/about"}},
 	}); err != nil {
 		t.Fatal(err)
@@ -122,12 +128,19 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 		t.Fatalf("status %d: %s", status, body)
 	}
 	for _, want := range []string{
-		`data-theme="dark"`, `--pk-color-accent-default:#c0ffee`, "Acme Journal", "Notes from the workshop",
+		`data-theme="dark"`, `--pk-color-accent-default:#b45309`, "Acme Journal", "Notes from the workshop",
 		`href="/about"`, "Welcome home", "<strong>home</strong>", "<code>code</code>", `<title>Welcome home · Acme</title>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+	// A colour this tenant did choose is one declaration and no mode rules: it was
+	// measured against both canvases before it was stored, so it belongs on either,
+	// and a document that rewrote it per mode would be the installation speaking
+	// over a choice somebody made.
+	if strings.Contains(body, `[data-theme="dark"]{--pk-color-accent-default`) {
+		t.Error("a tenant's own accent was rewritten for the dark mode")
 	}
 	if strings.Contains(body, "<script") || strings.Contains(body, "platformkit-theme") {
 		t.Error("a pinned document carried a script or the visitor's theme")
@@ -137,9 +150,53 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 	}
 }
 
+// TestASiteThatNamedNoAccentIsRenderedInTheInstallationAccent is the acceptance
+// seen from a browser: a tenant that never chose a colour is rendered in the
+// accent the installation's own sheet is composed from, in each mode, and the old
+// constant appears nowhere. The web shell already held the pair; what it did with
+// one colour for both modes is what this changes — a single value pinned over both
+// would be the light green on ink and the dark green on paper.
+func TestASiteThatNamedNoAccentIsRenderedInTheInstallationAccent(t *testing.T) {
+	h, settings, contents := site(t)
+	// The same pair the shell composes its stylesheet from, answering the port the
+	// settings service reads a resolved colour through: which is why the document
+	// below answers these two values and not a third.
+	theme := design.Default()
+	settings.Palette = sitecontracts.PaletteFunc(func(mode string) string {
+		if mode == sitecontracts.ThemeDark {
+			return theme.Dark.AccentDefault
+		}
+		return theme.Light.AccentDefault
+	})
+	if _, err := settings.Save(t.Context(), db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{
+		Title: "Acme", HomeSlug: "welcome", Theme: sitecontracts.ThemeSystem,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	contents.Put(&contentcontracts.Content{Slug: "welcome", Title: "Welcome home", Kind: "page", Body: "# Hello\n"})
+	status, body := get(t, h, "/")
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, body)
+	}
+	for _, want := range []string{
+		":root{--pk-color-accent-default:" + theme.Light.AccentDefault + "}",
+		`[data-theme="dark"]{--pk-color-accent-default:` + theme.Dark.AccentDefault + "}",
+		"@media (prefers-color-scheme: dark){:root:not([data-theme]){--pk-color-accent-default:" +
+			theme.Dark.AccentDefault + "}}",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a site with no accent of its own is missing %q", want)
+		}
+	}
+	if strings.Contains(body, "#2563eb") {
+		t.Error("the withdrawn default colour is still in the document")
+	}
+}
+
 func TestAMissingHomePageAndAnUnknownSlugAreSaidPlainly(t *testing.T) {
 	h, settings, _ := site(t)
-	if _, err := settings.Save(t.Context(), db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{HomeSlug: "later", Theme: "system", PrimaryColor: "#2563eb"}); err != nil {
+	ctx := tenancy.WithTenant(t.Context(), acme)
+	if _, err := settings.Save(ctx, db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{HomeSlug: "later", Theme: "system", PrimaryColor: "#2563eb"}); err != nil {
 		t.Fatal(err)
 	}
 	if status, body := get(t, h, "/"); status != http.StatusOK || !strings.Contains(body, "The home page is not published") {

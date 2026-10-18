@@ -1,7 +1,10 @@
 // Command platformkit is the reference application: one binary, one image, and
-// four subcommands — `run`, which serves, `bootstrap`, which creates the first
+// six subcommands — `run`, which serves, `bootstrap`, which creates the first
 // tenant of an empty installation, `start`, which runs the whole thing from
-// nothing on a laptop, and `migrate`, which applies the pending schema and exits.
+// nothing on a laptop, `seed`, which fills one tenant from the application's own
+// seed through the owners' write paths, `migrate`, which applies the pending
+// schema and exits, and `repair-roles`, which reports the grants an older seeder
+// left behind.
 //
 // It is short on purpose. Everything it does is read a configuration, compose
 // the modules, choose the three implementations the kernel cannot choose for
@@ -21,6 +24,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 func main() {
@@ -39,10 +43,14 @@ func main() {
 		err = bootstrap(args)
 	case "start":
 		err = startApp(args)
+	case "seed":
+		err = seedCommand(args)
 	case "migrate":
 		err = migrate(args)
+	case "repair-roles":
+		err = repairRoles(args)
 	default:
-		err = fmt.Errorf("%q is not a command; there are four: run, bootstrap, start and migrate", command)
+		err = fmt.Errorf("%q is not a command; there are six: run, bootstrap, start, seed, migrate and repair-roles", command)
 	}
 	if err != nil {
 		// The error goes to stderr rather than through the logger, because the
@@ -59,6 +67,7 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
 	role := fs.String("role", string(app.All), "web, worker, or all")
+	env := fs.String("environment", string(pkit.Production), "development, staging, or production: which deployment this is, which decides which implementation an app that names one runs")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -74,18 +83,27 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	c := compose(cfg)
+	c := composeReference(cfg, environment(*env))
 	if !cfg.Mail.Enabled() {
 		// Said out loud, because the failure it warns about is silent: every
 		// notification is still written and still visible in the application,
 		// and the ones asking for mail are logged instead of sent.
 		slog.WarnContext(ctx, "app: mail is not configured, so notifications marked for email are recorded and not sent; set mail.host")
 	}
-	a, err := app.New(ctx, cfg, c.modules, appOptions(cfg, c, app.Role(*role)))
-	if err != nil {
-		return err
+	return c.app.Run(ctx, c.once, app.Role(*role))
+}
+
+// environment reads the flag into pkit's name for it. An environment nobody named
+// is refused by pkit rather than defaulted: the same composition runs a
+// different implementation in development than in production, and a process that
+// guessed which it was would be guessing about money.
+func environment(name string) pkit.Environment {
+	switch e := pkit.Environment(name); e {
+	case pkit.Development, pkit.Staging, pkit.Production:
+		return e
+	default:
+		return ""
 	}
-	return a.Run(ctx)
 }
 
 // logger sets the process's default logger: JSON on stderr, at the configured

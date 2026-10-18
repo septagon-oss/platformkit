@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -32,6 +33,7 @@ func (nothing) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, er
 func TestReachingAroundRegisterIsStillRecorded(t *testing.T) {
 	_, app := dbtest.Schema(t)
 	a, _ := New(Options{
+		Cache:     cache.Memory("pkit"),
 		Tenants:   nothing{},
 		Conn:      app,
 		Authorize: nothing{},

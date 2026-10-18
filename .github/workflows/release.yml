@@ -47,6 +47,13 @@ jobs:
         env:
           POSTGRES_PASSWORD: platformkit
           POSTGRES_DB: platformkit
+          # This cluster is created for the job and deleted with it, so it does not
+          # force its writes to a device: the same three settings compose.yaml names
+          # on its server's command line, whose comment says why. initdb writes them
+          # into the configuration of the data directory this job creates and never
+          # reuses, which is the carrier a service container has and a developer's
+          # persistent volume must not rely on.
+          POSTGRES_INITDB_ARGS: "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=256"
         ports:
           - 5432:5432
         options: >-
@@ -100,6 +107,43 @@ jobs:
         env:
           PGPASSWORD: platformkit
         run: psql -h localhost -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
+
+      # The S3-compatible object store modules/file's S3 adapter is tested against.
+      # Its cases fail rather than skip without one, on this repository's own rule
+      # for the NATS transport, and the consequence of that choice is a fixture in
+      # every job that runs the gate: this job stands up its own services rather
+      # than the compose stack the Makefile's default endpoint belongs to. Image,
+      # credentials and port are compose.yaml's s3 service, so the store this job
+      # tests is the store `make up` starts. The probe is that service's own
+      # healthcheck: an anonymous bucket list is refused by design (403), and the
+      # refusal is what says somebody is listening at the port the adapter dials.
+      - name: Start the object store
+        run: |
+          docker run -d --name s3 -p 8333:8333 \
+            -e AWS_ACCESS_KEY_ID=pkittest -e AWS_SECRET_ACCESS_KEY=pkittestsecret \
+            chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -dir=/data
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://127.0.0.1:8333/; then echo "s3 is up"; exit 0; fi
+            sleep 1
+          done
+          echo "the object store did not become available" >&2; docker logs s3; exit 1
+
+      # The development mail catcher. This job runs `make e2e` below, and the
+      # journeys that open a mailed link read the message out of a catcher: with
+      # nothing answering, scripts/e2e.sh refuses to boot the application at all,
+      # so a tag whose tree has no catcher publishes nothing rather than shipping
+      # an image on a half-gate. Image and ports are compose.yaml's mailpit service
+      # — the same server `make up` gives a workstation — published on the ports
+      # scripts/e2e.sh derives its two addresses from by default.
+      - name: Start the mail catcher
+        run: |
+          docker run -d --name mailpit -p 1025:1025 -p 8025:8025 \
+            axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8025/api/v1/info >/dev/null; then echo "mailpit is up"; exit 0; fi
+            sleep 1
+          done
+          echo "the mail catcher did not become available" >&2; docker logs mailpit; exit 1
 
       - name: make check
         run: make check

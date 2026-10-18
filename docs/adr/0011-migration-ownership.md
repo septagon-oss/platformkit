@@ -22,7 +22,7 @@ All selected histories are validated before pending SQL runs. Changed or missing
 applied files, duplicate identities and insertions before applied versions fail.
 Omitted owners retain their data and history for later re-enablement.
 
-A database advisory lock serializes the whole composition. Each file executes
+A database advisory lock, keyed to the namespace the run writes, serializes that composition. Each file executes
 inside a transaction with its history insert. Failure or cancellation rolls both
 back; retry reads committed history and resumes. Earlier successful files remain
 committed. The application role receives no privileges on the history table.
@@ -115,7 +115,7 @@ step after it that a crash can skip. The application role is revoked from both.
 
 An autocommit statement is also the one statement a migration run must not hold the
 composition's advisory lock across. Such a statement waits for the transactions already
-in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds the
+in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds that
 wait — while that lock is what every other replica's boot queues behind. Holding both
 was measured, and it deadlocks the queue:
 
@@ -128,7 +128,27 @@ so the run puts the lock down for that one statement and takes it back for the h
 row, which is inserted `ON CONFLICT DO NOTHING`: two replicas may then both reach a
 statement the rule table already requires to be re-runnable, and the one that loses the
 race learns the file applied rather than failing its boot for a benign race. A statement
-that failed writes no row either way.
+that failed writes no row either way. The ledger row is the half of that race the history
+can settle; the *object* the statement built is the half it cannot, because two boots
+dropping and rebuilding one half-built index answer each other with a cycle the deadlock
+detector picks one of and with a catalog tuple updated underneath them. So the file takes
+an advisory lock of its own — the two-key form, one namespace per `owner/version` where
+the composition lock is one for the run — and holds it across the statement and its
+certification, asked for with `pg_try_advisory_lock` and re-asked with the session idle
+between asks, because a lock queue is a running transaction and a concurrent build waits
+for the transactions already in the database: to queue inside the holder's critical
+section is to join the cycle the release exists to leave (`kit/db/certify.go`,
+`kit/db/concurrent_index_replicas_test.go`, `kit/db/concurrent_index_turn_test.go`).
+
+The budget that survives that window is the statement one, which an installation names
+on purpose and which defaults to no bound. A `CONCURRENTLY` build cut short by it
+mid-way — or by the deadlock detector picking this session, or by the caller's context —
+leaves the half-built object standing under the name it was building, which the next send
+of `IF NOT EXISTS` reports as done. Success is therefore not the end of an autocommit
+file: the runner reads the object it named out of the catalog, drops and rebuilds one
+that is not valid, and refuses the file rather than recording a constraint the database
+does not enforce (`kit/db/certify.go`,
+`kit/db/migrate_certify_concurrently_test.go`).
 
 The order of a release is now a rule rather than a review comment. A `contract` file
 refuses while the `expand=` version it names is not already in that installation's
@@ -295,11 +315,11 @@ states the budgets and the contended report against a real database, the eightee
 grammar refusals, one case per rule beside the `allow=` that excepts it, the contract
 half refusing and then applying, the batched drain proved from `xmin`, and the files
 behind an unfinished drain waiting for the worker.
-`kit/db/review_rules_test.go` is the same table read from the other side: a rule with no
+`kit/db/rule_exception_refuses_marker_test.go` is the same table read from the other side: a rule with no
 exception refuses the marker that names it, the type-change rule catches the spelling
 without the `COLUMN` keyword, an autocommit `DROP INDEX CONCURRENTLY` has to survive its
 own success, an excepted data body runs once however it names the window, and `batch=0`
-is refused for the value it is. `kit/db/review_guarantees_test.go` holds what the runner
+is refused for the value it is. `kit/db/contention_err_contended_under_budget_deployment_named_test.go` holds what the runner
 owes and nothing else checked: the app role against both of its tables, `ErrContended`
 under a budget a deployment named, the fifty-batch bound and the run that resumes it,
 two drains of one file committing the work once, and a finished drain staying finished.
@@ -307,29 +327,29 @@ two drains of one file committing the work once, and a finished drain staying fi
 by holding a row the first window is about to write, and `kit/db/drain_commit_test.go`
 that the transaction which wrote the last window wrote the history row too, so the two
 tables never hold "every row written" and "a drain to resume" at once.
-`kit/app/review_drain_composed_test.go` boots the composition as the worker and waits
+`kit/app/drain_composed_test.go` boots the composition as the worker and waits
 for the tick to drain what the migration left, then applies the file that waited behind
 it; deleting the line that schedules that job fails this case and
-`kit/app/review3_drain_in_flight_boots_test.go`, which reaches a half-drained table
+`kit/app/drain_in_flight_boots_test.go`, which reaches a half-drained table
 through a boot rather than through a tick, and nothing else — measured over the whole
 suite on a copy with `scheduled := kernelJobs(transport)`, which reports those two cases
 in `kit/app` and passes every other package.
-`migrations/review_floors_test.go` proves each declared floor is the number the files
+`migrations/rule_floor_files_force_test.go` proves each declared floor is the number the files
 force, in both directions.
-`kit/db/review3_guard_floor_test.go` is the floor's third direction: the same rewrite
+`kit/db/source_cannot_declare_floor_past_head_test.go` is the floor's third direction: the same rewrite
 refused with no floor declared and refused with a floor of 50 over a source whose own
 head is 2, with nothing applied either way, and the release rule surviving that same
-floor. `kit/app/review3_drain_in_flight_boots_test.go` reaches a half-drained table
+floor. `kit/app/drain_in_flight_boots_test.go` reaches a half-drained table
 through the doors only — an installation that stopped at its own bound, then the worker
 an installation boots — and asks that the worker be alive and the table empty.
-`kit/db/review3_data_file_shape_test.go` refuses a two-statement data file with nothing
-resumable left behind and the corrected file drained by the run that carried it, and
-`kit/db/review3_rule_reads_the_statement_test.go` that a
-`DEFAULT` in one statement does not excuse a `NOT NULL` column in another.
-`kit/db/data_file_shape_test.go` is the other two branches of that one rule: the data
-file with a schema file behind it, which `Migrate` leaves and `db.Backfill` empties so
-the file behind it can apply, and a self-bounded body — no window, so no bound for a
-migration to hold it to — which waits for the worker even as the owner's last file.
+`kit/db/data_file_shape_test.go` owns the data-file shape: it refuses a two-statement data
+file with nothing resumable left behind and the corrected file drained by the run that
+carried it, and reaches the two branches that case cannot — the data file with a schema
+file behind it, which `Migrate` leaves and `db.Backfill` empties so the file behind it can
+apply, and a self-bounded body, no window and so no bound for a migration to hold it to,
+which waits for the worker even as the owner's last file.
+`kit/db/rule_reads_the_statement_test.go` says that a `DEFAULT` in one statement does not
+excuse a `NOT NULL` column in another.
 `apps/platformkit/migrate_test.go` shows `platformkit migrate` applying exactly the
 sources the composition selected — every owner and every one of its files — and the
 second run applying nothing further.

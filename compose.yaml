@@ -1,10 +1,37 @@
-# Local dependencies for `make run` and `make test`. Both published ports are
-# overridable so this stack can run beside another Postgres or NATS:
-# PLATFORMKIT_PG_PORT and PLATFORMKIT_NATS_PORT. `make test` reads the same
-# variables, so overriding them once is enough.
+# Local dependencies for `make run`, `make test` and `make check`. Every published
+# port is overridable so this stack can run beside another Postgres, NATS, Valkey,
+# object store or mail catcher: PLATFORMKIT_PG_PORT, PLATFORMKIT_NATS_PORT,
+# PLATFORMKIT_VALKEY_PORT, PLATFORMKIT_S3_PORT, PLATFORMKIT_MAILPIT_SMTP_PORT and
+# PLATFORMKIT_MAILPIT_PORT. `make test` and `make check` read the same variables, so
+# overriding them once is enough.
+#
+# Two further services sit behind profiles and so take no part in `make up`: the
+# `telemetry` collector (`make trace`) and `floci` (docs/spikes/floci-test-stack.md)
 services:
   postgres:
+    # Nothing in this cluster is ever recovered: each package of a suite gets a
+    # database of its own and drops it at its end, `make down` drops the volume,
+    # and the migration rehearsal and the restore drill read a dump rather than a
+    # restarted server. So it does not force its writes to a device. The
+    # PostgreSQL tuning chapter names fsync, synchronous_commit and
+    # full_page_writes for exactly this case
+    # (https://www.postgresql.org/docs/16/non-durability.html, "Non-Durable
+    # Settings"), and one task's test Postgres reached 79 GB of block writes
+    # across its suite runs against the image default: the host IO pressure
+    # beside it is what these three settings remove.
+    #
+    # Development and test only. Nothing here reaches a deployment, whose
+    # database is named by its own configuration, and `platformkit start`'s
+    # embedded Postgres — which holds a person's own data — shares no line with
+    # this file. An abrupt stop of this container can leave the cluster
+    # unreadable; `make down` and `make up` return a fresh one.
+    #
+    # max_connections is not one of those three: it is the one server limit the
+    # suite's pool bounds are priced against, and every cluster of this
+    # repository — this one and each workflow's service container — names the same
+    # number, and a case in kit/db/dbtest refuses the service block that drops it.
     image: postgres:16
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_connections=256"]
     environment:
       POSTGRES_PASSWORD: platformkit
       POSTGRES_DB: platformkit
@@ -29,6 +56,140 @@ services:
       - "${PLATFORMKIT_NATS_PORT:-4222}:4222"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  collector:
+    # The local trace backend: `make trace` starts it, and
+    # telemetry.otlp_endpoint http://localhost:4317 (or localhost:4317) is what
+    # points the application at it. It prints every span and metric datapoint it
+    # receives to this container's log — `docker compose logs collector` — and
+    # keeps nothing, so a developer sees the four kernel boundaries traced on
+    # their own machine without a trace backend. deploy/otel-collector.yaml is
+    # its configuration.
+    #
+    # A profile, and not in `make up`, because that goal is what `make test` and
+    # `make check` sit on: a service that has to be pulled before the database
+    # is usable would make an offline checkout untestable, and an image that is
+    # not started is no worse than the one that is not configured.
+    #
+    # No healthcheck: the release image is scratch-based, so it carries nothing
+    # to probe with — no wget, no shell — and a probe written as
+    # `otelcol --version` would report that a binary exists rather than that it
+    # is listening. `--wait` therefore waits for this one to be running, which
+    # for a service with no dependencies is the whole of readiness.
+    # No restart policy, which is a choice rather than a default left alone: a
+    # container that restarts itself hides the fact that it died, and the one
+    # thing a local backend has to do is admit it is not running. `make trace`
+    # recreates it on every call, so a laptop that slept over the weekend gets a
+    # fresh one when somebody asks for it.
+    image: otel/opentelemetry-collector:0.116.1
+    profiles: ["telemetry"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${PLATFORMKIT_OTLP_PORT:-4317}:4317"
+
+  valkey:
+    # The shared store kit/cache/providers/valkey answers to, and the store whose
+    # conformance run `make check` takes when this is up. Nothing is stored here that
+    # a replica may not recompute: sessions, grants and entitlements never are, so a
+    # suspension is the worst thing an entry can be wrong about and it is wrong for
+    # hostTTL at most.
+    #
+    # noeviction is not politeness, it is the requirement kit/cache states: the
+    # counter a Move raises carries no TTL, an evicted counter reads back as
+    # generation 0, and the entries the first Move closed are believed again.
+    image: valkey/valkey:8-alpine
+    command: ["--maxmemory-policy", "noeviction"]
+    ports:
+      - "${PLATFORMKIT_VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  s3:
+    # The S3-compatible object store modules/file's S3 adapter is tested against
+    # (file.S3). SeaweedFS because it is Apache-2.0 and its image pulls without a
+    # registry login; the adapter speaks plain S3 through minio-go, so any
+    # S3-compatible store serves in its place. The credentials are this local
+    # stack's and nobody else's, and the bucket each test run makes is its own.
+    # Published on 8333 whatever else this stack is on: no other service of this
+    # repository answers there.
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["server", "-s3", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: pkittest
+      AWS_SECRET_ACCESS_KEY: pkittestsecret
+    ports:
+      - "${PLATFORMKIT_S3_PORT:-8333}:8333"
+    healthcheck:
+      # Is the S3 endpoint answering? An anonymous bucket list is refused by
+      # design (403), and the refusal is the answer this probe wants, so the
+      # probe is a plain request whose exit code means "somebody is listening at
+      # the port the adapter dials" — curl without -f, which is exactly the flag
+      # that distinguishes "answered 403" from "nobody home". `make up` passes
+      # --wait, so a probe that can never be satisfied is a stack that never
+      # starts.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8333/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  s3-floci:
+    # The candidate object store docs/spikes/floci-test-stack.md measures against the
+    # `s3` service above: Floci, an AWS emulator whose S3 answers in-process, MIT at
+    # its own source repository (github.com/floci-io/floci). Behind a profile, so
+    # `make up` starts the store this repository develops against and nothing else
+    # moves: the switch is a decision, and a measurement task does not make it by
+    # editing a default.
+    #
+    # Pinned by digest beside the version tag. `floci/floci:latest` and
+    # `floci/floci:2.3.0` answer the same index digest today, and `latest` will not
+    # stay so.
+    #
+    # No healthcheck, because the image declares its own
+    # (`/usr/local/bin/healthcheck.sh`, 5s interval, 10s start period) and its base is
+    # ubi9-micro, which carries no curl to probe with: `s3`'s probe above would fail
+    # outright here. No command: the image's own starts the emulator. No volume:
+    # Floci's default storage mode is `memory`, so its state dies with the container,
+    # which is what the store above is once `make down -v` drops it. No credentials:
+    # Floci accepts any non-empty SigV4 credential, so naming `s3`'s
+    # AWS_ACCESS_KEY_ID would name a user that exists nowhere and be read by nobody.
+    #
+    # 4566 is where Floci serves every AWS API it has, S3 included. The host port is
+    # its own number rather than the stack's 8333, so the two stores can be up at once
+    # for a comparison — and so that dialling one of them is always an explicit
+    # endpoint, never whichever service happened to start.
+    image: floci/floci:2.3.0@sha256:e0b292df4dc9559b7b1bf4f51bdda4bb8e269276236438cd03cae661260ea8a9
+    profiles: ["floci"]
+    ports:
+      - "${PLATFORMKIT_S3_FLOCI_PORT:-8334}:4566"
+
+  mailpit:
+    # The development mail catcher. This application mails over SMTP, and with no
+    # host configured the reference app keeps every notice and sends none of the
+    # ones marked for email (apps/platformkit/modules.go's `mailer`, and the line
+    # main logs at boot). That is a safe default for a deployment and a dead end
+    # for a development machine: an invitation link nobody can open is the failure
+    # this repository's front door work was written against, so the dev stack runs
+    # a server. Mailpit accepts on 1025 and advertises neither TLS nor
+    # authentication, which is exactly the conversation modules/notification's
+    # SMTP sender holds with a server that offers neither, and it answers over
+    # HTTP on 8025, which is where scripts/e2e.sh points the browser journeys that
+    # read a mailed link. It relays to nothing: it accepts, holds and shows.
+    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+    ports:
+      - "${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${PLATFORMKIT_MAILPIT_PORT:-8025}:8025"
+    healthcheck:
+      # /api/v1/info is the endpoint the journeys themselves call, so the probe
+      # and the reader agree about what "the catcher is up" means.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8025/api/v1/info"]
       interval: 5s
       timeout: 5s
       retries: 10

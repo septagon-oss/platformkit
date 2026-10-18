@@ -22,14 +22,14 @@ import (
 
 func TestInvalidHomeSlugRefusesInTheRequestsLanguage(t *testing.T) {
 	owner, conn := dbtest.Schema(t, site.Migrations)
-	_, settings := site.Module(site.Deps{})
+	_, settings := site.New(site.Deps{})
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New(), Roles: []string{"admin"}}, true, nil
 		}, Log: slog.New(slog.DiscardHandler),
 	})
-	shell := admin.Module(admin.Deps{Modules: []module.Module{settings}, Authorize: caller{}, SignIn: "/api/v1/auth/login",
+	shell := admin.New(admin.Deps{Modules: []module.Module{settings}, Authorize: caller{}, SignIn: "/api/v1/auth/login",
 		Messages: xtext.Load("en", admin.Catalogue(), site.Catalogue(), page.Catalogue(), xtext.Source{Name: "resource", FS: resource.Catalogues()})})
 	api.Declare([]tenancy.Grant{{Permission: "site:manage"}, {Permission: "gallery:read"}})
 	settings.Routes(api.Surfaces(settings.Name))

@@ -30,7 +30,7 @@ const outbox = "platformkit_outbox"
 func TestServiceConforms(t *testing.T) {
 	contenttest.RunService(t, func(t *testing.T, run func(contenttest.Fixture)) {
 		_, conn := dbtest.Schema(t, content.Migrations)
-		svc := internal.NewService()
+		svc := internal.NewService(internal.Deps{})
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(contenttest.Fixture{Ctx: ctx, Tx: tx, Service: svc,
 				Seed: func(c *contracts.Content) uuid.UUID {
@@ -38,6 +38,15 @@ func TestServiceConforms(t *testing.T) {
 						t.Fatalf("seed content: %v", err)
 					}
 					return c.ID
+				},
+				Content: func(id uuid.UUID) (contracts.Content, error) {
+					// The row as this transaction sees it, which is what the
+					// suite's snapshot of "wrote nothing" compares.
+					got, err := crud.Get[*contracts.Content](tx, id)
+					if err != nil {
+						return contracts.Content{}, err
+					}
+					return *got, nil
 				},
 				Published: func() []string {
 					var names []string
@@ -62,7 +71,7 @@ func TestServiceConforms(t *testing.T) {
 // paths as silent.
 func TestTheCommandsPublishInTheCallersTransaction(t *testing.T) {
 	admin, conn := dbtest.Schema(t, content.Migrations)
-	svc := internal.NewService()
+	svc := internal.NewService(internal.Deps{})
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		page := &contracts.Content{Slug: "about-us", Title: "About us", Body: "hello"}

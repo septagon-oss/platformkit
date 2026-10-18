@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -39,6 +40,7 @@ func TestAnInflightHostLookupCannotRestoreRemovedTenantLanguages(t *testing.T) {
 
 	api, router := httpx.New(httpx.Options{
 		Conn: conn, Installation: host, PublicHost: host,
+		Cache: cache.Memory("pkit"),
 		Tenants: loaderFunc(func(ctx context.Context, tx db.Tx[db.System], h string) (tenancy.Tenant, error) {
 			if h != host && h != alias {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost

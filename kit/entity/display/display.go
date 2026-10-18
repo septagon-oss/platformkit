@@ -58,7 +58,20 @@ func Text(v any) string {
 // screens.boolean_false, screens.integer, screens.number and screens.datetime —
 // and falls back to what is returned here. A shell with no catalogue renders
 // exactly these bytes.
-func Display(f entity.Field, v any) string {
+func Display(f entity.Field, v any) string { return DisplayWord(f, v, nil) }
+
+// DisplayWord is Display with one thing decided elsewhere: how an enum value is
+// read. A screen that serves the request's language passes its own words (a
+// declared `enumLabels:"month=Monthly"` translated for that request) and every
+// other reading — booleans, instants, the dash for nothing — stays this
+// function's, so a cell, a description list and a select's option cannot drift
+// apart over which half of the value each one localises.
+//
+// A nil word function is EnumWord: the declared label, or Humanize(value).
+func DisplayWord(f entity.Field, v any, word func(entity.Field, string) string) string {
+	if word == nil {
+		word = EnumWord
+	}
 	switch {
 	case f.Type == entity.TypeBool:
 		if b, ok := v.(bool); ok && b {
@@ -71,7 +84,7 @@ func Display(f entity.Field, v any) string {
 		}
 	case len(f.Enum) > 0:
 		if out := Text(v); out != "" {
-			return Humanize(out)
+			return word(f, out)
 		}
 	default:
 		if out := Text(v); out != "" {
@@ -121,13 +134,40 @@ func Humanize(name string) string {
 	return b.String()
 }
 
+// EnumWord is one enum value as the author of its field named it, and
+// Humanize(value) when nobody named it. It is the enum half of FieldLabel: a
+// field that declares `enumLabels:"month=Monthly"` says so in one place, and a
+// cell, a description term and a select's option all read that one place.
+//
+// It returns the declared words untranslated, exactly as FieldLabel does: this
+// package knows the schema and no language, and the request's words are put on
+// the declared value at the two boundaries that serve it — ui/screens for the
+// catalogue document and ui/resource for the generated screens.
+func EnumWord(f entity.Field, value string) string {
+	if word := f.Presentation.EnumLabels[value]; word != "" {
+		return word
+	}
+	return Humanize(value)
+}
+
 // FieldLabel is what a control, a column header and a description term call a
 // field. It is Humanize today, in one place, so that the entity gaining a way
 // to name its own fields is one line here rather than three at three call
 // sites. Field.Doc is not that name: the entities in this repository write a
 // sentence there — "Short summary of the task" — which is a description and
 // belongs under the control, not on it. See Field.Doc.
-func FieldLabel(f entity.Field) string { return Humanize(f.Name) }
+func FieldLabel(f entity.Field) string {
+	if f.Presentation.Label != "" {
+		return f.Presentation.Label
+	}
+	return Humanize(f.Name)
+}
 
-// FieldHelp is the note under a control: the field's own Doc, when it has one.
-func FieldHelp(f entity.Field) string { return f.Doc }
+// FieldHelp is the note under a control: the line the author wrote for this
+// field when they wrote one, and the field's own Doc otherwise.
+func FieldHelp(f entity.Field) string {
+	if f.Presentation.Help != "" {
+		return f.Presentation.Help
+	}
+	return f.Doc
+}

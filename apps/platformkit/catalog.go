@@ -5,17 +5,22 @@ import (
 	"io/fs"
 
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/billing"
+	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
+	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	"github.com/septagon-oss/platformkit/modules/user"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 	"github.com/septagon-oss/platformkit/ui/export"
+	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
 )
@@ -29,19 +34,11 @@ import (
 // where precedence is decided. `ui/page` claims the `fault.` prefix as it is read,
 // which is what keeps a product's catalogue from re-wording what a kernel refusal
 // says; `ui/resource` claims nothing, so re-labelling "Delete" is a product's
-// ordinary decision and not a pull request into the foundation, and `ui/export`
-// claims nothing for the same reason, so a product may re-word the gallery's own
-// frame at the same keys.
+// ordinary decision and not a pull request into the foundation.
 //
-// "en" is the source language: the sentences in the Go code are English.
-// Resource names and admin-authored copy also have explicit English entries: the
-// loader's source language, and what the composition's parity check compares every
-// other locale against. This repository carries no pseudo-locale transform, and
-// building one is a decision about a deployment, not a fact about this one.
-// Which languages this deployment answers in is the set of files these directories
-// hold — the gate that fails when one of them is short is the loader's own
-// (kit/locale/providers/xtext), and the tenant's own supported set is negotiated
-// on top of it in locale.go.
+// "en" is the source language: the sentences in the Go code are English, so no
+// layer ships an English file, and an unsupported browser language is answered in
+// English from the text the call site passed rather than from a catalog entry.
 //
 // The one language no file carries is en-XA, the pseudo-locale: this composition
 // asks xtext to derive it from the English source copy, so every sentence the
@@ -52,13 +49,19 @@ import (
 // never went through a catalogue is the only kind of string that stays plain ASCII.
 // A deployment that serves it to real customers has a problem; a deployment that
 // cannot serve it has no way to see the bug.
+// Which languages this deployment answers in is the set of files these directories
+// hold — the gate that fails when one of them is short is the loader's own
+// (kit/locale/providers/xtext), and the tenant's own supported set is negotiated
+// on top of it in locale.go.
 func catalogues() xtext.Catalog {
 	return xtext.Pseudo(xtext.Load("en",
 		page.Catalogue(),
-		xtext.Source{FS: resource.Catalogues(), Name: "ui/resource"},
 		// The words of the gallery's frame — its landmark, its preview menus, the
 		// button that applies a preview — belong to the layer that draws them.
 		xtext.Source{FS: export.Catalogues(), Name: "ui/export"},
+		xtext.Source{FS: forms.Catalogues(), Name: "ui/forms"},
+		xtext.Source{FS: richtext.Catalogues(), Name: "kit/richtext"},
+		xtext.Source{FS: resource.Catalogues(), Name: "ui/resource"},
 		admin.Catalogue(),
 		// Each module's own permission labels, so a refusal names a grant in the
 		// language the tenant is served in and not in a key. Every module that
@@ -67,16 +70,19 @@ func catalogues() xtext.Catalog {
 		audit.Catalogue(),
 		auth.Catalogue(),
 		billing.Catalogue(),
+		change.Catalogue(),
 		content.Catalogue(),
 		file.Catalogue(),
+		notification.Catalogue(),
 		site.Catalogue(),
 		task.Catalogue(),
 		tenant.Catalogue(),
 		user.Catalogue(),
+		webhook.Catalogue(),
 		// This product's own words, last: whatever a layer already owns it ships,
 		// this holds only what no layer writes — the way out of the workspace this
 		// composition names.
-		product()), "en-XA")
+		productCatalogue()), "en-XA")
 }
 
 // productMessages is this composition's copy as files, one per locale. There is no
@@ -87,12 +93,12 @@ func catalogues() xtext.Catalog {
 //go:embed messages
 var productMessages embed.FS
 
-// product is the composition's own catalogue source: the words the reference product
+// productCatalogue is the composition's own catalogue source: the words the reference product
 // writes for a control no module owns. It claims no prefix — a client's catalogue is
 // composed after this one, and re-wording what the reference product says is that
 // client's ordinary decision — and a deployment that ships no file of its own reads
 // the fallback in the Go source instead.
-func product() xtext.Source {
+func productCatalogue() xtext.Source {
 	files, err := fs.Sub(productMessages, "messages")
 	if err != nil {
 		panic("apps/platformkit: its messages directory is not in the binary: " + err.Error())

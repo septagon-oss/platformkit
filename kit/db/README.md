@@ -22,6 +22,44 @@ Budget database connections across all processes, including web/worker replicas,
 migrations and maintenance. A larger pool does not establish greater throughput;
 use the [tenant-work benchmark](../jobs/README.md) to measure a concrete workload.
 
+## Test suite capacity
+
+`dbtest.Open` and `OpenFor` cap each owner pool at four open connections and one
+idle connection, without a lifetime limit. The same policy covers schema/role
+cleanup and private-database setup/removal. Four leaves room for tests that hold
+a lock while a writer and an observer use separate sessions. `dbtest.Schema`
+retains the application defaults above; test cleanup closes both handles.
+The events package uses `dbtest.RunInOwnDatabase` to isolate durable advisory
+locks from other packages; schemas do not scope database-wide lock keys.
+
+The Makefile runs `test`, `check` and `check-race` with four package processes.
+Compose and the CI PostgreSQL services allow 256 connections, including three
+reserved for superusers. Count every pool across the active packages, including
+multiple application boots, migration sessions and cleanup; four packages do not
+mean four pools. When growing the suite, sample all client backends in
+`pg_stat_activity` during a fresh `make check`, including unnamed clients and
+all databases. Keep the observed peak at most 224 including the sampler, leaving
+32 physical slots for maintenance, health probes and short overlaps that sampling
+can miss. Finite sampling reports an observed peak, not a mathematical bound.
+
+### Composition
+
+**Reused** — `database/sql` limits, `dbtest` fixture cleanup, `db.DefaultPool`,
+and the existing Makefile and PostgreSQL service definitions.
+**Added** — one private owner-pool opener and its limit proofs, because fixture
+owner handles previously had no connection maximum.
+**Made reusable** — `dbtest.Open` and `OpenFor` expose the shared test-owner
+pool policy to tests and benchmarks.
+
+### Limits
+
+The owner policy covers pools opened by `dbtest`. Raw `sql.Open` handles in
+`kit/db`'s independent fixture and session probes, and in `pkit` tests, retain
+their existing owners and settings. Include their sessions when measuring capacity.
+Package parallelism bounds processes, not fixtures: parallel tests and multiple
+runtimes can keep several pools alive in one process. The 224-client target needs
+a full-suite observation; multiplying one fixture's limits is no strict suite bound.
+
 # Migrations
 
 `Migrate(ctx, url, sources...)` applies each capability's files in owner and version
@@ -37,7 +75,32 @@ that sets one for itself cannot leak it to the next; `database.lock_timeout` and
 a `MigrationBudget`. The budgets are the runner's patience, not the operator's: a
 migration that cannot take a lock in five seconds of *waiting* stops. The statement
 budget defaults to no bound because a legitimate index build on a large table is the
-statement a duration bound would kill. The same two values go on the session before
+statement a duration bound would kill. **The one exception is the file in autocommit
+mode, which runs with the lock budget off and the statement budget as configured.**
+What that statement waits for is the transactions
+already in the database ceasing to be able to see the table — the wait `CONCURRENTLY`
+exists to make — and the server implements it as a lock wait (`wait_event_type=Lock`,
+`wait_event=virtualxid`), so a configured lock budget reaches it and cancels it:
+measured on PostgreSQL 16, a build that finds one session holding a snapshot older
+than its own is cancelled at `55P03`, and what it leaves behind is an INVALID index
+that the file's own `IF NOT EXISTS`, the re-runnability the rule table demands of this
+mode, then excuses on the retry the refusal tells the operator to run — the rerun
+reports the file applied and the index does not exist. Two things about that wait are
+wider than the sentence above them, and an operator needs both. It is any older
+transaction, not one touching the table being built: measured on the same server, a
+build of one table waited 5.0s for a transaction whose only lock was a row of another.
+And with the lock budget off, nothing the runner owns ends the wait — `statement_timeout`
+is off by default and `app.Bootstrap` hands the run a context with no deadline of its
+own, so a boot stopped at this file waits as long as the oldest transaction in the
+database does. The one bound a deployment can put on it is
+`database.statement_timeout`, which is therefore a trade and not a safety: it refuses
+the build at that bound, and leaves the INVALID index above for the retry that then
+reports the file applied. Waiting is also the shape of the queue for the composition
+lock, which has no budget on it either: that wait is taken off the session rather than
+left on it, because the lock is taken a second time mid-run, after an autocommit file,
+on a session that by then still carries the statement budget — the lock budget came off
+for that file, and a statement budget bounds a lock wait as surely as it bounds the
+work done inside the lock. The same two values go on the session before
 every batch of a drain (`BackfillWith`, and through it `app.Drain`,
 `jobs.BackfillMigrations` and `platformkit migrate --drain`), because the fifty
 transactions behind a data file are the half that waits longest for rows the running
@@ -54,21 +117,33 @@ other replica's boot behind it. The retry is a command rather than a loop:
 role's boot composes — for somebody who is not deploying, and `--drain` finishes a
 backfill the migration left behind instead of waiting for the worker's tick.
 
-What the budgets are *not* put on is the whole window one `autocommit` file opens: its
-statement, and the `pg_advisory_lock` that takes the lock back after it. Both are left
-patient, and both are bounded by the caller's context alone. ADR 0011 is the reason for
-each half in turn. That statement is the one a run must not hold the lock across, and it
-waits for the transactions already in the database — that is what `CONCURRENTLY` is for,
-and no `lock_timeout` bounds that wait; a rebuild cut short at a budget is not a refused
-file but a half-built index left standing invalid. The wait to take the lock back is the
-queue of boots this upgrade is ahead of, which no other file's patience describes: the
-replica that gets the lock second has the first one's applied files to read and finds
-nothing pending, so a boot that waits and applies nothing beats one that refuses at five
-seconds and is read as a failed deploy. The budgets go back on before that file's history
-row, so what they bound is what a file waits *inside a transaction* — which is every other
-statement of the run, and every batch of a drain. When the caller's context runs out the
-operator gets a context deadline, not `ErrContended`: nothing was refused, the run did not
-finish.
+What the budgets are *not* put on is the window one `autocommit` file opens: its
+statement runs with the lock budget off, and the `pg_advisory_lock` that takes the lock
+back after it waits with both budgets off. Both halves are left patient, and each is
+bounded by what is left on it — the caller's context for both, `database.statement_timeout`
+for the statement alone. ADR 0011 is the reason for each half in turn. That statement is
+the one a run must not hold the lock across, and it waits for the transactions already in
+the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds that wait;
+a rebuild cut short at a budget is not a refused file but a half-built index left standing
+invalid. The wait to take the lock back is the queue of boots this upgrade is ahead of,
+which no other file's patience describes: the replica that gets the lock second has the
+first one's applied files to read and finds nothing pending, so a boot that waits and
+applies nothing beats one that refuses at five seconds and is read as a failed deploy. The
+statement budget is what survives of the window, because it is the bound the deployment
+named and ADR 0011 takes none away: with no duration bound either, nothing the runner owns
+would end a build that waits behind a transaction that never ends. The budgets go back on
+before that file's history row, so what they bound is what a file waits *inside a
+transaction* — which is every other statement of the run, and every batch of a drain. When
+the caller's context runs out the operator gets a context deadline, not `ErrContended`:
+nothing was refused, the run did not finish.
+
+One answer to that patience is neither a refusal nor a deadline: being picked out of
+somebody else's deadlock (`40P01`) cancels an ask while the run holds nothing, because the
+ask is the first statement the session has sent and the cycle is already broken by the
+cancelling. The ask is therefore re-issued, four times at most, and a database that picks
+the same session every time is reported with the server's own words and its files
+unapplied. `kit/db/composition_lock_deadlock_test.go` raises `40P01` of the ask from the
+catalog side and pins both answers.
 
 **What each file cost.** Every applied file logs `db: applied migration` at info
 with the runner's own `duration_ms`, and a data file's line carries `batches=` beside
@@ -213,9 +288,9 @@ reads the id back off the message, counting the ids it is counting off every non
 the package rather than off `refusals.go` by name — an id *is* the constant
 `refusal<Name> = "…"`, wherever the runner keeps it, and a gate that opened one file by name
 could only ever hold the ids that stayed there, which is the tenth review's fourth finding.
-`kit/db/review8_refusal_ids_are_the_table_test.go` reads this table against the ids
+`kit/db/refusal_ids_are_the_table_test.go` reads this table against the ids
 `refusals.go` declares and refuses the two lists to differ, and
-`kit/db/review11_a_refusal_id_is_declared_wherever_the_runner_keeps_it_test.go` refuses an id
+`kit/db/refusal_id_is_declared_wherever_the_runner_keeps_it_test.go` refuses an id
 whose home is not that file: the file the two lists are read from stays one file however the
 code is arranged, which is what makes the promise below hold and not merely happen.
 Between them the two halves of that promise hold: an id named here that nothing prints, or a

@@ -3,52 +3,478 @@
 `modules/file` is uploaded bytes and the rows that name them. There is no
 `rest.Spec`, because a file arrives as a stream: the routes under
 `/api/v1/file/files` and the public read at `/api/v1/public/file/files/{id}` are
-written in [internal/handler.go](internal/handler.go), guarded by `file:read`
-and `file:manage`, with the admin entry at `/app/file/files`. Where a blob
-write sits relative to the commit is the one interesting problem here;
-[module.go](module.go) explains both answers, a subscription removes the blob
-after its row, and a sweep reconciles what the two disagree about.
+written in [internal/handler.go](internal/handler.go), guarded by `file:read`,
+`file:manage`, `file:retain` or `file:erase`, with the admin entry at
+`/app/file/files`. Where a blob write sits relative to the commit is the one
+interesting problem here; [module.go](module.go) explains both answers, a
+subscription removes the blob after its row and writes the proof, a sweep
+reconciles what the two disagree about, and a second sweep removes the rows
+whose retention class ran out.
 
-Compose it with `file.Deps{Storage, MaxBytes, QuotaBytes, ReconcileEvery}`;
-`config.example.yaml`'s `files` section supplies the directory, the upload
-ceiling and the per-tenant quota. Consumers import [contracts/](contracts/) and
-its [fake](contracts/filetest/), never `internal/`.
+The tenant is in the port's type. `contracts.Scope` names a tenant and is
+minted at two doors only — `ScopeOf(ctx)` for a request whose tenant was
+resolved at the middleware, `ScopeOfTx(db.Tx[db.Tenant])` for a command that is
+already in a transaction — and `Storage` takes a `Scope` before every `Key`, so
+an adapter is never handed a key and left to ask whose it is. A key is a lower
+case UUID and nothing else (`contracts.ParseKey`). What the prefix buys, what it
+explicitly does not buy — it is not the boundary, not one bucket per tenant, not
+a secret — is [ADR 0019](../../docs/adr/0019-the-tenant-is-in-the-object-name.md).
+`Local` keeps bytes at
+`<dir>/<tenant uuid>/<2 hex>/<key>`; the store that speaks to an object service
+is `S3`, and `Deps.Storage` is the composition's choice between them. A deployment
+with `Local` gets no signed URLs: `Grant` answers
+`contracts.ErrNotSignable`, which the route renders as 501, and that is the
+honest answer for a disk store rather than a bug. The same store does answer
+`Prover`, though: a directory holds one file under one name or none, so an
+installation on disk gets a `verified_at` stamp on its erasure certificates
+rather than one left open forever — and it counts both names `Delete` writes to,
+so bytes still lying in the pre-scope flat directory keep a copy from being
+certified away.
+
+`S3` is the same port on any store that speaks S3 — AWS S3, Garage, SeaweedFS,
+Ceph RGW — through minio-go, and it is the answer for an installation whose bytes
+cannot live on one volume. Its object names come from
+`contracts.Scope.ObjectName` and nowhere else, so one bucket shared by the whole
+installation (decision 0028) still holds `<tenant uuid>/<key>`, and a UUID copied
+out of one tenant's row names nothing in another tenant's prefix. That refusal is
+inherited rather than re-written: `filetest.RunStorage` asks those questions of
+every implementation, and `modules/file/s3_test.go` runs that suite against a live
+object store. It is also the store that answers `Signer`, so
+`GET /files/{id}/grant` returns a presigned read whose Content-Type,
+Cache-Control and Content-Disposition are the object's own, written at `Put` by
+`contracts.MetaFor` — the byte is served by the store, with no request of this
+process in the path. Two doors it does not answer, both declared on the type
+rather than discovered: it implements no `Reconciler`, so an installation on it
+gets no orphan sweep and leaves an upload's abandoned bytes to a bucket lifecycle
+rule, and it implements no `Prover`, so an erasure certificate's `verified_at`
+stays NULL. It takes the length a stream does not declare, because that is the
+only answer its own upload route gives: a body that arrives without one is
+written, and the no-clobber promise is kept by claiming the object's name with a
+conditional write of nothing before filling it, which is what a store's own
+conditional create header cannot do across a multipart upload. The test stack
+starts SeaweedFS (`make up`, published on 8333) and the adapter's cases fail
+rather than skip without it, as the NATS transport's do — so every job that runs
+`make check` starts that store as a step of its own, which is what
+`modules/file/store_gate_test.go` holds the three workflow files to. The reference
+application still composes `Local`: `make run` and `make e2e` are meant to work on
+a machine with no object store, and which store a deployment has is a line its
+composition writes.
+
+Compose it with `file.Deps{Storage, MaxBytes, QuotaBytes, ReconcileEvery,
+Retention, Tenants, RetainEvery}`; `config.example.yaml`'s `files` section
+supplies the directory, the upload ceiling, the per-tenant quota and
+`files.retention` — the deployment's table of how long each `kind` lives, which
+`kit/config` parses as Go durations and refuses when an entry is keyed on no
+class or is not a positive duration. The reference application ships the table
+empty, so an installation that priced no class runs no sweep at all. A kind the
+table does not name is never deleted, only logged. `Tenants` is required
+with a policy, so a sweep that could not walk the tenants fails at composition
+instead of quietly never removing anything. Consumers import
+[contracts/](contracts/) and its [fake](contracts/filetest/), never `internal/`.
 `make test TEST_PACKAGES=./modules/file/...` needs the development database.
 
 ## Authorization
 
 ### Permissions
 
-The manifest in `modules/file/module.go` (`permissions`) declares two keys, defined in `modules/file/contracts/permissions.go`.
-`file:read` guards list (`file-file-list`), read (`file-file-read`) and the authenticated download `GET` and `HEAD` `/{id}/content`, and the "Files" nav entry and screen `file/files`.
-`file:manage` guards upload (`file-file-upload`, multipart) and delete (`file-file-delete`).
-All are `httpx.Permission(...)` declarations in `modules/file/internal/handler.go`.
+The manifest in `modules/file/module.go` (`permissions`) declares four keys, defined in `modules/file/contracts/permissions.go`.
+
+- `file:read` guards list (`file-file-list`), read (`file-file-read`), the authenticated download `GET` and `HEAD` `/{id}/content`, and the time-limited URL `GET /{id}/grant` (`file-file-grant`). It is also the "Files" nav entry and screen `file/files`.
+- `file:manage` guards upload (`file-file-upload`, multipart, with the `visibility` and `kind` query parameters) and delete (`file-file-delete`).
+- `file:retain` guards `POST /{id}/hold` (`file-file-retain`) and `DELETE /{id}/hold` (`file-file-release`). Placing a hold stops the clock for everybody else's deletion, so it is not something a reader does by default.
+- `file:erase` guards `POST /erase` (`file-file-erase`). Erasing is a stronger promise than deleting — "and nothing is left", with the proof row that says so — which is why it does not borrow `file:manage`.
+
+All are `httpx.Permission(...)` declarations in `modules/file/internal/handler.go`, and `kit/app` refuses to boot a route that guards itself with a key the manifest does not declare.
 
 ### Object scope
 
 None. A search of the module finds no call to `tenancy.Policy` and no `Resource.Kind`.
-Scope is the tenant, through row-level security. The one per-object rule is visibility, described below.
+Scope is the tenant, through row-level security, and it is carried in the type before it is carried in the SQL: `contracts.Scope` names one tenant, `Scope.ObjectName` is the only place a prefix and a key are joined, and both new tables (`file_holds`, `file_erasures`) are `ENABLE`+`FORCE ROW LEVEL SECURITY` under `platformkit_tenant_match(tenant_id)` (migrations/000040). The per-object rule is visibility, described under Public faces below.
+
+The one read that is not a tenant's own is the orphan sweep: a blob no row names cannot be found from the rows, so `internal/reconcile.go` lists the store under `db.Tx[System]` and asks which keys no tenant's rows claim. It is a job with the ops surface's system token (`sweep.Use(s.Ops.SystemToken())` in `module.go`), reached from no route, and its delete is the one place this module removes bytes by tenant id rather than by a `Scope` a request brought. What the listing may name is narrower than what the adapter may read, and it is answered twice: `Local.tenantOf` answers only for bytes under this app's own segment (and for the flat directory), and `internal.foreignTenants` then drops every listed blob whose tenant's row names a different app — the directory says which store listed a byte, only `tenants.app` says whose tenant it is. A tenant whose row is gone names no app and stays its own store's to clean, which is `kit/events`' `holdsTenant` and the relay's answer for the same case. So on a volume two apps share, one app's sweep never reaches the other's, and a named app's bytes that still sit at the un-prefixed position before its `mv` are left by the deployment that names no app: they cost disk until the move, which is the way to be wrong about a directory two apps share.
 
 ### Duties the module enforces itself
 
-`Service.Open` in `modules/file/internal/service.go` refuses an anonymous caller a file that is not public, and answers `crud.ErrNotFound` rather than 403.
-`File.Validate` in `modules/file/contracts/file.go` stamps `UploaderID` from `tenancy.ActorFrom`.
-`Service.Upload` charges the tenant's quota and size ceiling (`charge`, `MaxBytes`), and `Service.Delete` removes the row in the caller's transaction and the bytes after commit (`RemoveBlob`).
-The code shows no rule tying a delete to the uploader.
+- `Service.Open` refuses an anonymous caller a file that is not public, and answers `crud.ErrNotFound` rather than 403.
+- `Service.Upload` mints its `Scope` from the context (`contracts.ScopeOf`), so nothing is open while a body arrives, and charges the tenant's quota and size ceiling (`charge`, `MaxBytes`).
+- `File.Validate` in `modules/file/contracts/file.go` stamps `UploaderID` from `tenancy.ActorFrom`, refuses a `visibility` that is neither `private` nor `public`, and refuses a `kind` that is not a token (`contracts.ValidKind`, the same shape `files_kind` CHECKs) — which is the difference between a 422 naming the class and a 500 from the database.
+- `Service.Delete` removes the row in the caller's transaction and publishes `file.deleted`; the bytes go after the commit, in the subscription. It refuses with `contracts.ErrHeld` while a live hold is on the file.
+- `Service.Retain` and `Service.Release` lock the file row with `crud.GetForUpdate` before they write the hold, which is what makes "no live hold" a fact and not a race against the sweep. Placing one is a replace, never a second row (`file_holds` is unique on `(tenant_id, file_id)`); releasing a file with no hold is success, not an error.
+- `Service.SetUses` locks a file whose use it ends `FOR UPDATE`, and a file the new set only names `FOR KEY SHARE`, before it decides anything about either, which is what makes "this image is read by nothing any more" a fact and not a race: two records that drop the last two uses of one picture serialise on it, and the grace period the release sweep measures starts exactly once.
+- `Service.EraseSubject` deletes exactly the files this subject uploaded inside this tenant's transaction, `FOR UPDATE` over the set it is about to remove. One held file refuses the whole erasure with `ErrHeld` and names it, so a refusal writes nothing; a subject with no files answers a receipt of zero and writes nothing either. `fault()` in `internal/handler.go` answers `ErrHeld` with 409 on both doors that refuse it — `rest.Fault` knows the kernel's sentinels and none of this module's, so without that arm the caller's own hold came back as a 500. The `reason` the route is given is filed, not accepted and dropped: it goes into each `file.deleted` work order and lands in the proof row beside the digest, so "why was this person's file removed" is a column read and not a memory — `contracts.MaxErasureReason` caps it and a longer one is refused before any row goes.
+- `internal.Sweep` (the retention job) is `jobs.PerTenant`, so each delete runs inside that tenant's own transaction. Its batch is a batch of the rows its policy covers: the class cutoffs (one `(kind, created_at <= cutoff)` arm per priced class) and the live-hold check are in the query, and both are rechecked before each delete, so `sweepBatch` costs latency and not a file kept past its class. A kind with no configured policy is never read and never deleted — the sweep reports what it removed and sees only the classes it was given.
+- `internal.EraseBlobs`, the subscription, asks the store `Prove` after removing the key and writes `file_erasures` with `verified_at` NULL when the store still reports copies (`versions_seen` above zero) rather than certifying an erasure it could not check. The proof row is written `ON CONFLICT (tenant_id, file_id, cause) DO NOTHING`: Postgres aborts a transaction at its first failing statement, so a redelivery that caught a duplicate-key error would be a transaction that can do nothing else. Zero rows is the answer "already certified", and it writes no second `file.erased`.
+- `Service.Grant` refuses an expiry over `contracts.MaxGrantExpiry`, a public file (`ErrPublicFile`, it already has an open door) and a store that cannot sign (`ErrNotSignable`). It changes no state, so it logs with the trace context instead of writing an audit row of its own.
+
+The code shows no rule tying a delete, a hold or an erasure to the uploader.
 
 ### Public faces
 
 `GET` and `HEAD` `/files/{id}` on the public surface (`httpx.Public()`, operations `file-file-public*`) return the bytes of a file whose visibility is public.
 Any other file, and a host with no tenant, is a 404.
-Download headers are set in `modules/file/contracts/response.go`.
-Both are reads; the module has no public write, so `kit/limit` is not applied.
+A public file is refused a grant (`ErrPublicFile`), so no signed URL ever competes with the open door. Download headers come from `modules/file/contracts/response.go`, and `contracts.MetaFor` hands the same set to the store at `Put` so a bucket-served object carries the `docs/cache.md` policy without a handler here.
+Both public routes are reads; the module has no public write, so `kit/limit` is not applied.
+
+Who may read a file is derived, not remembered: the visibility its uploader was given, widened by any live `file_uses` row of it that says the record showing it is showing it to somebody who has not signed in (`SetShown`/`SetUsesShown`, migrations/000056). The public door asks both halves and the row it hands back carries the answer, so the bytes served and the `Cache-Control` on them are one verdict. Neither half is copied into the other, and the two live in two columns. `files.upload_visibility` is the audience the file was *given* — chosen at upload by whoever holds `file:manage`, and written by the upload and by nothing else (migrations/000064 recovered it for rows an earlier release overwrote, from each file's own upload event where the outbox still holds one and, where it holds none, from whether a live public use already accounts for the `public` that row carries) — and the audience a record asserts lives in the use row that asserts it. `files.visibility` is what the row reports as its own audience: the same word at upload, and put back to `private` by the write that takes an asserted audience away, which is the one thing that ever narrows it. `SetShown` and `SetUses` therefore decide the answer and publish its flip, and never raise the file row with it: a file whose last public user is gone is anonymously unreadable at once, not when the release sweep arrives a day or two later, and an ordinary edit that adds a picture to a published record makes those bytes readable in the same write, from the row it just filed. The one row write a revocation owes is the downward one — a file nothing public reads any more, and whose recorded upload visibility is private, has `visibility` put back to private beside the event that says so. What that costs is one indexed read of `file_uses` for a file its own row calls private, and the object stored for a file public only because a page shows it carries the private cache policy — the conservative direction, never one reader wider. The floor is what the upload asked for, and where some record names that choice it holds in both directions a person might have meant: a site logo named by a bare uuid with no field and no lifecycle keeps its public read, and so does one that a published page gained and later dropped — that page's audience went back with its own row, and the uploader's choice was never the page's to take back. Where no record names it either way — the upload event has aged out of the outbox and a live public use accounts for the `public` in the row — the floor is private, and the file narrows as the record that was showing it takes its audience back, which is the moment the release it came from made that file private too.
+
+### The media library
+
+The grid, the meter and the caption are three reads and one write on the rows this
+module already owned, and they are `contracts.Library` rather than a fourth and
+fifth method on `Service`, for the reason `WidthOpener` exists: a caller that draws
+a grid has no business being handed the erasure commands.
+
+`GET /api/v1/file/files` gained the grid's three axes — `q`, `type` and `unused` —
+and `GET /api/v1/file/quota` answers what one tenant is holding. The meter is
+`file:read` and never anonymous: an upload must not teach a stranger how much of a
+quota is left, while a member of the tenant asking about that tenant's own disk is
+a different question with a different answer. `PUT /api/v1/file/files/{id}/alt`
+(`file:manage`) writes what a picture says about itself and publishes
+`file.altered`. `POST` to that same address performs the identical write, and it is
+there because it is the address the catalog's `alt` command sends a client to (see The
+catalog entry below): a command a document offers at a door that answers `405` is a door
+nobody outside the browser it was hand-written for has.
+
+A grid tile names a width only when its row has one. The content door serves a planned
+width only once it is built and never falls back, so a tile that asked for 480 whatever
+the row held would be a broken-image glyph over a 404 — which is what it was, for every
+picture narrower than the plan and for every picture whose encode pass had not run. The
+page therefore asks `Service.ReadyWidths` once for the rows it is drawing, and each tile
+asks for the widest ready width that fits it, or the frame's own address when the row has
+none: the frame is the one picture of a file that always answers, and for a picture
+narrower than the plan it is the only one there will ever be.
+
+Four decisions are functions in `contracts/` and not clauses in a query —
+`MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` — because the SQL service and
+`filetest.Fake` have to answer them identically, and the fake encodes no widths and
+holds no lock. The type filter shows why: a family read off the media type's prefix
+alone files `image/svg+xml` — which nothing here decodes, measures or renders
+inline — among the photographs, so `MediaFamily` asks for a frame the image pass
+actually measured (`width > 0`) as well as a type it would show in a browser.
+
+The meter takes no advisory lock, deliberately: the lock exists so twenty
+simultaneous uploads cannot each read one total and each decide there is room, and
+a page load that queued behind the tenant's own uploads would be an outage with a
+friendly face. Its number is the same sum `charge` refuses against, read as of the
+caller's own snapshot, so it can be one commit stale and is never the number that
+refused you. `used` counts a picture and its other widths together — one tenant's
+disk, one sum — and an installation with no ceiling answers `unlimited`, with no
+bar to draw.
+
+An alt text is a claim a person makes about a picture, so it is one command's
+write. `alt = ''` with no decorative claim is legal to arrive at — every upload and
+seeded file starts there — and illegal to leave by; `decorative` with words in it
+is refused by `File.Validate` and by the column's `CHECK`, written in the same
+image; and a caption is written against the `updatedAt` the caller was shown, so a
+row that has moved answers `ErrConflict` and changes nothing. A `PUT` naming no
+revision is a `PUT` that means "last write wins", and this module has no such
+command.
+
+### The library's page
+
+`internal.MountLibrary` serves the screen these reads are for, at the address the
+manifest's one `Nav` entry names: `/app/file/files`, guarded by `file:read` like the
+list door beside it. It is mounted by this module and composed by the application, which
+hands in the shell it already builds and the authorizer its routes already enforce
+(`Deps.Library`, a `*LibraryChrome`); with no chrome wired the module serves no page and
+the surface's own 404 says so, the way `modules/change` answers a queue nobody composed.
+
+One page, four routes, no script. The grid takes its filters as query parameters —
+`q`, `type`, `unused`, `sort`, `page` — so a filtered view is a URL a person can reload
+and send to a colleague; the details panel opens from `?file={id}`, which makes opening
+one a link rather than a click a script has to intercept; and the three write controls are
+`<form method="post">` elements posting to this module's own page routes — `POST
+/files/{id}/alt`, `POST /files/{id}/delete` and `POST /files/upload`, the last of which
+streams the multipart part to storage through the same `Service.Upload` the JSON door
+performs and lands the person on the new file's panel, because the JSON door answers with
+the row it wrote and a raw document is nowhere a person who pressed Upload should land. POST
+rather than the JSON verb, for the reason `modules/change` gives for its decision forms:
+`kit/httpx` refuses an unsafe request carrying a session cookie unless it is same-site,
+and a form cannot send `PUT` or `DELETE`. The JSON doors are unchanged and are still the
+ones a client that can speak them uses. The page fills one action above the fold — Upload
+— and the filter's Apply sits in the secondary tone beside it, because the design floor
+allows one thing to do per view.
+
+What the page decides is nothing. The tiles, the meter and the panel are answers from
+`contracts.Library`, `Service.Uses` and `crud.Get`, so the number on the meter is the
+number `charge` refused against; the caption form carries the `updatedAt` the panel was
+drawn from, so the second copy of that form is refused by `SetAlt` rather than quietly
+winning; and the removal control is disabled while a use row lives while the command
+underneath refuses the same thing whatever the button looks like. The controls a caller
+may not press are absent rather than disabled when the composition's authorizer says so
+— a control that cannot be used is a fact about the page, and the guard on the post is
+what actually decides.
+
+### The catalog entry
+
+`GET /api/v1/app/resources` names `file`/`file`. The routes above answer whether or not
+anybody declares them, and a door nobody can discover is a door only the browser it was
+written for has, so `RegisterRoutes` ends by recording the entity those routes are
+mounted on and the caption as a command with its work beside it: the same `SetAlt`, in
+the request's own transaction, behind the guard registration installs.
+
+Three CRUD doors are named because three are performable by a caller that never
+compiled against this module — the list, the read and the delete. No create is named:
+the upload is a stream, and a form or a generated client has no JSON body to send it
+with, so advertising it would be a New button over a refusal. No update is named: a
+file's bytes are what they are, so the only writable fact about one is what it says
+about itself, and that is a claim with an event rather than a `PATCH` over the row. No
+screen is published. The workspace address a person reads files at is the page above,
+and a generated screen over the same entity would be a second library beside it.
+
+Naming fewer than the five asks nothing of the number beside them:
+`ui/screens.CatalogVersion` moves when a resource already in the document loses a
+verb, because a shell in somebody's pocket drew that button and hears nothing when
+the address stops answering. `file/file` is new to the document, so no installed
+build holds a door of its own to lose and its verb set is this module's to declare.
+A shell that reads `operations` offers the list, the read and the delete here; one
+that ignores the key offers a New button over a stream the route refuses, which is
+the cost the key is written for.
 
 ### The operator boundary
 
-None. Neither permission sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route.
+None. No key in `permissions` sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route — `file:erase` and `file:retain` are tenant permissions, granted per role like the other two. The module's only cross-tenant reach is its own orphan sweep, which is a job holding the ops surface's system token (`s.Ops.SystemToken()` in `module.go`) and not a route anybody can call.
+
+What an operator does instead of a route is two steps beside `make rehearse`: `make backup` writes one dump of the database — with the grants on its tables, because a restore the application cannot open is not a restore of it — plus a copy of the on-disk byte store and a `manifest.sha256` of every artefact, and `make restore-drill` puts a backup back into a scratch database and compares four things. The objects the installation's own store holds against the objects the backup carries, in both directions, and the installation's current bytes against the digests the manifest recorded (`--files`, which `make` passes for `PLATFORMKIT_FILES_DIR` when the directory exists, and which an object-store deployment omits because it has no directory here to name; given no `--from`, the drill forwards that same directory to the backup it takes for itself, because a drill that drilled a backup of its own making which never held those objects would refuse every clean installation that has one). Every restored object against the digest taken before the backup. The set of tables, and every table's row set, in both databases — a table either side names that the other does not is a restore that failed, not a drill that could not run. And the set of tables the application's *own role* can read in the source against the set it can read in the restore (`--app-url`, default `PLATFORMKIT_TEST_DATABASE_URL`): the owner connection every other check runs on holds every table by construction, so it cannot see a restore that came back shut against the installation. The drill prints `restore_drill_pass_ratio=N/M` (`scripts/backup.sh`, `scripts/restore_drill.sh`). The rows and the bytes live in two places, so a promise that the installation can be put back is only answerable by restoring it and then reading what came back as the thing that will use it. One backup is one database, never one tenant, so `make backup TENANT=acme` is refused rather than silently dropped. With no `--files` the byte half can only ask whether the backup still reads like itself, and the closing line says that instead of claiming the installation was opened.
 
 ### Provisioning
 
-The code names no role. A composition grants `file:read` to people who may browse and download, and `file:manage` to people who may upload and delete.
+The code names no role. A composition grants `file:read` to people who may browse, download and mint a grant, `file:manage` to people who may upload and delete, `file:retain` to whoever may keep a file past its class, and `file:erase` to whoever answers a data-protection request — the last two are the ones a broad support role should not hold by default.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module.
+
+## Interface
+
+**Reused** — `kit/crud`, `kit/db`, `kit/httpx`, `kit/rest` (its error mapping, and the
+`FileUses`/`FileShown` ports other modules hand this one), `kit/events`, `kit/problem`,
+`ui/page` and `ui/components`. **Added** — `contracts.Service` and the narrow ports
+beside it (`Opener`, `WidthOpener`, `Library`, `VariantServable`), which are what a
+consumer imports; the HTTP doors listed above; the library page; and `filetest.Fake`,
+which answers all of them without a database. **Made reusable** —
+`ui/page.Route.StreamsBody`, the mark a page that reads its own request carries so the
+kernel bounds it by `files.max_bytes` rather than by the megabyte every other request
+gets, and `LibraryPages`' narrow ports (`UseReader`, `Remover`, `Storer`), which are
+what a page of this shape asks for instead of the whole `Service`.
+
+Consumers import [contracts/](contracts/) and its [fake](contracts/filetest/), never
+`internal/`.
+
+## Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it rebuilt.
+**Reused:** `kit/jobs.PerTenant`, wired as `modules/auth/internal/sweep.go` and
+`modules/billing/internal/renew.go` wire it and with the same
+`modules/tenant` `Active` as the lister; `contracts/filetest.RunStorage`, whose
+signature changed once so that every implementation that runs it inherited the new
+case — including both directions of the declared-length collision; `crud.GetForUpdate`,
+`platformkit_tenant_match` and the `ENABLE`+`FORCE` shape `000019_file.up.sql`
+already kept; `modules/audit`'s `SubscribeAll`, which is why an erasure needed an
+event and not a new sink; `contracts/response.go`'s header set and
+`contracts.MetaFor`, so an object served from a bucket carries the `docs/cache.md`
+policy with no handler here; and the custom-format `pg_dump -Fc` artifact
+`scripts/rehearse_migrations.sh` already reads. **Added:** `contracts.Scope` and
+`contracts.Key` — the only scope-carrying value in the kernel is `db.Tx[db.Tenant]`,
+which pins a connection for as long as a body arrives, and `Upload` writes bytes
+before it opens anything; `Signer` and the presigned grant, because read, write and
+delete was all the port had; `files.kind`, `file_holds`, `file_erasures`, the sweep
+that reads them and the `files.retention` table that prices them; `internal.S3`; and
+`make backup` with `make restore-drill`. **Made reusable:** `Scope.ObjectName` as the
+one place a prefix and a key are joined, so no adapter is ever handed a bare key and
+left to ask whose it is; `filetest.RunStorage` itself, which is the door any later
+store walks through and where a two-implementation disagreement stops being an
+argument; `Reconciler` and `Prover` as ports an implementation declines by name
+rather than by silence; and `Deps.Storage`, which is still the composition's choice —
+`file.Local(dir)` and `file.S3(cfg)` are the same call written in the same place.
+
+The audience, hold and bound work beside that names its share. **Reused:**
+`httpx.WriteLimits` and `httpx.RetryAfter` on the upload route, and `kit/limit`'s
+counter table behind them, so the module adds no counter of its own;
+`rest.Spec.Audience` and `rest.FileUses` (wired by `file.RecordUses`), which are how
+a record's public face reaches this ledger without this module learning what a page
+is; `crud.GetForUpdate`
+and `db.Now()` again for the hold check and the grace stamp. **Added:**
+`contracts.ShownUses`, `contracts.UsesOrder` and `contracts.InUse` — the audience a
+record asserts travels with the uses it files, the save-wide lock order is the one
+thing a richtext save can promise and a Service cannot guess, and a refusal worth
+naming a count for is worth a typed error;
+`Service.OrderUses`; and the process-wide decode gate in `internal/decode.go`.
+**Made reusable:** `WriteLimits` as the counted arm of the app surface rather than a
+file-module rule, so the next upload route declares two windows and gets the tenant
+scoping, the ordering behind the permission gate and the header for free; and
+`filetest`'s conformance cases for the audience, which run against the fake and the
+SQL service alike — the two implementations are where a rule written twice starts to
+mean two things.
+
+## Composition
+
+**Reused** — `kit/crud`'s writes and row locks, `kit/db`'s tenant transaction, this
+module's own `Storage` and `MetaFor`, `http.DetectContentType` (the sniff `Agrees`
+already runs), `kit/richtext`'s `References`, `kit/rest`'s existing richtext seam, and
+the orphan sweep. **Added** — `contracts/image.go` and the use ledger: no existing
+package decides what an image becomes or what a body of somebody else's record
+references, and both had to live in `contracts/` rather than `internal/` so that
+`filetest.Fake` runs the one implementation the SQL service runs instead of imitating
+it. **Made reusable** — `ProcessImage`, `ReadsAsImage`, `RefusesPass`, `CollapseRefs`
+and `DiffUses` as shared, tested decisions; `rest.FileUses` as the seam any module with
+a richtext field can mount and `file.RecordUses` as the shape of wiring it;
+`Upload.Image` as the door a picker or an editor knocks on, and
+`contracts.PictureSource`/`PictureURL` as the one spelling of that door's address —
+the string a body's `<img src>` and the workspace catalogue's `pictures.source` are
+both written from, so the two cannot drift into two shapes; and `width`/`height` on the
+row as the server's own account of a frame, which the media library and the editor will
+lay out against instead of decoding a header to learn what an image is.
+
+### Composition — the widths of a stored image (T-0315)
+
+**Reused** — this module's own `Storage`, `Scope`, `Key` and `MetaFor` for the variant
+objects, `internal.Service.charge`'s advisory-locked sum for their quota, `ProcessImage`
+for the frame they are scaled from, `kit/jobs`' `Job` + `PerTenant` + the retention
+sweep's `FOR UPDATE SKIP LOCKED` batch shape for the pass, `crud.GetForUpdate` for the
+claim, `file.deleted` and its `EraseBlobs` subscriber for the bytes of a width whose
+file went, and the existing download door for the read. **Added** — `file_variants`,
+`contracts.VariantWidths`/`VariantHeight`/`VariantKey`, `internal.Variants` and `?w=` on
+both doors: nothing in the tree resized a frame, named a planned width, or knew which
+widths a file could serve, and the plan had to be arithmetic in `contracts/` so the fake
+and the SQL service hold one answer rather than two. **Made reusable** — a variant as
+*not* a file (no `files` row, so no list entry, no use, no second quota), the
+`(file, width)`-derived object name as the idempotency key an encode needs to be
+repeatable, `contracts.VariantServable` and `contracts.WidthOpener` as the two narrow
+ports a consumer of a width takes, and `kit/richtext`'s write-time `checkImage`, which
+now holds every descriptor of a multi-width `srcset` to the one first-party address this
+kernel mounted. The orphan sweep asks both tables which objects a row names, so a width whose own
+row still says `ready` is never removed as an orphan the night after it was built — its object is
+named by `file_variants.storage_key` and by nothing else.
+
+### Composition — the library's grid, meter and caption (T-0316)
+
+**Reused** — `crud.GetForUpdate` and the tenant policy `000019_file.up.sql` keeps for
+the grid's read, the caption's write and the delete's second lock; `internal.Service.charge`
+and the advisory-locked two-table sum it already took, which the meter now reads through
+the same function rather than beside it; `filetest.RunService` and `filetest.Fake`, which
+ran the three new cases the moment `contracts/` held the decisions behind them; the
+existing `files.unused_since` stamp, `file_uses`, `Service.Uses` and the `file:read`/
+`file:manage` pair — no new column beyond the caption's own two, no new table, no new
+permission. **Added** — `alt`/`decorative` and `contracts.AltClaim`, `MediaFamily`,
+`LibrarySort`, `Quota` and `contracts.ErrInUse`: nothing in the tree could answer what a
+picture says about itself, what a file's family is, whether a tenant is out of room, or
+whether removing a file would strand a page, and each had to be one function `contracts/`
+owns so the SQL service and the fake cannot answer it differently. **Made reusable** —
+`contracts.Quota`, whose `Left`/`Fraction`/`Full` are the meter's whole arithmetic for any
+screen or client; `contracts.MediaFamily`, which is the type filter any later browse of
+these rows draws from; `WithQuota` on the fake, so a consumer can drive its own quota
+empty and get the same refusal the deployment gives; and a caption guarded by the row's
+own `updatedAt` rather than by a second counter, which is the revision guard any future
+single-column edit of a file can copy.
+
+### Composition — the media library's page (T-0316)
+
+**Reused** — `ui/page.Serve` and its `Route`/`Request`/`View`, which is how
+`modules/change`'s two screens are mounted and why this page needs no package of its
+own: it is `modules/file/internal/library_page.go` beside the service it reads, the same
+call `modules/change/internal/reviews.go` made; `ui/components`' `Masonry`, `Media`,
+`DetailList`, `SidePanel`, `EmptyState`, `Toolbar`, `Pagination`, `Alert`, `Form`-family
+controls and `ContentState`, so the grid has no class of its own to style and the states
+are the vocabulary the gallery already documents; `contracts.Library`'s three reads, the
+`file:read`/`file:manage` pair, `Service.Uses`, and the tenant policy that scopes every
+one of them. **Added** — `Deps.Library`/`LibraryChrome`, the one edge that lets a
+composition hand its chrome to a capability that must not guess at it, and the three page
+routes (`POST /files/{id}/alt`, `POST /files/{id}/delete` and `POST /files/upload`),
+which are this module's commands wearing a form. **Made reusable** —
+`LibraryPages.UseReader`, `Remover` and `Storer`, the
+narrow ports a page of this shape asks for instead of the whole `Service`, so a later
+screen (the picker, a record's own image field) takes the one question it needs; the
+revision stamp travelling in the form as the row's own `updatedAt` rather than a second
+counter; and the drawing rule that a write control is absent for a caller the authorizer
+refuses and never merely greyed out.
+
+## Verification
+
+`make test TEST_PACKAGES='./modules/file/... ./apps/platformkit/...'` needs the
+development database, object store and broker `make up` starts; the S3 adapter's
+conformance suite fails rather than skips without the store. The library's own cases —
+the caption invariant and its revision guard, tenant isolation on the grid and the
+panel, the read-only credential refused on both surfaces, the meter, the picker, and
+the two browser cases that drive Chromium at a phone's and a desktop's width — are in
+`modules/file/*_test.go`; `modules/file/internal` holds the service and store cases.
+`make check` covers the imports, the ui layers, the budgets and the published OpenAPI
+document. No mobile or native flow runs against any of it: this repository has no
+`native/` directory, and a catalog client's caption is proved by
+`TestTheCatalogsCaptionCommandAnswersWhereTheCatalogSendsIt`, which derives the address
+the way such a client does.
+
+## Limits
+
+The media library's page is a grid, a meter, a panel and three forms. What it does not
+have yet, and nothing pretends otherwise: no upload progress, cancel or retry (the
+browser's own is all there is), no per-file error tile beside the grid's rows — a
+refused upload answers one sentence above the grid and the person re-picks the file — no
+Replace on a stored file, no keyboard-and-axe pass and no Storybook state for the
+picker, and no journey in `e2e/steps` (there is no `file.ts`), so the brief's four
+acceptance journeys are unproved end to end. The picker's answer is a query parameter
+on the address that opened it; nothing in this repository opens the picker or reads that
+answer back, because the field that would is its consumer's share (T-0189). The page's
+markup also still lives in `internal/library_page.go` rather than in an `internal/ui`
+layer of its own.
+
+The image pass decodes JPEG, PNG, the first frame of a GIF and WebP (through
+`golang.org/x/image/webp`, whose decoder registers with `image.DecodeConfig`, so the
+pixel ceiling is still read from a header and not from an allocated frame). A planned
+width is served only once it is built: `?w=` answers 404 rather than falling back to the
+original, because one address with one width has one object to serve, and the encode is
+on the clock (`file-variants`, five minutes), which is why it is the page that asks which
+widths exist rather than the browser finding out. A width that will not fit the tenant's quota
+fails at the encode and is recorded as failed with `reason = 'quota'` — the original was
+already accepted, charged and served, and this module does not reach back to refuse an
+upload. A `failed` row is never retried and nothing reads it automatically yet; the media
+library will. An erasure proof certifies the frame's object, and the widths' removal
+rides the same delivery beside it.
+
+The pixel ceiling bounds one frame; how
+many there are at once is bounded by the process's own ceiling
+(`internal/decode.go`, one slot per core), which an upload that cannot get one
+inside its wait answers with `ErrBusyDecoding` and a 503 carrying `Retry-After`
+rather than by queueing
+without limit. The encode pass shares those slots and defers instead of failing.
+The two refusals are different answers: a spent window is the caller's and answers
+429, a machine holding every decode slot is nobody's request being wrong and answers
+503 — and both carry `Retry-After`, which is what a retry actually reads.
+How often a caller may ask is the other bound and it belongs to the route: the upload declares `httpx.WriteLimits` (60 a minute per person, 300 per tenant), counted after the permission guard and before the body is read, so a spent window answers 429 with `Retry-After` and opens no write. The release sweep (`file-unused`,
+`internal/unused.go`) removes an image stamped `unused_since` further ago than
+`Deps.UnusedAfter` with no live use and no hold, and only ever a file the image
+pass measured (`width > 0`), so a document upload is never reaped by a rule about
+pictures. No arrival is ever stamped: the rule speaks of a use that *ended*, and a
+file the ledger has never named has no such moment to measure from — a site logo
+is a measured image whose only name is a bare uuid outside the ledger, and a stamp at
+upload destroyed one a day after a person configured it. The upload nobody ever saved is
+that boundary's cost, charged to the quota and the retention sweep rather than to a rule
+that cannot tell an unsaved picture from a configured one. A resource left on
+`rest.RecordNoUses` sits on the safe side of that boundary: it files no uses, so nothing
+ever stamps its images and the release sweep never reaches them — mount warns because the
+audience of those images is never derived either, so a published page shows only what its
+uploader made public. `Service.Delete` refuses a file any row of `file_uses`
+still names — `ErrInUse`, 409, naming how many records, nothing written and
+nothing published — and it asks under a lock on the file row `FOR UPDATE`:
+`SetUses` holds that same row `FOR KEY SHARE` for as long as one of its
+transactions is filing a use, so a use that begins concurrently either waits
+behind the removal and is refused the file it named, or lands first and is
+counted. The library's disabled control is the courtesy; this is the refusal, and
+it reaches a client that never saw the page. A dangling row is therefore what the
+erasure door and the retention sweep leave behind, and it ends with the next
+rewrite of that field: an edit, or the record's own delete through `kit/rest`,
+which ends its uses and is not refused by a file that went first. The removals
+that outrank a record's convenience keep going through the paths that ignore the
+ledger: a subject's erasure removes what a page is still showing, and the two
+sweeps remove rows they are about to end. A tenant that wants the person's file
+gone and the page intact edits the page first; the module will not tell the holder
+of a subject request to go and do a content edit. Nothing else ends a use. An
+edit of a published record files what it adds as public in
+the same write: `rest.Spec.Audience` is the record's answer and `SetUsesShown`
+is the one rewrite that can act on it. That write asserts the audience in the use
+row and never in the file row: the write of a file row is a lock held to the end of
+the save, and a save of two richtext fields naming two shared pictures in each
+other's order is two saves waiting for what the other holds (Postgres ends it by
+refusing one — SQLSTATE 40P01). `file.RecordUses` therefore names the whole save to
+the ledger before filing any of it, and the ledger takes its exclusive locks in one
+ascending pass over what the save *ends*. The pass's refusals are
+English `error` text, not catalogue keys, so they are untranslated beside the
+`messages/` catalogue the rest of the module answers in.

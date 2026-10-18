@@ -9,9 +9,21 @@
 // already published, and a schema that normalised those is a schema every new
 // module has to be taught. A module is audited by having emitted an event.
 //
-// It is append-only. Nothing updates a row and nothing removes one but the
-// retention job, which is also why there is no rest.Spec: a Spec is five routes
-// and three of them write.
+// It is append-only in the sense the code makes true: nothing in this module
+// updates a row and nothing removes one but the retention job, which is also why
+// there is no rest.Spec — a Spec is five routes and three of them write.
+//
+// Say plainly what that does not include. The trail carries the request that caused
+// each row — actor, request id, client address, trace context (migrations/000035) —
+// and the database refuses a rewrite of it: migrations/000048 revokes UPDATE and
+// TRUNCATE from every grantee the catalog discovers, and installs a BEFORE UPDATE
+// trigger that refuses every role, the table's owner included, beside a BEFORE DELETE
+// trigger that admits only a role that may delete and may not insert, and only past
+// 365 days. What it is still not is hash-chained: the per-tenant sequence and
+// prev_hash/hash pair decision 0013 owes is undelivered, so what this proves is that
+// nothing inside the application's reach rewrote a row, not that no row was ever
+// inserted. modules/audit/README.md's Duties section carries the same account with the
+// command that checks it.
 package contracts
 
 import (
@@ -20,6 +32,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/request"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -35,18 +48,73 @@ import (
 // was written — and not when the worker got round to it. Actor is nil when
 // nobody caused it: a job, an event handler, the bootstrap. EventID is the
 // outbox event's own id, which is what makes recording idempotent whatever
-// redelivers it. The columns are migrations/000010.
+// redelivers it. The columns are migrations/000010 and, for the four that name a
+// cause which was no session, this module's
+// migrations/000053_audit_attribution.up.sql.
 type Event struct {
-	ID         uuid.UUID       `json:"id" format:"uuid" doc:"The trail row's own id"`
-	TenantID   uuid.UUID       `json:"-"`
-	OccurredAt time.Time       `json:"occurredAt" doc:"When the state changed"`
-	Name       string          `json:"name" doc:"The event's name" example:"task.task.created"`
-	Actor      *uuid.UUID      `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
-	EventID    uuid.UUID       `json:"eventId" format:"uuid" doc:"The event this row records"`
-	Payload    json.RawMessage `json:"payload" doc:"The event's payload, as its module published it"`
+	// Operation metadata is copied from the event, never reconstructed from a call.
+	OperationID       *string          `json:"operationId,omitempty"`
+	OperationRef      *uuid.UUID       `json:"operationRef,omitempty"`
+	OperationTenantID *uuid.UUID       `json:"operationTenantId,omitempty"`
+	OperationPersonID *uuid.UUID       `json:"operationPersonId,omitempty"`
+	OperationOutcome  *request.Outcome `json:"operationOutcome,omitempty"`
+	OperationRevision *int64           `json:"operationRevision,omitempty"`
+	ID                uuid.UUID        `json:"id" format:"uuid" doc:"The trail row's own id"`
+	TenantID          uuid.UUID        `json:"-"`
+	OccurredAt        time.Time        `json:"occurredAt" doc:"When the state changed"`
+	Name              string           `json:"name" doc:"The event's name" example:"task.task.created"`
+	Actor             *uuid.UUID       `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
+	EventID           uuid.UUID        `json:"eventId" format:"uuid" doc:"The event this row records"`
+	Payload           json.RawMessage  `json:"payload" doc:"The event's payload, as its module published it"`
+	// RequestID is the id the caller of the request that caused this was answered
+	// with (X-Request-ID), and TraceParent the W3C trace context it carried, kept
+	// verbatim as the standard spells it. ClientIP is the peer address of the
+	// connection the request arrived on — never a header a client could write.
+	// All three are absent for work no request caused, and for every row written
+	// before migrations/000035: a fact nobody captured cannot be reconstructed
+	// afterwards, and inventing one would be writing history twice.
+	RequestID string `json:"requestId,omitempty" doc:"The call that caused this, as its caller was told it" example:"0f7c0f1c-2a3e-4a1b-9b4f-2f1d0c9b8a71"`
+	ClientIP  string `json:"clientIp,omitempty" doc:"The address the call arrived from" example:"203.0.113.7"`
+	// Traceparent is spelled as the standard spells its header, in one word, and
+	// that is not a style choice: the runner maps a scanned field by snake_case,
+	// so a Go name of TraceParent reads a column named trace_parent and finds
+	// nothing — the failure kit/events/relay.go warns about, reached here first.
+	Traceparent string `json:"traceparent,omitempty" doc:"The W3C trace context of the call that caused this" example:"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"`
+	// TraceID is the trace this row was written in, as the uuid a trace backend
+	// and a query can answer from: the second field of Traceparent, read out of it
+	// on the way back rather than stored beside it. The trail keeps one string —
+	// two columns for one fact are two columns that can disagree, and migrations/
+	// 000037 indexes the id out of the one column that exists — and this field is
+	// what makes that join answerable without the caller parsing a header. It is
+	// absent, not zero, when the row carries no traceparent or an unparseable one:
+	// "no trace" and "the trace whose id is all zeros" are different facts.
+	TraceID *uuid.UUID `json:"traceId,omitempty" format:"uuid" gorm:"-" doc:"The trace this event happened in, absent when nobody traced it"`
+
+	// Attribution: what caused this when the cause was not a session. The outbox
+	// carries these four (kit/events.Attribution,
+	// migrations/000052_outbox_attribution.up.sql) and this trail
+	// is where they outlive it, because the relay deletes a published row once its
+	// retention window passes and the trail is append-only: a copy that dropped
+	// them is the last chance the installation had to say what caused the write.
+	// ActorKind names the sort of cause and is the only one of the four that may
+	// stand alone — the seed run that named no file is still a seed run. Actor and
+	// ActorKind are both absent for a job with nobody behind it, and Actor is absent
+	// while ActorKind is 'seed' for a run that served a person: `actor` is who was
+	// signed in, and no session wrote this. Initiator is that person, and is not
+	// Actor — the trail's Actor is a login, and no login wrote a seed run's row.
+	// SourceFile and SourceLine are cited together or not at all: the pair rule is
+	// kit/events.Attribution's, and Record keeps it here because this table holds no
+	// constraint of its own on the pair.
+	// modules/audit/migrations/000053_audit_attribution.up.sql says why nothing here
+	// is backfilled.
+	ActorKind  *string    `json:"actorKind,omitempty" doc:"What kind of cause wrote this, when it was no session: user, system, seed or job" example:"seed"`
+	SourceFile *string    `json:"sourceFile,omitempty" maxLength:"512" doc:"The file that asked for the write, cited by the run that made it" example:"seed/starter/contents.yaml"`
+	SourceLine *int       `json:"sourceLine,omitempty" doc:"The line of that file" example:"12"`
+	Initiator  *uuid.UUID `json:"initiator,omitempty" format:"uuid" doc:"The person the run served, who did not sign in"`
 }
 
-// TableName pins the table, so the struct and migrations/000010 agree.
+// TableName pins the table, so the struct and the migrations that made it —
+// 000010 and 000033 — agree.
 func (Event) TableName() string { return "audit_events" }
 
 // Query is a page of the trail: what happened, who did it, when, and to what.
@@ -62,10 +130,20 @@ func (Event) TableName() string { return "audit_events" }
 // command carries its own argument, where it is "taskId" or "contentId". An
 // event is about a row when the row's id appears anywhere in its payload, which
 // is true of both shapes and of any module that follows either.
+//
+// Request and TraceID are the two questions the row could not answer until
+// migrations/000035: which call wrote this, and which trace that call belonged
+// to. The first matches the stored id exactly; the second matches the trace id,
+// which is the second field of the stored traceparent and what
+// migrations/000037 indexes.
 type Query struct {
+	// OperationRef matches the immutable occurrence, across all of its events.
+	OperationRef  uuid.UUID
 	Name          string
 	Actor         uuid.UUID
 	Record        uuid.UUID
+	Request       string
+	TraceID       string
 	Since, Until  time.Time
 	Limit, Offset int
 }

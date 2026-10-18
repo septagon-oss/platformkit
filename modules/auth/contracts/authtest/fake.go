@@ -12,12 +12,18 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// resetPage is the set-password screen internal.ResetPath points its link at.
+// Asked of the kernel rather than written out, because the workspace prefix is
+// the kernel's to own.
+var resetPage = httpx.Workspace("/auth/reset")
 
 // Fake is contracts.Service over two maps: the same rules, no database, no
 // transaction. A consumer that wants to test what it does for a signed-in
@@ -54,21 +60,43 @@ type Fake struct {
 	// password_tokens.created_at.
 	offered   map[uuid.UUID]time.Time
 	published []string
+
+	// The second factor's two maps, and the tenant's own row about the
+	// usernameless door. See passkeys.go for what the fake decides about them
+	// and what it deliberately does not.
+	factors       map[uuid.UUID]*fakeFactor
+	ceremonies    map[uuid.UUID]*fakeCeremony
+	passkeySignIn bool
+
+	// keys is every bearer key issued, by id. See tokens.go.
+	keys map[uuid.UUID]*fakeKey
+
+	// proofs is the first-factor window: the address /login refused to finish,
+	// and when. See RequireFirstFactorProof.
+	proofs map[string]time.Time
 }
 
 // NewFake returns a fake signing people in from users.
 func NewFake(users contracts.Users) *Fake {
 	return &Fake{
-		Users:    users,
-		limiter:  contracts.NewLimiter(limit.Memory()),
-		sessions: map[uuid.UUID]contracts.Session{},
-		roles:    map[string]contracts.Permissions{},
-		offered:  map[uuid.UUID]time.Time{},
-		tokens:   map[string]uuid.UUID{},
+		Users:      users,
+		limiter:    contracts.NewLimiter(limit.Memory()),
+		sessions:   map[uuid.UUID]contracts.Session{},
+		roles:      map[string]contracts.Permissions{},
+		offered:    map[uuid.UUID]time.Time{},
+		tokens:     map[string]uuid.UUID{},
+		factors:    map[uuid.UUID]*fakeFactor{},
+		ceremonies: map[uuid.UUID]*fakeCeremony{},
+		proofs:     map[string]time.Time{},
+		keys:       map[uuid.UUID]*fakeKey{},
 	}
 }
 
-var _ contracts.Service = (*Fake)(nil)
+var (
+	_ contracts.Service  = (*Fake)(nil)
+	_ contracts.Passkeys = (*Fake)(nil)
+	_ contracts.Tokens   = (*Fake)(nil)
+)
 
 // Published is the names of the events the fake would have emitted, in order.
 func (f *Fake) Published() []string {
@@ -84,16 +112,95 @@ func (f *Fake) Grant(name string, permissions ...string) {
 	f.roles[name] = slices.Clone(permissions)
 }
 
-// RevokeSessions mirrors internal.Service.RevokeSessions.
+// RevokeSessions mirrors internal.Service.RevokeSessions, one event per session
+// that went: the password change's revocation and the person's "everywhere" are
+// the same fact, so the fake records it the same way for both.
 func (f *Fake) RevokeSessions(_ context.Context, _ db.Tx[db.Tenant], userID, except uuid.UUID) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	var gone int
 	for id, s := range f.sessions {
 		if s.UserID == userID && id != except {
 			delete(f.sessions, id)
+			gone++
 		}
 	}
+	f.mu.Unlock()
+	for range gone {
+		f.record(contracts.EventSessionRevoked)
+	}
 	return nil
+}
+
+// Sessions mirrors internal.Service.Sessions: the caller's own rows, most
+// recently seen first, as refs rather than as sessions, with both lifetimes
+// applied. The fake can be asked for another user's id and will answer for it,
+// which is exactly the claim it cannot make and the real service can — one
+// tenant, no row-level security — so the cross-tenant case lives in
+// internal/sessions_test.go and not in the conformance suite.
+func (f *Fake) Sessions(_ context.Context, _ db.Tx[db.Tenant], userID, current uuid.UUID) ([]*contracts.SessionListing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at := db.Now()
+	mine := contracts.SessionRef(current)
+	out := make([]*contracts.SessionListing, 0, len(f.sessions))
+	for _, s := range f.sessions {
+		if s.UserID != userID || !s.ExpiresAt.After(at) || !s.CreatedAt.Add(contracts.SessionMaxLifetime).After(at) {
+			continue
+		}
+		ref := contracts.SessionRef(s.ID)
+		out = append(out, &contracts.SessionListing{
+			Ref: ref, UserAgent: s.UserAgent, IP: s.IP,
+			CreatedAt: s.CreatedAt, LastSeenAt: s.LastSeenAt, ExpiresAt: s.ExpiresAt,
+			Current: ref == mine,
+		})
+	}
+	slices.SortFunc(out, func(a, b *contracts.SessionListing) int {
+		if a.LastSeenAt.Equal(b.LastSeenAt) {
+			return strings.Compare(a.Ref, b.Ref)
+		}
+		return b.LastSeenAt.Compare(a.LastSeenAt)
+	})
+	return out, nil
+}
+
+// RevokeSession mirrors internal.Service.RevokeSession, unknown ref included:
+// what a caller cannot see is what a caller cannot revoke.
+func (f *Fake) RevokeSession(_ context.Context, _ db.Tx[db.Tenant], userID uuid.UUID, ref string) error {
+	if _, err := contracts.SessionRefOf(ref); err != nil {
+		return crud.ErrNotFound
+	}
+	f.mu.Lock()
+	found := false
+	for id, s := range f.sessions {
+		if s.UserID == userID && contracts.SessionRefMatches(id, ref) {
+			delete(f.sessions, id)
+			found = true
+			break
+		}
+	}
+	f.mu.Unlock()
+	if !found {
+		return crud.ErrNotFound
+	}
+	f.record(contracts.EventSessionRevoked)
+	return nil
+}
+
+// RevokeAllSessions mirrors internal.Service.RevokeAllSessions: the same
+// revocation, keeping nothing, reporting how many went.
+func (f *Fake) RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error) {
+	f.mu.Lock()
+	gone := 0
+	for _, s := range f.sessions {
+		if s.UserID == userID {
+			gone++
+		}
+	}
+	f.mu.Unlock()
+	if err := f.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
+		return 0, err
+	}
+	return gone, nil
 }
 
 // ChangePassword mirrors internal.Service.ChangePassword, current password and
@@ -116,14 +223,19 @@ func (f *Fake) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userID, 
 // Precheck mirrors internal.Service.Precheck: the limiter's verdict, from the
 // same limiter the real one keeps, over kit/limit's memory store.
 func (f *Fake) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
-	return f.limiter.Check(ctx, email, ip)
+	verdict, _ := f.limiter.Check(ctx, email, ip)
+	return verdict
 }
 
 // MayAsk mirrors internal.Service.MayAsk.
-func (f *Fake) MayAsk(ctx context.Context, ip string) bool { return f.limiter.Requested(ctx, ip) }
+func (f *Fake) MayAsk(ctx context.Context, ip string) contracts.Decision {
+	return f.limiter.Requested(ctx, ip)
+}
 
 // MayRedeem mirrors internal.Service.MayRedeem.
-func (f *Fake) MayRedeem(ctx context.Context, ip string) bool { return f.limiter.Redeemed(ctx, ip) }
+func (f *Fake) MayRedeem(ctx context.Context, ip string) contracts.Decision {
+	return f.limiter.Redeemed(ctx, ip)
+}
 
 // Forget mirrors internal.Service.Forget: it publishes and does nothing else,
 // which is what makes the public route cost the same for an address somebody
@@ -183,7 +295,10 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 		// The path and no query: the notice is what a person sees in the
 		// application and it is not a credential.
 		_, err := f.Notify.Notify(ctx, tx, notificationcontracts.Notice{
-			Recipient: user.ID, Title: "Set your password", Link: "/auth/reset",
+			// The workspace address the real service links — httpx.Workspace of the
+			// same screen the auth module mails — so a consumer that reads a link
+			// out of this fake reads the address its pages answer at.
+			Recipient: user.ID, Title: "Set your password", Link: resetPage,
 		})
 		if err != nil {
 			return err
@@ -191,27 +306,35 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 	}
 	return f.Mailer.Send(ctx, notificationcontracts.Message{
 		To: user.Email, Subject: "Set your password",
-		Body: "Follow the link\n\nhttps://acme.example.com/auth/reset?token=" + token,
+		Body: "Follow the link\n\nhttps://acme.example.com" + resetPage + "?token=" + token,
 	})
 }
 
-// Reset mirrors internal.Service.Reset: one use, every session ended, one event.
-func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error {
+// Reset mirrors internal.Service.Reset: one use, every session that existed ended,
+// one opened for the browser that spent the link, two events. The fake keeps no
+// second factors, so the account that would be left signed out has no shape here.
+func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+	from contracts.Client) (*contracts.Session, error) {
 	f.mu.Lock()
 	userID, ok := f.tokens[token]
 	delete(f.tokens, token)
 	f.mu.Unlock()
 	if !ok {
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	}
 	if err := f.Users.SetPassword(ctx, tx, userID, password); err != nil {
-		return err
+		return nil, err
 	}
 	if err := f.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
-		return err
+		return nil, err
 	}
 	f.record(contracts.EventPasswordReset)
-	return nil
+	user, err := f.Users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := f.open(ctx, tx, user, from)
+	return session, err
 }
 
 // Roles mirrors internal.Service.Roles.
@@ -226,44 +349,64 @@ func (f *Fake) Roles(_ context.Context, _ db.Tx[db.Tenant]) ([]*contracts.Role, 
 	return out, nil
 }
 
-// SetRole mirrors internal.Service.SetRole, all three refusals included: a
-// permission nothing declares, an operator permission outside the operator's
-// own tenant, and the write that would leave the tenant with no role able to
-// change a role again. They are what the route promises to refuse, so the fake
-// refuses them.
-func (f *Fake) SetRole(_ context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+// SetRole mirrors internal.Service.SetRole.
+func (f *Fake) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, error) {
+	role, _, err := f.SetRoleChanged(ctx, tx, name, permissions, declared)
+	return role, err
+}
+
+// SetRoleChanged mirrors internal.Service.SetRoleChanged, all three refusals
+// included: a permission nothing declares, an operator permission outside the
+// operator's own tenant, and the write that would leave the tenant with nobody
+// able to administer it again. They are what the route promises to refuse, so
+// the fake refuses them — through the same door the service calls, asking the
+// same user fake every consumer of this package already answers with. The answer
+// it reports is the same one the real write gives: the same list again changed no
+// row and records no event.
+func (f *Fake) SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*contracts.Role, bool, error) {
 	name, err := contracts.ValidRoleName(name)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	tenant := db.TenantOf(tx)
 	want, err := contracts.CheckedPermissions(permissions, declared, tenant)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	f.mu.Lock()
 	was, existed := f.roles[name]
 	same := existed && slices.Equal([]string(was), []string(want))
-	// The third refusal, and the same rule: the last role that can administer
-	// roles cannot stop. The closure reads the map under the lock this holds.
+	// The third refusal, and the same rule as the service's: the people who could
+	// still sign in and administer this tenant, on both sides of this write. The
+	// closures read the map under the lock this holds.
 	err = contracts.CheckedAdministration(name, was, want, func() ([]*contracts.Role, error) {
 		others := make([]*contracts.Role, 0, len(f.roles))
 		for other, grants := range f.roles {
 			others = append(others, &contracts.Role{Name: other, Grants: grants})
 		}
 		return others, nil
+	}, func(names []string) ([]uuid.UUID, error) {
+		return f.Users.Holders(ctx, tx, names)
 	})
 	if err == nil {
 		f.roles[name] = want
 	}
 	f.mu.Unlock()
 	if err != nil {
-		return nil, err
+		if errors.Is(err, crud.ErrInvalid) {
+			// The rule refused it, and the fake records the name the service
+			// writes a row for, so a consumer testing against this map sees the
+			// same trail order the composed application produces. A read that
+			// failed refuses the write too and is not this rule refusing.
+			f.record(contracts.EventAdministrationRefused)
+		}
+		return nil, false, err
 	}
-	if !same {
-		f.record(contracts.EventRoleSet)
+	if same {
+		return &contracts.Role{TenantID: tenant.ID, Name: name, Grants: want}, false, nil
 	}
-	return &contracts.Role{TenantID: tenant.ID, Name: name, Grants: want}, nil
+	f.record(contracts.EventRoleSet)
+	return &contracts.Role{TenantID: tenant.ID, Name: name, Grants: want}, true, nil
 }
 
 // Purge mirrors internal.Service.Purge over the two maps.
@@ -278,13 +421,30 @@ func (f *Fake) Purge(_ context.Context, _ db.Tx[db.Tenant]) (int64, error) {
 			gone++
 		}
 	}
+	// A ceremony the person never answered is the row the real Purge sweeps
+	// first, and the fake's map is the same shape of nothing: a begun prompt is
+	// not state anybody should have to keep.
+	for id, ceremony := range f.ceremonies {
+		if !ceremony.expire.After(db.Now()) {
+			delete(f.ceremonies, id)
+			gone++
+		}
+	}
+	for address, at := range f.proofs {
+		if !at.Add(contracts.FirstFactorProofWindow).After(db.Now()) {
+			delete(f.proofs, address)
+		}
+	}
 	return gone, nil
 }
 
-// Login mirrors internal.Service.Login, including the dummy hash on the path
-// where no user was found.
+// Login mirrors internal.Service.Login, including the dummy hash on the path where no
+// user was found. What it does not mirror is the lockout's rate fields: those are the
+// real service stating the counter it read on the answer it is writing, and a fake that
+// wrote response headers would be a fake with an HTTP server in it.
 func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password string, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
-	if f.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, _ := f.limiter.Check(ctx, email, from.IP)
+	if verdict == contracts.Refuse {
 		f.record(contracts.EventLoginFailed)
 		return nil, nil, contracts.ErrTooManyAttempts
 	}
@@ -302,11 +462,30 @@ func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password s
 		return nil, nil, f.fail(ctx, email, from.IP)
 	}
 	f.limiter.Succeeded(ctx, email)
+	// The person who holds a factor is held at the door. This is where the
+	// window that makes the other half answerable is minted, and it is the
+	// reason a code — a thing a person may have written down somewhere — is
+	// never on its own the account. Nothing is published for the refusal: it is
+	// an outcome and not a fault, and no session is opened by it.
+	//
+	// Open, the provider's door, is the fake's known gap: it opens the session
+	// whatever the person holds. Closing it would change what every consumer's
+	// signed-in test sees through a door this module has never gated in here.
+	if f.holds(user.ID) {
+		f.mu.Lock()
+		f.proofs[strings.ToLower(strings.TrimSpace(email))] = db.Now()
+		f.mu.Unlock()
+		return nil, nil, contracts.ErrFactorRequired
+	}
 	return f.open(ctx, tx, user, from)
 }
 
-// Open mirrors internal.Service.Open.
-func (f *Fake) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
+// Open mirrors internal.Service.Open. It takes the sign-in method and does not
+// record it: this double publishes event names and no payloads, so the field that
+// carries the method in the real trail has nothing to be wrong about here. What it
+// does mirror is the door in front of the session — a user who is not active is
+// refused, whichever provider verified them.
+func (f *Fake) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client, _ contracts.SignInMethod) (*contracts.Session, *contracts.Identity, error) {
 	user, err := f.Users.Get(ctx, tx, id)
 	if err != nil {
 		return nil, nil, err

@@ -111,9 +111,11 @@ type refusalsKey struct{}
 
 // WithPolicyRefusals returns ctx carrying observe, which RequirePolicy calls with every
 // request a policy refused and the decision that refused it, before it returns
-// ErrPolicyDenied. The HTTP layer installs one per request so a refusal decided deep in a
-// module's service reaches the same audit trail as a missing grant: the module only asks
-// its question, and the error it returns may be mapped to a response anywhere.
+// ErrPolicyDenied. The HTTP layer installs one for every request a guard admits so a
+// refusal decided deep in a module's service reaches the same audit trail as a missing
+// grant: the module only asks its question, and the error it returns may be mapped to a
+// response anywhere. A public operation is handed none — see kit/httpx's pass, which
+// explains why a refusal with no account behind it is not auditable.
 func WithPolicyRefusals(ctx context.Context, observe func(context.Context, PolicyRequest, PolicyDecision)) context.Context {
 	return context.WithValue(ctx, refusalsKey{}, observe)
 }

@@ -1,7 +1,7 @@
 package rest_test
 
-// The delete door's turn at the question the fifth review asked of the patch
-// door. Row-level security filters a DELETE by a policy's USING clause alone —
+// The delete door's turn at the question the patch door asks. Row-level security
+// filters a DELETE by a policy's USING clause alone —
 // a WITH CHECK clause inspects the row a write produces, and a delete produces
 // none — so on the catalogue shape, whose USING is deliberately true for every
 // tenant, GetForUpdate answers a row the request may read and may not remove,
@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -39,6 +40,7 @@ func mountDeleteCatalog(t *testing.T, soft bool) (http.Handler, *sql.DB) {
 	}
 	reader := tenancy.Tenant{ID: uuid.New(), Slug: "reader", Name: "Reader"}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host,
 		Tenants:    hosts{map[string]tenancy.Tenant{host: acme, "reader.test": reader}},
 		Conn:       conn, Authorize: caller{},
@@ -75,7 +77,7 @@ func deleteDoorRefused(t *testing.T, soft bool) {
 	}
 	var live int
 	if err := admin.QueryRowContext(t.Context(),
-		`SELECT count(*) FROM rest_review5_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
+		`SELECT count(*) FROM rest_write_door_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
 		t.Fatalf("read back the row the refused delete was about: %v", err)
 	}
 	if live != 1 {
@@ -91,7 +93,7 @@ func deleteDoorRefused(t *testing.T, soft bool) {
 		t.Fatalf("owner DELETE = %d %s, want 204", code, out)
 	}
 	if err := admin.QueryRowContext(t.Context(),
-		`SELECT count(*) FROM rest_review5_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
+		`SELECT count(*) FROM rest_write_door_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
 		t.Fatalf("read back the deleted row: %v", err)
 	}
 	if live != 0 {

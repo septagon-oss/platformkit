@@ -36,15 +36,25 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	// Close is idempotent, so this covers the panic path and nothing else.
-	defer func() { _ = p.Close(false) }()
+	closed := false
+	defer func() {
+		if !closed {
+			rollbackErr := p.Close(false)
+			if n, ok := operationNote(ctx.Context()); ok && rollbackErr == nil {
+				if err := a.failedOperation(n); err != nil {
+					n.failureErr = err
+					a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: could not persist failed operation", "error", err)
+				}
+			}
+		}
+	}()
 
 	// The connection travels with the transaction: a control-plane route needs
 	// both it and a token to open a transaction of its own. See ConnFrom.
-	rctx = context.WithValue(WithConn(rctx, a.opts.Conn), txKey{}, p)
+	rctx = WithConn(rctx, a.opts.Conn)
 	// The list a handler may ask to forget at the commit: see ForgetTenantOnCommit.
 	asks := new(forgottenTenants)
-	rctx = context.WithValue(rctx, forgetKey{}, asks)
-	inner := huma.WithContext(ctx, rctx)
+	inner := huma.WithContext(ctx, context.WithValue(context.WithValue(rctx, txKey{}, p), forgetKey{}, asks))
 	next(inner)
 
 	if openErr := p.Err(); openErr != nil {
@@ -62,15 +72,34 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// thinks, so commit and say so; if nothing has been sent, nobody decided,
 	// and a transaction nobody decided about must not commit.
 	keep, undecided := statusOf(ctx, a, inner.Status())
+	if n, ok := operationNote(ctx.Context()); ok {
+		if b, ok := bufferFrom(ctx.Context()); ok && b.streamRefused {
+			keep = false
+			undecided = true
+		}
+		if keep {
+			if finishErr := a.finishOperation(n); finishErr != nil {
+				keep = false
+				undecided = true
+				a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: operation completion refused", "error", finishErr)
+			}
+		}
+	}
 	err = p.Close(keep)
+	closed = true
 	if err == nil && keep {
 		// The write is committed, so the resolutions that carry the old version of it
-		// are now wrong rather than merely early. Before the commit this is the one
-		// moment the ask can be honoured, and a rollback means nothing was written to be
-		// stale. A lookup that read the old row and has not answered yet has no entry for
-		// this scan to drop; the stamp it carries is what keeps it from adding one.
-		for _, tenant := range asks.drain() {
-			a.hosts.dropTenant(tenant)
+		// are wrong rather than merely early, and this is the one moment the ask can
+		// be honoured. A rollback wrote nothing that could go stale.
+		a.dropResolutions(ctx.Context(), asks.drain())
+	}
+	if n, ok := operationNote(ctx.Context()); ok && !keep && err == nil {
+		if failureErr := a.failedOperation(n); failureErr != nil {
+			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: failed operation evidence could not persist", "error", failureErr)
+			if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
+				a.refuse(ctx, http.StatusServiceUnavailable, "")
+			}
+			return
 		}
 	}
 	b, buffered := bufferFrom(ctx.Context())

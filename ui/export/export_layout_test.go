@@ -109,10 +109,26 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sidebar examples' schemas (six leaves: its type and default). Measured as a
 	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
 	// /css and /sha256 change, nothing else moves.
+	// Rich states add 42 English/Portuguese captures and optional EmptyState
+	// Text/Action and Alert.Live properties. Seven Alert, two EmptyState and
+	// Media's empty example change; all 127 old IDs remain. The measured export
+	// diff changes only examples and this digest: CSS, tokens and icons agree.
+	// DataList adds 44 captures. Four Table examples gain native selection
+	// targets/sorting height, and two Pagination examples gain wrapping 44px
+	// controls. Seventeen existing empty/media examples align their text blocks.
+	// Only examples, CSS and the digest change; no old ID is removed.
+	// Detail panels add 50 captures and Modal.Placement. The existing modal
+	// examples gain 44px controls and wrapping chrome; only examples/CSS/digest
+	// change. All prior IDs, tokens and icons remain.
+	// Timeline adds 30 typed captures with standard time codecs. Review fixes add
+	// loading geometry/schema; only examples/CSS/digest change, retaining all IDs and tokens.
+	// Remaining shared families add typed examples, row-header/Hero schema and exact
+	// int64 string codecs. Only examples/CSS/notices/digest change; all prior IDs,
+	// design tokens, themes and icons remain. NOTICE pins the engines; Leaflet CSS uses LF.
 	//
 	// Cascade layers: Compose now emits `@layer tokens, base, components,
 	// client;` and wraps each layer's rules in a block, so the exported sheet is
-	// the same declarations at one more level of nesting, and review round 1 of
+	// the same declarations at one more level of nesting, and the first pass of
 	// that change moved the kernel's own component-state rules out of @layer base
 	// into @layer components, ahead of the class lists, because a layer ranks
 	// before specificity and a dismissed modal was losing to the `flex` on its
@@ -124,36 +140,86 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
 	//
-	// Select's empty leading option now carries the caller's label and is disabled
-	// only when the field is Required: a placeholder is a prompt about an empty
-	// field, and where the field is optional an empty value is a value, so the
-	// option a person uses to take a choice back has to be reachable. Measured as a
-	// leaf-by-leaf diff of the v1 export at merge base ff1fd5a against this tree
-	// (`go run ./tools/designexport` on each, walked leaf by leaf): 2 of 6,406
-	// leaves move — /examples/95 (pk-ui.component.select/invalid, the one gallery
-	// example with a Placeholder and no Required) loses ` disabled` from its empty
-	// option, and /sha256. Tokens, icons, CSS, props, schemas and the other
-	// sixty-plus examples are byte-identical.
-	// A sentence a person is meant to read now has a reading width. Text gains
-	// `measure`, which caps the line at the design system's own `md` container, and
-	// SectionHeader passes it to its description: a paragraph in a block gets the
-	// width of its container, and the admin shell's main region is the width of the
-	// window, so a page introduction measured 142 characters to the line and the
-	// shell's own footer 189. The inverse sidebar column also names the foreground
-	// that goes with it, because everything inside it that styles no colour of its
-	// own — a list item, the brand link, which styles only its child — inherited the
-	// page's dark ink onto a dark panel and measured 1.02 against it. Measured as a
-	// leaf-by-leaf diff of the export at 1e42cee against this tree
-	// (`go run ./tools/designexport` on each, walked leaf by leaf): 6,406 leaves
-	// become 6,415 and twelve move — nine `measure` property types on the Text,
-	// SectionHeader, Hero and Grid examples' schemas, two Sidebar examples' HTML
-	// (the inverse column's class list gains `text-fg-on-inverse`, twice on
-	// `pk-ui.component.sidebar/default` and three times on `.../collapsed`, which
-	// renders the column twice), and /sha256. Tokens, icons, props and `/css` are
-	// byte-identical: the utility is already emitted, for the sidebar's brand text,
-	// and the reading width is the `max-w-md` a Container already uses.
-	if legacy.SHA256 != "2b104aeb38994f3e632cc3b98cc300c17061bd039eaa42a6fef44a4ac78e5644" {
-		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
+	// Prose is a shared component: its selector now reads the component's own
+	// data-component hook. The site owns data-prose in its client sheet.
+	//
+	// The frame's floor fixes move it: four utilities and one colour pair join the sheet for the brand
+	// link, the footer's bound, the frame's break rule and the table's opt-out from it, and the inverse
+	// sidebar column gains a text colour. A leaf-by-leaf diff before and after those commits changes /css
+	// and /sha256 and nothing else — no token, icon, example or schema — which is what this assertion has
+	// always had to be re-measured for.
+	//
+	// The sentences under a control are bounded by the bound the footer's sentence already took, so /css
+	// does not move again; 17 of the 6,406 leaves under `examples` do — the rendered HTML of the input,
+	// select, textarea, form and table-empty examples, plus the child span offsets the form example
+	// carries. The field element itself bounds nothing: the design tool projects no composition whose own
+	// sizing is constrained, so a max-width on the field's flex column is a client's design document that
+	// no longer contains their forms (measured at this head: 44 refusals). The break rule that stops a
+	// page scrolling sideways sits on the frame's content region for the same reason — see clShellMain.
+	//
+	// Both deltas above are one side's own before-and-after. The digest is neither side's number: it is
+	// this merged tree's export, printed by the refusal below and copied once the merge was in place.
+	// The shared component families add 811 typed examples with both sides'
+	// styles present, and the reduced-motion floor sits in the base layer. The digest
+	// below is that tree's export, remeasured with `go run ./tools/designexport`.
+	// Refusal and selection validation clears four Gallery examples: the two
+	// refused DataLists lose retained result props/slots, and the two removed-map
+	// selections retain only the remaining point. All 811 IDs, CSS, notices,
+	// themes and icons are unchanged in the before/after export comparison.
+
+	// The same clearing now covers a failed read: the two failed and two
+	// offline-failed DataList captures keep only their retry control, so 68
+	// content leaves of those four examples' props, captured slots and HTML
+	// disappear (99,997 leaves become 99,937) alongside this digest. Measured as a
+	// leaf-by-leaf diff of the v1 export of this tree against the same tree before
+	// the change: no other example, no CSS, token, theme, notice or icon moves.
+
+	// The same clearing now covers a component's strip of days and its range and
+	// period controls: SlotPicker and AreaChart returned early for an absent read,
+	// so a failed or refused capture exported the days and the range chip that
+	// pointed into the result it no longer has. The six English/Portuguese
+	// slot-picker failed, refused and offline-failed captures lose 11 leaves of
+	// captured dateStrip each and gain the cleared one (99,937 leaves become
+	// 99,877); no example used a retained range or period control, so only these
+	// captures and this digest move. The disabled slot-picker capture changes one
+	// leaf, its HTML: its days now render as labelled non-links.
+	//
+	// The branch was rebased onto origin/main, and main moves this export on its
+	// own: prose joins the sheet as a shared component, and the frame's floor fixes
+	// put break-normal on a table and max-w-sm on the sentence under a control.
+	// Both of those reach the families above, because those elements are rendered
+	// by the class lists main changed, so the captured HTML of the shared
+	// families' examples moves with them. Measured by exporting this tree and the
+	// revision this branch held before the rebase and walking both documents leaf
+	// by leaf: 99,877 leaves become 99,892; 166 change, 15 are added and none is
+	// removed. Of the 166, two are /css and /sha256; the other 164 are the html
+	// (and two child-offset) leaves of examples, all of them main's
+	// break-normal or max-w-sm, and the 15 added leaves are prose's own example
+	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
+	// digest below is that measurement of this tree, printed by the refusal above
+	// the re-measure and copied from it.
+	// A confirmation body drawn into a command form is a sentence of the form's own
+	// copy, so it takes the form's text scale and bounded measure (clFormSentence),
+	// and the confirm dialog's message — the same sentence, read inside a frame
+	// already narrowed to 24rem — now wears that one list. Measured by exporting this
+	// tree and the same tree without the change and walking both documents leaf by
+	// leaf: 99,892 leaves become 99,906. The 14 added leaves are the new Gallery
+	// example's own (id, name, group, props, schema and html); of the 2 changed, one
+	// is /sha256 and the other is pk-ui.component.confirmdialog/default's html, which
+	// gains max-w-sm on the message paragraph and paints the same box. No leaf is
+	// removed; CSS, schema, notices, themes, icons and font policy are identical.
+	// The digest below is that measurement of this tree, printed by the refusal above
+	// the re-measure and copied from it.
+	//
+	// The rich text field's chrome joins @layer components, and the editing surface
+	// takes the published page's prose rules with it. Measured by exporting this
+	// tree and the same tree with those two merges removed and walking both
+	// documents leaf by leaf: 99,906 leaves each, none added, none removed, and
+	// exactly two changed — /css, which carries the new rules, and /sha256, which is
+	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
+	// schema or font policy moves. The digest below is that measurement of this tree.
+	if legacy.SHA256 != "5004fa12de463e88646fdb918286ee332c335a402a8d20a2b4b0a4077d1ba99c" {
+		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
 	first := layoutExport(t, captures)

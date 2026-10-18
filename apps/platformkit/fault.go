@@ -21,13 +21,18 @@ package main
 
 import (
 	"context"
+	"errors"
+	"slices"
+	"sync"
 
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
+	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
@@ -45,12 +50,9 @@ import (
 //
 // A module may not write a prefix; the product may, and here it must. The
 // failure page is rendered by the kernel's own guard before any module is
-// consulted — a person refused by a guard ahead of routing has no handler to ask
-// what the workspace is called — so the chrome it needs is knowledge the
-// composition carries: where the shell's stylesheet is, where signing in is, and
-// what the workspace is called. What the guard does have, for the caller it
-// refuses after recognition, is that caller's session on the request context,
-// which is why the language resolver below can be the same one every page asks.
+// consulted — a refused visitor has no session to resolve and no module to ask
+// — so the chrome it needs is knowledge the composition carries: where the
+// shell's stylesheet is, where signing in is, and what the workspace is called.
 // TestPinnedAddresses asks the running server that every one of them answers,
 // which is what makes pinning them safe rather than hopeful.
 const (
@@ -70,6 +72,13 @@ const (
 	// What moved is where its documents are (/app/<module>/…), and the public
 	// doors, which took their own prefix.
 	pinnedSignInAPI = "/api/v1/auth/login"
+	// pinnedRegisterAPI is the registration door as the public surface composes
+	// it: /api/v1/public/<module>/… The shell's register form posts there, and
+	// TestPinnedAddresses asks the running server that it answers. The login
+	// door above keeps the workspace address because that is where it always
+	// was; this door is anonymous and public, so it lives where an anonymous
+	// caller is answered.
+	pinnedRegisterAPI = "/api/v1/public/auth/register"
 	// pinnedPublicFile is the file module's public door: a visitor who may see a
 	// file asks it there, and only there, because the public surface is the one
 	// that answers an anonymous caller and refuses to set a cookie while doing
@@ -102,7 +111,10 @@ const (
 // four lines.
 func faultChrome() page.Chrome {
 	return page.Chrome{
-		Brand:      "PlatformKit",
+		// The installation's own word, the same constant the workspace's face
+		// falls back to: this file composes pages of this application and has no
+		// business spelling its own name twice.
+		Brand:      brandName,
 		Assets:     pinnedAssets,
 		Stylesheet: ui.Compose(design.Default()),
 		SignIn:     pinnedSignIn,
@@ -125,77 +137,16 @@ func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
 	return page.Bare(body)
 }
 
-// faultPage is the kernel's renderer for this application: the one shell this file
-// builds, asked to answer. The refusal page and the two pages of an ask are the same
-// chrome, the same catalogue and the same language resolver, so they are built once —
-// a person refused then asking for access is refused and asking in one application, not
-// in two that happen to look alike.
-func faultPage(c composition) httpx.Fault {
-	return page.FaultHandler(faultShell(c))
-}
-
-// workspaceCatalog is the mount for the document a native shell reads to know what
-// this application has. The kernel owns the address and ui owns the body, and this
-// is the one line that joins them. It is written once on purpose: every entry point
-// and the test harness mount this same mount, so the document a gate compares
-// against is the one this file wires — the contract gate cannot pass on a copy of
-// the renderer while the shipped binary publishes another. The renderer's type is
-// carried on the call, so the OpenAPI document names the fields a shell parses
-// rather than an empty object — see app.WorkspaceCatalogRoute.
-func workspaceCatalog() func(api *httpx.API) {
-	return app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
-		document := screens.Describe(ctx, resources)
-		return &document, nil
-	})
-}
-
-// appOptions is the composition every entry point of this binary shares. It exists so
-// that the line wiring the failure page is one line rather than two — an entry point
-// that spells its own options out drifts, and the drift is invisible until somebody is
-// refused in production and sees JSON, while the other entry point shows a page.
-//
-// It is also the reason a test can claim the application does this: the test composes
-// through here, so it exercises the wiring rather than a copy of it.
-func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
-	return app.Options{
-		// The installation's own host, from the configuration. It is the only
-		// address that serves the control plane, and the console of the
-		// installation itself — /ops — answers there and nowhere else.
-		Installation: app.Installation{Host: cfg.Server.InstallationHost},
-		// The document a native shell reads; see workspaceCatalog.
-		WorkspaceCatalog: workspaceCatalog(),
-		Tenants:          c.tenants,
-		Authorize:        c.auth,
-		Entitle:          c.plans,
-		Authenticate:     c.auth.Authenticate,
-		Fault:            faultPage(c),
-		// Asking for access: the reach is this product's, the page is ui's, and
-		// the command behind both doors is the kernel's.
-		Access:     c.access,
-		AccessPage: func(router *httpx.Router) { page.MountAccess(router, faultShell(c)) },
-		Role:       role,
-		Transports: transports(),
-	}
-}
-
-// faultShell is the chrome the refusal page and the two ask pages are drawn with: one
-// shell per composition, built here because the admin module builds its own for the
-// screens it mounts and this one belongs to the guards that run ahead of any module.
-func faultShell(c composition) page.Shell {
-	return page.Shell{
+func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
+	return page.FaultHandler(page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
-		// The label of the way out is this product's copy, so it is named here and
-		// answered in apps/platformkit/messages: a Portuguese person refused a page
-		// is offered the way back in Portuguese, and the English above is what a
-		// deployment that ships no copy for the key prints.
-		BackKey: "app.back.workspace",
 		// Who may hand out what the page refused, as a role and never as a name:
 		// the grant that gates role management is the auth module's fact, and its
 		// label is that module's words, read off the manifest that defines it.
-		Granter: c.granter,
+		Granter: granter,
 		// The ask door exists in this composition, so the refusal page may offer
 		// it. A product that wired no AskForAccess leaves this empty and the page
 		// draws no button — the kernel never offers a door it has not mounted.
@@ -207,13 +158,145 @@ func faultShell(c composition) page.Shell {
 		// the application that shipped them. The line is what the page is rendered
 		// *with* — a person refused by a guard ahead of routing is refused by this
 		// shell, not by the ones page.Serve mounts — and TestPinnedAddresses and the
-		// refusal cases here are asked of the page this shell builds.
-		Messages: c.messages,
-		// The same resolver every served page asks, so the language a person chose is
-		// what refuses them too. It reads the accepted session off the request context
-		// the guard already carries, and answers "" — the caller's own header, as before
-		// — wherever there is no choice to read: an anonymous caller, the public face,
-		// an address whose host names no tenant.
-		Locale: accountLocale{users: c.users}.Locale,
+		// refusal cases here are asked of the page this literal builds.
+		Messages: messages,
+	})
+}
+
+// workspaceCatalog is the mount for the document a native shell reads to know what
+// this application has. The kernel owns the address and ui owns the body, and this
+// is the one line that joins them. It is written once on purpose: every entry point
+// and the test harness mount this same mount, so the document a gate compares
+// against is the one this file wires — the contract gate cannot pass on a copy of
+// the renderer while the shipped binary publishes another. The renderer's type is
+// carried on the call, so the OpenAPI document names the fields a shell parses
+// rather than an empty object — see app.WorkspaceCatalogRoute.
+func workspaceCatalog() func(api *httpx.API) {
+	// The gate is built here, one per composition, and not at file scope: see
+	// referenceGate.
+	return app.WorkspaceCatalogRoute(documentBuilder(new(documentGate)))
+}
+
+// documentBuilder is the body of that mount: the same catalogues read once, the
+// same gate, and the resources the request's caller may reach. It is a function
+// of its gate because the one thing about this handler that is not a translation
+// is a refusal, and a refusal nobody can call is a refusal nobody tests.
+func documentBuilder(gate *documentGate) func(context.Context, []httpx.Resource) (*screens.Catalog, error) {
+	// The catalogues this composition answers in. The document is read by a shell
+	// that is not a browser, and every word in it is one a person will read, so it
+	// is negotiated the same way the page beside it is — the request's own
+	// Accept-Language, restricted to the languages the tenant it resolved to is
+	// served in, that tenant's default behind them. A handler that negotiated less
+	// would answer a pt-only tenant in English from this address while the screen
+	// one click away spoke Portuguese.
+	messages := catalogues()
+	return func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
+		// A reading hint that names a module this installation did not compose is
+		// a composition mistake rather than a module's, and the document is the
+		// thing the promise is made in, so the check is made once, here, against
+		// the list this process actually registered. A Spec's own mount check
+		// cannot see a registration made after it, and a mount-time check cannot
+		// see one made after the mount: a worker process registers only the
+		// resources its jobs read, so the list standing at boot is not the list a
+		// shell would be served — which is why this rides the first build of the
+		// document rather than the mount. What the answer costs is the document
+		// and nothing else: every entry in it is a reference a shell would follow,
+		// so the composition that cannot answer the question refuses to publish an
+		// answer rather than publishing a half of one. Boot stays up: every route
+		// this process mounted resolves its own references at its own mount, and
+		// the document is the only thing this refusal can name.
+		if err := gate.check(resources); err != nil {
+			return nil, err
+		}
+		var preferences []string
+		if r, ok := httpx.RequestFrom(ctx); ok {
+			preferences = append(preferences, r.Header.Get("Accept-Language"))
+		}
+		if tenant, ok := tenancy.FromContext(ctx); ok {
+			preferences = page.TenantPreferences(page.Request{Tenant: tenant}, preferences...)
+		}
+		selected := page.SelectLocale(messages, preferences...)
+		// One formatter, no arguments: no hint in this contract takes a verb, so the
+		// document asks for a key and its fallback and nothing else.
+		var text screens.Text = func(key, fallback string) string {
+			return selected.Formatter.Text(key, fallback)
+		}
+		document := screens.DescribeLanguage(ctx, resources, text)
+		// Where a record's picture lives, said once for the whole document rather
+		// than once per field that holds a file id. The address is the file
+		// module's — it mounts the door — and the document is the kernel's, so this
+		// composition is the only party that has met the two and the only one that
+		// may write the string. A shell derives nothing.
+		document.Pictures = &screens.Pictures{
+			Source: filecontracts.PictureSource,
+			Widths: slices.Clone(filecontracts.VariantWidthSet),
+		}
+		return &document, nil
+	}
+}
+
+// documentGate is the composition's once-per-mount question about the document it
+// is about to publish, which is every question a reading declaration asks about the
+// modules this process actually registered: does each `reference` name a resource
+// somebody composed, and is each `primaryCommand` a verb this resource mounts?
+//
+// The once is there because the answer is about the composition, which does not
+// change after boot, and asking it per request would be a walk of every schema on
+// somebody's page load. It is held by one mount rather than by the process because a
+// process composes several applications — every test binary in this repository boots
+// the reference composition more than once — and a process-wide once lets the first
+// build of a document decide for every later one: a second composition's dangling
+// declaration would go unchecked, and a correct composition behind a broken one would
+// serve nothing but 500s. The question each composition asks is about the list *it*
+// registered.
+type documentGate struct {
+	once  sync.Once
+	fault error
+}
+
+// check asks the questions the first time it is called and remembers the answer.
+// sync.Once is the synchronisation: a reader here is a goroutine that has just
+// returned from Do, which happens after the answer was written.
+func (g *documentGate) check(resources []httpx.Resource) error {
+	g.once.Do(func() {
+		for _, question := range []func([]httpx.Resource) string{rest.CheckReferences, rest.CheckRowHints} {
+			if bad := question(resources); bad != "" {
+				g.fault = errors.New("apps/platformkit: " + bad)
+				return
+			}
+		}
+	})
+	return g.fault
+}
+
+// workspaceFace mounts every module-less route this product owns on the workspace
+// surface. app.Options.WorkspaceCatalog is the only seam that hands a composition
+// the *httpx.API of /api/v1/app/… — no module may compose that prefix, and kit may
+// not import ui — and it takes an arbitrary mount function, so a second such route
+// needs no new kernel seam, only this line. The field's name is now narrower than
+// what runs through it: the catalogue and the connection document are both mounted
+// here, and both are the composition's because both addresses are the kernel's and
+// both bodies are ui's.
+func workspaceFace(routes ...func(api *httpx.API)) func(api *httpx.API) {
+	return func(api *httpx.API) {
+		for _, mount := range routes {
+			mount(api)
+		}
+	}
+}
+
+// faultShell is the chrome the two ask pages are drawn with: the same frame, the
+// same catalogue and the same way on as the refusal page they follow, built once
+// per composition. One page per shell, and the shell is this file's to build —
+// the admin module builds its own, for the screens it mounts.
+func faultShell(messages page.Messages, granter page.Granter) page.Shell {
+	return page.Shell{
+		Chrome:    faultChrome(),
+		Frame:     faultFrame,
+		Back:      pinnedHome,
+		BackLabel: "Back to the workspace",
+		Granter:   granter,
+		Ask:       pinnedAsk,
+		Messages:  messages,
 	}
 }

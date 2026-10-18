@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -31,7 +32,7 @@ import (
 // and that is the second fact the control plane is gated on.
 const installationHost = "platformkit.example"
 
-// surfaces is this file's fixture: one installation, one host per tenant, and an
+// This file is this file's fixture: one installation, one host per tenant, and an
 // authorizer that says yes to everything so that what a case observes is the
 // surface's own decision and not a role's.
 type surfaces struct {
@@ -46,7 +47,8 @@ type surfaces struct {
 
 func newSurfaces(t *testing.T) *surfaces {
 	t.Helper()
-	return newSurfacesWith(t, httpx.Options{})
+	return newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit")})
 }
 
 func newSurfacesWith(t *testing.T, extra httpx.Options) *surfaces {
@@ -55,6 +57,7 @@ func newSurfacesWith(t *testing.T, extra httpx.Options) *surfaces {
 	_ = admin
 	s := &surfaces{who: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}}
 	opts := httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		PublicHost:   host,
 		Installation: installationHost,
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
@@ -105,16 +108,13 @@ type window struct {
 	seen  int
 }
 
-func (w *window) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
+func (w *window) Reserve(_ context.Context, _ string, limit int, _ time.Duration) (bool, int, time.Duration, error) {
 	w.seen++
-	if w.seen > w.allow {
-		return false, time.Minute, nil
-	}
-	return true, 0, nil
-}
-
-func (w *window) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return w.seen, 0, nil
+	// The same three answers the shared counter gives from its one statement: the
+	// verdict, the quota left under the limit it was handed, and the window it was
+	// handed — so a case that states a limit on the wire states one this fake
+	// reported rather than one the case arithmetic invented.
+	return w.seen <= w.allow, max(limit-w.seen, 0), time.Minute, nil
 }
 
 func (w *window) Forget(context.Context, string) error { return nil }
@@ -503,7 +503,8 @@ func TestAPublicSurfaceTakesNobodiesSessionAndSetsNobodiesCookie(t *testing.T) {
 // lock out. A workspace write has one, and is not counted here.
 func TestAnAnonymousWriteIsTheOnlyThingThePublicSurfaceLimits(t *testing.T) {
 	limiter := &window{allow: 2}
-	s := newSurfacesWith(t, httpx.Options{WriteLimiter: limiter})
+	s := newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit"), WriteLimiter: limiter})
 	ran := 0
 	// The public write carries no session: there is none to carry.
 	httpx.Register(s.api.Surfaces("auth").Public, huma.Operation{
@@ -691,20 +692,13 @@ type perKey struct {
 	keys []string
 }
 
-func (p *perKey) Allow(_ context.Context, key string, _ int, _ time.Duration) (bool, time.Duration, error) {
+func (p *perKey) Reserve(_ context.Context, key string, limit int, _ time.Duration) (bool, int, time.Duration, error) {
 	p.keys = append(p.keys, key)
 	if p.seen == nil {
 		p.seen = map[string]int{}
 	}
 	p.seen[key]++
-	if p.seen[key] > 1 {
-		return false, time.Minute, nil
-	}
-	return true, 0, nil
-}
-
-func (p *perKey) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return 0, 0, nil
+	return p.seen[key] <= 1, max(limit-p.seen[key], 0), time.Minute, nil
 }
 func (p *perKey) Forget(context.Context, string) error { return nil }
 
@@ -715,7 +709,8 @@ func (p *perKey) Forget(context.Context, string) error { return nil }
 // refused, and the other tenant's first is not.
 func TestTwoTenantsBehindOneAddressAreCountedApart(t *testing.T) {
 	counted := &perKey{}
-	s := newSurfacesWith(t, httpx.Options{WriteLimiter: counted})
+	s := newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit"), WriteLimiter: counted})
 	httpx.Register(s.api.Surfaces("auth").Public, huma.Operation{
 		OperationID: "register", Method: http.MethodPost, Path: "/register",
 	}, httpx.Public(), func(context.Context, *struct{}) (*body, error) { return &body{}, nil })
