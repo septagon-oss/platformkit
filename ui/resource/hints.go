@@ -28,6 +28,19 @@ import (
 // `command.<verb>.successMessage`, and a command argument's
 // `command.<verb>.field.<name>.label` / `.help`.
 //
+// A word nobody declared — the label computed off a field's name, the field's own
+// `doc:` sentence, an enum value's own spelling, a command's Summary and Description —
+// is copy a person reads just the same, so it is keyed by what it is addressed by
+// rather than by a declaration: `field.<module>.<entity>.<field>` and
+// `…<field>.help`, `enum.<module>.<entity>.<value>`,
+// `command.<module>.<entity>.<verb>` and `…<verb>.description`. A field's or an enum's
+// entity-less form (`field.<field>`, `enum.<value>`) sits behind the entity's own as
+// the older half of every module's copy; a command's verb is not asked that way,
+// because two entities' "publish" are two sentences. The computed word is the fallback
+// of every one of them, so a module that ships no copy of its own reads exactly as it
+// did before these keys existed. Words.schemaWord and Words.RouteWords are the two
+// lookups.
+//
 // What is *not* resolved is the rest of the vocabulary, and the reason is one
 // sentence: `icon`, `group.key`, `section.key`, `order`, `primaryField`,
 // `previewField`, `statusField`, `summaryFields`, `sortable`, `visibility`,
@@ -111,10 +124,60 @@ func (w Words) say(aspect, declared string) string {
 	if declared == "" || w.text == nil {
 		return declared
 	}
-	if out := w.text(w.Key(aspect), declared); out != "" {
-		return out
+	return orSaid(w.text(w.Key(aspect), declared), declared)
+}
+
+// orSaid is the one answer rule: what the catalogue said, or the word the caller
+// brought when it said nothing.
+func orSaid(said, fallback string) string {
+	if said != "" {
+		return said
 	}
-	return declared
+	return fallback
+}
+
+// schemaWord asks for a word the schema carries without anyone declaring it — a
+// label computed off the field's name, a `doc:` sentence, an enum value's own
+// spelling. A declared word is keyed by the declaration that holds it; an undeclared
+// one is computed at this boundary, so the screen that prints it as computed answers a
+// Portuguese reader in the language the module was written in. It is therefore asked
+// of the catalogue at the entity's own key first (`field.task.task.title`,
+// `enum.task.task.critical`) and at the bare key behind it (`field.title`,
+// `enum.draft`). The entity's key comes first because `field.title` is one key in one
+// catalogue and several modules define a title: the module that filled that key would
+// otherwise answer the others' forms with its own sentence, in English. The bare key
+// is where every module's copy has always lived, so an entity with no copy of its own
+// reads exactly as it did before the entity key existed, and the computed word is the
+// answer of last resort — no catalogue, or neither key held, is the schema's own
+// English. An entity this renderer cannot name (no module, no entity) asks the bare
+// key alone, which is the lookup this package always made.
+func (w Words) schemaWord(kind, name, computed string) string {
+	if computed == "" || w.text == nil {
+		return computed
+	}
+	shared := orSaid(w.text(kind+"."+name, computed), computed)
+	if w.schema.Module == "" || w.schema.Entity == "" {
+		return shared
+	}
+	scoped := kind + "." + w.schema.Module + "." + w.schema.Entity + "." + name
+	return orSaid(w.text(scoped, shared), computed)
+}
+
+// RouteWords are a command's own two words: the Summary written beside the route,
+// which is the word on the button, and the Description, which names the form. Neither
+// is a `presentation` declaration, so this file's `command.<verb>.` keys never reach
+// them, and a form that printed them as written named the action in the language the
+// API was declared in. They are asked at the entity's own command key
+// (`command.task.task.assign`) and behind it the sentence the module wrote for that
+// verb (`command.assign`) is not asked: two entities' "publish" are two sentences, and
+// the second key is how one module's copy would answer another's button.
+func (w Words) RouteWords(verb, summary, description string) (string, string) {
+	if w.text == nil || w.schema.Module == "" || w.schema.Entity == "" {
+		return summary, description
+	}
+	at := "command." + w.schema.Module + "." + w.schema.Entity + "." + verb
+	return orSaid(w.text(at, summary), summary),
+		orSaid(w.text(at+".description", description), description)
 }
 
 // Entry is this resource's entry declaration in the request's language, and
@@ -241,38 +304,47 @@ func (w Words) FieldLabel(f entity.Field) string {
 		if named, ok := kernelWords[f.Name]; ok {
 			return w.sayLayer(named)
 		}
-		return display.FieldLabel(f)
+		return w.schemaWord("field", f.Name, display.FieldLabel(f))
 	}
 	return w.say("field."+f.Name+".label", f.Presentation.Label)
 }
 
-// FieldHelp is the line under a control, in this request's language. An
-// undeclared help line is the field's own Doc, which is a developer sentence no
-// copy table holds until its author declares a `help:` of their own.
+// FieldHelp is the line under a control, in this request's language. An undeclared
+// help line is the field's own Doc: a sentence its author wrote for the API, which is
+// what the screen prints and therefore copy a reader's language has to reach — asked
+// under `field.<module>.<entity>.<field>.help`, with the field's bare
+// `field.<field>.help` behind it.
 func (w Words) FieldHelp(f entity.Field) string {
 	if f.Presentation.Help == "" {
-		return display.FieldHelp(f)
+		return w.schemaWord("field", f.Name+".help", display.FieldHelp(f))
 	}
 	return w.say("field."+f.Name+".help", f.Presentation.Help)
 }
 
-// EnumWord is one enum value as its field's author named it, in this request's
-// language. The tone of that value is not a word and is never translated.
+// EnumWord is one enum value in this request's language: the word its field's author
+// named it by under `enumLabels`, or — where none was declared — the value's own
+// spelling asked of the catalogue at `enum.<module>.<entity>.<value>`. The tone that
+// value carries is not a word and is never translated.
 func (w Words) EnumWord(f entity.Field, value string) string {
 	word := f.Presentation.EnumLabels[value]
 	if word == "" {
-		return display.EnumWord(f, value)
+		return w.schemaWord("enum", value, display.EnumWord(f, value))
 	}
 	return w.say("enum."+f.Name+"."+value, word)
 }
 
 // Value is a field's value as a screen shows it, in this request's language: the
-// declared reading of an enum under its `enumLabels` map, and the layout a boolean,
-// a measured number or an instant is written in — the words and the layouts a
-// catalogue holds, which is why a Portuguese row reads "12 345" where an English one
-// reads "12,345". Everything else is display.Display: a value no language writes
-// differently is that value, and an absent value is the dash every other empty cell
-// on this screen says.
+// reading of an enum value (its declared `enumLabels` word, or the value's own
+// spelling where the author declared none), and the layout a boolean, a measured
+// number or an instant is written in — the words and the layouts a catalogue holds,
+// which is why a Portuguese row reads "12 345" where an English one reads "12,345".
+// Everything else is display.Display: a value no language writes differently is that
+// value, and an absent value is the dash every other empty cell on this screen says.
+//
+// An enumerated field goes through the word seam whether or not its author declared
+// `enumLabels`: the values themselves are the vocabulary a screen must be able to
+// answer in the reader's language, and which of the two paths answers one is not the
+// screen's concern.
 func (w Words) Value(f entity.Field, v any) string {
 	if v != nil {
 		switch f.Type {
@@ -284,7 +356,7 @@ func (w Words) Value(f entity.Field, v any) string {
 			return w.number(f, v)
 		}
 	}
-	if w.text == nil || len(f.Presentation.EnumLabels) == 0 {
+	if w.text == nil || len(f.Enum) == 0 {
 		return display.Display(f, v)
 	}
 	return display.DisplayWord(f, v, w.EnumWord)

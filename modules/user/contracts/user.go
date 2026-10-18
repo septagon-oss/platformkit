@@ -117,7 +117,7 @@ type User struct {
 	// look no worse — which is exactly why the declaration is governed, and why a
 	// name outside the vocabulary refuses to mount instead of quietly meaning
 	// nothing.
-	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person;label:Username;help:Lower-case name this person answers to in this tenant" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
+	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person;label:Username" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
 	// PreferredLocale is the language this person asked to be answered in, or
 	// empty for "nobody chose: negotiate". Empty is a value and not an absence —
 	// it is how a choice is taken back, and it is the state most people are in
