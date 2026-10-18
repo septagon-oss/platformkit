@@ -94,7 +94,11 @@ CREATE POLICY tenant_locales_delete ON tenant_locales FOR DELETE
 -- system transaction changes whatever it likes — the operator's `SetLocale`,
 -- `AddHost`, `Suspend` and `Create` keep every authority they had, because
 -- `platformkit_is_system()` is what the kernel sets on a transaction of ours and
--- nothing else.
+-- nothing else. The rule's subject is a tenant transaction, so a transaction
+-- naming no tenant stands outside it too: the kernel's own system transaction
+-- names itself by GUC, and a connection outside either of ours (the migrating
+-- role's is the one that exists) was never bound by the tenant policies either —
+-- they answer it nothing, and it reads around them only as the table's owner.
 --
 -- The refusal is an exception and not a quiet no-op: the write is lost, the
 -- transaction aborts, and the caller is told which rule it broke. The application
@@ -105,7 +109,7 @@ CREATE POLICY tenant_locales_delete ON tenant_locales FOR DELETE
 CREATE OR REPLACE FUNCTION tenants_language_only() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-	IF platformkit_is_system() THEN
+	IF platformkit_is_system() OR platformkit_current_tenant_id() IS NULL THEN
 		RETURN NEW;
 	END IF;
 	-- The whole row compared as jsonb with the permitted columns taken out of both

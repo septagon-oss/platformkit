@@ -18,6 +18,7 @@ import (
 func TestRemovingTheLastTenantLanguageWritesNothing(t *testing.T) {
 	owner, conn := dbtest.Schema(t)
 	svc := internal.NewServiceWithLocaleManager(nil, []string{"en", "pt-PT"}, appname.Name("PlatformKit"), allowedLocaleManager{})
+	installed(t, conn, svc)
 	var tenant *contracts.Tenant
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error

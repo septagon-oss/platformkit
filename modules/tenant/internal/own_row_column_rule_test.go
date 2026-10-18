@@ -58,16 +58,23 @@ func changed(column, dataType string) (string, error) {
 		return fmt.Sprintf("%s = gen_random_uuid()", column), nil
 	case "jsonb", "json":
 		return fmt.Sprintf("%s = COALESCE(%s, '{}'::jsonb) || '{\"rule\":\"check\"}'", column, column), nil
+	case "ARRAY":
+		// The one array this table has is a text[] (oidc_roles); another element
+		// type will fail here loudly, which is this file's standing answer to a
+		// column the case has not been taught yet.
+		return fmt.Sprintf("%s = array_append(COALESCE(%s, ARRAY[]::text[]), 'rule-check')", column, column), nil
 	}
 	return "", fmt.Errorf("this case cannot move a %s column: add it to changed() rather than skipping the column", dataType)
 }
 
 func TestATenantTransactionWritesItsOwnLanguageColumnsAndNoOtherColumn(t *testing.T) {
 	owner, conn := dbtest.Schema(t)
+	svc := internal.NewService(nil, nil, "")
+	installed(t, conn, svc)
 	var tenant *contracts.Tenant
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error
-		tenant, err = internal.NewService(nil, nil, "").Create(ctx, tx, contracts.NewTenant{
+		tenant, err = svc.Create(ctx, tx, contracts.NewTenant{
 			Slug: "acme", Name: "Acme", Host: "acme.example.com",
 		})
 		return err
