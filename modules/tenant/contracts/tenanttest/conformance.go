@@ -413,7 +413,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Errorf("the refused declaration left %q %v at revision %d, want pt-PT [en] at %d",
 					after.DefaultLocale, after.Locales, after.LocaleRevision, born+1)
 			}
-			published(t, f, contracts.EventCreated, contracts.EventLocaleSet)
+			published(t, f, audited(contracts.EventCreated, contracts.EventLocaleSet)...)
 		},
 
 		"saying the same languages again changes nothing and says nothing": func(t *testing.T, f Fixture) {
