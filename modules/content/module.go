@@ -17,6 +17,9 @@
 package content
 
 import (
+	"context"
+
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -77,6 +80,14 @@ var Spec = rest.Spec[*contracts.Content]{
 	// it; author belongs to the create that stamped it from the caller, and a
 	// patch that could rewrite it would forge a byline.
 	Immutable: []string{"status", "publishedAt", "author"},
+	// Audience is the one fact a body cannot answer and the one content owns: a page
+	// shows its pictures to anybody exactly when it is published. It reads the row
+	// this transaction already locked and merged, so it costs no query, and status is
+	// immutable just above, so a merged row cannot be claiming a lifecycle this write
+	// moved. A create arrives with the default status, which files a draft's uses.
+	Audience: func(_ context.Context, _ db.Tx[db.Tenant], c *contracts.Content) (bool, error) {
+		return c.Status == contracts.StatusPublished, nil
+	},
 	// Nothing here publishes from a hook, so there is nothing for a Spec to
 	// declare on the write routes' behalf. The lifecycle's three events are
 	// declared by the three commands that publish them, in internal/handler.go.
@@ -85,14 +96,21 @@ var Spec = rest.Spec[*contracts.Content]{
 	// is written nowhere here: the body is Markdown source, and a row previewing
 	// raw Markdown is the fault decision 0085 photographs.
 	Present: entity.EntryHints{
-		Singular:      "page",
-		Plural:        "pages",
-		Icon:          "document",
-		Group:         &entity.ResourceGroup{Key: "content", Label: "Content"},
-		PrimaryField:  "title",
-		StatusField:   "status",
-		SummaryFields: []string{"kind"},
-		Sortable:      []string{"title", "publishedAt", "updatedAt"},
+		Singular:     "page",
+		Plural:       "pages",
+		Icon:         "document",
+		Group:        &entity.ResourceGroup{Key: "content", Label: "Content"},
+		PrimaryField: "title",
+		StatusField:  "status",
+		// The one picture this entity holds, and so both the record's opening
+		// photo and the row's thumbnail: `thumbnailField` is said anyway, because
+		// a document that echoes what a shell would have computed still answers
+		// "did somebody choose this?" and a shell that reads only the one key it
+		// was told to read has a thumbnail either way.
+		CoverField:     "coverImageId",
+		ThumbnailField: "coverImageId",
+		SummaryFields:  []string{"kind"},
+		Sortable:       []string{"title", "publishedAt", "updatedAt"},
 	},
 }
 

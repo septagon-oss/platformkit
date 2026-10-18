@@ -271,6 +271,15 @@ func (v *Variants) scale(ctx context.Context, scope contracts.Scope, parent *con
 		return nil, 0, "", fmt.Errorf("%w: read %s back: %w", errWidthDeferred, parent.StorageKey, err)
 	}
 	defer body.Close()
+	// The same ceiling an upload answers, with the patience a job has and a request
+	// does not. A miss is not a verdict on the picture: the row stays pending, no
+	// reason is filed, and the next round asks again — a busy machine is allowed to
+	// be busy, and the encode is nowhere due.
+	release, ok := v.svc.decode.wait(ctx, decodeJobWait)
+	if !ok {
+		return nil, 0, "", fmt.Errorf("%w: every decode slot is held", errWidthDeferred)
+	}
+	defer release()
 	src, _, err := image.Decode(body)
 	if err != nil {
 		return nil, 0, contracts.VariantFailedDecode, fmt.Errorf("decode %s: %w", parent.StorageKey, err)

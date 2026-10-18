@@ -124,6 +124,7 @@ func TestModuleUsesComposedService(t *testing.T) {
 	if want := map[string]int{
 		contracts.EventCreated: 1, contracts.EventAssigned: 1,
 		contracts.EventResolved: 1, contracts.EventSLABreached: 2,
+		"platformkit.operation_outcome": 1,
 	}; !maps.Equal(events, want) {
 		t.Errorf("committed events = %v, want %v", events, want)
 	}

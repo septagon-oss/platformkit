@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // Module is one business capability, described to the kernel.
@@ -215,6 +216,33 @@ type Permission struct {
 	// customer's administrator, and an ordinary route that declared this one
 	// would be reachable by nobody but the operator.
 	Operator bool
+}
+
+// Grants is every permission the composed modules declare: the catalogue of
+// what a role in this installation may be granted at all, and the only honest
+// answer to that question, because a permission is defined by the module that
+// owns it and a module that is not composed defines nothing.
+//
+// It is exported rather than built where it is needed because it is needed
+// twice and the two answers have to be the same list. kit/app hands it to
+// kit/httpx so that a module validating a permission somebody typed asks the
+// composition instead of guessing; a composition hands it to whatever seeds a
+// new tenant's roles for the same reason. A product that wrote the second list
+// out by hand — and every one of them did — seeds a grant no route will ever
+// accept the day it drops the module that defined it. See modules/auth.SeedRoles.
+//
+// Valid has already refused a manifest whose permission is malformed or defined
+// twice, so this does not check either; it is the list, in composition order,
+// with each permission's Label carried through so the layer that renders a
+// refusal can name the grant in words (see tenancy.Grant).
+func Grants(mods []Module) []tenancy.Grant {
+	var out []tenancy.Grant
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			out = append(out, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
+		}
+	}
+	return out
 }
 
 // RoleDecl is one role a module declares for its own capability: seeded into
@@ -507,7 +535,7 @@ func Validate(mods []Module) error {
 // for every attributable refused authorization (see kit/httpx Options.Denied). They
 // count as emitted for Validate and are expanded for a SubscribeAll module, so
 // modules/audit keeps them like any other event.
-var KernelEvents = []string{"security.denied", "security.access_requested"}
+var KernelEvents = []string{"security.denied", "security.access_requested", events.EventOperationOutcome}
 
 // KernelName is the manifest name kit/app gives the kernel's own share of the
 // composition. It is named because it is read by a rule: KernelEvents are the
@@ -529,6 +557,13 @@ const KernelName = "platformkit"
 // is not modified: the returned slice is a copy, sorted so every replica
 // registers the same consumers, and in it SubscribeAll is cleared — the flag is
 // a request and this is it answered.
+//
+// What it answers is subscriptions and nothing else, and that is a contract: the
+// permissions of every module it returns are the ones the module it came from
+// defined, so Grants reads one catalogue off either list — which is what makes
+// the catalogue kit/app declares to the request guard and the one a composition
+// hands its seeder answer "does this installation define this permission" the
+// same way. TestExpandRewritesSubscriptionsAndNothingElse holds the line.
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string

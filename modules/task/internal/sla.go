@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
@@ -62,7 +64,7 @@ func sweep(ctx context.Context, conn *db.Conn, tenants jobs.TenantLister, svc co
 		}
 		var failed []error
 		for _, id := range ids {
-			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			err := events.RunOperation(ctx, conn, idempotency.Scope{Tenant: tenant.ID, Route: "task.check_sla"}, uuid.Nil, db.Now, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 				_, err := svc.CheckSLA(ctx, tx, id)
 				return err
 			})

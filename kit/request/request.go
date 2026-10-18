@@ -10,10 +10,10 @@
 // read nowhere: the request kept them to itself, and the audit row could say who
 // and what and when but not which call and from where.
 //
-// One package, one context key, three fields, and no second copy of any of them.
+// Request facts and operation causality use separate context slots.
 // kit/trace still owns the trace format and kit/tenancy still owns the actor —
 // this package carries neither, and its closure is the proof: the standard
-// library and kit/trace.
+// library, kit/trace and the portable kit/operation values.
 //
 // It does not *parse* a request. Reading net/http here would put an HTTP server
 // in the closure of every worker that publishes an event, which is the boundary

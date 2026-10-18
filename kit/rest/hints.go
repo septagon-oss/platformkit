@@ -68,6 +68,30 @@ func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) stri
 	if p.Sections != nil && len(p.Sections) == 0 {
 		return "sections declares no block; say nothing rather than nothing"
 	}
+	for _, named := range []struct {
+		key   string
+		field string
+		row   bool
+	}{
+		{"coverField", p.CoverField, false}, {"thumbnailField", p.ThumbnailField, true},
+	} {
+		// A picture a person cannot see is not a picture a screen opens on, and a
+		// thumbnail drawn from a field the entry keeps off the list is a declaration
+		// nothing honours: `detail` and `hidden` both take the column away from a row.
+		if named.field == "" {
+			continue
+		}
+		if bad := namedFieldFault(named.key, named.field, name, fields, false); bad != "" {
+			return bad
+		}
+		f, _ := entity.FieldNamed(fields, named.field)
+		if f.Present != "image" {
+			return fmt.Sprintf("%s %q is not a picture; present:image names the field that holds one", named.key, named.field)
+		}
+		if named.row && !f.OnList() {
+			return fmt.Sprintf("%s %q names a field kept off the list; a row cannot show what the entry hid from it", named.key, named.field)
+		}
+	}
 	// An empty name is silence, not a hint naming the empty string.
 	if p.PrimaryField != "" {
 		if bad := namedFieldFault("primaryField", p.PrimaryField, name, fields, false); bad != "" {
@@ -144,6 +168,9 @@ func fieldHintFault(name string, fields []crud.Field, p entity.EntryHints) strin
 		if bad := enumHintFault(f); bad != "" {
 			return bad
 		}
+		if bad := doneValuesFault(f, p); bad != "" {
+			return bad
+		}
 		if bad := moneyFault(name, fields, f); bad != "" {
 			return bad
 		}
@@ -207,6 +234,41 @@ func enumHintFault(f crud.Field) string {
 	return ""
 }
 
+// doneValuesFault refuses the shapes where a list of "finished" values could
+// disagree with the field it sits on: no enum to name a value of, a value the
+// enum does not hold, the same value written twice, a list declared and emptied,
+// and a field that is not the entry's status field.
+//
+// That last refusal is the stricter of the two readings of "on a status field",
+// and it is the one that cannot lie: the state a shell celebrates is the one the
+// row's pill shows, and the pill is `statusField`'s. It costs nothing elsewhere —
+// a command's argument is checked against the zero EntryHints, so a form field is
+// never a record's state either.
+func doneValuesFault(f crud.Field, p entity.EntryHints) string {
+	done := f.Presentation.DoneValues
+	if done == nil {
+		return ""
+	}
+	if len(done) == 0 {
+		return fmt.Sprintf("field %q declares no done value; say nothing rather than nothing", f.Name)
+	}
+	if len(f.Enum) == 0 {
+		return fmt.Sprintf("field %q declares done values and has no enum", f.Name)
+	}
+	if p.StatusField != f.Name {
+		return fmt.Sprintf("field %q declares done values and is not this resource's status field", f.Name)
+	}
+	for i, value := range done {
+		if slicesContain(done[:i], value) {
+			return fmt.Sprintf("field %q names done value %q twice; one value is one value", f.Name, value)
+		}
+		if !slicesContain(f.Enum, value) {
+			return fmt.Sprintf("field %q names done value %q, which its enum does not hold", f.Name, value)
+		}
+	}
+	return ""
+}
+
 // moneyFault refuses the three shapes where a restated minor-unit scale could
 // disagree with the data: a money format on a column that does not hold minor
 // units, a scale with no currency to read, and a currency named by something
@@ -245,10 +307,8 @@ func moneyFault(name string, fields []crud.Field, f crud.Field) string {
 	return ""
 }
 
-// commandFault names what one command's hints get wrong, and "" when they are
-// coherent. It runs inside rest.Command rather than Spec.check because a command
-// is the one place the verb, its options, the entity's immutable list and the
-// argument's fields are all in hand at once.
+// commandFault checks a command's verb, presentation and argument ownership before
+// registration. It returns a fault, or "" for a coherent declaration.
 func commandFault(verb string, p entity.CommandHints, fields []crud.Field) string {
 	bad := ""
 	switch {
@@ -275,6 +335,11 @@ func commandFault(verb string, p entity.CommandHints, fields []crud.Field) strin
 	}
 	if bad != "" {
 		return bad
+	}
+	for _, f := range fields {
+		if entity.ServerOwned(f) {
+			return fmt.Sprintf("argument field %q is server-owned; use a caller-owned argument name instead (ifRevision for an observed revision)", f.Name)
+		}
 	}
 	// The argument's own hints run through the same gate. One consequence is
 	// worth naming: an argument cannot read its currency from a sibling field of
@@ -336,6 +401,56 @@ func CheckReferences(resources []httpx.Resource) string {
 		}
 	}
 	return ""
+}
+
+// CheckRowHints is the boot gate for the entry hints that speak of a row and a
+// verb: it answers whether a resource's `primaryCommand` names a command this
+// resource actually mounts, and one a swipe could run, and "" when they all do.
+//
+// It is asked at the same moment as CheckReferences, and for the same reason:
+// `entryHintsFault` runs in a Spec's own mount check, where no command exists yet
+// — commands arrive later, through a separate registration — so the first site
+// where an entry's declaration and its resource's verbs are in hand together is
+// the one that has the whole resource list. The refusal stays out of the command's
+// own gate, which runs from the verb's side and could never see a verb that was
+// never mounted.
+//
+// Three things make a mounted verb one a row cannot swipe to: it asks for values,
+// which a swipe sends none of (an argument is declared before the route is, so
+// this reads the fields a map-only argument would have produced and is not
+// satisfied by one that hides them), it is a system verb, which no person is
+// offered and which mounts no browser route at all, or it runs over the whole
+// collection, where a swipe names one row.
+func CheckRowHints(resources []httpx.Resource) string {
+	for _, r := range resources {
+		if r.Present.PrimaryCommand == "" {
+			continue
+		}
+		owner := resourceAddress(r.Module, r.Entity)
+		verb, found := namedCommand(r.Commands, r.Present.PrimaryCommand)
+		if !found {
+			return fmt.Sprintf("%s primaryCommand %q is not a command of %s", owner, r.Present.PrimaryCommand, r.Entity)
+		}
+		switch {
+		case len(verb.Fields) > 0:
+			return fmt.Sprintf("%s primaryCommand %q takes arguments; a row's swipe sends none", owner, verb.Verb)
+		case verb.Present.System:
+			return fmt.Sprintf("%s primaryCommand %q is a system command; no person is offered it", owner, verb.Verb)
+		case verb.Collection:
+			return fmt.Sprintf("%s primaryCommand %q runs on the collection; a row's swipe names one row", owner, verb.Verb)
+		}
+	}
+	return ""
+}
+
+// namedCommand is the verb a hint names, if this resource mounts one at all.
+func namedCommand(commands []httpx.Command, verb string) (httpx.Command, bool) {
+	for _, c := range commands {
+		if c.Verb == verb {
+			return c, true
+		}
+	}
+	return httpx.Command{}, false
 }
 
 // unresolvedReference names the first field that points beyond the composition,

@@ -56,6 +56,15 @@ func TestServiceConforms(t *testing.T) {
 	})
 }
 
+// asAdmin is a context the sender commands accept: a caller the transaction
+// names. Put, Verify and Delete refuse a caller nobody wrote, because the event
+// they publish is the record of who changed this tenant's mail identity, and an
+// audit row naming nobody answers nothing; the cases below are about what those
+// commands decide about a row, so they say who is asking, the way a route does.
+func asAdmin(ctx context.Context) context.Context {
+	return tenancy.WithActor(ctx, notificationtest.Ada)
+}
+
 // outbox is what has been published in this transaction, in order.
 func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 	t.Helper()
@@ -115,7 +124,7 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	svc := internal.NewService(directory{})
 	box := notification.NewMailbox()
-	sub := internal.SendMail(box, directory{}, hosts{}, true)
+	sub := internal.SendMail(box, directory{}, hosts{}, nil, true)
 	if sub.Module != "notification" || sub.Name != contracts.EventEmailRequested {
 		t.Fatalf("the subscription is %s to %s", sub.Module, sub.Name)
 	}
@@ -123,7 +132,7 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := svc.Notify(ctx, tx, contracts.Notice{
 			Recipient: notificationtest.Ada, Title: "A task was assigned to you",
-			Body: "Chiller-2 supply temperature out of band", Link: "/admin/task/tasks/1", Email: true,
+			Body: "Chiller-2 supply temperature out of band", Link: "/admin/task/tasks/1", Wants: contracts.WantsEmail,
 		})
 		if err != nil {
 			return err
@@ -177,7 +186,7 @@ func TestTheOutboxCarriesNoMessage(t *testing.T) {
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, err := svc.Notify(ctx, tx, contracts.Notice{
 			Recipient: notificationtest.Ada, Title: "Reset your password",
-			Body: "Follow the link", Link: "/auth/reset?token=s3cr3t", Email: true,
+			Body: "Follow the link", Link: "/auth/reset?token=s3cr3t", Wants: contracts.WantsEmail,
 		})
 		return err
 	})

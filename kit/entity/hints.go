@@ -90,11 +90,23 @@ type EntryHints struct {
 	// Order is a consumer's position within its own grouping. 0 means "no
 	// opinion", and the catalogue's array order never moves for it: resources
 	// are listed in registration order and a shell that groups re-sorts.
-	Order            int
-	PrimaryField     string
-	PreviewField     string
-	SummaryFields    []string
-	StatusField      string
+	Order         int
+	PrimaryField  string
+	PreviewField  string
+	SummaryFields []string
+	StatusField   string
+	// CoverField names the `present:image` field a record opens on, and
+	// ThumbnailField the one a list row shows. Both name a field and not a value:
+	// a picture is a column like any other, and the screen decides which of the
+	// record's pictures opens it. ThumbnailField defaults to CoverField at the
+	// reader and is never echoed as a default — see ui/screens/hints.go on why a
+	// computed default may not reach the wire.
+	CoverField     string
+	ThumbnailField string
+	// PrimaryCommand names the verb a row's swipe runs. It is one of this
+	// resource's own commands, and the one the document can check: an argument
+	// a swipe cannot send is a command no row may run. See kit/rest's row gate.
+	PrimaryCommand   string
 	Sections         []EntitySection
 	EmptyDescription string
 	Sortable         []string
@@ -154,6 +166,14 @@ type FieldHints struct {
 	Reference *FieldReference `json:"reference,omitempty"`
 	// Money says how an int64 minor-unit amount is read.
 	Money *FieldMoney `json:"money,omitempty"`
+	// DoneValues is which of this field's enum values mean *finished* — the
+	// subset a shell may celebrate, and nothing else. It is orthogonal to
+	// EnumTones: which values are finished is the entity's fact, which colour
+	// finished wears is a product's copy decision. It is declared on the entry's
+	// `statusField` alone, because the state a shell celebrates is the one the
+	// row's pill shows; the mount gate refuses it anywhere else. An absent list
+	// means nothing is finished and nothing celebrates.
+	DoneValues []string `json:"doneValues,omitempty"`
 }
 
 // FieldReference names the resource a value points at, as `module/entity`. Its
