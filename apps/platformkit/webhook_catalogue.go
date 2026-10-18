@@ -86,6 +86,12 @@ var webhookCatalogue = emittedEvents{
 	// identity wants the same distinction — see modules/notification/contracts/events.go.
 	notificationcontracts.EventPreferenceSet, notificationcontracts.EventSenderSet,
 	notificationcontracts.EventSenderVerified, notificationcontracts.EventSenderRemoved,
+	// Where a person can be reached, and where that stopped being true. A registration
+	// is the holder's own act, so the event is the only way an installation watching its
+	// own delivery floor learns the reachability changed; a removal is the provider's
+	// answer rather than anybody's command, and its payload names no actor for that
+	// reason — see modules/notification/internal/carrier_push.go.
+	notificationcontracts.EventDeviceRegistered, notificationcontracts.EventDeviceRemoved,
 	taskcontracts.EventCreated, taskcontracts.EventUpdated, taskcontracts.EventDeleted,
 	taskcontracts.EventAssigned, taskcontracts.EventResolved, taskcontracts.EventSLABreached,
 	contentcontracts.EventCreated, contentcontracts.EventUpdated, contentcontracts.EventDeleted,
