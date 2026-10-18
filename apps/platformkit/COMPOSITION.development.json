@@ -9,6 +9,8 @@
       "provides": [
         "usercontracts.Administration",
         "usercontracts.Granting",
+        "usercontracts.LocalePolicy",
+        "tenantcontracts.LocaleManager",
         "filecontracts.Storage",
         "auditcontracts.Plan",
         "tenancy.Policy",
@@ -18,7 +20,6 @@
         "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Pictures",
-        "admincontracts.Locale",
         "tenantcontracts.Languages",
         "webhookcontracts.Catalogue"
       ],
@@ -64,6 +65,10 @@
         },
         {
           "contract": "usercontracts.Granting",
+          "from": "product"
+        },
+        {
+          "contract": "usercontracts.LocalePolicy",
           "from": "product"
         }
       ],
@@ -116,6 +121,10 @@
         {
           "contract": "tenantcontracts.Inviter",
           "from": "user"
+        },
+        {
+          "contract": "tenantcontracts.LocaleManager",
+          "from": "product"
         }
       ],
       "uses": [
@@ -368,6 +377,9 @@
       "provides": [
         "changecontracts.Notifier",
         "changecontracts.ProposalPage",
+        "admincontracts.Locale",
+        "admincontracts.AccountLanguage",
+        "admincontracts.AccountLanguageVersion",
         "*change.ReviewChrome"
       ],
       "needs": [
@@ -378,6 +390,10 @@
         {
           "contract": "notificationcontracts.Service",
           "from": "notification"
+        },
+        {
+          "contract": "tenantcontracts.Service",
+          "from": "tenant"
         },
         {
           "contract": "sitecontracts.Service",
@@ -407,6 +423,7 @@
       "after": [
         "product",
         "user",
+        "tenant",
         "notification",
         "auth",
         "site"
@@ -567,17 +584,30 @@
         },
         {
           "contract": "admincontracts.Locale",
-          "from": "product"
+          "from": "access"
         },
         {
           "contract": "admincontracts.Storybook",
           "from": ""
+        },
+        {
+          "contract": "admincontracts.AccountLanguage",
+          "from": "access"
+        },
+        {
+          "contract": "admincontracts.AccountLanguageVersion",
+          "from": "access"
+        },
+        {
+          "contract": "tenantcontracts.Languages",
+          "from": "product"
         }
       ],
       "after": [
         "product",
         "tenant",
-        "auth"
+        "auth",
+        "access"
       ],
       "runsLast": true
     }
