@@ -10,7 +10,7 @@ import (
 )
 
 func TestAuthResolvesTheNotificationServicesMailLedger(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	deployment := pkit.Deployment{Environment: pkit.Development, Config: cfg}
 	plan, err := sentencesOf(cfg).Plan(deployment)
 	if err != nil {

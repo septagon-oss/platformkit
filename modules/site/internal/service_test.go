@@ -102,14 +102,16 @@ func TestSavingTheReadsAnswerStoresTheAbsenceOfAColour(t *testing.T) {
 		t.Fatalf("the case's transaction: %v", err)
 	}
 
+	// The catalog read names the schema under test. One database serves every suite on
+	// a host, and a checkout that predates this migration still creates the column with
+	// its old default, so unqualified, information_schema answers about whichever other
+	// suite's site_settings it reached first. migrations/tenant_app_backfill_test.go
+	// writes the rule, and the case that passes alone and fails under a full suite is the
+	// shape of forgetting it.
 	var heldDefault string
-	// table_schema = current_schema(): one database serves the whole suite, and an
-	// unqualified information_schema query answers about whichever other test's
-	// site_settings it reaches first — another schema still on the old default makes
-	// this case fail in a full run while passing alone.
 	if err := admin.QueryRowContext(t.Context(), `SELECT column_default FROM information_schema.columns
 		WHERE table_schema = current_schema()
-		AND table_name = 'site_settings' AND column_name = 'primary_color'`).Scan(&heldDefault); err != nil {
+			AND table_name = 'site_settings' AND column_name = 'primary_color'`).Scan(&heldDefault); err != nil {
 		t.Fatalf("read the column default: %v", err)
 	}
 	if !strings.HasPrefix(heldDefault, "''") {
