@@ -57,6 +57,14 @@ func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 	var person *usercontracts.User
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error
+		// The installation's own tenant first: a lifecycle command audits both
+		// sides of a tenant's creation against it, and refuses to guess when no
+		// row plays the part (see tenant.ErrNoOperatorTenant).
+		if _, err = tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+			Slug: "installation", Name: "This installation", Host: "ops.example.com", Operator: true,
+		}); err != nil {
+			return err
+		}
 		tenantRow, err = tenants.Create(ctx, tx, tenantcontracts.NewTenant{Slug: "language", Name: "Language", Host: host})
 		if err != nil {
 			return err
