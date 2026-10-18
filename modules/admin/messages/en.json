@@ -68,6 +68,42 @@
       "": "Not ready: %s"
     }
   },
+  "admin.dashboard.no_screens_title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "No screens open yet",
+    "plural": {
+      "": "No screens open yet"
+    }
+  },
+  "admin.dashboard.no_screens_body": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Your role in this tenant opens no page. An administrator can grant it the permissions you need.",
+    "plural": {
+      "": "Your role in this tenant opens no page. An administrator can grant it the permissions you need."
+    }
+  },
+  "admin.dashboard.opens_title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "What your role opens",
+    "plural": {
+      "": "What your role opens"
+    }
+  },
+  "admin.dashboard.opens_body": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "This tenant holds nothing this role can count. These screens are yours.",
+    "plural": {
+      "": "This tenant holds nothing this role can count. These screens are yours."
+    }
+  },
   "admin.health.title": {
     "translation": "Health",
     "plural": {
@@ -688,6 +724,222 @@
     "translation": "%q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again",
     "plural": {
       "": "%q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again"
+    }
+  },
+  "admin.sessions.title": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Sessions",
+    "plural": {
+      "": "Sessions"
+    }
+  },
+  "admin.sessions.subtitle": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Every place you are signed in, most recently seen first. Ending one signs that device out; it does not change your password.",
+    "plural": {
+      "": "Every place you are signed in, most recently seen first. Ending one signs that device out; it does not change your password."
+    }
+  },
+  "admin.sessions.empty_title": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Nothing is signed in",
+    "plural": {
+      "": "Nothing is signed in"
+    }
+  },
+  "admin.sessions.empty_body": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "This request opened no session, so there is nothing here to end.",
+    "plural": {
+      "": "This request opened no session, so there is nothing here to end."
+    }
+  },
+  "admin.sessions.others": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Everywhere else",
+    "plural": {
+      "": "Everywhere else"
+    }
+  },
+  "admin.sessions.end_all_label": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End every session but this one",
+    "plural": {
+      "": "End every session but this one"
+    }
+  },
+  "admin.sessions.end_others": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End the other %d",
+    "plural": {
+      "": "End the other %d"
+    }
+  },
+  "admin.sessions.passkeys": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Passkeys",
+    "plural": {
+      "": "Passkeys"
+    }
+  },
+  "admin.sessions.passkey_add": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Add a passkey",
+    "plural": {
+      "": "Add a passkey"
+    }
+  },
+  "admin.sessions.passkey_enrolled": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "That passkey is enrolled.",
+    "plural": {
+      "": "That passkey is enrolled."
+    }
+  },
+  "admin.sessions.passkey_name": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "What this device is called",
+    "plural": {
+      "": "What this device is called"
+    }
+  },
+  "admin.sessions.passkey_placeholder": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Office laptop",
+    "plural": {
+      "": "Office laptop"
+    }
+  },
+  "admin.sessions.column_device": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Device",
+    "plural": {
+      "": "Device"
+    }
+  },
+  "admin.sessions.column_signed_in": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Signed in",
+    "plural": {
+      "": "Signed in"
+    }
+  },
+  "admin.sessions.column_last_used": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Last used",
+    "plural": {
+      "": "Last used"
+    }
+  },
+  "admin.sessions.column_ends": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Ends",
+    "plural": {
+      "": "Ends"
+    }
+  },
+  "admin.sessions.column_from": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "From",
+    "plural": {
+      "": "From"
+    }
+  },
+  "admin.sessions.column_end": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End",
+    "plural": {
+      "": "End"
+    }
+  },
+  "admin.sessions.table_label": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Your sessions, most recently seen first",
+    "plural": {
+      "": "Your sessions, most recently seen first"
+    }
+  },
+  "admin.sessions.this_device": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "This device",
+    "plural": {
+      "": "This device"
+    }
+  },
+  "admin.sessions.end_one": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End the session on %s",
+    "plural": {
+      "": "End the session on %s"
+    }
+  },
+  "admin.sessions.end_this": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End this session",
+    "plural": {
+      "": "End this session"
+    }
+  },
+  "admin.sessions.unknown_device": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "A device that would not say what it is",
+    "plural": {
+      "": "A device that would not say what it is"
+    }
+  },
+  "admin.nav.menu": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Menu",
+    "plural": {
+      "": "Menu"
     }
   }
 }
