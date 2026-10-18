@@ -1,0 +1,6 @@
+# What `make generate` writes, so `make check-generated` can find it and forge can tell it from prose.
+# The attribute asks a forge to collapse these four documents in a pull request's diff, which is the
+# price of the marker: a review reads a changed composition under "Files changed" only after expanding
+# it, and the prose that says why the composition moved is in the commit body and the .md comment line.
+COMPOSITION.*.md linguist-generated=true
+COMPOSITION.*.json linguist-generated=true

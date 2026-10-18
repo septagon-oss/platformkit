@@ -1,11 +1,11 @@
 package main
 
-// The committed composition documents are regenerated wholesale under
-// UPDATE_GOLDEN, so the golden comparison alone cannot notice a regeneration
-// that quietly resolved to a composition without the approval door. This case
-// pins the door's wiring in the document itself: the product provides the
-// gate, the first consumer takes it from the product, and the change module
-// still receives a subject binding from each of its two contributors.
+// `make generate` rewrites the committed composition documents wholesale, and the
+// golden comparison alone cannot notice a regeneration that quietly resolved to a
+// composition without the approval door. This case pins the door's wiring in the
+// document itself: the product provides the gate, the first consumer takes it from
+// the product, and the change module still receives a subject binding from each of
+// its two contributors.
 
 import (
 	"encoding/json"
