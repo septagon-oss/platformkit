@@ -24,6 +24,26 @@ type S3Config struct {
 	SecretKey string
 	Region    string
 	Secure    bool // https to the endpoint
+	// BucketLookup is how the bucket is addressed: "", auto, dns or path. Auto is
+	// what the clouds answer and a coin flip for a store on a private network, where
+	// the bucket lives in the path because no DNS wildcard points at the host. The
+	// kernel reads it from files.s3.bucket_lookup, whose own default is auto.
+	BucketLookup string
+}
+
+// bucketLookup maps the configuration's word onto the client's. An unknown word is
+// refused rather than rounded to the default: a deployment that wrote `path` and
+// got auto is a deployment whose next request goes to a host that never answers.
+func bucketLookup(name string) (minio.BucketLookupType, error) {
+	switch name {
+	case "", "auto":
+		return minio.BucketLookupAuto, nil
+	case "dns":
+		return minio.BucketLookupDNS, nil
+	case "path":
+		return minio.BucketLookupPath, nil
+	}
+	return minio.BucketLookupAuto, fmt.Errorf("file: bucket lookup %q is none of auto, dns or path", name)
 }
 
 // S3 is contracts.Storage and contracts.Signer on an S3-compatible object
@@ -69,10 +89,15 @@ func NewS3(cfg S3Config) (*S3, error) {
 	if cfg.Endpoint == "" || cfg.Bucket == "" {
 		return nil, errors.New("file: an S3 store needs an endpoint and a bucket")
 	}
+	lookup, err := bucketLookup(cfg.BucketLookup)
+	if err != nil {
+		return nil, err
+	}
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: cfg.Secure,
-		Region: cfg.Region,
+		Creds:        credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure:       cfg.Secure,
+		Region:       cfg.Region,
+		BucketLookup: lookup,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("file: connect to %s: %w", cfg.Endpoint, err)
