@@ -7,10 +7,16 @@ the document at [testdata/openapi.json](../../apps/platformkit/testdata/openapi.
 gated by [openapi_contract_test.go](../../apps/platformkit/openapi_contract_test.go).
 
 ```sh
-# The forge answers an anonymous release download with its sign-in page and a 200, so the
-# pin comes down with a token and reaches the harness as a file:// URL, as the job's
-# "Fetch the pinned shell build" step does.
-curl -fsSL -H "Authorization: token $FORGE_TOKEN" -o shell.apk https://…/shell.apk
+# The forge requires sign-in to read a release at all: an anonymous read of the download
+# address is turned toward the sign-in page, and a workflow job's own token is nobody to it.
+# The job's "Fetch the pinned shell build through the forge's API" step therefore resolves the
+# pinned tag through the API and downloads the address that release document publishes for the
+# asset, with PK_MOBILE_TOKEN — a read-only token for this repository, kept as a repository
+# secret. The same two reads, by hand:
+curl -fsS -H "Authorization: token $FORGE_TOKEN" \
+	"$FORGE/api/v1/repos/<owner>/<repo>/releases/tags/<tag>" |
+	python3 -c 'import json,sys; print(next(a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"] == "<asset>"))'
+curl -fsSL -H "Authorization: token $FORGE_TOKEN" -o shell.apk '<the address it printed>'
 PK_MOBILE_APK="file://$PWD/shell.apk" PK_MOBILE_APK_SHA256=<64 hex> PK_MOBILE_AVD=<avd name> make mobile-e2e
 ```
 
@@ -25,7 +31,9 @@ for*: `adb` and `emulator` are searched under `$ANDROID_HOME`, `$ANDROID_SDK_ROO
 `~/Android/Sdk`, and `maestro` under `$MAESTRO_HOME`, under the tools prefix this
 repository's own tooling installs into (`~/.local/share/platformkit-tools/maestro/bin`)
 and on `PATH`. A tool that exists and is not looked for is a journey that reports
-itself impossible, so the search scope is part of the claim.
+itself impossible, so the search scope is part of the claim. The job is dispatchable
+as well as run on `main`, so the branch that changed the fetch, the pin or the flow can
+ask the runner that owns a device for a journey rather than guess from `make check`.
 
 ## The declared set, and the number
 
