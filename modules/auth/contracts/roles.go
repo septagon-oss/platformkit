@@ -2,6 +2,7 @@ package contracts
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -148,5 +149,162 @@ func CheckedPermissions(permissions []string, declared []tenancy.Grant, tenant t
 		out = append(out, p)
 	}
 	slices.Sort(out)
+	return out, nil
+}
+
+// OperatorGrants is the permissions of a catalogue that belong to the operator
+// of the installation: the ones no wildcard satisfies, which a role has to name
+// to hold. Sorted, so the row a seeder writes does not depend on the order the
+// modules happened to be composed in.
+//
+// declared is the composition's own catalogue (kit/module.Grants), which is why
+// this answers the question the hourly warning used to ask an hour late: a
+// permission is in it exactly when a composed module defines it.
+func OperatorGrants(declared []tenancy.Grant) []string {
+	out := make([]string, 0, len(declared))
+	for _, g := range declared {
+		if g.Operator {
+			out = append(out, g.Permission)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// SeededGrants narrows the grants of one role that no composed module declares
+// to the ones this module's seeder is the writer of. gone is what
+// internal.Undeclared found in role — a permission that left with its module and
+// grants nothing now; the question here is who put it there, because a role's
+// name belonging to the seeder is not the same as a grant in it being the
+// seeder's.
+//
+// SeededRoles above is the whole of what the seeder writes, so this is the same
+// three decisions read backwards:
+//
+//   - The built-in administrator, in the operator's own tenant: the seeder wrote
+//     the wildcard and the operator permissions of the catalogue it was handed,
+//     and a departed permission was one of those. A name beside the wildcard is
+//     the only kind that can add anything to that row — the wildcard already
+//     grants every ordinary permission — and an operator permission is what the
+//     seeder puts there. So a dead grant is taken back, unless somebody has
+//     since taken the wildcard off the row, in which case the ordinary names in
+//     it are theirs and mean something and none of it is touched.
+//   - An initial role the application names: the seeder wrote the list in that
+//     literal, so a dead grant that literal still names is the seeder's. One it
+//     does not name was added through SetRole by whoever administers the tenant.
+//   - Anything else — no name in defaults matches it, the built-in member
+//     included: an application whose literal does name member falls under the
+//     bullet above and not this one — : the seeder wrote it holding nothing, so
+//     every permission in it is somebody's decision. A customer's tenant is not
+//     the operator's either, so its administrator's row is only ever seeded the
+//     wildcard and nothing in it is the seeder's.
+//
+// Limits. In the operator's own tenant the row does not record which writer put
+// a permission in it, and an operator may have named one by hand — an ordinary
+// permission as much as an operator one, since once the module owning it leaves
+// nothing says any more which it was; the seeder and that hand are
+// indistinguishable here, so the first branch takes both. It is dead either way,
+// the wildcard beside it still grants every ordinary permission, the only tenant
+// it can happen in is the operator's own, and the command that reads this lists
+// before it removes so that a person decides. What is left over —
+// every dead grant in every other role — stays where it is and goes on being
+// reported by the hourly sweep, which is the only thing entitled to say what its
+// author meant by it.
+func SeededGrants(role Role, gone []string, defaults []Role, tenant tenancy.Tenant) []string {
+	if role.Name == RoleAdmin {
+		if !tenant.Operator || !slices.Contains(role.Grants, Wildcard) {
+			return nil
+		}
+		return slices.Clone(gone)
+	}
+	i := slices.IndexFunc(defaults, func(d Role) bool {
+		name, err := ValidRoleName(d.Name)
+		return err == nil && name == role.Name
+	})
+	if i < 0 {
+		return nil
+	}
+	ours := make([]string, 0, len(gone))
+	for _, p := range gone {
+		for _, named := range defaults[i].Grants {
+			if strings.ToLower(strings.TrimSpace(named)) == p {
+				ours = append(ours, p)
+				break
+			}
+		}
+	}
+	return ours
+}
+
+// SeededRoles is what a composition provisions a new tenant with: the built-in
+// administrator, the built-in member, and the initial roles the application
+// names, each with the grants they are created holding.
+//
+// It is the whole of the seeder's decision and it opens no database, so an
+// application can ask it before it has one — which is the point of it being
+// here. SeedRoles writes exactly this and nothing else, so "what the seeder
+// produces" and "what the composition says it should" are one function and
+// cannot drift; the repair that removes a grant an older seeder wrote reads it
+// for the role names it is allowed to touch.
+//
+// The administrator's operator grants are OperatorGrants(declared) and nothing
+// else. A product that does not compose the module owning a permission never
+// seeds it: a grant is only ever as wide as the composition. The wildcard is
+// beside them rather than filtered with them — it is the rule and not a
+// permission (see Grants), and a filter applied to it would take every ordinary
+// grant away from every administrator in the installation.
+//
+// An initial role is a customer-shaped role and is held to two rules the
+// administrator's is not. It may not name the wildcard, because a second role
+// granting everything is an administrator nobody called one; and it may not
+// name an operator permission, in the operator's own tenant either, because the
+// one role that holds those is the one this function builds. Both rules are
+// about the permission and not the way the literal spells it, so both read it
+// normalised — the same normalisation CheckedPermissions is about to apply, and
+// the same one SeededGrants applies to read this literal backwards. A rule that
+// compared the raw text held only for the one spelling out of five a person
+// plausibly types, and the other four were seeded. Everything else goes through
+// CheckedPermissions, which is where "no module defines it" is refused — the
+// rule that used to be a warning an hour later.
+//
+// "grants nothing" is read from that same normalised list and not from the raw
+// literal: CheckedPermissions drops an entry that trims to nothing, so a list of
+// blanks is a list of nothing and is refused here. Measured against the raw
+// literal it was a list of one, and the role was seeded holding nothing.
+func SeededRoles(declared []tenancy.Grant, defaults []Role, tenant tenancy.Tenant) ([]Role, error) {
+	operator := OperatorGrants(declared)
+	admin := Permissions{Wildcard}
+	if tenant.Operator {
+		admin = append(admin, operator...)
+	}
+	roles := map[string]Permissions{RoleAdmin: admin, RoleMember: {}}
+	seen := map[string]bool{RoleAdmin: true}
+	for _, role := range defaults {
+		name, err := ValidRoleName(role.Name)
+		if err != nil {
+			return nil, err
+		}
+		if seen[name] {
+			return nil, fmt.Errorf("%w: initial role %q is reserved or duplicated", fault.ErrInvalid, name)
+		}
+		for _, p := range role.Grants {
+			p = strings.ToLower(strings.TrimSpace(p))
+			if p == Wildcard || slices.Contains(operator, p) {
+				return nil, fmt.Errorf("%w: initial role %q cannot grant %q", fault.ErrInvalid, name, p)
+			}
+		}
+		grants, err := CheckedPermissions(role.Grants, declared, tenant)
+		if err != nil {
+			return nil, fmt.Errorf("initial role %q: %w", name, err)
+		}
+		if len(grants) == 0 {
+			return nil, fmt.Errorf("%w: initial role %q grants nothing", fault.ErrInvalid, name)
+		}
+		seen[name], roles[name] = true, grants
+	}
+	out := make([]Role, 0, len(roles))
+	for _, name := range slices.Sorted(maps.Keys(roles)) {
+		out = append(out, Role{Name: name, Grants: roles[name]})
+	}
 	return out, nil
 }

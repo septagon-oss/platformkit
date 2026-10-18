@@ -22,6 +22,44 @@ Budget database connections across all processes, including web/worker replicas,
 migrations and maintenance. A larger pool does not establish greater throughput;
 use the [tenant-work benchmark](../jobs/README.md) to measure a concrete workload.
 
+## Test suite capacity
+
+`dbtest.Open` and `OpenFor` cap each owner pool at four open connections and one
+idle connection, without a lifetime limit. The same policy covers schema/role
+cleanup and private-database setup/removal. Four leaves room for tests that hold
+a lock while a writer and an observer use separate sessions. `dbtest.Schema`
+retains the application defaults above; test cleanup closes both handles.
+The events package uses `dbtest.RunInOwnDatabase` to isolate durable advisory
+locks from other packages; schemas do not scope database-wide lock keys.
+
+The Makefile runs `test`, `check` and `check-race` with four package processes.
+Compose and the CI PostgreSQL services allow 256 connections, including three
+reserved for superusers. Count every pool across the active packages, including
+multiple application boots, migration sessions and cleanup; four packages do not
+mean four pools. When growing the suite, sample all client backends in
+`pg_stat_activity` during a fresh `make check`, including unnamed clients and
+all databases. Keep the observed peak at most 224 including the sampler, leaving
+32 physical slots for maintenance, health probes and short overlaps that sampling
+can miss. Finite sampling reports an observed peak, not a mathematical bound.
+
+### Composition
+
+**Reused** — `database/sql` limits, `dbtest` fixture cleanup, `db.DefaultPool`,
+and the existing Makefile and PostgreSQL service definitions.
+**Added** — one private owner-pool opener and its limit proofs, because fixture
+owner handles previously had no connection maximum.
+**Made reusable** — `dbtest.Open` and `OpenFor` expose the shared test-owner
+pool policy to tests and benchmarks.
+
+### Limits
+
+The owner policy covers pools opened by `dbtest`. Raw `sql.Open` handles in
+`kit/db`'s independent fixture and session probes, and in `pkit` tests, retain
+their existing owners and settings. Include their sessions when measuring capacity.
+Package parallelism bounds processes, not fixtures: parallel tests and multiple
+runtimes can keep several pools alive in one process. The 224-client target needs
+a full-suite observation; multiplying one fixture's limits is no strict suite bound.
+
 # Migrations
 
 `Migrate(ctx, url, sources...)` applies each capability's files in owner and version
