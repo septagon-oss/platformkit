@@ -33,6 +33,15 @@
       "": "Title"
     }
   },
+  "field.site.settings.id":   {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Id",
+    "plural": {
+      "": "Id"
+    }
+  },
   "field.site.settings.title.help": {
     "references": [
       "modules/site/contracts/site.go"

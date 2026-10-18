@@ -249,6 +249,114 @@
       "": "Serves it to anybody, and records when. Publishing what is already published changes nothing; the publication time does not move."
     }
   },
+  "field.content.content.lang":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Lang",
+    "plural": {
+      "": "Lang"
+    }
+  },
+  "field.content.content.lang.help":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "The language this acts on: a tag this tenant is served in, other than its own",
+    "plural": {
+      "": "The language this acts on: a tag this tenant is served in, other than its own"
+    }
+  },
+  "field.content.content.fields":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Fields",
+    "plural": {
+      "": "Fields"
+    }
+  },
+  "field.content.content.fields.help":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "The field names; empty for every translatable field of the record",
+    "plural": {
+      "": "The field names; empty for every translatable field of the record"
+    }
+  },
+  "command.content.content.translate":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Translate a content",
+    "plural": {
+      "": "Translate a content"
+    }
+  },
+  "command.content.content.translate.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Writes this language's text of the named fields, stamped as typed by a person. The record's own fields are untouched.",
+    "plural": {
+      "": "Writes this language's text of the named fields, stamped as typed by a person. The record's own fields are untouched."
+    }
+  },
+  "command.content.content.review-translation":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Mark a content's translation reviewed",
+    "plural": {
+      "": "Mark a content's translation reviewed"
+    }
+  },
+  "command.content.content.review-translation.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Names the fields a person has checked against the source. A field whose source has moved since it was translated is refused.",
+    "plural": {
+      "": "Names the fields a person has checked against the source. A field whose source has moved since it was translated is refused."
+    }
+  },
+  "command.content.content.suggest-translation":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Ask the machine for a draft of a content",
+    "plural": {
+      "": "Ask the machine for a draft of a content"
+    }
+  },
+  "command.content.content.suggest-translation.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Saves the machine's text as a draft nobody has reviewed; it is never served publicly until a person marks it reviewed. Refuses, writing nothing, when the installation names no machine translator.",
+    "plural": {
+      "": "Saves the machine's text as a draft nobody has reviewed; it is never served publicly until a person marks it reviewed. Refuses, writing nothing, when the installation names no machine translator."
+    }
+  },
+  "command.content.content.untranslate":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Remove a content's translation",
+    "plural": {
+      "": "Remove a content's translation"
+    }
+  },
+  "command.content.content.untranslate.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Deletes this language's rows for the named fields, or for every field when none is named. The record itself is untouched.",
+    "plural": {
+      "": "Deletes this language's rows for the named fields, or for every field when none is named. The record itself is untouched."
+    }
+  },
   "command.content.content.unpublish": {
     "references": [
       "modules/content/internal/handler.go"

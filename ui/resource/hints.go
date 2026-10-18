@@ -41,6 +41,11 @@ import (
 // did before these keys existed. Words.schemaWord and Words.RouteWords are the two
 // lookups.
 //
+// One consequence of keying an undeclared word by address rather than by the sentence:
+// two commands of one entity that take an argument of the same name ask one key, and
+// the catalogue holds one sentence for it. `lang` on the four translation doors is that
+// case; the entry those four share is the one rule they state.
+//
 // What is *not* resolved is the rest of the vocabulary, and the reason is one
 // sentence: `icon`, `group.key`, `section.key`, `order`, `primaryField`,
 // `previewField`, `statusField`, `summaryFields`, `sortable`, `visibility`,
@@ -151,16 +156,24 @@ func orSaid(said, fallback string) string {
 // answer of last resort — no catalogue, or neither key held, is the schema's own
 // English. An entity this renderer cannot name (no module, no entity) asks the bare
 // key alone, which is the lookup this package always made.
+//
+// The bare key is asked only when the entity's own did not answer, because a key a
+// renderer asks and nobody can answer is a line on the translators' worklist that no
+// translator can clear: `field.title` is not missing from the catalogue that holds
+// `field.task.task.title`, and a worklist holding both sends a reader looking for a
+// key that was never the one at fault.
 func (w Words) schemaWord(kind, name, computed string) string {
 	if computed == "" || w.text == nil {
 		return computed
 	}
-	shared := orSaid(w.text(kind+"."+name, computed), computed)
 	if w.schema.Module == "" || w.schema.Entity == "" {
-		return shared
+		return orSaid(w.text(kind+"."+name, computed), computed)
 	}
 	scoped := kind + "." + w.schema.Module + "." + w.schema.Entity + "." + name
-	return orSaid(w.text(scoped, shared), computed)
+	if said := w.text(scoped, computed); said != computed {
+		return said
+	}
+	return orSaid(w.text(kind+"."+name, computed), computed)
 }
 
 // RouteWords are a command's own two words: the Summary written beside the route,

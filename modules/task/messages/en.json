@@ -231,6 +231,33 @@
       "": "When the task was resolved"
     }
   },
+  "field.task.task.id":   {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Id",
+    "plural": {
+      "": "Id"
+    }
+  },
+  "field.task.task.revision":   {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Revision",
+    "plural": {
+      "": "Revision"
+    }
+  },
+  "field.task.task.revision.help":   {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "This row's own write count, from 1",
+    "plural": {
+      "": "This row's own write count, from 1"
+    }
+  },
   "field.task.task.resolution": {
     "references": [
       "modules/task/contracts/task.go"

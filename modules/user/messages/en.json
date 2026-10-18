@@ -168,6 +168,33 @@
       "": "Roles this person holds in this tenant"
     }
   },
+  "field.user.user.password.help":   {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "The new password; at least twelve characters",
+    "plural": {
+      "": "The new password; at least twelve characters"
+    }
+  },
+  "field.user.user.roles":   {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Roles",
+    "plural": {
+      "": "Roles"
+    }
+  },
+  "field.user.user.displayName.help":   {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Name to show",
+    "plural": {
+      "": "Name to show"
+    }
+  },
   "enum.user.user.invited": {
     "references": [
       "modules/user/contracts/user.go"

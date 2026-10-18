@@ -501,6 +501,33 @@
       "": "Momento em que a tarefa foi resolvida"
     }
   },
+  "field.task.task.id":   {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Identificador",
+    "plural": {
+      "": "Identificador"
+    }
+  },
+  "field.task.task.revision":   {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Revisão",
+    "plural": {
+      "": "Revisão"
+    }
+  },
+  "field.task.task.revision.help":   {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "O número de escritas desta linha, a partir de 1",
+    "plural": {
+      "": "O número de escritas desta linha, a partir de 1"
+    }
+  },
   "field.task.task.resolution": {
     "references": [
       "modules/task/contracts/task.go"

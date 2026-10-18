@@ -114,6 +114,15 @@
       "": "Título"
     }
   },
+  "field.site.settings.id":   {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Identificador",
+    "plural": {
+      "": "Identificador"
+    }
+  },
   "field.site.settings.title.help": {
     "references": [
       "modules/site/contracts/site.go"

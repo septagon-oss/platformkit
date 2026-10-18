@@ -384,6 +384,114 @@
       "": "Serve o conteúdo a toda a gente e regista quando. Publicar o que já está publicado não altera nada; o momento de publicação não se move."
     }
   },
+  "field.content.content.lang":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Idioma",
+    "plural": {
+      "": "Idioma"
+    }
+  },
+  "field.content.content.lang.help":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "O idioma sobre que isto actua: uma etiqueta em que este tenant é servido, que não a sua",
+    "plural": {
+      "": "O idioma sobre que isto actua: uma etiqueta em que este tenant é servido, que não a sua"
+    }
+  },
+  "field.content.content.fields":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Campos",
+    "plural": {
+      "": "Campos"
+    }
+  },
+  "field.content.content.fields.help":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Os nomes dos campos; vazio para todos os campos traduzíveis do registo",
+    "plural": {
+      "": "Os nomes dos campos; vazio para todos os campos traduzíveis do registo"
+    }
+  },
+  "command.content.content.translate":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Traduzir um conteúdo",
+    "plural": {
+      "": "Traduzir um conteúdo"
+    }
+  },
+  "command.content.content.translate.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Escreve o texto deste idioma para os campos indicados, marcado como escrito por uma pessoa. Os campos do próprio registo não são alterados.",
+    "plural": {
+      "": "Escreve o texto deste idioma para os campos indicados, marcado como escrito por uma pessoa. Os campos do próprio registo não são alterados."
+    }
+  },
+  "command.content.content.review-translation":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Marcar a tradução de um conteúdo como revista",
+    "plural": {
+      "": "Marcar a tradução de um conteúdo como revista"
+    }
+  },
+  "command.content.content.review-translation.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Indica os campos que uma pessoa verificou contra a origem. Um campo cuja origem mudou desde que foi traduzido é recusado.",
+    "plural": {
+      "": "Indica os campos que uma pessoa verificou contra a origem. Um campo cuja origem mudou desde que foi traduzido é recusado."
+    }
+  },
+  "command.content.content.suggest-translation":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Pedir à máquina um rascunho de um conteúdo",
+    "plural": {
+      "": "Pedir à máquina um rascunho de um conteúdo"
+    }
+  },
+  "command.content.content.suggest-translation.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Guarda o texto da máquina como um rascunho que ninguém reviu; nunca é servido publicamente antes de uma pessoa o marcar como revisto. Recusa, sem escrever nada, quando a instalação não nomeia nenhum tradutor automático.",
+    "plural": {
+      "": "Guarda o texto da máquina como um rascunho que ninguém reviu; nunca é servido publicamente antes de uma pessoa o marcar como revisto. Recusa, sem escrever nada, quando a instalação não nomeia nenhum tradutor automático."
+    }
+  },
+  "command.content.content.untranslate":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Remover a tradução de um conteúdo",
+    "plural": {
+      "": "Remover a tradução de um conteúdo"
+    }
+  },
+  "command.content.content.untranslate.description":   {
+    "references": [
+      "kit/rest/translations_write.go"
+    ],
+    "translation": "Elimina as linhas deste idioma para os campos indicados, ou para todos os campos quando nenhum é indicado. O próprio registo não é alterado.",
+    "plural": {
+      "": "Elimina as linhas deste idioma para os campos indicados, ou para todos os campos quando nenhum é indicado. O próprio registo não é alterado."
+    }
+  },
   "command.content.content.unpublish": {
     "references": [
       "modules/content/internal/handler.go"

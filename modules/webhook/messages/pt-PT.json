@@ -24,6 +24,132 @@
       "other": "Endpoints"
     }
   },
+  "field.webhook.delivery.eventName":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Nome do evento",
+    "plural": {
+      "": "Nome do evento"
+    }
+  },
+  "field.webhook.delivery.seq":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Sequência",
+    "plural": {
+      "": "Sequência"
+    }
+  },
+  "field.webhook.delivery.endpointId":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Identificador do endpoint",
+    "plural": {
+      "": "Identificador do endpoint"
+    }
+  },
+  "field.webhook.delivery.eventId":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Identificador do evento",
+    "plural": {
+      "": "Identificador do evento"
+    }
+  },
+  "field.webhook.delivery.attempt":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Tentativa",
+    "plural": {
+      "": "Tentativa"
+    }
+  },
+  "field.webhook.delivery.cause":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Causa",
+    "plural": {
+      "": "Causa"
+    }
+  },
+  "field.webhook.delivery.state":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "field.webhook.delivery.availableAt":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Disponível a partir de",
+    "plural": {
+      "": "Disponível a partir de"
+    }
+  },
+  "field.webhook.delivery.statusCode":   {
+    "references": [
+      "modules/webhook/contracts/delivery.go"
+    ],
+    "translation": "Código de estado",
+    "plural": {
+      "": "Código de estado"
+    }
+  },
+  "field.webhook.endpoint.name":   {
+    "references": [
+      "modules/webhook/contracts/endpoint.go"
+    ],
+    "translation": "Nome",
+    "plural": {
+      "": "Nome"
+    }
+  },
+  "field.webhook.endpoint.url":   {
+    "references": [
+      "modules/webhook/contracts/endpoint.go"
+    ],
+    "translation": "URL",
+    "plural": {
+      "": "URL"
+    }
+  },
+  "field.webhook.endpoint.status":   {
+    "references": [
+      "modules/webhook/contracts/endpoint.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "field.webhook.endpoint.lastSuccessAt":   {
+    "references": [
+      "modules/webhook/contracts/endpoint.go"
+    ],
+    "translation": "Última entrega bem-sucedida em",
+    "plural": {
+      "": "Última entrega bem-sucedida em"
+    }
+  },
+  "field.webhook.endpoint.createdBy":   {
+    "references": [
+      "modules/webhook/contracts/endpoint.go"
+    ],
+    "translation": "Criado por",
+    "plural": {
+      "": "Criado por"
+    }
+  },
   "resource.webhook.delivery": {
     "translation": "Entrega",
     "plural": {
