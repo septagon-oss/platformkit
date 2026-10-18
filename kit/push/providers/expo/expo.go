@@ -204,7 +204,7 @@ func (a *adapter) send(ctx context.Context, d push.Device, m push.Message) (push
 	if err != nil {
 		return push.Receipt{}, fmt.Errorf("expo: read the answer: %w", err)
 	}
-	return answer(resp.StatusCode, raw)
+	return answer(resp.StatusCode, raw, d.Token, a.cfg.token)
 }
 
 // request is the POST body, shortened until it fits one notification: a notice
@@ -236,15 +236,20 @@ func (a *adapter) request(token string, m push.Message) ([]byte, error) {
 // written and keeps the device; a ticket naming DeviceNotRegistered ends the
 // device; a 429, a 5xx or anything else the transport did is nobody's refusal and
 // is returned bare.
-func answer(status int, raw []byte) (push.Receipt, error) {
+//
+// secrets are this send's own credentials — the device's token and the project's
+// push key — which is what the provider echoes back in the sentence below, so
+// they are cut out of it here rather than left to the caller's redaction: an
+// answer that has already been shortened has nothing left for a caller to match.
+func answer(status int, raw []byte, secrets ...string) (push.Receipt, error) {
 	// A 400 or a 413 is Expo refusing what was posted rather than the device it
 	// was posted for, and every other status is the service itself: the sentence
 	// goes to the caller bare, so the outbox retries it.
 	if status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge {
-		return push.Receipt{}, fmt.Errorf("%w: expo refused the request: %s", push.ErrRejected, reason(raw))
+		return push.Receipt{}, fmt.Errorf("%w: expo refused the request: %s", push.ErrRejected, reason(raw, secrets...))
 	}
 	if status != http.StatusOK {
-		return push.Receipt{}, fmt.Errorf("expo: the push service answered %d: %s", status, reason(raw))
+		return push.Receipt{}, fmt.Errorf("expo: the push service answered %d: %s", status, reason(raw, secrets...))
 	}
 	var got response
 	if err := json.Unmarshal(raw, &got); err != nil {
@@ -271,9 +276,13 @@ func answer(status int, raw []byte) (push.Receipt, error) {
 }
 
 // reason is the body as far as an operator needs it: a sentence for the ledger,
-// cut short, and never a header or a token.
-func reason(raw []byte) string {
-	s := strings.TrimSpace(string(raw))
+// with the send's credentials cut out of it and then the sentence cut short — in
+// that order, which is the whole point. Truncation first would leave the front of
+// a long token or key standing where the caller's exact-string redaction can no
+// longer reach it, and a trace event or a ledger reason would then carry a
+// credential's best half. Never a header.
+func reason(raw []byte, secrets ...string) string {
+	s := strings.TrimSpace(push.Scrub(string(raw), secrets...))
 	if len(s) > 200 {
 		s = s[:200] + "…"
 	}
