@@ -601,6 +601,12 @@ func fallback(value, or string) string {
 func ownScreens(recorded []string, resources []httpx.Resource) map[string]bool {
 	own := map[string]bool{}
 	for _, r := range resources {
+		if r.Screen == "" {
+			// A resource with no screen address serves no workspace page. Beside an
+			// empty address every recorded path looks like it sits beneath one, and
+			// the boot log would name pages a module does not serve.
+			continue
+		}
 		for _, path := range recorded {
 			if path == r.Screen || strings.HasPrefix(path, r.Screen+"/") {
 				own[r.Screen] = true
