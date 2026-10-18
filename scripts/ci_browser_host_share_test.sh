@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The browser suites of .gitea/workflows/ci.yml ask the host for a core, print what they waited
+# The three browser suites of .gitea/workflows/ci.yml ask the host for a core, print what they waited
 # through, and hand their own exit status back. Every case writes only into one temporary directory.
 #
 # Why these questions. The `design` job's browser step refuses with a browser death — a `Target
@@ -12,9 +12,10 @@
 # survives the sampler wrapped around it. The container's ceiling is asked of all three shapes a host
 # can leave memory accounting in — cgroup v2, cgroup v1, and none — because a promise one layout keeps
 # and another breaks is a promise about the image, not about the run. The rest ask what the guard
-# itself cannot: whether the two browser steps of the workflow still call it and reach it from the
-# directory they run in, and whether this file would notice one that stopped — three planted refusals
-# over copied workflow files, and a copied Makefile that lost either of the two lines that run these
+# itself cannot: whether the three browser steps of the workflow still call it and reach it from the
+# directory they run in, and whether this file would notice one that stopped — six planted refusals
+# over copied workflow files, the design step's two, its own reach, and gate 10's three, and a copied
+# Makefile that lost either of the two lines that run these
 # cases.
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -136,26 +137,43 @@ case "$out" in *"peaked at"*"MB used"*) ;; *) fail "watch printed no peak for th
 bash "$guard" watch 1 >/dev/null 2>&1 && fail "watch accepted no command" || true
 bash "$guard" >/dev/null 2>&1 && fail "the guard answered no subcommand" || true
 
-# Both browser steps of the real workflow, and one that lost the guard. The steps are read as data,
-# the way scripts/ci_go_cache_test.sh reads the cache steps: the question is which commands a job
-# will run, and a grep over the file answers it for text that has been renamed or reflowed away.
+# The three browser steps of the real workflow, and one that lost the guard. The steps are read as
+# data, the way scripts/ci_go_cache_test.sh reads the cache steps: the question is which commands a
+# job will run, and a grep over the file answers it for text that has been renamed or reflowed away.
 steps_call_guard() { # <workflow file>: one line per browser step, ok or the reason it does not
 	python3 - "$1" <<'PY'
 import re, sys, yaml
 with open(sys.argv[1], encoding="utf-8") as handle:
     jobs = (yaml.safe_load(handle) or {}).get("jobs") or {}
-wanted = {"design": ("name", "Native browser observations"), "editor": ("run", "editor/*.test.mjs")}
-for job, (field, needle) in wanted.items():
+wanted = {
+    "check": ("name", "make e2e", "bash scripts/ci_browser_host_share.sh"),
+    "design": ("name", "Native browser observations", "bash ../../../scripts/ci_browser_host_share.sh"),
+    "editor": ("run", "editor/*.test.mjs", "bash ../../../scripts/ci_browser_host_share.sh"),
+}
+for job, (field, needle, path) in wanted.items():
     steps = [s for s in ((jobs.get(job) or {}).get("steps") or []) if s.get("run")]
     hit = next((s for s in steps if needle in str(s.get(field) or "")), None)
     if hit is None:
         print(f"{job}: no step whose {field} names {needle}")
         continue
     run = str(hit.get("run"))
-    # The path is part of the guard: both steps run with the design tool as their working directory,
-    # so a call that names `scripts/` alone would resolve to a file that does not exist there.
-    if "bash ../../../scripts/ci_browser_host_share.sh" not in run:
-        print(f"{job}: its browser suite does not reach the guard from the directory it runs in")
+    # The path is part of the guard, and it is asked of each step's own working directory: the two
+    # design-tool suites resolve the guard three levels up, gate 10 from the repository root. Either
+    # answer written in the wrong step names a file that is not there, and that step dies before its
+    # first browser rather than guarding anything.
+    calls = set()
+    for line in run.splitlines():
+        line = line.strip()
+        # A `#` line of a run block is the step's own prose, not a command it will exec, and those
+        # prose lines name the guard file as often as the two lines that call it.
+        if "ci_browser_host_share.sh" not in line or line.startswith("#"):
+            continue
+        calls.add(line[:line.index("ci_browser_host_share.sh") + len("ci_browser_host_share.sh")])
+    if not calls:
+        print(f"{job}: its browser suite calls no host-share guard")
+        continue
+    if calls != {path}:
+        print(f"{job}: its browser suite does not reach the guard from the directory it runs in: {sorted(calls)}")
         continue
     waits = re.findall(r"ci_browser_host_share\.sh wait (\d+)", run)
     watches = re.findall(r"ci_browser_host_share\.sh watch (\d+)", run)
@@ -169,6 +187,8 @@ verdict="$(steps_call_guard "$root/.gitea/workflows/ci.yml")" || fail "the workf
 echo "$verdict" | grep -qx 'design: ok wait=300 watch=30' || fail "the design job's browser suite is not guarded:
 $verdict"
 echo "$verdict" | grep -qx 'editor: ok wait=720 watch=30' || fail "the editor job's browser suite is not guarded:
+$verdict"
+echo "$verdict" | grep -qx 'check: ok wait=600 watch=30' || fail "gate 10's browser suite is not guarded:
 $verdict"
 
 # The same assertion over a workflow with the design step's guard deleted: red here means the case
@@ -193,6 +213,29 @@ sed 's#bash \.\./\.\./\.\./scripts/ci_browser_host_share\.sh#bash scripts/ci_bro
 	"$root/.gitea/workflows/ci.yml" > "$mutated"
 if steps_call_guard "$mutated" | grep -q 'design: ok'; then
 	fail "the workflow case accepted a guard the step's own working directory cannot reach"
+fi
+
+# Gate 10's own three, the same three questions over the suite whose death is the reason it was
+# asked: a step that lost its wait, a suite the sampler no longer wraps, and a guard named from a
+# directory too deep for the step that calls it. Each is refused for gate 10 rather than for the two
+# suites guarded first, so a workflow that lost gate 10 alone cannot pass on their answers.
+mutated="$temporary/ci-gate10-lost-wait.yml"
+sed 's#^\( *\)bash scripts/ci_browser_host_share\.sh wait 600#\1bash missing_gate10_guard wait 600#' \
+	"$root/.gitea/workflows/ci.yml" > "$mutated"
+if steps_call_guard "$mutated" | grep -qx 'check: ok wait=600 watch=30'; then
+	fail "the workflow case accepted gate 10 starting a Chromium with no wait before its first page"
+fi
+mutated="$temporary/ci-gate10-unwatched.yml"
+sed 's#^\( *\)bash scripts/ci_browser_host_share\.sh watch 30 make e2e#\1make e2e#' \
+	"$root/.gitea/workflows/ci.yml" > "$mutated"
+if steps_call_guard "$mutated" | grep -qx 'check: ok wait=600 watch=30'; then
+	fail "the workflow case accepted a gate 10 suite that runs unwatched"
+fi
+mutated="$temporary/ci-gate10-deep-path.yml"
+sed 's#^\( *\)bash scripts/ci_browser_host_share\.sh#\1bash ../../../scripts/ci_browser_host_share.sh#' \
+	"$root/.gitea/workflows/ci.yml" > "$mutated"
+if steps_call_guard "$mutated" | grep -qx 'check: ok wait=600 watch=30'; then
+	fail "the workflow case accepted a guard gate 10's own working directory cannot reach"
 fi
 
 echo "ok   a browser suite waits for a core, prints the host it waited for, and keeps its own verdict"
