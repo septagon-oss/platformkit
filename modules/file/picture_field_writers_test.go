@@ -142,7 +142,7 @@ func (*renamedCover) TableName() string { return "renamed_covers" }
 // a PATCH of another field, a PATCH that clears it and one that names it again.
 func TestACoverWhoseNameIsNotItsColumnFilesAndEndsItsUse(t *testing.T) {
 	router, admin, _ := pictureMount(t, "renamed_covers", "cover_image_id uuid",
-		rest.Spec[*renamedCover]{Module: "content", Entity: "renamed", Path: "/renamed",
+		rest.Spec[*renamedCover]{Name: rest.Name{One: "Record", Other: "Records"}, Module: "content", Entity: "renamed", Path: "/renamed",
 			Read: "content:read", Write: "content:write"})
 	cover := uploadAs(t, router, host, files+"?image=true", "cover.png", "image/png", pngBytes(t))
 	uses := func() int {
@@ -176,7 +176,7 @@ func TestACoverWhoseNameIsNotItsColumnFilesAndEndsItsUse(t *testing.T) {
 // countedCoverMount is coveredMount over the counted record.
 func countedCoverMount(t *testing.T) (chi.Router, *sql.DB, rest.Spec[*countedCover]) {
 	return pictureMount(t, "counted_covers", "cover uuid, revision bigint NOT NULL DEFAULT 1",
-		rest.Spec[*countedCover]{Module: "content", Entity: "counted", Path: "/counted",
+		rest.Spec[*countedCover]{Name: rest.Name{One: "Record", Other: "Records"}, Module: "content", Entity: "counted", Path: "/counted",
 			Read: "content:read", Write: "content:write"})
 }
 

@@ -12,6 +12,6 @@ func TestExplicitShownVisibilityOverridesHideListAtMount(t *testing.T) {
 			t.Fatalf("explicit visibility must override hide:list, but mount refused: %v", fault)
 		}
 	}()
-	mountAs(t, rest.Spec[*shownAndHidden]{Module: "hinted", Entity: "hinted",
+	mountAs(t, rest.Spec[*shownAndHidden]{Name: rest.Name{One: "Thing", Other: "Things"}, Module: "hinted", Entity: "hinted",
 		Path: "/things", Read: "hinted:read", Write: "hinted:write"}, caller{})
 }

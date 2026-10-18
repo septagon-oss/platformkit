@@ -64,6 +64,7 @@ func TestDeletingARecordEndsUsesEvenWhenItsImageWasRemoved(t *testing.T) {
 			})
 			mod.Routes(surfacesOf(api))
 			spec := rest.Spec[*imageRecord]{
+				Name:   rest.Name{One: "Image", Other: "Images"},
 				Module: "content", Entity: "image", Path: "/images",
 				Read: "content:read", Write: "content:write",
 				RichTextFiles: file.RichTextFiles{Opener: svc}, FileUses: file.RecordUses{Service: svc},

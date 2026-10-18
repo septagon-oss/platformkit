@@ -19,7 +19,7 @@ func TestBuildRefusesServerOwnedCommandArgumentBeforeMigration(t *testing.T) {
 	calls := 0
 	invalid := pkit.NewModule("booking", func(*pkit.Wiring) (module.Module, error) {
 		return module.Module{Name: "booking", Routes: func(s httpx.Surfaces) {
-			spec := rest.Spec[*taskcontracts.Task]{Module: "booking", Entity: "reservation", Path: "/reservations"}
+			spec := rest.Spec[*taskcontracts.Task]{Name: rest.Name{One: "Reservation", Other: "Reservations"}, Module: "booking", Entity: "reservation", Path: "/reservations"}
 			rest.Command(s, spec, "confirm", "Confirm", "Confirm the reservation.", nil,
 				func(context.Context, db.Tx[db.Tenant], uuid.UUID, struct {
 					Revision int64 `json:"revision"`

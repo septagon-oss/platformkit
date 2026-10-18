@@ -129,7 +129,7 @@ var articlePort = &stubPort{rows: map[string]rest.TranslatedField{
 // given port, with one row created through the resource's own door.
 func mountedArticle(t *testing.T, port rest.Translations) (chi.Router, string) {
 	t.Helper()
-	s := rest.Spec[*Article]{
+	s := rest.Spec[*Article]{Name: rest.Name{One: "Article", Other: "Articles"},
 		Module: "articles", Entity: "article", Path: "/article",
 		Read: "article:read", Write: "article:write", Translations: port,
 	}

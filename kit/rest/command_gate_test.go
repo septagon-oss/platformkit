@@ -88,7 +88,7 @@ func gated(t *testing.T, refusal error) gatedWorld {
 	t.Helper()
 	door := &recorder{err: refusal}
 	ran := new(int)
-	s := rest.Spec[*gateDoc]{
+	s := rest.Spec[*gateDoc]{Name: rest.Name{One: "Doc", Other: "Docs"},
 		Module: "docs", Entity: "doc", Path: "/doc",
 		Read: "docs:read", Write: "docs:write", Gate: door,
 	}

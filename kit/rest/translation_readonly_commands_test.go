@@ -11,7 +11,7 @@ import (
 
 func TestAReadOnlySignedInResourceCannotBeMutatedThroughTranslation(t *testing.T) {
 	port := &recordedPort{Translations: &stubPort{}}
-	_, router, admin := mountAs(t, rest.Spec[*Article]{
+	_, router, admin := mountAs(t, rest.Spec[*Article]{Name: rest.Name{One: "Article", Other: "Articles"},
 		Module: "articles", Entity: "article", Path: "/article",
 		ReadAuth: httpx.SignedIn(), WriteAuth: httpx.SignedIn(),
 		Operations: []httpx.CRUD{rest.List, rest.Read}, Translations: port,

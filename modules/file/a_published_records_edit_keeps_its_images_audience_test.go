@@ -65,6 +65,7 @@ func TestAPublishedRecordsEditKeepsItsImagesAudience(t *testing.T) {
 	})
 	mod.Routes(surfacesOf(api))
 	spec := rest.Spec[*shownRecord]{
+		Name:   rest.Name{One: "Record", Other: "Records"},
 		Module: "content", Entity: "shown", Path: "/shown",
 		Read: "content:read", Write: "content:write",
 		RichTextFiles: file.RichTextFiles{Opener: svc}, FileUses: file.RecordUses{Service: svc},

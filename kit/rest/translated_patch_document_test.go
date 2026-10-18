@@ -10,7 +10,7 @@ import (
 
 func TestTranslatedPatchDocumentationPreservesTheLocaleWriteBoundary(t *testing.T) {
 	docAPI, docRouter := patchDocumentAPI()
-	s := rest.Spec[*CountedArticle]{
+	s := rest.Spec[*CountedArticle]{Name: rest.Name{One: "Counted", Other: "Counteds"},
 		Module: "articles", Entity: "counted", Path: "/counted",
 		Read: "article:read", Write: "article:write", Translations: &stubPort{},
 	}

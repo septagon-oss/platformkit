@@ -65,6 +65,7 @@ func coveredMount(t *testing.T) (chi.Router, *sql.DB, rest.Spec[*coveredRecord])
 	})
 	mod.Routes(surfacesOf(api))
 	spec := rest.Spec[*coveredRecord]{
+		Name:   rest.Name{One: "Record", Other: "Records"},
 		Module: "content", Entity: "covered", Path: "/covered",
 		Read: "content:read", Write: "content:write",
 		FileUses: file.RecordUses{Service: svc},

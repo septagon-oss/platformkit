@@ -13,7 +13,7 @@ import (
 // a provider that answers a title longer than the field allows is a 422 that saves
 // no draft, publishes nothing, and leaves nothing for a reviewer to approve.
 func TestAMachineDraftObeysTheFieldsLengthLimit(t *testing.T) {
-	spec := rest.Spec[*LimitedArticle]{
+	spec := rest.Spec[*LimitedArticle]{Name: rest.Name{One: "Article", Other: "Articles"},
 		Module: "articles", Entity: "article", Path: "/article",
 		Read: "article:read", Write: "article:write",
 	}

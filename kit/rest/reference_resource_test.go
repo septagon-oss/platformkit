@@ -16,7 +16,7 @@ type referencedOwner struct {
 func (*referencedOwner) TableName() string { return "rest_referenced_owners" }
 
 func TestAMountedReferenceResolvesTheRegisteredResource(t *testing.T) {
-	api, _, _ := mountAs(t, rest.Spec[*referencedOwner]{
+	api, _, _ := mountAs(t, rest.Spec[*referencedOwner]{Name: rest.Name{One: "Note", Other: "Notes"},
 		Module: "note", Entity: "note", Path: "/notes", Read: "note:read", Write: "note:write",
 	}, caller{})
 	resources := append(api.Resources(), httpx.Resource{Module: "user", Entity: "user"})

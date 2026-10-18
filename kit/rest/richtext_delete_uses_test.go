@@ -23,7 +23,7 @@ func TestADeletedRecordEndsTheUsesOfItsFields(t *testing.T) {
 	src := "/api/v1/file/files/" + image.String() + "/content"
 	files.Put(acme, image, richtext.Image{Src: src, SrcSet: src + " 2w", Width: 2, Height: 3}, false)
 	uses := &usesSeen{}
-	s := rest.Spec[*richTextCreateOnly]{
+	s := rest.Spec[*richTextCreateOnly]{Name: rest.Name{One: "Task", Other: "Tasks"},
 		Module: "tasks", Entity: "task", Path: "/task",
 		Read: "task:read", Write: "task:write",
 		Operations:    []httpx.CRUD{rest.Create, rest.Read, rest.Delete},
