@@ -2,6 +2,7 @@ package resource
 
 import (
 	"maps"
+	"time"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
@@ -58,6 +59,12 @@ type Text func(key, fallback string) string
 type Words struct {
 	schema entity.Schema
 	text   Text
+	// phrase asks for the layout a value is written in — a count, a measurement,
+	// an instant. It is a second seam beside text because those strings take an
+	// argument and a label does not; kit/locale's Formatter answers both shapes, so
+	// one language serves both and this type keeps the two calls apart. Nil with no
+	// catalogue: a value prints the digits it carries.
+	phrase func(key, fallback string, args ...any) string
 	// prefix holds an aspect path inside the resource: empty for the resource's
 	// own declarations, `command.assign.` for one command's. It is why a command
 	// argument's label is `…command.assign.field.assigneeId.label` and the field of
@@ -227,14 +234,80 @@ func (w Words) EnumWord(f entity.Field, value string) string {
 	return w.say("enum."+f.Name+"."+value, word)
 }
 
-// Value is a field's value as a screen shows it, with this request's enum
-// words: display.Display in every respect except the one a declared
-// `enumLabels` map reaches.
+// Value is a field's value as a screen shows it, in this request's language: the
+// declared reading of an enum under its `enumLabels` map, and the layout a boolean,
+// a measured number or an instant is written in — the words and the layouts a
+// catalogue holds, which is why a Portuguese row reads "12 345" where an English one
+// reads "12,345". Everything else is display.Display: a value no language writes
+// differently is that value, and an absent value is the dash every other empty cell
+// on this screen says.
 func (w Words) Value(f entity.Field, v any) string {
+	if v != nil {
+		switch f.Type {
+		case entity.TypeTime:
+			return w.moment(f, v)
+		case entity.TypeBool:
+			return w.boolean(f, v)
+		case entity.TypeInt, entity.TypeFloat:
+			return w.number(f, v)
+		}
+	}
 	if w.text == nil || len(f.Presentation.EnumLabels) == 0 {
 		return display.Display(f, v)
 	}
 	return display.DisplayWord(f, v, w.EnumWord)
+}
+
+// boolean is the one word a screen writes over a value that has two answers. The
+// record says yes or no; the page says it in the reader's language, which is the
+// difference between data and copy — and "Yes" printed under pt-PT is copy that
+// stopped being true when the page changed language.
+func (w Words) boolean(f entity.Field, v any) string {
+	on, ok := v.(bool)
+	if !ok || w.text == nil {
+		return display.Display(f, v)
+	}
+	if on {
+		return w.text("screens.boolean_true", "Yes")
+	}
+	return w.text("screens.boolean_false", "No")
+}
+
+// number is one measured value in the layout this request's language counts in:
+// English writes 12,345 with a comma and Portuguese with a space, and the row carries
+// neither. A count and a measurement take two keys because they are written with two
+// different verbs — "%g" prints a float and answers an integer with "%!g(int=…)",
+// which a person then reads on the page — and a language that groups both alike says
+// so twice in its copy rather than having this file decide its punctuation.
+func (w Words) number(f entity.Field, v any) string {
+	if w.phrase == nil {
+		return display.Display(f, v)
+	}
+	switch n := v.(type) {
+	case float64:
+		return w.phrase("screens.number", "%g", n)
+	case float32:
+		return w.phrase("screens.number", "%g", float64(n))
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return w.phrase("screens.integer", "%d", n)
+	default:
+		return display.Display(f, v)
+	}
+}
+
+// moment is one instant under the layout the request's language writes instants in:
+// Portuguese puts the day before the month and English does not, so the order is copy
+// and not a branch in the renderer. A value that is not an instant, and a render with
+// no catalogue, are what kit/entity/display has always printed.
+func (w Words) moment(f entity.Field, v any) string {
+	if w.text != nil {
+		if layout := w.text("screens.datetime", display.DateTimeLayout); layout != display.DateTimeLayout {
+			if at, err := time.Parse(time.RFC3339, display.Text(v)); err == nil {
+				return at.UTC().Format(layout)
+			}
+		}
+	}
+	return display.Display(f, v)
 }
 
 // CommandLabel is the word on this command's button, in this request's
@@ -266,7 +339,9 @@ func (o Options) Words(schema entity.Schema) Words {
 		return WordsFor(schema, nil)
 	}
 	selected := *o.Locale
-	return WordsFor(schema, func(key, fallback string) string {
+	return Words{schema: schema, text: func(key, fallback string) string {
 		return selected.Formatter.Text(key, fallback)
-	})
+	}, phrase: func(key, fallback string, args ...any) string {
+		return selected.Text(key, fallback, args...)
+	}}
 }
