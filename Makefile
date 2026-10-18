@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc generate check-generated check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc generate check-generated check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -341,6 +341,25 @@ check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
 # wires it.
 check-test-inventory: ## Re-check tests/inventory.json against the tests the tree holds
 	./scripts/check_test_inventory.sh
+
+# The provider legs of kit/inference's one conformance suite. `make check` runs that
+# suite over both far ends this repository holds — the script, and the OpenAI-shaped
+# adapter over a loopback stub — which is the whole of the portability claim a
+# checkout with no network can make. What it cannot claim is that a second vendor
+# speaks the same wire, so that claim is made per run and per named endpoint, and the
+# suite refuses a leg it cannot reach rather than skipping it.
+#
+# PROVIDERS=ollama,hosted reads PLATFORMKIT_TEST_INFERENCE_OLLAMA_URL, _MODEL and
+# _KEY, and the same three for `hosted`. A key is never printed: the leg names the
+# variable it read and not the value, as the adapter's error sentences name a status
+# code and a host for the same reason. Each real endpoint Honours the port's own
+# semantics and declines the far-end deviations — a hosted vendor will not answer a
+# truncated reply to order — and prints the cases it declined.
+PLATFORMKIT_TEST_INFERENCE_PROVIDERS ?= $(PROVIDERS)
+export PLATFORMKIT_TEST_INFERENCE_PROVIDERS
+inference-conformance: ## Run the inference port's suite against operator-named providers (PROVIDERS=ollama,hosted)
+	@test -n '$(PLATFORMKIT_TEST_INFERENCE_PROVIDERS)' || { echo 'usage: make inference-conformance PROVIDERS=<name>,<name>, each configured by PLATFORMKIT_TEST_INFERENCE_<NAME>_URL, _MODEL and _KEY' >&2; exit 2; }
+	go test -v -count=1 -timeout=10m -run 'TestTheConfiguredProvidersConform' ./kit/inference
 
 check-push: build check-generated vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
 	./scripts/check_push_tier.sh
