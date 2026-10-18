@@ -161,6 +161,12 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 			// control for it: a button labelled with the language question, sitting
 			// beside a list of other people, would write the reader's own row.
 			Self: true,
+			// The sentence is declared as the command's own label so the screen that
+			// names its form with it asks it under
+			// hints.user/user.command.language.label: undeclared, the renderer falls
+			// back to the route's API Summary, which no catalogue can reach, and the
+			// person who chose Portuguese is handed the English question.
+			Present: entity.CommandHints{Label: "Choose which language this person is answered in"},
 		})
 
 	// The same choice, read and replaced by the person it is about.
@@ -245,9 +251,14 @@ type handleBody struct {
 // stated an intent rather than a read — a person pressing a control labelled
 // Portuguese need not have read anything first — and the row that comes back says
 // which language they now hold either way.
+//
+// The labels and help lines are declared because the form a generated screen builds
+// from this body is read by a person, and the sentence under a control is theirs:
+// `doc:` stays the API's. The help lines carry no comma or semicolon for the reason
+// the `ui:` grammar has none — a directive separator cannot live inside a value.
 type languageBody struct {
-	Locale           string `json:"locale" maxLength:"35" doc:"One of the languages this tenant is served in, or empty to leave the choice to the browser" example:"pt-PT"`
-	ExpectedRevision *int64 `json:"expectedRevision,omitempty" doc:"The revision the current choice was read at; a stale one is a conflict that writes nothing" example:"2"`
+	Locale           string `json:"locale" maxLength:"35" ui:"label:Locale;help:A language this tenant serves — empty leaves the choice to the browser" doc:"One of the languages this tenant is served in, or empty to leave the choice to the browser" example:"pt-PT"`
+	ExpectedRevision *int64 `json:"expectedRevision,omitempty" ui:"label:Expected revision;help:The revision the current choice was read at — a stale one writes nothing" doc:"The revision the current choice was read at; a stale one is a conflict that writes nothing" example:"2"`
 }
 
 // ownLanguage is the address of the versioned pair. It names no person because

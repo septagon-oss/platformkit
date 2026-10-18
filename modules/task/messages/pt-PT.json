@@ -98,6 +98,177 @@
       "": "tarefa"
     }
   },
+  "hints.task/task.field.title.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Título",
+    "plural": {
+      "": "Título"
+    }
+  },
+  "hints.task/task.field.title.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Resumo curto da tarefa",
+    "plural": {
+      "": "Resumo curto da tarefa"
+    }
+  },
+  "hints.task/task.field.description.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Descrição",
+    "plural": {
+      "": "Descrição"
+    }
+  },
+  "hints.task/task.field.description.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Descrição detalhada da tarefa",
+    "plural": {
+      "": "Descrição detalhada da tarefa"
+    }
+  },
+  "hints.task/task.field.status.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "hints.task/task.field.status.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Estado do ciclo de vida",
+    "plural": {
+      "": "Estado do ciclo de vida"
+    }
+  },
+  "hints.task/task.field.priority.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Prioridade",
+    "plural": {
+      "": "Prioridade"
+    }
+  },
+  "hints.task/task.field.priority.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Prioridade da tarefa",
+    "plural": {
+      "": "Prioridade da tarefa"
+    }
+  },
+  "hints.task/task.field.dueAt.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Meta suave de conclusão",
+    "plural": {
+      "": "Meta suave de conclusão"
+    }
+  },
+  "hints.task/task.field.slaDeadline.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Prazo rígido do SLA, contra o qual se mede o incumprimento",
+    "plural": {
+      "": "Prazo rígido do SLA, contra o qual se mede o incumprimento"
+    }
+  },
+  "hints.task/task.enum.status.open": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Aberta",
+    "plural": {
+      "": "Aberta"
+    }
+  },
+  "hints.task/task.enum.status.acknowledged": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Aceite",
+    "plural": {
+      "": "Aceite"
+    }
+  },
+  "hints.task/task.enum.status.in_progress": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Em curso",
+    "plural": {
+      "": "Em curso"
+    }
+  },
+  "hints.task/task.enum.status.resolved": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Resolvida",
+    "plural": {
+      "": "Resolvida"
+    }
+  },
+  "hints.task/task.enum.status.closed": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Fechada",
+    "plural": {
+      "": "Fechada"
+    }
+  },
+  "hints.task/task.enum.priority.low": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Baixa",
+    "plural": {
+      "": "Baixa"
+    }
+  },
+  "hints.task/task.enum.priority.normal": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Normal",
+    "plural": {
+      "": "Normal"
+    }
+  },
+  "hints.task/task.enum.priority.high": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Alta",
+    "plural": {
+      "": "Alta"
+    }
+  },
+  "hints.task/task.enum.priority.critical": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Crítica",
+    "plural": {
+      "": "Crítica"
+    }
+  },
   "permission.task:read": {
     "references": [
       "modules/task/module.go"

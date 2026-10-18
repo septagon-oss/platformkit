@@ -63,9 +63,15 @@ type Task struct {
 	crud.Base
 
 	// Title is the one-line summary. It is what a list screen shows.
-	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" doc:"Short summary of the task" minLength:"1" maxLength:"200" example:"Chiller-2 supply temperature out of band"`
+	//
+	// The label and the help line are declared rather than humanized off the field
+	// name and lifted off `doc:`, because a word a person reads is a word a
+	// translator has to be able to reach: `hints.task/task.field.title.label` and
+	// `.help` are the keys a second language is written under, and the declared
+	// English stays the fallback (ui/resource/hints.go).
+	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" ui:"label:Title;help:Short summary of the task" doc:"Short summary of the task" minLength:"1" maxLength:"200" example:"Chiller-2 supply temperature out of band"`
 	// Description is the optional long form.
-	Description string `json:"description,omitempty" gorm:"type:text" ui:"widget:textarea;hide:list" doc:"Detailed description of the task"`
+	Description string `json:"description,omitempty" gorm:"type:text" ui:"widget:textarea;hide:list;label:Description;help:Detailed description of the task" doc:"Detailed description of the task"`
 
 	// Status and Priority are closed sets; the enum tag is what a form renders
 	// as a select and what Validate refuses a value outside.
@@ -74,8 +80,8 @@ type Task struct {
 	// struct field with no omitempty as a required request property, so without
 	// it a create would have to send the three fields the server sets itself —
 	// which is the same reasoning as crud.Base's, one level out.
-	Status   string `json:"status" gorm:"type:varchar(20);not null;default:'open'" enum:"open,acknowledged,in_progress,resolved,closed" ui:"widget:select" enumTones:"open=info,acknowledged=info,in_progress=warning,resolved=success,closed=neutral" doneValues:"resolved" doc:"Lifecycle state" default:"open" required:"false"`
-	Priority string `json:"priority" gorm:"type:varchar(20);not null;default:'normal'" enum:"low,normal,high,critical" ui:"widget:select" enumTones:"low=neutral,normal=neutral,high=warning,critical=danger" doc:"Task priority" default:"normal" required:"false"`
+	Status   string `json:"status" gorm:"type:varchar(20);not null;default:'open'" enum:"open,acknowledged,in_progress,resolved,closed" ui:"widget:select;label:Status;help:Lifecycle state" enumTones:"open=info,acknowledged=info,in_progress=warning,resolved=success,closed=neutral" enumLabels:"open=Open,acknowledged=Acknowledged,in_progress=In progress,resolved=Resolved,closed=Closed" doneValues:"resolved" doc:"Lifecycle state" default:"open" required:"false"`
+	Priority string `json:"priority" gorm:"type:varchar(20);not null;default:'normal'" enum:"low,normal,high,critical" ui:"widget:select;label:Priority;help:Task priority" enumTones:"low=neutral,normal=neutral,high=warning,critical=danger" enumLabels:"low=Low,normal=Normal,high=High,critical=Critical" doc:"Task priority" default:"normal" required:"false"`
 
 	// Source and SourceRef link a task back to whatever raised it — a sensor, a
 	// form — without a foreign key into another module's table. That is what
@@ -101,8 +107,13 @@ type Task struct {
 	// schema says and not what a person asks. Both stay writable: the ordinary
 	// update is what carries a task's SLA terms, and a deadline nobody can move
 	// strands a task whose terms changed.
-	DueAt       *time.Time `json:"dueAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;label:Due" doc:"Soft target completion time"`
-	SLADeadline *time.Time `json:"slaDeadline,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;label:Response due" doc:"Hard SLA deadline; a breach is measured against this"`
+	//
+	// The help lines are declared next to the labels: the sentence under a control
+	// is the reader's, and `doc:` is the API's. The SLA one drops the semicolon the
+	// `ui:` grammar cannot carry — a directive separator is not a character a value
+	// may hold — and the contract it states is unchanged.
+	DueAt       *time.Time `json:"dueAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;label:Due;help:Soft target completion time" doc:"Soft target completion time"`
+	SLADeadline *time.Time `json:"slaDeadline,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;label:Response due;help:Hard SLA deadline, which a breach is measured against" doc:"Hard SLA deadline; a breach is measured against this"`
 	// SLABreached is stored rather than derived, so that a breach stays a fact
 	// after the task is resolved and the deadline stops being in the future. It is
 	// read-only already — spec.Immutable names it — which is the editability axis,

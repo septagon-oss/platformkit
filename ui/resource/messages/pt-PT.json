@@ -288,5 +288,23 @@
     "plural": {
       "": "Um registo já usa um destes valores. Altere o valor duplicado e tente novamente."
     }
+  },
+  "screens.created_at": {
+    "references": [
+      "ui/resource/hints.go"
+    ],
+    "translation": "Criado em",
+    "plural": {
+      "": "Criado em"
+    }
+  },
+  "screens.updated_at": {
+    "references": [
+      "ui/resource/hints.go"
+    ],
+    "translation": "Atualizado em",
+    "plural": {
+      "": "Atualizado em"
+    }
   }
 }

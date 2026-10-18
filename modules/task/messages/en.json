@@ -581,5 +581,176 @@
     "plural": {
       "": "task"
     }
+  },
+  "hints.task/task.field.title.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Title",
+    "plural": {
+      "": "Title"
+    }
+  },
+  "hints.task/task.field.title.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Short summary of the task",
+    "plural": {
+      "": "Short summary of the task"
+    }
+  },
+  "hints.task/task.field.description.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Description",
+    "plural": {
+      "": "Description"
+    }
+  },
+  "hints.task/task.field.description.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Detailed description of the task",
+    "plural": {
+      "": "Detailed description of the task"
+    }
+  },
+  "hints.task/task.field.status.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Status",
+    "plural": {
+      "": "Status"
+    }
+  },
+  "hints.task/task.field.status.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Lifecycle state",
+    "plural": {
+      "": "Lifecycle state"
+    }
+  },
+  "hints.task/task.field.priority.label": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Priority",
+    "plural": {
+      "": "Priority"
+    }
+  },
+  "hints.task/task.field.priority.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Task priority",
+    "plural": {
+      "": "Task priority"
+    }
+  },
+  "hints.task/task.field.dueAt.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Soft target completion time",
+    "plural": {
+      "": "Soft target completion time"
+    }
+  },
+  "hints.task/task.field.slaDeadline.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Hard SLA deadline, which a breach is measured against",
+    "plural": {
+      "": "Hard SLA deadline, which a breach is measured against"
+    }
+  },
+  "hints.task/task.enum.status.open": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Open",
+    "plural": {
+      "": "Open"
+    }
+  },
+  "hints.task/task.enum.status.acknowledged": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Acknowledged",
+    "plural": {
+      "": "Acknowledged"
+    }
+  },
+  "hints.task/task.enum.status.in_progress": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "In progress",
+    "plural": {
+      "": "In progress"
+    }
+  },
+  "hints.task/task.enum.status.resolved": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Resolved",
+    "plural": {
+      "": "Resolved"
+    }
+  },
+  "hints.task/task.enum.status.closed": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Closed",
+    "plural": {
+      "": "Closed"
+    }
+  },
+  "hints.task/task.enum.priority.low": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Low",
+    "plural": {
+      "": "Low"
+    }
+  },
+  "hints.task/task.enum.priority.normal": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Normal",
+    "plural": {
+      "": "Normal"
+    }
+  },
+  "hints.task/task.enum.priority.high": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "High",
+    "plural": {
+      "": "High"
+    }
+  },
+  "hints.task/task.enum.priority.critical": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Critical",
+    "plural": {
+      "": "Critical"
+    }
   }
 }
