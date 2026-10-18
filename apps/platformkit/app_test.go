@@ -105,9 +105,30 @@ const fixtureLockTimeout = 90 * time.Second
 const webhookKey = "0123456789abcdef0123456789abcdef"
 
 // configure writes the configuration the reference app would have read from
-// config.yaml, against a schema of this test's own, and returns the path and
-// the loaded value. The database is empty: no tables, no ledger, nothing.
+// config.yaml, against an installation of this test's own, and returns the path and
+// the loaded value.
+//
+// The installation arrives as a copy the server made of the one this package's TestMain prepared,
+// which is what a case used to buy by running the whole migration and the bootstrap for itself: the
+// copy holds the same ledger, the same tenant and the same administrator, and it holds whatever the
+// case writes for itself alone in a database no other case can reach. A case whose own claim is
+// about installing — the bootstrap's answer, the ledger, a refusal only an untouched database can
+// give — takes configureFresh rather than a copy of a finished installation.
 func configure(t *testing.T) (string, config.Config) {
+	t.Helper()
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
+	migrateURL, appURL := dbtest.Clone(t)
+	path, cfg := writeConfig(t, migrateURL, appURL)
+	copied.Store(t, struct{}{})
+	t.Cleanup(func() { copied.Delete(t) })
+	return path, cfg
+}
+
+// configureFresh is configure against an empty schema of this test's own: no tables, no ledger, no
+// tenant, nothing. It is the whole cost of an installation, and it belongs to the cases for which
+// getting there is the thing being asserted — see install.
+func configureFresh(t *testing.T) (string, config.Config) {
 	t.Helper()
 	// The seed command's operator proves themselves the way every deployment
 	// does — through the environment, never argv — and the person they prove they
@@ -117,14 +138,26 @@ func configure(t *testing.T) (string, config.Config) {
 	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
 	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
 	migrateURL, appURL := dbtest.URLs(t)
+	return writeConfig(t, migrateURL, appURL)
+}
+
+// copied names the cases that were handed a copy of the prepared installation. install reads it,
+// and nothing else does.
+var copied sync.Map // *testing.T → struct{}
+
+// writeConfig writes config.yaml for one installation and loads what it wrote. The two URLs name
+// the database and the namespace it lives in; everything else here is this product's own answer to
+// what a reference installation is configured with.
+//
+// The file module keeps its bytes under a directory of this test's own, so a suite that uploads
+// something leaves nothing behind and two suites running at once do not share a disk. The
+// installation is reached at acme's host, which is the operator's own tenant (the bootstrap created
+// it): the control plane is served where the installation is, and nowhere else.
+// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx is where globex's answer at the same
+// address is proved.
+func writeConfig(t *testing.T, migrateURL, appURL string) (string, config.Config) {
+	t.Helper()
 	path := t.TempDir() + "/config.yaml"
-	// The file module keeps its bytes under a directory of this test's own, so
-	// a suite that uploads something leaves nothing behind and two suites
-	// running at once do not share a disk.
-	// The installation is reached at acme's host, which is the operator's own
-	// tenant (the bootstrap created it): the control plane is served where the
-	// installation is, and nowhere else. TestTheControlPlaneIsNotFoundAtATenantHost
-	// in kit/httpx is where globex's answer at the same address is proved.
 	body := "server:\n  addr: \"" + freeAddr(t) + "\"\n  public_host: \"platformkit.localhost\"\n  installation_host: \"" + acmeHost + "\"\n  docs: true\n" +
 		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n  lock_timeout: \"" + fixtureLockTimeout.String() + "\"\n" +
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
@@ -145,7 +178,12 @@ func configure(t *testing.T) (string, config.Config) {
 }
 
 // install runs the bootstrap subcommand exactly as the README's third command
-// does: an empty database in, a tenant and an administrator out.
+// does: an empty database in, a tenant and an administrator out. It does
+// nothing for a case configure gave a copy of the prepared installation, because
+// the bootstrap is what made that copy; a case that needs the run itself — one
+// that asserts the bootstrap's own answer, the ledger, or a refusal only an
+// untouched database can give — takes configureFresh, and this answers it in
+// full.
 //
 // A run the database declined for contention is run again, because that is what db.ErrContended
 // says instead of failing: it may be run again, with the files it applied already there to be read.
@@ -160,18 +198,14 @@ func configure(t *testing.T) (string, config.Config) {
 // with the count of runs it took.
 func install(t *testing.T, path string) {
 	t.Helper()
-	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
-	// The installation's second language is one this tenant's people are served in,
-	// said at the same moment the tenant is created. A tenant is not served in it
-	// by accident of the catalogues somebody compiled: SetLocale is the declaration,
-	// and a bootstrap that says nothing leaves the tenant in the one language its
-	// copy is written in — which is what apps/platformkit/locale_test.go and
-	// e2e/localization.spec.ts then check the other language against.
-	args := []string{
-		"--config", path, "--tenant", "acme", "--host", acmeHost,
-		"--name", acmeName, "--admin-email", adminEmail,
-		"--language", "pt-PT",
+	if _, ok := copied.Load(t); ok {
+		// The configuration names a database the server copied from the prepared installation, so
+		// the migration and the bootstrap this case would have run are what made that copy. What is
+		// left for this case to do is write into it.
+		return
 	}
+	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
+	args := installationArgs(path)
 	until := time.Now().Add(installContentionWait)
 	for runs := 1; ; runs++ {
 		err := bootstrap(args)
@@ -196,6 +230,25 @@ const (
 	installContentionPause = 250 * time.Millisecond
 	installContentionWait  = 2 * time.Minute
 )
+
+// installationArgs are the answers bootstrap takes from an operator standing in front of an empty
+// installation: the tenant's slug, host and name, its first administrator, and the languages its
+// people are served in. One spelling, because the package's TestMain prepares the installation every
+// case is copied from, and a case must never be looking at a different installation than its
+// neighbours.
+//
+// The installation's second language is one this tenant's people are served in, said at the same
+// moment the tenant is created. A tenant is not served in it by accident of the catalogues somebody
+// compiled: SetLocale is the declaration, and a bootstrap that says nothing leaves the tenant in the
+// one language its copy is written in — which is what apps/platformkit/locale_test.go and
+// e2e/localization.spec.ts then check the other language against.
+func installationArgs(path string) []string {
+	return []string{
+		"--config", path, "--tenant", "acme", "--host", acmeHost,
+		"--name", acmeName, "--admin-email", adminEmail,
+		"--language", "pt-PT",
+	}
+}
 
 // start runs the application in the background and returns when it is listening.
 //
@@ -252,7 +305,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 // and its administrator, the process migrates and serves, and the whole round
 // trip — sign in, create, list, sign out — happens over a cookie.
 func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 
 	c := compose(cfg)
@@ -641,7 +694,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 // TestBootstrapRefusesAnInstallationThatAlreadyExists: the one write with no
 // caller to authorize is safe because it can only ever happen once.
 func TestBootstrapRefusesAnInstallationThatAlreadyExists(t *testing.T) {
-	path, _ := configure(t)
+	path, _ := configureFresh(t)
 	install(t, path)
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
 	err := bootstrap([]string{
@@ -1883,7 +1936,7 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 // would fail on CREATE TABLE tasks — and the applied_at comparison proves the
 // rows were re-owned rather than replaced.
 func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	sources := app.MigrationSources(compose(cfg).modules)
 	// The patient budget, not the deployment's: this case is about a ledger whose rows
 	// change owner, and the legacy layout it installs carries the same concurrent build

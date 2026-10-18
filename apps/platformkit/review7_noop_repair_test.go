@@ -41,7 +41,7 @@ import (
 // walk that reached neither, a hook that seeded nothing and an operator catalogue
 // that arrived empty all fail there rather than passing on emptiness.
 func TestARepairOfAnInstallationThatNeedsNoRepairChangesNothing(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 	conn, err := db.Open(t.Context(), cfg.Database.URL)

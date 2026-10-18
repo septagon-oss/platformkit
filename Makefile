@@ -895,8 +895,13 @@ trace: ## Start the local OTLP collector that prints every span it receives
 	  || { echo "collector is not up at 127.0.0.1:$(PLATFORMKIT_OTLP_PORT); its own log:"; docker compose --profile telemetry logs --tail 20 collector; exit 1; }
 	@echo "collector up on 127.0.0.1:$(PLATFORMKIT_OTLP_PORT): point telemetry.otlp_endpoint at that host:port and read spans with 'docker compose logs -f collector'"
 
-# The profile is named here as well, because `down` is the file's teardown: a
-# goal that stopped two containers and left a third holding port 4317 would half
-# finish the one job it has. It stays destructive of volumes, as before.
-down: ## Stop Postgres, NATS, Valkey, the object store, the mail catcher and the collector, and drop their volumes
-	docker compose --profile telemetry down -v
+# Every profile is named here as well, because `down` is the file's teardown: a goal
+# that stopped four containers and left a fifth holding a port would half finish the
+# one job it has. That is measured here and not taken from a comment: a `down` naming
+# one profile and not the other does not stop the other's container, prints
+# `Network … Resource is still in use`, and exits 0 — so a stack that had ever started
+# the candidate store would leak one container every time it tore itself down, which is
+# the cost this repository is trying to shrink rather than add. It stays destructive of
+# volumes, as before.
+down: ## Stop Postgres, NATS, Valkey, the object stores, the mail catcher and the collector, and drop their volumes
+	docker compose --profile telemetry --profile floci down -v
