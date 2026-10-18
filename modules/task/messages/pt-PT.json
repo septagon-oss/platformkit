@@ -111,9 +111,9 @@
     "references": [
       "modules/task/contracts/task.go"
     ],
-    "translation": "Resumo curto da tarefa",
+    "translation": "Resumo da tarefa",
     "plural": {
-      "": "Resumo curto da tarefa"
+      "": "Resumo da tarefa"
     }
   },
   "hints.task/task.field.description.label": {
