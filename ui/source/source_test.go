@@ -226,6 +226,36 @@ func TestProducerSourcePersistence(t *testing.T) {
 	}
 }
 
+// A producer directory need not sit inside a repository Go can read: an export,
+// a tarball, or — as on the host this was found on — any directory below an
+// empty .git that is a marker to Go and not a repository to git. What this
+// session reads is the producer's build inputs, which it hashes itself, so
+// whatever history does or does not surround them must not refuse a review.
+func TestProducerSourceIgnoresTheSurroundingRepository(t *testing.T) {
+	f := newProducerFixture(t)
+	base := f.snapshot(t, nil)
+	proposal := export.PropsProposal{
+		BaseSHA256: base.SHA256,
+		Path:       []string{"screen/editor", "action/save"},
+		Props:      json.RawMessage(`{"label":"Create & keep"}`),
+	}
+	f.restoreAfter(t)
+	if err := os.Mkdir(filepath.Join(f.producer.Dir, ".git"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	change, err := source.Prepare(t.Context(), f.producer, f.target("save :="), proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := change.Apply(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	f.assertSource(t, []byte(change.Review().Source))
+	if !strings.Contains(change.Review().Source, "Create & keep") {
+		t.Fatal("apply did not write the proposed label")
+	}
+}
+
 type producerFixture struct {
 	producer          source.GoProducer
 	file, supportFile string

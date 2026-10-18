@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "65a291eda2b75b260d366349435769b996c69fb7"
+    "candidate": "c80f3d3d67dd6dbe001e7621bc7e06f2457321b8"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
@@ -88,6 +88,9 @@
     "./modules/task.Module: changed from func(Deps) github.com/septagon-oss/platformkit/kit/module.Module to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/task/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/task/contracts.Task: old is comparable, new is not",
+    "./modules/task/contracts/tasktest.(*Fake).Published: removed",
+    "./modules/task/contracts/tasktest.(*Fake).Put: changed from func(*github.com/septagon-oss/platformkit/modules/task/contracts.Task) github.com/google/uuid.UUID to func(context.Context, *github.com/septagon-oss/platformkit/modules/task/contracts.Task) github.com/google/uuid.UUID",
+    "./modules/task/contracts/tasktest.(*Fake).Tasks: removed",
     "./modules/tenant.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/tenant/contracts.Service, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/tenant/contracts.Service.ClearOIDC: added",
     "./modules/tenant/contracts.Service.ClearSAML: added",
@@ -104,7 +107,6 @@
     "./modules/user/contracts.Registrations.ConfirmAddress: added",
     "./modules/user/contracts.Service.ByHandle: added",
     "./modules/user/contracts.Service.Holders: added",
-    "./modules/user/contracts.Service.Reactivate: added",
     "./modules/user/contracts.Service.SetHandle: added",
     "./modules/web.Deps: old is comparable, new is not",
     "./modules/web.Module: changed from func(Deps) github.com/septagon-oss/platformkit/kit/module.Module to *github.com/septagon-oss/platformkit/pkit.Module",
