@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 20 modules · role `all`.
+App `platformkit` · environment `development` · 21 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 20 modules.
+pkit: platformkit in development builds 21 modules.
 pkit: cloud profile local in development.
 pkit: seam storage runs local-disk (default).
 pkit: seam cache runs in-process (default).
@@ -30,7 +30,7 @@ pkit: user.Module is built after product.Module.
 pkit: user.Module needs usercontracts.Administration from product.Module.
 pkit: user.Module needs usercontracts.Granting from product.Module.
 pkit: user.Module defines the permission user:read, user:manage and user:approve.
-pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.administration_refused, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
+pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.reactivated, user.handle_set, user.administration_refused, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
 pkit: translation.Module is built after product.Module.
 pkit: translation.Module needs rest.TranslationSource from product.Module.
 pkit: translation.Module emits translation.updated.
@@ -101,6 +101,11 @@ pkit: auth.Module reads config.Server.
 pkit: auth.Module defines the permission role:manage and passkey:signin.
 pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.factor_used, auth.factor_suspect, auth.passkey_sign_in_set, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested, auth.verification_requested, auth.no_link_requested, auth.mail_failed and auth.administration_refused.
 pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_unverified, auth.no_link_requested and auth.verification_requested.
+pkit: scim.Module is built after user.Module and auth.Module.
+pkit: scim.Module needs usercontracts.Service from user.Module.
+pkit: scim.Module needs authcontracts.Auth from auth.Module.
+pkit: scim.Module defines the permission scim:provision.
+pkit: scim.Module emits scim.group_created, scim.group_changed, scim.group_removed, scim.mapping_changed and scim.user_changed.
 pkit: media.Module is built after auth.Module.
 pkit: media.Module needs authcontracts.Auth from auth.Module.
 pkit: access.Module is built after product.Module, user.Module, notification.Module, auth.Module and site.Module.
@@ -154,6 +159,7 @@ pkit: task.Module provides taskcontracts.Service; no module in platformkit needs
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.
 pkit: auth.Module provides httpx.Authorizer; no module in platformkit needs it.
 pkit: auth.Module provides pkit.Authenticator; no module in platformkit needs it.
+pkit: scim.Module provides scimcontracts.Service; no module in platformkit needs it.
 pkit: file.Module provides filecontracts.Service; no module in platformkit needs it.
 pkit: change.Module provides changecontracts.Service; no module in platformkit needs it.
 
