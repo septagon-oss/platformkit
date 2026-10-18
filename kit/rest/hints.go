@@ -307,10 +307,8 @@ func moneyFault(name string, fields []crud.Field, f crud.Field) string {
 	return ""
 }
 
-// commandFault names what one command's hints get wrong, and "" when they are
-// coherent. It runs inside rest.Command rather than Spec.check because a command
-// is the one place the verb, its options, the entity's immutable list and the
-// argument's fields are all in hand at once.
+// commandFault checks a command's verb, presentation and argument ownership before
+// registration. It returns a fault, or "" for a coherent declaration.
 func commandFault(verb string, p entity.CommandHints, fields []crud.Field) string {
 	bad := ""
 	switch {
@@ -337,6 +335,11 @@ func commandFault(verb string, p entity.CommandHints, fields []crud.Field) strin
 	}
 	if bad != "" {
 		return bad
+	}
+	for _, f := range fields {
+		if entity.ServerOwned(f) {
+			return fmt.Sprintf("argument field %q is server-owned; use a caller-owned argument name instead (ifRevision for an observed revision)", f.Name)
+		}
 	}
 	// The argument's own hints run through the same gate. One consequence is
 	// worth naming: an argument cannot read its currency from a sibling field of

@@ -65,7 +65,7 @@ import (
 const sweepWarningMessage = "auth: a role names permissions no module defines, so they grant nothing"
 
 func TestTheHourlyWarningHasNothingToSayAboutWhatThisCompositionSeeds(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 
