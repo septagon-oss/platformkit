@@ -226,6 +226,24 @@
       "": "%s não é um número inteiro"
     }
   },
+  "invalid.rest.revision.shape": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "não é uma revisão",
+    "plural": {
+      "": "não é uma revisão"
+    }
+  },
+  "invalid.rest.revision.number": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "não é uma revisão inteira em que a linha possa estar",
+    "plural": {
+      "": "não é uma revisão inteira em que a linha possa estar"
+    }
+  },
   "invalid.rest.form.number": {
     "references": [
       "kit/rest/screens.go"

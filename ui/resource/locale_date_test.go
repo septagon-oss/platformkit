@@ -14,8 +14,8 @@ func TestDateValueFollowsTheRequestLocale(t *testing.T) {
 	copy := xtext.Load("en", xtext.Source{Name: "ui/resource", FS: Catalogues()})
 	en := locale.SelectLocale(copy, "en")
 	pt := locale.SelectLocale(copy, "pt-PT")
-	english := fieldValue(Options{Locale: &en}, date, value)
-	portuguese := fieldValue(Options{Locale: &pt}, date, value)
+	english := Options{Locale: &en}.Words(entity.Schema{}).Value(date, value)
+	portuguese := Options{Locale: &pt}.Words(entity.Schema{}).Value(date, value)
 	if english == portuguese {
 		t.Errorf("a date is displayed as %q in both en and pt-PT; the renderer ignores the request locale", portuguese)
 	}

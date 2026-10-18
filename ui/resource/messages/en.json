@@ -216,6 +216,24 @@
       "": "%s is not a whole number"
     }
   },
+  "invalid.rest.revision.shape": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "is not a revision",
+    "plural": {
+      "": "is not a revision"
+    }
+  },
+  "invalid.rest.revision.number": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "is not a whole revision the row can be at",
+    "plural": {
+      "": "is not a whole revision the row can be at"
+    }
+  },
   "invalid.rest.form.number": {
     "references": [
       "kit/rest/screens.go"

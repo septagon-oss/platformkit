@@ -19,7 +19,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -420,6 +419,15 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
 		Action:    action, CancelURL: r.Screen, Title: title,
+		// The words on the two buttons and the heading of the refusal this form
+		// answers with are asked here because the form builder is one layer below the
+		// catalogue and the language, and left to itself it prints its own English.
+		// A Portuguese form whose every field the module had translated would
+		// otherwise report its refused save in English under a Portuguese heading.
+		CancelLabel:  o.Label("screens.cancel", "Cancel"),
+		SubmitLabel:  o.Label("screens.save", "Save"),
+		FailureTitle: o.Label("screens.failure_title", ""),
+		Notes:        o.notes(),
 		Text: func(key, fallback string) string {
 			if o.Locale == nil {
 				return fallback
@@ -543,6 +551,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	// an address in a person's disc. What reads this is the row's link, which is the one thing
 	// on the screen that is not a field: it is the row, and so it takes the row's name.
 	named := make(map[string]string, len(rows))
+	nothing := words.Value(primary, nil)
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
@@ -551,10 +560,14 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		// The leading cell is the row's only link, so its text is that link's accessible name. A
 		// blank there means this row has nothing in the column the entity leads with, and an empty
 		// link is a row a screen reader reads as "link" — so the row names itself, by the next
-		// candidate it has a value for rather than by its id. See label. The blank is read off the
-		// row, not off the cell above: display.Display spells "nothing" as a dash, and a dash is
-		// not empty, so a cell tested here could never fall back.
-		if display.Text(row[primary.Name]) == "" {
+		// candidate it has a value for rather than by its id. See label.
+		//
+		// Blankness is asked of the screen and not of the row: the screen spells nothing as a dash,
+		// so the only question that means what it says is whether this row's leading cell reads
+		// exactly the way nothing reads. The value on the row cannot be asked — kit/entity/display's
+		// Text is what a widget posts and is silent about a count, so a list of measurements led by
+		// 12,345 would link by its id and print no measurement at all.
+		if cells[primary.Name] == nothing {
 			if name := label(row, listed); name != "" {
 				named[display.Text(row["id"])] = name
 			}
@@ -740,11 +753,13 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 	return components.Breadcrumb(components.BreadcrumbProps{
 		NavigationLabel: o.Text("screens.breadcrumb", "Breadcrumb"),
 		Items: []components.BreadcrumbItem{
-			{Label: o.Home, Href: o.Workspace}, {Label: collection, Href: at}, {Label: here},
+			{Label: o.Label("screens.home", o.Home), Href: o.Workspace},
+			{Label: collection, Href: at}, {Label: here},
 		}})
 }
 
 func pages(total int64) int { return int((total + PerPage - 1) / PerPage) }
+
 func (r Resource) offers(verb string) bool {
 	if len(r.Operations) == 0 {
 		return true
@@ -867,23 +882,31 @@ func label(row map[string]any, fields []entity.Field) string {
 
 // next is the sort a header click asks for: the same field the other way round,
 // or a new field ascending.
+// Label is a word a screen writes over something — a button, a heading, the note
+// under a control — asked at its own key with no argument interpolated. It carries
+// its own name because Text reads as a printf to the toolchain and to whoever
+// writes the copy, and a label is not a format string.
+func (o Options) Label(key, fallback string) string {
+	if o.Locale == nil {
+		return fallback
+	}
+	return o.Locale.Text(key, fallback)
+}
+
+// notes are the sentences a control says about itself — why a value cannot be
+// edited, that a field holds another record's id, how a list of values is typed —
+// which the form layer cannot write in the reader's language because it is copy.
+func (o Options) notes() forms.Notes {
+	return forms.Notes{
+		Immutable:      o.Label("screens.immutable_note", ""),
+		RelatedRecord:  o.Label("screens.related_record", ""),
+		CommaSeparated: o.Label("screens.comma_separated", ""),
+	}
+}
+
 func next(sort, field string) string {
 	if sort == field {
 		return "-" + field
 	}
 	return field
-}
-
-// fieldValue is one field's value as this screen shows it, in the language the
-// screen is written in: the declared reading of an enum in that language, and an
-// instant under the layout that language's catalogue names.
-func fieldValue(o Options, f entity.Field, value any) string {
-	if f.Type == entity.TypeTime {
-		if layout := o.Text("screens.datetime", display.DateTimeLayout); layout != display.DateTimeLayout {
-			if at, err := time.Parse(time.RFC3339, display.Text(value)); err == nil {
-				return at.UTC().Format(layout)
-			}
-		}
-	}
-	return display.Display(f, value)
 }
