@@ -56,6 +56,7 @@ type plan struct {
 	last         *Module                    // the module that runs after everything
 	cfg          config.Config              // the deployment's configuration, read by Config
 	reads        map[*Module][]reflect.Type // which section each built module asked Config for
+	cloud        cloudPlan                  // what the deployment's configuration answers about its seams
 }
 
 type choice struct {
@@ -89,6 +90,16 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 		said[id] = true
 		fail(method, format, args...)
 	}
+
+	// The cloud profile is resolved here, once, before anything reads a setting, so
+	// the sections modules read, the implementation a FromDeployment picks, the
+	// configuration the engine starts on and the seams Describe prints are one answer
+	// rather than four readings of one file. A Config built in Go never passed through
+	// Load, and resolving the profile only where the seams are answered would leave a
+	// deployment described from settings the composition never used. An unknown
+	// profile name fills nothing here and is refused below, with every other problem
+	// the deployment has.
+	d.Config = config.ApplyCloudProfile(d.Config)
 
 	p := &plan{
 		from:         map[edge]*Module{},
@@ -417,6 +428,16 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 				}
 			}
 		}
+	}
+
+	// What the deployment's configuration answers about its seams, and what it
+	// still owes the cloud profile it named. Read here rather than at Build because
+	// it is a problem with the deployment in the same sense a missing input is one,
+	// and a person who is told about both at once fixes one file once.
+	if envKnown {
+		cloud, cloudIssues := resolveCloud(d)
+		p.cloud = cloud
+		issues = append(issues, cloudIssues...)
 	}
 
 	// Contributors and takers, read off the survivors.
