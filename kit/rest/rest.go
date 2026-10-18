@@ -897,6 +897,11 @@ type CommandOptions struct {
 // case. A command whose argument is missing is refused by run, with
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
+//
+// Command panics before registration if I's derived fields include a server-owned
+// field, as defined by entity.ServerOwned, regardless of surface or presentation.
+// Use a caller-owned name such as ifRevision for an observed revision and map it
+// to the domain condition in run; do not embed the stored row or Base in I.
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
