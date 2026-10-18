@@ -129,7 +129,7 @@ func TestTheServedCatalogCarriesEveryHint(t *testing.T) {
 // into Spec would leave a tenant's one row of settings described by the kernel's
 // own guesses.
 func TestASingletonCarriesItsPresentation(t *testing.T) {
-	singleton := rest.Singleton[*TenantSetting]{
+	singleton := rest.Singleton[*TenantSetting]{Name: rest.Name{One: "Setting", Other: "Settings"},
 		Module: "site", Entity: "setting", Path: "/settings",
 		Read: "site:read", Write: "site:write",
 		Load: func(context.Context, db.Tx[db.Tenant]) (*TenantSetting, error) { return &TenantSetting{}, nil },
@@ -173,7 +173,7 @@ func TestASingletonCarriesItsPresentation(t *testing.T) {
 // TestASingletonRefusesAnInvalidHintNamingIt: the gate is the same gate.
 func TestASingletonRefusesAnInvalidHintNamingIt(t *testing.T) {
 	hintRefused(t, func() {
-		rest.Singleton[*TenantSetting]{Module: "site", Entity: "setting", Path: "/settings",
+		rest.Singleton[*TenantSetting]{Name: rest.Name{One: "Setting", Other: "Settings"}, Module: "site", Entity: "setting", Path: "/settings",
 			Read: "site:read", Write: "site:write",
 			Load:    func(context.Context, db.Tx[db.Tenant]) (*TenantSetting, error) { return &TenantSetting{}, nil },
 			Save:    func(_ context.Context, _ db.Tx[db.Tenant], in *TenantSetting) (*TenantSetting, error) { return in, nil },

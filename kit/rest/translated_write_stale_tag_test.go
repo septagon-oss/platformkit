@@ -58,7 +58,7 @@ CREATE POLICY rest_counted_articles_tenant ON rest_counted_articles
 // over the given port, with one row created through the resource's own door.
 func mountedCountedArticle(t *testing.T, port rest.Translations) (chi.Router, string) {
 	t.Helper()
-	s := rest.Spec[*CountedArticle]{
+	s := rest.Spec[*CountedArticle]{Name: rest.Name{One: "Counted", Other: "Counteds"},
 		Module: "articles", Entity: "counted", Path: "/counted",
 		Read: "article:read", Write: "article:write", Translations: port,
 	}

@@ -44,11 +44,11 @@ func refusedForTheSecondMark(t *testing.T, site string, mount func()) {
 
 func TestASecondDisplayMarkIsRefusedAtEitherMount(t *testing.T) {
 	refusedForTheSecondMark(t, "Spec", func() {
-		rest.Spec[*Twice]{Module: "twice", Entity: "twice", Path: "/doubles",
+		rest.Spec[*Twice]{Name: rest.Name{One: "Twice", Other: "Twices"}, Module: "twice", Entity: "twice", Path: "/doubles",
 			Read: "twice:read", Write: "twice:write"}.Mount(httpx.Surfaces{})
 	})
 	refusedForTheSecondMark(t, "Singleton", func() {
-		rest.Singleton[*Twice]{Module: "twice", Entity: "twice", Path: "/doubles", Read: "twice:read",
+		rest.Singleton[*Twice]{Name: rest.Name{One: "Twice", Other: "Twices"}, Module: "twice", Entity: "twice", Path: "/doubles", Read: "twice:read",
 			Load: func(context.Context, db.Tx[db.Tenant]) (*Twice, error) { return &Twice{}, nil },
 		}.Mount(httpx.Surfaces{})
 	})

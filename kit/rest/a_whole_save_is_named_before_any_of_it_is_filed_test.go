@@ -86,7 +86,7 @@ func TestASaveNamesItsWholeRecordBeforeTheLedgerFilesAnyOfIt(t *testing.T) {
 		src := "/api/v1/file/files/" + pair.id.String() + "/content"
 		files.Put(acme, pair.id, richtext.Image{Src: src, SrcSet: src + " 2w", Width: pair.width, Height: 3}, false)
 	}
-	s := rest.Spec[*twoRichTextFields]{
+	s := rest.Spec[*twoRichTextFields]{Name: rest.Name{One: "Task", Other: "Tasks"},
 		Module: "tasks", Entity: "task", Path: "/task",
 		Read: "task:read", Write: "task:write",
 		Operations:    []httpx.CRUD{rest.Create, rest.Read, rest.Delete},

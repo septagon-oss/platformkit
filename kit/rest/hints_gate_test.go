@@ -266,7 +266,7 @@ func hintRefused(t *testing.T, mount func(), want ...string) {
 
 func mountSpec[T crud.Entity](p entity.EntryHints, path string) func() {
 	return func() {
-		rest.Spec[T]{Module: "hinted", Entity: "hinted", Path: path,
+		rest.Spec[T]{Name: rest.Name{One: "Thing", Other: "Things"}, Module: "hinted", Entity: "hinted", Path: path,
 			Read: "hinted:read", Write: "hinted:write", Present: p}.Mount(httpx.Surfaces{})
 	}
 }
@@ -292,9 +292,9 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 		// declaration. The two pairs of `visibility` beside `hide:list` mount in
 		// TestHiddenBesideHideListMounts and in
 		// TestExplicitShownVisibilityOverridesHideListAtMount.
-		mountAs(t, rest.Spec[*hintedOK]{Module: "hinted", Entity: "hinted", Path: "/things",
+		mountAs(t, rest.Spec[*hintedOK]{Name: rest.Name{One: "Thing", Other: "Things"}, Module: "hinted", Entity: "hinted", Path: "/things",
 			Read: "hinted:read", Write: "hinted:write", Present: good}, caller{})
-		mountAs(t, rest.Spec[*coverOK]{Module: "hinted", Entity: "hinted", Path: "/covers",
+		mountAs(t, rest.Spec[*coverOK]{Name: rest.Name{One: "Thing", Other: "Things"}, Module: "hinted", Entity: "hinted", Path: "/covers",
 			Read: "hinted:read", Write: "hinted:write",
 			Present: entity.EntryHints{Icon: "document", PrimaryField: "title",
 				StatusField: "level", CoverField: "cover", ThumbnailField: "cover"}}, caller{})
@@ -359,7 +359,7 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 // every entity that later says `hidden` about a field it already hid a mount
 // failure nobody caused.
 func TestHiddenBesideHideListMounts(t *testing.T) {
-	mountAs(t, rest.Spec[*hiddenBesideHideList]{Module: "hinted", Entity: "hinted",
+	mountAs(t, rest.Spec[*hiddenBesideHideList]{Name: rest.Name{One: "Thing", Other: "Things"}, Module: "hinted", Entity: "hinted",
 		Path: "/things", Read: "hinted:read", Write: "hinted:write"}, caller{})
 }
 
@@ -370,7 +370,7 @@ func TestHiddenBesideHideListMounts(t *testing.T) {
 // renderer read that one rule — entity.Field.OnList — and the screen's half is
 // ui/resource's TestExplicitShownVisibilityOverridesHideListInTheList.
 func TestShownBesideHideListMountsTheColumnTheOlderTagTook(t *testing.T) {
-	mountAs(t, rest.Spec[*shownAndHidden]{Module: "hinted", Entity: "hinted",
+	mountAs(t, rest.Spec[*shownAndHidden]{Name: rest.Name{One: "Thing", Other: "Things"}, Module: "hinted", Entity: "hinted",
 		Path: "/things", Read: "hinted:read", Write: "hinted:write"}, caller{})
 }
 

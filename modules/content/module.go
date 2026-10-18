@@ -60,7 +60,7 @@ type Deps struct {
 // mounted Spec but its two names and its entity, which is why a mounted Spec
 // and this are the same answer.
 func TranslationSource() rest.TranslationSource {
-	return rest.TranslationSourceOf(rest.Spec[*contracts.Content]{Module: "content", Entity: "content"})
+	return rest.TranslationSourceOf(Spec)
 }
 
 // Spec is the entity's presence in the application: five routes, two

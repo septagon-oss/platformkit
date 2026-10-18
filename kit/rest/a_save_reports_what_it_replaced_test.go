@@ -72,6 +72,7 @@ CREATE POLICY rest_notes_tenant ON rest_notes
 
 var noteSpec = rest.Spec[*Note]{
 	Module: "notes", Entity: "note", Path: "/note",
+	Name: rest.Name{One: "Note", Other: "Notes"},
 	Read: "note:read", Write: "note:write",
 }
 

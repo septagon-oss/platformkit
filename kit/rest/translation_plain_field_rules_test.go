@@ -18,7 +18,7 @@ func (LimitedArticle) TableName() string { return "rest_articles" }
 
 func TestPlainTranslationObeysTheFieldsLengthLimit(t *testing.T) {
 	port := &recordedPort{Translations: &stubPort{}}
-	_, router, admin := mountAs(t, rest.Spec[*LimitedArticle]{
+	_, router, admin := mountAs(t, rest.Spec[*LimitedArticle]{Name: rest.Name{One: "Article", Other: "Articles"},
 		Module: "articles", Entity: "article", Path: "/article",
 		Read: "article:read", Write: "article:write", Translations: port,
 	}, spokeCaller{})

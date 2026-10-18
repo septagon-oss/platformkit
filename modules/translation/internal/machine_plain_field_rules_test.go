@@ -27,7 +27,7 @@ func (shortTitled) TableName() string { return "short_titled_pages" }
 
 func TestAMachineDraftLongerThanItsFieldIsRefusedAndNothingIsWritten(t *testing.T) {
 	_, conn := dbtest.Schema(t, translation.Migrations)
-	source := rest.TranslationSourceOf(rest.Spec[*shortTitled]{Module: "pages", Entity: "page"})
+	source := rest.TranslationSourceOf(rest.Spec[*shortTitled]{Name: rest.Name{One: "Page", Other: "Pages"}, Module: "pages", Entity: "page"})
 	machine := &translationtest.Machine{Answer: func(context.Context, string, string, string) (string, error) {
 		return "Este título é demasiado longo", nil
 	}}

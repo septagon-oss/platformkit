@@ -20,7 +20,7 @@ type richTextCreateOnly struct {
 func (richTextCreateOnly) TableName() string { return "rest_tasks" }
 
 func TestAReadlessRichTextCreateStillValidatesAndStoresMarkdown(t *testing.T) {
-	s := rest.Spec[*richTextCreateOnly]{
+	s := rest.Spec[*richTextCreateOnly]{Name: rest.Name{One: "Task", Other: "Tasks"},
 		Module: "tasks", Entity: "task", Path: "/task",
 		Read: "task:read", Write: "task:write",
 		Operations:    []httpx.CRUD{rest.Create},

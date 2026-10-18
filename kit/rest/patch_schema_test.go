@@ -112,7 +112,7 @@ func (TaggedPatch) TableName() string { return "tagged_patch" }
 
 func TestPatchPropertiesRetainTypesWithoutChangingEntitySchemas(t *testing.T) {
 	api, router := patchDocumentAPI()
-	s := rest.Spec[*TaggedPatch]{Module: "tagged", Entity: "tagged", Path: "/rows", Read: "tagged:read", Write: "tagged:write", RichTextFiles: richtext.RejectImages{}}
+	s := rest.Spec[*TaggedPatch]{Name: rest.Name{One: "Row", Other: "Rows"}, Module: "tagged", Entity: "tagged", Path: "/rows", Read: "tagged:read", Write: "tagged:write", RichTextFiles: richtext.RejectImages{}}
 	s.Mount(api.Surfaces(s.Module))
 	schemas := patchComponents(t, router)
 	patch, entity := schemas["TaggedPatchPatch"], schemas["TaggedPatch"]

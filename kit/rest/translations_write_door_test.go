@@ -95,7 +95,7 @@ CREATE POLICY rest_slides_tenant ON rest_slides
 
 func mountedSlide(t *testing.T, port rest.Translations) (chi.Router, string) {
 	t.Helper()
-	s := rest.Spec[*Slide]{
+	s := rest.Spec[*Slide]{Name: rest.Name{One: "Slide", Other: "Slides"},
 		Module: "slides", Entity: "slide", Path: "/slide",
 		Read: "slide:read", Write: "slide:write", Translations: port,
 		RichTextFiles: richtext.RejectImages{},
@@ -288,7 +288,7 @@ func TestTheReviewAndSuggestDoorsHandOverTheSourceTheyAreHolding(t *testing.T) {
 // record's. A caller the router would refuse for the PATCH must be refused for the
 // translation, at the same declared guard.
 func TestEachTranslationDoorCarriesTheRecordsOwnWritePermission(t *testing.T) {
-	api, _, _ := mountAs(t, rest.Spec[*Article]{
+	api, _, _ := mountAs(t, rest.Spec[*Article]{Name: rest.Name{One: "Article", Other: "Articles"},
 		Module: "articles", Entity: "article", Path: "/article",
 		Read: "article:read", Write: "article:write", Translations: &stubPort{},
 	}, spokeCaller{})
