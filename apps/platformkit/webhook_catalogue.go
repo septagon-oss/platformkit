@@ -61,6 +61,10 @@ var webhookCatalogue = emittedEvents{
 	usercontracts.EventCreated, usercontracts.EventUpdated, usercontracts.EventDeleted,
 	usercontracts.EventInvited, usercontracts.EventPasswordSet, usercontracts.EventRolesSet,
 	usercontracts.EventHandleSet, usercontracts.EventDeactivated,
+	// The one account command a person uses for themselves: the language they are
+	// answered in. A subscriber that mirrors a person's own settings has to see the
+	// choice land, and the event carries the revision the next write sends back.
+	usercontracts.EventLanguageSet,
 	usercontracts.EventAdministrationRefused,
 	usercontracts.EventRegistrationPending, usercontracts.EventRegistrationApproved,
 	usercontracts.EventRegistrationUnverified, usercontracts.EventEmailVerified,
