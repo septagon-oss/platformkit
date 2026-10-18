@@ -186,6 +186,15 @@
       "": "%q is not a colour; a primary colour is #rrggbb"
     }
   },
+  "invalid.site.settings.primaryColor.contrast": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "%q reads %.2f:1 against the light canvas and %.2f:1 against the dark one; an accent must read at least %.1f:1 against both (%s and %s)",
+    "plural": {
+      "": "%q reads %.2f:1 against the light canvas and %.2f:1 against the dark one; an accent must read at least %.1f:1 against both (%s and %s)"
+    }
+  },
   "invalid.site.settings.nav.count": {
     "references": [
       "modules/site/contracts/site.go"
@@ -238,6 +247,87 @@
     "translation": "System",
     "plural": {
       "": "System"
+    }
+  },
+  "hints.site/settings.field.homeSlug.help": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Which page is served at the site root",
+    "plural": {
+      "": "Which page is served at the site root"
+    }
+  },
+  "hints.site/settings.field.homeSlug.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Home page",
+    "plural": {
+      "": "Home page"
+    }
+  },
+  "hints.site/settings.field.logoFileId.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Logo",
+    "plural": {
+      "": "Logo"
+    }
+  },
+  "hints.site/settings.field.primaryColor.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Brand colour",
+    "plural": {
+      "": "Brand colour"
+    }
+  },
+  "hints.site/settings.field.theme.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Colour scheme",
+    "plural": {
+      "": "Colour scheme"
+    }
+  },
+  "hints.site/settings.field.title.label": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Site name",
+    "plural": {
+      "": "Site name"
+    }
+  },
+  "hints.site/settings.group.site": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Site",
+    "plural": {
+      "": "Site"
+    }
+  },
+  "hints.site/settings.plural": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "site settings",
+    "plural": {
+      "": "site settings"
+    }
+  },
+  "hints.site/settings.singular": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "site settings",
+    "plural": {
+      "": "site settings"
     }
   }
 }

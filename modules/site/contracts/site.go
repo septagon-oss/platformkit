@@ -252,8 +252,9 @@ func (s *SiteSettings) Validate(context.Context) error {
 	// colour and that is the whole of the fix.
 	case s.PrimaryColor != "" && !readsOnBothCanvases(s.PrimaryColor):
 		light, dark, _ := AccentRatios(s.PrimaryColor)
-		return fmt.Errorf("%q reads %.2f:1 against the light canvas and %.2f:1 against the dark one; an accent must read at least %.1f:1 against both (%s and %s)",
-			s.PrimaryColor, light, dark, MinAccentRatio, CanvasLight, CanvasDark)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.primaryColor.contrast",
+			Text: "%q reads %.2f:1 against the light canvas and %.2f:1 against the dark one; an accent must read at least %.1f:1 against both (%s and %s)",
+			Args: []any{s.PrimaryColor, light, dark, MinAccentRatio, CanvasLight, CanvasDark}}
 	case len(s.Nav) > MaxNav:
 		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.nav.count",
 			Text: "a navigation is at most %d links", Args: []any{MaxNav}}
