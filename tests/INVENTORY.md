@@ -113,7 +113,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 
 | area | files | keep-rewrite | merge | delete |
 |---|---|---|---|---|
-| kit | 495 | 67 | 139 | 0 |
+| kit | 499 | 67 | 139 | 0 |
 | modules | 429 | 28 | 36 | 0 |
 | apps | 253 | 24 | 28 | 0 |
 | ui | 176 | 10 | 5 | 0 |
