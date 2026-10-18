@@ -281,15 +281,13 @@ nil (`TestAnAbsentProviderClosesItsChannelAsSuppressed`).
 never authenticated to. What a real relay answers — DKIM as the far end verifies it, and
 STARTTLS negotiation — is observed by no test here.
 
-The device table is run by `TestARegisteredDeviceReceivesThePersonsPushNotice` (a
-device registered over its own route, the notice's delivery event reaching the
-composed adapter with the recipient and the tenant on it),
-`TestAPushNoticeReachesTheCarrierAndAGoneDeviceIsRemoved` (the provider's gone answer
-closing the ledger row `failed`, deleting the row and publishing the removal with no
-actor in its payload), `TestAnotherPersonsDeviceIsNotTheirsToRemove` (a member of the
-same tenant, a command naming no person and a person of another tenant refused without
-writing, publishing or losing a row), and
-`TestATokenReregisteredByAnotherPersonBecomesTheirs` (one live token is one row, and a
-holder re-registering it writes and publishes nothing). Against them: no device screen,
-so no browser journey; and no live push service, so a real provider's gone answer
-arrives in this repository only as a stand-in's.
+Four cases read the device table:
+`TestARegisteredDeviceReceivesThePersonsPushNotice` (a device registered over its own
+route, the delivery event reaching the composed adapter with the recipient and the
+tenant on it), `TestAPushNoticeReachesTheCarrierAndAGoneDeviceIsRemoved` (the gone
+answer closes the ledger row `failed`, deletes the row and publishes the removal with no
+actor), `TestAnotherPersonsDeviceIsNotTheirsToRemove` (a member of the same tenant, a
+command naming no person and a person of another tenant refused without writing,
+publishing or losing a row) and `TestATokenReregisteredByAnotherPersonBecomesTheirs`
+(one live token is one row). Against them: no device screen, so no browser journey, and
+no live push service, so a provider's gone answer is a stand-in's.
