@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
 // Administration answers, for one tenant, which of its roles grant the
@@ -248,15 +249,27 @@ type Reach struct {
 // administrator who has forgotten a password nobody can reset for them is a
 // lockout no row shows, and a module that someday renames or deletes a role will
 // have to answer this rule about the name it removes, because nothing here does.
-func CheckedAdministration(before, after Reach, lastWayBack bool, leaving string) error {
+// `leaving` is the caller's own sentence for which grant this write takes last, and
+// `values` are the arguments that sentence was written to take: a caller that names
+// what it refused in words rather than in values leaves the screen redrawing the form
+// with a sentence it cannot complete.
+func CheckedAdministration(before, after Reach, lastWayBack bool, leaving string, values ...any) error {
 	if len(after.CanAdminister) > 0 {
 		return nil // somebody would still be able to act; this write takes nothing last
 	}
 	if len(before.CanAdminister) == 0 && !lastWayBack {
 		return nil // the write found nobody, and a write that finds none is not refused
 	}
-	return fmt.Errorf("%w: this would leave nobody who can sign in and administer this tenant: %s; grant it to somebody already active first",
-		crud.ErrInvalid, leaving)
+	// The sentence is a `fault.Reason` rather than a formatted error, and `values`
+	// are its arguments rather than text already folded into it: the caller that
+	// refuses in Go and the screen that redraws a form are two readers of one
+	// verdict, and the screen's own sentence for it is in a catalogue. Printed
+	// values travel as prose and cannot be asked about; this carries the hole and
+	// what fills it, and `Error()` is the same sentence it always was.
+	return fmt.Errorf("%w: %w", crud.ErrInvalid, &fault.Reason{Kind: crud.ErrInvalid,
+		Text: "this would leave nobody who can sign in and administer this tenant: " +
+			leaving + "; grant it to somebody already active first",
+		Args: values})
 }
 
 // UserReach is this module's door onto that rule: the state of a tenant as
