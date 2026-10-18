@@ -608,7 +608,14 @@ func spoken(p *problem.Problem, words Words) (said, source string) {
 	if p.Detail != source && !strings.HasSuffix(p.Detail, ": "+source) {
 		return "", source
 	}
-	if translated := words.Text(p.Refusal.Key, source, p.Refusal.Args...); translated != source {
+	// The fallback is the writer's sentence with its holes still in it, not the one
+	// already filled that the Detail carries: the arguments belong to the template,
+	// and handing a formatter a filled sentence plus the arguments it no longer
+	// holds is answered with `%!(EXTRA …)` — the reader's own language with the
+	// writer's formatting left on top. Asked with the template, a catalogue that
+	// holds no entry answers exactly the sentence already on the page, which is the
+	// answer that means "nothing translated here" and leaves the Detail alone.
+	if translated := words.Text(p.Refusal.Key, p.Refusal.Text, p.Refusal.Args...); translated != source {
 		return translated, source
 	}
 	return "", source

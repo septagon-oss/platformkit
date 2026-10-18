@@ -237,7 +237,12 @@ func entityValidate(ctx context.Context, e any) error {
 		return nil
 	}
 	if err := v.Validate(ctx); err != nil {
-		return fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		// Both halves are wrapped, not just the verdict. The sentence the entity
+		// wrote is a *fault.Reason and it carries the catalogue key of that sentence;
+		// printed with %s it survives only as text, and the page that redraws the
+		// form has nothing left to ask a catalogue with — the person writing Portuguese
+		// is then answered in the language the module's Go source is written in.
+		return fmt.Errorf("%w: %w", crud.ErrInvalid, err)
 	}
 	return nil
 }

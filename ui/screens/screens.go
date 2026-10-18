@@ -10,6 +10,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
@@ -121,7 +122,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 					}
 				}
 				o := localized(o, req)
-				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{words(o, req)})
+				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{req.Locale})
 				return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), sent, errs, detail, true), nil
 			})
 	}
@@ -160,7 +161,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 					}
 				}
 				o := localized(o, req)
-				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{words(o, req)})
+				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{req.Locale})
 				return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
 			})
 	}
@@ -311,23 +312,9 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 				}
 			}
 			o := localized(o, req)
-			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{words(o, req)})
+			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{req.Locale})
 			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
 		})
-}
-
-// words is this request's formatter for the copy a package owns but does not
-// speak: a message key and the English to show where no catalogue was composed.
-// It is the shape rest.FieldErrorsIn asks for, and kit/richtext.Catalogues holds
-// the sentences for a refused Markdown field.
-func words(o Options, req page.Request) func(key, fallback string) string {
-	loc := localized(o, req)
-	return func(key, fallback string) string {
-		if loc.Locale == nil {
-			return fallback
-		}
-		return loc.Locale.Text(key, fallback)
-	}
 }
 
 // localized is the shell's options with this request's language. Options is a
@@ -338,16 +325,25 @@ func localized(o Options, req page.Request) Options {
 	return o
 }
 
-// refusalWords is this package's catalogue seam as kit/rest asks it: a function of
-// key and fallback is what a page's words are, and rest.Words is the shape its
-// field-error reader takes.
+// refusalWords is this package's catalogue seam as kit/rest asks it: the reader's
+// own locale, asked with the arguments the sentence was written to take.
+//
+// The arguments go to the catalogue rather than being applied to what it answered,
+// because the sentence a catalogue holds is the one with the holes in it: a module
+// that refuses `currency %q is not an ISO 4217 code` keeps the same hole in
+// Portuguese, and answering the key first and formatting afterwards is what fills
+// it. Formatting afterwards over the answer would be the bug a reader sees — the
+// translated sentence with `%!(MISSING)` where the value belonged.
 type refusalWords struct {
-	say func(key, fallback string) string
+	loc *locale.Locale
 }
 
 func (w refusalWords) Text(key, fallback string, args ...any) string {
-	if len(args) == 0 {
-		return w.say(key, fallback)
+	if w.loc == nil {
+		if len(args) == 0 {
+			return fallback
+		}
+		return fmt.Sprintf(fallback, args...)
 	}
-	return fmt.Sprintf(w.say(key, fallback), args...)
+	return w.loc.Text(key, fallback, args...)
 }
