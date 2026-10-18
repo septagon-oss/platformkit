@@ -101,7 +101,63 @@ func ExampleApp_Describe() {
 	//       ]
 	//     }
 	//   ],
-	//   "problems": []
+	//   "problems": [],
+	//   "cloud": {
+	//     "profile": "local",
+	//     "environment": "development",
+	//     "seams": [
+	//       {
+	//         "seam": "storage",
+	//         "provider": "local-disk",
+	//         "source": "default",
+	//         "served": true
+	//       },
+	//       {
+	//         "seam": "cache",
+	//         "provider": "in-process",
+	//         "source": "default",
+	//         "served": true
+	//       },
+	//       {
+	//         "seam": "events",
+	//         "provider": "by-role",
+	//         "source": "default",
+	//         "served": true
+	//       },
+	//       {
+	//         "seam": "mail",
+	//         "provider": "mailbox",
+	//         "source": "default",
+	//         "served": true
+	//       },
+	//       {
+	//         "seam": "policy",
+	//         "provider": "rego-in-process",
+	//         "source": "kernel",
+	//         "served": false,
+	//         "note": "not a cloud seam"
+	//       },
+	//       {
+	//         "seam": "telemetry",
+	//         "provider": "none",
+	//         "source": "default",
+	//         "served": true
+	//       },
+	//       {
+	//         "seam": "identity",
+	//         "provider": "password-only",
+	//         "source": "default",
+	//         "served": true
+	//       },
+	//       {
+	//         "seam": "flags",
+	//         "provider": "configuration",
+	//         "source": "kernel",
+	//         "served": false,
+	//         "note": "not a cloud seam"
+	//       }
+	//     ]
+	//   }
 	// }
 }
 

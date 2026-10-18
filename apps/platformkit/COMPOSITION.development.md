@@ -9,9 +9,19 @@ App `platformkit` · environment `development` · 21 modules · role `all`.
 ## Composition
 
 pkit: platformkit in development builds 21 modules.
+pkit: cloud profile local in development.
+pkit: seam storage runs local-disk (default).
+pkit: seam cache runs in-process (default).
+pkit: seam events runs by-role (default).
+pkit: seam mail runs mailbox (default).
+pkit: seam policy runs rego-in-process (kernel; not a cloud seam).
+pkit: seam telemetry runs none (default).
+pkit: seam identity runs password-only (default).
+pkit: seam flags runs configuration (kernel; not a cloud seam).
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
+pkit: product.Module reads config.Files.
 pkit: product.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: product.Module contributes one changecontracts.SubjectBinding to change.Module.
 pkit: seed.Module needs no other module.
