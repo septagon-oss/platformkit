@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/septagon-oss/platformkit/kit/db"
 )
 
@@ -98,5 +100,17 @@ func TestAStoreThatNeverAnswersIsRefusedAtOnce(t *testing.T) {
 	if spent := time.Since(start); spent >= migratePause/2 {
 		t.Errorf("a migration nothing refused waited %s for it: only a refusal that offered a re-run "+
 			"is waited on, and one wait of this fixture's own pause would have cost %s", spent, migratePause)
+	}
+}
+
+func TestConnectionExhaustionIsNotRetried(t *testing.T) {
+	exhausted := &pgconn.PgError{Code: "53300", Message: "too many clients already"}
+	var tries int
+	err := pastContention(t.Context(), migrateTries, time.Millisecond, func(context.Context) error {
+		tries++
+		return exhausted
+	})
+	if err != exhausted || tries != 1 {
+		t.Fatalf("connection exhaustion returned %v after %d attempts, want the original error once", err, tries)
 	}
 }

@@ -27,7 +27,7 @@ suite="$(ci_line check 'go tool gotestsum')"
 # from
 # the environment the expansion must still carry -count=1, and it must be this line and not one that
 # narrowed it.
-if [[ "$suite" != "go tool gotestsum --packages='./...' -- -count=1 -timeout=30m" ]]; then
+if [[ "$suite" != "go tool gotestsum --packages='./...' -- -count=1 -timeout=30m -p=4" ]]; then
 	printf 'FAIL: make check without TEST_COUNT is not the fresh suite line CI depends on:\n%s\n' "$suite" >&2
 	exit 1
 fi
@@ -39,7 +39,7 @@ race="$(ci_line check-race 'go test')"
 # the three parts a later edit may not drop; what it may change is everything around them — the number
 # itself included, which is why the bound is matched as a stated minutes value and not as 30m.
 case "$race" in
-	'go test -race -count=1 -timeout='*m' ./'*) ;;
+	'go test -race -count=1 -timeout='*m' -p=4 ./'*) ;;
 	*)
 		printf 'FAIL: make check-race without TEST_COUNT is not the fresh, bounded race line CI depends on:\n%s\n' "$race" >&2
 		exit 1 ;;
