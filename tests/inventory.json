@@ -46260,6 +46260,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/task/internal/erasure_keeps_text_wherever_the_compact_rewrite_fits_test.go",
+   "id": "modules/task/internal/erasure_keeps_text_wherever_the_compact_rewrite_fits_test.go#TestErasureKeepsTheTitleWholeWheneverTheCompactRewriteFits",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestErasureKeepsTheTitleWholeWheneverTheCompactRewriteFits",
+   "needs_db": true,
+   "pkg": "modules/task/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/task/internal/erasure_preserves_text_that_fits_test.go",
    "id": "modules/task/internal/erasure_preserves_text_that_fits_test.go#TestErasurePreservesOtherTextWhenTheCompactTitleFits",
    "kind": "go",
@@ -68617,7 +68636,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1820,
+  "files": 1821,
   "forge_runs": [
    408,
    413,
@@ -68651,7 +68670,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2937,
+   "behaviour": 2938,
    "composition": 422,
    "contract": 21,
    "journey": 93
@@ -68670,9 +68689,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3473,
+  "rows": 3474,
   "tiers": {
-   "merge": 2193,
+   "merge": 2194,
    "nightly": 93,
    "push": 1187
   },
@@ -68680,13 +68699,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1593,
+   "keep": 1594,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3117,
+   "keep": 3118,
    "keep-rewrite": 140,
    "merge": 216
   }
