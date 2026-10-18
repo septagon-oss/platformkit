@@ -676,15 +676,17 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/mobile_journey_fetch_token_precedence_test.sh
 	bash scripts/ci_go_cache_test.sh
-	# scripts/ci_browser_host_share_test.sh asks the two browser suites of the workflow the question
+	# scripts/ci_browser_host_share_test.sh asks the three browser suites of the workflow the question
 	# their refusals cannot answer from inside a runner: does a step that starts a Chromium ask the host
 	# for a core before its first page, and does the suite's own verdict survive the sampler wrapped
 	# around it? The guard it runs is scripts/ci_browser_host_share.sh, adopted here because `go tool
 	# gotestsum --packages='./...'` sees no shell script and a step that quietly stopped guarding its
 	# browsers would leave nothing else red — which is also why the case asks the dry-run recipe of this
-	# goal for its own line, and refuses a copied Makefile that lost it. Cases over the guard's three
-	# subcommands, its two steps and the three shapes a host can leave memory accounting in, five of them
-	# planted refusals over copied files; 3.4 s, no node, no browser, no database and no listener.
+	# goal for its own line, and refuses a copied Makefile that lost it. Gate 10 joined those two at the
+	# step that lost `shared families: en / dark` to `frame.evaluate: Target crashed` at job 70995, the
+	# second death of that one case in four runs read beside it. Cases over the guard's three
+	# subcommands, its three steps and the three shapes a host can leave memory accounting in, six of
+	# them planted refusals over copied files; 3.4 s, no node, no browser, no database and no listener.
 	bash scripts/ci_browser_host_share_test.sh
 	# scripts/ci_browser_guard_readable_cgroup_test.py asks that same guard the one thing this machine
 	# cannot ask it: the guard reads fixed paths under /sys, so a host that exposes none reports the
