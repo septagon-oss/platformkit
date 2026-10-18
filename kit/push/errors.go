@@ -3,6 +3,7 @@ package push
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // The refusal vocabulary of the port. Anything that is not one of these five is
@@ -33,6 +34,47 @@ var (
 	// device's platform — a fact about the deployment, not about the send.
 	ErrUnsupportedPlatform = errors.New("push: this installation carries no such platform")
 )
+
+// Redacted is what a secret's place looks like in a sentence an adapter
+// returns: the provider wrote the words, but the words are about an address that
+// lets anybody push to it.
+const Redacted = "[redacted]"
+
+// Redact returns err reporting itself with every occurrence of each secret cut
+// out, while still unwrapping to it, so the caller reads the sentinel and the
+// cause exactly as it would have.
+//
+// An adapter owes this on every error that carries a sentence it did not write.
+// A provider echoes what it was sent in its refusal — Expo writes "cannot
+// deliver to <token>" — and net/http names the URL in a transport failure, which
+// for a browser subscription is the subscription's own credential. Those errors
+// go into a delivery ledger's reason, into a worker's log line and into a trace
+// event, all of which are read by more people than hold the database; a device
+// token replays somebody's notices to their phone.
+func Redact(err error, secrets ...string) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	for _, secret := range secrets {
+		if secret != "" {
+			msg = strings.ReplaceAll(msg, secret, Redacted)
+		}
+	}
+	if msg == err.Error() {
+		return err
+	}
+	return &redacted{msg: msg, err: err}
+}
+
+// redacted is an error with its text rewritten and its identity kept.
+type redacted struct {
+	msg string
+	err error
+}
+
+func (r *redacted) Error() string { return r.msg }
+func (r *redacted) Unwrap() error { return r.err }
 
 // Gone names the provider's reason for a token that is not a device any more:
 // the sentence an operator reads in the delivery ledger, wrapped so that

@@ -36,6 +36,13 @@ const MaxToken = 1024
 // notifications.
 const sendPath = "/--/api/v2/push/send"
 
+// maxNotification is Expo's ceiling on one notification payload, counted over
+// the JSON this package posts. Expo's reference names the error a longer one
+// gets (MessageTooBig) rather than the bytes it allows, and the count it uses is
+// of the notification, so the recipient token is included here to spend: a
+// notice that fits this number fits whichever way the far end counts.
+const maxNotification = 4096
+
 // Config is what a deployment knows that this package cannot.
 type Config struct {
 	// BaseURL is Expo's host, defaulting to https://exp.host. A test points it
@@ -49,8 +56,10 @@ type Config struct {
 	// 10-second ceiling: a worker's transaction holds the connection open
 	// otherwise.
 	HTTPClient *http.Client
-	// TTL is how long Expo may keep trying, zero meaning push.MaxTTL. Expo's
-	// own default runs to four weeks; a notice that arrives next month is noise.
+	// TTL is how long Expo may keep trying: the ceiling for every send this
+	// adapter makes, zero meaning push.MaxTTL. Expo's own default runs to four
+	// weeks and a message that asks for longer is shortened to this; a message
+	// that asks for less keeps its own.
 	TTL time.Duration
 }
 
@@ -147,6 +156,15 @@ func (a *adapter) Validate(token string) error {
 }
 
 func (a *adapter) Send(ctx context.Context, d push.Device, m push.Message) (push.Receipt, error) {
+	receipt, err := a.send(ctx, d, m)
+	// Expo answers a refusal with a sentence about what it was refused, and what
+	// it was refused is a device token, so nothing this adapter returns goes out
+	// before the token — and the project's own push credential, in case a relay
+	// echoes the request it was given — has been cut out of it.
+	return receipt, push.Redact(err, d.Token, a.cfg.token)
+}
+
+func (a *adapter) send(ctx context.Context, d push.Device, m push.Message) (push.Receipt, error) {
 	if d.Platform != push.PlatformExpo {
 		return push.Receipt{}, fmt.Errorf("%w: the Expo adapter carries no device of %s", push.ErrInvalid, d.Platform)
 	}
@@ -157,9 +175,9 @@ func (a *adapter) Send(ctx context.Context, d push.Device, m push.Message) (push
 		return push.Receipt{}, err
 	}
 	m = m.Clip()
-	body, err := json.Marshal(a.request(d.Token, m))
+	body, err := a.request(d.Token, m)
 	if err != nil {
-		return push.Receipt{}, fmt.Errorf("expo: encode the message: %w", err)
+		return push.Receipt{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.cfg.baseURL+sendPath, bytes.NewReader(body))
 	if err != nil {
@@ -189,34 +207,28 @@ func (a *adapter) Send(ctx context.Context, d push.Device, m push.Message) (push
 	return answer(resp.StatusCode, raw)
 }
 
-func (a *adapter) request(token string, m push.Message) message {
-	msg := message{To: token, Title: m.Title, Body: m.Body, CollapseID: m.Tag, TTL: ttlSeconds(m)}
-	if m.URL != "" {
-		msg.Data = map[string]any{"link": m.URL}
+// request is the POST body, shortened until it fits one notification: a notice
+// whose copy is too long for the platform arrives shortly and partly rather than
+// not at all, which is the same choice the port makes at MaxBody. The body comes
+// back encoded because the length that decides the shortening is the length of
+// what goes on the wire.
+func (a *adapter) request(token string, m push.Message) ([]byte, error) {
+	for range 4 {
+		msg := message{To: token, Title: m.Title, Body: m.Body, CollapseID: m.Tag, TTL: push.TTLSeconds(m, a.cfg.ttl)}
+		if m.URL != "" {
+			msg.Data = map[string]any{"link": m.URL}
+		}
+		body, err := json.Marshal(msg)
+		if err != nil {
+			return nil, fmt.Errorf("expo: encode the message: %w", err)
+		}
+		if len(body) <= maxNotification {
+			return body, nil
+		}
+		m = m.TrimTo(len(body) - maxNotification)
 	}
-	return msg
-}
-
-// ttlSeconds is the message's TTL as Expo reads it. Never zero: its reference
-// warns that a TTL of zero can keep a normal-priority message from ever reaching
-// an Android device in doze mode, and the port's ceiling is shorter than Expo's
-// own default.
-func ttlSeconds(m push.Message) int64 {
-	ttl := m.TTL
-	if ttl <= 0 {
-		ttl = push.MaxTTL
-	}
-	if ttl > push.MaxTTL {
-		ttl = push.MaxTTL
-	}
-	seconds := int64(ttl / time.Second)
-	if ttl%time.Second != 0 {
-		seconds++
-	}
-	if seconds < 1 {
-		seconds = 1
-	}
-	return seconds
+	return nil, fmt.Errorf("%w: an Expo notice titled in %d bytes and linked in %d does not fit %d",
+		push.ErrInvalid, len(m.Title), len(m.URL), maxNotification)
 }
 
 // answer is the mapping from one HTTP exchange to the port's vocabulary, and it
