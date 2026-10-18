@@ -243,7 +243,15 @@ func read(ctx context.Context, c Chrome) Request {
 // fallback a deployment that ships no copy for the key is shown, which is what a
 // shell with no catalogue, no key, or no language for this request keeps printing.
 func (s Shell) backLabel(loc *Locale) string {
-	if loc == nil || s.BackKey == "" {
+	if s.BackKey == "" {
+		// The shell named no catalogue entry for its way out. This package still
+		// words the destination its own label names, and carries the translation of
+		// that one destination under fault.back — so the label is asked of the
+		// reader's language here rather than printed as the composition wrote it.
+		// A shell whose words name somewhere else keeps them untranslated: see backWay.
+		return backWay(loc, s.BackLabel)
+	}
+	if loc == nil {
 		return s.BackLabel
 	}
 	return loc.Text(s.BackKey, s.BackLabel)
