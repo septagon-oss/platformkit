@@ -44,8 +44,10 @@ import (
 // TestATenantCannotWriteWhichTenantIsTheInstallation is the escalation case the
 // operator grant is worth: a customer's own transaction tries to set the column
 // that says it is the installation, on its own row and on the installation's.
-// Neither reaches the column — the first is refused by the policy's WITH CHECK,
-// the second never finds a row to refuse because the policy's USING hides the
+// Neither reaches the column — the first is refused as an out-of-languages write
+// on the tenant's own row (000071's column rule, standing where the policy cannot
+// name columns; without it the WITH CHECK of the split UPDATE policy would), the
+// second never finds a row to refuse because the policy's USING hides the
 // installation from a tenant that is not it — and the row the tenant holds stays a
 // customer's row.
 func TestATenantCannotWriteWhichTenantIsTheInstallation(t *testing.T) {
@@ -92,8 +94,8 @@ func TestATenantCannotWriteWhichTenantIsTheInstallation(t *testing.T) {
 	if ownErr == nil {
 		t.Error("the customer's transaction wrote operator = true on its own row and nothing refused it; " +
 			"migrations/000006_tenant.up.sql's tenants_scope WITH CHECK (platformkit_is_system()) is what stands between a customer and the control plane")
-	} else if !strings.Contains(ownErr.Error(), "row-level security") {
-		t.Errorf("the write to tenants.operator failed with %v, want the row-level security refusal WITH CHECK states", ownErr)
+	} else if !strings.Contains(ownErr.Error(), "SQLSTATE 42501") {
+		t.Errorf("the write to tenants.operator failed with %v, want the insufficient-privilege refusal an out-of-languages write to one's own row gets (000071's column rule here; WITH CHECK where no column rule reaches)", ownErr)
 	}
 
 	var stillCustomer, installationIsOperator bool

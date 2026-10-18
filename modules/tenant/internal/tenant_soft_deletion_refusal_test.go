@@ -13,10 +13,12 @@ import (
 
 func TestTenantLanguageAccessCannotSoftDeleteItsTenant(t *testing.T) {
 	owner, conn := dbtest.Schema(t)
+	svc := internal.NewService(nil, nil, "")
+	installed(t, conn, svc)
 	var tenant *contracts.Tenant
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error
-		tenant, err = internal.NewService(nil, nil, "").Create(ctx, tx, contracts.NewTenant{
+		tenant, err = svc.Create(ctx, tx, contracts.NewTenant{
 			Slug: "acme", Name: "Acme", Host: "acme.example.com",
 		})
 		return err
