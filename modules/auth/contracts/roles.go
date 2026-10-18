@@ -12,6 +12,7 @@ import (
 	// The refusals come from kit/fault rather than kit/crud: this package names no
 	// transaction, and kit/crud re-exports the same values, so a caller that already
 	// wrote crud.ErrInvalid still matches what is returned here.
+	"errors"
 	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -116,21 +117,27 @@ func CheckedAdministration(name string, was, want Permissions,
 	if err != nil {
 		return err
 	}
-	leaving := fmt.Sprintf("role %q is the last role that grants %s", name, PermissionRoleManage)
+	leaving := "role %q is the last role that grants %s"
 	if len(after) > 0 {
 		leaving += " that any active person holds"
 	}
 	refusal := usercontracts.CheckedAdministration(usercontracts.Reach{CanAdminister: reached},
-		usercontracts.Reach{CanAdminister: left}, len(after) == 0, leaving)
+		usercontracts.Reach{CanAdminister: left}, len(after) == 0, leaving, name, PermissionRoleManage)
 	if refusal == nil {
 		return nil
 	}
 	// The verdict is the user module's, because whether anybody is left who can
 	// sign in is its fact and not this module's. Its sentence is keyed here so the
-	// person refused one is answered in the language the rest of the page is in.
+	// person refused one is answered in the language the rest of the page is in —
+	// and its arguments travel with it, because the sentence a screen owns for the
+	// same verdict names the role and the permission rather than quoting prose.
+	reason, named := errors.AsType[*fault.Reason](refusal)
+	if !named {
+		return refusal
+	}
 	return &fault.Reason{Kind: fault.ErrInvalid,
 		Key:  "invalid.auth.role.last_administration",
-		Text: refusal.Error()}
+		Text: reason.Text, Args: reason.Args}
 }
 
 // CheckedPermissions normalises a permission list and refuses the two ways one can be
