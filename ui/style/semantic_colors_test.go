@@ -107,3 +107,48 @@ func TestSemanticColorsResolveBothModesAndCallerPalette(t *testing.T) {
 		t.Fatal("context-dependent caller colour must remain unsupported, not receive a guessed value")
 	}
 }
+
+// TestGeneratedScreenTextPairsMeetTheContrastFloor computes, from the shipped
+// palettes, the WCAG ratio of each text colour a generated resource screen paints
+// on the surface it paints it on — labels, values, links, the rail's brand, the
+// filled and outline buttons — and holds every pair to 4.5:1 in light and dark.
+func TestGeneratedScreenTextPairsMeetTheContrastFloor(t *testing.T) {
+	pairs := []struct{ fg, bg style.Color }{
+		{style.FgPrimary, style.SurfacePrimary}, {style.FgPrimary, style.SurfaceSecondary},
+		{style.FgSecondary, style.SurfacePrimary}, {style.FgSecondary, style.SurfaceSecondary},
+		{style.FgMuted, style.SurfacePrimary}, {style.FgMuted, style.SurfaceSecondary},
+		{style.FgLink, style.SurfacePrimary}, {style.FgLink, style.SurfaceSecondary},
+		{style.FgBrand, style.SurfacePrimary}, {style.FgBrand, style.SurfaceSecondary},
+		{style.FgOnBrand, style.SurfaceBrand}, {style.FgOnBrand, style.SurfaceDanger},
+		{style.FgOnInverse, style.SurfaceInverse},
+	}
+	for _, theme := range design.Default().Both() {
+		got, err := design.ResolveColors(theme.Tokens(), style.RoleColors())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range pairs {
+			fg, bg := got["--pk-role-"+string(p.fg)], got["--pk-role-"+string(p.bg)]
+			if ratio := contrast(fg, bg); ratio < 4.5 {
+				t.Errorf("%s: %s on %s is %.2f:1, the floor is 4.5:1", theme.Name, p.fg, p.bg, ratio)
+			}
+		}
+	}
+}
+
+// contrast is the WCAG 2 ratio of two opaque colours, the formula the design
+// gate's probe applies to computed styles.
+func contrast(a, b design.SRGBA) float64 {
+	x, y := luminance(a), luminance(b)
+	return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+}
+
+func luminance(c design.SRGBA) float64 {
+	linear := func(v float64) float64 {
+		if v <= 0.03928 {
+			return v / 12.92
+		}
+		return math.Pow((v+0.055)/1.055, 2.4)
+	}
+	return 0.2126*linear(c[0]) + 0.7152*linear(c[1]) + 0.0722*linear(c[2])
+}

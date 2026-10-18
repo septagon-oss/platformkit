@@ -81,7 +81,10 @@ Set `PLATFORMKIT_PG_PORT`, `PLATFORMKIT_NATS_PORT`, `PLATFORMKIT_VALKEY_PORT`,
 `PLATFORMKIT_MAILPIT_PORT` if the default ports are in use, retaining those values
 for every command. Never use production test credentials: tests create and remove
 database schemas. `make down` deletes the Compose volumes as well as stopping
-services; it is not a test step.
+services; it is not a test step. The Postgres of this stack does not force its
+writes to a device, because nothing here is ever recovered from one — `compose.yaml`
+names the three settings and why — so a cluster whose container was killed outright
+can come back unreadable, and `make down` and `make up` return a fresh one.
 The Valkey service is optional in a way the others are not: `kit/cache` boots
 without a store, so its adapter's conformance suite skips when nothing answers the
 Valkey port and names the skip, and every other case in `make check` runs either way.

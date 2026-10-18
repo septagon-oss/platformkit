@@ -1177,6 +1177,72 @@ copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
+**A seeded grant is only ever as wide as the composition, and there is a door for the
+rows an older seeder left.** The operator permissions a new tenant's administrator was
+created holding were a list each application wrote out by hand, and no application
+narrowed it when it dropped a module: one installation served from 2026-09-22 with an
+administrator granted `billing:catalog` and no billing module to exercise it against,
+and the only thing that said so was the hourly sweep — fourteen identical warnings by
+the next morning. `auth.SeedRoles` now takes the permission catalogue of the modules the
+application actually composed (`kit/module.Grants`, which the kernel's own manifest
+check already read) and seeds the operator permissions of that catalogue and nothing
+else; an initial role naming a permission no composed module defines is refused where it
+used to be written, and `contracts.SeededRoles` is what the seeder writes, so an
+application can ask what a composition seeds before it has a database. The two rules an
+initial role is held to — it may not name the wildcard, and it may not name an operator
+permission — are about the permission and not the spelling of it, so `" * "` is refused
+as `*` is and `" Tenant:Manage "` as `tenant:manage` is; until now a space or a capital
+walked past both and the role was seeded — the row indistinguishable from one that had
+been allowed. The rows already written belong to a customer and are not edited on the
+way past: `platformkit repair-roles` lists, per tenant and per role, the grants this
+installation's own seeder wrote that no composed module defines any more, and `--remove`
+is the decision — through the module's ordinary role write, so each removal takes the
+tenant's role lock, is held to the floor below and is in the audit as an
+`auth.role_set`. What the seeder did not write it does not touch: the built-in member is
+seeded holding nothing unless the application's initial roles name it, a customer
+tenant's administrator is seeded the wildcard and nothing else, and a permission
+somebody added through the roles screen stays where it is and goes on being reported by
+the sweep, which is the only thing entitled to say what its author meant by it. The one
+row that cannot be said of is the operator's own administrator while it still holds the
+wildcard, the only role the seeder writes named permissions into: once a module leaves,
+nothing records whether a departed grant was the seeder's or a hand's, so every dead
+grant there is taken — each dead either way, and beside a wildcard that still grants the
+rest. What `--remove` prints is what its transaction wrote, not what it read. A run reads
+a tenant's roles unlocked to find out whether it holds anything to take, and when it does
+it takes that tenant's role lock, reads again, and subtracts from what *that* read holds:
+derived from the first read instead, the list it writes revokes a permission somebody had
+just granted and hands back one they had just taken away, and only the second of those
+leaves no trace in what the command prints. Two operators running the command at once
+therefore both find the same dead grant, and the second finds the row already cleaned once
+it holds the lock and writes nothing at all — so it reports nothing. Two lines for one
+removal would tell a tenant twice that a person changed something nobody changed. The
+listing a run without `--remove` prints is bounded by that same guard, so a role the write
+could not finish is named by neither run and the
+sweep goes on being the only thing that says it is there.
+
+**One published signature moved, and that is this change's cost.** `auth.SeedRoles` is
+exported from a published package, and its fourth parameter changed type: the
+hand-written `[]string` of operator permissions is now `[]tenancy.Grant`, the catalogue
+of what the composition declares. Nothing a caller can write repairs the old shape,
+because the old shape is the defect; a caller asks its own composition with
+`kit/module.Grants`, the call the kernel's own manifest check already made. The second
+line is this branch's later one: `auth/contracts.Service` gains `SetRoleChanged`, the
+same write as `SetRole` plus whether the row changed — which the write already worked
+out for itself, to decide not to publish an event twice, and kept. `SetRole` keeps its
+shape, so a caller that renders the role it was given is untouched; an out-of-tree
+implementation of the service interface owes the new method, and `authtest.NewFake`
+ships one. Measured
+with the comparison the release process asks for (`python3 scripts/check_public_api.py
+v1.1.0 HEAD`): the v1.1.0 line answers 106 accepted incompatibilities at the merged
+tree, and the added lines are these two.
+[RELEASE.md](RELEASE.md#choose-the-compatible-release-line) measures a break against
+v1.1.0, and the accepted-break baseline is re-measured where a merge joins the two
+([scripts/PUBLIC-API.md](scripts/PUBLIC-API.md)); `check-apidiff` is a required line
+of `make check`, not a workflow that runs on a Sunday. the `usertest.NewFake` entry below names the same
+constraint and the `/v2` migration it owes. The reference composition, this repository's
+tests and the repair command are on the new shape; the products repository, whose
+`registry.go` passes the literal, is the caller left to move.
+
 **The migration lock belongs to one application's namespace, not to one database.**
 `db.Migrate` holds its advisory lock for the namespace it is about to write: the key
 carries the OID of `current_schema()` beside its own constant, because the ledger it

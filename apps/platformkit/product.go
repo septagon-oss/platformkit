@@ -74,7 +74,12 @@ import (
 // at package scope cannot: an installation with no storybook directory composes
 // no Storybook provider, and the shell's gallery answers Core to the operator
 // alone rather than the app lying about having a gallery.
-func product(cfg config.Config) *pkit.Module {
+//
+// `grants` is the permission catalogue's empty holder, contributed to the roles
+// hook below: this module builds first, so it is the one that can name the hook,
+// and the catalogue the hook seeds from belongs to the resolution this module's
+// own manifest is a part of. See lateCatalogue.
+func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
@@ -192,7 +197,7 @@ func product(cfg config.Config) *pkit.Module {
 		// exists before the operator narrows it, so a page can answer a person in
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
-		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(seedRoles))
+		pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
 		// Which event names may be put on a webhook endpoint is this file's fact:
 		// the modules that emit them are composed by this file, and the module that
 		// checks a subscription against them cannot enumerate them. The literal is
