@@ -14,7 +14,7 @@ import (
 func TestCompositionRefusalLeavesTheDatabaseEmpty(t *testing.T) {
 	for _, name := range []string{"missing user", "two registration doors"} {
 		t.Run(name, func(t *testing.T) {
-			cfg := referenceDependencyConfig(t)
+			cfg := referenceCompositionConfig(t)
 			cfg.Database.MigrateURL, cfg.Database.URL = dbtest.URLs(t)
 			deployment := pkit.Deployment{Environment: pkit.Development, Config: cfg}
 			if _, err := sentencesOf(cfg).Plan(deployment); err != nil {
