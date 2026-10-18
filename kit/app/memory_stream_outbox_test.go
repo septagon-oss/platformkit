@@ -74,7 +74,7 @@ func TestTheDefaultMemoryStreamReceivesCommittedOutboxEvents(t *testing.T) {
 		if err := events.Publish(ctx, tx, "hello.note_written", map[string]string{"note": "private body"}); err != nil {
 			return err
 		}
-		return tx.DB().Raw("SELECT id FROM platformkit_outbox WHERE name = ?", "hello.note_written").Scan(&eventID).Error
+		return tx.DB().Raw("SELECT id FROM platformkit_outbox WHERE name = ?", "hello.note_written").Row().Scan(&eventID)
 	}); err != nil {
 		t.Fatal(err)
 	}
