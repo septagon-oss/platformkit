@@ -765,6 +765,13 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# that hardened into a refusal of any line under a step's name fails here. Four runs of the guard, so
 	# a few seconds more than its own line, and still no stack, no container and no device.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_step_policy_test.py
+	# Whether both cases above are still lines of this recipe. tests/inventory.json files every
+	# scripts/ pin at tier push from its path alone, so the table promises a run no wiring keeps: an
+	# edit that moved either line into another goal, or dropped it, leaves the push headline counting
+	# a case no pull request runs. This case asks `make -n check` for both lines and plants each
+	# deletion, so a refusal names the line that went missing; its own make run is a dry one, which
+	# compiles nothing, starts no container and needs no stack.
+	bash scripts/mobile_listener_pins_are_check_recipe_lines_test.sh
 	# Which failures of the API gate's one network step are worth another try. The target
 	# itself is the last prerequisite; this case is the bound on its retry, so it runs with
 	# the rest of the script cases and needs no stack, no proxy and no tree but this one.
