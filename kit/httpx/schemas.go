@@ -516,7 +516,16 @@ func recognised(ctx context.Context) bool {
 // disagree about which doors exist. It does not look the resource up: a module
 // registers its commands in a call of its own, which may run before or after
 // the Spec — a test mounts them without it — so Resources joins the two.
+// A nonnil Run is guarded by the command's own Auth on every invocation.
 func (a *API) AddCommand(module, entity string, c Command) {
+	if run := c.Run; run != nil {
+		c.Run = func(ctx context.Context, id uuid.UUID, values map[string]any) error {
+			if err := a.mayDeclare(ctx, c.Auth); err != nil {
+				return err
+			}
+			return run(ctx, id, values)
+		}
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.commands == nil {
