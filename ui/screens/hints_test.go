@@ -222,6 +222,10 @@ const frozenEntry = `{
       }
     }
   ],
+  "name": {
+    "one": "Note",
+    "other": "Notes"
+  },
   "presentation": {
     "singular": "note",
     "plural": "notes",
