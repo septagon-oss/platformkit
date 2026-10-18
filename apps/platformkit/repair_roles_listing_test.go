@@ -35,7 +35,7 @@ import (
 // Phrased about the installation, this case fails on the suspended run below,
 // which exited 0 and left ghost:read in the row it had just called clean.
 func TestTheRepairCommandPrintsWhatItCommitted(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
@@ -168,7 +168,7 @@ func TestTheRepairCommandPrintsWhatItCommitted(t *testing.T) {
 // that the run kept silent: the removal it could not commit was taken back, and a
 // grant the installation still holds is a grant the hourly sweep still reports.
 func TestTheRepairPrintsNothingThatItsCommitRefused(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
