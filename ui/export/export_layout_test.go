@@ -218,7 +218,26 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// exactly two changed — /css, which carries the new rules, and /sha256, which is
 	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
 	// schema or font policy moves. The digest below is that measurement of this tree.
-	if legacy.SHA256 != "5004fa12de463e88646fdb918286ee332c335a402a8d20a2b4b0a4077d1ba99c" {
+	//
+	// The merge of origin/main retires the digest above: it is the number main's own
+	// tree exports, and this branch's screens are not main's screens. Measured by
+	// exporting the revision this branch merged and this tree and walking both
+	// documents leaf by leaf: 99,906 leaves become 99,917. The 11 added leaves are one
+	// schema leaf each on the examples whose component takes this branch's `measure`
+	// prop — grid's three children, hero's three examples, section-header, text's three
+	// tones and the toolbar's member slot — and they say `boolean`, which is the type
+	// the prop has and no example said before. The 2 changed leaves are /sha256, which
+	// digests the document those 11 joined, and pk-ui.component.select/invalid's html,
+	// whose empty option keeps `selected` and loses `disabled`: the choice a person may
+	// take back is a choice they can reach. Nothing is removed. No CSS, token, theme,
+	// notice, icon, schema of another example or font policy leaf moves: the exported
+	// sheet is main's, byte for byte, because this branch changes no rule of it, and the
+	// digest moves only because the document it digests grew eleven leaves. Re-measuring
+	// the merged tree, with none of the work after the merge in it, exported this same
+	// document leaf for leaf, so no commit after the merge moves it either. The digest
+	// below is that measurement of this tree, printed by the refusal above and copied
+	// from it.
+	if legacy.SHA256 != "c47100ffa84099aea58e376d1a8952cd31e7d878e99acd43a3d10cfd332b4e76" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
