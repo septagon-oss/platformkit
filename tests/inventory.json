@@ -5434,6 +5434,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/scim_customer_tenant_test.go",
+   "id": "apps/platformkit/scim_customer_tenant_test.go#TestACustomerTenantsAdministratorProvisionsThroughItsOwnSCIMDoor",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestACustomerTenantsAdministratorProvisionsThroughItsOwnSCIMDoor",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/scim_door_test.go",
    "id": "apps/platformkit/scim_door_test.go#TestTheSCIMDoorAnswersAtTheAddressTheProtocolNames",
    "kind": "go",
@@ -66414,7 +66433,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1753,
+  "files": 1754,
   "forge_runs": [
    408,
    413,
@@ -66449,7 +66468,7 @@
   ],
   "layers": {
    "behaviour": 2846,
-   "composition": 399,
+   "composition": 400,
    "contract": 21,
    "journey": 93
   },
@@ -66467,9 +66486,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3359,
+  "rows": 3360,
   "tiers": {
-   "merge": 2122,
+   "merge": 2123,
    "nightly": 93,
    "push": 1144
   },
@@ -66477,13 +66496,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1526,
+   "keep": 1527,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3003,
+   "keep": 3004,
    "keep-rewrite": 140,
    "merge": 216
   }
