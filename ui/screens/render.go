@@ -48,7 +48,7 @@ type Options = resource.Options
 // A field the renderers read has to be delivered here, and
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
-	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
+	return resource.Resource{Schema: r.Schema, Name: r.Name, Immutable: r.Immutable, Singleton: r.Singleton,
 		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present, API: r.Path}
 }
 

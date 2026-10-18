@@ -107,6 +107,7 @@ var permissions = []module.Permission{
 var endpointSpec = rest.Spec[*contracts.Endpoint]{
 	Module:     "webhook",
 	Entity:     "endpoint",
+	Name:       rest.Name{One: "Endpoint", Other: "Endpoints"},
 	Path:       "/endpoints",
 	Read:       contracts.PermissionWebhookRead,
 	Write:      contracts.PermissionWebhookUpdate,
@@ -128,6 +129,7 @@ var endpointSpec = rest.Spec[*contracts.Endpoint]{
 var deliverySpec = rest.Spec[*contracts.Delivery]{
 	Module:     "webhook",
 	Entity:     "delivery",
+	Name:       rest.Name{One: "Delivery", Other: "Deliveries"},
 	Path:       "/deliveries",
 	Read:       contracts.PermissionWebhookRead,
 	Write:      contracts.PermissionWebhookUpdate,

@@ -34,6 +34,11 @@ import (
 var Module = pkit.NewModule("user", wire,
 	pkit.Needs[usercontracts.Administration](),
 	pkit.Needs[usercontracts.Granting](),
+	// Which languages a person may ask to be answered in is the control plane's
+	// fact, not this module's; the composition answers the port from the tenant
+	// service, which is built after this one because a new tenant's first
+	// administrator is looked up here.
+	pkit.Needs[usercontracts.LocalePolicy](),
 	pkit.Provides[usercontracts.Service](),
 	pkit.Provides[authcontracts.Users](),
 	pkit.Provides[authcontracts.Provisioner](),
@@ -45,6 +50,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	svc, manifest := New(Deps{
 		Administration: pkit.Get[usercontracts.Administration](w),
 		Granting:       pkit.Get[usercontracts.Granting](w),
+		LocalePolicy:   pkit.Get[usercontracts.LocalePolicy](w),
 	})
 	pkit.Put(w, svc)
 	pkit.Put[authcontracts.Users](w, svc)

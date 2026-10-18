@@ -79,10 +79,12 @@ import (
 // hook below: this module builds first, so it is the one that can name the hook,
 // and the catalogue the hook seeds from belongs to the resolution this module's
 // own manifest is a part of. See lateCatalogue.
-func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
+func product(cfg config.Config, grants *lateCatalogue, ports *latePorts) *pkit.Module {
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
+		pkit.Provides[usercontracts.LocalePolicy](),
+		pkit.Provides[tenantcontracts.LocaleManager](),
 		pkit.Provides[filecontracts.Storage](),
 		pkit.Provides[auditcontracts.Plan](),
 		pkit.Provides[tenancy.Policy](),
@@ -97,7 +99,6 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		pkit.Provides[rest.TranslationSource](),
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Pictures](),
-		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
 		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
@@ -118,6 +119,12 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		// this application that is late-bound rather than built, and product puts
 		// it precisely because it needs nobody and so is built first.
 		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
+		// The two language edges, in the same late-bound shape and for the same
+		// reason as the grant check above: the service that answers each is built
+		// after the module that reads it, so the product hands out the holder and the
+		// access module below fills it. See latePorts.
+		pkit.Put[usercontracts.LocalePolicy](w, ports.locales)
+		pkit.Put[tenantcontracts.LocaleManager](w, ports.localeGrant)
 		pkit.Put[filecontracts.Storage](w, file.Local(cfg.Files.Dir))
 		// The trail is this reference product's worked example of something a plan
 		// includes or does not. The name is the price list's, and it is chosen here
@@ -191,7 +198,10 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		// document is the kernel's, so this composition is the only party that has met
 		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
 		pkit.Put[admincontracts.Pictures](w, admincontracts.Pictures{Source: filecontracts.PictureSource})
-		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
+		// Which language a page is written in is not put here: the answer is the
+		// person's own durable choice, which belongs to the user service, and the
+		// module that owns people is built after this one. The access module below
+		// puts it — see accountLocale for the order of the reads.
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
 		// exists before the operator narrows it, so a page can answer a person in
@@ -233,10 +243,24 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 // the kernel's refusal door calls, and `granter` is who a refusal may say may
 // hand out what it refused — the label of which is the composed manifest's word,
 // so the application reads it off the resolved plan rather than a module.
-func access(ask *accessReach) *pkit.Module {
+func access(ask *accessReach, ports *latePorts) *pkit.Module {
 	return pkit.NewModule("access", func(w *pkit.Wiring) (module.Module, error) {
 		users, notices := pkit.Get[usercontracts.Service](w), pkit.Get[notificationcontracts.Service](w)
 		sites := pkit.Get[sitecontracts.Service](w)
+		// The two late language edges, filled by the first build that has met both
+		// answers: see latePorts. Until this line each holder refuses to answer, so a
+		// composition that never built this module cannot read a language set it was
+		// never given and cannot pass a language command with nobody behind its door.
+		ports.locales.tenants = pkit.Get[tenantcontracts.Service](w)
+		ports.localeGrant.auth = pkit.Get[authcontracts.Auth](w)
+		// Which language a page is written in: the person's own choice first, the
+		// sign-in link's `?lang=` and the browser's negotiation after it. It is put
+		// here rather than by the product because the answer reads the user service,
+		// and the account control beside it writes through the same service — one
+		// fact, one owner, reached from the two doors a person uses it through.
+		pkit.Put[admincontracts.Locale](w, accountLocale{users: users}.Locale)
+		pkit.Put[admincontracts.AccountLanguage](w, accountLanguage{users: users})
+		pkit.Put[admincontracts.AccountLanguageVersion](w, accountLanguage{users: users})
 		// Recipients joins the two modules that each own half the answer. Tell
 		// writes one notice through the notification module — the bell in the
 		// application, with no mail: a message to every administrator for every
@@ -283,12 +307,16 @@ func access(ask *accessReach) *pkit.Module {
 	},
 		pkit.Needs[usercontracts.Service](),
 		pkit.Needs[notificationcontracts.Service](),
+		pkit.Needs[tenantcontracts.Service](),
 		pkit.Needs[sitecontracts.Service](),
 		pkit.Needs[sitecontracts.LockedReader](),
 		pkit.Needs[usercontracts.Granting](),
 		pkit.Needs[authcontracts.Auth](),
 		pkit.Provides[changecontracts.Notifier](),
 		pkit.Provides[changecontracts.ProposalPage](),
+		pkit.Provides[admincontracts.Locale](),
+		pkit.Provides[admincontracts.AccountLanguage](),
+		pkit.Provides[admincontracts.AccountLanguageVersion](),
 		pkit.Provides[*change.ReviewChrome](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
 	)
