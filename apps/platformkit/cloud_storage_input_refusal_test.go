@@ -13,7 +13,7 @@ func TestMissingCloudStorageInputsReturnErrorsWithoutPanicking(t *testing.T) {
 	for _, profile := range []string{config.ProfileAWS, config.ProfileAzure, config.ProfileLocal} {
 		for _, missing := range []string{"endpoint", "bucket"} {
 			t.Run(profile+"/"+missing, func(t *testing.T) {
-				path, _ := configure(t)
+				path, _ := configureFresh(t)
 				cfg, err := config.Load(path,
 					config.Set("cloud.profile", profile),
 					config.Set("files.store", "s3"),
