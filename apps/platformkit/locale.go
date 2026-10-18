@@ -178,7 +178,9 @@ func (m *tenantLocaleManager) MaySetOwnLocale(ctx context.Context, _ db.Tx[db.Te
 // answer reads the user service. Until the access module fills it, the page falls
 // back to the half of the answer that needs no caller, which is what it did before
 // the choice existed at all.
-type pageLocale struct{ resolve func(context.Context, page.Request) string }
+type pageLocale struct {
+	resolve func(context.Context, page.Request) string
+}
 
 func (l *pageLocale) Locale(ctx context.Context, r page.Request) string {
 	if l.resolve == nil {
