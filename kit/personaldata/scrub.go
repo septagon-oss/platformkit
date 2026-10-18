@@ -465,52 +465,69 @@ func query(s Subject, g guard, table string, columns []string, isJSON bool, room
 }
 
 // fits rewrites one bounded column inside the room the server says it holds: the wide
-// placeholder where it fits, and the narrow one shortened to the room where even that will
-// not go. See bounds for where the room comes from, and Scrub for why the erasure cuts
-// rather than failing.
+// placeholder where it fits, the narrow one where only that fits, and a shortening of the
+// narrow one where even that will not go. See bounds for where the room comes from, and Scrub
+// for why the erasure cuts rather than failing.
+//
+// The middle branch is what makes this three answers rather than two, and it is the one that
+// decides whether a colleague keeps their words. A column near its ceiling usually still has
+// room for the narrower placeholder, and a rewrite that fits needs nothing taken from the text
+// around it: shortening it anyway would hand outsideWord a value it has no claim on and take a
+// trailing word out of a row that never needed shortening. Shortening answers a rewrite that
+// cannot fit, and nothing else.
 //
 // The rewrites are written once each, into the FROM of a sub-select, and the CASE below reads
 // their names. Writing them out again at the place they are measured would ask the server for
-// the same chain of regexp_replace twice over a column a quarter of a megabyte wide. The room
-// is then applied to what came back: the narrow rewrite is cut to the character bound first,
-// so that where the column also bounds bytes the measurement that decides the second cut is
-// taken on the text that would actually be written.
+// the same chain of regexp_replace twice over a column a quarter of a megabyte wide. The two
+// cuts the last branch needs are taken one level out, over those names, so one rewritten value
+// still costs one rewrite. The room is then applied to what came back: the narrow rewrite is
+// cut to the character bound first, so that where the column also bounds bytes the measurement
+// that decides the second cut is taken on the text that would actually be written.
 //
 // mark is the narrow placeholder on its own, which is what a column takes when shortening the
 // rewrite leaves nothing behind that this file can vouch for. See shortest.
 func fits(column string, room extent, wide, narrow, mark piece) piece {
-	var when []piece
-	if room.chars > 0 {
-		when = append(when, piece{sql: "length(room.wide) <= ?", args: []any{room.chars}})
-	}
-	if room.octets > 0 {
-		when = append(when, piece{sql: "octet_length(room.wide) <= ?", args: []any{room.octets}})
-	}
-	guards := []piece{{sql: column + " = (SELECT CASE WHEN "}}
-	for _, clause := range when {
-		if len(guards) > 1 {
-			guards = append(guards, piece{sql: " AND "})
+	// standsInside is the test that the named value of the FROM below keeps every bound the
+	// column carries, and the values those two measures are measured against, kept beside the
+	// text that asks for them. It always names at least one measure: fits is reached only for a
+	// column whose extent answered with a room at all. See bounds.
+	standsInside := func(name string) piece {
+		var tests []string
+		var values []any
+		if room.chars > 0 {
+			tests = append(tests, "length("+name+") <= ?")
+			values = append(values, room.chars)
 		}
-		guards = append(guards, clause)
+		if room.octets > 0 {
+			tests = append(tests, "octet_length("+name+") <= ?")
+			values = append(values, room.octets)
+		}
+		return piece{sql: strings.Join(tests, " AND "), args: values}
 	}
-	cut, token := narrow, mark
-	if room.chars > 0 {
-		cut = bound(piece{sql: "left("}, narrow, piece{sql: ", ?)", args: []any{room.chars}})
-		token = bound(piece{sql: "left("}, mark, piece{sql: ", ?)", args: []any{room.chars}})
+	// downToCharacters is the named value cut to the character bound, which is the cut the byte
+	// bound is then counted over. See byteRoom.
+	downToCharacters := func(name string) piece {
+		if room.chars == 0 {
+			return piece{sql: name}
+		}
+		return piece{sql: "left(" + name + ", ?)", args: []any{room.chars}}
 	}
-	sets := append(guards, piece{sql: " THEN room.wide ELSE "}, shortest(room),
-		piece{sql: " END FROM (SELECT "}, wide,
-		piece{sql: " AS wide, "}, cut,
-		piece{sql: " AS cut, "}, token,
-		piece{sql: " AS mark) AS room)"},
+	return bound(
+		piece{sql: column + " = (SELECT CASE WHEN "}, standsInside("room.wide"),
+		piece{sql: " THEN room.wide WHEN "}, standsInside("room.narrow"),
+		piece{sql: " THEN room.narrow ELSE "}, shortest(room),
+		piece{sql: " END FROM (SELECT raw.wide AS wide, raw.narrow AS narrow, "},
+		downToCharacters("raw.narrow"), piece{sql: " AS cut, "},
+		downToCharacters("raw.mark"), piece{sql: " AS mark FROM (SELECT "}, wide,
+		piece{sql: " AS wide, "}, narrow, piece{sql: " AS narrow, "}, mark,
+		piece{sql: " AS mark) AS raw) AS room)"},
 	)
-	return bound(sets...)
 }
 
-// shortest is the value to write when the wide placeholder will not fit: the cut the room
-// already took, taken down to the byte bound too where the column carries one, and then taken
-// back to the last character that could not have stood inside one of the person's identifiers.
-// That last step is what keeps a shortened value anonymous; see outsideWord.
+// shortest is the value to write when neither placeholder fits: the cut the room already took,
+// taken down to the byte bound too where the column carries one, and then taken back to the last
+// character that could not have stood inside one of the person's identifiers. That last step is
+// what keeps a shortened value anonymous; see outsideWord.
 //
 // Where even that leaves nothing — a value that is one unbroken word the whole way to its
 // ceiling — the column takes the placeholder rather than an empty string, so the row still says
