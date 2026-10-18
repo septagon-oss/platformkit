@@ -133,14 +133,16 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	// the button is the short verb phrase: a page with three command forms on it has
 	// to tell a reader what each one is for, and three buttons reading "Assign",
 	// "Resolve", "Archive" with no prose is a guess about consequence.
+	// The route's Summary and Description are the words of a command nobody hinted:
+	// the screen came to this renderer wearing them, and they are asked of the
+	// catalogue before they are said, on the same terms as a field's label.
+	summary, description := words.RouteWords(c.Verb, c.Label, c.Description)
 	label := words.CommandLabel(c.Verb, c.Present)
 	if label == "" {
-		// Nothing was declared, so there is nothing to translate: the screen came
-		// to this renderer already wearing the route's Summary as its name.
-		label = c.Label
+		label = summary
 	}
-	if c.Description != "" {
-		label = c.Description
+	if description != "" {
+		label = description
 	}
 	warning := words.Command(c.Verb, c.Present).Confirmation
 	if warning != nil && warning.Title != "" {
@@ -149,7 +151,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 		// see this file's own header.
 		label = warning.Title
 	}
-	button := c.Label
+	button := summary
 	if declared := words.CommandLabel(c.Verb, c.Present); declared != "" {
 		button = declared
 	}

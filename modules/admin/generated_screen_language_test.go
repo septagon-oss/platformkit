@@ -75,18 +75,18 @@ func TestEveryGeneratedScreenSpeaksTheRequestsLanguage(t *testing.T) {
 			">Invited<", ">Pending<", ">Unverified<", ">Active<", ">Inactive<",
 		}},
 		{"site", "settings", reflect.TypeFor[sitecontracts.SiteSettings](), []string{
-			">Title<", "The site&#39;s name", ">Tagline<", "The line under the name",
-			">Home slug<", "Slug of the content served at /",
-			">Theme<", "Colour scheme, or system to follow the visitor&#39;s",
-			">Primary color<", "Brand colour, #rrggbb", ">Logo file id<", "File id of the logo",
+			">Site name<", "The site&#39;s name", ">Tagline<", "The line under the name",
+			">Home page<", "Which page is served at the site root",
+			">Colour scheme<", "Colour scheme, or system to follow the visitor&#39;s",
+			">Brand colour<", "Brand colour, #rrggbb", ">Logo<", "File id of the logo",
 			">Light<", ">Dark<", ">System<",
 		}},
 		{"billing", "plan", reflect.TypeFor[billingcontracts.Plan](), []string{
-			"Stable identifier, unique within the tenant", ">Price cents<",
+			"Stable identifier, unique within the tenant", ">Price<",
 			"Price of one interval, in the currency&#39;s minor unit",
-			">Currency<", "ISO 4217 code", ">Interval<", "How long one period lasts",
-			"Feature names this plan includes", ">Active<",
-			"Whether this plan accepts new subscriptions", ">Month<", ">Year<",
+			">Currency<", "ISO 4217 code", ">Billing period<", "How long one period lasts",
+			"What a person gets on this plan", ">Active<",
+			"Whether this plan accepts new subscriptions", ">Monthly<", ">Yearly<",
 		}},
 	}
 	for _, c := range cases {
