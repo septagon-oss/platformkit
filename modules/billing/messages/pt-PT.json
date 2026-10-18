@@ -139,6 +139,15 @@
       "": "Código"
     }
   },
+  "field.billing.plan.id":   {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Identificador",
+    "plural": {
+      "": "Identificador"
+    }
+  },
   "field.billing.plan.code.help": {
     "references": [
       "modules/billing/contracts/billing.go"

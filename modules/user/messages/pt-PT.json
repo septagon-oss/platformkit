@@ -429,6 +429,33 @@
       "": "As funções que esta pessoa tem neste tenant"
     }
   },
+  "field.user.user.password.help":   {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "A nova palavra-passe; pelo menos doze caracteres",
+    "plural": {
+      "": "A nova palavra-passe; pelo menos doze caracteres"
+    }
+  },
+  "field.user.user.roles":   {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Funções",
+    "plural": {
+      "": "Funções"
+    }
+  },
+  "field.user.user.displayName.help":   {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Nome a mostrar",
+    "plural": {
+      "": "Nome a mostrar"
+    }
+  },
   "enum.user.user.invited": {
     "references": [
       "modules/user/contracts/user.go"

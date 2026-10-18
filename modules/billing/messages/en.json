@@ -58,6 +58,15 @@
       "": "Code"
     }
   },
+  "field.billing.plan.id":   {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Id",
+    "plural": {
+      "": "Id"
+    }
+  },
   "field.billing.plan.code.help": {
     "references": [
       "modules/billing/contracts/billing.go"
