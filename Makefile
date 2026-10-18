@@ -652,6 +652,19 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# granted back. One throwaway repository, nine commits, three verdicts over it, no network, database,
 	# browser or listener.
 	bash scripts/a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh
+	# scripts/a_returned_allocation_can_be_partly_repriced_test.sh asks what an allowance is worth once
+	# part of it has been handed back: the branch priced six lines, spent three, returned three, and a later
+	# build(budget) raise buys one of those three. "Newest declaration wins" grants that branch the whole
+	# original six, because a merge of main left a higher number for the lowering to write over; "largest
+	# raise ever written" refuses the one line, because it holds a returned allocation open forever. The
+	# running total both readings were written to replace is what this case can tell apart, and the merge and
+	# the lowering that follow the reprice have to leave the other two lines unpriced. Each of its four
+	# verdicts also asks that the ratchet leave the repository it was asked about at the HEAD it found and
+	# with a clean status: the merge-base form clones and checks out that tree, and a checker that wrote to
+	# it would make every verdict after it worthless. One throwaway repository, fourteen commits across its
+	# two branches, four verdicts over it, one `go build` of the counter, no network, database, browser or
+	# listener; 2.8 s measured.
+	bash scripts/a_returned_allocation_can_be_partly_repriced_test.sh
 	# scripts/a_lowering_needs_no_new_owner_approval_test.sh asks who owes the `Owner-approved:` trailer of
 	# a bucket standing over 1,000 lines: the commit that raised it, never the one that brings part of it
 	# back. CONTRIBUTING.md permits lowering a ceiling and asks for the trailer on a raise, so returning
