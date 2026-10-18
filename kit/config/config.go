@@ -38,6 +38,10 @@ type Config struct {
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Cloud is the one setting that says which seams this deployment runs on —
+	// which object store, which shared cache, which event transport, where the
+	// spans go. It names the adapters and no address: see Cloud.
+	Cloud Cloud `yaml:"cloud"`
 	// Webhook is the deployment's share of the outbound webhook sender: the key
 	// that wraps each endpoint's signing secret at rest, which addresses this
 	// deployment is willing to dial, and how long a signed attempt is kept.
@@ -534,6 +538,40 @@ type Files struct {
 	// class and no row in the kernel's key table: one class per line is a
 	// config-file thing, which is what modules/file.Deps.Retention says too.
 	Retention map[string]time.Duration `yaml:"retention"`
+	// Store names the object store the bytes go to: "" or local-disk for the
+	// directory above, s3 for the one below. Which adapter a composition wires
+	// stays that composition's decision; this is the deployment saying which store
+	// it has actually provided the money and the address for.
+	Store string `yaml:"store"`
+	// S3 is where an object store is. It says nothing about whether one is used —
+	// store does that — and is the address of whichever store store names.
+	S3 S3 `yaml:"s3"`
+}
+
+// S3 is where an S3-compatible object store is and how it is reached: AWS S3,
+// Garage, SeaweedFS, Ceph RGW, MinIO on a laptop. The settings are the ones the
+// client this kernel links cannot do without, plus the two shape keys beside them,
+// which exist because a host and a scheme are the same mistake waiting to be made
+// twice.
+//
+// A bucket is addressed by name, so an endpoint is only ever a host, and the
+// credentials are static: the client speaks no credential chain, which is why a
+// profile that names a cloud still requires the pair instead of assuming the pod
+// knows who it is.
+type S3 struct {
+	// Endpoint is host:port, with no scheme, path or credentials in it.
+	Endpoint string `yaml:"endpoint"`
+	Bucket   string `yaml:"bucket"`
+	Region   string `yaml:"region"`
+	// Scheme is http or https, and empty is https: a deployment that talks plain
+	// http to a store writes that down on purpose.
+	Scheme string `yaml:"scheme"`
+	// BucketLookup is how the bucket is addressed — auto, dns or path. Auto is
+	// right for the clouds and a coin flip for a store on a LAN, which is why the
+	// key exists and why the default is the one that asks the store.
+	BucketLookup string `yaml:"bucket_lookup"`
+	AccessKey    string `yaml:"access_key"`
+	SecretKey    string `yaml:"secret_key"`
 }
 
 // The defaults. Twenty-five megabytes is what a mail attachment limit taught
@@ -643,7 +681,7 @@ var keys = []key{
 	// server reads neither and the command refuses an empty pair itself.
 	{"seed.operator_email", "PLATFORMKIT_SEED_OPERATOR_EMAIL", func(c *Config) *string { return &c.Seed.OperatorEmail }, nil, false},
 	{"seed.operator_password", "PLATFORMKIT_SEED_OPERATOR_PASSWORD", func(c *Config) *string { return &c.Seed.OperatorPassword }, nil, false},
-	// The sender, overridable like the host beside it. It used to have no
+	// The sender, overridable like the host above it. It used to have no
 	// environment name, on the argument that one client has one from address and
 	// writes it once — true of a deployment, and the reason the example file's
 	// value stays empty. It is not true of the machine that sets mail.host from
@@ -658,6 +696,23 @@ var keys = []key{
 	// The fourth secret-shaped key, and not a secret: which customer a shared
 	// installation is serving is not sensitive, but a fleet sets it per deployment.
 	{"telemetry.client", "PLATFORMKIT_TELEMETRY_CLIENT", func(c *Config) *string { return &c.Telemetry.Client }, nil, false},
+	// The object store: one profile name, one adapter name, an address, and the two
+	// static credentials the client speaks. Every one is required: false, because
+	// presence is the cloud profile's question and not the loader's — an empty one
+	// is what a deployment that never chose a store looks like, and refusing that
+	// here would refuse every laptop in this repository's own test suite.
+	{"cloud.profile", "PLATFORMKIT_CLOUD_PROFILE", func(c *Config) *string { return &c.Cloud.Profile }, nil, false},
+	{"files.store", "PLATFORMKIT_FILES_STORE", func(c *Config) *string { return &c.Files.Store }, nil, false},
+	{"files.s3.endpoint", "PLATFORMKIT_FILES_S3_ENDPOINT", func(c *Config) *string { return &c.Files.S3.Endpoint }, nil, false},
+	{"files.s3.bucket", "PLATFORMKIT_FILES_S3_BUCKET", func(c *Config) *string { return &c.Files.S3.Bucket }, nil, false},
+	{"files.s3.region", "PLATFORMKIT_FILES_S3_REGION", func(c *Config) *string { return &c.Files.S3.Region }, nil, false},
+	{"files.s3.scheme", "PLATFORMKIT_FILES_S3_SCHEME", func(c *Config) *string { return &c.Files.S3.Scheme }, nil, false},
+	{"files.s3.bucket_lookup", "PLATFORMKIT_FILES_S3_BUCKET_LOOKUP", func(c *Config) *string { return &c.Files.S3.BucketLookup }, nil, false},
+	// Two more secrets, for the reason every other secret in this table has: a
+	// credential belongs in the environment because config.yaml is a file somebody
+	// will commit.
+	{"files.s3.access_key", "PLATFORMKIT_FILES_S3_ACCESS_KEY", func(c *Config) *string { return &c.Files.S3.AccessKey }, nil, false},
+	{"files.s3.secret_key", "PLATFORMKIT_FILES_S3_SECRET_KEY", func(c *Config) *string { return &c.Files.S3.SecretKey }, nil, false},
 }
 
 // Override is one key a composition sets before the configuration is validated.
@@ -704,12 +759,8 @@ func Load(path string, overrides ...Override) (Config, error) {
 	for _, o := range overrides {
 		i := slices.IndexFunc(keys, func(k key) bool { return k.name == o.key })
 		if i < 0 {
-			names := make([]string, len(keys))
-			for j, k := range keys {
-				names[j] = k.name
-			}
 			return Config{}, fmt.Errorf("config %s: %q is not an overridable key; they are %s",
-				path, o.key, strings.Join(names, ", "))
+				path, o.key, strings.Join(Keys(), ", "))
 		}
 		if err := keys[i].assign(&c, o.value); err != nil {
 			return Config{}, fmt.Errorf("config %s: the override %s: %w", path, o.key, err)
@@ -725,6 +776,18 @@ func Load(path string, overrides ...Override) (Config, error) {
 			}
 		}
 	}
+
+	// The cloud profile is applied here: under all three sources above, and before
+	// anything is checked. It writes only keys that are still empty, so a file, an
+	// override or a variable that already answered a seam outranks it, and it runs
+	// before the validators so no guard below is shown a half-written seam the
+	// profile was about to finish. The name is checked first: a profile the table
+	// does not hold writes nothing, and naming that is better than booting on the
+	// wrong adapters quietly.
+	if err := c.Cloud.validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	c = ApplyCloudProfile(c)
 
 	for _, k := range keys {
 		// Only a key that holds a string can be missing: a port that arrived as 0
@@ -852,6 +915,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if c.Files.MaxBytes < 1 {
 		return Config{}, fmt.Errorf("config %s: files.max_bytes is %d; a limit is a number of bytes", path, c.Files.MaxBytes)
+	}
+	if err := c.Files.validateObjects(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	// A retention table is a promise that bytes get removed, so the two ways to
 	// write one by mistake are refused here rather than discovered by the sweep.

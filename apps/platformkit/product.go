@@ -109,6 +109,17 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 	}
 	return pkit.NewModule("product", func(w *pkit.Wiring) (module.Module, error) {
 		installed := catalogues()
+		// The bytes go wherever the deployment said they go, read off the configuration
+		// the profile resolved rather than the one this function was handed: a profile
+		// that picked the object store picks it for this product too, and a store built
+		// from the settings as they arrived would be a different store from the one
+		// Explain names. A store missing an input its adapter cannot do without is
+		// refused here, before any effect; whether the address answers is asked of the
+		// first upload, because nothing here dials (see objectStore).
+		store, err := objectStore(pkit.Config(w, func(c config.Config) config.Files { return c.Files }))
+		if err != nil {
+			return module.Module{}, err
+		}
 		// auth.AdministeringRoles is what makes "the last person who can still
 		// administer this tenant" answerable at all: the user module owns who
 		// holds a role, the auth module owns what a role grants, and neither reads
@@ -119,7 +130,7 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		// this application that is late-bound rather than built, and product puts
 		// it precisely because it needs nobody and so is built first.
 		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
-		pkit.Put[filecontracts.Storage](w, file.Local(cfg.Files.Dir))
+		pkit.Put[filecontracts.Storage](w, store)
 		// The trail is this reference product's worked example of something a plan
 		// includes or does not. The name is the price list's, and it is chosen here
 		// rather than inside the module because which features a product sells is
@@ -229,6 +240,38 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		}
 		return module.Module{Name: "product"}, nil
 	}, decls...)
+}
+
+// objectStore is this product's reading of files.store: the directory the kernel
+// has always wired, or the object store the deployment named an address for.
+//
+// It branches on the setting and never on cloud.profile. A profile exists to pick
+// adapters for a deployment that did not write this line, and a product that
+// branched on the profile would be a product with a vendor in it — and one that
+// disagreed with its own configuration whenever an operator overrode the profile.
+//
+// What it refuses is the input its adapter cannot build without: an endpoint and a
+// bucket. It asks nothing of the network — construction is not readiness, and
+// whether the address answers is what the first Put finds out, or /ready once the
+// installation asks it.
+//
+// An empty scheme means https, which is what config.Load already settled; http is
+// the one spelling that has to be written down on purpose, because a store inside a
+// private network is real and a store on the public internet reached in plain text
+// is not.
+func objectStore(files config.Files) (filecontracts.Storage, error) {
+	if files.Store != config.StoreS3 {
+		return file.Local(files.Dir), nil
+	}
+	return file.S3(file.S3Config{
+		Endpoint:     files.S3.Endpoint,
+		Bucket:       files.S3.Bucket,
+		AccessKey:    files.S3.AccessKey,
+		SecretKey:    files.S3.SecretKey,
+		Region:       files.S3.Region,
+		Secure:       files.S3.Scheme != config.S3SchemeHTTP,
+		BucketLookup: files.S3.BucketLookup,
+	})
 }
 
 // access is the reach an ask for access has in this product, and the site settings
