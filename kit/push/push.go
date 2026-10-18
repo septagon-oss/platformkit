@@ -151,7 +151,18 @@ func (m Message) Clip() Message {
 	if len(m.Body) <= MaxBody {
 		return m
 	}
-	cut := MaxBody
+	return m.TrimTo(len(m.Body) - MaxBody)
+}
+
+// TrimTo is the message with its Body shortened by n bytes at a rune boundary,
+// to nothing at worst. An adapter that has a shorter ceiling of its own — a
+// platform that caps the whole notification, title and link included — reaches
+// for this rather than MaxBody, so the copy that goes is the copy that fits.
+func (m Message) TrimTo(n int) Message {
+	cut := len(m.Body) - n
+	if cut < 0 {
+		cut = 0
+	}
 	for cut > 0 && !utf8.RuneStart(m.Body[cut]) {
 		cut--
 	}
@@ -184,14 +195,24 @@ func (m Message) Validate() error {
 	return nil
 }
 
-// ttlSeconds is the message's TTL in whole seconds, clamped to the port's own
-// ceiling and rounded up: a part-second of tolerance is a second on the wire,
-// and never zero, because both platforms' own behaviour at zero drops the
-// message on a sleeping device.
-func (m Message) ttlSeconds() int64 {
+// TTLSeconds is a message's lifetime as a provider is told it, in whole seconds:
+// the message's own TTL, or the adapter's configured ceiling for a message that
+// names none, or MaxTTL where the deployment configured no ceiling either. A
+// configured ceiling bounds the send in both directions — a deployment that says
+// "an hour" is not overruled by a message asking for a day — and the port's own
+// MaxTTL bounds the ceiling. The result is rounded up and never zero: both
+// platforms drop a message at zero on a sleeping device instead of delivering it
+// late, and a part-second of tolerance is a second on the wire.
+func TTLSeconds(m Message, ceiling time.Duration) int64 {
 	ttl := m.TTL
 	if ttl <= 0 {
+		ttl = ceiling
+	}
+	if ttl <= 0 {
 		ttl = MaxTTL
+	}
+	if ceiling > 0 && ttl > ceiling {
+		ttl = ceiling
 	}
 	if ttl > MaxTTL {
 		ttl = MaxTTL
