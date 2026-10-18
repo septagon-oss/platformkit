@@ -115,5 +115,14 @@
     "plural": {
       "": "decidir e aplicar uma alteração proposta"
     }
+  },
+  "nav.change.proposals": {
+    "references": [
+      "modules/change/module.go"
+    ],
+    "translation": "Revisões",
+    "plural": {
+      "": "Revisões"
+    }
   }
 }

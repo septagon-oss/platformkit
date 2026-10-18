@@ -25,5 +25,15 @@
     "plural": {
       "": "Organizações"
     }
+  },
+  "resource.tenant.languages": {
+    "references": [
+      "modules/tenant/module.go"
+    ],
+    "translation": "Idioma",
+    "plural": {
+      "one": "Idioma",
+      "other": "Idiomas"
+    }
   }
 }

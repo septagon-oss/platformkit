@@ -30,5 +30,23 @@
       "one": "Entrega",
       "other": "Entregas"
     }
+  },
+  "nav.webhook.endpoints": {
+    "references": [
+      "modules/webhook/module.go"
+    ],
+    "translation": "Endpoints",
+    "plural": {
+      "": "Endpoints"
+    }
+  },
+  "nav.webhook.deliveries": {
+    "references": [
+      "modules/webhook/module.go"
+    ],
+    "translation": "Entregas",
+    "plural": {
+      "": "Entregas"
+    }
   }
 }
