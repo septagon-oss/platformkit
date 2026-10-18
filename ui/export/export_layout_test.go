@@ -218,7 +218,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// exactly two changed — /css, which carries the new rules, and /sha256, which is
 	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
 	// schema or font policy moves. The digest below is that measurement of this tree.
-	if legacy.SHA256 != "5004fa12de463e88646fdb918286ee332c335a402a8d20a2b4b0a4077d1ba99c" {
+	// NOTICE gained the Web Push library's attribution, and design-notices.txt
+	// carries NOTICE verbatim, so /notices moves and /sha256 with it: exporting this
+	// tree and the same tree without that paragraph gives 99,906 leaves each, and
+	// those two leaves are the only difference between them.
+	if legacy.SHA256 != "541645307ddbc4724971f7c2c66a707445a4801c2b220c6a6da01ac22df0a3a9" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
