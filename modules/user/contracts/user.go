@@ -85,7 +85,7 @@ type User struct {
 	// Email identifies the person within the tenant. It is stored as it was
 	// given and compared without case, which is what the unique index in
 	// migrations/000007 does too.
-	Email string `json:"email" gorm:"type:text;not null" validate:"required" format:"email" maxLength:"320" doc:"Address this person signs in with, unique within the tenant" example:"ada@acme.example.com"`
+	Email string `json:"email" gorm:"type:text;not null" validate:"required" format:"email" maxLength:"320" ui:"label:Email" doc:"Address this person signs in with, unique within the tenant" example:"ada@acme.example.com"`
 	// DisplayName is what a screen shows. It is optional: an invitation has an
 	// address and nothing else.
 	//
@@ -124,7 +124,7 @@ type User struct {
 	// forever. It is refused by name in module.go's Immutable list for the reason
 	// Handle is: it arrives by command, publishes user.language_set, and is only
 	// ever about the person signed in, which a PATCH that names any id cannot be.
-	PreferredLocale string `json:"preferredLocale,omitempty" gorm:"type:text;not null;default:''" maxLength:"35" doc:"Language this person chose, empty while the browser and the tenant decide" example:"pt-PT"`
+	PreferredLocale string `json:"preferredLocale,omitempty" gorm:"type:text;not null;default:''" maxLength:"35" ui:"label:Preferred locale" doc:"Language this person chose, empty while the browser and the tenant decide" example:"pt-PT"`
 	// LocaleRevision counts the language choices this person has made. json:"-":
 	// it is not copy, and it is not a field a caller writes through a user body —
 	// it is what the versioned account door compares an expected revision against,
@@ -135,7 +135,7 @@ type User struct {
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
-	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" enumTones:"invited=neutral,pending=warning,unverified=warning,active=success,inactive=neutral" doc:"Lifecycle state" default:"invited" required:"false"`
+	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select;label:Status" enumTones:"invited=neutral,pending=warning,unverified=warning,active=success,inactive=neutral" enumLabels:"invited=Invited,pending=Pending,unverified=Unverified,active=Active,inactive=Inactive" doc:"Lifecycle state" default:"invited" required:"false"`
 
 	// Roles are the names of the roles this person holds. What a name grants is
 	// the auth module's business, which is why this is a list of strings and

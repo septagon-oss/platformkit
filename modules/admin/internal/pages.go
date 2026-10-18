@@ -85,8 +85,8 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	// sidebar drops the link for the same reason, so the two agree.
 	page.Serve(namespace(s.App, "tenant"), p.shell, page.Route{ID: "admin-tenants", Method: http.MethodGet, Path: p.at.tenants.rel, Summary: "The tenants of this installation"},
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
-		func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return p.tenants(ctx)
+		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return p.tenants(ctx, r.Locale)
 		})
 }
 
@@ -706,7 +706,16 @@ func checks(ctx context.Context) []result {
 // tenant, so listing them takes a system transaction, opened on a detached
 // context so it is a transaction of its own rather than a widening of the
 // request's. See docs/adr/0006.
-func (p pages) tenants(ctx context.Context) (page.View, error) {
+func (p pages) tenants(ctx context.Context, selected *page.Locale) (page.View, error) {
+	// Every word on this page is the admin module's own, so every one of them is
+	// asked of the reader's language rather than printed as the sentence this file
+	// wrote. A tenant's name, its slug's value and its hosts are data and stay as typed.
+	text := func(key, fallback string) string {
+		if selected == nil {
+			return fallback
+		}
+		return selected.Text("admin.tenants."+key, fallback)
+	}
 	conn, reachable := httpx.ConnFrom(ctx)
 	if !reachable {
 		return page.View{}, unreachable
@@ -726,18 +735,20 @@ func (p pages) tenants(ctx context.Context) (page.View, error) {
 			"name": t.Name, "slug": t.Slug, "status": t.Status, "hosts": strings.Join(t.Hosts, ", "),
 		}})
 	}
-	return page.View{Title: "Tenants", Body: []g.Node{
+	return page.View{Title: text("title", "Tenants"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Tenants", Subtitle: "Every tenant of this installation. A link opens that tenant's own shell."}),
+			Title: text("title", "Tenants"),
+			Subtitle: text("subtitle",
+				"Every tenant of this installation. A link opens that tenant's own shell.")}),
 		components.TableWithSlots(components.TableProps{
 			Columns: []components.TableColumn{
-				{Key: "name", Label: "Tenant", Primary: true},
-				{Key: "slug", Label: "Slug"},
-				{Key: "status", Label: "Status"},
-				{Key: "hosts", Label: "Served at"},
+				{Key: "name", Label: text("name", "Tenant"), Primary: true},
+				{Key: "slug", Label: text("slug", "Slug")},
+				{Key: "status", Label: text("status", "Status")},
+				{Key: "hosts", Label: text("hosts", "Served at")},
 			},
 			Rows:      rows,
-			EmptyText: "No tenants. Run `platformkit bootstrap`.",
+			EmptyText: text("empty", "No tenants. Run `platformkit bootstrap`."),
 		}, components.TableSlots{
 			Cell: func(row components.TableRow, c components.TableColumn) g.Node {
 				switch c.Key {

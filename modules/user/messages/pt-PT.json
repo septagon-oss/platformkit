@@ -143,6 +143,123 @@
       "": "pessoa"
     }
   },
+  "hints.user/user.field.email.label": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "E-mail",
+    "plural": {
+      "": "E-mail"
+    }
+  },
+  "hints.user/user.field.preferredLocale.label": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Idioma preferido",
+    "plural": {
+      "": "Idioma preferido"
+    }
+  },
+  "hints.user/user.field.status.label": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "hints.user/user.enum.status.invited": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Convidado",
+    "plural": {
+      "": "Convidado"
+    }
+  },
+  "hints.user/user.enum.status.pending": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Pendente",
+    "plural": {
+      "": "Pendente"
+    }
+  },
+  "hints.user/user.enum.status.unverified": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Não verificado",
+    "plural": {
+      "": "Não verificado"
+    }
+  },
+  "hints.user/user.enum.status.active": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Ativo",
+    "plural": {
+      "": "Ativo"
+    }
+  },
+  "hints.user/user.enum.status.inactive": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Inativo",
+    "plural": {
+      "": "Inativo"
+    }
+  },
+  "hints.user/user.command.language.label": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Escolher o idioma em que esta pessoa é respondida",
+    "plural": {
+      "": "Escolher o idioma em que esta pessoa é respondida"
+    }
+  },
+  "hints.user/user.command.language.field.locale.label": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Idioma",
+    "plural": {
+      "": "Idioma"
+    }
+  },
+  "hints.user/user.command.language.field.locale.help": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Um idioma que este tenant serve — vazio deixa a escolha ao navegador",
+    "plural": {
+      "": "Um idioma que este tenant serve — vazio deixa a escolha ao navegador"
+    }
+  },
+  "hints.user/user.command.language.field.expectedRevision.label": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Revisão esperada",
+    "plural": {
+      "": "Revisão esperada"
+    }
+  },
+  "hints.user/user.command.language.field.expectedRevision.help": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "A revisão na qual a escolha atual foi lida — uma revisão desatualizada não escreve nada",
+    "plural": {
+      "": "A revisão na qual a escolha atual foi lida — uma revisão desatualizada não escreve nada"
+    }
+  },
   "permission.user:approve": {
     "references": [
       "modules/user/module.go"

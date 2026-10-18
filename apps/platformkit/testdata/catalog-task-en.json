@@ -23,14 +23,22 @@
       "type": "string",
       "maxLength": 200,
       "required": true,
-      "doc": "Short summary of the task"
+      "doc": "Short summary of the task",
+      "presentation": {
+        "label": "Title",
+        "help": "Short summary of the task"
+      }
     },
     {
       "name": "description",
       "type": "text",
       "widget": "textarea",
       "hideList": true,
-      "doc": "Detailed description of the task"
+      "doc": "Detailed description of the task",
+      "presentation": {
+        "label": "Description",
+        "help": "Detailed description of the task"
+      }
     },
     {
       "name": "status",
@@ -46,6 +54,15 @@
       "default": "open",
       "doc": "Lifecycle state",
       "presentation": {
+        "label": "Status",
+        "help": "Lifecycle state",
+        "enumLabels": {
+          "acknowledged": "Acknowledged",
+          "closed": "Closed",
+          "in_progress": "In progress",
+          "open": "Open",
+          "resolved": "Resolved"
+        },
         "enumTones": {
           "acknowledged": "info",
           "closed": "neutral",
@@ -71,6 +88,14 @@
       "default": "normal",
       "doc": "Task priority",
       "presentation": {
+        "label": "Priority",
+        "help": "Task priority",
+        "enumLabels": {
+          "critical": "Critical",
+          "high": "High",
+          "low": "Low",
+          "normal": "Normal"
+        },
         "enumTones": {
           "critical": "danger",
           "high": "warning",
@@ -114,7 +139,8 @@
       "widget": "datetime",
       "doc": "Soft target completion time",
       "presentation": {
-        "label": "Due"
+        "label": "Due",
+        "help": "Soft target completion time"
       }
     },
     {
@@ -123,7 +149,8 @@
       "widget": "datetime",
       "doc": "Hard SLA deadline; a breach is measured against this",
       "presentation": {
-        "label": "Response due"
+        "label": "Response due",
+        "help": "Hard SLA deadline, which a breach is measured against"
       }
     },
     {
@@ -159,6 +186,10 @@
       "doc": "This row's own write count, from 1"
     }
   ],
+  "name": {
+    "one": "Task",
+    "other": "Tasks"
+  },
   "presentation": {
     "singular": "task",
     "plural": "tasks",

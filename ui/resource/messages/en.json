@@ -296,5 +296,23 @@
     "plural": {
       "": "Page %s, current page"
     }
+  },
+  "screens.created_at": {
+    "references": [
+      "ui/resource/hints.go"
+    ],
+    "translation": "Created at",
+    "plural": {
+      "": "Created at"
+    }
+  },
+  "screens.updated_at": {
+    "references": [
+      "ui/resource/hints.go"
+    ],
+    "translation": "Updated at",
+    "plural": {
+      "": "Updated at"
+    }
   }
 }

@@ -156,6 +156,35 @@ func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 	return out
 }
 
+// kernelWords are the two columns a generated screen labels and no entity declares:
+// the two timestamps ride on every entity's base, and a label written there would
+// put a `presentation` block on the catalog document of every resource, hinted or
+// not (ui/screens' own "an entry nobody hinted is byte-for-byte unchanged"). So the
+// layer that draws the column owns the two words, and asks them at the moment it
+// draws — the document a shell parses keeps the bytes it had.
+type word struct{ key, text string }
+
+var kernelWords = map[string]word{
+	"createdAt": {"screens.created_at", "Created at"},
+	"updatedAt": {"screens.updated_at", "Updated at"},
+}
+
+// sayLayer asks one of this package's own words under its unqualified key — the
+// shape ui/screens uses for `screens.new` — rather than under this resource's
+// `hints.` prefix. The difference is who wrote the word: a resource's declared
+// label belongs to that resource and may be translated differently for each one,
+// and a column heading this layer gives every table is the installation's, chosen
+// once. An untranslated key answers the fallback, as `say` does.
+func (w Words) sayLayer(named word) string {
+	if w.text == nil {
+		return named.text
+	}
+	if out := w.text(named.key, named.text); out != "" {
+		return out
+	}
+	return named.text
+}
+
 // Fields is a schema with every declared word on it read in the request's
 // language, and every non-word left exactly as the schema holds it. The slice
 // and the two maps are copied; the caller's schema is never written to.
@@ -209,6 +238,9 @@ func (w Words) Command(verb string, p entity.CommandHints) entity.CommandHints {
 // wrote a string here to translate.
 func (w Words) FieldLabel(f entity.Field) string {
 	if f.Presentation.Label == "" {
+		if named, ok := kernelWords[f.Name]; ok {
+			return w.sayLayer(named)
+		}
 		return display.FieldLabel(f)
 	}
 	return w.say("field."+f.Name+".label", f.Presentation.Label)
