@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -27,6 +28,7 @@ func TestBillingPlanRefusalsSpeakPortugueseAndPreserveRows(t *testing.T) {
 	owner, conn := dbtest.Schema(t, billing.Migrations)
 	_, plans := billing.New(billing.Deps{Payments: billing.Manual()})
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Installation: operatorHost,
 		Tenants: caller{}, Conn: conn, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
