@@ -267,6 +267,15 @@
       "": "%q não é uma cor; uma cor principal é #rrggbb"
     }
   },
+  "invalid.site.settings.primaryColor.contrast": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "%q lê %.2f:1 contra a tela clara e %.2f:1 contra a escura; uma cor de destaque tem de ler pelo menos %.1f:1 contra ambas (%s e %s)",
+    "plural": {
+      "": "%q lê %.2f:1 contra a tela clara e %.2f:1 contra a escura; uma cor de destaque tem de ler pelo menos %.1f:1 contra ambas (%s e %s)"
+    }
+  },
   "invalid.site.settings.nav.count": {
     "references": [
       "modules/site/contracts/site.go"
