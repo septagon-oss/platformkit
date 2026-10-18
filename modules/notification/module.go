@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/push"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
 )
@@ -65,6 +66,21 @@ type Deps struct {
 	// the same decision the session cookie's Secure flag is: a laptop reached at
 	// a local name gets http, and everything else gets https.
 	Secure bool
+
+	// Push is what this installation can carry to a device, one adapter per
+	// platform (kit/push). It is how the two device channels get carried: a
+	// platform present here opens its channel — every phone family under push,
+	// the browser under web_push — through one carrier this manifest composes
+	// (internal.PushCarrier), which reads the recipient's registered devices and
+	// closes the ledger row around what the provider answers.
+	//
+	// Nil, or a map with no adapter that reaches a channel, is not "broken": it
+	// is the same sentence a missing key in Providers says, so Decide suppresses
+	// the channel with a reason naming the deployment and no subscription waits
+	// on an event nobody will publish. The one reading of "does this deployment
+	// send it" stays contracts.Providers.Active, which is where these carriers
+	// land rather than beside it.
+	Push push.Adapters
 }
 
 // Module is the manifest, and the service it is built on: main holds the
@@ -114,6 +130,8 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Mailer == nil {
 		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
 	}
+	deps = withDeviceCarriers(deps)
+	devices := internal.DeviceStore{Adapters: deps.Push}
 	svc := internal.NewService(deps.Recipients,
 		internal.WithPreferences(internal.Prefs{}),
 		internal.WithSenders(deps.Senders),
@@ -134,8 +152,33 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
 		Subscriptions: subscriptions(deps),
-		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
+		Routes: func(s httpx.Surfaces) {
+			internal.RegisterRoutes(s.App, svc)
+			internal.RegisterDeviceRoutes(s.App, devices)
+		},
 	}
+}
+
+// withDeviceCarriers puts a channel in Deps.Providers for every device channel
+// these adapters reach, so that the two halves of the wiring — the decision that
+// opens a requested row and the subscription that closes it — stay one reading of
+// one Deps value. A channel somebody already wired a Provider for keeps theirs:
+// the adapters fill the channels nothing else staffs, and never replace them.
+func withDeviceCarriers(deps Deps) Deps {
+	if len(deps.Push) == 0 {
+		return deps
+	}
+	providers := contracts.Providers{}
+	for c, p := range deps.Providers {
+		providers[c] = p
+	}
+	for _, c := range []contracts.Channel{contracts.ChannelPush, contracts.ChannelWebPush} {
+		if providers[c] == nil {
+			providers[c] = internal.PushCarrier(c, deps.Push)
+		}
+	}
+	deps.Providers = providers
+	return deps
 }
 
 // Settings is this module's own answer about who may be told what: the channel
@@ -150,6 +193,20 @@ func New(deps Deps) (contracts.Service, module.Module) {
 // (internal.choosing), so the page is a form over one's own rows and there is no
 // shape of it that reaches another person's choices.
 func Settings() contracts.PreferenceService { return internal.Prefs{} }
+
+// Devices is this module's device table as contracts.DeviceService: the three
+// commands a person has over the tokens they registered, over the module's own
+// rows, in the caller's transaction. It is the face the module's three device
+// routes are mounted on, and a product that reaches the same commands from Go
+// builds it the way it builds Settings — with no arguments and no fixture.
+//
+// Adapters is what registration asks whether a token is carryable, so pass the
+// same push.Adapters the composition wired into Deps.Push: a device registered
+// against a platform nobody carries is a token that fails every notice to that
+// person, and refusing it is the adapter's answer rather than a pattern here.
+func Devices(adapters push.Adapters) contracts.DeviceService {
+	return internal.DeviceStore{Adapters: adapters}
+}
 
 // Senders is the tenant's own sending address as a contracts.Senders and a
 // contracts.SenderAdmin: the module keeps the row, the token, the refusal and the
