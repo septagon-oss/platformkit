@@ -64757,6 +64757,66 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/mobile_listener_attribution_test.py",
+   "id": "scripts/mobile_listener_attribution_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "mobile_listener_attribution_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
+   "file": "scripts/mobile_listener_pins_are_check_recipe_lines_test.sh",
+   "id": "scripts/mobile_listener_pins_are_check_recipe_lines_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "mobile_listener_pins_are_check_recipe_lines_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
+   "file": "scripts/mobile_listener_step_policy_test.py",
+   "id": "scripts/mobile_listener_step_policy_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "mobile_listener_step_policy_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/openpencil_lock_above_advisory_test.sh",
    "id": "scripts/openpencil_lock_above_advisory_test.sh",
    "kind": "shell_pin",
@@ -66984,7 +67044,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1764,
+  "files": 1767,
   "forge_runs": [
    408,
    413,
@@ -67019,7 +67079,7 @@
   ],
   "layers": {
    "behaviour": 2873,
-   "composition": 402,
+   "composition": 405,
    "contract": 21,
    "journey": 93
   },
@@ -67037,23 +67097,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3389,
+  "rows": 3392,
   "tiers": {
    "merge": 2143,
    "nightly": 93,
-   "push": 1153
+   "push": 1156
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1537,
+   "keep": 1540,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3033,
+   "keep": 3036,
    "keep-rewrite": 140,
    "merge": 216
   }
