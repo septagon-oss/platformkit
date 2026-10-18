@@ -2739,6 +2739,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/erasure_keeps_bounded_task_text_anonymous_test.go",
+   "id": "apps/platformkit/erasure_keeps_bounded_task_text_anonymous_test.go#TestCompletedErasureLeavesNoNameInABoundedTaskTitle",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestCompletedErasureLeavesNoNameInABoundedTaskTitle",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/erasure_scrubs_the_export_requests_own_words_test.go",
    "id": "apps/platformkit/erasure_scrubs_the_export_requests_own_words_test.go#TestErasureScrubsTheExportRequestsOwnWords",
    "kind": "go",
@@ -39860,6 +39879,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/task/internal/erasure_keeps_bounded_text_anonymous_test.go",
+   "id": "modules/task/internal/erasure_keeps_bounded_text_anonymous_test.go#TestErasureLeavesNoNameWhenABoundedTitleEndsInALongerName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestErasureLeavesNoNameWhenABoundedTitleEndsInALongerName",
+   "needs_db": true,
+   "pkg": "modules/task/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/task/internal/erasure_preserves_title_capacity_test.go",
    "id": "modules/task/internal/erasure_preserves_title_capacity_test.go#TestErasureCanAnonymiseATaskWhoseTitleAlreadyFillsItsAllowedLength",
    "kind": "go",
@@ -61276,7 +61314,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1593,
+  "files": 1595,
   "forge_runs": [
    408,
    413,
@@ -61310,8 +61348,8 @@
    578
   ],
   "layers": {
-   "behaviour": 2625,
-   "composition": 364,
+   "behaviour": 2626,
+   "composition": 365,
    "contract": 20,
    "journey": 88
   },
@@ -61329,9 +61367,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3097,
+  "rows": 3099,
   "tiers": {
-   "merge": 1963,
+   "merge": 1965,
    "nightly": 88,
    "push": 1046
   },
@@ -61339,13 +61377,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1408,
+   "keep": 1410,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2807,
+   "keep": 2809,
    "keep-rewrite": 117,
    "merge": 173
   }
