@@ -42,7 +42,7 @@ func TestBothE2EInstallationsDeclareAUsableWebhookKey(t *testing.T) {
 			if err := yaml.Unmarshal([]byte("webhook:\n"+body), &declared); err != nil {
 				t.Fatalf("configuration YAML: %v", err)
 			}
-			cfg := referenceDependencyConfig(t)
+			cfg := referenceCompositionConfig(t)
 			cfg.Webhook = declared.Webhook
 			if _, err := sentencesOf(cfg).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg}); err != nil {
 				t.Fatalf("the installation's declared webhook configuration does not plan: %v", err)

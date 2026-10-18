@@ -54,8 +54,8 @@ which `FromDeployment` implementations its deployment has inputs for; and
 `reference.describe`, which commits what the resolved composition says as
 [COMPOSITION.development.json](COMPOSITION.development.json) and
 [COMPOSITION.production.json](COMPOSITION.production.json) beside the text file,
-named by `platformkit.composition.v1` and refused on drift by the same
-`UPDATE_GOLDEN` check — names only, so a machine can read what this installation
+named by `platformkit.composition.v1`, written by `make generate` and refused on
+drift by the same check — names only, so a machine can read what this installation
 is composed of without reading a configuration value out of it.
 
 The one edge no module declares is `user`'s promotion check, answered by the auth
