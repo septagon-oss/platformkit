@@ -58653,6 +58653,46 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/a_lowered_allocation_survives_main_without_restoring_returned_lines_test.sh",
+   "id": "scripts/a_lowered_allocation_survives_main_without_restoring_returned_lines_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_lowered_allocation_survives_main_without_restoring_returned_lines_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
+   "file": "scripts/a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh",
+   "id": "scripts/a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh",
    "id": "scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh",
    "kind": "shell_pin",
@@ -61900,7 +61940,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1625,
+  "files": 1627,
   "forge_runs": [
    408,
    413,
@@ -61935,7 +61975,7 @@
   ],
   "layers": {
    "behaviour": 2653,
-   "composition": 369,
+   "composition": 371,
    "contract": 20,
    "journey": 88
   },
@@ -61953,23 +61993,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3130,
+  "rows": 3132,
   "tiers": {
    "merge": 1996,
    "nightly": 88,
-   "push": 1046
+   "push": 1048
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1440,
+   "keep": 1442,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2840,
+   "keep": 2842,
    "keep-rewrite": 117,
    "merge": 173
   }

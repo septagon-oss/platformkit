@@ -178,9 +178,32 @@ for commit in $touched; do
 done
 # Each row is `<commit> <bucket> <lines over main where it was written> <1 when the commit raises the
 # bucket over its own parent, 0 when it brings it down>`. The walk is topological and prints the commit
-# nearest HEAD first, so the row that stands for a bucket is the last declaration that bucket's branch of
-# the history reached.
-declared="$(awk '$2 != "" && !seen[$2]++' <<< "$raised")"
+# nearest HEAD first, so a bucket's rows read back to front are this branch's declarations in the order
+# they became effective, and one bucket's allowance is their running total: a raising commit lifts it to
+# what it wrote over main's where it was written, and a commit that brings the ceiling down pulls it down
+# to the smaller number it wrote and never up.
+#
+# The order is the rule, and no single row carries it. Reading only the newest row grants whatever that
+# commit wrote over main's, so a branch that merged main with a higher ceiling written in the resolution
+# alone is granted that ceiling as soon as one of its own commits lowers it — including the lines an
+# earlier lowering of its own ceiling had already returned. Reading only the largest raise ever written
+# keeps a branch that returned half of an approved allocation on the hook for the whole of it. The
+# running total is the reading both documents describe: a raise buys what it declares over main's, a
+# bring-down returns lines to the pool — down to none, when the branch takes the whole raise back — and a
+# number that reached the branch only through a merge is tidied, never spent, until a raise owns it.
+allowances="$(awk '
+	$2 != "" { count[$2]++; over[$2, count[$2]] = $3 + 0; up[$2, count[$2]] = $4 }
+	END {
+		for (bucket in count) {
+			held = 0
+			for (i = count[bucket]; i >= 1; i--) {
+				wrote = over[bucket, i]
+				if (up[bucket, i] == 1) { if (wrote > held) held = wrote }
+				else if (wrote < held) held = wrote > 0 ? wrote : 0
+			}
+			print bucket, held
+		}
+	}' <<< "$raised")"
 # A raise of more than 1,000 lines in one bucket is the owner's, not only the reviewer's: every commit
 # raising that bucket names the approval in an `Owner-approved:` trailer. The check reads that the
 # claim is recorded where review reads it; it cannot read that the owner made it. A commit that brings a
@@ -210,15 +233,10 @@ if [ -n "$merge_base_ref" ]; then
 		exit 2
 	fi
 	while read -r name grew; do
-		# What pays for a line is the ceiling this branch's budget file last wrote for the bucket, measured
-		# over main's where that commit was written — and never more than the largest ceiling the branch's
-		# own raising commits reached there. A commit that brings a ceiling down returns lines to the pool;
-		# reading it as an allowance would mint credit for a ceiling a merge resolution wrote, and let one
-		# lowering widen an allocation the branch had already priced at something smaller.
-		allowed="$(awk -v b="$name" '$2 == b && $3 > 0 { print $3 }' <<< "$declared")"
+		# What pays for a line is the allowance the branch's own build(budget) commits last left standing for
+		# the bucket: a merge of main neither widens it nor restores the part of it a lowering returned.
+		allowed="$(awk -v b="$name" '$1 == b { print $2; exit }' <<< "$allowances")"
 		[ -n "$allowed" ] || allowed=0
-		priced="$(awk -v b="$name" '$2 == b && $4 == 1 && $3 > best { best = $3 } END { print best + 0 }' <<< "$raised")"
-		if [ "$allowed" -gt "$priced" ]; then allowed="$priced"; fi
 		if [ "$grew" -gt "$allowed" ]; then
 			problems="${problems:+$problems$'\n'}loc-budget.json: $name grew by $grew lines since the merge base ${base:0:12}; this branch's build(budget) commits declare $allowed"
 		fi

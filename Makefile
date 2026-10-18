@@ -643,6 +643,24 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# repositories' worth of one history, eleven commits, one `go build` of the counter, no network,
 	# database, browser or listener.
 	bash scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh
+	# scripts/a_lowered_allocation_survives_main_without_restoring_returned_lines_test.sh asks what an
+	# allocation the branch spent most of survives: fifteen hundred lines priced, fourteen hundred and fifty
+	# of them consumed, fifty returned, then a merge of main carrying main's numbers. The remainder has to
+	# stay priced across that merge, because the merge base moves to main's side and the branch's own raise
+	# is still the only thing that priced it; and the one line of the returned fifty the branch then adds has
+	# to be refused against the fourteen hundred and fifty still standing. Neither neighbour above reaches
+	# both halves: the merge cases never consume what they price, and the approval case never merges. One
+	# throwaway repository, eight commits, four verdicts over it, no network, no database.
+	bash scripts/a_lowered_allocation_survives_main_without_restoring_returned_lines_test.sh
+	# scripts/a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh asks the question the two
+	# lowering cases above leave open between them: a branch priced two lines, took one of them back, merged
+	# main with a higher ceiling written only in the resolution, then lowered that ceiling in a commit of its
+	# own. One line still stands priced — the second lowering tidies a number the branch never raised, and
+	# what an earlier lowering returned stays returned until a raise reprices it. Read the newest declaration
+	# alone and capped by the largest raise on the branch, both lowerings pass while the returned line is
+	# granted back. One throwaway repository, nine commits, three verdicts over it, no network, database,
+	# browser or listener.
+	bash scripts/a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh
 	# scripts/a_lowering_needs_no_new_owner_approval_test.sh asks who owes the `Owner-approved:` trailer of
 	# a bucket standing over 1,000 lines: the commit that raised it, never the one that brings part of it
 	# back. CONTRIBUTING.md permits lowering a ceiling and asks for the trailer on a raise, so returning

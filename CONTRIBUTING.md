@@ -205,19 +205,19 @@ verification in its message. The ratchet accepts a raise only when every commit
 on the branch that touches a budget file is such a commit, so the raise stands
 alone in history; a removed bucket or a changed measurement is never accepted.
 `make check-loc` holds each bucket's growth since the merge base with
-`origin/main` to what the last of those commits leaves standing above main's
-own ceiling at the point it was written, and never past the largest raise this
-branch's own commits wrote there. One declaration is counted once, not once per
-commit that restates it: a branch that merges main and then re-raises main's
-ceiling to where its own priced ceiling stood has restated the same raise, and
-those lines are bought once. Main's own growth is not the branch's: a branch
-that merges main carries main's numbers unchanged, and the merge declares
-nothing. A ceiling that comes down returns lines to the pool and mints none, so
-lowering a ceiling only a merge resolution wrote declares nothing, and lowering
-one the branch itself raised holds it to what is left of that raise. A raise of
-over 1,000 lines in one bucket also needs an `Owner-approved:` trailer on each
-commit that raises it; a commit returning part of an approved allocation owes
-no second trailer.
+`origin/main` to what this branch's own budget commits leave standing above
+main's ceiling, taken in the order they were made: a raise lifts the allowance
+to what it wrote over main's where it was written, a lowering brings it down to
+the smaller number it wrote and never back up, and lines a lowering gave back
+stay given back until a raise reprices them. One declaration is counted once,
+not once per commit restating it: a branch that merges main and re-raises
+main's ceiling to where its own priced ceiling stood restated one raise, bought
+once. Main's own growth is not the branch's: a branch that merges main carries
+main's numbers unchanged, and the merge declares nothing. A ceiling that comes
+down returns lines to the pool and mints none, so lowering a ceiling only a
+merge resolution wrote declares nothing. A raise of over 1,000 lines in one
+bucket also needs an `Owner-approved:` trailer on each commit that raises it; a
+commit returning part of an approved allocation owes no second trailer.
 `go run ./tools/locbudget --write` lowers ceilings; rebaselining with
 `--round 100` can raise them and requires that review. A branch that expects an
 acceptance round prices that too, because the round arrives with a test file of
