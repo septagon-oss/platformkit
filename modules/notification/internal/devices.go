@@ -149,7 +149,7 @@ func (s DeviceStore) ListDevices(ctx context.Context, tx db.Tx[db.Tenant], recip
 	}
 	q.Filter = map[string]any{"recipientId": recipient}
 	if q.Sort == "" {
-		q.Sort = "-created_at"
+		q.Sort = "-createdAt"
 	}
 	return crud.List[*contracts.Device](tx, q)
 }
