@@ -449,7 +449,7 @@ for pair in \
 	"save:uses: actions/cache/save@" \
 	"setup-node:uses: actions/setup-node@" \
 	"check-e2e-guards:run: make check-e2e-guards$" \
-	"make e2e:run: make e2e$" \
+	"make e2e:name: make e2e$" \
 	"budget:run: bash scripts/check_budget_ratchet.sh" ; do
 	name="${pair%%:*}"
 	here="$(line_of "${pair#*:}")"
@@ -581,7 +581,7 @@ check_job="$(job_text check)"
 last_compile="$(grep -nE '^[[:space:]]+run: go run golang.org/x/vuln' <<<"$check_job" | tail -1 | cut -d: -f1)"
 job_save="$(grep -nE '^[[:space:]]+uses: actions/cache/save@' <<<"$check_job" | head -1 | cut -d: -f1)"
 first_node="$(grep -nE '^[[:space:]]+- uses: actions/setup-node@' <<<"$check_job" | head -1 | cut -d: -f1)"
-gate10="$(grep -nE '^[[:space:]]+run: make e2e$' <<<"$check_job" | head -1 | cut -d: -f1)"
+gate10="$(grep -nE '^[[:space:]]+- name: make e2e$' <<<"$check_job" | head -1 | cut -d: -f1)"
 for pair in "last Go compile:$last_compile" "save:$job_save" "first node:$first_node" "gate 10:$gate10"; do
 	[ -n "${pair#*:}" ] ||
 		fail "the check job has no ${pair%%:*} step to order (case 12 cannot tell where the save stands)"
