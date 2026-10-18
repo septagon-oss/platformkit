@@ -10214,6 +10214,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/cache/in_process_stores_end_with_their_case_test.go",
+   "id": "kit/cache/in_process_stores_end_with_their_case_test.go#TestTheInProcessFactoryForgetsEveryStoreItsCasesMade",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheInProcessFactoryForgetsEveryStoreItsCasesMade",
+   "needs_db": false,
+   "pkg": "kit/cache",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/cache/one_connection_store_test.go",
    "id": "kit/cache/one_connection_store_test.go#TestAOneConnectionStoreConformsWhenEachCaseHasItsOwnKeyspace",
    "kind": "go",
@@ -67282,7 +67301,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1779,
+  "files": 1780,
   "forge_runs": [
    408,
    413,
@@ -67316,7 +67335,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2876,
+   "behaviour": 2877,
    "composition": 414,
    "contract": 21,
    "journey": 93
@@ -67335,23 +67354,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3404,
+  "rows": 3405,
   "tiers": {
    "merge": 2142,
    "nightly": 93,
-   "push": 1169
+   "push": 1170
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1552,
+   "keep": 1553,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3048,
+   "keep": 3049,
    "keep-rewrite": 140,
    "merge": 216
   }
