@@ -437,7 +437,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # promises it makes — the port it refuses, the listener it is willing to serve through, and the port
 # it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
 # here. See scripts/free_port.sh for why the answer is no longer the literal 8099 and why a 200 on
-# /health is not enough to answer it, and scripts/free_port_test.sh for the sixteen cases.
+# /health is not enough to answer it, and scripts/free_port_test.sh for the cases behind each of them.
 #
 # scripts/e2e_guards_run_before_the_gate_test.sh asks a question about check-e2e-guards rather than
 # about gate 10: whether the two port refusals below are run at all, by the goal and by CI, in the
@@ -749,6 +749,30 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ri
 	# Playwright. This case asks the script itself, in under a second, with no stack.
 	bash scripts/e2e_mail_address_test.sh
 	bash scripts/free_port_test.sh
+	# scripts/mobile_listener_attribution_test.py asks the journey's receipt step the question the
+	# planted-silence cases cannot: whether the socket table of the machine running this answers with
+	# the exact pid of the listener the step itself started. It runs the committed step body with one
+	# reader on PATH at a time, ss, then lsof where the host carries it, refuses a reader that answers
+	# with some other pid sharing the true one's prefix, and asks two steps to name their own listeners
+	# at once. No node, no container and no real wait: it starts one loopback server per case and kills
+	# its process group whether the case passed or refused.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_attribution_test.py
+	# Whether the job would run that step at all. scripts/free_port_test.sh reads the receipt step's own
+	# policy keys — no `if:`, and no `continue-on-error:` other than the literal `false` — and this case is
+	# the check on that reading: it plants each weakening in a copy of the workflow and runs the whole
+	# guard over the copy, which must lose the verdict while keeping the commands that just passed, so a
+	# refusal belongs to the declaration and not to a step whose body went missing with it. The accepted
+	# forms — no condition, and the explicit `continue-on-error: false` — are run beside them, so a guard
+	# that hardened into a refusal of any line under a step's name fails here. Four runs of the guard, so
+	# a few seconds more than its own line, and still no stack, no container and no device.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_step_policy_test.py
+	# Whether both cases above are still lines of this recipe. tests/inventory.json files every
+	# scripts/ pin at tier push from its path alone, so the table promises a run no wiring keeps: an
+	# edit that moved either line into another goal, or dropped it, leaves the push headline counting
+	# a case no pull request runs. This case asks `make -n check` for both lines and plants each
+	# deletion, so a refusal names the line that went missing; its own make run is a dry one, which
+	# compiles nothing, starts no container and needs no stack.
+	bash scripts/mobile_listener_pins_are_check_recipe_lines_test.sh
 	# Which failures of the API gate's one network step are worth another try. The target
 	# itself is the last prerequisite; this case is the bound on its retry, so it runs with
 	# the rest of the script cases and needs no stack, no proxy and no tree but this one.
