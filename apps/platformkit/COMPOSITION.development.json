@@ -358,6 +358,26 @@
       ]
     },
     {
+      "name": "scim",
+      "provides": [
+        "scimcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        }
+      ],
+      "after": [
+        "user",
+        "auth"
+      ]
+    },
+    {
       "name": "media",
       "provides": [
         "*file.LibraryChrome"
