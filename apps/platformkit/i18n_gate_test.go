@@ -234,7 +234,17 @@ func TestThePseudoLocaleGate(t *testing.T) {
 	if os.Getenv("UPDATE_I18N_FLOOR") == "1" {
 		writeFloor(t, now)
 	}
+	// The worklist behind the unanswered-key count, so the refusal names what to fix:
+	// the key, the page that first asked it, the language that did not answer. A key can
+	// be looked up in a renderer; a rendered sentence cannot be.
+	var unasked []string
+	for _, ask := range rec.Unanswered() {
+		unasked = append(unasked, fmt.Sprintf("UNASKED %s %s (%s)", ask.Page, ask.Key, ask.Language))
+	}
 	check(t, wanted, now, unreachable, declined, skips)
+	for _, line := range unasked {
+		fmt.Println(line)
+	}
 }
 
 // check prints the number on every run, passing included, then refuses what fell.
