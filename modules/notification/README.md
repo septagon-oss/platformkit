@@ -229,6 +229,13 @@ What this module does not do, stated here rather than only in the branch that le
   it. `ChannelWebhook` is carried by nobody here: a tenant's endpoint URL, its HMAC secret
   and the product's decision to accept one are outside this module, and
   `contracts.Delivery.Secret` waits for them.
+- **No device screen, and no composition that carries one.** The three routes
+  answer a client that already knows them; nothing renders them here, and
+  `apps/platformkit` wires no `push.Adapters`, so its registrations are refused
+  with "this installation carries no web push" until the product picks a platform
+  and hands over a VAPID pair. The person's own tokens are the export this table
+  owes, and erasure is not: a product that promises to forget somebody must delete
+  `notification_devices` by `(tenant_id, recipient_id)`, which no command here does.
 - **One expected revision, on one row.** `Put` refuses a copy that names a `Revision` the
   row has gone past — `crud.ErrConflict`, nothing written, published or returned; migration
   000057 keeps the counter and `Verify` advances it. A copy naming none (`Revision 0`, a
@@ -273,3 +280,16 @@ nil (`TestAnAbsentProviderClosesItsChannelAsSuppressed`).
 `TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
 never authenticated to. What a real relay answers — DKIM as the far end verifies it, and
 STARTTLS negotiation — is observed by no test here.
+
+The device table is run by `TestARegisteredDeviceReceivesThePersonsPushNotice` (a
+device registered over its own route, the notice's delivery event reaching the
+composed adapter with the recipient and the tenant on it),
+`TestAPushNoticeReachesTheCarrierAndAGoneDeviceIsRemoved` (the provider's gone answer
+closing the ledger row `failed`, deleting the row and publishing the removal with no
+actor in its payload), `TestAnotherPersonsDeviceIsNotTheirsToRemove` (a member of the
+same tenant, a command naming no person and a person of another tenant refused without
+writing, publishing or losing a row), and
+`TestATokenReregisteredByAnotherPersonBecomesTheirs` (one live token is one row, and a
+holder re-registering it writes and publishes nothing). Against them: no device screen,
+so no browser journey; and no live push service, so a real provider's gone answer
+arrives in this repository only as a stand-in's.
