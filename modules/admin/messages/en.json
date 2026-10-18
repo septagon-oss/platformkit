@@ -941,5 +941,266 @@
     "plural": {
       "": "Menu"
     }
+  },
+  "admin.login.forgot": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Forgot your password?",
+    "plural": {
+      "": "Forgot your password?"
+    }
+  },
+  "admin.login.register": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Create an account",
+    "plural": {
+      "": "Create an account"
+    }
+  },
+  "admin.forgot.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Forgot your password?",
+    "plural": {
+      "": "Forgot your password?"
+    }
+  },
+  "admin.forgot.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Enter the address this tenant knows you by. If it can receive an account email, a link that sets a new password is sent to it. The link works once and stops working in an hour.",
+    "plural": {
+      "": "Enter the address this tenant knows you by. If it can receive an account email, a link that sets a new password is sent to it. The link works once and stops working in an hour."
+    }
+  },
+  "admin.forgot.email": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Email",
+    "plural": {
+      "": "Email"
+    }
+  },
+  "admin.forgot.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Send me a link",
+    "plural": {
+      "": "Send me a link"
+    }
+  },
+  "admin.forgot.sent": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "If this address can receive an account email, a link will be sent. Check your inbox.",
+    "plural": {
+      "": "If this address can receive an account email, a link will be sent. Check your inbox."
+    }
+  },
+  "admin.forgot.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Back to sign in",
+    "plural": {
+      "": "Back to sign in"
+    }
+  },
+  "admin.register.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Create an account",
+    "plural": {
+      "": "Create an account"
+    }
+  },
+  "admin.register.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Tell us who you are. If the address is not here yet, an account is made for it.",
+    "plural": {
+      "": "Tell us who you are. If the address is not here yet, an account is made for it."
+    }
+  },
+  "admin.register.email": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Email",
+    "plural": {
+      "": "Email"
+    }
+  },
+  "admin.register.name": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Name",
+    "plural": {
+      "": "Name"
+    }
+  },
+  "admin.register.password": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Password",
+    "plural": {
+      "": "Password"
+    }
+  },
+  "admin.register.confirmation": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Confirm the password",
+    "plural": {
+      "": "Confirm the password"
+    }
+  },
+  "admin.register.terms": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "I accept the terms of this tenant.",
+    "plural": {
+      "": "I accept the terms of this tenant."
+    }
+  },
+  "admin.register.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Create the account",
+    "plural": {
+      "": "Create the account"
+    }
+  },
+  "admin.register.sent": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "If this address can receive an account email, a link will be sent. Check your inbox.",
+    "plural": {
+      "": "If this address can receive an account email, a link will be sent. Check your inbox."
+    }
+  },
+  "admin.register.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Back to sign in",
+    "plural": {
+      "": "Back to sign in"
+    }
+  },
+  "admin.reset.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Choose a password",
+    "plural": {
+      "": "Choose a password"
+    }
+  },
+  "admin.reset.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "This link sets a password once. Saving it ends every session already open for this account. A password is at least twelve characters.",
+    "plural": {
+      "": "This link sets a password once. Saving it ends every session already open for this account. A password is at least twelve characters."
+    }
+  },
+  "admin.reset.password": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "New password",
+    "plural": {
+      "": "New password"
+    }
+  },
+  "admin.reset.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Save the password",
+    "plural": {
+      "": "Save the password"
+    }
+  },
+  "admin.reset.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Back to sign in",
+    "plural": {
+      "": "Back to sign in"
+    }
+  },
+  "admin.verify.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Confirm your email address",
+    "plural": {
+      "": "Confirm your email address"
+    }
+  },
+  "admin.verify.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "This link confirms the address and turns on the account. It works once and expires in twenty-four hours.",
+    "plural": {
+      "": "This link confirms the address and turns on the account. It works once and expires in twenty-four hours."
+    }
+  },
+  "admin.verify.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Confirm the address",
+    "plural": {
+      "": "Confirm the address"
+    }
+  },
+  "admin.verify.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Back to sign in",
+    "plural": {
+      "": "Back to sign in"
+    }
+  },
+  "admin.login.or": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "or",
+    "plural": {
+      "": "or"
+    }
+  },
+  "admin.login.passkey": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Continue with a passkey",
+    "plural": {
+      "": "Continue with a passkey"
+    }
   }
 }
