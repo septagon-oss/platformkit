@@ -79,6 +79,12 @@ type Pictures struct {
 // `writable` promises a door no route answers.
 type Entry struct {
 	entity.Schema
+	// Name is the resource's own two words — the singular and the plural its author
+	// declared — carried so a shell that is not a browser can label a shelf of rows
+	// in the reader's language instead of spelling the entity's code name. Printed
+	// only when both words are declared, so an entry a shell read before this key
+	// existed is read exactly as it was.
+	Name *entity.Name `json:"name,omitempty"`
 	// Presentation is this resource as its author said it reads — the words, the
 	// icon, the group, which field names a row and which block each field belongs
 	// to. It is declared here, immediately after the embedded schema and before
@@ -275,6 +281,12 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present), Screen: r.Screen,
 		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
 		Operations: r.OperationWords()}
+	// Both words or neither: a shelf labelled with a singular at three rows is the
+	// wrong word, and no word is better than a wrong one — see the field's rule.
+	if r.Name.One != "" && r.Name.Other != "" {
+		name := r.Name
+		e.Name = &name
+	}
 	if writable {
 		e.WritePath = r.WritePath
 	}

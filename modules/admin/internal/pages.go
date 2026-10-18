@@ -555,14 +555,16 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, selected *page.L
 		// own two words, chosen by the language's cardinal rule rather than by a
 		// letter appended here.
 		name := r.Name.One
-		if total != 1 {
+		if total != 1 && r.Name.Other != "" {
 			name = r.Name.Other
 		}
+		// A resource with no plural word of its own is answered with its singular, not
+		// with a letter appended here: the cardinal rule belongs to the reader's
+		// language and to the catalogue that speaks it, and this page composes no rule
+		// about the letter s — which is also why the catalogue answer below wins
+		// whenever a catalogue is composed at all.
 		if name == "" {
 			name = rest.Humanize(r.Entity)
-			if total != 1 {
-				name += "s"
-			}
 		}
 		if selected != nil {
 			name = selected.Plural("resource."+r.Module+"."+r.Entity, total, r.Name.One, r.Name.Other)

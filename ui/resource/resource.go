@@ -148,15 +148,43 @@ func (o Options) Text(key, fallback string, args ...any) string {
 	return o.Locale.Text(key, fallback, args...)
 }
 
+// plural is one label through the seam with a count in front of it: the catalog's
+// choice of the language's plural form, or — with no catalog composed — the
+// plural rules of the source language applied to the two words the caller declared.
+func (o Options) plural(key string, count int64, one, other string, args ...any) string {
+	if o.Locale != nil {
+		return o.Locale.Plural(key, count, one, other, args...)
+	}
+	return (locale.Locale{}).Plural(key, count, one, other, args...)
+}
+
+// noun is this resource's word for a count, in the request's language.
+func (o Options) noun(r Resource, count int64) string {
+	return o.Noun(r.Schema.Module, r.Schema.Entity, r.Name, count)
+}
+
+// Noun selects the declared resource name through the request's catalogue.
+//
+// A resource that declares only one of its two words is answered with that word at
+// every count: appending a letter here would be this file deciding the plural of a
+// language it does not speak, and the words a reader sees are the resource author's
+// and the catalogue's, not a rule about the letter s.
+func (o Options) Noun(module, entityName string, name entity.Name, count int64) string {
+	if name.One == "" {
+		name.One = display.Humanize(entityName)
+	}
+	if name.Other == "" {
+		name.Other = name.One
+	}
+	return o.plural("resource."+module+"."+entityName, count, name.One, name.Other)
+}
+
 // count is the list's subtitle. The English fallback is already pluralized
 // so a shell without a catalog reads exactly as before; a catalog receives
 // the number and the noun and applies its own plural rules.
-func (o Options) count(total int64, noun string) string {
-	noun = strings.ToLower(noun)
-	if total != 1 {
-		noun += "s"
-	}
-	return o.Text("screens.count", "%d %s", total, noun)
+func (o Options) count(total int64, r Resource) string {
+	noun := strings.ToLower(o.noun(r, total))
+	return o.plural("screens.count", total, "%d %s", "%d %s", noun)
 }
 
 // List is the list screen: a toolbar with the count, the rows, the pager. The
@@ -170,8 +198,12 @@ func (o Options) count(total int64, noun string) string {
 // have to be the adapter is a second answer to one question, and only one of the
 // two is checked by anyone.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
-	at, one := r.Screen, r.noun(1)
-	title := listName(one)
+	at, one := r.Screen, o.noun(r, 1)
+	// The heading is the resource's own plural word, read through the catalogue like
+	// every other word on this screen. It is also the accessible name of the
+	// screen's scrolling table region, in the same words: the region is the list, so
+	// giving the two different names would be two names for one thing.
+	title := o.noun(r, 2)
 	var actions []g.Node
 	// The New button is drawn for a caller who may write *and* a resource that
 	// offers a create: the two questions are different, and the second is
@@ -188,7 +220,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		PageLabel:        o.Text("screens.page", "Go to page %s", "%d"),
 		CurrentPageLabel: o.Text("screens.current_page", "Page %s, current page", "%d"),
 	}
-	body := []g.Node{table(o, r, at, title, rows, sort, o.count(total, one), &pager, components.DataListSlots{
+	body := []g.Node{table(o, r, at, title, rows, sort, o.count(total, r), &pager, components.DataListSlots{
 		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title}, actions...)},
 		// Collection commands retain their native forms and precede the pager.
 		// Generated CRUD does not gain selected-row writes from a UI control.
@@ -231,11 +263,11 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
 		if !r.Singleton && r.offers("delete") {
-			actions = append(actions, deleteForm(o, item, r.noun(1)))
+			actions = append(actions, deleteForm(o, item, o.noun(r, 1)))
 		}
 	}
 	body := []g.Node{
-		breadcrumb(o, r.noun(2), at, named),
+		breadcrumb(o, o.noun(r, 2), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		localeStrip(locales),
 		details(r, o.Words(r.Schema), row, rendered),
@@ -259,7 +291,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 		status = statusUnprocessableEntity
 	}
 	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
-		breadcrumb(o, r.noun(2), at, title),
+		breadcrumb(o, o.noun(r, 2), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
@@ -474,11 +506,6 @@ func formField(words Words, f entity.Field) forms.Field {
 	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
 }
 
-// listName is the heading a list screen wears. It is also the accessible name of
-// that screen's scrolling table region, in the same words: the region is the
-// list, so giving the two different names would be two names for one thing.
-func listName(one string) string { return one + "s" }
-
 // table is the list screen's rows: the field a row is known by first, as the
 // link into it, then every other field the schema does not hide.
 //
@@ -537,7 +564,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	state := components.ContentState{}
 	groups := []components.DataGroup{{Key: "rows", Rows: out}}
 	if len(rows) == 0 {
-		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity)}
+		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: o.Text("screens.empty", "No %s yet.", strings.ToLower(o.noun(r, 2)))}
 		groups = nil
 	}
 	p := components.DataListProps{
@@ -718,27 +745,6 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 }
 
 func pages(total int64) int { return int((total + PerPage - 1) / PerPage) }
-
-// offers reports whether this resource mounted the route for a verb. An empty
-// Operations means all five; the same question, stated once on httpx.Resource,
-// decides the route table, and this is its answer at the door.
-// noun is this resource's word for a number of them: the name its author gave, or
-// the entity's humanized name when nobody gave one. A count of one takes the
-// singular and any other count the plural, because these are two strings a
-// translator may choose and not one word with a letter added in this package.
-func (r Resource) noun(count int64) string {
-	if count == 1 && r.Name.One != "" {
-		return r.Name.One
-	}
-	if r.Name.Other != "" {
-		return r.Name.Other
-	}
-	if count == 1 {
-		return display.Humanize(r.Schema.Entity)
-	}
-	return display.Humanize(r.Schema.Entity) + "s"
-}
-
 func (r Resource) offers(verb string) bool {
 	if len(r.Operations) == 0 {
 		return true
