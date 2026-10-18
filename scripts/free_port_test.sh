@@ -230,16 +230,59 @@ done
 # empty list — so the question is never whether the probe succeeded, only whether it named the pid.
 # Both silences have to refuse: a journey whose runner cannot attribute a socket is refused by
 # scripts/mobile_e2e.sh for somebody else's listener, which is the wrong thing to accuse it of.
-probe_step="$(awk '
-	/^      - name: The socket probe/ { keep = 1; next }
-	keep && /^      - / { exit }
-	keep && /^        run: \|$/ { inrun = 1; next }
-	keep && inrun { sub(/^          /, ""); print }
-' "$root/.gitea/workflows/mobile.yml")"
+
+# Two questions are asked of that step, and the first is not about its commands. The extraction below
+# finds the body wherever the job writes it, so a step put behind an `if:` or given
+# `continue-on-error: true` — lines that keep a job from ever running it, or from minding that it
+# refused — would leave every verdict here green over a journey that stopped asking the question. So
+# the step's own mapping keys are read first: the receipt runs unconditionally, and its refusal ends
+# the job.
+probe_body() { # probe_body <workflow> — the receipt step's command lines, dedented, as the job runs them
+	awk '
+		/^      - name: The socket probe/ { keep = 1; next }
+		keep && /^      - / { exit }
+		keep && /^        run: \|$/ { inrun = 1; next }
+		keep && inrun { sub(/^          /, ""); print }
+	' "$1"
+}
+# probe_weakening <workflow> — the step's own keys that can skip it or forgive it, one per line, and
+# nothing when it runs on every journey and a refusal there stops the job. A step-level key sits at
+# eight spaces, one fewer than the `run: |` block beneath it, so no line of the step's own script can
+# answer here. Any `if:` is a condition under which the receipt does not run, so it is refused;
+# `continue-on-error: false` is the same promise said in the workflow's own words, so it is allowed
+# — a guard that refuses harmless lines is edited out rather than obeyed.
+probe_weakening() {
+	awk '
+		/^      - name: The socket probe/ { keep = 1; next }
+		keep && /^      - / { exit }
+		keep && /^        if:/ { sub(/^        /, ""); print }
+		keep && /^        continue-on-error:/ {
+			value = $0
+			sub(/^        continue-on-error:[[:space:]]*/, "", value)
+			if (value != "false") { sub(/^        /, ""); print }
+		}
+	' "$1"
+}
+weakened_copy() { # weakened_copy <file> <field> — this workflow, with one step-level field under the name
+	local field="$2"
+	awk -v extra='        '"$field" '
+		{ print }
+		/^      - name: The socket probe/ { print extra }
+	' "$root/.gitea/workflows/mobile.yml" >"$1"
+}
+probe_step="$(probe_body "$root/.gitea/workflows/mobile.yml")"
 if [ -z "$probe_step" ]; then
 	echo "FAIL: mobile.yml carries no step that asks the socket table about a listener of its own, so the journey's job trusts an answer nobody proved it could give"
 	failures=$((failures + 1))
 else
+	declared="$(probe_weakening "$root/.gitea/workflows/mobile.yml")"
+	if [ -n "$declared" ]; then
+		echo "FAIL: mobile.yml's journey does not run its own receipt step, or does not stop when it refuses; the step carries:"
+		printf '    %s\n' "$declared"
+		failures=$((failures + 1))
+	else
+		echo "ok   mobile.yml runs its receipt step on every journey and ends the job when it refuses"
+	fi
 	got=0
 	(cd "$root" && bash -e -c "$probe_step" >/dev/null 2>&1) || got=$?
 	check "the journey's job attributes a listener it started itself" 0 "$got"
@@ -270,11 +313,39 @@ else
 	else
 		echo "ok   the journey's job refuses a runner with no socket probe at all (exit $got)"
 	fi
-	rm -rf "$silent" "$bare"
+	# Both ways to unrun the receipt are planted in a copy of the workflow, one field under the step's
+	# name, and asked of the guard above. Each copy has to keep the commands that just passed and lose
+	# only the declaration, so a refusal is the declaration's and not a step whose body went missing.
+	weakened="$(mktemp -d)"
+	for field in 'if: ${{ false }}' 'continue-on-error: true'; do
+		weakened_copy "$weakened/mobile.yml" "$field"
+		weakening="$(probe_weakening "$weakened/mobile.yml")"
+		if [ -z "$weakening" ]; then
+			echo "FAIL: a receipt step carrying '$field' still answered that the journey runs it and stops when it refuses"
+			failures=$((failures + 1))
+		elif [ "$(probe_body "$weakened/mobile.yml")" != "$probe_step" ]; then
+			echo "FAIL: the copy carrying '$field' lost the step's commands with its declaration, so it tests the extraction and not the policy"
+			failures=$((failures + 1))
+		else
+			echo "ok   a receipt step given '$field' is refused ($weakening)"
+		fi
+	done
+	# And the same promise said out loud has to answer what the file already answered, because without
+	# this third copy the two refusals above could be a guard that refuses every line under a step. The
+	# comparison is with that answer rather than with silence, so a workflow refused above stays refused
+	# here for the reason above and not for a second one invented by the copy.
+	weakened_copy "$weakened/mobile.yml" 'continue-on-error: false'
+	if [ "$(probe_weakening "$weakened/mobile.yml")" != "$declared" ]; then
+		echo "FAIL: a receipt step whose own line says its failure stops the job answers differently from the same step without that line, so the guard above reads no field at all"
+		failures=$((failures + 1))
+	else
+		echo "ok   a receipt step that says its failure stops the job is read as the promise itself"
+	fi
+	rm -rf "$silent" "$bare" "$weakened"
 fi
 
 if [ "$failures" -ne 0 ]; then
 	echo "free port: $failures case(s) failed" >&2
 	exit 1
 fi
-echo "free port: an allocation is bindable, a held port is refused before anything is touched, the listener is named by pid before the answer is trusted, the browser is told which port it got, and the CI jobs install the tool that answers"
+echo "free port: an allocation is bindable, a held port is refused before anything is touched, the listener is named by pid before the answer is trusted, the browser is told which port it got, the CI jobs install the tool that answers, and the journey runs its own receipt on every run"
