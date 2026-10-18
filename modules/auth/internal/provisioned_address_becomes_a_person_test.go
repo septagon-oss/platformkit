@@ -50,6 +50,7 @@ func mountProvision(t *testing.T, providers contracts.OIDCProviders, secrets con
 	users, userModule := user.New(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
 		Granting:       allowGranting,
+		LocalePolicy:   &usercontracts.LocalePolicyFunc{Ask: speaksEnglish},
 	})
 	svc, authModule := auth.New(auth.Deps{
 		Users: users, Notify: &authtest.Notices{}, Mailer: &authtest.Mailbox{},
