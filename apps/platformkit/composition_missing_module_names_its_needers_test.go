@@ -14,7 +14,7 @@ import (
 // names the module to add and the modules that needed what it provided — not
 // only a contract nobody can map back to a line of app.go.
 func TestRemovingTheUserModuleNamesItAndWhoNeedsIt(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	_, err := sentencesOf(cfg, "user").Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
 	if err == nil {
 		t.Fatal("a composition without user.Module planned")
@@ -36,7 +36,7 @@ func TestRemovingTheUserModuleNamesItAndWhoNeedsIt(t *testing.T) {
 // fills while it builds. In the resolved reference composition it is filled:
 // a caller with no principal is answered no, not the unfilled holder's error.
 func TestTheReferenceCompositionFillsTheGrantCheckUserReads(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	p, err := sentencesOf(cfg).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
 	if err != nil {
 		t.Fatal(err)
