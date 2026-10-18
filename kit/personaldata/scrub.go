@@ -56,7 +56,9 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // the narrower of Subject's two placeholders will not fit, the value is cut to the width
 // from its tail: the erasure keeps the row and loses characters that could not have lived
 // there anyway, which is the smaller of the two losses open to an operation whose whole
-// purpose is to forget. See bounds.
+// purpose is to forget. The cut ends at the last character no identifier ends with, so that
+// shortening a value cannot spell the person back out of a longer word that stood at its end.
+// See bounds and shortest.
 func Scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, where string, args ...any) (int64, error) {
 	return scrub(ctx, tx, s, guard{}, table, columns, false, where, args)
@@ -409,7 +411,9 @@ func query(s Subject, g guard, table string, columns []string, isJSON bool, room
 		// A jsonb column carries no bound, so the two cases never meet; the guard says so
 		// rather than relying on the catalog never answering for a document column.
 		if room := rooms[c]; room.room() && !isJSON {
-			set = fits(c, room, wide, rewrite(s.shortToken()))
+			// mark is the narrow placeholder on its own, for a value so near its ceiling that the
+			// shortened rewrite leaves nothing this package can certify anonymous. See fits.
+			set = fits(c, room, wide, rewrite(s.shortToken()), piece{sql: "?", args: []any{s.shortToken()}})
 		}
 		q.sets = append(q.sets, set.sql)
 		q.args = append(q.args, set.args...)
@@ -461,17 +465,20 @@ func query(s Subject, g guard, table string, columns []string, isJSON bool, room
 }
 
 // fits rewrites one bounded column inside the room the server says it holds: the wide
-// placeholder where it fits, and the narrow one cut down to the room where even that will
+// placeholder where it fits, and the narrow one shortened to the room where even that will
 // not go. See bounds for where the room comes from, and Scrub for why the erasure cuts
 // rather than failing.
 //
-// The two rewrites are written once each, into the FROM of a sub-select, and the CASE
-// below reads their names. Writing them out again at the place they are measured would ask
-// the server for the same chain of regexp_replace twice over a column a quarter of a
-// megabyte wide. The room is then applied to what came back: the narrow rewrite is cut to
-// the character bound first, so that where the column also bounds bytes the measurement
-// that decides the second cut is taken on the text that would actually be written.
-func fits(column string, room extent, wide, narrow piece) piece {
+// The rewrites are written once each, into the FROM of a sub-select, and the CASE below reads
+// their names. Writing them out again at the place they are measured would ask the server for
+// the same chain of regexp_replace twice over a column a quarter of a megabyte wide. The room
+// is then applied to what came back: the narrow rewrite is cut to the character bound first,
+// so that where the column also bounds bytes the measurement that decides the second cut is
+// taken on the text that would actually be written.
+//
+// mark is the narrow placeholder on its own, which is what a column takes when shortening the
+// rewrite leaves nothing behind that this file can vouch for. See shortest.
+func fits(column string, room extent, wide, narrow, mark piece) piece {
 	var when []piece
 	if room.chars > 0 {
 		when = append(when, piece{sql: "length(room.wide) <= ?", args: []any{room.chars}})
@@ -486,33 +493,87 @@ func fits(column string, room extent, wide, narrow piece) piece {
 		}
 		guards = append(guards, clause)
 	}
-	cut := narrow
+	cut, token := narrow, mark
 	if room.chars > 0 {
 		cut = bound(piece{sql: "left("}, narrow, piece{sql: ", ?)", args: []any{room.chars}})
+		token = bound(piece{sql: "left("}, mark, piece{sql: ", ?)", args: []any{room.chars}})
 	}
 	sets := append(guards, piece{sql: " THEN room.wide ELSE "}, shortest(room),
 		piece{sql: " END FROM (SELECT "}, wide,
 		piece{sql: " AS wide, "}, cut,
-		piece{sql: " AS cut) AS room)"},
+		piece{sql: " AS cut, "}, token,
+		piece{sql: " AS mark) AS room)"},
 	)
 	return bound(sets...)
 }
 
 // shortest is the value to write when the wide placeholder will not fit: the cut the room
-// already took, taken down to the byte bound too where the column carries one. That second
-// cut is measured in characters rather than bytes because these are text columns and a
-// character is what a reader loses: dropping a character drops at least one byte, so
-// dropping as many characters as there are bytes over the bound is the smallest cut that is
-// always enough, and the only one that never touches a character the row was allowed to
-// keep. Where the column bounds characters alone, the cut of the value already answered it.
+// already took, taken down to the byte bound too where the column carries one, and then taken
+// back to the last character that could not have stood inside one of the person's identifiers.
+// That last step is what keeps a shortened value anonymous; see outsideWord.
+//
+// Where even that leaves nothing — a value that is one unbroken word the whole way to its
+// ceiling — the column takes the placeholder rather than an empty string, so the row still says
+// an erased person sat in it and a product that holds its column to a minimum length finds its
+// erasure refused by nothing.
 func shortest(room extent) piece {
+	return bound(
+		piece{sql: "coalesce(nullif("}, outsideWord(byteRoom("room.cut", room)),
+		piece{sql: ", ''), "}, byteRoom("room.mark", room), piece{sql: ")"},
+	)
+}
+
+// outsideWord is the value with its trailing run of identifier characters taken back.
+//
+// A cut is not a rewrite, and the difference is the one that matters: a rewrite leaves no
+// identifier standing, and a cut can put one back. "Jo Jones: … / Jo Joneson" names two people,
+// and erasing the first leaves the second alone, correctly, because Jo Joneson is not the
+// person being forgotten. Cut to the title's ceiling the value ends "… / Jo Jones", and the end
+// of a value is a word boundary, so the characters the cut removed were the ones that had been
+// telling the server this was a longer name. The cut had rebuilt the name it existed to remove,
+// and the erasure reported itself finished over the top of it.
+//
+// So the cut gives back the tail it cannot reason about and keeps everything up to the last
+// character no identifier ends with. Nothing the row was certain of is lost: every character
+// given back stood against the cut, so it is the shortest tail that could have been standing
+// inside one of the person's own strings.
+func outsideWord(value piece) piece {
+	return bound(piece{sql: "regexp_replace("}, value,
+		piece{sql: ", ?, '', 'g')", args: []any{identifierRun}})
+}
+
+// identifierRun is the tail outsideWord takes back: the characters an identifier is built from,
+// which are the characters a value can end with while still naming the person.
+//
+// `[[:alnum:]_]` is the whole of it for a name and for the mention of a handle, and it is the
+// server's own word rather than a translation of one — the same class `\m` and `\M` decide a
+// boundary against, on the same database this statement runs. A name cut off at a letter, a
+// digit or an underscore is a word again at the end of a value, and that is what the boundary
+// rule would then find.
+//
+// The dot is no word character and is in the class for one pattern alone: a handle is matched
+// as `@handle`, with the match refused when a dot and a letter follow, because "@will.co" is
+// somebody else's mailhost. A cut one character past that dot ends the mention and removes the
+// reason the refusal applied, so the run reaches over the dot. A name whose own last character
+// is punctuation needs none of this: it is matched as a substring on that side, which the
+// characters before the cut already satisfied and the rewrite already took.
+const identifierRun = `[[:alnum:]_.]+$`
+
+// byteRoom takes the characters a byte bound finds over the bound, counting them off the tail of
+// the named column of fits's sub-select. It measures characters rather than bytes because these
+// are text columns and a character is what a reader loses: dropping a character drops at least
+// one byte, so dropping as many characters as there are bytes over the bound is the smallest cut
+// that is always enough, and the only one that never touches a character the row was allowed to
+// keep. Where the column bounds characters alone, the named value is already inside the room.
+func byteRoom(name string, room extent) piece {
+	value := piece{sql: name}
 	if room.octets == 0 {
-		return piece{sql: "room.cut"}
+		return value
 	}
-	return piece{
-		sql:  "left(room.cut, greatest(length(room.cut) - greatest(octet_length(room.cut) - ?, 0), 0))",
-		args: []any{room.octets},
-	}
+	return bound(piece{sql: "left("}, value,
+		piece{sql: ", greatest(length("}, value,
+		piece{sql: ") - greatest(octet_length("}, value,
+		piece{sql: ") - ?, 0), 0))", args: []any{room.octets}})
 }
 
 // boundedPattern quotes an identifier for Postgres' ARE pattern syntax and puts a word
