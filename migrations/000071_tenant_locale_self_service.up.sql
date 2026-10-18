@@ -76,13 +76,22 @@ CREATE POLICY tenant_locales_delete ON tenant_locales FOR DELETE
 -- tenants_language_only: the column rule the policy above cannot state.
 --
 -- A tenant transaction may change its own languages and nothing else on its own
--- row: `slug`, `name`, `status` and `operator` are the control plane's facts about
--- the customer, `created_at` is a fact about the past, and `deleted_at` is the fact
--- of whether the customer exists at all — which the split policy above refuses a
--- tenant a DELETE of, and a soft delete through an UPDATE would have been the same
--- refusal walked around by the one command the tenant is granted. `default_locale`,
--- `locale_revision` and `updated_at` are what the self-service command writes, and
--- a system transaction changes whatever it likes — the operator's `SetLocale`,
+-- row. The rule is written as what it *permits* — `default_locale`,
+-- `locale_revision` and `updated_at`, the three columns the self-service command
+-- writes — and every other column of this table is outside it, whatever it is
+-- called. A list of refused columns would read better here and would not hold:
+-- this table grows facts about the customer on both sides of the installation
+-- (`slug`, `name`, `status`, `operator`, and later an app, an OIDC issuer and a
+-- SAML provider), and a trigger that names only the facts it was written beside
+-- would leave each new one open to the tenant's own UPDATE. Naming the permitted
+-- three means a column nobody has thought about yet is refused the day it is
+-- added, and the guard test enumerates the catalog rather than repeating this one
+-- list.
+--
+-- `deleted_at` is refused here as well as by the split policy above: the policy
+-- refuses a tenant the DELETE of its own row, and a soft delete through an UPDATE
+-- is the same refusal walked around by the one command the tenant is granted. A
+-- system transaction changes whatever it likes — the operator's `SetLocale`,
 -- `AddHost`, `Suspend` and `Create` keep every authority they had, because
 -- `platformkit_is_system()` is what the kernel sets on a transaction of ours and
 -- nothing else.
@@ -90,9 +99,8 @@ CREATE POLICY tenant_locales_delete ON tenant_locales FOR DELETE
 -- The refusal is an exception and not a quiet no-op: the write is lost, the
 -- transaction aborts, and the caller is told which rule it broke. The application
 -- role is subject to this even as the table's own grantee, because the trigger
--- asks who the transaction *is* rather than what the role *owns*, and the review
--- that asked for it insisted it be proved at the application role rather than
--- inferred from the SQL. It does, column by column, in
+-- asks who the transaction *is* rather than what the role *owns*, and it is proved
+-- at the application role, column by column, in
 -- modules/tenant/internal/own_row_column_rule_test.go.
 CREATE OR REPLACE FUNCTION tenants_language_only() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -100,16 +108,17 @@ BEGIN
 	IF platformkit_is_system() THEN
 		RETURN NEW;
 	END IF;
-	IF NEW.slug IS DISTINCT FROM OLD.slug
-		OR NEW.name IS DISTINCT FROM OLD.name
-		OR NEW.status IS DISTINCT FROM OLD.status
-		OR NEW.operator IS DISTINCT FROM OLD.operator
-		OR NEW.created_at IS DISTINCT FROM OLD.created_at
-		OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
-		RAISE EXCEPTION 'a tenant transaction may change only its own languages'
-			USING ERRCODE = '42501';
+	-- The whole row compared as jsonb with the permitted columns taken out of both
+	-- sides: whatever is left of a row that differs is a column this transaction
+	-- had no right to move. `updated_at` is removed rather than ignored, because a
+	-- write that leaves it where it was is as legal as one that moves it.
+	IF to_jsonb(NEW) - 'default_locale' - 'locale_revision' - 'updated_at'
+		IS NOT DISTINCT FROM
+		to_jsonb(OLD) - 'default_locale' - 'locale_revision' - 'updated_at' THEN
+		RETURN NEW;
 	END IF;
-	RETURN NEW;
+	RAISE EXCEPTION 'a tenant transaction may change only its own languages'
+		USING ERRCODE = '42501';
 END;
 $$;
 

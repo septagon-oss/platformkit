@@ -135,7 +135,7 @@ No expected revision, and no revision column. The command has one writer — the
 person signed in, on their own row, about one field — so what a revision would
 arbitrate is one person's two tabs choosing twice, and the losing tab is told which
 language they now hold the moment the page answers. The migration says the same
-thing at the table (`modules/user/migrations/000030_preferred_locale.up.sql`): a
+thing at the table (`modules/user/migrations/000072_preferred_locale.up.sql`): a
 column no command consults is a fact nobody reads. If this preference grows a second
 writer, it grows the column and the expected argument in that commit.
 

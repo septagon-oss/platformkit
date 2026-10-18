@@ -1355,14 +1355,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// modules/notification/000027 added the delivery ledger, 27 became 28 when the
 	// kernel added 000028_outbox_trace, which gives the outbox the trace columns the
 	// CloudEvents envelope carries, and 28 became 29 when the kernel added
-	// 000029_tenant_locale, which gives a tenant the languages it is served in,
-	// and 29 became 30 when modules/user/000030_preferred_locale added the
-	// language a person chose for themselves. That file is 30 and not the 29 it
-	// was written as, for the same reason 27 moved to 28 above it: this fixture
-	// flattens every owner's files under one owner, so two files at one version
-	// are one INSERT past the ledger's PRIMARY KEY (owner, version) — and kit/db
-	// refuses a repeated version in a source before that (migration_files.go,
-	// "invalid or repeated version").
+	// 000029_tenant_locale, which gives a tenant the languages it is served in.
+	// The three files that own the languages a tenant and a person set for
+	// themselves are numbered 71, 72 and 73 rather than continuing their own owner's
+	// list, and the numbering is this assertion's business: this fixture flattens
+	// every owner's files under one owner, so two files at one version are one INSERT
+	// past the ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated
+	// version in a source before that (migration_files.go, "invalid or repeated
+	// version"). An adopted version is matched the same way, so a module file numbered
+	// like a kernel file would be taken for that kernel file's history
+	// (modules/user/migrations.go). A new file of this composition therefore takes a
+	// number above every file in it, whoever owns that file.
 	// A new kernel file continues past the highest number anywhere in the
 	// composition.
 	// The number is the point of the assertion: an upgrade fixture that silently
@@ -1372,18 +1375,16 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
 	// this head prints 32 — thirteen files under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29, 31) and nineteen under modules/*/migrations/ (4, 7, 8, 10,
-	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 30, 32), all distinct.
+	// 20, 21, 26, 28, 29, 71) and nineteen under modules/*/migrations/ (4, 7, 8, 10,
+	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 72, 73), all distinct.
 	//
-	// The thirty-first is 000031_tenant_locale_self_service.up.sql, the kernel half
-	// of a tenant setting its own languages. It moves this number for the reason the
-	// paragraph above gives, and not because the fixture stopped counting anything:
-	// the count this line wants is the count the command in the comment prints, and
-	// both were run at this head.
-	//
-	// The thirty-second is modules/user/000032_user_language_revision.up.sql, the
-	// revision a person's language choice is read at. It is 32 and not 31 because
-	// the kernel file above already holds that version.
+	// 71 is 000071_tenant_locale_self_service.up.sql, the kernel half of a tenant
+	// setting its own languages. 72 is modules/user/000072_preferred_locale.up.sql,
+	// the language a person chose for themselves, and 73 is
+	// modules/user/000073_user_language_revision.up.sql, the revision that choice is
+	// read at. The count is 32 with numbers unused below it, which is what one
+	// composition-wide sequence costs; the ledger records what ran, not that the
+	// sequence is unbroken.
 	if len(before) != 32 {
 		t.Fatalf("the old layout applied %d files, want 32", len(before))
 	}
