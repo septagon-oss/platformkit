@@ -14981,6 +14981,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/events/providers/nats/observation_at_most_once_test.go",
+   "id": "kit/events/providers/nats/observation_at_most_once_test.go#TestASlowObservationNeverReceivesOnePublishTwice",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASlowObservationNeverReceivesOnePublishTwice",
+   "needs_db": true,
+   "pkg": "kit/events/providers/nats",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/events/providers/nats/options_test.go",
    "id": "kit/events/providers/nats/options_test.go#TestOwnedNATSProviderUsesPrivateTLSAndCredentials",
    "kind": "go",
@@ -26870,6 +26889,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/stream/http2_idle_connection_test.go",
+   "id": "kit/stream/http2_idle_connection_test.go#TestAnIdleHTTP2StreamOutlivesItsWriteDeadline",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnIdleHTTP2StreamOutlivesItsWriteDeadline",
+   "needs_db": true,
+   "pkg": "kit/stream",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
    "verdict": "keep"
   },
   {
@@ -59835,7 +59873,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1539,
+  "files": 1541,
   "forge_runs": [
    408,
    413,
@@ -59869,7 +59907,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2564,
+   "behaviour": 2566,
    "composition": 351,
    "contract": 19,
    "journey": 88
@@ -59888,9 +59926,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3022,
+  "rows": 3024,
   "tiers": {
-   "merge": 1911,
+   "merge": 1913,
    "nightly": 88,
    "push": 1023
   },
@@ -59898,13 +59936,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1354,
+   "keep": 1356,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2732,
+   "keep": 2734,
    "keep-rewrite": 117,
    "merge": 173
   }
