@@ -28,6 +28,15 @@ var Module = pkit.NewModule("admin", wire,
 	pkit.Optional[admincontracts.Pictures](),
 	pkit.Optional[admincontracts.Locale](),
 	pkit.Optional[admincontracts.Storybook](),
+	// The header's language control, and the two facts it draws: the person's own
+	// choice through the account door, and the set this installation's copy is
+	// written in. All three are optional in the shell's own words — a composition
+	// that wires no account door draws no control rather than a broken one — and
+	// each is answered by whoever owns the fact: the module that owns people for
+	// the choice, the control plane for the set a tenant may be served in.
+	pkit.Optional[admincontracts.AccountLanguage](),
+	pkit.Optional[admincontracts.AccountLanguageVersion](),
+	pkit.Optional[tenantcontracts.Languages](),
 	pkit.After(pkit.Everything),
 )
 
@@ -48,6 +57,15 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Messages:  skin.Copy,
 		Locale:    pkit.Get[admincontracts.Locale](w),
 		Storybook: pkit.Get[admincontracts.Storybook](w),
+		Language:  pkit.Get[admincontracts.AccountLanguage](w),
+		// The counted door, from the same answer: a composition whose account door
+		// counts its choices wires both, and one that wires only the intent door
+		// draws no revision.
+		LanguageVersion: pkit.Get[admincontracts.AccountLanguageVersion](w),
+		// The languages this installation's copy is written in, which are the most a
+		// tenant's own page may offer — the same value the control plane caps a
+		// declaration with, read from the one port that carries it.
+		Installed: pkit.Get[tenantcontracts.Languages](w).Tags,
 		SignIn:    signin.Address,
 		// A generated picture cell fetches through the file module's door, which this
 		// shell does not mount and so cannot name: the composition that published that

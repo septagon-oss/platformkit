@@ -39,6 +39,11 @@ import (
 var Module = pkit.NewModule("tenant", wire,
 	pkit.Needs[tenantcontracts.Inviter](),
 	pkit.Needs[[]tenantcontracts.Hook](),
+	// May this caller set this tenant's own languages: the question the self-service
+	// command asks inside its own transaction, answered over the authorizer this
+	// composition enforces every route with. Required, in the words of the panic it
+	// answers: a command with no way to ask would answer "nobody".
+	pkit.Needs[tenantcontracts.LocaleManager](),
 	pkit.Optional[tenantcontracts.Languages](),
 	pkit.Provides[tenantcontracts.Service](),
 	// Which host is which tenant is this module's rows and nobody else's: the
@@ -69,10 +74,11 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		return module.Module{}, err
 	}
 	svc, manifest := New(Deps{
-		OnCreate:  pkit.All[tenantcontracts.Hook](w),
-		Invite:    pkit.Get[tenantcontracts.Inviter](w),
-		Languages: pkit.Get[tenantcontracts.Languages](w).Tags,
-		App:       slug,
+		OnCreate:      pkit.All[tenantcontracts.Hook](w),
+		Invite:        pkit.Get[tenantcontracts.Inviter](w),
+		LocaleManager: pkit.Get[tenantcontracts.LocaleManager](w),
+		Languages:     pkit.Get[tenantcontracts.Languages](w).Tags,
+		App:           slug,
 	})
 	pkit.Put(w, svc)
 	pkit.Put[httpx.TenantLoader](w, svc)

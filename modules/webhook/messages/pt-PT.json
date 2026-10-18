@@ -16,5 +16,19 @@
     "plural": {
       "": "registar, alterar, ativar e desativar endpoints de webhook"
     }
+  },
+  "resource.webhook.endpoint": {
+    "translation": "Endpoint",
+    "plural": {
+      "one": "Endpoint",
+      "other": "Endpoints"
+    }
+  },
+  "resource.webhook.delivery": {
+    "translation": "Entrega",
+    "plural": {
+      "one": "Entrega",
+      "other": "Entregas"
+    }
   }
 }

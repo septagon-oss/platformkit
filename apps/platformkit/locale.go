@@ -123,14 +123,33 @@ func (a accountLanguage) ChooseAt(ctx context.Context, tx db.Tx[db.Tenant], tag 
 	return err
 }
 
+// tenantLocales is user.Deps.LocalePolicy: which languages the tenant of the
+// running transaction is served in, read where that fact lives.
+//
+// The tenant module's own Service answers the interface as it stands — the port
+// and the method are the same question — so this type only carries the value and
+// refuses to answer before the control plane is composed, rather than inventing a
+// set. It is late-bound because the control plane is built after the module that
+// asks: a new tenant's first administrator is a person, and people are the user
+// module's rows.
+type tenantLocales struct{ tenants tenantcontracts.Service }
+
+func (l *tenantLocales) CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error) {
+	if l.tenants == nil {
+		return tenancy.Languages{}, errors.New("platformkit: the tenant module is not composed yet, so no language set can be read")
+	}
+	return l.tenants.CurrentLanguages(ctx, tx)
+}
+
 // tenantLocaleManager is the tenant module's own question — may this caller set
 // this tenant's languages? — answered over the same authorizer the kernel
 // enforces with. The route guard asks first; this is the ask that happens inside
 // the transaction that writes, which is the one the command is authoritative about.
 //
-// auth is filled after the tenant module is constructed, beside the line that
-// fills roles.auth, because the authorizer is built from the modules and the
-// tenant module is one of them. Until it is filled the answer is an error rather
+// auth is filled by the access module's build, the one build in this composition
+// that runs after the authentication service exists: the authorizer is built from
+// the modules and the tenant module is one of them, so it cannot be handed one at
+// its own line. Until it is filled the answer is an error rather
 // than false: "nobody may" and "we could not ask" are different facts, and the
 // second one is an outage somebody has to be able to see.
 type tenantLocaleManager struct{ auth httpx.Authorizer }
@@ -148,4 +167,24 @@ func (m *tenantLocaleManager) MaySetOwnLocale(ctx context.Context, _ db.Tx[db.Te
 		return false, nil
 	}
 	return m.auth.Allowed(ctx, who, tenancy.Grant{Permission: tenantcontracts.PermissionLocaleManage})
+}
+
+// latePorts are the two language edges this product answers for its own modules,
+// both of them late-bound because the service that answers is built after the
+// module that reads it: which languages a person may choose is the control plane's
+// fact and the control plane needs the user service first, and who may set a
+// tenant's languages is the authorizer's answer and the authorizer is built from
+// every module including the tenant one.
+//
+// They are one value because they are one decision: the product puts both holders
+// needing nobody, and the access module — the first build that has met the control
+// plane and the authorizer — fills them. Neither edge is a declared need in either
+// direction, because the graph they would make is the cycle pkit refuses.
+type latePorts struct {
+	locales     *tenantLocales
+	localeGrant *tenantLocaleManager
+}
+
+func newLatePorts() *latePorts {
+	return &latePorts{locales: &tenantLocales{}, localeGrant: &tenantLocaleManager{}}
 }

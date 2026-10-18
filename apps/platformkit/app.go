@@ -268,9 +268,12 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 // different value to name, and sentences is what everybody else calls.
 func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace) {
 	ask, shell, provision, grants, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}
+	// The two language edges no module may declare as a need: the product puts each
+	// holder and the access module fills it. See latePorts.
+	ports := newLatePorts()
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
-			product(cfg, grants),
+			product(cfg, grants, ports),
 			user.Module,
 			tenant.Module,
 			notification.Module,
@@ -298,7 +301,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 			// for are everything above it has already declared.
 			webhook.Module,
 			seeding(provision),
-			access(ask),
+			access(ask, ports),
 			change.Module,
 			admin.Module,
 		}, without)...).

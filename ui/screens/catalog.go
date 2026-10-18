@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"net/http"
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -150,6 +151,13 @@ type Command struct {
 	Description string `json:"description,omitempty"`
 	Collection  bool   `json:"collection,omitempty"`
 	Path        string `json:"path,omitempty"`
+	// Method is the verb the Path above answers, printed on the same rule as
+	// Path itself: absent means POST, which is what every command kit/rest
+	// mounts answers with and what a build that predates this key already sends.
+	// A command mounted with another verb — a replace at its resource's own
+	// address — says which, because a shell that posted to it would meet a 405
+	// at an address this document just promised it.
+	Method string `json:"method,omitempty"`
 	// Self says the command writes the caller's own row, so a device that has the
 	// person's token and nothing else knows it may offer it: the same fact
 	// kit/httpx declares on its own command, carried here unchanged.
@@ -200,8 +208,18 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 			}
 			continue
 		}
-		if !r.Readable(ctx) {
-			continue
+		// A caller who may use one of this resource's commands is told the resource
+		// exists even where its rows stay unreadable: CommandsFor asks each command's
+		// guard, not the resource's, and an account command (rest.CommandOptions.Self)
+		// is the case where that answer is yes while the rows are none of the caller's
+		// business. What such a caller is given is the name and those commands; the
+		// screen, the row schema and the write path describe rows not to read.
+		readable := r.Readable(ctx)
+		if !readable {
+			if len(r.Commands) == 0 {
+				continue
+			}
+			r.Schema.Fields, r.Screen, r.Immutable = nil, "", nil
 		}
 		r = Localise(r, text)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
@@ -263,12 +281,23 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
-			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
+			Collection: c.Collection, Path: derived(r, c), Method: verb(c), Fields: c.Fields,
 			Self:         c.Self,
 			Presentation: commandDeviations(c.Present),
 		})
 	}
 	return e
+}
+
+// verb is the command's method as the document states it: nothing for the one
+// every command already answers with, and the verb itself for the rare one that
+// does not — the same economy as derived below, so an entry a shell could read
+// before this key existed is byte-for-byte what it was.
+func verb(c httpx.Command) string {
+	if c.Method == "" || c.Method == http.MethodPost {
+		return ""
+	}
+	return c.Method
 }
 
 // derived is the command's address when a shell could not work it out itself,
