@@ -138,7 +138,7 @@ for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/locale k
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts pkit; do
+    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey kit/inference kit/inference/providers/openai modules/auth/contracts pkit; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done

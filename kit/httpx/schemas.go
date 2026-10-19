@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -131,12 +132,24 @@ type Resource struct {
 
 	// Count reads the total without a page. Registration guards it with Read
 	// and supplies a List-based fallback for resources with custom loading.
-	Count  func(ctx context.Context) (int64, error)
-	List   func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error)
-	Get    func(ctx context.Context, id uuid.UUID) (map[string]any, error)
-	Create func(ctx context.Context, values map[string]any) (map[string]any, error)
-	Update func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error)
-	Delete func(ctx context.Context, id uuid.UUID) error
+	Count func(ctx context.Context) (int64, error)
+	// CountFiltered reads a total narrowed to one declared predicate set — the
+	// "Due today" a card wears beside its total — behind the same read guard as
+	// Count, so a sub-count cannot be reached by a caller the total refuses.
+	//
+	// The Where is built by server code from a declaration the mount gate
+	// checked: no request parameter reaches this package as one, and a column
+	// name comes out of the entity's own schema and never out of a string.
+	CountFiltered func(ctx context.Context, w crud.Where) (int64, error)
+	// CountDays reads this resource's rows broken into the UTC days of one of its
+	// own timestamp columns, behind the same read guard as Count. It answers only
+	// the days it found; an unnamed day is a zero the document writes.
+	CountDays func(ctx context.Context, field string, from, to time.Time) ([]crud.DayCount, error)
+	List      func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error)
+	Get       func(ctx context.Context, id uuid.UUID) (map[string]any, error)
+	Create    func(ctx context.Context, values map[string]any) (map[string]any, error)
+	Update    func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error)
+	Delete    func(ctx context.Context, id uuid.UUID) error
 
 	// mayDeclare is the whole authorization a declaration asks, installed by
 	// RegisterResource: the same method the six closures below call, so a door,
@@ -334,6 +347,25 @@ func (a *API) guard(r Resource) Resource {
 				return nil, 0, err
 			}
 			return list(ctx, q)
+		}
+	}
+	// The two narrowed counts ask the same question the total asks, and are
+	// wrapped here rather than at their caller for the same reason Count is: a
+	// Resource built anywhere else is unguarded until it is registered.
+	if narrowed := r.CountFiltered; narrowed != nil {
+		r.CountFiltered = func(ctx context.Context, w crud.Where) (int64, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return 0, err
+			}
+			return narrowed(ctx, w)
+		}
+	}
+	if daily := r.CountDays; daily != nil {
+		r.CountDays = func(ctx context.Context, field string, from, to time.Time) ([]crud.DayCount, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return daily(ctx, field, from, to)
 		}
 	}
 	if get != nil {
