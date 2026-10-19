@@ -31,7 +31,7 @@ import (
 )
 
 func TestACompositionNamingAnUndeclaredPermissionCreatesNoTenantAndEmitsNothing(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 	conn, err := db.Open(t.Context(), cfg.Database.URL)

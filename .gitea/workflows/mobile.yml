@@ -81,7 +81,13 @@ jobs:
         env:
           POSTGRES_PASSWORD: platformkit
           POSTGRES_DB: platformkit
-          POSTGRES_INITDB_ARGS: "-c max_connections=256"
+          # This cluster is created for the job and deleted with it, so it does not
+          # force its writes to a device: the same three settings compose.yaml names
+          # on its server's command line, whose comment says why. initdb writes them
+          # into the configuration of the data directory this job creates and never
+          # reuses, which is the carrier a service container has and a developer's
+          # persistent volume must not rely on.
+          POSTGRES_INITDB_ARGS: "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=256"
         options: >-
           --health-cmd "pg_isready -U postgres -d platformkit"
           --health-interval 5s
@@ -192,20 +198,89 @@ jobs:
           done
           adb version
           emulator -version | head -3
+          # The one tool the journey cannot do without that this step does not require, because
+          # requiring it here would refuse every run of an image that buys it further down. The
+          # harness decides whether the application this job started owns the socket it is answering
+          # /health on, and it decides that from `ss`, falling back to `lsof` (its wait_healthy). Both
+          # probes send their own "command not found" to /dev/null, so a runner carrying neither gets
+          # an empty list, and an empty list is read there as "that listener is not mine": the journey
+          # is refused for a stranger's socket while its own process holds the port. iproute2 is
+          # bought by the install step below, which runs after this one, and the receipt for it is
+          # that step's own — `The socket probe on this runner names the listener it holds`.
+          for probe in ss lsof; do
+            path="$(command -v "$probe" 2>/dev/null || true)"
+            echo "$probe: ${path:-absent from this image}"
+          done
 
       # The same retry the kernel's check job asks for, and the same measured reason: `apt-get update`
-      # ends this step under `bash -e`, so a mirror mid-sync leaves this job no `psql` and the role
-      # below never gets prepared. scripts/ci_apt_index.sh holds why a retry is the answer; this is the
-      # line that stops the journey's job from being the one half of the program that still pays a
-      # mirror's bad minute in full. scripts/ci_apt_index_test.sh runs this body against a stub apt-get
-      # that refuses the way the mirror refused.
-      - name: Install the database client and prepare the role
+      # ends this step under `bash -e`, so a mirror mid-sync leaves this job no `psql` and no `ss`: the
+      # role below never gets prepared and the journey cannot say whose socket it holds.
+      # scripts/ci_apt_index.sh holds why a retry is the answer; this is the line that stops the
+      # journey's job from being the one half of the program that still pays a mirror's bad minute in
+      # full. scripts/ci_apt_index_test.sh runs this body against a stub apt-get that refuses the way
+      # the mirror refused.
+      - name: Install the database client, the socket probe and prepare the role
         env:
           PGPASSWORD: platformkit
         run: |
           bash scripts/ci_apt_index.sh
-          apt-get install --yes --no-install-recommends postgresql-client
+          apt-get install --yes --no-install-recommends postgresql-client iproute2
           psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
+
+      # The receipt for the line above. scripts/mobile_e2e.sh attributes the listener on the journey's
+      # port to the application it started by reading the socket table, and both of its probes — `ss
+      # -ltnp` and `lsof` — write their own "command not found" into /dev/null. On a runner that
+      # carries neither, the answer is an empty list, and the empty list is read as "somebody else
+      # holds this port": the run is refused for a listener it does not have, with the socket table
+      # the refusal offers as its evidence equally silent. So the mechanism is tried against a
+      # listener this step started itself, on a port the kernel allocated, because a probe that has
+      # never named a socket of its own is exactly the silence that failure is made of. The question
+      # goes to scripts/free_port.sh's port_listeners — the reader scripts/e2e.sh asks, iproute2 first
+      # with lsof behind it — rather than to a copy of the harness's inline shape, and the listener is
+      # the `python3 -m http.server` shape scripts/e2e_health_owner_test.sh already uses for a
+      # stranger's, because free_port.sh's own port_attribution_works binds through node, which is
+      # gate 10's prerequisite and nothing this job has ever required. It runs before the emulator
+      # boots, so a runner that cannot answer the question says so in seconds rather than after
+      # twenty minutes of device.
+      - name: The socket probe on this runner names the listener it holds
+        run: |
+          # shellcheck source=scripts/free_port.sh
+          . scripts/free_port.sh
+          # What this job was given, after the install above and not before it: the probe step asks
+          # the same question of the image, and the two answers are minutes and one apt run apart.
+          for probe in ss lsof; do
+            path="$(command -v "$probe" 2>/dev/null || true)"
+            echo "$probe: ${path:-absent from this image}"
+          done
+          # The project and its version, which is what "the package is there" would only assert.
+          if command -v ss >/dev/null 2>&1; then ss -V; fi
+          banner="$(mktemp)"
+          python3 -u -m http.server 0 --bind 127.0.0.1 >"$banner" 2>&1 &
+          listener=$!
+          # The server prints the port the kernel gave it; the wait is for that line, not for a
+          # moment's sleep, and port 0 keeps this off the number the journey is going to bind.
+          for try in 1 2 3 4 5 6 7 8 9 10; do
+            if grep -q 'port ' "$banner"; then break; fi
+            sleep 0.3
+          done
+          port="$(sed -n 's/.*port \([0-9]*\).*/\1/p' "$banner" | head -1)"
+          # `|| true` because this step's verdict is the pid match below and not the exit code of the
+          # question: a machine that will not answer it at all is still a refusal, and it has to be
+          # this step's refusal, in its own words.
+          holders="$(port_listeners "$port" 2>/dev/null || true)"
+          kill "$listener" 2>/dev/null || true
+          wait "$listener" 2>/dev/null || true
+          rm -f "$banner"
+          # No walk up the parents, which the harness does because an application may be started
+          # through a wrapper: this listener is this step's own child, so the holder it names is
+          # $listener or the answer proves nothing.
+          if ! printf '%s\n' "$holders" | grep -qxF "$listener"; then
+            echo "neither ss nor lsof on this runner named the listener this step started (pid $listener on port ${port:-none})." >&2
+            echo "scripts/mobile_e2e.sh attributes the journey's /health answer with the same probe, so a journey whose own socket this is" >&2
+            echo "would be refused for a listener it does not have. The runner label needs iproute2; the flow does not get skipped." >&2
+            exit 1
+          fi
+          echo "the socket probe names its own listener: pid $listener on port $port"
 
       - name: Start NATS with JetStream on this job's network
         id: nats

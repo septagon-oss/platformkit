@@ -105,9 +105,30 @@ const fixtureLockTimeout = 90 * time.Second
 const webhookKey = "0123456789abcdef0123456789abcdef"
 
 // configure writes the configuration the reference app would have read from
-// config.yaml, against a schema of this test's own, and returns the path and
-// the loaded value. The database is empty: no tables, no ledger, nothing.
+// config.yaml, against an installation of this test's own, and returns the path and
+// the loaded value.
+//
+// The installation arrives as a copy the server made of the one this package's TestMain prepared,
+// which is what a case used to buy by running the whole migration and the bootstrap for itself: the
+// copy holds the same ledger, the same tenant and the same administrator, and it holds whatever the
+// case writes for itself alone in a database no other case can reach. A case whose own claim is
+// about installing — the bootstrap's answer, the ledger, a refusal only an untouched database can
+// give — takes configureFresh rather than a copy of a finished installation.
 func configure(t *testing.T) (string, config.Config) {
+	t.Helper()
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
+	migrateURL, appURL := dbtest.Clone(t)
+	path, cfg := writeConfig(t, migrateURL, appURL)
+	copied.Store(t, struct{}{})
+	t.Cleanup(func() { copied.Delete(t) })
+	return path, cfg
+}
+
+// configureFresh is configure against an empty schema of this test's own: no tables, no ledger, no
+// tenant, nothing. It is the whole cost of an installation, and it belongs to the cases for which
+// getting there is the thing being asserted — see install.
+func configureFresh(t *testing.T) (string, config.Config) {
 	t.Helper()
 	// The seed command's operator proves themselves the way every deployment
 	// does — through the environment, never argv — and the person they prove they
@@ -117,14 +138,26 @@ func configure(t *testing.T) (string, config.Config) {
 	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
 	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
 	migrateURL, appURL := dbtest.URLs(t)
+	return writeConfig(t, migrateURL, appURL)
+}
+
+// copied names the cases that were handed a copy of the prepared installation. install reads it,
+// and nothing else does.
+var copied sync.Map // *testing.T → struct{}
+
+// writeConfig writes config.yaml for one installation and loads what it wrote. The two URLs name
+// the database and the namespace it lives in; everything else here is this product's own answer to
+// what a reference installation is configured with.
+//
+// The file module keeps its bytes under a directory of this test's own, so a suite that uploads
+// something leaves nothing behind and two suites running at once do not share a disk. The
+// installation is reached at acme's host, which is the operator's own tenant (the bootstrap created
+// it): the control plane is served where the installation is, and nowhere else.
+// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx is where globex's answer at the same
+// address is proved.
+func writeConfig(t *testing.T, migrateURL, appURL string) (string, config.Config) {
+	t.Helper()
 	path := t.TempDir() + "/config.yaml"
-	// The file module keeps its bytes under a directory of this test's own, so
-	// a suite that uploads something leaves nothing behind and two suites
-	// running at once do not share a disk.
-	// The installation is reached at acme's host, which is the operator's own
-	// tenant (the bootstrap created it): the control plane is served where the
-	// installation is, and nowhere else. TestTheControlPlaneIsNotFoundAtATenantHost
-	// in kit/httpx is where globex's answer at the same address is proved.
 	body := "server:\n  addr: \"" + freeAddr(t) + "\"\n  public_host: \"platformkit.localhost\"\n  installation_host: \"" + acmeHost + "\"\n  docs: true\n" +
 		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n  lock_timeout: \"" + fixtureLockTimeout.String() + "\"\n" +
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
@@ -145,7 +178,12 @@ func configure(t *testing.T) (string, config.Config) {
 }
 
 // install runs the bootstrap subcommand exactly as the README's third command
-// does: an empty database in, a tenant and an administrator out.
+// does: an empty database in, a tenant and an administrator out. It does
+// nothing for a case configure gave a copy of the prepared installation, because
+// the bootstrap is what made that copy; a case that needs the run itself — one
+// that asserts the bootstrap's own answer, the ledger, or a refusal only an
+// untouched database can give — takes configureFresh, and this answers it in
+// full.
 //
 // A run the database declined for contention is run again, because that is what db.ErrContended
 // says instead of failing: it may be run again, with the files it applied already there to be read.
@@ -160,18 +198,14 @@ func configure(t *testing.T) (string, config.Config) {
 // with the count of runs it took.
 func install(t *testing.T, path string) {
 	t.Helper()
-	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
-	// The installation's second language is one this tenant's people are served in,
-	// said at the same moment the tenant is created. A tenant is not served in it
-	// by accident of the catalogues somebody compiled: SetLocale is the declaration,
-	// and a bootstrap that says nothing leaves the tenant in the one language its
-	// copy is written in — which is what apps/platformkit/locale_test.go and
-	// e2e/localization.spec.ts then check the other language against.
-	args := []string{
-		"--config", path, "--tenant", "acme", "--host", acmeHost,
-		"--name", acmeName, "--admin-email", adminEmail,
-		"--language", "pt-PT",
+	if _, ok := copied.Load(t); ok {
+		// The configuration names a database the server copied from the prepared installation, so
+		// the migration and the bootstrap this case would have run are what made that copy. What is
+		// left for this case to do is write into it.
+		return
 	}
+	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
+	args := installationArgs(path)
 	until := time.Now().Add(installContentionWait)
 	for runs := 1; ; runs++ {
 		err := bootstrap(args)
@@ -196,6 +230,25 @@ const (
 	installContentionPause = 250 * time.Millisecond
 	installContentionWait  = 2 * time.Minute
 )
+
+// installationArgs are the answers bootstrap takes from an operator standing in front of an empty
+// installation: the tenant's slug, host and name, its first administrator, and the languages its
+// people are served in. One spelling, because the package's TestMain prepares the installation every
+// case is copied from, and a case must never be looking at a different installation than its
+// neighbours.
+//
+// The installation's second language is one this tenant's people are served in, said at the same
+// moment the tenant is created. A tenant is not served in it by accident of the catalogues somebody
+// compiled: SetLocale is the declaration, and a bootstrap that says nothing leaves the tenant in the
+// one language its copy is written in — which is what apps/platformkit/locale_test.go and
+// e2e/localization.spec.ts then check the other language against.
+func installationArgs(path string) []string {
+	return []string{
+		"--config", path, "--tenant", "acme", "--host", acmeHost,
+		"--name", acmeName, "--admin-email", adminEmail,
+		"--language", "pt-PT",
+	}
+}
 
 // start runs the application in the background and returns when it is listening.
 //
@@ -252,7 +305,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 // and its administrator, the process migrates and serves, and the whole round
 // trip — sign in, create, list, sign out — happens over a cookie.
 func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 
 	c := compose(cfg)
@@ -641,7 +694,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 // TestBootstrapRefusesAnInstallationThatAlreadyExists: the one write with no
 // caller to authorize is safe because it can only ever happen once.
 func TestBootstrapRefusesAnInstallationThatAlreadyExists(t *testing.T) {
-	path, _ := configure(t)
+	path, _ := configureFresh(t)
 	install(t, path)
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
 	err := bootstrap([]string{
@@ -1876,14 +1929,14 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 // TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace is the
 // upgrade half of the migration move, and the half a fresh database cannot
 // check: an existing installation's ledger says "platformkit" applied all
-// twenty-four files, and the release that splits them must neither refuse the
+// thirty-three files at or below the adopted ceiling, and the release that splits them must neither refuse the
 // files the foundation no longer ships nor run the module files again.
 //
 // Success alone proves the SQL did not re-run — a second 000004_task.up.sql
 // would fail on CREATE TABLE tasks — and the applied_at comparison proves the
 // rows were re-owned rather than replaced.
 func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	sources := app.MigrationSources(compose(cfg).modules)
 	// The patient budget, not the deployment's: this case is about a ledger whose rows
 	// change owner, and the legacy layout it installs carries the same concurrent build
@@ -1954,7 +2007,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the twenty-one above the ceiling, because the
+	// 33 stays 33 for those files and for every file above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -1962,42 +2015,35 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// below has to produce, and the two counts below compare the ledger against
 	// every file the release ships.
 	//
-	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 68 — twenty-four under migrations/ (1, 2, 3, 5, 6, 9, 12, 20,
-	// 21, 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52, 58, 59, 60, 61) and forty-four
-	// under modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22,
-	// 23, 24, 25, 27, 31, 32, 33, 35, 35, 36, 37, 38, 39, 40, 42, 43, 44, 44, 44, 45,
-	// 45, 47, 48, 49, 50, 53, 54, 54, 55, 56, 57). Every version to 33 is one file, and
-	// every repeat in the release — 35 (modules/audit's audit_context and modules/auth's
-	// passkeys), 43, 44, 45, 50 and 54 — is above the ceiling, so the flattening below
-	// never meets one. The release this
-	// fixture is
-	// applied from shipped 33 of them: the thirteen under migrations/ up to the
-	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
-	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
-	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The twenty-five above it — the kernel's own 34, 41, 43, 46, 50,
-	// 51, 52, 54, 55, 56 and 57, modules/audit's 35, 36, 37, 48, 49 and 53,
-	// modules/auth's 35 and 47, modules/change's 38, modules/site's 39, modules/file's
-	// 40, 44 and 45 and modules/content's 42 — postdate that release, are not in the
-	// old installation's ledger, and legacyLayout leaves them out; the upgrade below
-	// applies them under the owner that ships them and counts them as new rows. Each
-	// continues past the highest number anywhere in the composition at the time it was
-	// written, which is the rule this fixture exists to enforce — and it is a rule with
-	// teeth rather than tidiness, because kit/db reads a repeated version only inside
-	// one owner: the kernel's 000034_outbox_request and a modules/auth file numbered 34
-	// apply side by side under two owners, and the only thing that says so is the one
-	// map below that counts every shipped file under one key. modules/audit's 48 and 49
-	// are this rule's newest customer: the append-only trail and its retention marks
-	// were numbered 41 and 42 while the branch was open, and main took 41 for the
-	// kernel's own outbox baggage and 42 for modules/content's body characters
-	// underneath it. T-0231's own four are this rule's newest since: they arrived at
-	// 000044, 000045, 000046 and 000047, main took 000046 for its own SAML provider
-	// columns in between, and the flattened fixture below reads one version as one row
-	// whatever the owner, so they are 000058, 000059, 000060 and 000061: this merge is
-	// the seventh time that rule has moved them, main having taken 000054 to 000057 for
-	// modules/file's variants, unused-since, use-audience and its index, and 000054 for
-	// modules/site's default accent, while this branch's four stood at those numbers.
+	// The whole-tree census is deliberately absent: the file count this fixture
+	// ships moves with every delivery that adds a migration, and a number quoted here
+	// is a number the next merge silently falsifies. `find migrations modules -name
+	// '*.up.sql' | wc -l` answers it, and the two counts that matter are asserted
+	// below rather than restated here — the old layout's ledger against the files at
+	// or beneath the adopted ceiling, and the upgraded ledger against every file the
+	// release ships. What the census used to enumerate is the part worth keeping: the
+	// release repeats six numbers, each above the ceiling so the flattening below
+	// never meets them — 35 is modules/audit's audit_context beside modules/auth's
+	// passkeys, 43 is the kernel's tenant-app columns beside modules/translation's
+	// field copy, 44 is modules/file's image dimensions beside modules/notification's
+	// mail ledger and modules/webhook's endpoint table, 45 is modules/file's file uses
+	// beside that module's delivery log, 50 is the kernel's tenant demo marker beside
+	// modules/task's task_revision, and 54 is modules/file's image variants beside
+	// modules/site's default accent. Every file above the ceiling continues past the
+	// highest number anywhere in the composition at the time it was written, which is
+	// the rule this fixture exists to enforce — and it is a rule with teeth rather
+	// than tidiness, because
+	// kit/db reads a repeated version only inside one owner: the kernel's
+	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
+	// under two owners, and the only thing that says so is the one map below that
+	// counts every shipped file under one key. T-0231's four are this rule's newest
+	// customer: they arrived at 000044, 000045, 000046 and 000047, main took 000046 for
+	// its own SAML provider columns in between, and the flattened fixture below reads
+	// one version as one row whatever the owner, so they are 000058, 000059, 000060 and
+	// 000061. modules/audit's 48 and 49 are the customer before them: the append-only
+	// trail and its retention marks were numbered 41 and 42 while the branch was open,
+	// and main took 41 for the kernel's own outbox baggage and 42 for modules/content's
+	// body characters underneath it.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
 	// merged as, for the reason this paragraph has now recorded six times: this fixture
@@ -2022,7 +2068,13 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// provider columns, 000047 for modules/auth's replay table and 000048 and 000049
 	// for modules/audit's append-only trail and its retention marks — and two files at
 	// one version under the one owner `audit` is a refusal in kit/db before it is ever
-	// a ledger row.
+	// a ledger row. modules/scim's group, mapping and person tables arrived on their
+	// branch as 000044, then as 000054, and are 000064 here: main took 000044 for
+	// modules/file's image dimensions while that branch was open, then took 000054 twice
+	// more for modules/file's variants and modules/site's default accent, then 000058 to
+	// 000062 for its own ledger lock, refusal, placement and idempotency files and
+	// 000063 for modules/file's media alt text, and 000064 continues past 000063, the
+	// highest number any owner holds at the commit this merge lands.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
@@ -2060,18 +2112,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the thirty-five files above the
-	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 50, 51, 52, 58, 59, 60
-	// and 61, modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 35 and 47,
-	// modules/change 38, modules/site 39 and 54, modules/file 40, 44, 45, 54, 55, 56
-	// and 57, modules/content 42, modules/notification 44 and 45, modules/webhook 44
-	// and 45, modules/translation 43 and modules/task 50, all absent from the old
-	// ledger) have to be accounted for:
-	// 68 files in the release and 61 versions among them: seven of those files name a
-	// version another owner already named — 35, 43, 44 twice over, 45, 50 and 54 — so
-	// the two maps below count seven keys fewer than there are files, and every one of
-	// those repeats sits above the ceiling of 33, where the flattened fixture above
-	// never meets one.
+	// release ships is in the ledger, which is where the files above the adopted
+	// ceiling have to be accounted for. Both maps below are keyed by version, so a
+	// version two owners hold is one key in each of them: the comparison is between
+	// the ledger and the sources the composition names, never against a count carried
+	// in this comment.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
