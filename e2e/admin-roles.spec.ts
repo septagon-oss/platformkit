@@ -31,6 +31,9 @@ test('the Roles entry in the sidebar opens a screen that changes what a role gra
   await expect(page).toHaveURL(/\/app\/auth\/roles$/);
   await expect(page.getByRole('heading', { name: 'Roles', exact: true })).toBeVisible();
 
+  // Roles start as summaries. Open each editor using the same native control as a person.
+  await page.locator("summary").filter({ hasText: /^admin ·/ }).click();
+  await page.locator("summary").filter({ hasText: /^member ·/ }).click();
   // The two roles every tenant is seeded with, each with a form of its own.
   await expect(page.getByRole('form', { name: 'What admin grants' })).toBeVisible();
   const member = page.getByRole('form', { name: 'What member grants' });
@@ -62,6 +65,7 @@ test('the Roles entry in the sidebar opens a screen that changes what a role gra
   // contract that nothing else checked: a grant taken away is written as surely as
   // one given, and the screen reads back what the row says rather than what the
   // browser still holds.
+  await page.locator('summary').filter({ hasText: /^member ·/ }).click();
   await page.locator('label[for="pk-role-member-task-read"]').click();
   await expect(read).not.toBeChecked();
   await member.getByRole('button', { name: 'Save member' }).click();
@@ -72,6 +76,7 @@ test('the Roles entry in the sidebar opens a screen that changes what a role gra
 
 test('a role name the module refuses comes back on the screen rather than on a fault page', async ({ page }) => {
   await page.goto('/app/auth/roles');
+  await page.locator('summary').filter({ hasText: /^New role ·/ }).click();
   const create = page.getByRole('form', { name: 'A new role' });
   // A leading digit is not a lower-case identifier. The browser's own pattern
   // check is removed first on purpose: what is being tested is the server's
@@ -94,6 +99,7 @@ test('the last role that can administer roles refuses to be emptied', async ({ p
   // grants role:manage. Unticking that one box and pressing save is the whole
   // of the mistake: afterwards nobody in this tenant could open this screen
   // again, and the operator of the installation could not repair it either.
+  await page.locator('summary').filter({ hasText: /^admin ·/ }).click();
   const owner = page.getByRole('form', { name: 'What admin grants' });
   await page.locator('label[for="pk-role-admin-everything"]').click();
   await expect(page.locator('#pk-role-admin-everything')).not.toBeChecked();

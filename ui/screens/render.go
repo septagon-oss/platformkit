@@ -278,3 +278,12 @@ func excerpt(value any) string {
 	}
 	return string(runes[:cut]) + "…"
 }
+
+// entryName shares the catalogue's translated noun with generated form headings.
+func entryName(r httpx.Resource, o Options) string {
+	name := o.Words(r.Schema).Entry(r.Present).Singular
+	if name == "" {
+		return r.Entity
+	}
+	return name
+}
