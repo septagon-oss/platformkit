@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-14T15:13:59Z",
+  "measured_utc": "2026-10-19T17:10:28Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -79,24 +79,28 @@
       "readable": 5
     },
     "GET /app/content/contents": {
-      "wrapped": 5,
-      "readable": 71
+      "wrapped": 6,
+      "readable": 73
     },
     "GET /app/content/contents/new": {
-      "wrapped": 73,
-      "readable": 145
+      "wrapped": 75,
+      "readable": 147
     },
     "GET /app/content/contents/{id}": {
-      "wrapped": 12,
-      "readable": 106
+      "wrapped": 17,
+      "readable": 114
     },
     "GET /app/content/contents/{id}/edit": {
-      "wrapped": 74,
-      "readable": 155
+      "wrapped": 76,
+      "readable": 159
     },
     "GET /app/file/files": {
       "wrapped": 0,
       "readable": 30
+    },
+    "GET /app/notification/notifications": {
+      "wrapped": 0,
+      "readable": 5
     },
     "GET /app/site/settings": {
       "wrapped": 7,
@@ -159,8 +163,8 @@
       "readable": 79
     },
     "POST /app/content/contents": {
-      "wrapped": 73,
-      "readable": 148
+      "wrapped": 75,
+      "readable": 150
     },
     "POST /app/task/tasks": {
       "wrapped": 7,

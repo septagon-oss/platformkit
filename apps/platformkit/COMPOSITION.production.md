@@ -5,11 +5,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `production` · 22 modules · role `all`.
+App `platformkit` · environment `production` · 23 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in production builds 22 modules.
+pkit: platformkit in production builds 23 modules.
 pkit: cloud profile local in production.
 pkit: seam storage runs local-disk (default).
 pkit: seam cache runs in-process (default).
@@ -25,6 +25,7 @@ pkit: product.Module needs no other module.
 pkit: product.Module reads config.Files.
 pkit: product.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: product.Module contributes one changecontracts.SubjectBinding to change.Module.
+pkit: workspace.Module needs no other module.
 pkit: seed.Module needs no other module.
 pkit: seed.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: user.Module is built after product.Module.
@@ -49,9 +50,10 @@ pkit: tenant.Module defines the permission tenant:manage.
 pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.renamed, tenant.host_removed, tenant.reactivated, tenant.deleted, tenant.lifecycle_recorded, tenant.oidc_set, tenant.oidc_cleared, tenant.saml_set and tenant.saml_cleared.
 pkit: emailregistration.Module is built after user.Module.
 pkit: emailregistration.Module needs usercontracts.Service from user.Module.
-pkit: notification.Module is built after user.Module and tenant.Module.
+pkit: notification.Module is built after user.Module, tenant.Module and workspace.Module.
 pkit: notification.Module needs notificationcontracts.RecipientLookup from user.Module.
 pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Module.
+pkit: notification.Module uses *notification.Page from workspace.Module.
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
 pkit: notification.Module runs on mailbox, which the deployment picked.
