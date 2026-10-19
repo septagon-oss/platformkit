@@ -20,6 +20,7 @@ package main
 // never refuses a socket on the strength of a name having left the list.
 
 import (
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
@@ -103,6 +104,11 @@ var webhookCatalogue = emittedEvents{
 	contentcontracts.EventCreated, contentcontracts.EventUpdated, contentcontracts.EventDeleted,
 	contentcontracts.EventPublished, contentcontracts.EventUnpublished, contentcontracts.EventArchived,
 	sitecontracts.EventSettingsUpdated,
+	// history, whose one event says a stored version of a record came back. The
+	// name rides on the kit's Versions port and not on a module's contracts, for
+	// the reason that port gives: the kit publishes it for whichever resource asked
+	// for history, and modules/history declares it typed in its manifest.
+	httpx.RestoredEvent,
 	// translation, whose one event says a record's other languages moved.
 	translationcontracts.EventUpdated,
 	filecontracts.EventUploaded, filecontracts.EventDeleted, filecontracts.EventRetained,
