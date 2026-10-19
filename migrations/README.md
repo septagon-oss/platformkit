@@ -136,6 +136,13 @@ applied, and owned by one capability. [ADR 0011](../docs/adr/0011-migration-owne
 owns that contract; this file is the part an author reads: what a file may say
 about itself, and what the runner refuses.
 
+Immutable means every byte, comments included: the ledger checksums the whole
+file, so a comment that follows a renamed test is a boot failure on every
+installation that ran the old bytes. `make check-applied-migrations` refuses an
+edit, rename or removal of a file the base carries — line endings included, as
+the binary embeds them — and accepts only a file put back to the bytes the
+base's releases applied. A stale comment stays; the change goes in a new migration.
+
 A file runs in one transaction with its history row. Three kinds of file are not
 like that, and a file has to say which it is, because a reader cannot tell from
 the SQL.
