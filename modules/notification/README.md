@@ -97,8 +97,9 @@ means. Ask the two tables two questions.
   mail that really went rather than over-reporting one that did not. No `requested`
   row exists to catch the difference, on purpose.
 * **No retention, no export.** The screen exists — `GET /app/notification/notifications`
-  lists the caller's own rows, live — and it writes nothing. Rows are appended and nothing in this
-  schema deletes or updates them, and the table holds a recipient address, so
+  lists the caller's own rows, live — and it writes nothing. Rows are appended and
+  nothing in this schema deletes or updates them, and the table holds a recipient
+  address, so
   "what happens to these rows when a person is forgotten" is unanswered here —
   the platform has no cross-table erasure, and the product that promises to forget
   people owes that answer. Its one read is used by one public door in
@@ -176,10 +177,11 @@ which chrome a person's own notices sit in is an installation's fact and this mo
 when it is not handed one is the answer a deployment with no such page expects.
 
 **Made reusable, by the in-app list** — `document.View.Live`, one field on a page that any
-module's own screen may set to go live, with the wrapper, the pinned extension's tag and the
-fragment answer drawn by the kernel rather than by the module; and the rule that a page's
-topics and its manifest's `Streams` are read from one slice, so a screen cannot watch what its
-own module never opened.
+module's own screen may set to go live, with the wrapper, the pinned extension's tag, the
+controller the region runs on and the fragment answer drawn by the kernel rather than by the
+module. What stays this module's own is the one slice its manifest's `Streams` and its page's
+topics are read from: nothing exports that rule, and a screen which watched a topic its
+module never opened would be watching a door no module opened.
 
 ## Authorization
 
@@ -224,9 +226,11 @@ Roles and the roles API therefore do not affect this module's two routes.
 
 What this module does not do, stated here rather than only in the branch that left it out:
 
-- **No in-app bell and no list in the kernel shell.** `Service.ListFor` and `MarkRead` and
-  the two routes answer the question a bell asks; nobody renders it. There is no nav entry
-  and no page, so a `requested` in-app row is read only by a client that already knows the path.
+- **No unread bell and no way in from the shell.** `GET /app/notification/notifications`
+  is this module's one screen, and it is handed a shell rather than claiming one: there is
+  no nav entry, no count in the shell and no link to the page anywhere in this repository,
+  so a person reaches it from an address the composition wrote. The count a bell asks is
+  `ListFor`'s answer and nobody draws it.
 - **No settings or sender page, and no route over either face.** `Settings()` and
   `Senders(verifier, keys, grants)` are the commands and `sender:manage` is the key; the product
   writes the form and the route, and until it does a person cannot change a channel switch
@@ -285,3 +289,17 @@ nil (`TestAnAbsentProviderClosesItsChannelAsSuppressed`).
 `TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
 never authenticated to. What a real relay answers — DKIM as the far end verifies it, and
 STARTTLS negotiation — is observed by no test here.
+
+The list page is checked beside those: the declaration the live door asks before a byte
+leaves (`TestTheModuleOpensItsTwoNoticeEventsToTheirRecipientOnly`,
+`TestTheDeclarationPassesTheKernelsOwnValidation`) and the address the pager links,
+which is the address the page is mounted at
+(`TestTheInboxPagerLinksTheAddressThePageIsMountedAt`). The drawing of a live page, the
+shape of a refresh and the files a region runs on are the kernel's cases, in `./ui/document`
+and `./ui/page`. The composed application is asked the same questions by
+[apps/platformkit](../apps/platformkit): whether the list it composes loads what its live
+region runs on, and whether one tenant's notices reach nobody at another
+(`TestTheComposedNoticeListLoadsWhatItsLiveRegionRunsOn`,
+`TestTheNoticeListShowsOneTenantsNoticesToNobodyAtAnother`). What no test here observes is a
+browser: the rate one region refreshes at, and the refresh that follows the last frame of a
+burst, are the controller's own behaviour, and no journey drives them yet.
