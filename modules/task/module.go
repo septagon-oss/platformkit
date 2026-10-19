@@ -111,6 +111,21 @@ var Spec = rest.Spec[*contracts.Task]{
 		// `sortable` refuses a name pointing at a `hidden` field, and `detail` is
 		// not `hidden`.
 		Sortable: []string{"title", "dueAt", "updatedAt"},
+		// The question a first screen asks about a list it cannot count by hand:
+		// what is due today. It is the same rows the list pages through, narrowed
+		// by a predicate and not kept in a second store of numbers, and the day is
+		// resolved when the question is asked, so "today" is the caller's today and
+		// not this binary's build date. The daily series below is the same kind of
+		// question: the list's rows, grouped instead of narrowed.
+		// createdAt is already the index a bounded window reads: tasks_tenant_created.
+		TrendField: "createdAt",
+		Highlight: &entity.EntryHighlight{
+			Label: "Due today",
+			Filter: []entity.EntryPredicate{
+				{Field: "dueAt", Op: "gte", Value: "today"},
+				{Field: "dueAt", Op: "lt", Value: "tomorrow"},
+			},
+		},
 	},
 }
 
