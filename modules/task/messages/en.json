@@ -591,6 +591,15 @@
       "": "Work"
     }
   },
+  "hints.task/task.highlight.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Due today",
+    "plural": {
+      "": "Due today"
+    }
+  },
   "hints.task/task.plural": {
     "references": [
       "modules/task/module.go"
