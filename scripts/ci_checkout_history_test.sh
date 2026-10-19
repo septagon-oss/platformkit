@@ -83,7 +83,7 @@ while IFS='|' read -r workflow job how source regex; do
 		fi
 	fi
 done <<'CASES'
-ci|check|reads|scripts/check_budget_ratchet.sh|git rev-list --no-merges
+ci|check|reads|scripts/check_budget_ratchet.sh|no-merges.*base\.\.HEAD
 ci|design|none|tools/designexport/openpencil|git
 ci|editor|none|tools/designexport/openpencil|git
 mobile|journey|none|scripts/mobile_e2e.sh|git

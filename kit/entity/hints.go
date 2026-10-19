@@ -40,6 +40,51 @@ var Formats = []string{"email", "phone", "url", "date", "datetime", "relative", 
 // anything, and a key printed for a hint nobody wrote is not this contract.
 var Visibilities = []string{"shown", "detail", "hidden"}
 
+// Anchors is every clock-relative instant a declared predicate value may name.
+// The server resolves one against the single instant of the response that answers
+// it, so `today` is the day the person was asked about rather than the day the
+// binary was built. `now` is that instant; `today` and `tomorrow` are the starts
+// of consecutive UTC days.
+//
+// The set is frozen for the reason Icons is: a value outside it has to refuse to
+// mount, and a fourth word is asked for by a product that needs one.
+var Anchors = []string{"now", "today", "tomorrow"}
+
+// ValidAnchor reports whether a declared value names one of those instants. The
+// empty string is invalid: an anchor is named by an author who meant one, and a
+// value that is not an anchor is a literal in the field's own reading, which
+// kit/rest's gate coerces and refuses.
+func ValidAnchor(v string) bool { return validNamed(Anchors, v, false) }
+
+// EntryHighlight is one declared sub-count: the words a card wears beside its
+// total, and the predicate that says which rows it counts. Filter is never empty
+// — a label with no predicate is the total wearing a label — and every predicate
+// names one of this entity's own fields, so nothing here reaches a column the
+// entity does not own.
+//
+// The label is a declared reading string and is resolved for language the way
+// every other declared string is (ui/resource's hints.<module>/<entity> grammar);
+// the answer to the question is a bare number in the summary document, which
+// carries no words at all.
+type EntryHighlight struct {
+	Label  string           `json:"label"`
+	Filter []EntryPredicate `json:"filter"`
+}
+
+// EntryPredicate is one condition on one field of this entity, spelled as data.
+// A SQL fragment is not a declaration: it would name columns this entity does not
+// own and refuse nothing at mount.
+//
+// Value is a string and nothing else, because a Go time written in a declaration
+// is a frozen date. It is read as the field's own type — an anchor name or an
+// RFC3339 instant for a timestamp, a number for a number — by the same coercion
+// the list's filter parameter uses, so one table decides both questions.
+type EntryPredicate struct {
+	Field string `json:"field"`
+	Op    string `json:"op"`
+	Value string `json:"value"`
+}
+
 // ValidIcon reports whether a shell can draw the named icon. The empty string is
 // valid: it means "no icon is claimed", which is every resource written before
 // this name existed.
@@ -110,6 +155,13 @@ type EntryHints struct {
 	Sections         []EntitySection
 	EmptyDescription string
 	Sortable         []string
+	// Highlight is the one sub-count a card may wear beside its total, and
+	// TrendField names this entity's own timestamp field to break the last two
+	// weeks into days. Both are questions about rows the list already reads, so
+	// both belong to a resource that mounts a list: the gate refuses either
+	// declared where no list route would answer it.
+	Highlight  *EntryHighlight
+	TrendField string
 }
 
 // ResourceGroup is the navigation slot an entry names. Key is an identifier a

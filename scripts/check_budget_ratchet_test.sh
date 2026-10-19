@@ -15,7 +15,7 @@ budget() { # budget <go max> [<extra bucket name>]
 	echo '{"packages": 5}' > packages-budget.json
 }
 
-commit() { git add -A && git -c user.name=t -c user.email=t@example.invalid commit -qm "$1"; }
+commit() { git add -A && git -c user.name=t -c user.email=t@example.invalid commit -qm "$1" ${2:+-m "$2"}; }
 
 fresh() { # a repository whose first commit is the base; prints the base sha
 	local dir="$root/$1"
@@ -92,6 +92,121 @@ if [ "$unreviewed" != 1 ] || ! grep -q 'go raised from 100 to 160' "$root/unrevi
 	failures=$((failures + 1))
 else
 	echo 'ok   a refusal still names the raise it refused'
+fi
+
+# The merge-base cases, which are `make check-loc`: a bucket may grow since the merge base with
+# origin/main by what this branch's own build(budget) commits declare and no more, and a ceiling that
+# main's own growth made stale is not this branch's to restate.
+lines() { local n; for n in $(seq "$2"); do echo "// $n" >> "$1"; done; }
+fresh_branch() { # main holds a.go at its go ceiling of 3, origin/main points there, HEAD is a branch off it
+	fresh "$1"
+	budget 3 docs && printf 'package a\n// one\n// two\n' > a.go && commit 'main at its ceiling'
+	git update-ref refs/remotes/origin/main HEAD
+	git checkout -q -b branch
+}
+on_main() { git checkout -q main; "$@"; git update-ref refs/remotes/origin/main HEAD; git checkout -q branch; }
+main_raises_then_overruns() { # main prices go 3 -> 5, then grows to 7 lines: its own ceiling is stale
+	budget 5 docs && commit 'build(budget): go 3 -> 5'
+	lines b.go 4 && commit 'feat: main grows past its own raise'
+}
+expect_merge_base() { # expect_merge_base <exit code> <case name>
+	local want="$1" name="$2" got=0
+	bash "$script" --merge-base origin/main >"$root/out" 2>&1 || got=$?
+	if [ "$got" != "$want" ]; then
+		echo "FAIL: $name: exit $got, wanted $want"
+		sed 's/^/    /' "$root/out"
+		failures=$((failures + 1))
+	else
+		echo "ok   $name"
+	fi
+}
+
+fresh_branch moved_merged
+on_main main_raises_then_overruns
+sed -i 's/one/uno/' a.go && commit 'feat: a change that grows nothing'
+git merge -q --no-edit origin/main
+expect_merge_base 0 'a branch that merged main after a main-side raise passes without touching loc-budget.json'
+
+fresh_branch moved_unmerged
+sed -i 's/one/uno/' a.go && commit 'feat: a change that grows nothing'
+on_main main_raises_then_overruns
+expect_merge_base 0 'a branch whose origin/main moved past a raise passes unmerged'
+
+fresh_branch unpriced
+lines a.go 2 && commit 'feat: two lines nobody priced'
+expect_merge_base 1 'a branch growing a bucket without a build(budget) commit is refused'
+if ! grep -q 'go grew by 2 lines since the merge base .* declare 0' "$root/out"; then
+	echo 'FAIL: the refusal does not name the bucket, its growth and what was declared'
+	failures=$((failures + 1))
+fi
+
+fresh_branch inside
+budget 8 docs && commit 'build(budget): go 3 -> 8'
+lines a.go 4 && commit 'feat: four lines inside the five priced'
+expect_merge_base 0 'growth inside a declared raise passes'
+
+fresh_branch beyond
+budget 5 docs && commit 'build(budget): go 3 -> 5'
+lines a.go 4 && commit 'feat: four lines against two priced'
+expect_merge_base 1 'growth beyond a declared raise is refused'
+
+# A ceiling that comes down is tidying, not a promise to shrink. The branch that lowers one to what its
+# own tree counts grows by nothing, so the ratchet accepts the commit that priced it; and the same
+# lowering buys no room to grow, because an allowance is what the branch raised, never the sum of what it
+# moved. Reading a signed lowering against the allowance refused the rebaseline command CONTRIBUTING
+# prescribes, on a branch whose code had not moved at all.
+budget_docs() { # budget_docs <go max> <docs max> — the two ceilings of `budget 3 docs`, each given
+	printf '{"buckets": [{"name": "go", "suffixes": [".go"], "max": %s}, {"name": "docs", "suffixes": [".txt"], "max": %s}]}\n' "$1" "$2" > loc-budget.json
+	echo '{"packages": 5}' > packages-budget.json
+}
+
+fresh_branch lowering_prices_nothing
+budget_docs 3 8 && commit 'build(budget): the docs ceiling comes down to what the tree counts'
+expect_merge_base 0 'a build(budget) commit that only lowers a ceiling is never a refusal'
+
+fresh_branch lowering_buys_nothing
+budget_docs 3 8 && commit 'build(budget): the docs ceiling comes down to what the tree counts'
+lines a.go 2 && commit 'feat: two lines the lowering did not price'
+expect_merge_base 1 'a lowering declares no growth'
+
+# Two readings of the same pair of commits, on a branch that raised a bucket and then brought it down
+# again: what pays for the lines is the raise it was priced at, or what the budget file last carried for
+# the bucket. The second is what `make check-loc` holds, because a ceiling the file no longer states is a
+# ceiling no reviewer agreed to. So the branch that lowers the bucket it had raised is refused for its
+# growth, and the one that keeps enough of it stands on what is left of the raise.
+fresh_branch raise_then_lower_declares_nothing
+budget 8 docs && commit 'build(budget): go 3 -> 8'
+budget 3 docs && commit 'build(budget): go comes back down to 3'
+lines a.go 2 && commit 'feat: two lines of a raise the branch took back'
+expect_merge_base 1 'a raise the branch lowers back is no longer priced'
+
+fresh_branch lower_keeps_what_is_left
+budget 8 docs && commit 'build(budget): go 3 -> 8'
+lines a.go 4 && commit 'feat: four of the five priced lines'
+budget 7 docs && commit 'build(budget): go 8 -> 7, one line came back out'
+expect_merge_base 0 'the ceiling the branch last wrote is what pays for its growth'
+
+fresh_branch resolution
+on_main main_raises_then_overruns
+git merge -q --no-ff --no-commit origin/main >/dev/null
+budget 20 docs && commit 'merge main, raising go in the resolution'
+lines a.go 4 && commit 'feat: four lines the merge resolution claimed to price'
+expect_merge_base 1 'a raise declared only in a merge resolution declares nothing'
+
+fresh_branch unapproved
+budget 1004 docs && commit 'build(budget): go 3 -> 1004'
+expect_merge_base 1 'a raise over 1,000 lines without Owner-approved is refused'
+
+fresh_branch approved
+budget 1004 docs && commit 'build(budget): go 3 -> 1004' 'Owner-approved: the owner, for this raise'
+expect_merge_base 0 'a raise over 1,000 lines with Owner-approved passes'
+
+fresh_branch unfetched
+git update-ref -d refs/remotes/origin/main
+expect_merge_base 2 'a branch with no merge base with origin/main is refused'
+if ! grep -q 'no merge base' "$root/out"; then
+	echo 'FAIL: the refusal does not say there is no merge base'
+	failures=$((failures + 1))
 fi
 
 [ "$failures" -eq 0 ] || { echo "$failures case(s) failed"; exit 1; }

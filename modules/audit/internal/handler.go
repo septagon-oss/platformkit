@@ -56,7 +56,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, feature string) {
 				return nil, unavailable
 			}
 			items, total, err := svc.List(ctx, tx, contracts.Query{
-				Name: in.Name, Actor: in.Actor, Record: in.Record,
+				Name: in.Name, Actor: in.Actor, Record: in.Record, OperationRef: in.OperationRef,
 				Request: in.Request, TraceID: in.Trace,
 				Since: in.Since, Until: in.Until,
 				Limit: in.Limit, Offset: in.Offset,
@@ -96,9 +96,10 @@ type idInput struct {
 // parameters rather than kit/rest's repeated field:value because two of them
 // are ranges, which that syntax has no operator for.
 type listInput struct {
-	Name   string    `query:"name" doc:"Only events with this name" example:"task.task.created"`
-	Actor  uuid.UUID `query:"actor" format:"uuid" doc:"Only events this user caused"`
-	Record uuid.UUID `query:"record" format:"uuid" doc:"Only events about this row, whatever its payload calls it"`
+	OperationRef uuid.UUID `query:"operationRef" format:"uuid" doc:"Only events caused by this operation occurrence"`
+	Name         string    `query:"name" doc:"Only events with this name" example:"task.task.created"`
+	Actor        uuid.UUID `query:"actor" format:"uuid" doc:"Only events this user caused"`
+	Record       uuid.UUID `query:"record" format:"uuid" doc:"Only events about this row, whatever its payload calls it"`
 	// The two the row could not answer until migrations/000035. Both are the
 	// values the caller already has: X-Request-ID from their own response, and
 	// the 32-hex trace id from their own traceparent.

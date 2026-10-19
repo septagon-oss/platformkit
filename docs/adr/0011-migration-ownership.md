@@ -115,7 +115,7 @@ step after it that a crash can skip. The application role is revoked from both.
 
 An autocommit statement is also the one statement a migration run must not hold the
 composition's advisory lock across. Such a statement waits for the transactions already
-in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds the
+in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds that
 wait — while that lock is what every other replica's boot queues behind. Holding both
 was measured, and it deadlocks the queue:
 
@@ -128,7 +128,27 @@ so the run puts the lock down for that one statement and takes it back for the h
 row, which is inserted `ON CONFLICT DO NOTHING`: two replicas may then both reach a
 statement the rule table already requires to be re-runnable, and the one that loses the
 race learns the file applied rather than failing its boot for a benign race. A statement
-that failed writes no row either way.
+that failed writes no row either way. The ledger row is the half of that race the history
+can settle; the *object* the statement built is the half it cannot, because two boots
+dropping and rebuilding one half-built index answer each other with a cycle the deadlock
+detector picks one of and with a catalog tuple updated underneath them. So the file takes
+an advisory lock of its own — the two-key form, one namespace per `owner/version` where
+the composition lock is one for the run — and holds it across the statement and its
+certification, asked for with `pg_try_advisory_lock` and re-asked with the session idle
+between asks, because a lock queue is a running transaction and a concurrent build waits
+for the transactions already in the database: to queue inside the holder's critical
+section is to join the cycle the release exists to leave (`kit/db/certify.go`,
+`kit/db/concurrent_index_replicas_test.go`, `kit/db/concurrent_index_turn_test.go`).
+
+The budget that survives that window is the statement one, which an installation names
+on purpose and which defaults to no bound. A `CONCURRENTLY` build cut short by it
+mid-way — or by the deadlock detector picking this session, or by the caller's context —
+leaves the half-built object standing under the name it was building, which the next send
+of `IF NOT EXISTS` reports as done. Success is therefore not the end of an autocommit
+file: the runner reads the object it named out of the catalog, drops and rebuilds one
+that is not valid, and refuses the file rather than recording a constraint the database
+does not enforce (`kit/db/certify.go`,
+`kit/db/migrate_certify_concurrently_test.go`).
 
 The order of a release is now a rule rather than a review comment. A `contract` file
 refuses while the `expand=` version it names is not already in that installation's
