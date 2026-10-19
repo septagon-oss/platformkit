@@ -29366,6 +29366,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/secrets/providers/openbao/a_shared_name_does_not_reach_a_tenants_key_test.go",
+   "id": "kit/secrets/providers/openbao/a_shared_name_does_not_reach_a_tenants_key_test.go#TestASharedNameDoesNotReachATenantsKey",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASharedNameDoesNotReachATenantsKey",
+   "needs_db": false,
+   "pkg": "kit/secrets/providers/openbao",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/secrets/providers/openbao/openbao_test.go",
    "id": "kit/secrets/providers/openbao/openbao_test.go#TestTheOpenBaoAdapterConforms",
    "kind": "go",
@@ -65373,7 +65392,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1701,
+  "files": 1702,
   "forge_runs": [
    408,
    413,
@@ -65407,7 +65426,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2801,
+   "behaviour": 2802,
    "composition": 390,
    "contract": 20,
    "journey": 92
@@ -65426,23 +65445,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3303,
+  "rows": 3304,
   "tiers": {
    "merge": 2049,
    "nightly": 92,
-   "push": 1162
+   "push": 1163
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1474,
+   "keep": 1475,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2947,
+   "keep": 2948,
    "keep-rewrite": 140,
    "merge": 216
   }
