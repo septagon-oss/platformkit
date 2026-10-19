@@ -129,8 +129,17 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 	// page in the languages as they were when its request started is not a page that
 	// is wrong. The write below carries this same read, and a move that lands
 	// between the two closes the entry rather than surviving it.
-	joined := a.generations.stamp(under)
-	shared, err, _ := a.resolving.Do(resolutionKey(host, joined), func() (any, error) {
+	//
+	// What the joining rests on is that both requests can name the one generation
+	// they share. A read that did not answer names none, so a request whose read
+	// failed shares nothing and loads for itself: two requests during a cache outage
+	// are two requests whose reads said nothing, not two requests proven to sit at
+	// the same moment, and joining them would let the one that arrived after an
+	// invalidation be answered from the snapshot the invalidation just closed. That
+	// is the same answer costs one loader query each, which is what a miss on an
+	// unreadable store costs either way.
+	joined, shareable := a.generations.stamp(under)
+	load := func() (any, error) {
 		resolved, hit, _ := a.cachedUnder(ctx, key)
 		if hit {
 			return resolved, nil
@@ -179,7 +188,14 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 				"host", host, "error", err)
 		}
 		return t, nil
-	})
+	}
+	var shared any
+	var err error
+	if shareable {
+		shared, err, _ = a.resolving.Do(resolutionKey(host, joined), load)
+	} else {
+		shared, err = load()
+	}
 	if err != nil {
 		return tenancy.Tenant{}, err
 	}
@@ -212,15 +228,24 @@ type hostGenerations struct {
 }
 
 // stamp is this process's number for the generation g, advanced the first time it
-// sees a generation it has not seen.
-func (h *hostGenerations) stamp(g cache.Generation) uint64 {
+// sees a generation it has not seen, and whether g names a read at all.
+//
+// The second answer is the one that decides whether a shared lookup may be joined:
+// sharing rests on two requests naming the same moment, and a Generation that came
+// from no read names none. It is the zero value in exactly that case — every read
+// that answered, a hit or a miss alike, carries that it read, so a request is never
+// kept from a lookup it genuinely belongs to.
+func (h *hostGenerations) stamp(g cache.Generation) (uint64, bool) {
+	if g == (cache.Generation{}) {
+		return 0, false
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if !h.seen || h.open != g {
 		h.open, h.seen = g, true
 		h.window++
 	}
-	return h.window
+	return h.window, true
 }
 
 // cachedUnder reads the store and answers the generation its read found open,
@@ -434,16 +459,27 @@ func ForgetTenantOnCommit(ctx context.Context, tenant uuid.UUID) {
 // dropResolutions closes the host namespace for the tenants one committed request
 // changed. Nothing is asked of the store when the request changed no tenant, so an
 // ordinary read costs nothing here.
-func (a *API) dropResolutions(ctx context.Context, changed []uuid.UUID) {
+//
+// The store's error comes back rather than being logged away, because the commit is
+// the one thing this failure cannot undo: the row says what the tenant speaks now
+// while every process reading this namespace may still answer in what it spoke
+// before. The route is the only thing left that can tell the person who made the
+// change, and a route that reported success here would report an effect it had not
+// achieved. Repeating the request runs the same move again, which is why the answer
+// is a retryable refusal rather than an unwinding of the write.
+func (a *API) dropResolutions(ctx context.Context, changed []uuid.UUID) error {
 	if len(changed) == 0 {
-		return
+		return nil
 	}
 	// WithoutCancel: the write is committed and the client may already be gone,
 	// while every replica reading this store still believes the old resolution.
 	if err := a.opts.Cache.Move(context.WithoutCancel(ctx), hostScope); err != nil {
 		// The committed row stands and the store is behind it. The next read of
-		// each host costs a query, which is what hostTTL would have cost anyway.
+		// each host costs a query, which is what hostTTL would have cost anyway —
+		// unless the row changed under it, which is what the caller must answer for.
 		a.log.WarnContext(ctx, "httpx: could not close the host resolutions a commit changed",
 			"tenants", len(changed), "error", err)
+		return fmt.Errorf("httpx: closing the host resolutions of %d committed tenant change(s): %w", len(changed), err)
 	}
+	return nil
 }
