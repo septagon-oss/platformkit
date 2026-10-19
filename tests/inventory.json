@@ -2393,6 +2393,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/content_deck_reader_test.go",
+   "id": "apps/platformkit/content_deck_reader_test.go#TestAContentReaderIsServedTheDeckWithOnlyItsSkip",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestAContentReaderIsServedTheDeckWithOnlyItsSkip",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/content_translation_catalog_test.go",
    "id": "apps/platformkit/content_translation_catalog_test.go#TestContentTranslationsAreReachableFromTheReferenceCatalog",
    "kind": "go",
@@ -27511,6 +27530,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/defaulted_command_validation_test.go",
+   "id": "kit/rest/defaulted_command_validation_test.go#TestADefaultedCommandValidatesItsBodyLikeAnUndefaultedOne",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestADefaultedCommandValidatesItsBodyLikeAnUndefaultedOne",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "merge",
    "unique_lines": null,
    "unique_reach": [],
@@ -68676,7 +68714,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1818,
+  "files": 1820,
   "forge_runs": [
    408,
    413,
@@ -68710,8 +68748,8 @@
    578
   ],
   "layers": {
-   "behaviour": 2936,
-   "composition": 426,
+   "behaviour": 2937,
+   "composition": 427,
    "contract": 21,
    "journey": 93
   },
@@ -68729,9 +68767,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3476,
+  "rows": 3478,
   "tiers": {
-   "merge": 2197,
+   "merge": 2199,
    "nightly": 93,
    "push": 1186
   },
@@ -68739,13 +68777,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1591,
+   "keep": 1593,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3120,
+   "keep": 3122,
    "keep-rewrite": 140,
    "merge": 216
   }
