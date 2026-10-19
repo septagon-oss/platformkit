@@ -309,6 +309,18 @@ func endErr(span trace.Span, err error) {
 	span.End()
 }
 
+// Opened returns the transaction this Pending has opened, and false when it has
+// opened none. Asking opens nothing: a request that never queried wrote nothing a
+// caller could add a row beside.
+func (p *Pending) Opened() (Tx[Tenant], bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.gtx == nil {
+		return Tx[Tenant]{}, false
+	}
+	return Tx[Tenant]{db: p.gtx, scope: Tenant{tenant: p.tenant}}, true
+}
+
 // Err is the failure that stopped the transaction opening, if one did.
 func (p *Pending) Err() error {
 	p.mu.Lock()
