@@ -84,12 +84,24 @@ func (s *stub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // transit seals and opens the way a derived transit key does: the context is folded
 // into the key's additional authenticated data, so the same key answers a different
 // key for every tenant and a ciphertext cannot cross.
+//
+// The one refusal a fake of this endpoint has to copy is the server's own: OpenBao
+// answers `transit/encrypt/<tenant>/<key>` with 404 "unsupported path", because a
+// transit key lives at one path segment and cannot be nested the way a KV secret
+// can. A stub that accepted the nesting is how an adapter passed a suite and then
+// met a server that had never heard of the address.
 func (s *stub) transit(w http.ResponseWriter, r *http.Request, parts []string) {
-	// The key is mounted under its own address, tenant segment and all, which is how
-	// a transit mount of one customer's keys differs from the installation's.
+	// The key is mounted under its own address, which for a customer's key is its
+	// tenant's UUID as a prefix — see openbao.KeyAddress — and not a directory.
+	if len(parts) < 3 || strings.Contains(parts[2], "/") {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	material, ok := s.keys[parts[2]]
 	if !ok {
-		w.WriteHeader(http.StatusNotFound)
+		// A key that was never mounted is the server's 400 "encryption key not
+		// found", measured against the container, and not a miss.
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	key, err := box.Key(material)
@@ -178,7 +190,7 @@ func TestTheOpenBaoAdapterConforms(t *testing.T) {
 			if ref.Name() == secretstest.SuiteKeyOther {
 				material = secretstest.OtherKeyMaterial
 			}
-			server.keys[pathOf(ref)] = []byte(material)
+			server.keys[openbao.KeyAddress(ref)] = []byte(material)
 		},
 		// A KV v2 `value` is a JSON string, so the bytes this store can hold are the
 		// ones JSON can spell — NUL, newline and a non-ASCII letter included. The
@@ -260,9 +272,11 @@ func TestTheTokenIsNeverInASentence(t *testing.T) {
 }
 
 // TestTheContainerPinIsWhereTheSkipSaysItIs refuses the quiet failure: if the
-// service leaves compose.yaml or the Makefile stops exporting its address, the one
-// real-server run of this adapter skips in every check and every CI job, and the skip
-// sentence sends the reader to a command that starts nothing.
+// service leaves compose.yaml, the Makefile stops exporting its address, or the stack
+// stops mounting the two engines the cases read, then either the one real-server run
+// of this adapter skips in every check and every CI job and the skip sentence sends
+// the reader to a command that starts nothing, or it runs against a server that
+// answers "no mount point" for half the case list.
 func TestTheContainerPinIsWhereTheSkipSaysItIs(t *testing.T) {
 	compose, err := os.ReadFile("../../../../compose.yaml")
 	if err != nil {
@@ -278,16 +292,49 @@ func TestTheContainerPinIsWhereTheSkipSaysItIs(t *testing.T) {
 	if !bytes.Contains(makefile, []byte("PLATFORMKIT_TEST_OPENBAO_URL")) {
 		t.Error("the Makefile never sets PLATFORMKIT_TEST_OPENBAO_URL, so `make check` skips the OpenBao adapter's conformance run")
 	}
+	// The two mounts are half of what this suite reads, and only the stack's own
+	// start-up makes them: dev mode mounts KV v2 and not transit, so a service that
+	// lost its mount step would answer the sealing cases as a broken adapter.
+	if !bytes.Contains(compose, []byte("openbao-dev.sh")) {
+		t.Error("compose.yaml's openbao service mounts nothing, so the transit cases have no engine to run against")
+	}
+	for _, enable := range []string{
+		"bao secrets enable -path=secret kv-v2",
+		"bao secrets enable -path=transit transit",
+	} {
+		if !bytes.Contains(script(t), []byte(enable)) {
+			t.Errorf("the stack's mount step never runs %q", enable)
+		}
+	}
+}
+
+// script is the dev-mode OpenBao's own start-up, read from where compose.yaml mounts
+// it: a fixture a test cannot read is a fixture whose promises nobody checks.
+func script(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile("../../../../deploy/openbao-dev.sh")
+	if err != nil {
+		t.Fatalf("read the dev-mode OpenBao's start-up script: %v", err)
+	}
+	return raw
 }
 
 // TestTheSharedSuiteAgainstTheContainer is the same case list against a real
-// OpenBao, and the answer to a stub that agrees with the client it is testing.
+// OpenBao, and the answer to a stub that agrees with the client it is testing. The
+// mount table, the two key types and what a KV v2 `value` can hold byte for byte are
+// the three things only a server can say, so this run says them from one.
 func TestTheSharedSuiteAgainstTheContainer(t *testing.T) {
 	url, token := os.Getenv("PLATFORMKIT_TEST_OPENBAO_URL"), os.Getenv("PLATFORMKIT_TEST_OPENBAO_TOKEN")
 	if url == "" || token == "" {
 		t.Skip("PLATFORMKIT_TEST_OPENBAO_URL and PLATFORMKIT_TEST_OPENBAO_TOKEN name the dev-mode OpenBao `make up` starts; neither is set, so this run answers nothing and the wire cases above are the only evidence about this adapter")
 	}
-	cfg := config.Secrets{Adapter: "openbao", URL: url, Token: token}
+	// The two mounts are named here rather than left empty: the fixture addresses the
+	// server directly, so an empty name would be a path with a hole in it, and these
+	// are the names New falls back to when a deployment names none.
+	cfg := config.Secrets{
+		Adapter: "openbao", URL: url, Token: token,
+		KVMount: openbao.DefaultKVMount, TransitMount: openbao.DefaultTransitMount,
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	adapter := secretstest.Adapter{
 		Name:  "openbao",
@@ -300,33 +347,51 @@ func TestTheSharedSuiteAgainstTheContainer(t *testing.T) {
 			// The mount is the operator's act, not the port's: this is the request a
 			// `vault kv put` sends, and it is here because the suite needs a
 			// rotation it can cause.
-			body, err := json.Marshal(map[string]any{"data": map[string]string{"value": string(plaintext)}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			request, err := http.NewRequest(http.MethodPost, url+"/v1/"+cfg.KVMount+"/data/"+pathOf(ref), bytes.NewReader(body))
-			if err != nil {
-				t.Fatal(err)
-			}
-			request.Header.Set("X-Vault-Token", token)
-			request.Header.Set("Content-Type", "application/json")
-			response, err := client.Do(request)
-			if err != nil {
-				t.Fatalf("mount a secret: %v", err)
-			}
-			defer response.Body.Close()
-			if response.StatusCode >= 300 {
-				t.Fatalf("mount a secret: %s", response.Status)
-			}
+			put(t, client, url, token, cfg.KVMount+"/data/"+pathOf(ref),
+				map[string]any{"data": map[string]string{"value": string(plaintext)}})
 		},
 		WriteKey: func(t *testing.T, ref secrets.Ref) {
-			t.Skip("the container's transit keys are its fixture's, mounted before the run; see compose.yaml's openbao service")
+			t.Helper()
+			// Mounting a key is the same kind of act, and `derived` is the flag this
+			// adapter's tenant binding reads: a customer's key must be derived for its
+			// tenant context to mean anything to the server, and the installation's own
+			// must not be, because a derived key refuses a call that carries no context.
+			put(t, client, url, token, cfg.TransitMount+"/keys/"+openbao.KeyAddress(ref), map[string]any{
+				"type": "aes256-gcm96", "derived": ref.Tenant() != uuid.Nil,
+			})
 		},
 		Exact: []byte("hunter2\n\u00e9\u4e2d\u0000"),
 	}
 	secretstest.Conformance(t, adapter)
 	secretstest.Tenants(t, adapter)
 	secretstest.Versions(t, adapter)
+	secretstest.Keys(t, adapter)
+	secretstest.TenantKeys(t, adapter)
+}
+
+// put sends one JSON body to one path of the server's API with the token in the
+// header the server reads, and fails the case rather than returning an error: a
+// fixture this suite could not build is not a case worth running.
+func put(t *testing.T, client *http.Client, url, token, path string, body any) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, url+"/v1/"+path, bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("X-Vault-Token", token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("mounting %s: %v", path, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 300 {
+		t.Fatalf("mounting %s: %s", path, response.Status)
+	}
 }
 
 // TestATransitContextIsNotOptionalToTheKey says the derivation is the server's and
