@@ -43,13 +43,15 @@ func TestNewRefusesALinkPageThatIsNotAnAbsolutePath(t *testing.T) {
 
 // A mailed link opens a page that reads the token and calls the API; a link
 // into the API itself is a JSON door a mail client cannot use. A dot segment
-// that resolves there is the same address.
+// that resolves there is the same address, and a browser's ".." takes back an
+// empty segment rather than the one before it.
 func TestNewRefusesALinkPageUnderTheAPIRoot(t *testing.T) {
 	for _, page := range []string{
 		"/api/v1",
 		"/api/v1/auth/password/reset",
 		"/api/v1/public/auth/verify-email",
 		"/account/../api/v1/public/auth/verify-email",
+		"/api/v1//../auth/password/reset",
 	} {
 		for _, pages := range []auth.LinkPages{{SetPassword: page}, {ConfirmEmail: page}} {
 			said := refusal(auth.Deps{LinkPages: pages})
