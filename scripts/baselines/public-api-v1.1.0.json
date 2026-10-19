@@ -2,11 +2,12 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "c80f3d3d67dd6dbe001e7621bc7e06f2457321b8"
+    "candidate": "c175d02bb3abe13baf163fe4e4589ae37e905ea9"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
     "./kit/config.Files: old is comparable, new is not",
+    "./kit/config.Mail.Password: removed",
     "./kit/events/providers/nats.JetStream: changed from func(string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error) to func(github.com/septagon-oss/platformkit/kit/appname.Name, string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error)",
     "./kit/health.Mux: changed from func(*log/slog.Logger, ...Check) net/http.Handler to func(*log/slog.Logger, []Check, ...Report) net/http.Handler",
     "./kit/health.Register: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, ...Check) to func(*github.com/septagon-oss/platformkit/kit/httpx.API, []Check, ...Report)",
