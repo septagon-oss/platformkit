@@ -446,6 +446,12 @@ func (brokenStore) Complete(context.Context, idempotency.Scope, uuid.UUID, idemp
 	return errStoreDown
 }
 
+// Mark is the same outage: a store that cannot be read cannot be written, and the
+// interface asks for the effect marker beside the other three.
+func (brokenStore) Mark(context.Context, db.Tx[db.Tenant], idempotency.Scope, uuid.UUID) error {
+	return errStoreDown
+}
+
 // n0 is a zero reading of the counter, written so the arithmetic below reads as a
 // difference rather than as a magic starting point.
 func n0(k *keyedWrite) int32 { return k.ran.Load() }

@@ -17,7 +17,10 @@ package screens
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	g "maragu.dev/gomponents"
 
@@ -26,6 +29,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -137,7 +141,9 @@ func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row
 	if err != nil {
 		return page.View{}, err
 	}
-	return resource.DetailRichText(view(r, ctx, at), o, row, writable, rendered, locales), nil
+	v := view(r, ctx, at)
+	v.History = historyPanel(r, ctx, o, at, row)
+	return resource.DetailRichText(v, o, row, writable, rendered, locales), nil
 }
 
 // localeStates is the one language question the record screen asks, asked of the
@@ -185,4 +191,90 @@ func FormExample(id string, r httpx.Resource, o Options, action, title string, r
 // Control adapts an entity field to the portable form control. See resource.Control.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 	return resource.Control(f, value, fieldErr, immutable)
+}
+
+// historyPanel is the record's own past, read for the caller standing in front of
+// this page and drawn beside the row it describes. A resource whose Spec keeps no
+// versions answers nil, which is the whole of what the renderer needs to know. A
+// series that could not be read leaves the record on its own rather than failing
+// the page over it: the row is what the person came for, and the panel is the part
+// they can ask for again.
+//
+// The row's own write count goes with the panel as the condition every restore
+// below quotes, because the page that read the row is the page that can say so.
+func historyPanel(r httpx.Resource, ctx context.Context, o Options, at string, row map[string]any) *resource.HistoryPanel {
+	if r.History == nil || r.History.Versions == nil {
+		return nil
+	}
+	id, err := uuid.Parse(strings.TrimSpace(rest.Text(row["id"])))
+	if err != nil {
+		return nil
+	}
+	stored, err := r.History.Versions(ctx, id)
+	if err != nil {
+		return nil
+	}
+	out := &resource.HistoryPanel{
+		Action:  at + "/" + id.String() + "/" + r.History.RestoreVerb,
+		Carries: r.History.RestoreVerb,
+		Title:   o.Text("screens.history", "History"),
+		Restore: o.Text("screens.history.restore", "Restore this version"),
+		// The consequence comes from the command, not from this page: the panel asks in
+		// the words whoever mounted the resource wrote, and asks nothing when they
+		// declared none.
+		Asking: r.History.Asks,
+	}
+	if revision, numbered := row[entity.RevisionField].(float64); numbered {
+		out.Condition = strconv.FormatInt(int64(revision), 10)
+	}
+	// What each version held, indexed by its number, because the comparison one
+	// version offers is against the one before it and the series arrives newest
+	// first. A number missing from the index is a version retention released, or the
+	// beginning of the series: both answer "nothing to compare against".
+	held := make(map[int64]map[string]any, len(stored))
+	for _, v := range stored {
+		document := map[string]any{}
+		decoder := json.NewDecoder(strings.NewReader(string(v.Fields)))
+		decoder.UseNumber()
+		_ = decoder.Decode(&document)
+		held[v.Version] = document
+	}
+	for _, v := range stored {
+		item := resource.VersionRow{Number: v.Version, When: v.At.UTC().Format("2 Jan 2006, 15:04 UTC")}
+		if from, restored := rest.RestoredVersion(v.Reason); restored {
+			item.RestoredFrom = from
+		}
+		for _, name := range v.Changed {
+			item.Changes = append(item.Changes, resource.VersionChange{
+				Label: rest.Humanize(name),
+				Edits: valueEdits(held[v.Version-1], held[v.Version], name),
+			})
+		}
+		out.Rows = append(out.Rows, item)
+	}
+	return out
+}
+
+// valueEdits is one field of one version as the comparison it is: the words the
+// version before held, marked against the words this one left. Where no earlier
+// version stands on this page there is nothing to mark, and the value is shown as one
+// unchanged stretch, cut to the panel's line.
+func valueEdits(before, after map[string]any, name string) []resource.VersionEdit {
+	if before == nil {
+		return []resource.VersionEdit{{Text: excerpt(after[name])}}
+	}
+	return wordEdits(rest.Text(before[name]), rest.Text(after[name]))
+}
+
+// excerpt is a stored value as one line of the panel. A version of a body is
+// paragraphs long and the panel is a list of versions, so a line is cut; the whole
+// document stays behind the versions route, which answers it in full.
+func excerpt(value any) string {
+	text := rest.Text(value)
+	runes := []rune(text)
+	const cut = 160
+	if len(runes) <= cut {
+		return text
+	}
+	return string(runes[:cut]) + "…"
 }

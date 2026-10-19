@@ -21,8 +21,8 @@ import (
 // where `<module>/<entity>` is the resource address `rest.resourceAddress` keys
 // the registry by (and `reference:` spells a target), and `<aspect>` names the
 // declaration: `singular`, `plural`, `description`, `emptyDescription`,
-// `group.<key>`, `section.<key>`, `field.<name>.label`, `field.<name>.help`,
-// `enum.<field>.<value>`, `command.<verb>.label`,
+// `group.<key>`, `section.<key>`, `highlight.label`, `field.<name>.label`,
+// `field.<name>.help`, `enum.<field>.<value>`, `command.<verb>.label`,
 // `command.<verb>.confirmation.<title|body|confirmLabel>`,
 // `command.<verb>.successMessage`, and a command argument's
 // `command.<verb>.field.<name>.label` / `.help`.
@@ -31,8 +31,10 @@ import (
 // sentence: `icon`, `group.key`, `section.key`, `order`, `primaryField`,
 // `previewField`, `statusField`, `summaryFields`, `sortable`, `visibility`,
 // `format`, `money`, `reference`, `enumTones`, `system`, `primary`,
-// `destructive` and `verb` are names a screen draws, not words a person reads —
-// translating `warning` or `detail` would be a bug, not a localisation.
+// `destructive`, `verb`, `trendField` and a highlight's `filter` are names a
+// screen draws, not words a person reads — translating `warning` or `detail` would
+// be a bug, not a localisation, and a translated predicate would count a different
+// set of rows than the one its author asked about.
 //
 // The declared literal is always the fallback, which is why no `en.json` exists
 // anywhere: the sentence the code author wrote is the English (decision 0012 rule
@@ -138,6 +140,14 @@ func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 		group := *p.Group
 		group.Label = w.say("group."+group.Key, group.Label)
 		out.Group = &group
+	}
+	if p.Highlight != nil {
+		// The label is a word and the filter is not: which rows a sub-count counts
+		// is a question the server asks, and a translated operator would answer a
+		// different one. The predicates stay shared — nothing writes one.
+		highlight := *p.Highlight
+		highlight.Label = w.say("highlight.label", highlight.Label)
+		out.Highlight = &highlight
 	}
 	if p.Sections != nil {
 		sections := make([]entity.EntitySection, 0, len(p.Sections))

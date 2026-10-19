@@ -270,11 +270,15 @@ var cases = map[string]func(*testing.T, idempotency.Store, context.Context){
 		}
 	},
 
-	"a begun claim whose lease ran out is spent, not taken over": func(t *testing.T, s idempotency.Store, ctx context.Context) {
+	"a begun claim whose lease ran out resolves by its marker": func(t *testing.T, s idempotency.Store, ctx context.Context) {
 		// The pair of "a claim older than the lease is taken over once", and the reason
 		// that case is not the whole rule: a claim nobody entered and a claim whose
 		// write committed and never got its answer down look identical until somebody
-		// marks which one it was. Taking the second over is the duplicate write.
+		// marks which one it was. This case is the unmarked half — no marker, so that
+		// transaction is not in the database and the identical retry runs; the marked
+		// half is answered Spent and is a case of the shared store, because the marker
+		// is a row written inside a tenant transaction and this suite has none. Taking a
+		// marked claim over is the duplicate write the key exists to prevent.
 		one := scope("begun")
 		first, err := s.Claim(ctx, one, start)
 		if err != nil {
@@ -287,8 +291,8 @@ var cases = map[string]func(*testing.T, idempotency.Store, context.Context){
 		if err != nil {
 			t.Fatalf("claim after the lease: %v", err)
 		}
-		if v.Kind != idempotency.Spent {
-			t.Fatalf("an abandoned begun claim = %v, want Spent", v.Kind)
+		if v.Kind != idempotency.First {
+			t.Fatalf("an unmarked begun claim past its lease = %v, want First", v.Kind)
 		}
 		// While its lease runs the answer is the one every in-flight write gets: the
 		// mark changes what happens when the lease runs out, not what a caller is told

@@ -43,6 +43,13 @@ import (
 // transaction needs to keep a snapshot for.
 func (a *API) bodies(ctx huma.Context, next func(huma.Context)) {
 	_, streams := ctx.Operation().Extensions[StreamedBodyExtension]
+	_, streamsResponse := ctx.Operation().Extensions[StreamedResponseExtension]
+	// Either half of "the work is waiting": the route that reads its request for
+	// as long as the client cares to trickle, and the route that keeps the response
+	// open for as long as the caller cares to listen. Both hold a connection past the
+	// point where the guards' queries are done, and neither has any use for a
+	// snapshot of the rows that decided to admit it.
+	waits := streams || streamsResponse
 	// The request carry put on the context, which is the one a handler that
 	// reads its own body reads. It is deliberately not the one huma decodes a
 	// schema'd body from — huma copies the request on every WithContext, and
@@ -59,7 +66,7 @@ func (a *API) bodies(ctx huma.Context, next func(huma.Context)) {
 		_, w := humachi.Unwrap(ctx)
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 	}
-	if p, ok := ctx.Context().Value(txKey{}).(*db.Pending); ok && streams {
+	if p, ok := ctx.Context().Value(txKey{}).(*db.Pending); ok && waits {
 		if err := p.Close(true); err != nil {
 			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the guard transaction did not commit",
 				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)

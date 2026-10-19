@@ -5,12 +5,33 @@
 # PLATFORMKIT_MAILPIT_PORT. `make test` and `make check` read the same variables, so
 # overriding them once is enough.
 #
-# One further service sits behind the `telemetry` profile and so takes no part in
-# `make up`: see `make trace`.
+# Two further services sit behind profiles and so take no part in `make up`: the
+# `telemetry` collector (`make trace`) and `floci` (docs/spikes/floci-test-stack.md)
 services:
   postgres:
+    # Nothing in this cluster is ever recovered: each package of a suite gets a
+    # database of its own and drops it at its end, `make down` drops the volume,
+    # and the migration rehearsal and the restore drill read a dump rather than a
+    # restarted server. So it does not force its writes to a device. The
+    # PostgreSQL tuning chapter names fsync, synchronous_commit and
+    # full_page_writes for exactly this case
+    # (https://www.postgresql.org/docs/16/non-durability.html, "Non-Durable
+    # Settings"), and one task's test Postgres reached 79 GB of block writes
+    # across its suite runs against the image default: the host IO pressure
+    # beside it is what these three settings remove.
+    #
+    # Development and test only. Nothing here reaches a deployment, whose
+    # database is named by its own configuration, and `platformkit start`'s
+    # embedded Postgres — which holds a person's own data — shares no line with
+    # this file. An abrupt stop of this container can leave the cluster
+    # unreadable; `make down` and `make up` return a fresh one.
+    #
+    # max_connections is not one of those three: it is the one server limit the
+    # suite's pool bounds are priced against, and every cluster of this
+    # repository — this one and each workflow's service container — names the same
+    # number, and a case in kit/db/dbtest refuses the service block that drops it.
     image: postgres:16
-    command: ["postgres", "-c", "max_connections=256"]
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off", "-c", "max_connections=256"]
     environment:
       POSTGRES_PASSWORD: platformkit
       POSTGRES_DB: platformkit
@@ -157,6 +178,36 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  s3-floci:
+    # The candidate object store docs/spikes/floci-test-stack.md measures against the
+    # `s3` service above: Floci, an AWS emulator whose S3 answers in-process, MIT at
+    # its own source repository (github.com/floci-io/floci). Behind a profile, so
+    # `make up` starts the store this repository develops against and nothing else
+    # moves: the switch is a decision, and a measurement task does not make it by
+    # editing a default.
+    #
+    # Pinned by digest beside the version tag. `floci/floci:latest` and
+    # `floci/floci:2.3.0` answer the same index digest today, and `latest` will not
+    # stay so.
+    #
+    # No healthcheck, because the image declares its own
+    # (`/usr/local/bin/healthcheck.sh`, 5s interval, 10s start period) and its base is
+    # ubi9-micro, which carries no curl to probe with: `s3`'s probe above would fail
+    # outright here. No command: the image's own starts the emulator. No volume:
+    # Floci's default storage mode is `memory`, so its state dies with the container,
+    # which is what the store above is once `make down -v` drops it. No credentials:
+    # Floci accepts any non-empty SigV4 credential, so naming `s3`'s
+    # AWS_ACCESS_KEY_ID would name a user that exists nowhere and be read by nobody.
+    #
+    # 4566 is where Floci serves every AWS API it has, S3 included. The host port is
+    # its own number rather than the stack's 8333, so the two stores can be up at once
+    # for a comparison — and so that dialling one of them is always an explicit
+    # endpoint, never whichever service happened to start.
+    image: floci/floci:2.3.0@sha256:e0b292df4dc9559b7b1bf4f51bdda4bb8e269276236438cd03cae661260ea8a9
+    profiles: ["floci"]
+    ports:
+      - "${PLATFORMKIT_S3_FLOCI_PORT:-8334}:4566"
 
   mailpit:
     # The development mail catcher. This application mails over SMTP, and with no

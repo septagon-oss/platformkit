@@ -271,6 +271,41 @@ files:
   # lives. An entry with no class name, or one that is not a positive duration,
   # fails the load rather than quietly deleting nothing.
   retention: {}
+  # Which object store the bytes go to: empty or local-disk for the directory
+  # above, s3 for the store below. A cloud profile writes this key for you; an
+  # operator who writes it themselves keeps what they wrote, which is the whole
+  # reason the setting exists beside the directory rather than instead of it.
+  store: ""
+  s3:
+    # host:port, with no scheme, path or credentials in any of these: the scheme is
+    # the key below and the credentials are the two keys after it, because a
+    # credential pasted into an endpoint is one that ends up in a committed file.
+    endpoint: ""
+    bucket: ""
+    region: ""
+    # https unless a deployment writes http — the spelling a store inside a private
+    # network needs, and one nobody reaches by leaving a key empty.
+    scheme: "https"
+    # How the bucket is addressed: auto asks the store, dns and path say which way
+    # this network answers. Auto is right for the clouds and a coin flip for a
+    # MinIO on a LAN, which is why the key exists.
+    bucket_lookup: "auto"
+    # The static pair the object-store client speaks. It has no credential chain, so
+    # a cloud that expects the pod to know who it is still has to be given these two,
+    # and an empty pair is not half a credential: it is an anonymous store.
+    access_key: ""
+    secret_key: ""
+
+# The one setting that says which seams this deployment runs on: local (everywhere
+# the default, and what an empty profile means), self-hosted, aws, gcp or azure. A
+# profile writes the adapter each seam runs on — the object store, the shared cache,
+# the event transport — and names what the deployment still has to provide for it:
+# an address, a bucket, a sender. It writes no endpoint and no credential, infers
+# nothing from a hostname, and dials nothing: choosing a profile is not a network
+# call. Staging and production refuse a profile whose inputs nobody named; development
+# warns, because a laptop halfway through a setup is a laptop and not an outage.
+cloud:
+  profile: ""
 
 # Outbound webhooks: the HTTPS addresses a tenant registers so a machine of its own
 # hears what happened here, signed with Standard Webhooks' own headers.

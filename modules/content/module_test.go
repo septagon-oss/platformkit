@@ -14,10 +14,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/cache"
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
@@ -42,6 +44,46 @@ func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.T
 }
 func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
+// kept is the version store as this module's own cases meet it: content turns
+// history on, so mounting it needs a store to record through, and the store these
+// cases hand it is the one the composition hands it — modules/history's — which
+// its own cases test against Postgres, twice, at its SQL edge and at its door.
+// What is checked here is the call and its contents: a page's committed write that
+// records no version is the loss this module's declaration refuses, and a fake that
+// kept nothing could not answer that question.
+type kept struct {
+	items []httpx.Version
+}
+
+func (k *kept) RecordVersion(_ context.Context, _ db.Tx[db.Tenant], in httpx.VersionInput) (uuid.UUID, error) {
+	id := uuid.New()
+	k.items = append(k.items, httpx.Version{
+		ID: id, Module: in.Module, Entity: in.Entity, Record: in.Record, Locale: in.Locale,
+		Version: in.Version, Fields: in.Fields, Changed: in.Changed, Reason: in.Reason,
+		Actor: in.Actor, At: in.At,
+	})
+	return id, nil
+}
+
+func (k *kept) ListVersions(_ context.Context, _ db.Tx[db.Tenant], q httpx.VersionQuery) ([]httpx.Version, error) {
+	var out []httpx.Version
+	for _, v := range k.items {
+		if v.Record == q.Record && v.Locale == q.Locale {
+			out = append([]httpx.Version{v}, out...)
+		}
+	}
+	return out, nil
+}
+
+func (k *kept) Version(_ context.Context, _ db.Tx[db.Tenant], key httpx.VersionKey) (httpx.Version, error) {
+	for _, v := range k.items {
+		if v.Record == key.Record && v.Locale == key.Locale && v.Version == key.Version {
+			return v, nil
+		}
+	}
+	return httpx.Version{}, crud.ErrNotFound
+}
+
 // mounted is the module as main mounts it: the manifest's own Routes, on the
 // real API, against a real Postgres.
 func mounted(t *testing.T) (*httpx.API, chi.Router) {
@@ -59,8 +101,12 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 	// translatable fields, and a mount that declares them with no Translations
 	// port is refused by the Spec's own check — which is the sentence
 	// translationtest.NewFake lets this file speak without dragging a second
-	// Postgres table into a test about content.
-	_, contents := content.New(content.Deps{Translations: translationtest.NewFake(nil)})
+	// Postgres table into a test about content. A page keeps a version of every
+	// write, so the mount needs the store to keep it in as well.
+	_, contents := content.New(content.Deps{
+		Translations: translationtest.NewFake(nil),
+		Versions:     &kept{},
+	})
 	contents.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -188,6 +234,14 @@ func TestEveryEventTheRoutesDeclareIsInTheManifest(t *testing.T) {
 		}
 	}
 	for _, e := range declared {
+		// The one event a content route publishes that content does not name is
+		// the restore this module turned on: the version door writes the sentence,
+		// and modules/history declares it typed. It is named by the kit that
+		// publishes it, not by this module's manifest, and kit/app's boot gate
+		// checks the composition's whole list rather than one module's.
+		if e == rest.RestoredEvent {
+			continue
+		}
 		if !slices.Contains(events.Names(contracts.Events), e) {
 			t.Errorf("a route publishes %q and the manifest does not name it", e)
 		}
