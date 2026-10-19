@@ -41,8 +41,8 @@ door this installation opens; `pkit.Composition` for the shell's navigation,
 `pkit.Config` for the settings a module cannot decide, `Wiring.Skin` for the
 theme and the copy the app named with `Theme` and `Languages`, and `pkit.Value`
 for the services `bootstrap`, `migrate` and these tests read off the resolved
-plan. **Added** — the two modules in [product.go](product.go), because a
-composition still has to say what is its own, and saying it as two modules that
+plan. **Added** — the three modules in [product.go](product.go), because a
+composition still has to say what is its own, and saying it as modules that
 declare what they provide is the only shape in which the resolver can check it,
 refuse a missing provider by name and print the edge; nothing existing could
 carry it, since the file they replace (`modules.go` and `wiring.go`) built every
@@ -122,7 +122,7 @@ What the counting door does not do, stated here because a shell reading
 | file | what it is |
 |---|---|
 | [app.go](app.go) | the sentence, the resolved composition, and the two entry points every command shares |
-| [product.go](product.go) | the two modules this application composes: the values it owns, and the joins |
+| [product.go](product.go) | the three modules this application composes: the values it owns, the chrome it hands a module's own screen, and the joins |
 | [summary.go](summary.go) | the workspace's counts: what each resource the caller may read holds, at one instant |
 | [roles.go](roles.go) | the list somebody wrote down of who a new tenant begins as |
 | [change.go](change.go) | the one subject under change control, its flag, and the gate |
@@ -138,25 +138,26 @@ rather than finding out at the first login.
 ## Authorization
 
 Decision 0011 asks every composed module's README the same six questions. This one
-answers for the two modules this application declares in `product.go`, because no
+answers for the three modules this application declares in `product.go`, because no
 `modules/<name>/README.md` exists to answer them. [authorization_readme_test.go](authorization_readme_test.go)
-reads this section against the two manifests, the same way it reads the kernel
+reads this section against their manifests, the same way it reads the kernel
 modules'.
 
 ### Permissions
 
-None of `product`, `access` or `media` declares a permission: a manifest with no
+None of `product`, `workspace`, `access` or `media` declares a permission: a manifest with no
 grant to hand out. Every permission the running application offers belongs to the module
 that owns the subject it governs — `user` for people and roles, `content` for
 pages, `billing` for plans — and this application adds none.
 
 ### Object scope
 
-All three work inside one tenant and never across two. `product` hands out values that
+All four work inside one tenant and never across two. `product` hands out values that
 are read once at composition — the session cookie, the rate buckets, the storage
 bucket, the scheduler cadence — and joins that are constructed from a `db.Tx`
 carrying the tenant the request resolved, which is where tenancy is enforced here.
-`access` joins a person, a notice and a site to decide who may be let in, and every
+`workspace` hands out one value, the shell a module's own page is drawn in, and
+reads nothing. `access` joins a person, a notice and a site to decide who may be let in, and every
 row it reads is behind that same transaction. `media` reads nothing: it hands
 `file.Module` the shell the library is drawn in and the authorizer that decides
 which of the page's two write controls a person is shown — the check itself is
@@ -165,7 +166,8 @@ which of the page's two write controls a person is shown — the check itself is
 ### Duties the module enforces itself
 
 None enforces anything. They provide no route of their own, no duty and no check:
-`product` answers contracts, `access` fills the reach an ask has here and the
+`product` answers contracts, `workspace` names the chrome and mounts nothing,
+`access` fills the reach an ask has here and the
 authorizer the sign-in page asks, and `media` hands the library its chrome — the
 guard on the page's two posts is `file`'s own permission, asked of the composition
 by the router. The enforcement is the modules' whose services they join, and
