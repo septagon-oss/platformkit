@@ -149,6 +149,24 @@ func TestALivePageIsDrawnAsAConnectionAndARegion(t *testing.T) {
 	}
 }
 
+// TestABoostedFetchOfALivePageIsAnsweredWithADocument is the fetch that is not a
+// region refreshing: hx-boost is a person navigating with the address in the bar,
+// and a history restore is the controller replaying a GET for the document they are
+// going back to. Both ask for a page, and a fragment there would replace a whole
+// window with a bare list.
+func TestABoostedFetchOfALivePageIsAnsweredWithADocument(t *testing.T) {
+	router, inbox, _ := livePages(t)
+	for _, name := range []string{"HX-Boosted", "HX-History-Restore-Request"} {
+		fetch := htmxFetch()
+		fetch[name] = "true"
+		out := openWorkspace(t, router, inbox, fetch)
+		for _, want := range []string{"<!doctype html>", "<main><h2>Acme</h2>", `data-controller="live"`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the %s fetch of a live page is not answered with a document (%s):\n%s", name, want, out)
+			}
+		}
+	}
+}
 
 // TestARegionIsAnsweredWithItsOwnContents is the refresh: neither a document nor a
 // second owner, and the region's contents in full.

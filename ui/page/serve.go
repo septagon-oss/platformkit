@@ -160,7 +160,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 		// whole document whatever the request carried, because nothing said it had a
 		// region to swap.
 		var out *httpx.Page
-		if len(v.Live) > 0 && htmxRequested(ctx) {
+		if len(v.Live) > 0 && regionRequested(ctx) {
 			out, err = RenderFragment(g.Group(v.Body), status)
 		} else {
 			region := v.Body
@@ -237,13 +237,27 @@ func read(ctx context.Context, c Chrome) Request {
 	return r
 }
 
-// htmxRequested says an agent asked for a piece of a page rather than the page:
-// htmx puts HX-Request on every fetch it makes. It is a client's claim, read for
-// one decision and one only — whether to wrap a body in a document — and never
-// for who may see it, which the route's own guard decided before this line.
-func htmxRequested(ctx context.Context) bool {
+// regionRequested says the fetch in hand is a region asking for its own contents:
+// htmx puts HX-Request on every fetch it makes, and two of those fetches ask for a
+// page rather than a piece of one.
+//
+// A boosted link (hx-boost) is the browser navigating with the address in the bar,
+// and a history restore is the controller replaying a GET for a document the person
+// is going back to: both expect a document, and answering either with a fragment
+// would leave a person looking at a bare list where a page used to be. The region's
+// own refresh is neither — it is the plain fetch htmx makes when the controller
+// triggers it, and it is the only fetch of this address that wants the swap answer.
+//
+// The header is a client's claim, read for one decision and one only — whether to
+// wrap a body in a document — and never for who may see it, which the route's own
+// guard decided before this line.
+func regionRequested(ctx context.Context) bool {
 	req, ok := httpx.RequestFrom(ctx)
-	return ok && req.Header.Get("HX-Request") == "true"
+	if !ok || req.Header.Get("HX-Request") != "true" {
+		return false
+	}
+	return req.Header.Get("HX-Boosted") != "true" &&
+		req.Header.Get("HX-History-Restore-Request") != "true"
 }
 
 // streamConnect is the address a live region opens its connection at: the
