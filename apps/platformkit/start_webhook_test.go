@@ -8,7 +8,7 @@ import (
 
 func TestStartConfigCanComposeTheReferenceApplication(t *testing.T) {
 	cfg := startConfig(t.TempDir(), "127.0.0.1:8080", 54321)
-	application, _, _, _, _ := sentences(cfg)
+	application, _, _, _, _, _, _ := sentences(cfg)
 	_, err := application.Plan(pkit.Deployment{
 		Environment: pkit.Development,
 		Config:      cfg,

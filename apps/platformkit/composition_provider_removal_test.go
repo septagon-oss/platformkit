@@ -13,7 +13,7 @@ import (
 // composed. The site case has its own test; this one asks the same of every
 // provider the composition holds.
 func TestRemovingAnyProviderFromTheReferenceCompositionIsRefused(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	if _, err := sentencesOf(cfg).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg}); err != nil {
 		t.Fatalf("the whole reference composition must plan before a provider is removed: %v", err)
 	}

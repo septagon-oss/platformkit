@@ -314,6 +314,17 @@ type Service interface {
 	// there is no list of sessions to walk here.
 	Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
 
+	// Reactivate lets a person who was stood down sign in again. It is its own
+	// command rather than a boolean beside Deactivate because the two decisions are
+	// not opposites: standing somebody down has to check that the tenant is left
+	// with somebody who can still administer it, and standing them back up takes
+	// nothing away, so it has no floor to check. An inactive person becomes active
+	// and publishes user.reactivated; an active person changes nothing and publishes
+	// nothing. A person who was never stood down is not reopened by this command —
+	// invited, pending and unverified each wait for the act that fits their state,
+	// and a door that could step over that state would be a way in that skipped it.
+	Reactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
+
 	// Get is one user of this tenant.
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
 

@@ -28,7 +28,7 @@ line_of() { # first line of ci.yml matching the extended regex $1, or empty
 node="$(line_of 'uses: actions/setup-node@')"
 browser="$(line_of 'npx playwright install')"
 guards="$(line_of '^[[:space:]]+run: make check-e2e-guards[[:space:]]*$')"
-gate="$(line_of '^[[:space:]]+run: make e2e[[:space:]]*$')"
+gate="$(line_of '^[[:space:]]+- name: make e2e[[:space:]]*$')"
 if [ -z "$node" ] || [ -z "$browser" ] || [ -z "$guards" ] || [ -z "$gate" ]; then
 	echo "FAIL: ci.yml must install node and the browser and run both goals (setup-node=$node, browser=$browser, guards=$guards, e2e=$gate)"
 	failures=$((failures + 1))

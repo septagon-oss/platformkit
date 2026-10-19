@@ -26,6 +26,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	"github.com/septagon-oss/platformkit/modules/audit"
@@ -39,6 +40,7 @@ import (
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
@@ -111,6 +113,35 @@ type composition struct {
 	messages pkit.Catalogue
 }
 
+// catalogue is this application's permission catalogue: every permission the
+// modules its sentence resolved declare, read off their manifests, and the one
+// answer to a question two readers ask. The roles hook seeds a new tenant's
+// administrator with the operator permissions of this list and nothing else, and
+// repair-roles may take away only a grant this list says no module defines. A
+// second list at either call site is how an installation ends up holding a grant
+// no route in it will ever accept: a permission is defined by the module that
+// owns it, and a module that is not composed defines nothing.
+func (c composition) catalogue() []tenancy.Grant { return module.Grants(c.modules) }
+
+// lateCatalogue is that answer's empty holder, the same shape as the seed
+// provisioner, the fault shell and the ask's reach: the sentence contributes the
+// roles hook before anything is resolved, and what the composition declares is
+// only answerable once it is. composeReference fills it once, from the plan.
+//
+// An unfilled holder declares nothing, which is not a quiet answer for this
+// application: it seeds two initial roles, and an initial role naming a
+// permission nothing declares is refused rather than written.
+type lateCatalogue struct {
+	get func() []tenancy.Grant
+}
+
+func (c *lateCatalogue) grants() []tenancy.Grant {
+	if c == nil || c.get == nil {
+		return nil
+	}
+	return c.get()
+}
+
 // reference is the application, its deployment, and the composition it resolved.
 type reference struct {
 	app  *pkit.App
@@ -160,7 +191,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell, provision, face := sentence(cfg, served)
+	a, ask, shell, provision, grants, face, _ := sentence(cfg, served)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -205,6 +236,12 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		users: c.users, contents: c.contents, sites: c.sites, tasks: c.tasks,
 		files: c.files, auth: c.auth, demoPassword: cfg.Demo.Password,
 	}
+	// The roles hook's catalogue, filled from the same resolved plan for the same
+	// reason seeding gives: the hook is contributed while the sentence is written
+	// and the modules it asks about are only known once it is resolved. Until this
+	// line the hook seeds nothing, and the initial roles this application names make
+	// that a refusal rather than a thin tenant.
+	*grants = lateCatalogue{get: c.catalogue}
 	// The face, filled from the composition the plan answered. The mount was
 	// written into the sentence with an empty holder beside it, because a mount is
 	// part of the sentence and the answers are not.
@@ -212,13 +249,16 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	return reference{app: a, once: once, composition: c}
 }
 
-// sentences is the one statement of this application's composition, and the four
+// sentences is the one statement of this application's composition, and the six
 // values its own chrome reads: the reach an ask has here, which the access module
 // fills once the services it joins exist, the shell of the ask's two pages, which
 // is drawn from the skin the resolved composition answered with, the seed's
 // tenant-creation hook, which composeReference fills from the resolved plan for
-// the reason seeding gives, and the workspace's own face, whose mount is part of
-// the sentence below while the answers it serves come out of the plan.
+// the reason seeding gives, the permission catalogue the roles hook seeds from,
+// which the same line fills for the same reason, the workspace's own face, whose
+// mount is part of the sentence below while the answers it serves come out of the
+// plan, and the counting door's face, whose mount the same line takes while its
+// count arrives from the resources the plan resolved.
 // that boots the reference application goes through it: `run` and `start`, which
 // hand the whole thing to pkit, and appOptions, which is what a test in this
 // repository boots the same composition with when it wants the handler rather
@@ -228,16 +268,20 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 // `served` is the copy that one sentence is worded from: for every caller in this
 // binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
 // different value to name, and sentences is what everybody else calls.
-func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
-	ask, shell, provision, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &connectionFace{}
+func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace, *summaryFace) {
+	ask, shell, provision, grants, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}
+	counts := &summaryFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
-			product(cfg),
+			product(cfg, grants),
 			user.Module,
 			tenant.Module,
 			notification.Module,
 			auth.Module,
 			auth.EmailRegistration,
+			// The door a tenant's identity provider provisions through, which needs
+			// people to write and roles to name, and so comes after both.
+			scimProvisioning,
 			// The media library's chrome, immediately before the module that mounts
 			// the page: the authorizer its controls ask is the auth service above it.
 			media(),
@@ -270,14 +314,14 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
-		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
-	return a, ask, shell, provision, face
+		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount, counts.mount))
+	return a, ask, shell, provision, grants, face, counts
 }
 
 // sentences is that sentence in the copy this installation ships, for every caller
 // with no opinion about the words — including the cases that take a module out of
 // the list to ask what the composition resolves to without its provider.
-func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace, *summaryFace) {
 	return sentence(cfg, catalogues(), without...)
 }
 
@@ -389,7 +433,7 @@ func (r reference) describe() ([]byte, error) {
 // startingRoles is this application's claim about who a tenant begins as, in
 // pkit's words: Build refuses a grant no composed module defines and an operator
 // grant a tenant's role may not hold, and Explain prints what survives. The
-// personas themselves are still seeded by seedRoles, the tenant module's own
+// initial roles themselves are still seeded by seedRoles, the tenant module's own
 // creation hook — the engine has no seam for a starting role, and pkit's doc says
 // as much.
 //
@@ -398,8 +442,8 @@ func (r reference) describe() ([]byte, error) {
 // resolved composition whether it names a role the list omits: what a new tenant
 // is seeded with and what the modules declare cannot drift quietly apart.
 func startingRoles() []pkit.Role {
-	roles := make([]pkit.Role, 0, len(personas))
-	for _, r := range personas {
+	roles := make([]pkit.Role, 0, len(initialRoles))
+	for _, r := range initialRoles {
 		roles = append(roles, pkit.Role{Name: r.Name, Grants: append([]string(nil), r.Grants...)})
 	}
 	return roles
@@ -428,5 +472,11 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 	// ask whether its failure reads as an outage or as "nobody can grant this" is
 	// to compose one that fails. Every other answer comes from the resolved plan.
 	opts.Access = c.access
+	// SCIM names the media type its JSON is sent and answered in. A protocol's
+	// type is registered here rather than by the module that serves it because the
+	// API's format table is the kernel's, and which protocols an installation
+	// speaks is this file's decision: a module that could register a type could
+	// make every other door on the same API accept a body it never chose to read.
+	opts.JSONMediaTypes = []string{scimcontracts.ProtocolMediaType}
 	return opts
 }

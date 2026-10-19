@@ -115,7 +115,7 @@ Any other file, and a host with no tenant, is a 404.
 A public file is refused a grant (`ErrPublicFile`), so no signed URL ever competes with the open door. Download headers come from `modules/file/contracts/response.go`, and `contracts.MetaFor` hands the same set to the store at `Put` so a bucket-served object carries the `docs/cache.md` policy without a handler here.
 Both public routes are reads; the module has no public write, so `kit/limit` is not applied.
 
-For a file the use ledger speaks about the audience is derived, not remembered: it is public if and only if some live `file_uses` row of it says the record showing it is showing it to somebody who has not signed in (`SetShown`, migrations/000056). The two commands that can end that assertion take it back in the transaction that ends it — `SetShown` when a record leaves the public face, and `SetUses` when the last row that made a file public goes, which is what a record's delete does through `kit/rest`. Bytes whose last public user is gone are therefore anonymously unreadable at once, not when the release sweep arrives a day or two later. A file the ledger has no row for keeps what its uploader asked for: the site logo, named by a bare uuid with no field and no lifecycle, and the media library's hand-raised public upload are those two cases.
+Who may read a file is derived, not remembered: the visibility its uploader was given, widened by any live `file_uses` row of it that says the record showing it is showing it to somebody who has not signed in (`SetShown`/`SetUsesShown`, migrations/000056). The public door asks both halves and the row it hands back carries the answer, so the bytes served and the `Cache-Control` on them are one verdict. Neither half is copied into the other, and the two live in two columns. `files.upload_visibility` is the audience the file was *given* — chosen at upload by whoever holds `file:manage`, and written by the upload and by nothing else (migrations/000064 recovered it for rows an earlier release overwrote, from each file's own upload event where the outbox still holds one and, where it holds none, from whether a live public use already accounts for the `public` that row carries) — and the audience a record asserts lives in the use row that asserts it. `files.visibility` is what the row reports as its own audience: the same word at upload, and put back to `private` by the write that takes an asserted audience away, which is the one thing that ever narrows it. `SetShown` and `SetUses` therefore decide the answer and publish its flip, and never raise the file row with it: a file whose last public user is gone is anonymously unreadable at once, not when the release sweep arrives a day or two later, and an ordinary edit that adds a picture to a published record makes those bytes readable in the same write, from the row it just filed. The one row write a revocation owes is the downward one — a file nothing public reads any more, and whose recorded upload visibility is private, has `visibility` put back to private beside the event that says so. What that costs is one indexed read of `file_uses` for a file its own row calls private, and the object stored for a file public only because a page shows it carries the private cache policy — the conservative direction, never one reader wider. The floor is what the upload asked for, and where some record names that choice it holds in both directions a person might have meant: a site logo named by a bare uuid with no field and no lifecycle keeps its public read, and so does one that a published page gained and later dropped — that page's audience went back with its own row, and the uploader's choice was never the page's to take back. Where no record names it either way — the upload event has aged out of the outbox and a live public use accounts for the `public` in the row — the floor is private, and the file narrows as the record that was showing it takes its audience back, which is the moment the release it came from made that file private too.
 
 ### The media library
 
@@ -286,6 +286,25 @@ argument; `Reconciler` and `Prover` as ports an implementation declines by name
 rather than by silence; and `Deps.Storage`, which is still the composition's choice —
 `file.Local(dir)` and `file.S3(cfg)` are the same call written in the same place.
 
+The audience, hold and bound work beside that names its share. **Reused:**
+`httpx.WriteLimits` and `httpx.RetryAfter` on the upload route, and `kit/limit`'s
+counter table behind them, so the module adds no counter of its own;
+`rest.Spec.Audience` and `rest.FileUses` (wired by `file.RecordUses`), which are how
+a record's public face reaches this ledger without this module learning what a page
+is; `crud.GetForUpdate`
+and `db.Now()` again for the hold check and the grace stamp. **Added:**
+`contracts.ShownUses`, `contracts.UsesOrder` and `contracts.InUse` — the audience a
+record asserts travels with the uses it files, the save-wide lock order is the one
+thing a richtext save can promise and a Service cannot guess, and a refusal worth
+naming a count for is worth a typed error;
+`Service.OrderUses`; and the process-wide decode gate in `internal/decode.go`.
+**Made reusable:** `WriteLimits` as the counted arm of the app surface rather than a
+file-module rule, so the next upload route declares two windows and gets the tenant
+scoping, the ordering behind the permission gate and the header for free; and
+`filetest`'s conformance cases for the audience, which run against the fake and the
+SQL service alike — the two implementations are where a rule written twice starts to
+mean two things.
+
 ## Composition
 
 **Reused** — `kit/crud`'s writes and row locks, `kit/db`'s tenant transaction, this
@@ -410,9 +429,16 @@ upload. A `failed` row is never retried and nothing reads it automatically yet; 
 library will. An erasure proof certifies the frame's object, and the widths' removal
 rides the same delivery beside it.
 
-The pixel ceiling bounds one frame, not how
-many frames are decoded at once — concurrent decodes are unbounded until the
-upload route carries a `kit/limit`. The release sweep (`file-unused`,
+The pixel ceiling bounds one frame; how
+many there are at once is bounded by the process's own ceiling
+(`internal/decode.go`, one slot per core), which an upload that cannot get one
+inside its wait answers with `ErrBusyDecoding` and a 503 carrying `Retry-After`
+rather than by queueing
+without limit. The encode pass shares those slots and defers instead of failing.
+The two refusals are different answers: a spent window is the caller's and answers
+429, a machine holding every decode slot is nobody's request being wrong and answers
+503 — and both carry `Retry-After`, which is what a retry actually reads.
+How often a caller may ask is the other bound and it belongs to the route: the upload declares `httpx.WriteLimits` (60 a minute per person, 300 per tenant), counted after the permission guard and before the body is read, so a spent window answers 429 with `Retry-After` and opens no write. The release sweep (`file-unused`,
 `internal/unused.go`) removes an image stamped `unused_since` further ago than
 `Deps.UnusedAfter` with no live use and no hold, and only ever a file the image
 pass measured (`width > 0`), so a document upload is never reaped by a rule about
@@ -425,22 +451,30 @@ that cannot tell an unsaved picture from a configured one. A resource left on
 `rest.RecordNoUses` sits on the safe side of that boundary: it files no uses, so nothing
 ever stamps its images and the release sweep never reaches them — mount warns because the
 audience of those images is never derived either, so a published page shows only what its
-uploader made public. `Service.Delete` asks the ledger first, and it locks the file
-itself `FOR UPDATE` before it reads: `SetUses` holds that same row `FOR KEY SHARE` for as
-long as one of its transactions is filing a use, so a use in flight is waited for and
-counted rather than missed — a delete that read the ledger without that lock would delete
-the row while a committed use of it landed beside it, and the ledger would then name a
-file nobody can show. Then it locks that file's own `file_uses` rows `FOR UPDATE`, and
-one of them answers `ErrInUse` — 409, the count in the sentence, nothing written and
-nothing published.
-The library's disabled control is the courtesy; this is the refusal, and it reaches a
-client that never saw the page. What ends a use is unchanged: an edit, or the
-record's own delete through `kit/rest`, which is not refused by a file that went
-first — and the removals that outrank a record's convenience keep going through the
-paths that ignore the ledger: a subject's erasure removes what a page is still
-showing, and the two sweeps remove rows they are about to end. A tenant that wants
-the person's file gone and the page intact edits the page first; the module will not
-tell the holder of a subject request to go and do a content edit. Nothing else ends a
-use. The pass's refusals are
+uploader made public. `Service.Delete` refuses a file any row of `file_uses`
+still names — `ErrInUse`, 409, naming how many records, nothing written and
+nothing published — and it asks under a lock on the file row `FOR UPDATE`:
+`SetUses` holds that same row `FOR KEY SHARE` for as long as one of its
+transactions is filing a use, so a use that begins concurrently either waits
+behind the removal and is refused the file it named, or lands first and is
+counted. The library's disabled control is the courtesy; this is the refusal, and
+it reaches a client that never saw the page. A dangling row is therefore what the
+erasure door and the retention sweep leave behind, and it ends with the next
+rewrite of that field: an edit, or the record's own delete through `kit/rest`,
+which ends its uses and is not refused by a file that went first. The removals
+that outrank a record's convenience keep going through the paths that ignore the
+ledger: a subject's erasure removes what a page is still showing, and the two
+sweeps remove rows they are about to end. A tenant that wants the person's file
+gone and the page intact edits the page first; the module will not tell the holder
+of a subject request to go and do a content edit. Nothing else ends a use. An
+edit of a published record files what it adds as public in
+the same write: `rest.Spec.Audience` is the record's answer and `SetUsesShown`
+is the one rewrite that can act on it. That write asserts the audience in the use
+row and never in the file row: the write of a file row is a lock held to the end of
+the save, and a save of two richtext fields naming two shared pictures in each
+other's order is two saves waiting for what the other holds (Postgres ends it by
+refusing one — SQLSTATE 40P01). `file.RecordUses` therefore names the whole save to
+the ledger before filing any of it, and the ledger takes its exclusive locks in one
+ascending pass over what the save *ends*. The pass's refusals are
 English `error` text, not catalogue keys, so they are untranslated beside the
 `messages/` catalogue the rest of the module answers in.

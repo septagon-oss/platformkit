@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,7 +12,7 @@ import (
 // The public site consumes the site settings service. The composition document
 // must show that edge to a reader who is checking which module supplies it.
 func TestReferenceCompositionNamesWebsSiteDependency(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	got := composeReference(cfg, pkit.Development).explain(app.All)
 	for _, module := range []string{"site.Module", "web.Module"} {
 		if !strings.Contains(got, module) {
@@ -40,7 +38,7 @@ func TestReferenceCompositionNamesWebsSiteDependency(t *testing.T) {
 // A module that still has a prebuilt service must not conceal that its provider
 // was removed from the app's declared composition.
 func TestReferenceCompositionRefusesWebWithoutSiteModule(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	c := compose(cfg)
 	if !namesAModule(c.modules, "site") || !namesAModule(c.modules, "web") {
 		t.Fatal("the composition must contain site and web before this dependency is tested")
@@ -51,13 +49,13 @@ func TestReferenceCompositionRefusesWebWithoutSiteModule(t *testing.T) {
 	}
 }
 
-func referenceDependencyConfig(t *testing.T) config.Config {
+// referenceCompositionConfig is the installation the composition documents
+// describe, read from the committed file, for a case that asks the resolver about
+// that composition: a resolver question is answered by the same bytes the document
+// is written from, so the case reads what a reader reads.
+func referenceCompositionConfig(t *testing.T) config.Config {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(compositionConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.Load(path)
+	cfg, err := config.Load(compositionConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
