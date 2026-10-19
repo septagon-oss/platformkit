@@ -141,6 +141,7 @@
     },
     "singular": "página",
     "plural": "páginas",
+    "description": "Escreva, reveja e publique as páginas que o seu público vê.",
     "icon": "document",
     "group": {
       "key": "content",
@@ -151,6 +152,7 @@
       "kind"
     ],
     "statusField": "status",
+    "emptyDescription": "Crie uma página e guarde um rascunho antes de publicar.",
     "sortable": [
       "title",
       "publishedAt",
