@@ -161,14 +161,14 @@ func (g *Group[V]) load(ctx context.Context, key Key, compose func(context.Conte
 			// client and nothing else.
 			return zero, err
 		}
-		g.remember(key, v)
+		// A local reader must not see a value before its shared marker.
 		if err := g.cache.Set(ctx, key, markerValue, g.ttl, under); err != nil {
-			// The value is composed and this process holds it; a marker nobody
-			// can write costs the next request one lookup and costs this one
-			// nothing. Refusing here would be a cache deciding the answer.
+			// A marker write failure still serves the composed value; the next
+			// request checks the store again.
 			g.log.WarnContext(ctx, "cache: composed an entry this process cannot mark shared",
 				"entry", key.String(), "error", err)
 		}
+		g.remember(key, v)
 		return v, nil
 	})
 	if err != nil {
