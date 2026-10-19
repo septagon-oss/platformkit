@@ -29385,6 +29385,44 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/secrets/providers/openbao/key_addresses_are_disjoint_test.go",
+   "id": "kit/secrets/providers/openbao/key_addresses_are_disjoint_test.go#TestKeyAddressSpacesAreDisjoint",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestKeyAddressSpacesAreDisjoint",
+   "needs_db": false,
+   "pkg": "kit/secrets/providers/openbao",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/secrets/providers/openbao/key_addresses_are_disjoint_test.go",
+   "id": "kit/secrets/providers/openbao/key_addresses_are_disjoint_test.go#TestTenantScopeRefusalsNeverReachOpenBao",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTenantScopeRefusalsNeverReachOpenBao",
+   "needs_db": false,
+   "pkg": "kit/secrets/providers/openbao",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/secrets/providers/openbao/openbao_test.go",
    "id": "kit/secrets/providers/openbao/openbao_test.go#TestTheOpenBaoAdapterConforms",
    "kind": "go",
@@ -65392,7 +65430,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1702,
+  "files": 1703,
   "forge_runs": [
    408,
    413,
@@ -65426,7 +65464,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2802,
+   "behaviour": 2804,
    "composition": 390,
    "contract": 20,
    "journey": 92
@@ -65445,23 +65483,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3304,
+  "rows": 3306,
   "tiers": {
    "merge": 2049,
    "nightly": 92,
-   "push": 1163
+   "push": 1165
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1475,
+   "keep": 1476,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2948,
+   "keep": 2950,
    "keep-rewrite": 140,
    "merge": 216
   }
