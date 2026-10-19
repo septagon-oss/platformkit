@@ -62,8 +62,10 @@ var spec = rest.Spec[*contracts.User]{
 	Read:   contracts.PermissionUserRead,
 	Write:  contracts.PermissionUserManage,
 	// Present is how a person reads. `primaryField` is the address and not
-	// Email names a person even before they have chosen a display name.
-	// The list shows identity and status; timestamps remain on the record.
+	// displayName: displayName defaults to empty, so a catalogue reader titling
+	// by it would name an invited person "Untitled person", and an email is
+	// required, unique per tenant and never blank. The display name and handle
+	// follow as the summary; timestamps remain on the record.
 	Present: entity.EntryHints{
 		Description:      "Invite and manage the people who can access this workspace.",
 		EmptyDescription: "Add a person, then assign the role they need.",
@@ -71,8 +73,8 @@ var spec = rest.Spec[*contracts.User]{
 		Plural:           "people",
 		Icon:             "people",
 		Group:            &entity.ResourceGroup{Key: "people", Label: "People"},
-		PrimaryField:     "displayName",
-		SummaryFields:    []string{"email", "handle"},
+		PrimaryField:     "email",
+		SummaryFields:    []string{"displayName", "handle"},
 		StatusField:      "status",
 		Sortable:         []string{"email", "displayName", "updatedAt"},
 	},

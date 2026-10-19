@@ -518,7 +518,9 @@ func backToSignIn(text func(key, fallback string) string, back string) g.Node {
 			Label: text("signIn", "Back to sign in")}))
 }
 
-// Dashboard keeps every authorized destination visible even if a count is unavailable.
+// workspaceScope names whose workspace the request's host serves: the
+// installation's operator or one tenant. It follows the host, never the
+// caller's grants.
 func workspaceScope(t tenancy.Tenant, o resource.Options) string {
 	if t.Operator {
 		return o.Text("admin.workspace.operator", "Platform operator")
@@ -526,6 +528,10 @@ func workspaceScope(t tenancy.Tenant, o resource.Options) string {
 	return o.Text("admin.workspace.tenant_workspace", "Tenant workspace")
 }
 
+// dashboard is the workspace home: every destination the caller may open,
+// grouped as the sidebar groups them, with the count its own list reports.
+// A destination whose count fails stays on the page without a figure, and the
+// operator's health line appears only when a check was observed.
 func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Options) page.View {
 	visible := p.nav.Visible(ctx, t, p.Authorize)
 	sections := workspaceSections(p.at, visible, p.resources, o)
@@ -533,9 +539,13 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 	if t.Operator {
 		title, description = o.Text("admin.workspace.overview", "Platform overview"), o.Text("admin.workspace.operator_description", "Manage tenants and access. Open a tenant workspace to work with its data.")
 	}
-	body := []g.Node{components.SectionHeader(components.SectionHeaderProps{
-		Eyebrow: workspaceScope(t, o), Title: title, Description: description, Level: 1,
-	})}
+	// The scope is the header's badge, so the intro is the title and one
+	// sentence; FormSentence carries the reading measure a full-width
+	// SectionHeader description does not.
+	body := []g.Node{
+		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1}),
+		components.FormSentence(components.FormSentenceProps{Text: description}),
+	}
 	if t.Operator {
 		results := checks(ctx)
 		if len(results) > 0 {
@@ -678,7 +688,7 @@ func (p pages) tenants(ctx context.Context) (page.View, error) {
 	}
 	return page.View{Title: "Tenants", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Tenants", Subtitle: "Choose a workspace to manage. Each tenant has its own people, permissions and data."}),
+			Title: "Tenants", Subtitle: "Choose a workspace to manage. Each has its own people and data."}),
 		components.TableWithSlots(components.TableProps{
 			Columns: []components.TableColumn{
 				{Key: "name", Label: "Tenant", Primary: true},
