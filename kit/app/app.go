@@ -39,6 +39,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/stream"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -116,6 +117,16 @@ type Options struct {
 	// nothing serves, and boot says so: a control plane nobody can reach is a
 	// decision, and a silent one is a surprise during the incident it was for.
 	Installation Installation
+
+	// JSONMediaTypes are the media types this installation reads and writes as
+	// JSON, beside application/json. A protocol that names its own type arrives
+	// with a Content-Type the API has never been told about, and refuses to parse
+	// anything carrying it, so which types are JSON is a fact about what the
+	// installation serves and belongs with the rest of those facts.
+	//
+	// httpx.Options.JSONMediaTypes is where it is spent; see that field for why a
+	// module cannot say it itself.
+	JSONMediaTypes []string
 
 	// WorkspaceCatalog mounts the catalog route the kernel owns the address of,
 	// /api/v1/app/resources: the resources this caller may reach, as a document.
@@ -267,6 +278,12 @@ type App struct {
 	// record of its refusals are all built before the pool is dialled — see heldConn
 	// — and each of them asks this for the connection on the request that needs it.
 	held *heldConn
+
+	// observed is the event transport this composition's live connections watch:
+	// Start's, handed over the same way, and otherwise the one the live door dials
+	// for a role that runs no worker half. It is one transport rather than one per
+	// connection because the outbox relay publishes on one — see heldTransport.
+	observed *heldTransport
 
 	// measurement is this deployment's telemetry, planned here and installed by a
 	// Start that got all the way through. Batched spans and the last metric interval
@@ -541,7 +558,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log, declared: declared,
 		declaredRelease: declaredRelease,
-		held:            &heldConn{}, measurement: measurement, reports: reports}, nil
+		held:            &heldConn{}, observed: &heldTransport{}, measurement: measurement, reports: reports}, nil
 }
 
 // heldConn is the application connection of a composition that builds its routes
@@ -785,16 +802,17 @@ func useJetStream(mode string, role Role) (bool, error) {
 // could not.
 func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
-		Unwired:      true,
-		Cache:        store,
-		PublicHost:   a.cfg.Server.PublicHost,
-		Docs:         a.cfg.Server.Docs,
-		Tenants:      a.opts.Tenants,
-		Authorize:    a.opts.Authorize,
-		Entitle:      a.opts.Entitle,
-		Authenticate: a.opts.Authenticate,
-		Fault:        a.opts.Fault,
-		Log:          a.log,
+		Unwired:        true,
+		Cache:          store,
+		PublicHost:     a.cfg.Server.PublicHost,
+		Docs:           a.cfg.Server.Docs,
+		Tenants:        a.opts.Tenants,
+		Authorize:      a.opts.Authorize,
+		Entitle:        a.opts.Entitle,
+		Authenticate:   a.opts.Authenticate,
+		JSONMediaTypes: a.opts.JSONMediaTypes,
+		Fault:          a.opts.Fault,
+		Log:            a.log,
 		// The ceiling on the one route that reads its own request. Every other
 		// body is bounded at httpx.MaxBodyBytes, and a schema'd one is bounded
 		// by huma as well.
@@ -1038,6 +1056,11 @@ func (a *App) composeGates(api *httpx.API) error {
 		if a.opts.AccessPage != nil {
 			a.opts.AccessPage(api.Surfaces("").App)
 		}
+	}
+	// The live door, on the same condition the catalog is mounted on: a worker
+	// process serves no HTTP surface at all, so it has no connection to hold open.
+	if a.opts.Role != Worker {
+		mountStream(api, a.streamHub(stream.NewRegistry(a.mods)), a.log)
 	}
 	if a.opts.WorkspaceCatalog != nil {
 		a.opts.WorkspaceCatalog(api)

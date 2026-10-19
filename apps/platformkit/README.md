@@ -54,8 +54,8 @@ which `FromDeployment` implementations its deployment has inputs for; and
 `reference.describe`, which commits what the resolved composition says as
 [COMPOSITION.development.json](COMPOSITION.development.json) and
 [COMPOSITION.production.json](COMPOSITION.production.json) beside the text file,
-named by `platformkit.composition.v1` and refused on drift by the same
-`UPDATE_GOLDEN` check — names only, so a machine can read what this installation
+named by `platformkit.composition.v1`, written by `make generate` and refused on
+drift by the same check — names only, so a machine can read what this installation
 is composed of without reading a configuration value out of it.
 
 The one edge no module declares is `user`'s promotion check, answered by the auth
@@ -65,12 +65,65 @@ holder, `user` reads it and `auth` fills it in its own build. That is
 `pkit`'s tested late-bound holder, and an unfilled holder fails the roles write
 with no row, no event and no stale read.
 
+What the counting door (`summary.go`, `/api/v1/app/summary`) composed and what it
+wrote: **Reused** — `crud.Count` for the total, `(*API).guard` and
+`Resource.Readable` for who may hear it, `httpx.TxFrom` for the tenant scope,
+`cache.Of`/`Get`/`Set` and their generations for the fifteen seconds a total is
+believed, `Options.WorkspaceCatalog` and `workspaceFace` for the address, the
+`connectionDocument` envelope for the way a body type survives into the published
+document, `entity.EntryHints` and `entryHintsFault` for the declaration and its
+refusal, `ui/screens`' pointer-per-key `declared`/`deviations` rule for the echo,
+`ui/resource.Words` for the one word. **Added** — `crud.CountWhere` and
+`crud.CountDays`, because `Query.Filter` reaches equality only and `comparable`
+says so in its own comment, and no grouped read of an entity's column existed;
+`Resource.CountFiltered`/`CountDays` and `API.Cache()`, the store having been
+reachable only as a private field; `screens.Summary` and `Summarise`, `ui/screens`
+having held no per-resource number; the `highlight` and `trendField` hints; and one
+partial index, `due_at` having never been read as a range before. **Made
+reusable** — the predicate grammar (`crud.Ops`, `Predicate`, `Where`) with the one
+coercion table `Coerce`, which `?filter=` now shares with a declared value, the
+anchor resolution (`Declared`, `DayStart`) that lets a declaration name "today"
+instead of a date, and a second worked `/api/v1/app` mount whose body type reaches
+the OpenAPI document.
+
+What the counting door does not do, stated here because a shell reading
+`/summary` decides what to draw from it:
+
+- **The budget bounds the wait, not the query.** `summaryBudget` is a deadline on
+  the parts of a request that carry it — the store round trips and the read-guard
+  decision. The counts run in the request's own transaction, whose session was
+  opened before that deadline existed and whose reads take no context, so a
+  statement is cut short by the installation's `database.statement_timeout` and by
+  nothing in this file.
+- **A card costs one statement per question it declares**, not one per card: the
+  task card asks a total, a sub-count and a daily series, so three.
+- **"Due today" is a window on `dueAt` and nothing else.** A task resolved or
+  closed during the same day is still counted in it, because the grammar has no
+  `ne` or `in` and the task entity's own `doneValues` vocabulary has no way to
+  reach a declared filter. The brief specified the window; narrowing it to open
+  work is the module's, and the operator it needs is not written here.
+- **"Today" is the UTC day**, not the person's, and no locale or time zone enters
+  the cache key — which is also why the body carries no word.
+- **One cache key per tenant and resource** is sound while a read grant is
+  tenant-wide, which every grant in this installation is. An authorizer that ever
+  decides per row makes that count the wrong answer, and the key would have to name
+  the grant set or the document would go uncached.
+- **A resource that carries no count closure has no number, permanently.** `file`
+  registers its routes and its own library page by hand and names no `Count`, so
+  its card is absent for every caller, including an administrator — which is the
+  truth rather than a zero, and is the file module's to add over the rows its page
+  lists.
+- **The count is the whole live set**, never the open one: the "total open" the
+  brief first asked for is not answered here, because "open" is a set of statuses
+  no shared module may name.
+
 ## What lives where
 
 | file | what it is |
 |---|---|
 | [app.go](app.go) | the sentence, the resolved composition, and the two entry points every command shares |
 | [product.go](product.go) | the two modules this application composes: the values it owns, and the joins |
+| [summary.go](summary.go) | the workspace's counts: what each resource the caller may read holds, at one instant |
 | [roles.go](roles.go) | the list somebody wrote down of who a new tenant begins as |
 | [change.go](change.go) | the one subject under change control, its flag, and the gate |
 | [fault.go](fault.go) | the refusal page, the two ask pages, and the addresses they are pinned to |
@@ -139,3 +192,26 @@ content are provisioned by `user`, `auth` and `site` when the tenant is created,
 and `roles.go` is the list of who the first person is. What `product` decides at
 composition is which storage backend, mailer and payment gateway a tenant's first
 administrator will find.
+
+## The test installation
+
+Three sentences, for the next person who changes how this package gets a database.
+
+**Reused** — `kit/db/dbtest`'s `RunInOwnDatabase` for the package's own database, `URLs` and `Open`
+for a case's namespace and handles, this package's own `bootstrap`, `install`, `compose` and `start`
+for what a case stands on, unchanged. **Added** — one prepared installation per package
+(`dbtest.RunInOwnDatabaseWithTemplate`, run by `main_test.go`'s `prepareInstallation`) that a case
+copies instead of reinstalling (`dbtest.Clone`, taken by `configure`), because two hundred cases were
+each paying the composition's whole migration at one database-wide advisory lock, and no existing
+unit handed out an installation that was already made; a case for which installing *is* the claim
+takes `configureFresh` and installs in full. **Made reusable** — the template-and-copy primitive
+itself, the namespace statements `URLsFor` and the template now share, and a parity case that says a
+copy answers what a fresh install answers, which is what lets the rest of the package take the copy.
+
+A copy is named after the case that took it, and the number a case that asks twice needs is part of
+that name: `dbtest.Role` names the login role it creates after the namespace the copy lives in, so a
+namespace that filled PostgreSQL's identifier limit would have named two copies' roles the same and
+the second grant would have landed on the first copy's database. The budget in `dbtest.cloneName`
+leaves room for the prefix and the ask number, and `dbtest.identifier` keeps the tail of a name the
+server would otherwise cut — the contract is on `Role`, and
+`TestEachRepeatedCopyCanHoldAnIndependentRoleInItsOwnDatabase` is the case.

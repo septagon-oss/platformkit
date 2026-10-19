@@ -73,6 +73,26 @@ func (s Spec[T]) resource() httpx.Resource {
 			total, err := crud.Count[T](tx)
 			return total, Fault(err)
 		},
+		// The two narrowed counts a declared highlight and trendField ask, in the
+		// request's own transaction like the total beside them: the same tenant
+		// scope, the same lifecycle predicate, so a sub-count can only ever be a
+		// part of the whole one.
+		CountFiltered: func(ctx context.Context, w crud.Where) (int64, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return 0, err
+			}
+			total, err := crud.CountWhere[T](tx, w)
+			return total, Fault(err)
+		},
+		CountDays: func(ctx context.Context, field string, from, to time.Time) ([]crud.DayCount, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			days, err := crud.CountDays[T](tx, field, from, to)
+			return days, Fault(err)
+		},
 		List: func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -154,6 +174,10 @@ func (s Spec[T]) resource() httpx.Resource {
 		// not mount. A refused count produces no card, which is the truth; a number
 		// on a card that leads nowhere is the lie.
 		res.Count = func(context.Context) (int64, error) { return 0, refused("list") }
+		res.CountFiltered = func(context.Context, crud.Where) (int64, error) { return 0, refused("list") }
+		res.CountDays = func(context.Context, string, time.Time, time.Time) ([]crud.DayCount, error) {
+			return nil, refused("list")
+		}
 		res.List = func(context.Context, crud.Query) ([]map[string]any, int64, error) {
 			return nil, 0, refused("list")
 		}

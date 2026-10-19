@@ -543,7 +543,12 @@ vocabulary of its own.
 **Where it lives.** `kit/events` — `Publish` (`kit/events/events.go:61`),
 `PublishFor` (`:80`) for a system transaction that has to name its tenant,
 `Consume` (`:208`), and the claim and dead-letter paths (`:284`, `:293`). The
-wire format is its own file, `kit/events/transport/cloudevents.go`.
+wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
+(`kit/events/transport/transport.go:192`) is the other door onto the same stream:
+one tenant's one event, watched from now on, claiming nothing, retrying nothing
+and holding no history — what a live connection is built on (`kit/stream`), and
+what an app opens for its own events by declaring `Streams`
+(`kit/module/module.go:96`).
 
 **Builds on.** CloudEvents 1.0 in structured content mode, hand-built: the
 envelope (`kit/events/transport/cloudevents.go:41`) is what crosses a broker, so
@@ -552,7 +557,7 @@ without importing this package (`:3-7`). `SpecVersion` is `"1.0"` and nothing
 else is accepted (`:27`). The broker is NATS JetStream,
 `github.com/nats-io/nats.go` v1.54.0 (Apache-2.0), from
 `kit/events/providers/nats` (`Connect`, `kit/events/providers/nats/options.go:14`)
-against the `nats:2-alpine` container (`compose.yaml:30`).
+against the `nats:2-alpine` container (`compose.yaml:52`).
 
 **How the tenant crosses it.** Three ways, all load-bearing: `Publish` takes a
 `db.Tx[db.Tenant]`, so no call publishes without a tenant transaction
@@ -625,7 +630,7 @@ seam between a tenant and a name; `Deps` and `S3Config`
 **Builds on.** `github.com/minio/minio-go/v7` v7.3.0 (Apache-2.0) over the S3
 API, which the module names as several stores — AWS S3, Garage, SeaweedFS, Ceph
 RGW (`modules/file/module.go:43`); locally it is tested against the SeaweedFS
-image pinned by digest (`compose.yaml:100`). The client library is the dependency;
+image pinned by digest (`compose.yaml:122`). The client library is the dependency;
 the store is a separate program.
 
 **How the tenant crosses it.** In the object name: `Scope.ObjectName` produces
@@ -662,7 +667,7 @@ permission grants or entitlements (`kit/cache/cache.go:22-27`).
 
 **Builds on.** `github.com/redis/go-redis/v9` v9.22.0 (BSD-2-Clause) against
 `valkey/valkey:8-alpine` run with `--maxmemory-policy noeviction`
-(`compose.yaml:82-83`). The kernel imports neither a Valkey server nor a
+(`compose.yaml:104-105`). The kernel imports neither a Valkey server nor a
 Valkey-specific client, and `docs/cache.md` holds the rules.
 
 **How the tenant crosses it.** The key *is* the tenant: `CacheKey` spells
@@ -685,7 +690,7 @@ else (`apps/platformkit/product.go:235`, in `caches()` at `:234`). A selected
 adapter with no constructor is refused before anything opens
 (`kit/app/app.go:185-192`). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
-generation 0, and what `Move` closed reopens (`compose.yaml:77-81`) — a deployment
+generation 0, and what `Move` closed reopens (`compose.yaml:99-103`) — a deployment
 fault, not a caller's.
 
 ### Metrics and traces: OpenTelemetry
@@ -701,7 +706,7 @@ with the header names written once (`:27-31`). `kit/app` installs the one
 
 **Builds on.** `go.opentelemetry.io/otel` v1.46.0 (Apache-2.0) and its OTLP/gRPC
 exporters; W3C Trace Context, which `kit/trace` implements rather than wraps. The
-collector is a separate program (`compose.yaml:64`).
+collector is a separate program (`compose.yaml:86`).
 
 **How the tenant crosses it.** Every span and number is stamped from the context:
 `SpanAttrs` puts `pkit.tenant` — the slug a person recognises — and

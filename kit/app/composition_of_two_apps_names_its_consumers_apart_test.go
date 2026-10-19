@@ -17,6 +17,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"github.com/google/uuid"
 	"strings"
 	"sync"
 	"testing"
@@ -48,6 +50,11 @@ func (c *consumerNames) Subscribe(_ context.Context, durable, name string, _ eve
 	default:
 	}
 	return nil
+}
+
+// Observe refuses: this recorder counts durable subscriptions, and observes nothing.
+func (c *consumerNames) Observe(context.Context, uuid.UUID, string, func(events.Event)) (func(), error) {
+	return nil, errors.New("events: this transport double observes nothing")
 }
 
 func (c *consumerNames) names() []string {

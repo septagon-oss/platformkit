@@ -268,6 +268,37 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	return u, events.Publish(ctx, tx, contracts.EventDeactivated, contracts.Deactivated{UserID: u.ID, At: db.Now()})
 }
 
+// Reactivate stands a deactivated person up again.
+//
+// It asks nothing of the tenant's administration floor, because the floor refuses
+// the write that takes the last administrator away and this one takes nothing: the
+// person it returns to service was administering this tenant not long ago.
+//
+// Only `inactive` is reactivated. `invited`, `pending` and `unverified` are each
+// waiting for an act of their own — the person's own password, an administrator's
+// approval, the person's own confirmation of the address — and a command that could
+// declare that act happened would be a door into an account whose owner has not
+// walked through it yet. An already-active person is the answer they already are,
+// with no write and no event: the same request twice from a connector retrying is
+// not a second fact in the trail.
+func (s *Service) Reactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	u, err := lockedUser(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status == contracts.StatusActive {
+		return u, nil
+	}
+	if u.Status != contracts.StatusInactive {
+		return nil, fmt.Errorf("%w: only a person who was stood down is stood back up; %s waits for the act that fits that state", crud.ErrConflict, u.Status)
+	}
+	u.Status = contracts.StatusActive
+	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {
+		return nil, err
+	}
+	return u, events.Publish(ctx, tx, contracts.EventReactivated, contracts.Reactivated{UserID: u.ID, At: db.Now()})
+}
+
 // Get is one user of this tenant.
 func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	return crud.Get[*contracts.User](tx, id)

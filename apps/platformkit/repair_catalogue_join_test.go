@@ -43,7 +43,7 @@ import (
 )
 
 func TestTheRepairNarrowsAgainstTheCatalogueItsSeederWasGiven(t *testing.T) {
-	_, cfg := configure(t)
+	_, cfg := configureFresh(t)
 	c := compose(cfg)
 
 	// The expectation, written out from the manifests this composition holds.
