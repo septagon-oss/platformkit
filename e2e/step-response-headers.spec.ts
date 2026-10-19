@@ -11,6 +11,6 @@ test('the workspace response satisfies the published header step', async ({ page
   await signIn(page);
   const response = await page.goto('/app');
   expect(response?.status()).toBe(200);
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Platform overview', exact: true })).toBeVisible();
   securityHeaders(response, 'desk');
 });

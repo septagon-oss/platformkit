@@ -226,7 +226,12 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// of every leaf in the document only `notices` moved — no example, CSS, token,
 	// theme, icon, schema or font policy. The digest below is that measurement of
 	// this tree, printed by the refusal and copied from it.
-	if legacy.SHA256 != "ef79fadbcfcea108429e09ca6cce847ea5578734e74c96c4311b6eb89328c433" {
+	// Admin experience: comparing exports by stable capture ID adds Standalone
+	// and Disclosure, removes no capture and changes only the HTML of the three
+	// sidebar captures plus CSS and this digest. Schema, font policy, notices,
+	// themes and icons are byte-identical to the previous export.
+	// The digest covers the composed examples, stylesheet and attribution together.
+	if legacy.SHA256 != "bf53d791f4544e0cd2fb3e305021f916d78464e1e7c5537d951f8021291496d3" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

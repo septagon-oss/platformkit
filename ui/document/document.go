@@ -324,10 +324,9 @@ func Brand(c Chrome, r Request) string {
 	return c.Brand
 }
 
-// Bare is the frame with no navigation: a narrow column of cards.
+// Bare is the access-page frame: an inset, narrow main landmark without navigation.
 func Bare(body []g.Node) g.Node {
-	return components.Container(components.ContainerProps{MaxWidth: "sm"},
-		components.Stack(components.StackProps{Gap: "6"}, body...))
+	return components.Standalone(components.ComponentProps{}, body...)
 }
 
 // Fault is the page for a refusal a person can act on: the status text, the
