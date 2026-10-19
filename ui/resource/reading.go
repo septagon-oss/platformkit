@@ -18,20 +18,46 @@ func (r Resource) reading(o Options) entity.EntryHints {
 	return p
 }
 
+// primary is the column a row links on, chosen from fields (the ones this
+// surface shows): the field the entity marks `ui:"display"`, else the declared
+// primaryField, else the first name candidate. The mark wins on the web because
+// it may be blank, which a row's link survives through rowName and a catalogue
+// reader titling by primaryField does not.
 func (r Resource) primary(fields []entity.Field) entity.Field {
+	if f, ok := displayField(fields); ok {
+		return f
+	}
 	if f, ok := fieldFor(fields, r.Present.PrimaryField); ok {
 		return f
 	}
 	return known(fields)
 }
 
+// rowName is what a row is called on the web, among fields only: its
+// `ui:"display"` value when filled, then its primaryField value, then the
+// first candidate with a value (see label), then its id.
 func (r Resource) rowName(row map[string]any, fields []entity.Field) string {
-	if f, ok := fieldFor(fields, r.Present.PrimaryField); ok {
-		if value := display.Text(row[f.Name]); value != "" {
-			return value
+	for _, f := range []string{displayName(fields), r.Present.PrimaryField} {
+		if f, ok := fieldFor(fields, f); ok {
+			if value := display.Text(row[f.Name]); value != "" {
+				return value
+			}
 		}
 	}
 	return label(row, fields)
+}
+
+func displayField(fields []entity.Field) (entity.Field, bool) {
+	i := slices.IndexFunc(fields, func(f entity.Field) bool { return f.Display })
+	if i < 0 {
+		return entity.Field{}, false
+	}
+	return fields[i], true
+}
+
+func displayName(fields []entity.Field) string {
+	f, _ := displayField(fields)
+	return f.Name
 }
 
 func (r Resource) listFields() []entity.Field {
@@ -42,7 +68,9 @@ func (r Resource) listFields() []entity.Field {
 	if len(names) > 0 {
 		// The author's reading order is stable; hidden/detail-only fields stay
 		// off this surface even for a direct render outside route validation.
-		names = append(slices.Clone(names), r.Present.StatusField, r.Present.ThumbnailField)
+		// The declared primaryField leads it when the display mark took the
+		// link column, so the field every row has stays on the list.
+		names = append(append([]string{r.Present.PrimaryField}, names...), r.Present.StatusField, r.Present.ThumbnailField)
 		for _, name := range names {
 			if name == "id" || name == primary.Name {
 				continue
