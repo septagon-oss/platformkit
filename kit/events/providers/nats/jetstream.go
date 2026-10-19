@@ -12,8 +12,10 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/septagon-oss/platformkit/kit/appname"
 	delivery "github.com/septagon-oss/platformkit/kit/events/internal/delivery"
@@ -174,6 +176,32 @@ func wanted(app appname.Name, durable, name string) []nats.SubOpt {
 // leaves a durable behind that nothing drains and the stream keeps feeding.
 // It is also the smaller change: one call, and one field in reconcile.
 func group(durable string) string { return durable }
+
+// watching is the consumer one observation asks for: ephemeral, deliver-new, and
+// filtered to the one subject js.Subscribe was handed. It shares nothing with
+// wanted, and that is the point — no name for reconcile to compare against (it
+// deletes a stored consumer whose filter, ack or deliver policy disagrees, and an
+// ephemeral consumer wearing a durable's name would be deleted by the durable
+// subscription beside it), no acknowledgement ladder to climb, no stored position
+// to resume.
+//
+// DeliverNew and AckNone are named rather than left to the library's defaults, which
+// are DeliverAll and AckExplicit, and each answers one half of the promise Observe
+// makes. A consumer that replayed the stream would hand a browser events it is not
+// owed and that this method's contract says it never sees. A consumer that
+// acknowledges is worse: the server restarts the ack window of every message it has
+// sent and not heard back about, and a callback queue that is still inside an earlier
+// delivery cannot answer the later one, so the broker redelivers a message whose
+// callback has not started yet — one publish reaching the same observer twice. An
+// observation's contract is at most once per publish and no retry, and no-ack is the
+// only consumer policy that keeps it however slow the callback is: what a watch loses
+// is the notice, never a duplicate of it. The filter is the subscribe subject —
+// nats.go writes it into the consumer configuration it is about to create, and there
+// is no separate option for it in this release — which is why Observe passes the exact
+// address rather than a wildcard.
+func watching() []nats.SubOpt {
+	return []nats.SubOpt{nats.BindStream(stream), nats.DeliverNew(), nats.AckNone()}
+}
 
 // stream brings the stored stream into line with what this code asks for, the
 // way reconcile does for a consumer, and for the same reason: the stream is
@@ -398,6 +426,75 @@ func (j *jetstream) Subscribe(ctx context.Context, durable, name string, sink tr
 		_ = sub.Drain()
 	}()
 	return nil
+}
+
+// Observe watches one tenant's one event from now on, on an ephemeral consumer
+// the server names and deletes when this connection's subscription goes away.
+//
+// It asks for no durable name, no ack ladder and no stored position, so it can
+// create, update or delete nothing a durable subscription owns: the claim ledger
+// that makes a redelivery safe does not exist for a watch, which is why a notice
+// this process could not deliver is not something it will ever be handed again — the
+// consumer acknowledges nothing, so the broker has no window to time out and no
+// reason to send one message to the same callback twice.
+//
+// The broker's own buffer bounds nothing here — no MaxPending is set — because the
+// queue that decides whether a connection is alive is kit/stream's per-connection
+// one: a subscriber that cannot keep up is dropped by that bound and not by the
+// server, which would otherwise be redelivering to a consumer whose listener has
+// already stopped caring.
+func (j *jetstream) Observe(ctx context.Context, tenantID uuid.UUID, name string, fn func(transport.Event)) (func(), error) {
+	// The stream has to exist to bind to; nothing else is prepared, and no
+	// reconciliation runs, because an observation owns no stored consumer.
+	if err := j.stream(ctx); err != nil {
+		return nil, fmt.Errorf("events: observe %s in tenant %s: %w", name, tenantID, err)
+	}
+	subject := transport.AppSubject(j.app, tenantID, name)
+	sub, err := j.js.Subscribe(subject, func(msg *nats.Msg) {
+		var ev transport.Event
+		// An undecodable body is dropped, which is the whole of the handling it gets:
+		// this consumer acknowledges nothing, so nothing comes back to be read again.
+		if err := json.Unmarshal(msg.Data, &ev); err != nil {
+			slog.ErrorContext(ctx, "events: undecodable message", "subject", msg.Subject, "error", err)
+			return
+		}
+		// The filter fixed the name and the tenant, because this is an exact subject
+		// rather than a wildcard — but the filter is what the broker routed by, not
+		// what the document claims, and the two are still both read. A message written
+		// at this address by a publisher claiming another app, or no app at all from a
+		// process that names one, is somebody else's delivery.
+		if err := transport.AddressMismatch(j.app, msg.Subject, ev); err != nil {
+			slog.ErrorContext(ctx, "events: message at an address its document does not claim",
+				"subject", msg.Subject, "event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "error", err)
+			return
+		}
+		// Nothing is acknowledged and nothing is asked for: an observation dropped
+		// here is a notice the client is told to refetch rather than one this process
+		// owes, and an ack would be the broker's licence to deliver it a second time.
+		defer func() {
+			if v := recover(); v != nil {
+				slog.ErrorContext(ctx, "events: an observation panicked; the notice was dropped",
+					"event", ev.Name, "id", ev.ID, "tenant", ev.TenantID, "panic", v)
+			}
+		}()
+		fn(ev)
+	}, watching()...)
+	if err != nil {
+		return nil, fmt.Errorf("events: observe %s in tenant %s: %w", name, tenantID, err)
+	}
+	var once sync.Once
+	stop := func() {
+		// Unsubscribe and not Drain: draining waits for in-flight messages, and a
+		// withdrawal the caller already has nothing to answer for never blocks on a
+		// delivery. The error is the server's about a consumer it is already
+		// deleting; Unsubscribe also deletes the ephemeral consumer with it.
+		once.Do(func() { _ = sub.Unsubscribe() })
+	}
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+	return stop, nil
 }
 
 // Close releases the connection. It is not part of transport.Transport, because the

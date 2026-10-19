@@ -192,6 +192,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.PasswordSet](contracts.EventPasswordSet),
 			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
 			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
+			events.Declare[contracts.Reactivated](contracts.EventReactivated),
 			events.Declare[contracts.HandleSet](contracts.EventHandleSet),
 			events.Declare[contracts.LanguageSet](contracts.EventLanguageSet),
 			events.Declare[contracts.AdministrationRefused](contracts.EventAdministrationRefused),

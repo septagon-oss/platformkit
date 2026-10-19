@@ -26,6 +26,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -68,6 +69,17 @@ var webhookCatalogue = emittedEvents{
 	usercontracts.EventAdministrationRefused,
 	usercontracts.EventRegistrationPending, usercontracts.EventRegistrationApproved,
 	usercontracts.EventRegistrationUnverified, usercontracts.EventEmailVerified,
+	// The return an administrator's own command drives: a suspended person is an
+	// account that cannot sign in, and a subscriber watching who may enter would
+	// otherwise hear the door close and never hear it open again.
+	usercontracts.EventReactivated,
+	// scim, the five facts no user event describes: the collection declared with
+	// nobody in it, the collection renamed, the collection withdrawn, this tenant's
+	// binding of a collection to a role, and the attribute of a person this door
+	// writes and modules/user publishes nothing about. The person's own invitation,
+	// roles and deactivation stay the `user.` names above.
+	scimcontracts.EventGroupCreated, scimcontracts.EventGroupChanged, scimcontracts.EventGroupRemoved,
+	scimcontracts.EventMappingChanged, scimcontracts.EventUserChanged,
 	// tenant, whose lifecycle an installation's own operator acts drive.
 	tenantcontracts.EventCreated, tenantcontracts.EventSuspended, tenantcontracts.EventHostAdded,
 	tenantcontracts.EventHostRemoved, tenantcontracts.EventLocaleSet, tenantcontracts.EventRenamed,

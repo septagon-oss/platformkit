@@ -7,7 +7,8 @@ import (
 )
 
 // The base events this module emits. The first three are kit/rest's, published
-// by the Spec module.go mounts; the last four are lifecycle commands. Pending
+// by the Spec module.go mounts; the rest are lifecycle commands, the last of
+// them the record of a write this module refused. Pending
 // registration and approval events are declared in registration.go. All are
 // listed in the manifest, and kit/app refuses to start if a route would publish
 // one that is not.
@@ -22,6 +23,7 @@ const (
 	EventHandleSet   = "user.handle_set"
 	EventLanguageSet = "user.language_set"
 	EventDeactivated = "user.deactivated"
+	EventReactivated = "user.reactivated"
 	// EventAdministrationRefused is a write this module refused because it would
 	// have left the tenant with nobody who can sign in and administer it. It is
 	// the record of an attempt that did not happen, which is the only reason it
@@ -97,6 +99,15 @@ type LanguageSet struct {
 // Deactivated is the payload of EventDeactivated: this person can no longer
 // sign in.
 type Deactivated struct {
+	UserID uuid.UUID `json:"userId"`
+	At     time.Time `json:"at"`
+}
+
+// Reactivated is the payload of EventReactivated: this person can sign in again.
+// It is a name of its own rather than the absence of a deactivation because the
+// two doors that close a person are not the doors that open them, and an audit
+// of who could sign in needs to say which of them opened it.
+type Reactivated struct {
 	UserID uuid.UUID `json:"userId"`
 	At     time.Time `json:"at"`
 }
