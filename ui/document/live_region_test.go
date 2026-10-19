@@ -7,6 +7,7 @@ import (
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 
+	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui"
 
 	"github.com/septagon-oss/platformkit/ui/document"
@@ -38,6 +39,52 @@ func TestALiveRegionIsAnOwnerAndTheRegionItFeeds(t *testing.T) {
 	// the connection that caused it.
 	if strings.Index(out, `data-controller="live"`) < strings.Index(out, `hx-ext="sse"`) {
 		t.Errorf("the region element precedes the element holding its connection:\n%s", out)
+	}
+}
+
+// A live region runs on three files: htmx, which the pinned extension registers
+// itself with the moment it is evaluated; the extension; and the controller file
+// whose live controller turns a frame into one refresh. The head gives a live page
+// all three — a chrome that lists its controllers is handed only what it left out,
+// and a light chrome that lists none is given htmx first and the controller last,
+// because the file that reads what the others configure cannot be read first. A
+// document that carried the extension alone threw on load and never opened its
+// connection: the page looked drawn and stayed still.
+func TestALivePageIsGivenWhatItsRegionRunsOn(t *testing.T) {
+	t.Parallel()
+	live := document.View{Title: "Notifications", Live: []string{"notification.created"}}
+	light := document.Chrome{Brand: "PlatformKit", Assets: "/admin/assets",
+		Stylesheet: ui.Compose(design.Default()), SignIn: "/admin/login"}
+	out := render(t, document.Document(light, document.Request{}, live, h.Main()))
+	for _, file := range []string{"htmx.min.js", "components.js", ui.SSEExtension} {
+		if !strings.Contains(out, `src="/admin/assets/js/`+file) {
+			t.Errorf("a live page drawn in a chrome that lists no controllers does not load %s, which its region runs on:\n%s", file, out)
+		}
+	}
+	if strings.Index(out, "htmx.min.js") > strings.Index(out, ui.SSEExtension) {
+		t.Errorf("the extension is fetched ahead of htmx, which it registers itself with:\n%s", out)
+	}
+
+	// The chrome that carries its own controllers keeps them in its own order and
+	// gets the one file it left out, after them.
+	carrying := chrome()
+	carrying.Scripts = []string{"htmx.min.js", "theme.js"}
+	out = render(t, document.Document(carrying, document.Request{}, live, h.Main()))
+	for _, file := range []string{"htmx.min.js", "theme.js", "components.js"} {
+		if n := strings.Count(out, `src="/admin/assets/js/`+file); n != 1 {
+			t.Errorf("a live page whose chrome already lists %s is given it %d times:\n%s", file, n, out)
+		}
+	}
+	if strings.Index(out, "theme.js") > strings.Index(out, "components.js") {
+		t.Errorf("the controller a live page was missing is fetched ahead of the chrome's own:\n%s", out)
+	}
+
+	// And a page with no region is drawn with exactly the chrome's list: the runtime
+	// belongs to the pages that asked for a connection.
+	quiet := render(t, document.Document(carrying, document.Request{},
+		document.View{Title: "Ordinary"}, h.Main()))
+	if strings.Contains(quiet, "components.js") {
+		t.Errorf("a page with no live region was given the live controller:\n%s", quiet)
 	}
 }
 

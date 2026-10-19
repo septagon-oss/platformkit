@@ -91,12 +91,13 @@ func liveShell() page.Shell {
 // openWorkspace asks for one address as somebody who is signed in — the kernel reads
 // a credential before it will ask who is calling, so a request with no cookie is
 // anonymous whatever the authenticator would have said — and returns what came back.
-func openWorkspace(t *testing.T, router http.Handler, url, htmx string) string {
+// The headers are the htmx ones a browser would put on that particular fetch.
+func openWorkspace(t *testing.T, router http.Handler, url string, htmx map[string]string) string {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://acme.localhost"+url, nil)
 	req.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: "a-session-the-kernel-need-not-read"})
-	if htmx != "" {
-		req.Header.Set("HX-Request", htmx)
+	for name, value := range htmx {
+		req.Header.Set(name, value)
 	}
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -106,13 +107,17 @@ func openWorkspace(t *testing.T, router http.Handler, url, htmx string) string {
 	return rec.Body.String()
 }
 
+// htmxFetch is the headers of the region's own refresh: a plain fetch of the
+// address, asking for a piece rather than a page.
+func htmxFetch() map[string]string { return map[string]string{"HX-Request": "true"} }
+
 // TestALivePageIsDrawnAsAConnectionAndARegion is the first paint: the document carries
 // the owner that holds one connection, the region a refresh re-reads, and the address
 // of the kernel's own live door — named once by the kernel rather than spelled out by
 // whoever drew the page.
 func TestALivePageIsDrawnAsAConnectionAndARegion(t *testing.T) {
 	router, inbox, _ := livePages(t)
-	out := openWorkspace(t, router, inbox, "")
+	out := openWorkspace(t, router, inbox, nil)
 	for _, want := range []string{
 		"<!doctype html>",
 		`hx-ext="sse"`,
@@ -130,13 +135,26 @@ func TestALivePageIsDrawnAsAConnectionAndARegion(t *testing.T) {
 	if strings.Index(out, `data-controller="live"`) < strings.Index(out, `hx-ext="sse"`) {
 		t.Errorf("the region is drawn outside the element holding its connection:\n%s", out)
 	}
+	// A region runs on three files, and the shell that mounted this page handed it
+	// none of them: the head that draws a region gives the document what the region
+	// runs on, because a page that loads the extension without htmx throws on load
+	// and never opens its connection.
+	for _, file := range []string{"htmx.min.js", "components.js", "htmx-ext-sse-2.2.4.min.js"} {
+		if !strings.Contains(out, `src="/admin/assets/js/`+file) {
+			t.Errorf("the live page does not load %s, which its region runs on:\n%s", file, out)
+		}
+	}
+	if strings.Index(out, "htmx.min.js") > strings.Index(out, "htmx-ext-sse") {
+		t.Errorf("the extension is fetched ahead of htmx, which it registers itself with:\n%s", out)
+	}
 }
+
 
 // TestARegionIsAnsweredWithItsOwnContents is the refresh: neither a document nor a
 // second owner, and the region's contents in full.
 func TestARegionIsAnsweredWithItsOwnContents(t *testing.T) {
 	router, inbox, _ := livePages(t)
-	out := openWorkspace(t, router, inbox, "true")
+	out := openWorkspace(t, router, inbox, htmxFetch())
 	for _, unwanted := range []string{"<!doctype", "<html", "<head", "<main", "hx-ext", "sse-connect", "sse-swap", "<script"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("the swap answer carries %s, which would nest a page inside a page or replace the connection that asked:\n%s", unwanted, out)
@@ -152,7 +170,7 @@ func TestARegionIsAnsweredWithItsOwnContents(t *testing.T) {
 // region to swap.
 func TestAnOrdinaryPageAnswersHtmxAsADocument(t *testing.T) {
 	router, _, plain := livePages(t)
-	out := openWorkspace(t, router, plain, "true")
+	out := openWorkspace(t, router, plain, htmxFetch())
 	for _, want := range []string{"<!doctype html>", "<main><h2>Acme</h2>", "<p>an ordinary page</p>"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("an ordinary page lost its document for an HX-Request (%s):\n%s", want, out)
@@ -171,7 +189,7 @@ func TestAnOrdinaryPageAnswersHtmxAsADocument(t *testing.T) {
 // before it is ever written into an attribute.
 func TestARefreshKeepsThePageItWasDrawnAt(t *testing.T) {
 	router, inbox, _ := livePages(t)
-	out := openWorkspace(t, router, inbox+"?page=2", "")
+	out := openWorkspace(t, router, inbox+"?page=2", nil)
 	if !strings.Contains(out, `hx-get="`+inbox+`?page=2"`) {
 		t.Errorf("the region was drawn to re-read the first page rather than the one it came from:\n%s", out)
 	}

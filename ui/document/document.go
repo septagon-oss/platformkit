@@ -116,7 +116,8 @@ type View struct {
 	// every page answer a different question, and a page weight budget is only real
 	// if the answer is per page too.
 	Modules []string
-	// RunsWASM says this document instantiates WebAssembly, which the content	// security policy refuses by default: 'self' and a nonce speak about where a
+	// RunsWASM says this document instantiates WebAssembly, which the content
+	// security policy refuses by default: 'self' and a nonce speak about where a
 	// script came from, and a module built from bytes came from nowhere. The
 	// adapter declares it for this response only (httpx.AllowWASM), which adds
 	// 'wasm-unsafe-eval' to its script-src — an image editor or a trace view is
@@ -235,13 +236,36 @@ func RequestNoticeExamples(signIn string) []examples.Example {
 	return captures
 }
 
+// liveBefore and liveAfter are what a live region needs in the document besides
+// the extension tag: htmx, which the extension registers itself with the moment
+// it is evaluated, and the controller file whose live controller turns a frame
+// into one refresh. A page that declares Live asks the kernel to draw a region,
+// so the head gives the page what that region runs on rather than assuming the
+// chrome thought of it: the chrome that carries neither is a real one (a light
+// page with no controllers at all), and a document that loaded the extension
+// alone threw on load and never opened its connection.
+//
+// htmx goes ahead of a chrome's own controllers, because the list a chrome gives
+// runs in the order it is given and htmx-config.js configures a global that has
+// to exist first; components.js goes after them, because it is the file that
+// reads what the others configure. A file the chrome already lists is never
+// handed to it twice.
+var (
+	liveBefore = []string{"htmx.min.js"}
+	liveAfter  = []string{"components.js"}
+)
+
 // head is every page's head: the stylesheet with its fingerprint, the inline
 // snippets, the controllers as deferred scripts in order — deferred, so the
 // document parses before any of them runs and the order is still theirs — and
 // whatever the view adds.
 func head(c Chrome, r Request, v View) g.Node {
-	scripts := make([]g.Node, 0, len(c.Scripts))
-	for _, name := range c.Scripts {
+	listed := c.Scripts
+	if len(v.Live) > 0 {
+		listed = liveScripts(c.Scripts)
+	}
+	scripts := make([]g.Node, 0, len(listed))
+	for _, name := range listed {
 		scripts = append(scripts, h.Script(h.Src(c.Assets+"/js/"+name), g.Attr("defer")))
 	}
 	// A module is fetched with the document it belongs to and never deferred: it
@@ -271,6 +295,24 @@ func head(c Chrome, r Request, v View) g.Node {
 		g.Group(modules),
 		g.Group(v.Head),
 	)
+}
+
+// liveScripts is the chrome's own controller list with whatever a live region
+// still runs on added around it, in the order the runtime needs.
+func liveScripts(listed []string) []string {
+	out := make([]string, 0, len(listed)+len(liveBefore)+len(liveAfter))
+	for _, name := range liveBefore {
+		if !slices.Contains(listed, name) {
+			out = append(out, name)
+		}
+	}
+	out = append(out, listed...)
+	for _, name := range liveAfter {
+		if !slices.Contains(listed, name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // Brand is what the page calls the installation: the tenant's name, or the
