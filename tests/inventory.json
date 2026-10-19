@@ -42174,6 +42174,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/notification/internal/device_removal_once_test.go",
+   "id": "modules/notification/internal/device_removal_once_test.go#TestTwoRemovalsOfOneDeviceDeleteItOnceAndPublishOnce",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoRemovalsOfOneDeviceDeleteItOnceAndPublishOnce",
+   "needs_db": true,
+   "pkg": "modules/notification/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/notification/internal/device_token_validation_test.go",
    "id": "modules/notification/internal/device_token_validation_test.go#TestDeviceRegistrationRefusesTokensItsAdapterCannotCarry",
    "kind": "go",
@@ -65430,7 +65449,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1716,
+  "files": 1717,
   "forge_runs": [
    408,
    413,
@@ -65464,7 +65483,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2804,
+   "behaviour": 2805,
    "composition": 390,
    "contract": 20,
    "journey": 92
@@ -65483,9 +65502,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3306,
+  "rows": 3307,
   "tiers": {
-   "merge": 2058,
+   "merge": 2059,
    "nightly": 92,
    "push": 1156
   },
@@ -65493,13 +65512,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1489,
+   "keep": 1490,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2950,
+   "keep": 2951,
    "keep-rewrite": 140,
    "merge": 216
   }
