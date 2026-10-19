@@ -1929,7 +1929,7 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 // TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace is the
 // upgrade half of the migration move, and the half a fresh database cannot
 // check: an existing installation's ledger says "platformkit" applied all
-// twenty-four files, and the release that splits them must neither refuse the
+// thirty-three files at or below the adopted ceiling, and the release that splits them must neither refuse the
 // files the foundation no longer ships nor run the module files again.
 //
 // Success alone proves the SQL did not re-run — a second 000004_task.up.sql
@@ -2007,7 +2007,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the twenty-one above the ceiling, because the
+	// 33 stays 33 for those files and for every file above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -2015,42 +2015,35 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// below has to produce, and the two counts below compare the ledger against
 	// every file the release ships.
 	//
-	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 68 — twenty-four under migrations/ (1, 2, 3, 5, 6, 9, 12, 20,
-	// 21, 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52, 58, 59, 60, 61) and forty-four
-	// under modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22,
-	// 23, 24, 25, 27, 31, 32, 33, 35, 35, 36, 37, 38, 39, 40, 42, 43, 44, 44, 44, 45,
-	// 45, 47, 48, 49, 50, 53, 54, 54, 55, 56, 57). Every version to 33 is one file, and
-	// every repeat in the release — 35 (modules/audit's audit_context and modules/auth's
-	// passkeys), 43, 44, 45, 50 and 54 — is above the ceiling, so the flattening below
-	// never meets one. The release this
-	// fixture is
-	// applied from shipped 33 of them: the thirteen under migrations/ up to the
-	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
-	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
-	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The twenty-five above it — the kernel's own 34, 41, 43, 46, 50,
-	// 51, 52, 54, 55, 56 and 57, modules/audit's 35, 36, 37, 48, 49 and 53,
-	// modules/auth's 35 and 47, modules/change's 38, modules/site's 39, modules/file's
-	// 40, 44 and 45 and modules/content's 42 — postdate that release, are not in the
-	// old installation's ledger, and legacyLayout leaves them out; the upgrade below
-	// applies them under the owner that ships them and counts them as new rows. Each
-	// continues past the highest number anywhere in the composition at the time it was
-	// written, which is the rule this fixture exists to enforce — and it is a rule with
-	// teeth rather than tidiness, because kit/db reads a repeated version only inside
-	// one owner: the kernel's 000034_outbox_request and a modules/auth file numbered 34
-	// apply side by side under two owners, and the only thing that says so is the one
-	// map below that counts every shipped file under one key. modules/audit's 48 and 49
-	// are this rule's newest customer: the append-only trail and its retention marks
-	// were numbered 41 and 42 while the branch was open, and main took 41 for the
-	// kernel's own outbox baggage and 42 for modules/content's body characters
-	// underneath it. T-0231's own four are this rule's newest since: they arrived at
-	// 000044, 000045, 000046 and 000047, main took 000046 for its own SAML provider
-	// columns in between, and the flattened fixture below reads one version as one row
-	// whatever the owner, so they are 000058, 000059, 000060 and 000061: this merge is
-	// the seventh time that rule has moved them, main having taken 000054 to 000057 for
-	// modules/file's variants, unused-since, use-audience and its index, and 000054 for
-	// modules/site's default accent, while this branch's four stood at those numbers.
+	// The whole-tree census is deliberately absent: the file count this fixture
+	// ships moves with every delivery that adds a migration, and a number quoted here
+	// is a number the next merge silently falsifies. `find migrations modules -name
+	// '*.up.sql' | wc -l` answers it, and the two counts that matter are asserted
+	// below rather than restated here — the old layout's ledger against the files at
+	// or beneath the adopted ceiling, and the upgraded ledger against every file the
+	// release ships. What the census used to enumerate is the part worth keeping: the
+	// release repeats six numbers, each above the ceiling so the flattening below
+	// never meets them — 35 is modules/audit's audit_context beside modules/auth's
+	// passkeys, 43 is the kernel's tenant-app columns beside modules/translation's
+	// field copy, 44 is modules/file's image dimensions beside modules/notification's
+	// mail ledger and modules/webhook's endpoint table, 45 is modules/file's file uses
+	// beside that module's delivery log, 50 is the kernel's tenant demo marker beside
+	// modules/task's task_revision, and 54 is modules/file's image variants beside
+	// modules/site's default accent. Every file above the ceiling continues past the
+	// highest number anywhere in the composition at the time it was written, which is
+	// the rule this fixture exists to enforce — and it is a rule with teeth rather
+	// than tidiness, because
+	// kit/db reads a repeated version only inside one owner: the kernel's
+	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
+	// under two owners, and the only thing that says so is the one map below that
+	// counts every shipped file under one key. T-0231's four are this rule's newest
+	// customer: they arrived at 000044, 000045, 000046 and 000047, main took 000046 for
+	// its own SAML provider columns in between, and the flattened fixture below reads
+	// one version as one row whatever the owner, so they are 000058, 000059, 000060 and
+	// 000061. modules/audit's 48 and 49 are the customer before them: the append-only
+	// trail and its retention marks were numbered 41 and 42 while the branch was open,
+	// and main took 41 for the kernel's own outbox baggage and 42 for modules/content's
+	// body characters underneath it.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
 	// merged as, for the reason this paragraph has now recorded six times: this fixture
@@ -2075,7 +2068,13 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// provider columns, 000047 for modules/auth's replay table and 000048 and 000049
 	// for modules/audit's append-only trail and its retention marks — and two files at
 	// one version under the one owner `audit` is a refusal in kit/db before it is ever
-	// a ledger row.
+	// a ledger row. modules/scim's group, mapping and person tables arrived on their
+	// branch as 000044, then as 000054, and are 000064 here: main took 000044 for
+	// modules/file's image dimensions while that branch was open, then took 000054 twice
+	// more for modules/file's variants and modules/site's default accent, then 000058 to
+	// 000062 for its own ledger lock, refusal, placement and idempotency files and
+	// 000063 for modules/file's media alt text, and 000064 continues past 000063, the
+	// highest number any owner holds at the commit this merge lands.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
@@ -2113,18 +2112,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the thirty-five files above the
-	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 50, 51, 52, 58, 59, 60
-	// and 61, modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 35 and 47,
-	// modules/change 38, modules/site 39 and 54, modules/file 40, 44, 45, 54, 55, 56
-	// and 57, modules/content 42, modules/notification 44 and 45, modules/webhook 44
-	// and 45, modules/translation 43 and modules/task 50, all absent from the old
-	// ledger) have to be accounted for:
-	// 68 files in the release and 61 versions among them: seven of those files name a
-	// version another owner already named — 35, 43, 44 twice over, 45, 50 and 54 — so
-	// the two maps below count seven keys fewer than there are files, and every one of
-	// those repeats sits above the ceiling of 33, where the flattened fixture above
-	// never meets one.
+	// release ships is in the ledger, which is where the files above the adopted
+	// ceiling have to be accounted for. Both maps below are keyed by version, so a
+	// version two owners hold is one key in each of them: the comparison is between
+	// the ledger and the sources the composition names, never against a count carried
+	// in this comment.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

@@ -26,7 +26,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -1597,30 +1596,11 @@ func (in *listInput) query(fields []crud.Field) (crud.Query, error) {
 // coerce reads a query parameter as the field's own type, so a filter on an
 // integer column compares integers. Postgres would raise on the mismatch, which
 // is a 500 for what is really a malformed request.
-func coerce(f crud.Field, raw string) (any, error) {
-	var (
-		v   any
-		err error
-	)
-	switch f.Type {
-	case crud.TypeInt:
-		v, err = strconv.ParseInt(raw, 10, 64)
-	case crud.TypeFloat:
-		v, err = strconv.ParseFloat(raw, 64)
-	case crud.TypeBool:
-		v, err = strconv.ParseBool(raw)
-	case crud.TypeUUID:
-		v, err = uuid.Parse(raw)
-	case crud.TypeTime:
-		v, err = time.Parse(time.RFC3339, raw)
-	default:
-		v = raw
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s is a %s and %q is not one", crud.ErrInvalid, f.Name, f.Type, raw)
-	}
-	return v, nil
-}
+// coerce reads a filter value as the field's own type. The table is kit/crud's,
+// because a declared highlight value and a ?filter= value are the same question —
+// what is this field's name worth as this field's type — and two tables answering
+// it would be two opinions about which filters do nothing.
+func coerce(f crud.Field, raw string) (any, error) { return crud.Coerce(f, raw) }
 
 // merge applies a PATCH body to an entity, field by field, through the schema,
 // and reports the database columns it changed so that Update writes those and

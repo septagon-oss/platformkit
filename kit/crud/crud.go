@@ -349,12 +349,12 @@ func conditions(fields []Field, filter map[string]any) ([]string, []any, error) 
 	where := make([]string, 0, len(filter))
 	args := make([]any, 0, len(filter))
 	for name, v := range filter {
-		f, err := comparable(fields, name, "filter")
+		sql, arg, err := predicateSQL(fields, Predicate{Field: name, Op: OpEq, Value: v})
 		if err != nil {
 			return nil, nil, err
 		}
-		where = append(where, f.Column+" = ?")
-		args = append(args, v)
+		where = append(where, sql)
+		args = append(args, arg...)
 	}
 	return where, args, nil
 }

@@ -214,6 +214,27 @@ func (f *Fake) Deactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	return f.get(id)
 }
 
+// Reactivate mirrors internal.Service.Reactivate. The floor has no part in it:
+// standing a person back up takes no administrator away.
+func (f *Fake) Reactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, err := f.get(id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status == contracts.StatusActive {
+		return u, nil
+	}
+	if u.Status != contracts.StatusInactive {
+		return nil, fmt.Errorf("%w: only a person who was stood down is stood back up; %s waits for the act that fits that state", crud.ErrConflict, u.Status)
+	}
+	u.Status, u.UpdatedAt = contracts.StatusActive, db.Now()
+	f.users[id] = *u
+	f.published = append(f.published, contracts.EventReactivated)
+	return f.get(id)
+}
+
 // Get mirrors internal.Service.Get.
 func (f *Fake) Get(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	f.mu.Lock()

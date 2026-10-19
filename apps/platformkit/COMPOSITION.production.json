@@ -36,6 +36,9 @@
             "change"
           ]
         }
+      ],
+      "reads": [
+        "config.Files"
       ]
     },
     {
@@ -358,6 +361,26 @@
       ]
     },
     {
+      "name": "scim",
+      "provides": [
+        "scimcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        }
+      ],
+      "after": [
+        "user",
+        "auth"
+      ]
+    },
+    {
       "name": "media",
       "provides": [
         "*file.LibraryChrome"
@@ -627,5 +650,61 @@
       ]
     }
   ],
-  "problems": []
+  "problems": [],
+  "cloud": {
+    "profile": "local",
+    "environment": "production",
+    "seams": [
+      {
+        "seam": "storage",
+        "provider": "local-disk",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "cache",
+        "provider": "in-process",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "events",
+        "provider": "by-role",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "mail",
+        "provider": "mailbox",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "policy",
+        "provider": "rego-in-process",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      },
+      {
+        "seam": "telemetry",
+        "provider": "none",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "identity",
+        "provider": "password-only",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "flags",
+        "provider": "configuration",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      }
+    ]
+  }
 }
