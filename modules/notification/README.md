@@ -96,7 +96,8 @@ means. Ask the two tables two questions.
   transport took the message leaves no `sent` row, so the table under-reports a
   mail that really went rather than over-reporting one that did not. No `requested`
   row exists to catch the difference, on purpose.
-* **No retention, no export, no screen.** Rows are appended and nothing in this
+* **No retention, no export.** The screen exists — `GET /app/notification/notifications`
+  lists the caller's own rows, live — and it writes nothing. Rows are appended and nothing in this
   schema deletes or updates them, and the table holds a recipient address, so
   "what happens to these rows when a person is forgotten" is unanswered here —
   the platform has no cross-table erasure, and the product that promises to forget
@@ -160,6 +161,25 @@ as the one error a provider returns when another attempt would say the same thin
 and the shape of a provider test — an in-process relay in the carrier's own package that
 asserts what went on the wire rather than what a mock said (`providers/gomail`, whose relay
 lives in `gomail_test.go`: a testing approach to copy, not an API to import).
+
+**Reused, by the in-app list** — `kit/stream` and the connection the kernel mounts at
+`/api/v1/app/stream`, `module.Stream` with `module.StreamRecipient("recipientId")` as the
+manifest's own door onto the two events this module already raised, `ui/page`'s fragment
+answer for the htmx fetch of a region, `ui/components` for the toolbar, table, empty state
+and pager, and the hand-mounted-page shape `modules/change` drew for rows that belong to a
+person rather than to a tenant.
+
+**Added, by the in-app list** — `internal.MountInApp`, because a `rest.Spec`'s list route is
+the whole tenant and these rows are the caller's, so no generated screen could carry them at
+any setting of its fields; and `notification.Page`, the shell the list is drawn in, because
+which chrome a person's own notices sit in is an installation's fact and this module's silence
+when it is not handed one is the answer a deployment with no such page expects.
+
+**Made reusable, by the in-app list** — `document.View.Live`, one field on a page that any
+module's own screen may set to go live, with the wrapper, the pinned extension's tag and the
+fragment answer drawn by the kernel rather than by the module; and the rule that a page's
+topics and its manifest's `Streams` are read from one slice, so a screen cannot watch what its
+own module never opened.
 
 ## Authorization
 

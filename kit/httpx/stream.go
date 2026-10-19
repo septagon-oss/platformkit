@@ -26,6 +26,13 @@ import (
 // See StreamedResponse for the door, and bodies.go for the commit.
 const StreamedResponseExtension = "x-platformkit-streams-response"
 
+// StreamAddress is the workspace address the kernel's live door answers at: the
+// App surface's own root with "stream". No module owns the connection every
+// module's declared events arrive on, so the kernel mounts it and the kernel
+// names it, and a page that draws a live region links this one value rather than
+// spelling an address that could drift from the route that answers it.
+const StreamAddress = "/api/v1/app/stream"
+
 // StreamedResponse is what a route that streams its response puts in its
 // Extensions, beside an authorization declaration. It closes nothing else: the
 // surface, the guard and the logging are unchanged, and the response's own media

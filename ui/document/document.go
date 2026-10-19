@@ -116,8 +116,7 @@ type View struct {
 	// every page answer a different question, and a page weight budget is only real
 	// if the answer is per page too.
 	Modules []string
-	// RunsWASM says this document instantiates WebAssembly, which the content
-	// security policy refuses by default: 'self' and a nonce speak about where a
+	// RunsWASM says this document instantiates WebAssembly, which the content	// security policy refuses by default: 'self' and a nonce speak about where a
 	// script came from, and a module built from bytes came from nowhere. The
 	// adapter declares it for this response only (httpx.AllowWASM), which adds
 	// 'wasm-unsafe-eval' to its script-src — an image editor or a trace view is
@@ -125,8 +124,20 @@ type View struct {
 	// It says nothing about the markup: the body of a view that declares it and
 	// the body of one that does not are the same bytes.
 	RunsWASM bool
-	Head     []g.Node
-	Body     []g.Node
+	// Live names the events this page's body is a region for — the topics a
+	// connection is opened for, each one declared by the module that owns the
+	// rows the body lists. It is the page's claim about its own body and nothing
+	// else: the shell keeps no list, and a page that names none is drawn exactly
+	// as it was before the field existed.
+	//
+	// The name is the browser's, not a new fact: the same strings are the SSE
+	// event names the server sends and the names the module declared in its
+	// manifest. Nothing here reads a topic's payload — the frame is a hint to
+	// read again, so what the person sees is a fresh read of rows they may
+	// already read, never what the frame carried.
+	Live []string
+	Head []g.Node
+	Body []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
@@ -239,6 +250,15 @@ func head(c Chrome, r Request, v View) g.Node {
 	modules := make([]g.Node, 0, len(v.Modules))
 	for _, path := range v.Modules {
 		modules = append(modules, h.Script(h.Src(c.Assets+"/"+path), g.Attr("type", "module")))
+	}
+	// A live region is bound by the pinned extension, and only a page that names
+	// a topic pays for it. It is a module script rather than a deferred classic
+	// one because module scripts and deferred scripts share the one in-order list
+	// that runs before DOMContentLoaded, which is when htmx reads the document —
+	// so the extension is defined before any element is read, with no coordination
+	// between the two files and no inline script the policy would have to forgive.
+	if len(v.Live) > 0 {
+		modules = append(modules, h.Script(h.Src(c.Assets+"/js/"+ui.SSEExtension), g.Attr("type", "module")))
 	}
 	return h.Head(
 		h.Meta(h.Charset("utf-8")),
