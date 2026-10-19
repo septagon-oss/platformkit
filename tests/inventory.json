@@ -58509,6 +58509,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/race_clock_guard_refusals_test.py",
+   "id": "scripts/race_clock_guard_refusals_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "race_clock_guard_refusals_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/race_guard_check_recipe_test.py",
    "id": "scripts/race_guard_check_recipe_test.py",
    "kind": "shell_pin",
@@ -60496,7 +60516,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1568,
+  "files": 1569,
   "forge_runs": [
    408,
    413,
@@ -60531,7 +60551,7 @@
   ],
   "layers": {
    "behaviour": 2584,
-   "composition": 362,
+   "composition": 363,
    "contract": 20,
    "journey": 91
   },
@@ -60549,23 +60569,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3057,
+  "rows": 3058,
   "tiers": {
    "merge": 1924,
    "nightly": 91,
-   "push": 1042
+   "push": 1043
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1383,
+   "keep": 1384,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2767,
+   "keep": 2768,
    "keep-rewrite": 117,
    "merge": 173
   }
