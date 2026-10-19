@@ -7,9 +7,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 <!-- BEGIN GENERATED: scripts/inventory_figures.py scale -->
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 3500 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1830 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 3229 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 3501 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1831 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 3230 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 61 | filename prefix |
 | rows inside them | 93 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 92 / 1 / 89 / 89 | same walk |
@@ -21,7 +21,7 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 21 | push, first | asserts a golden or the published API set |
-| behaviour | 2960 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| behaviour | 2961 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 426 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
 | journey | 93 | nightly | `e2e/`: browser or device |
 <!-- END GENERATED -->
@@ -51,7 +51,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 <!-- BEGIN GENERATED: scripts/inventory_figures.py verdicts -->
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1603 | 3144 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 1604 | 3145 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 73 | 140 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -130,7 +130,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | e2e | 93 | 5 | 0 | 0 |
 | migrations | 15 | 5 | 8 | 0 |
 
-The verdict columns sum to 140 keep-rewrite, 216 merge and 0 delete. Areas that hold no verdict, with their file populations: `scripts` (89 files), `pkit` (73 files), `design` (4 files).
+The verdict columns sum to 140 keep-rewrite, 216 merge and 0 delete. Areas that hold no verdict, with their file populations: `scripts` (89 files), `pkit` (74 files), `design` (4 files).
 <!-- END GENERATED -->
 
 `tools` appears with the design tooling's JavaScript cases: one of them, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above. The table lists the areas that hold a verdict; an area that holds none is every `keep`, so a row for it would carry three zeroes beside a population and tell a reader nothing the `Verdicts` table above does not, and the sentence under the table names it with its population instead. `ui`'s merge column is small because the round-named sheets that carried those verdicts folded into the named pins beside them. The table and that sentence are written by `scripts/inventory_figures.py` from the same rows (`make generate`), and `make check` refuses this file when they no longer answer them.
