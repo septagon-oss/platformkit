@@ -1,4 +1,9 @@
 {
+  "screens.empty_collection": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Ainda sem %s.",
+    "plural": { "": "Ainda sem %s." }
+  },
   "screens.count": {
     "references": ["ui/resource/resource.go"],
     "translation": "%d %s registados",

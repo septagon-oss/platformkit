@@ -186,3 +186,12 @@ func FormExample(id string, r httpx.Resource, o Options, action, title string, r
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 	return resource.Control(f, value, fieldErr, immutable)
 }
+
+// entryName shares the catalogue's translated noun with generated form headings.
+func entryName(r httpx.Resource, o Options) string {
+	name := o.Words(r.Schema).Entry(r.Present).Singular
+	if name == "" {
+		return r.Entity
+	}
+	return name
+}

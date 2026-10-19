@@ -47,12 +47,9 @@ type Resource struct {
 	// record lives, and a browser that guessed an API path would be guessing which
 	// surface its caller may read on.
 	API string
-	// Present is how this resource's author said it reads. The renderer consults
-	// three parts of it and no others: `visibility`, which keeps a field off the
-	// list and off the record; `section`, which groups the record; and
-	// `sortable`, which names the columns a header may be clicked on. The words,
-	// the icon and the tones are the document's, and the web screen keeps drawing
-	// what it drew until the design decides how they are read.
+	// Present supplies the resource names, reading order, status, empty-state
+	// guidance, visibility, sections and supported sorts. The catalogue and web
+	// screens resolve the same declarations through Words.
 	Present entity.EntryHints
 	// Screen is the workspace address of this resource's collection screen:
 	// /app/<module>/<entity>, composed by the kernel at registration. Every
@@ -133,17 +130,6 @@ func (o Options) Text(key, fallback string, args ...any) string {
 	return o.Locale.Text(key, fallback, args...)
 }
 
-// count is the list's subtitle. The English fallback is already pluralized
-// so a shell without a catalog reads exactly as before; a catalog receives
-// the number and the noun and applies its own plural rules.
-func (o Options) count(total int64, noun string) string {
-	noun = strings.ToLower(noun)
-	if total != 1 {
-		noun += "s"
-	}
-	return o.Text("screens.count", "%d %s", total, noun)
-}
-
 // List is the list screen: a toolbar with the count, the rows, the pager. The
 // New button is drawn only for a caller who may write — a person who may not is
 // not shown a form that would refuse them.
@@ -155,14 +141,19 @@ func (o Options) count(total int64, noun string) string {
 // have to be the adapter is a second answer to one question, and only one of the
 // two is checked by anyone.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
-	at, one := r.Screen, display.Humanize(r.Schema.Entity)
-	title := listName(one)
+	at := r.Screen
+	reading := r.reading(o)
+	title := display.Humanize(reading.Plural)
+	noun := reading.Plural
+	if total == 1 {
+		noun = reading.Singular
+	}
 	var actions []g.Node
 	// The New button is drawn for a caller who may write *and* a resource that
 	// offers a create: the two questions are different, and the second is
 	// answered by the mounted routes rather than by anybody's permissions.
 	if writable && r.offers("create") {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
+		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new"})}
 	}
 	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
@@ -173,8 +164,8 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		PageLabel:        o.Text("screens.page", "Go to page %s", "%d"),
 		CurrentPageLabel: o.Text("screens.current_page", "Page %s, current page", "%d"),
 	}
-	body := []g.Node{table(o, r, at, title, rows, sort, o.count(total, one), &pager, components.DataListSlots{
-		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title}, actions...)},
+	body := []g.Node{table(o, r, at, title, rows, sort, o.Text("screens.count", "%d %s", total, noun), &pager, components.DataListSlots{
+		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title, Subtitle: reading.Description}, actions...)},
 		// Collection commands retain their native forms and precede the pager.
 		// Generated CRUD does not gain selected-row writes from a UI control.
 		Footer: commandForms(o, o.Words(r.Schema), r.Commands, at, true),
@@ -203,7 +194,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	if !r.Singleton {
 		item = at + "/" + display.Text(row["id"])
 	}
-	named := label(row, readable(r.Schema.Fields))
+	named := r.rowName(row, readable(r.Schema.Fields))
 	var actions []g.Node
 	if writable {
 		if r.offers("update") {
@@ -220,7 +211,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		}
 	}
 	body := []g.Node{
-		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
+		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		localeStrip(locales),
 		details(r, o.Words(r.Schema), row, rendered),
@@ -244,7 +235,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 		status = statusUnprocessableEntity
 	}
 	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
-		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, title),
+		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
@@ -437,11 +428,6 @@ func formField(words Words, f entity.Field) forms.Field {
 	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
 }
 
-// listName is the heading a list screen wears. It is also the accessible name of
-// that screen's scrolling table region, in the same words: the region is the
-// list, so giving the two different names would be two names for one thing.
-func listName(one string) string { return one + "s" }
-
 // table is the list screen's rows: the field a row is known by first, as the
 // link into it, then every other field the schema does not hide.
 //
@@ -454,17 +440,8 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	// and a table that led with a value its author kept off every row would put that
 	// value back through the one column every row links on.
 	listed := onList(r.Schema.Fields)
-	primary := known(listed)
-	shown := []entity.Field{primary}
-	for _, f := range listed {
-		// `hidden` is off every screen and `detail` is off this one; both keep
-		// their value in the schema, the PATCH and the JSON, because what a person
-		// is shown and what a caller may read are two questions.
-		if f.Name == primary.Name || f.Name == "id" {
-			continue
-		}
-		shown = append(shown, f)
-	}
+	primary := r.primary(listed)
+	shown := r.listFields()
 	columns := make([]components.TableColumn, 0, len(shown))
 	words := o.Words(r.Schema)
 	for i, f := range shown {
@@ -479,7 +456,11 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	// an address in a person's disc. What reads this is the row's link, which is the one thing
 	// on the screen that is not a field: it is the row, and so it takes the row's name.
 	named := make(map[string]string, len(rows))
+	tones := make(map[string]string, len(rows))
 	for _, row := range rows {
+		if f, ok := fieldFor(shown, r.Present.StatusField); ok {
+			tones[display.Text(row["id"])] = f.Presentation.EnumTones[display.Text(row[f.Name])]
+		}
 		cells := map[string]any{}
 		for _, f := range shown {
 			cells[f.Name] = words.Value(f, row[f.Name])
@@ -500,7 +481,15 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	state := components.ContentState{}
 	groups := []components.DataGroup{{Key: "rows", Rows: out}}
 	if len(rows) == 0 {
-		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity)}
+		description := r.reading(o).EmptyDescription
+		if description == "" {
+			if r.Present.Plural != "" {
+				description = o.Text("screens.empty_collection", "No %s yet.", r.reading(o).Plural)
+			} else {
+				description = o.Text("screens.empty", "No %ss yet.", r.Schema.Entity)
+			}
+		}
+		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: description}
 		groups = nil
 	}
 	p := components.DataListProps{
@@ -542,6 +531,9 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 				}
 			}
 			if !c.Primary {
+				if c.Key == r.Present.StatusField {
+					return components.Badge(components.BadgeProps{Label: display.Text(row.Cells[c.Key]), Tone: tones[row.ID], Dot: true})
+				}
 				return nil
 			}
 			text := display.Text(row.Cells[c.Key])
