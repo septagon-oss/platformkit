@@ -44,9 +44,9 @@ func TestTheModuleOpensItsTwoNoticeEventsToTheirRecipientOnly(t *testing.T) {
 			t.Errorf("%s is watched under the %q policy: a notice is addressed to somebody, and a connection that tells everybody is a leak of who was told what",
 				stream.Event, kind)
 		}
-		if field := stream.Policy.Field(); field != "recipientId" {
-			t.Errorf("%s reads the recipient from %q: the payload member is who was told, and it is the same user id the connection is opened as",
-				stream.Event, field)
+		if field := stream.Policy.Field(); field != recipientField() {
+			t.Errorf("%s reads the recipient from %q, which is not the member the payload spells (%q): the payload member is who was told, and it is the same user id the connection is opened as",
+				stream.Event, field, recipientField())
 		}
 	}
 }
