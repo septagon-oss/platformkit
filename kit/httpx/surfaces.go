@@ -134,6 +134,15 @@ func classify(path string) Surface {
 // resolve an entry without being told where the shell lives.
 func Workspace(screen string) string { return AppRoot + "/" + strings.TrimPrefix(screen, "/") }
 
+// UnderAPI reports whether p, once cleaned of dot segments, is the JSON API's
+// root or an address beneath it. Every module route and the public JSON answer
+// there and no page does, so a composition that names a page of its own is
+// refused one this answers true for.
+func UnderAPI(p string) bool {
+	p = path.Clean(p)
+	return p == apiRoot || strings.HasPrefix(p, apiRoot+"/")
+}
+
 // SurfaceExtension is the OpenAPI extension naming the surface a route was
 // mounted on. Like x-platformkit-auth it is a document key as well as a
 // runtime one: the surface a projection reads is the surface the chain applies,
