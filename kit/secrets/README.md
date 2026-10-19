@@ -50,7 +50,7 @@ in through.
 |---|---|---|---|---|
 | `env` (the default) | `PLATFORMKIT_MAIL_PASSWORD` for `Shared("mail.password")` | none: `""` | refused: `ErrNotSupported` | re-seal everything |
 | `file` | `<dir>/<name>`, or `<dir>/<tenant>/<name>` | the file's mtime, UTC RFC3339Nano | one subdirectory per tenant | re-seal everything |
-| `openbao` | KV v2's `value` field at `secret/data/<name>` | `v<N>`, the mount's own version | the tenant segment in the path, and the transit derivation context | the key service's: old ciphertexts still open |
+| `openbao` | KV v2's `value` field at `secret/data/<name>` | `v<N>`, the mount's own version | the tenant segment in the KV path, its UUID as the prefix of the key's name, and the transit derivation context | the key service's: old ciphertexts still open |
 
 An unset `secrets.adapter` is `env`: the environment is the one store every deployment
 has, it opens nothing, and a composition is never refused for a secret store it did not
@@ -107,8 +107,22 @@ secret the process has not needed yet and a rotation reaches the next send.
   `EnvironmentSecrets` is still its own one-method port. Moving a port and six secrets
   in one change is a change nobody can review; webhook's `box` and auth's port are the
   next two in line, in that order.
-- **The OpenBao container runs dev mode**, unsealed and in-memory, with KV v2 at
-  `secret` and transit at `transit`; `PLATFORMKIT_TEST_OPENBAO_URL` is exported only
-  when something answers the port, and the suite skips with that sentence when it is
-  not. Which mounts a production deployment uses, and whether its keys are derived, is
-  its own answer — the port requires the context to be sent when they are.
+- **The OpenBao container runs dev mode**, unsealed and in-memory, and
+  `deploy/openbao-dev.sh` mounts KV v2 at `secret` and transit at `transit` before the
+  healthcheck is satisfied — dev mode mounts the first and not the second, and a stack
+  that came up without `transit` would read as a broken adapter rather than as an
+  unmounted engine. `PLATFORMKIT_TEST_OPENBAO_URL` is exported only when something
+  answers the port, and the suite skips with that sentence when it is not.
+- **A key's address in the transit mount is one path segment.** The engine refuses a
+  nested key name — `transit/keys/<tenant>/<key>` answers 404 `unsupported path`,
+  measured against the container — so a customer's key is `<tenant-uuid>-<name>`,
+  prefixed rather than nested, and a policy reads `transit/encrypt/<tenant>-*`. KV v2
+  keeps the nested `<tenant>/<name>`: its paths nest freely and per-customer policy is
+  better served by a directory there.
+- **Whether the derivation is real is the mount's, not the adapter's.** A key created
+  `derived: true` refuses a call with no context, and a key created without that flag
+  answers a call that carries one by ignoring it — both measured against the
+  container. The tenant's own key *address* is therefore the binding that holds
+  whatever the mount looks like; the derivation context is the second one, and a
+  deployment that wants it mounts a customer's keys derived and the installation's own
+  not. `secretstest.Keys` and `TenantKeys` run against the container on those terms.

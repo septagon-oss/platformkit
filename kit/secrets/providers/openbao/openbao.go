@@ -18,15 +18,24 @@
 //
 // # What makes a tenant's secret another tenant's refusal
 //
-// A read is scoped twice: kit/secrets refuses an address whose tenant the context
-// did not resolve, and the transit *key derivation* refuses a ciphertext written
-// for a different tenant. The provider's own words are the mechanism — "Key
-// derivation is supported, which allows the same key to be used for multiple
-// purposes by deriving a new key based on a user-supplied context value" — and the
-// context this adapter sends is the tenant's 16 UUID bytes, absent for the
-// installation's own key. So a ciphertext stolen from one tenant's column does not
-// open with another tenant's context: the binding is enforced by the key store,
-// which is the only place it can be enforced when the key store holds the key.
+// A read is scoped three times: kit/secrets refuses an address whose tenant the
+// context did not resolve, a customer's key is mounted under its own address
+// (KeyAddress), and the transit *key derivation* refuses a ciphertext written for a
+// different tenant. The provider's own words are the mechanism — "Key derivation is
+// supported, which allows the same key to be used for multiple purposes by deriving
+// a new key based on a user-supplied context value" — and the context this adapter
+// sends is the tenant's 16 UUID bytes, absent for the installation's own key. So a
+// ciphertext stolen from one tenant's column does not open with another tenant's
+// context: the binding is enforced by the key store, which is the only place it can
+// be enforced when the key store holds the key.
+//
+// That split is also what a deployment's mount has to honour. A derived key refuses
+// a call that carries no context; a key created without `derived` answers a call
+// that carries one by ignoring it, measured against the container. So the tenant's
+// own key address is the binding that holds whatever the mount looks like, and the
+// derivation is the second one a deployment adds by mounting a customer's keys
+// `derived: true` — which is why the mount, and not only this file, decides how far
+// a stolen ciphertext reaches.
 package openbao
 
 import (
@@ -215,6 +224,28 @@ func (s *store) kv(ctx context.Context, ref secrets.Ref) (kvResponse, error) {
 	return response, nil
 }
 
+// KeyAddress is a key's whole path inside the transit mount: the name for the
+// installation's own key, and the tenant's UUID as a prefix for a customer's.
+//
+// One segment rather than KV's nested `<tenant>/<name>`, because the transit mount
+// refuses a nested key name before it looks at anything else: `POST
+// /v1/transit/keys/<tenant>/<name>` answers 404 "unsupported path", measured
+// against the container compose.yaml names. The tenant's UUID is a prefix instead,
+// spelled in full so a policy may be written for `transit/encrypt/<tenant>-*` and
+// one customer's request cannot address another's key by guessing a suffix.
+//
+// The two address spaces can only overlap in spelling — a shared name written as
+// `<uuid>-k` and a customer's `k` under Of(uuid) — and one key cannot serve both:
+// a customer's key has to be created `derived: true` for its tenant context to reach
+// it and the installation's has to be created without that flag, so the overlap is
+// two mounts or a refusal, never one key with two owners.
+func KeyAddress(ref secrets.Ref) string {
+	if ref.Tenant() == uuid.Nil {
+		return ref.Name()
+	}
+	return ref.Tenant().String() + "-" + ref.Name()
+}
+
 // transit is one encrypt or decrypt call: the key's name is the last segment, the
 // body is JSON, and a 400 is ErrSealed rather than a miss because a ciphertext the
 // server cannot open is a ciphertext this port should not have been handed.
@@ -223,10 +254,11 @@ func (s *store) transit(ctx context.Context, verb string, ref secrets.Ref, body 
 	if err != nil {
 		return fmt.Errorf("secrets: %s: %w", verb, err)
 	}
-	// A secret's name and a key's name share this port's address space and the
-	// transit mount's own path segment, so an operator mounts keys under their own
-	// names and nothing about the envelope differs from a read.
-	path := s.transitMount + "/" + verb + "/" + addressPath(ref)
+	// A secret's name and a key's name share this port's address space, and the key
+	// lives under its own one-segment address rather than KV's nested one — see
+	// KeyAddress. An operator mounts keys under their own names, and nothing about
+	// the envelope differs from a read.
+	path := s.transitMount + "/" + verb + "/" + KeyAddress(ref)
 	if err := s.callStatus(ctx, http.MethodPost, path, payload, out, map[int]error{
 		http.StatusBadRequest: fmt.Errorf("secrets: %w", secrets.ErrSealed),
 	}); err != nil {
@@ -330,12 +362,13 @@ func addressPath(ref secrets.Ref) string {
 	return ref.Tenant().String() + "/" + ref.Name()
 }
 
-// deriveContext is the transit key-derivation context: the tenant's own 16 bytes.
+// deriveContext is the transit key-derivation context: the tenant's own 16 bytes,
+// base64'd, and "" — no context at all — for the installation's own key.
 //
-// The installation's own key answers "", which is the spelling of an *underived*
-// key: a key mounted with `derived: true` refuses an absent context, and that
-// refusal is the deployment's answer to "may the installation's secrets share a key
-// with a customer's" — an answer this port does not make for it, only carries.
+// Omitted rather than sent empty, because a derived key refuses a call that carries
+// no context and that refusal is the deployment's answer to "may the installation's
+// secrets share a key with a customer's": the two spellings are how one server keeps
+// two keys apart, and this port only carries the question it was mounted to answer.
 func deriveContext(tenant uuid.UUID) string {
 	if tenant == uuid.Nil {
 		return ""
