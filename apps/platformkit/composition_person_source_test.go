@@ -19,7 +19,13 @@ import (
 
 func TestAdminIsComposedWithTheUserServiceThatNamesThePerson(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(compositionConfig), 0o600); err != nil {
+	// compositionConfig names the composition file since main's 3ed4d85; the case writes its bytes, as it wrote the
+	// inline document before (root, 2026-10-19, decision 0008: the fixture's contract, no assertion).
+	src, err := os.ReadFile(compositionConfig)
+	if err != nil {
+		t.Fatalf("read the configuration: %v", err)
+	}
+	if err := os.WriteFile(path, src, 0o600); err != nil {
 		t.Fatalf("write the configuration: %v", err)
 	}
 	cfg, err := config.Load(path)
