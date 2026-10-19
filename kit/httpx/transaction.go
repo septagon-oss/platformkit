@@ -87,11 +87,22 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	}
 	err = p.Close(keep)
 	closed = true
+	b, buffered := bufferFrom(ctx.Context())
 	if err == nil && keep {
 		// The write is committed, so the resolutions that carry the old version of it
 		// are wrong rather than merely early, and this is the one moment the ask can
 		// be honoured. A rollback wrote nothing that could go stale.
-		a.dropResolutions(ctx.Context(), asks.drain())
+		if dropErr := a.dropResolutions(ctx.Context(), asks.drain()); dropErr != nil {
+			// The row stands and the store is behind it: this process, and every other
+			// one reading the same namespace, may still answer the tenant as it was
+			// before the write. The response is the only place left to say so — the
+			// commit is not going back, so what the caller has to learn is that the
+			// change is not finished and repeating it is what finishes it.
+			if buffered && b.reset() {
+				a.refuse(ctx, http.StatusServiceUnavailable, "")
+				return
+			}
+		}
 	}
 	if n, ok := operationNote(ctx.Context()); ok && !keep && err == nil {
 		if failureErr := a.failedOperation(n); failureErr != nil {
@@ -102,7 +113,6 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 			return
 		}
 	}
-	b, buffered := bufferFrom(ctx.Context())
 	switch {
 	case err == nil:
 		if undecided && buffered && b.reset() {
