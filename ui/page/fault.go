@@ -69,6 +69,12 @@ var faultKeys = map[string]string{
 	httpx.CodeCSRFOrigin:        "fault.CSRF_ORIGIN",
 	httpx.CodePublicSetsACookie: "fault.PUBLIC_SETS_A_COOKIE",
 	httpx.CodeLimitExhausted:    "fault.LIMIT_EXHAUSTED",
+	// The one refusal a module's own door publishes: a restore asked for a version
+	// this record has never held. Everything else about a 422 stays the writer's
+	// English sentence, because it names a field of the caller's own request; this
+	// one is the kit's own sentence about its own door, which is why it has a code,
+	// and a code is what a catalogue can be asked about.
+	httpx.CodeVersionUnusable: "fault.VERSION_UNUSABLE",
 }
 
 // refusalParts is every catalogue key the refusal page looks up besides the

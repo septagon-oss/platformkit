@@ -168,12 +168,19 @@ var notOwedHere = map[porttest.Kind]string{
 	porttest.Denied: "the lifecycle takes no grant of its own: the three commands are reached " +
 		"through kit/rest's routes and the public page through the site, and that is where the " +
 		"grant is checked",
-	porttest.Stale: "content carries no revision field, and nothing below this port owns " +
-		"an optimistic-concurrency check to decline one: kit/crud.Update takes the columns " +
-		"to write and kit/crud.GetForUpdate takes a row lock; neither compares a revision. " +
-		"This package's TestTheStaleSkipReasonStillStatesWhatTheKernelHas watches both, so a " +
-		"kernel that grows the check reddens this sentence rather than leaving it standing. " +
-		"When it does, the case is the harness's to generate and the skip goes away",
+	porttest.Stale: "no command of this port is given a revision to be stale about: Publish, " +
+		"Unpublish, Archive and Public take the row id or slug and nothing else, kit/crud.Update " +
+		"takes the columns to write and kit/crud.GetForUpdate takes a row lock; none of them " +
+		"compares a number a caller sent. A content row does carry its own write count " +
+		"(contracts.Content.Revision, which every write of it moves and modules/history numbers its " +
+		"versions with), and a row's own count is not a caller's quote: it says what the row is on, " +
+		"never what the caller believes. The refusal a stale quote earns is kit/rest's stale-tag " +
+		"rule over the form that quoted the number it read — " +
+		"TestAContentRestoreFormRefusesAStaleRevision is that rule, one mount above this port. " +
+		"This package's TestTheStaleSkipReasonStillStatesWhatTheKernelHas watches the kernel facts " +
+		"this sentence rests on, so the port that starts taking a number from a caller reddens it " +
+		"rather than leaving the sentence standing; the case would then be the harness's to " +
+		"generate and the skip would go away",
 	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
 		"here to make the refused call from. The fake holds the rows of the first tenant that " +
 		"reaches it and answers any other with nothing, which this package's own " +

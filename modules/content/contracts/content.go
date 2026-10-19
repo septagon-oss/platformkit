@@ -4,13 +4,17 @@
 //
 // Content is a page or a post: a slug, a title, a body in Markdown, and a
 // status that decides whether the public site serves it. There are no
-// versions. There are no translations in this table either: the title and the
-// body declare themselves translatable, and the text of another language lives
-// in the translation module's own table, reached through the record's own door.
-// Versions in particular are a module of their own — a history table, a diff, a
-// restore and a retention rule — and the private catalogue has one; what a
-// reference architecture owes is the lifecycle, which is draft, published,
-// archived.
+// versions and no categories. There are no translations in this table either:
+// the title and the body declare themselves translatable, and the text of
+// another language lives in the translation module's own table, reached through
+// the record's own door.
+//
+// A page's versions are kept in no table of this module's own — that is
+// modules/history, a history table, a diff, a restore and a retention rule, and
+// the private catalogue has one — and content keeps none of them. What content
+// owes a version is its own write count, Revision: the number a version is
+// numbered with and the number a restore is quoted against, which is what makes
+// a page brought back a new write and the lifecycle still the lifecycle.
 package contracts
 
 import (
@@ -169,6 +173,17 @@ type Content struct {
 	// something a body can claim; the Spec names it Immutable, so no patch
 	// rewrites a byline.
 	AuthorID uuid.UUID `json:"author,omitempty" gorm:"column:author_id;type:uuid" format:"uuid" ui:"visibility:detail;reference:user/user" doc:"The user who created this" readOnly:"true"`
+	// Revision counts this row's own writes, from 1 (migrations/000054). It is the
+	// number modules/history numbers a version with and the number a restore is
+	// quoted against: a page brought back is a new write on this row, refused
+	// rather than guessed at when the row has moved since the caller read it.
+	//
+	// Every Go write of the row moves it — the generated PATCH does it by
+	// rest.Spec.bumpRevision, and internal/service.go's lifecycle commands do it
+	// by hand — for the reason modules/task and modules/site both gave when they
+	// grew the column: a number a database trigger moved behind the kernel's back
+	// would be a stale-base refusal nobody could point at.
+	Revision int64 `json:"revision" gorm:"not null;default:1" readOnly:"true" required:"false" doc:"This row's own write count, from 1"`
 	// Changes is what the save that published this payload moved. It is the trail's
 	// field and not the entity's: see events.Change and events.Recorder. The kernel's
 	// own write door fills it from the row it locked just before it publishes
