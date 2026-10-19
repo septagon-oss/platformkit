@@ -20,8 +20,8 @@ test('Portuguese sign-in keeps accessible labels and the existing keyboard authe
   expect((await new AxeBuilder({ page }).include('[data-login-form]').analyze()).violations).toEqual([]);
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/app$/);
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
+  await expect(page.getByRole('heading', { name: 'Visão geral da plataforma', exact: true })).toBeVisible();
 });
 
 test('an English URL preference overrides the Portuguese browser without persisting it', async ({ page }) => {
