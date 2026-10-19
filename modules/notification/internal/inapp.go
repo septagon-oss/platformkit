@@ -74,18 +74,26 @@ func MountInApp(s httpx.Surfaces, p InApp) {
 	if per <= 0 {
 		per = inAppPerPage
 	}
+	// The address this page is served at, as the surface composes it. The module
+	// owns the tail of the route ("/notifications"); the workspace namespace in
+	// front of it belongs to the composition, and only the surface has met both.
+	// The pager links this address and the live region re-reads it, so a person's
+	// own page is one address and not two — and both answers come from the same
+	// guarded handler, so the shape of the question changes nothing about what the
+	// address reaches.
+	mounted := s.App.PagePath(path)
 	page.Serve(s.App, p.Shell, page.Route{
 		ID: "notification-inbox", Method: http.MethodGet, Path: path,
 		Summary: "The notices addressed to you", Errors: inboxFaults,
 	}, httpx.SignedIn(), func(ctx context.Context, r page.Request, in *inboxInput) (page.View, error) {
-		return p.inbox(ctx, in.Page, per)
+		return p.inbox(ctx, in.Page, per, mounted)
 	})
 }
 
 // inbox reads this person's rows and draws them, newest first. The caller and
 // the transaction come from the same reading the JSON list uses: the person is
 // the principal the request authenticated, never a parameter.
-func (p InApp) inbox(ctx context.Context, at, per int) (page.View, error) {
+func (p InApp) inbox(ctx context.Context, at, per int, mounted string) (page.View, error) {
 	tx, me, err := caller(ctx)
 	if err != nil {
 		return page.View{}, err
@@ -106,7 +114,11 @@ func (p InApp) inbox(ctx context.Context, at, per int) (page.View, error) {
 			}),
 			inboxTable(rows),
 			components.Pagination(components.PaginationProps{
-				CurrentPage: min(at, last), TotalPages: last, BaseURL: path,
+				// The mounted address, never the bare collection: /notifications is
+				// the JSON route's address and no host serves a page there, so a
+				// pager written with the tail linked a person over one screenful of
+				// notices to a 404.
+				CurrentPage: min(at, last), TotalPages: last, BaseURL: mounted,
 				NavigationLabel: "Notifications pagination",
 			}),
 		},
