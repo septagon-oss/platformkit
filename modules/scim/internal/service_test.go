@@ -127,6 +127,16 @@ func compose(t *testing.T, known ...string) wiring {
 		Granting: &usercontracts.GrantingFunc{
 			Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil },
 		},
+		// Which languages this tenant's people could be written in is the tenant
+		// module's answer in the reference composition; here it is the one language
+		// these cases could otherwise be read in, because what arrives here is
+		// membership and roles, and the language door has its own tests in
+		// modules/user.
+		LocalePolicy: &usercontracts.LocalePolicyFunc{
+			Ask: func(context.Context, db.Tx[db.Tenant]) (tenancy.Languages, error) {
+				return tenancy.Languages{Default: "en"}, nil
+			},
+		},
 	})
 	authority := grantBook{users: users, grants: map[string][]string{
 		administered: {usercontracts.PermissionUserManage},
