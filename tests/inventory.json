@@ -9682,6 +9682,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/app/stream_read_timeout_test.go",
+   "id": "kit/app/stream_read_timeout_test.go#TestAStreamOutlivesTheServersReadTimeout",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAStreamOutlivesTheServersReadTimeout",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/app/stream_refreshed_principal_test.go",
    "id": "kit/app/stream_refreshed_principal_test.go#TestAHeartbeatChecksTheRefreshedPrincipalsRoles",
    "kind": "go",
@@ -69083,7 +69102,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1828,
+  "files": 1829,
   "forge_runs": [
    408,
    413,
@@ -69117,7 +69136,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2957,
+   "behaviour": 2958,
    "composition": 426,
    "contract": 21,
    "journey": 93
@@ -69136,9 +69155,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3497,
+  "rows": 3498,
   "tiers": {
-   "merge": 2220,
+   "merge": 2221,
    "nightly": 93,
    "push": 1184
   },
@@ -69146,13 +69165,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1601,
+   "keep": 1602,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3141,
+   "keep": 3142,
    "keep-rewrite": 140,
    "merge": 216
   }
