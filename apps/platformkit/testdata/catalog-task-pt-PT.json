@@ -52,7 +52,10 @@
           "in_progress": "warning",
           "open": "info",
           "resolved": "success"
-        }
+        },
+        "doneValues": [
+          "resolved"
+        ]
       }
     },
     {
@@ -175,7 +178,23 @@
       "title",
       "dueAt",
       "updatedAt"
-    ]
+    ],
+    "highlight": {
+      "label": "Vence hoje",
+      "filter": [
+        {
+          "field": "dueAt",
+          "op": "gte",
+          "value": "today"
+        },
+        {
+          "field": "dueAt",
+          "op": "lt",
+          "value": "tomorrow"
+        }
+      ]
+    },
+    "trendField": "createdAt"
   },
   "screen": "/app/task/tasks",
   "immutable": [

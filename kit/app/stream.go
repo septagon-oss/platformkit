@@ -28,6 +28,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/stream"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -284,7 +285,10 @@ func (a *App) streamHub(registry *stream.Registry) func() (*stream.Hub, error) {
 			built = stream.New(stream.Deps{
 				Transport: transport,
 				Registry:  registry,
-				Authority: streamAuthority{conn: a.held.read, authenticate: a.opts.Authenticate, authorize: a.opts.Authorize, catalogue: a.permissionCatalogue()},
+				// The grant the door asks with is the grant the route guard is
+				// asked about, so the door is handed the list httpx.Declare
+				// receives rather than a second reading of the manifests.
+				Authority: streamAuthority{conn: a.held.read, authenticate: a.opts.Authenticate, authorize: a.opts.Authorize, catalogue: module.Grants(a.mods)},
 				Limits:    limits,
 				Log:       a.log,
 			})

@@ -73,8 +73,11 @@ needs a bucket of its own, it composes a second store and points a second
 `Deps.Storage` at it; the port does not care which.
 
 **It does not make a key secret.** `files.storage_key` is `json:"-"`: the key
-never leaves in a body. Publicness is `files.visibility` and nothing else, and a
-public file is served by the module through the public surface, not by an
+never leaves in a body. Publicness is the audience the upload was given —
+`files.upload_visibility`, which only an upload writes — widened by a live use
+row that says a public page shows the file, and nothing else; `files.visibility`
+reports the audience the row answers with today, and only a revocation narrows
+it. A public file is served by the module through the public surface, not by an
 inference from an unguessable name.
 
 ## The consequences the decision has to pay for

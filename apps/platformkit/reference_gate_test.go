@@ -32,7 +32,7 @@ func pointing(module, entityName, target string) httpx.Resource {
 // is the once — the same refusal, not a second walk of the same schemas.
 func TestADanglingReferenceRefusesItsOwnCompositionFirstDocument(t *testing.T) {
 	resources := append(referenceResources(t), pointing("planted", "planted", "usr/user"))
-	build := documentBuilder(new(referenceGate))
+	build := documentBuilder(new(documentGate))
 	document, err := build(t.Context(), resources)
 	if err == nil {
 		t.Fatalf("a composition whose reference names no registered resource served a document: %+v", document)
@@ -58,11 +58,11 @@ func TestADanglingReferenceRefusesItsOwnCompositionFirstDocument(t *testing.T) {
 // Both builds run in one process, which is what every test binary here does.
 func TestTwoCompositionsAskTheReferenceQuestionEachForItsOwnList(t *testing.T) {
 	resources := referenceResources(t)
-	broken := documentBuilder(new(referenceGate))
+	broken := documentBuilder(new(documentGate))
 	if _, err := broken(t.Context(), append(append([]httpx.Resource{}, resources...), pointing("planted", "planted", "usr/user"))); err == nil {
 		t.Fatal("the planted composition served a document, so there is nothing for the reference composition to be poisoned by")
 	}
-	healthy := documentBuilder(new(referenceGate))
+	healthy := documentBuilder(new(documentGate))
 	if _, err := healthy(t.Context(), resources); err != nil {
 		t.Fatalf("the reference composition refused because another one built first: %s", err)
 	}

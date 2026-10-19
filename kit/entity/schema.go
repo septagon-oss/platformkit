@@ -253,12 +253,29 @@ var Widgets = []string{
 // import, so what ties the two together is a test there that names a rendered
 // composition for every entry here, plus the mount-time refusal in kit/rest.
 //
-// One entry, on purpose. ADR 0012 requires an adopted consumer's benefit, and a
-// vocabulary invented with no second caller in sight is how you get an alias of a
-// Go type you have to keep explaining. `text` is deliberately absent: the empty
-// string already means "derive it from the type", and an enum value, a timestamp
-// and a boolean each have a reading that needs no name.
-var Presentations = []string{"person"}
+// Three of the four read a file id — `image` is one picture, `images` a list of
+// them, `avatar` one picture of a person — and one reads a name. The picture
+// names earn their place the way `person` did: `image` is adopted by a reference
+// resource's cover field today, and `images` and `avatar` are honoured by the
+// same two compositions in ui/resource and wait on a product's own gallery and
+// profile field for an adopting column. What a name may not be is a type spelled
+// twice: `text` is deliberately absent, because the empty string already means
+// "derive it from the type", and an enum value, a timestamp and a boolean each
+// have a reading that needs no name.
+//
+// A name a mounted Spec claims and no screen renders refuses to mount, and the
+// shape a picture name may sit on is refused too — see ui/resource's own test
+// that names a composition per name here, and kit/rest's picture gate.
+var Presentations = []string{"person", "image", "images", "avatar"}
+
+// PicturesAre reports whether the named presentation reads a file id, which is
+// the one fact about the name that a mount gate can check without importing what
+// draws it: `image`, `images` and `avatar` hold a `files` row's id and nothing
+// else, so they refuse the column shapes that could not hold one and the hints
+// that would read the same column two ways.
+func PicturesAre(present string) bool {
+	return present == "image" || present == "images" || present == "avatar"
+}
 
 // ValidPresentation reports whether a screen renders the named presentation. The
 // empty string is valid: it means "derive from Type and Enum", which is most
@@ -439,6 +456,14 @@ func derive(t reflect.Type) []Field {
 					f.Presentation.Money.Scale, _ = strconv.Atoi(value)
 				}
 			}
+		}
+		// Its own tag, for the reason the two maps below have theirs: the values
+		// are a comma-separated list, and `,` is a directive separator inside
+		// `ui:`, so a directive there could name one value and an entity with two
+		// would have to repeat the key. The list is the same shape as the `enum:`
+		// tag's own, because it is a subset of exactly that list.
+		if raw := sf.Tag.Get("doneValues"); raw != "" {
+			f.Presentation.DoneValues = strings.Split(raw, ",")
 		}
 		for _, tag := range []struct {
 			name string

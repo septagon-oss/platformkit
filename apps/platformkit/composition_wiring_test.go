@@ -13,8 +13,6 @@ package main
 // Build, which these cases read rather than assert around.
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -38,19 +36,12 @@ import (
 // case that asks the resolver a question and reads nothing else. The four values
 // sentences also returns belong to the composition's own chrome.
 func sentencesOf(cfg config.Config, without ...string) *pkit.App {
-	a, _, _, _, _ := sentences(cfg, without...)
+	a, _, _, _, _, _, _ := sentences(cfg, without...)
 	return a
 }
 
 func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(compositionConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := config.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := referenceCompositionConfig(t)
 	r := composeReference(cfg, pkit.Development)
 	// Every module the sentence names is one the resolver placed, and every
 	// module the resolver placed is one the sentence named: Use is the whole of
@@ -58,14 +49,14 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 	for _, name := range []string{
 		"product", "seed", "user", "tenant", "notification", "auth", "emailregistration", "file",
 		"task", "billing", "translation", "content", "site", "web", "audit", "webhook",
-		"change", "access", "admin",
+		"change", "access", "media", "admin", "scim",
 	} {
 		if !namesAModule(r.modules, name) {
 			t.Errorf("%s.Module is named in Use and answers no manifest in the resolved composition", name)
 		}
 	}
-	if len(r.modules) != 19 {
-		t.Errorf("the composition resolved to %d modules, want the 19 the sentence names: %v", len(r.modules), moduleNames(r.modules))
+	if len(r.modules) != 21 {
+		t.Errorf("the composition resolved to %d modules, want the 21 the sentence names: %v", len(r.modules), moduleNames(r.modules))
 	}
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted.

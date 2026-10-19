@@ -3,27 +3,67 @@
 `modules/notification` tells somebody something, in the application and
 optionally by mail. Rows are addressed to a person, so the two routes under
 `/api/v1/notification/notifications` are scoped by the principal rather than by
-a permission, and the manifest declares neither permissions nor a navigation
-entry; a subscription delivers the mail-marked rows through the composed
+a permission, and the manifest declares one permission — `sender:manage`, which
+guards the tenant's sender commands and no page — and no navigation entry; a
+subscription delivers the mail-marked rows through the composed
 `Mailer`. Without a mail host the rows are still recorded and the mails are
 logged, which is what a development machine wants.
 
-Compose it with `notification.Deps{Recipients, Mailer, Hosts, Secure}`: `SMTP`
-is the production mailer for `config.example.yaml`'s `mail` section (password
-through `PLATFORMKIT_MAIL_PASSWORD`) and `NewMailbox()` the in-memory one.
-Consumers import [contracts/](contracts/) and its
+Compose it with `notification.Deps{Recipients, Senders, Providers, Mailer, Hosts,
+Secure}`: the mailer is `providers/gomail` — `gomail.New(gomail.Config{…})` over
+`config.example.yaml`'s `mail` section (password through `PLATFORMKIT_MAIL_PASSWORD`),
+the dependency the register names — or `NewMailbox()`, the in-memory one, and
+`Senders` and `Providers` may each be nil — every nil is a named refusal inside the
+decision rather than a surprise at send time, and a deployment with no `Senders` speaks
+as the address in its own configuration for every tenant, which is what it did before
+per-tenant senders existed. Consumers import [contracts/](contracts/) and its
 [fake](contracts/notificationtest/), never `internal/`; mail templates live in
 [internal/templates](internal/templates/).
 
-Every channel a notice asks for is accounted for in `notification_deliveries`
-(migration 000027), under the tenant's row-level security and append-only: a
-`requested` row when the notice is written, then a terminal row in the same
-transaction as the step that finishes the channel — `sent`, or `suppressed` with
-the reason (no address, the notice deleted before its mail was due). In-app is
-requested and sent with the row itself. A relay that refuses leaves no terminal
-row, because its transaction rolls back and the outbox retries; a send that can
-never succeed is recorded by the kernel in `platformkit_dead_letters`.
-`delivery_ledger_coverage` — requested channels with a terminal row, over all
+Who may be told what is decided in the notice's own transaction, before any row is
+written. `Service.Notify` reads the person's channel choices and quiet window
+(`notification_preferences` and `notification_quiet_hours`, migration 000054) and the
+tenant's sender (`notification_senders`, 000055), runs `contracts.Decide`, and accounts
+for the outcome of every channel the notice asked for: a chosen one opens a `requested`
+row and its own outbox event, a refused one closes in the same transaction with the
+sentence a person would read and the `Correction` naming whose decision would stop it —
+the recipient's, the tenant's, or the deployment's. `notification.Settings()` is the form
+behind those choices, over the caller's own rows, and `notification.Senders(verifier, keys)`
+the tenant's sending address, one row per tenant; neither is reached by a route here.
+
+A provider in `Providers` is a channel this deployment sends, and a channel it sends has
+somebody listening: `subscriptions(deps)` composes one carrier subscription per provider
+(`internal.Carrier`), named by the same `contracts.RequestedEvent` table `Notify` asks that
+channel by, so the two halves come from one `Deps` value and one reading of it —
+`contracts.Providers.Active`, which counts a key wired to nil as the absent channel it
+names — and cannot disagree. The carrier
+answers into a ledger row this module writes — nil is `sent`, `contracts.ErrPermanent` is
+`failed` with its sentence, anything else rolls back and retries — and a provider wired for
+`in_app` or `email`, which the module carries itself, panics at composition.
+
+Mail leaves as the tenant that raised it. `SendMail` reads `notification_senders` in
+the worker's own transaction and hands the row to the carrier, which puts the tenant's
+name and address in the `From:` **header** and signs it with DKIM (RFC 6376) under the
+row's selector; the **envelope** sender stays `mail.from` — one address per
+binary, which `kit/config` accepts with a display name and the carrier strips for
+`MAIL FROM` and keeps in `From:`, because those two answer different questions. A
+verified sender whose key this deployment does
+not hold is never sent unsigned. What the relay answers decides the ledger: a 5xx is
+`contracts.ErrPermanent`, which writes `failed` with the relay's own sentence and
+acknowledges the event, and anything else writes no row, rolls back and is retried on the
+kernel's ladder. A delivery the ledger already closed is not sent again — the worker reads
+the terminal row before it dials, which is the other half of migration 000056.
+
+The ledger is `notification_deliveries` (migration 000027), under the tenant's
+row-level security and append-only: a `requested` row when the notice is written, then a
+terminal row in the same transaction as the step that finishes the channel — `sent`, or
+`suppressed` with the reason (no address, the notice deleted before its mail was due).
+In-app is requested and sent with the row itself. A relay that refuses leaves no
+terminal row, because its transaction rolls back and the outbox retries; a send that can
+never succeed is recorded by the kernel in `platformkit_dead_letters`. Migration 000056
+is a unique partial index over the `sent` rows, so a redelivered send is accounted once
+and the worker acknowledges the retry instead of dead-lettering a delivery that
+happened. `delivery_ledger_coverage` — requested channels with a terminal row, over all
 requested channels — is `internal.Coverage`.
 
 The mails a composition sends *outside* a notice are recorded elsewhere, in
@@ -78,13 +118,58 @@ means. Ask the two tables two questions.
   reason a caller narrows the read at all is privacy rather than convenience: see
   `contracts.MailReport` and `modules/auth/internal/email_registration.go`.
 
+## Interface
+
+`contracts/` is the whole surface: `Service` (notify, list, mark read), `PreferenceService`
+and `Preferences` (one person's channel switches and quiet window), `Senders` and
+`SenderAdmin` (the tenant's one sending address), `Decide` and the channel vocabulary, the
+ten names in `Events`, and the ports the composition owes the module (`RecipientLookup`,
+`HostLookup`, `Mailer`, `Senders`, `DKIMKeys`, `SenderVerifier`, `GrantChecker`, `Provider`).
+Consumers import that and `contracts/notificationtest` — a fake `Service`, a fake `Mailer`
+and `RunService`, the suite the real service also runs — and never `internal/`. The two
+faces the composition reaches are `notification.Settings()` and
+`notification.Senders(verifier, keys, grants)`; the two HTTP routes are hand-written, because a
+`rest.Spec` list route is the whole tenant and these rows are addressed to a person.
+
+There is no mobile counterpart to derive or compose here, and this module is why not: with
+no `rest.Spec` there is no catalog resource and no command surface, so a phone client
+holding this module's own contracts would have to be written against Go, not a generated
+catalog (decision 0019). A bell derived from `Service` and `PreferenceService` is the form
+that surface would take; it is the product's to build and the limits below name what stops.
+
+## Composition
+
+**Reused** — the delivery ledger and its one writer (`internal.record`,
+`internal.Coverage`, migration 000027 with 000056's sent-once index), the channel
+vocabulary and the single decision (`contracts.Channel`, `contracts.Wants`,
+`contracts.Decide`), the outbox and its retry ladder (`kit/events`, `docs/adr/0004`),
+row-level security through `platformkit_tenant_match`, and the `Mailer` port with its
+second consumer in `modules/auth`, which keeps mailing a reset link that exists in no row.
+
+**Added** — `providers/gomail`, because the brief names `github.com/wneessen/go-mail` as
+this pillar's standard and the stdlib `net/smtp` conversation it replaced could neither
+sign a message nor carry a tenant's own header nor bound a wedged relay; and the worker's
+reading of the tenant's sender, its `contracts.ErrPermanent` split, and its skip over a
+closed delivery, because "a tenant sends from its own name" and "a suppressed notice has a
+row saying so" are both facts about the send and no existing unit reached the send.
+
+**Made reusable** — `providers/` as the place a carrier lives outside `internal/` (the
+`kit/events/providers/{memory,nats}` pattern, one package per SDK, so nothing in
+`contracts/` or `internal/` names one), `contracts.Permanent`
+as the one error a provider returns when another attempt would say the same thing, and
+and the shape of a provider test — an in-process relay in the carrier's own package that
+asserts what went on the wire rather than what a mock said (`providers/gomail`, whose relay
+lives in `gomail_test.go`: a testing approach to copy, not an API to import).
+
 ## Authorization
 
 ### Permissions
 
-None. `permissions` in `modules/notification/module.go` is an empty `[]module.Permission`, and the module has no nav entry.
-Both routes are guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`).
-The `SendMail` event subscription (`modules/notification/internal/mail.go`) is run by the kernel and is not guarded by a permission.
+One key: `sender:manage` (`contracts.PermissionSenderManage`, declared in `permissions` in `modules/notification/module.go`). It is the tenant's own sending address — `Put`, `Verify` and `Delete` in `internal/senders.go` — and it is defined here rather than beside a route because `kit/app` refuses a route whose permission no manifest defines. Its `Label` — `manage the tenant's sending address` — is the grant in words, which is what a refusal reads out and what `kit/module.Validate` refuses a permission for lacking.
+The key is checked inside the transaction, not only at a route: `Senders.administered` asks the composition's `contracts.GrantChecker` whether the caller's roles grant it, and refuses when the deployment wires no checker to answer. A deployment that grants it to nobody therefore has working sender commands refused, which is the failure it will notice.
+No nav entry names it: a nav entry decides who sees a link, and this key guards a mail identity, not a page.
+The module's two routes stay outside it, guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`) — both are about the caller, and a permission every signed-in person must hold decides nothing.
+The `SendMail` event subscription (`modules/notification/internal/mail.go`), and the one carrier subscription per wired provider (`internal.Carrier`), are run by the kernel and are not guarded by a permission.
 
 ### Object scope
 
@@ -96,6 +181,8 @@ Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.Princ
 
 `Service.MarkRead` in `modules/notification/internal/service.go` answers `crud.ErrNotFound` when the row's `RecipientID` is not the caller, so nobody learns whether another person's notification exists.
 `caller` in `handler.go` answers 403 when there is no principal or the user id is nil.
+`SetChannel`, `SetQuietHours`, `ClearQuietHours` and `Mine` in `internal/preferences.go` answer `tenancy.ErrPolicyDenied` when the context carries a principal who is not the recipient they name: one person's opt-out, quiet window and the list of both are their own, and row-level security cannot say so because both people are in one tenant.
+The mail subscription re-reads the tenant's sender before it sends (`internal/mail.go`): a sender that went back to pending after the notice was queued is a suppressed row, not a message signed as a domain that stopped vouching for itself.
 This is a recipient check, not a separation-of-duties rule.
 
 ### Public faces
@@ -105,9 +192,76 @@ It has no public write, so `kit/limit` is not used.
 
 ### The operator boundary
 
-None. There are no permissions, so none is marked `Operator: true`, and no `OperatorRead` or `OperatorWrite` route exists.
+None. `sender:manage` is not marked `Operator: true` — its scope is the tenant's own row, which the transaction resolves, so an operator is not the only one who may hold it — and no `OperatorRead` or `OperatorWrite` route exists.
 
 ### Provisioning
 
-Nothing needs granting. Every signed-in person can read and mark their own notifications, which is why the manifest declares no key.
-Roles and the roles API therefore do not affect this module's routes.
+`sender:manage` is the one key a role would be granted, and it is granted by nothing today, because the module mounts no route over the sender face: the composition holds `Senders(verifier, keys, grants)` and the product writes the page. Granting it is therefore the product's act over its own roles, and until it does, the commands are reachable only from inside the composition — and a signed-in caller needs a `contracts.GrantChecker` wired over the roles table before any of them is reachable at all.
+Every signed-in person can read and mark their own notifications and set their own channel switches without any grant: those commands are scoped by the principal, not by a key.
+Roles and the roles API therefore do not affect this module's two routes.
+
+## Limits
+
+What this module does not do, stated here rather than only in the branch that left it out:
+
+- **No in-app bell and no list in the kernel shell.** `Service.ListFor` and `MarkRead` and
+  the two routes answer the question a bell asks; nobody renders it. There is no nav entry
+  and no page, so a `requested` in-app row is read only by a client that already knows the path.
+- **No settings or sender page, and no route over either face.** `Settings()` and
+  `Senders(verifier, keys, grants)` are the commands and `sender:manage` is the key; the product
+  writes the form and the route, and until it does a person cannot change a channel switch
+  from a screen and an administrator cannot set a tenant's sender from anywhere but Go. The
+  same is true of the grant: nothing in this repository implements `contracts.GrantChecker`,
+  whose implementation is a few lines over the auth module's `Permissions`.
+- **No templates per event per locale, and no HTML alternative.** `internal/templates` holds
+  one text template, `contracts.Message.HTML` and `Lang` are read by the carrier and written
+  by nobody, and `internal/mail.go` sets `Lang: "en"`; locale is the product's copy table.
+- **Mail is the only carrier that reaches a device.** The module can host a carrier for any
+  channel — `internal.Carrier` asks it and closes the ledger row around the answer — and
+  `contracts.Provider` is the shape, but nothing in this repository implements it: a wired
+  push carrier gets `Delivery.Target` empty, because device tokens, browser subscriptions
+  and tenant endpoint URLs live outside this module.
+- **One expected revision, on one row.** `Put` refuses a copy that names a `Revision` the
+  row has gone past — `crud.ErrConflict`, nothing written, published or returned; migration
+  000057 keeps the counter and `Verify` advances it. A copy naming none (`Revision 0`, a
+  value built rather than read) states what the tenant's sender is and writes. That guard
+  reaches the command and no further: `kit/entity`'s `Base` carries no version and
+  `rest` takes no `If-Match` (docs/adr/0016), so a screen over `Senders()` has to carry the
+  number in its form, and a token a caller hands in is discarded rather than checked: `Put`
+  mints the verification challenge and no command accepts one.
+- **Not measured as an evidence indicator.** `internal.Coverage` computes
+  `delivery_ledger_coverage` as requested channels with a terminal row over all requested
+  ones; the repository has no `tools/pillars.py` to report it through, so the ratio is a
+  query and a number in the brief, not a dashboard.
+
+## Verification
+
+`go test ./modules/notification/...` runs the contracts suite against the real service,
+a real Postgres and a real tenant transaction (`TestServiceConforms`), the settings and
+sender commands against the same (`TestAConversationWithTheSenderCommands`), a redelivered
+send against 000056 (`TestARedeliveredSendWritesOneSentRow`) and the same committed replay
+over every asynchronous channel (`TestEveryCarriedChannelIgnoresACommittedEventReplay`), a
+wired carrier through its ledger row
+(`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`), one tenant's writes against another tenant's rows with a caller both transactions name
+(`TestOneTenantsLedgerIsNotAnothers`, `TestAnotherTenantWritesNothingOfThisTenants`,
+`TestAnotherTenantThatHoldsTheKeyWritesNothingOfThisTenants`), two verifications of one
+sender against one provider call and one event
+(`TestConcurrentSenderVerificationChecksAndPublishesOnce`), the sender commands against a
+caller that names nobody (`TestTheSenderCommandsRefuseACallerWhoIsNobody`), a member whose
+roles do not grant `sender:manage` (`TestSenderCommandsRefuseAMemberWithoutTheManageGrant`),
+a sender deletion's audit event (`TestDeletingAPendingSenderPublishesItsAuditEvent`), a
+queued mail whose sender is no longer verified
+(`TestQueuedMailRechecksSenderVerificationBeforeDelivery`), one recipient's choices and
+their own list against another recipient's principal
+(`TestPreferenceCommandsRefuseAnotherRecipientsChoices`, `TestMineAnswersOnlyTheCallersOwnChoices`),
+every answer the sender commands can get from the composition's `GrantChecker`
+(`TestSenderCommandsFollowTheGrantCheckersAnswer`), and two first answers for one
+channel leaving one row (`TestTwoFirstAnswersForOneChannelLeaveOneRow`), a stale copy of a
+sender against the identity a newer one committed
+(`TestAStaleSenderEditPreservesTheCommittedIdentity`), another tenant's copy of a published
+DNS challenge (`TestAnotherTenantCannotReuseAPublishedDomainProof`) and a carrier wired to
+nil (`TestAnAbsentProviderClosesItsChannelAsSuppressed`).
+`providers/gomail` runs against an in-process relay in its own package, including
+`TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
+never authenticated to. What a real relay answers — DKIM as the far end verifies it, and
+STARTTLS negotiation — is observed by no test here.

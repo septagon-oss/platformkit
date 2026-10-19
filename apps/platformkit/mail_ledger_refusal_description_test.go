@@ -8,7 +8,7 @@ import (
 )
 
 func TestCompositionDescriptionRefusesAMissingMailLedgerProvider(t *testing.T) {
-	cfg := referenceDependencyConfig(t)
+	cfg := referenceCompositionConfig(t)
 	for _, env := range []pkit.Environment{pkit.Development, pkit.Production} {
 		t.Run(string(env), func(t *testing.T) {
 			description, err := sentencesOf(cfg, "notification").Describe(pkit.Deployment{Environment: env, Config: cfg})

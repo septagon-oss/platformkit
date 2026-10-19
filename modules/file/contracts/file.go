@@ -47,6 +47,10 @@ const (
 const (
 	MaxName        = 255
 	MaxContentType = 120
+	// MaxAlt is how much a picture is allowed to say about itself. The column is
+	// varchar(1000) and the entity refuses 1001 characters, so the answer is a
+	// 422 that names the limit and not a constraint violation arriving as a 500.
+	MaxAlt = 1000
 )
 
 // Renderable is the closed set of media types this application will let a
@@ -145,7 +149,26 @@ type File struct {
 	// Visibility decides which door serves it. It defaults to private, and it
 	// is spelled as a closed set rather than a bool so that the third answer
 	// somebody will want — signed URLs — is a value and not a schema change.
+	//
+	// It is the audience this row carries, and only one thing ever raises it: the
+	// upload. The write that takes an audience back lowers it (see
+	// internal.Service.settleAudience), and the derived half of who may read the
+	// file — a record with a public face showing it — is never written here,
+	// because that half belongs to the record and lives in its use row. An
+	// earlier release did write it here, which is what UploadVisibility is for.
 	Visibility string `json:"visibility" gorm:"type:varchar(10);not null;default:'private'" enum:"private,public" ui:"widget:select" doc:"Who may read it" default:"private" required:"false"`
+
+	// UploadVisibility is the audience the upload itself was given: the choice
+	// made by whoever held file:manage when the bytes arrived, and the floor of
+	// who may read the file. No command that shows a file, publishes a record or
+	// takes an audience back writes it, which is the whole reason it is a second
+	// column and not files.visibility — that one held the derived answer for
+	// every file a published page showed, and so stopped saying what its uploader
+	// chose. Rows written before this column existed get it back from their own
+	// file.uploaded event, or from what their uses account for; see 000064. It is
+	// the module's own record of a choice, not a second answer to show a caller:
+	// the answer a caller is given is Visibility, that choice widened by what shows it.
+	UploadVisibility string `json:"-" gorm:"column:upload_visibility;type:varchar(10);not null;default:'private'"`
 
 	// UploaderID is whoever uploaded it, a user id with no foreign key behind
 	// it. Validate stamps it from the caller on the context, the way content
@@ -181,6 +204,15 @@ type File struct {
 	// about it — see the CHECK in migrations/000055, which keeps a file the image
 	// pass never measured from carrying a stamp at all.
 	UnusedSince *time.Time `json:"unusedSince,omitempty" gorm:"column:unused_since" doc:"Since when nothing shows it" readOnly:"true" required:"false" format:"date-time"`
+
+	// Alt is what the picture says about itself, in the words a person chose, and
+	// it is written by one command only — SetAlt — never merged in from a request
+	// body. A file may arrive without it; a body may not be handed the file until
+	// it has it, or until the picture is declared decorative.
+	Alt string `json:"alt" gorm:"column:alt;type:varchar(1000);not null;default:''" maxLength:"1000" doc:"What the image says about itself, empty until somebody captions it"`
+	// Decorative is the person saying this picture carries no information a reader
+	// would want: the alternative to writing alt text, and never both at once.
+	Decorative bool `json:"decorative" gorm:"column:decorative;not null;default:false" doc:"True when the image carries no information a reader would want"`
 }
 
 // TableName pins the table, so the entity and migrations/000019 agree.
@@ -188,6 +220,12 @@ func (File) TableName() string { return "files" }
 
 // Public reports whether anybody may read this file.
 func (f *File) Public() bool { return f.Visibility == VisibilityPublic }
+
+// GivenPublic is the floor: the audience the upload was given, whatever the records
+// showing the file have since asserted. Every file a person has ever published reads
+// the same as Public(); the two part company for a file whose visibility a record with
+// a public face is widening right now, which is readable and was not given public.
+func (f *File) GivenPublic() bool { return f.UploadVisibility == VisibilityPublic }
 
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through.
@@ -199,6 +237,12 @@ func (f *File) Validate(ctx context.Context) error {
 	}
 	if f.Visibility == "" {
 		f.Visibility = VisibilityPrivate
+	}
+	if f.UploadVisibility == "" {
+		// A write that names the audience it gives names the floor with the same
+		// word: the two columns part company only when something takes an audience
+		// back, and no command that does that arrives here.
+		f.UploadVisibility = f.Visibility
 	}
 	if f.UploaderID == uuid.Nil {
 		// The context is the one thing that knows whose request this is, which
@@ -237,6 +281,15 @@ func (f *File) Validate(ctx context.Context) error {
 		return fmt.Errorf("nothing this module's ledger can speak about is stamped: an unstored frame carries no grace period")
 	case f.Size < 0:
 		return fmt.Errorf("a file is not a negative number of bytes")
+	// A caption is the entity's business too: whichever door writes it — SetAlt,
+	// a fixture, an import — the row may not carry words and the claim that there
+	// are none at the same time. The empty-but-not-declarative state is legal to
+	// arrive in and is refused by the commands that leave it, which is what
+	// contracts.AltClaim's own comment says and what SetAlt enforces.
+	case f.Alt != "" && f.Decorative:
+		return fmt.Errorf("a decorative image says nothing about itself, and that one carries %d characters", utf8.RuneCountInString(f.Alt))
+	case utf8.RuneCountInString(f.Alt) > MaxAlt:
+		return fmt.Errorf("an alt text is at most %d characters, and that one is %d", MaxAlt, utf8.RuneCountInString(f.Alt))
 	// The same shape files_dimensions CHECKs: a frame is either unmeasured, in
 	// which case both numbers are 0, or it is measured, in which case neither
 	// side is. A width with no height is a number nobody read.
@@ -464,10 +517,12 @@ type FileUse struct {
 	Field  string    `json:"field" gorm:"type:varchar(64);not null" maxLength:"64" doc:"The field of that record" readOnly:"true"`
 	Locale string    `json:"locale" gorm:"type:varchar(35);not null" maxLength:"35" doc:"The locale of the body that names it" readOnly:"true"`
 	// Public says the record this row belongs to was showing the file to somebody
-	// who has not signed in. One command writes it — SetShown, called by the module
-	// that owns that record's public face — and files.visibility is recomputed from
-	// it: a file the ledger speaks about is public if and only if some live use row
-	// of it says true here. See migrations/000056.
+	// who has not signed in. Two commands write it: SetShown, called by the module
+	// that owns that record's public face, and SetUsesShown, which files a new use
+	// with the audience the record already asserts. The row asserts its own half of
+	// the answer: a stranger may read the file when its own visibility says so or
+	// some live use row of it says true here, which is the question Open asks at the
+	// public door. See migrations/000056.
 	Public bool `json:"public" gorm:"not null;default:false" doc:"Shown to anonymous readers" readOnly:"true"`
 }
 
@@ -509,6 +564,20 @@ type UseRow struct {
 	Use
 	ID        uuid.UUID `json:"-" doc:"The use row's own id"`
 	CreatedAt time.Time `json:"createdAt" doc:"When this use began"`
+}
+
+// DistinctRecords is how many records these uses belong to: the count Delete
+// names when it refuses, and the count a details panel would show. It is a
+// function and not a SQL GROUP BY because the fake has to give the same answer as
+// the database for the same rows — the count is one decision, made in one place,
+// and a second implementation of it in either language is where the two
+// implementations would start to disagree about what one page shows.
+func DistinctRecords(rows []UseRow) int {
+	seen := map[Use]struct{}{}
+	for _, row := range rows {
+		seen[Use{Module: row.Module, Entity: row.Entity, Record: row.Record}] = struct{}{}
+	}
+	return len(seen)
 }
 
 // CollapseRefs is what a body's references mean as a set of uses: the ids in the
@@ -555,10 +624,13 @@ func DiffUses(existing, wanted []uuid.UUID) (add, remove []uuid.UUID) {
 // "this module can delete files" is a different sentence from "this module can
 // read one".
 type Opener interface {
-	// Open is the row and its bytes. anonymous is the public door: it serves
-	// only a file whose visibility says anybody may read it, and answers
-	// ErrNotFound for everything else, so a private file and a file that does
-	// not exist are the same answer to a caller who is not signed in.
+	// Open is the row and its bytes. anonymous is the public door: it serves a
+	// file when somebody may read it — because its own visibility says so, or
+	// because a record with a public face is showing it — and answers ErrNotFound
+	// for everything else, so a private file and a file that does not exist are the
+	// same answer to a caller who is not signed in. The row handed back carries the
+	// answer the door gave, so what is served, the cache policy written on it and
+	// what the caller goes on to report about the file are one verdict.
 	Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, anonymous bool) (*File, io.ReadCloser, error)
 }
 
@@ -610,6 +682,12 @@ type Service interface {
 	// key. The bytes are removed by whoever handles that event, after this
 	// transaction commits — see the module's subscription. Deleting what is
 	// already gone is ErrNotFound, because the row is what a caller named.
+	//
+	// A file some record still shows is refused with ErrInUse naming how many
+	// records show it, and nothing is written, published or removed. The check and
+	// the removal are one transaction under a lock on the file row, so a use that
+	// begins concurrently is decided rather than raced: it waits behind the removal
+	// and is then refused the file it named, or it lands first and is counted.
 	Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*File, error)
 
 	// Grant hands out a time-limited door onto one row's bytes, so a private
@@ -671,12 +749,13 @@ type Service interface {
 	// a public audience takes that audience back here, in the transaction that ended
 	// it, because this rewrite is what every delete and every edit goes through: a
 	// record that was showing a picture is gone, and its bytes must not stay readable
-	// by anybody because nobody recomputed them. The rule is SetShown's — public if any
-	// live use of the file is public, private when none is, a file with no rows at all
-	// now counted as nobody is — and so is its exemption: a file the ledger never had a
-	// row for is not this command's to change, and neither is one whose ended rows said
+	// by anybody because nobody recomputed them. The rule is SetShown's — a stranger
+	// may read the file when any live use of it is public or when its own visibility
+	// says so — and so is its exemption: a file the ledger never had a row for is not
+	// this command's to change, and neither is one whose ended rows said
 	// nothing about the public. Only an audience a publish granted is a publish's to
-	// take back. Every other fact stays silent: the record's own write is the auditable
+	// take back: what an upload was given is the floor, and no record's edit narrows
+	// it. Every other fact stays silent: the record's own write is the auditable
 	// one, and the file module has no business emitting an event for somebody else's
 	// row.
 	SetUses(ctx context.Context, tx db.Tx[db.Tenant], use Use, refs []uuid.UUID) ([]uuid.UUID, error)
@@ -689,10 +768,13 @@ type Service interface {
 	// module that owns the record's public face calls it from the command that
 	// moves the lifecycle, in that command's transaction, so the flip and the move
 	// commit together or not at all. Each named file is locked FOR UPDATE, in
-	// ascending id order, before its rows are written and its visibility is
-	// recomputed from the whole ledger: public if any live use of it is public,
-	// private when none is. A file the ledger does not speak about is not named
-	// here and keeps whatever its upload asked for.
+	// ascending id order, before its rows are written and the answer recomputed from
+	// the whole ledger: somebody who has not signed in may read it when any live use of
+	// it is public, or when its own visibility says so. What is recomputed is that
+	// answer, published as a flip and asked again at the door — never the file's own
+	// visibility, which is what its upload was given and is no command's to take back.
+	// A file the ledger does not speak about is not named here and keeps whatever its
+	// upload asked for.
 	//
 	// public true with no use row for one of the refs is refused — the bytes would
 	// go public while nothing records who shows them, so nothing could ever turn
@@ -714,6 +796,58 @@ type Service interface {
 	// which is the record a data-protection question is answered from. Empty is
 	// allowed; past MaxErasureReason is refused before anything is removed.
 	EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject uuid.UUID, reason string) (*ErasureReceipt, error)
+}
+
+// ShownUses is SetUses for the one caller that knows the record filing these uses
+// has a public face. It is a separate interface rather than a fifth method on
+// Service because a deployment that wired its own Service before this command
+// existed is not broken by a capability it never asked for: the one caller that
+// wants it asserts it at the call, and refuses the write when the Service it was
+// wired cannot answer. See Service.SetUses for the rules it does not change and
+// Service.SetShown for what public means.
+//
+// A row this call files carries public = true, and that row is itself the audience:
+// a published page that gains an image in an ordinary edit gains public bytes in
+// that write, at the door, without waiting for the next lifecycle move. The file's
+// own visibility is left as it stands — writing that row is a lock on the file held
+// to the end of the save that took it, and two records naming two shared pictures in
+// each other's order deadlock on exactly that, which is what UsesOrder exists for.
+// Rows it keeps are left alone: the audience of an existing use
+// stays SetShown's to change, and this command came to file new uses, not to
+// re-assert old ones. public false is SetUses exactly as it is, which is what
+// every command that does not know the answer calls.
+type ShownUses interface {
+	SetUsesShown(ctx context.Context, tx db.Tx[db.Tenant], use Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error)
+}
+
+// UsesOrder is the ledger's promise that the file rows one save touches are locked
+// in one pass, in the ledger's own ascending order, whatever order the save names
+// them in. It is asked by the one caller that can know a whole save at once — the
+// richtext door, which sees every field of the body before it files any of them —
+// and it is optional in the way ShownUses is: a Service that answers nothing of the
+// kind keeps filing one field at a time, which is the order that can collide.
+//
+// The collision it prevents is not a race. A save that files a use of one picture in
+// its body and another in its summary locks two file rows, in the order the document
+// holds them; a second record naming the same two pictures the other way round then
+// holds one row and waits for the other while the first waits for it, and Postgres
+// ends the deadlock by refusing one of the two saves — a person's write, lost to a
+// wait they can neither see nor fix. One ascending pass over everything the save will
+// touch makes the second save wait for the first instead, which is a slow save.
+//
+// OrderUses locks and decides nothing else: it writes no row, publishes no event and
+// refuses nothing. The rewrite itself stays SetUses' and SetUsesShown's, and its own
+// locks are unchanged — what this pass buys is that those later locks are already
+// held, since Postgres grants a row a transaction has locked again for nothing.
+// Locking strong and once is the rule this keeps; nothing here takes a row weak and
+// upgrades it later, which is what two rewrites of one file deadlock on.
+type UsesOrder interface {
+	// OrderUses walks the files refs names, together with every file owner's record
+	// already shows — the second half is what makes an edit that drops a picture join
+	// the same pass — in one ascending FOR UPDATE pass. Files a caller has no right to
+	// see are not there to lock, and locking nothing is not an error: the tenant scope
+	// answers which rows exist, as it does for every other read here.
+	OrderUses(ctx context.Context, tx db.Tx[db.Tenant], owner Use, refs []uuid.UUID) error
 }
 
 // DefaultGrantExpiry is the life of a grant nobody asked a length for: long
@@ -745,6 +879,37 @@ var ErrInvalidExpiry = errors.New("file: that expiry is not one this module sign
 
 // ErrHeld is a removal refused because a hold says the bytes must stay.
 var ErrHeld = errors.New("file: this file is under a retention hold")
+
+// ErrInUse is a removal refused because some record still shows the file. It is
+// a conflict and not a validation failure, and the remedy is the other door: edit
+// or delete the records that name it, and the file goes. A hold outranks a use,
+// so a file under a live hold still answers ErrHeld.
+var ErrInUse = errors.New("file: this file is shown by records that still exist")
+
+// InUse is that refusal with its size: how many records show the file. Records,
+// not rows — one page can show one picture in its body and its summary, in two
+// locales, and the person deciding what to do about it counts pages.
+type InUse struct {
+	File    uuid.UUID
+	Records int
+}
+
+func (e *InUse) Error() string {
+	noun := "records"
+	if e.Records == 1 {
+		noun = "record"
+	}
+	return fmt.Sprintf("%s: %s is shown by %d %s", ErrInUse, e.File, e.Records, noun)
+}
+
+// Is lets errors.Is find ErrInUse in a refusal that carries its size.
+func (e *InUse) Is(target error) bool { return target == ErrInUse }
+
+// ErrBusyDecoding is an image upload the process will not take right now:
+// every decode slot is held, and the wait for one ran out. Neither the request
+// nor anybody's state is wrong, so it is a 503 with the caller's own retry, not
+// a 4xx about a body and not a 500 about a broken installation.
+var ErrBusyDecoding = errors.New("file: this instance is decoding every image it has room for")
 
 // ErrUnprovable is an erasure the store cannot certify: it reported a version,
 // a delete marker or an in-flight multipart part, so the bytes are not gone in

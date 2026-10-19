@@ -376,7 +376,11 @@ var _ changecontracts.Notifier = proposalNotifier{}
 func (n proposalNotifier) Told(ctx context.Context, tx db.Tx[db.Tenant], p changecontracts.Notice) error {
 	title, body := verdictSaid(p.Kind, p.State)
 	_, err := n.notices.Notify(ctx, tx, notificationcontracts.Notice{
-		Recipient: p.Recipient, Title: title, Body: body, Link: p.Link, Email: true,
+		// The mail bit is the ceiling this product raises: a proposer is told in the
+		// application whatever the person's settings decide about mail, because in-app
+		// is the floor of every notice rather than something a caller can ask off.
+		Recipient: p.Recipient, Title: title, Body: body, Link: p.Link,
+		Wants: notificationcontracts.WantsEmail,
 	})
 	return err
 }

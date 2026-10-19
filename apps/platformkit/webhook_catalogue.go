@@ -26,6 +26,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -64,6 +65,17 @@ var webhookCatalogue = emittedEvents{
 	usercontracts.EventAdministrationRefused,
 	usercontracts.EventRegistrationPending, usercontracts.EventRegistrationApproved,
 	usercontracts.EventRegistrationUnverified, usercontracts.EventEmailVerified,
+	// The return an administrator's own command drives: a suspended person is an
+	// account that cannot sign in, and a subscriber watching who may enter would
+	// otherwise hear the door close and never hear it open again.
+	usercontracts.EventReactivated,
+	// scim, the five facts no user event describes: the collection declared with
+	// nobody in it, the collection renamed, the collection withdrawn, this tenant's
+	// binding of a collection to a role, and the attribute of a person this door
+	// writes and modules/user publishes nothing about. The person's own invitation,
+	// roles and deactivation stay the `user.` names above.
+	scimcontracts.EventGroupCreated, scimcontracts.EventGroupChanged, scimcontracts.EventGroupRemoved,
+	scimcontracts.EventMappingChanged, scimcontracts.EventUserChanged,
 	// tenant, whose lifecycle an installation's own operator acts drive.
 	tenantcontracts.EventCreated, tenantcontracts.EventSuspended, tenantcontracts.EventHostAdded,
 	tenantcontracts.EventHostRemoved, tenantcontracts.EventLocaleSet, tenantcontracts.EventRenamed,
@@ -72,6 +84,20 @@ var webhookCatalogue = emittedEvents{
 	tenantcontracts.EventSAMLSet, tenantcontracts.EventSAMLCleared,
 	// notification, task, content, site, file, billing, change.
 	notificationcontracts.EventCreated, notificationcontracts.EventEmailRequested, notificationcontracts.EventRead,
+	// The channels the tenant's sender and the person's own switches opened up. One
+	// name per channel rather than one event carrying a channel field, so an endpoint
+	// that answers 500 all afternoon delays its own channel and nothing else; a
+	// subscriber that watches what a notice was asked to do names the channel it cares
+	// about and no other.
+	notificationcontracts.EventPushRequested, notificationcontracts.EventWebPushRequested,
+	notificationcontracts.EventWebhookRequested,
+	// The three moments of a person's and a tenant's own decisions: which switches are
+	// on, which address this tenant sends from, and whether that address ever proved
+	// itself. A removal of a sender that was never believed is its own name rather than
+	// a sender_set saying "pending", and an endpoint that watches the tenant's mail
+	// identity wants the same distinction — see modules/notification/contracts/events.go.
+	notificationcontracts.EventPreferenceSet, notificationcontracts.EventSenderSet,
+	notificationcontracts.EventSenderVerified, notificationcontracts.EventSenderRemoved,
 	taskcontracts.EventCreated, taskcontracts.EventUpdated, taskcontracts.EventDeleted,
 	taskcontracts.EventAssigned, taskcontracts.EventResolved, taskcontracts.EventSLABreached,
 	contentcontracts.EventCreated, contentcontracts.EventUpdated, contentcontracts.EventDeleted,
@@ -86,6 +112,11 @@ var webhookCatalogue = emittedEvents{
 	// private again when the last of them stops. A subscriber that watches what an
 	// installation exposes needs that moment, not only the upload.
 	filecontracts.EventVisibility,
+	// What a picture says about itself, and the claim that it says nothing. One
+	// command writes both and publishes in its own transaction, so a subscriber that
+	// watches whether an installation's images are described watches this name: the
+	// upload says a file arrived, never that anyone captioned it.
+	filecontracts.EventAltered,
 	billingcontracts.EventPlanCreated, billingcontracts.EventPlanUpdated, billingcontracts.EventPlanDeleted,
 	billingcontracts.EventSubscribed, billingcontracts.EventCancelled, billingcontracts.EventRenewed,
 	billingcontracts.EventPastDue,

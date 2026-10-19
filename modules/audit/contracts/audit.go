@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/request"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -51,13 +52,20 @@ import (
 // cause which was no session, this module's
 // migrations/000053_audit_attribution.up.sql.
 type Event struct {
-	ID         uuid.UUID       `json:"id" format:"uuid" doc:"The trail row's own id"`
-	TenantID   uuid.UUID       `json:"-"`
-	OccurredAt time.Time       `json:"occurredAt" doc:"When the state changed"`
-	Name       string          `json:"name" doc:"The event's name" example:"task.task.created"`
-	Actor      *uuid.UUID      `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
-	EventID    uuid.UUID       `json:"eventId" format:"uuid" doc:"The event this row records"`
-	Payload    json.RawMessage `json:"payload" doc:"The event's payload, as its module published it"`
+	// Operation metadata is copied from the event, never reconstructed from a call.
+	OperationID       *string          `json:"operationId,omitempty"`
+	OperationRef      *uuid.UUID       `json:"operationRef,omitempty"`
+	OperationTenantID *uuid.UUID       `json:"operationTenantId,omitempty"`
+	OperationPersonID *uuid.UUID       `json:"operationPersonId,omitempty"`
+	OperationOutcome  *request.Outcome `json:"operationOutcome,omitempty"`
+	OperationRevision *int64           `json:"operationRevision,omitempty"`
+	ID                uuid.UUID        `json:"id" format:"uuid" doc:"The trail row's own id"`
+	TenantID          uuid.UUID        `json:"-"`
+	OccurredAt        time.Time        `json:"occurredAt" doc:"When the state changed"`
+	Name              string           `json:"name" doc:"The event's name" example:"task.task.created"`
+	Actor             *uuid.UUID       `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
+	EventID           uuid.UUID        `json:"eventId" format:"uuid" doc:"The event this row records"`
+	Payload           json.RawMessage  `json:"payload" doc:"The event's payload, as its module published it"`
 	// RequestID is the id the caller of the request that caused this was answered
 	// with (X-Request-ID), and TraceParent the W3C trace context it carried, kept
 	// verbatim as the standard spells it. ClientIP is the peer address of the
@@ -129,6 +137,8 @@ func (Event) TableName() string { return "audit_events" }
 // which is the second field of the stored traceparent and what
 // migrations/000037 indexes.
 type Query struct {
+	// OperationRef matches the immutable occurrence, across all of its events.
+	OperationRef  uuid.UUID
 	Name          string
 	Actor         uuid.UUID
 	Record        uuid.UUID

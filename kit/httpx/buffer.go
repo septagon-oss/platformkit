@@ -6,6 +6,7 @@ package httpx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"time"
 )
@@ -47,10 +48,12 @@ type buffer struct {
 	// beside the response because a keyed write answers a retry from its record, from
 	// a different request's call stack, and the numbers the counters gave are the only
 	// account of the ceilings that answer was decided under.
-	counted []measured
-	status  int
-	body    bytes.Buffer
-	direct  bool
+	counted       []measured
+	status        int
+	body          bytes.Buffer
+	direct        bool
+	mutation      bool
+	streamRefused bool
 }
 
 // maxBuffer is the most a held response may hold. Two megabytes is far past any
@@ -81,6 +84,10 @@ func (b *buffer) Write(p []byte) (int, error) {
 	// ordered them the way the surface's promise cannot survive: by the time the
 	// first byte goes, so do the headers beside it.
 	b.withholdCookies()
+	if b.mutation && b.body.Len()+len(p) > maxBuffer {
+		b.streamRefused = true
+		return 0, errors.New("httpx: mutation response must be buffered")
+	}
 	if !b.direct && b.body.Len()+len(p) > maxBuffer {
 		b.send()
 	}
@@ -91,6 +98,10 @@ func (b *buffer) Write(p []byte) (int, error) {
 }
 
 func (b *buffer) Flush() {
+	if b.mutation {
+		b.streamRefused = true
+		return
+	}
 	b.withholdCookies()
 	b.send()
 	if f, ok := b.ResponseWriter.(http.Flusher); ok {

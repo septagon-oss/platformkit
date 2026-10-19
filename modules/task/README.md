@@ -105,9 +105,10 @@ The module does not create roles. A composition grants `task:read` and `task:upd
 ## Composition
 
 **Reused** — the reading vocabulary `kit/entity` froze (`EntryHints`,
-`FieldHints`, `CommandHints`, `Icons`, `Tones`) declared at the three sites
-`kit/rest` already exposes (`Spec.Present`, the `ui:`/`enumLabels`/`enumTones`
-tags in `derive`'s grammar, `rest.CommandOptions.Present`), the copy machinery
+`FieldHints`, `CommandHints`, `Icons`, `Tones`, `DoneValues`) declared at the three
+sites `kit/rest` already exposes (`Spec.Present`, the
+`ui:`/`enumLabels`/`enumTones`/`doneValues` tags in `derive`'s grammar,
+`rest.CommandOptions.Present`), the copy machinery
 `kit/locale/providers/xtext` and `ui/page`'s `TenantPreferences`/`SelectLocale`
 for the negotiation, and `ui/resource`'s own `readable` filter for what a form
 offers. **Added** — the words themselves (this module's `Present:` literal, its

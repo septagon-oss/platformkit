@@ -44,6 +44,17 @@ type EntryPresentation struct {
 	Sections         *[]entity.EntitySection `json:"sections,omitempty"`
 	EmptyDescription *string                 `json:"emptyDescription,omitempty"`
 	Sortable         *[]string               `json:"sortable,omitempty"`
+	CoverField       *string                 `json:"coverField,omitempty"`
+	ThumbnailField   *string                 `json:"thumbnailField,omitempty"`
+	PrimaryCommand   *string                 `json:"primaryCommand,omitempty"`
+	// Highlight is the declared sub-count — the words and the predicate, not the
+	// number. The answer is in /summary, which carries no words at all, so the
+	// label lives here where every other declared string is resolved for language.
+	Highlight *entity.EntryHighlight `json:"highlight,omitempty"`
+	// TrendField names the timestamp a shell may break into days. It names a
+	// field and never a window: the fourteen days are the answer's, not a
+	// declaration's.
+	TrendField *string `json:"trendField,omitempty"`
 }
 
 // CommandPresentation is one lifecycle route as its author described it.
@@ -80,6 +91,9 @@ func deviations(p entity.EntryHints) *EntryPresentation {
 		Group: p.Group, Order: declared(p.Order),
 		PrimaryField: declared(p.PrimaryField), PreviewField: declared(p.PreviewField),
 		StatusField: declared(p.StatusField), EmptyDescription: declared(p.EmptyDescription),
+		CoverField: declared(p.CoverField), ThumbnailField: declared(p.ThumbnailField),
+		PrimaryCommand: declared(p.PrimaryCommand), Highlight: p.Highlight,
+		TrendField: declared(p.TrendField),
 	}
 	if p.SummaryFields != nil {
 		out.SummaryFields = &p.SummaryFields

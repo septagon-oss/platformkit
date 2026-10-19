@@ -115,6 +115,47 @@ is alive, because from that moment its own older traffic is unreadable to it. A 
 ledger, which is what the move above is for; the two are one decision read at two moments.
 
 
+**A file says what it is, and the library can ask it.** `files` gains `alt`
+(`varchar(1000)`, default `''`) and `decorative` (`boolean`, default `false`, under
+`file_files_decorative`, which refuses a picture that carries words while claiming it
+carries none) in `modules/file/migrations/000063_file_alt_text.up.sql`, and one command
+writes them: `Service.SetAlt` re-checks the claim inside the caller's transaction under
+`crud.GetForUpdate`, refuses a row that has moved past the `updatedAt` the caller was
+shown with `ErrConflict` and no write, and publishes the new `file.altered` in the same
+transaction. An empty alt with no decorative claim is legal to arrive at and illegal to
+leave by — the upload is never refused for want of words nobody typed. Three reads join
+the app surface, all `file:read`: `GET /api/v1/file/files` gained the grid's axes (`q`,
+`type` of `all|image|document|video`, `unused`), `GET /api/v1/file/quota` answers the
+tenant's own disk from the same sum an upload is refused against and without the upload
+lock, and `PUT /api/v1/file/files/{id}/alt` is `file:manage`. `DELETE
+/api/v1/file/files/{id}` gains a refusal of its own: a file a live `file_uses` row still
+shows answers `ErrInUse` (409) after locking that ledger, and writes nothing — the
+removals that outrank a page (a subject's erasure, the two sweeps) keep their own paths.
+`contracts.MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` are pure and in
+`contracts/`, so the SQL service and `filetest.Fake` answer the grid and the meter
+identically; the suite's `Delete` cases now show a file surviving until its last use
+ends. `apps/platformkit/testdata/openapi.json` is re-recorded for the three operations.
+
+**The media library has a page at the address its nav entry names.**
+`/app/file/files` is served by `modules/file/internal` (`internal.MountLibrary`) in the
+shell the composition hands it, so the nav entry this module has declared since the
+module existed no longer leads to a 404, and `apps/platformkit`'s
+`knownUnservedNav` debt loses a line by being served. The grid is `Search` over `q`,
+`type`, `unused`, `sort` and `page` — filters as query parameters, so a filtered view is
+a URL — one tile per row and never one per width, the meter is `Quota` (no bar on an
+installation with no ceiling), and `?file={id}` opens one file's panel server-side: its
+facts, the preview at the stored frame, "Used in" read from the use ledger, the caption
+form, and the removal. Two page posts join them, `POST /app/file/files/{id}/alt` and
+`POST /app/file/files/{id}/delete`, both `file:manage`, both real forms because a `<form>`
+cannot send the JSON verb `kit/httpx` guards a cookie-bearing unsafe request against; the
+JSON doors are untouched. The caption carries the `updatedAt` the panel was drawn from,
+so the second copy of the same form is refused 409 and writes nothing, and the removal is
+disabled while a use row lives while the command underneath refuses it regardless.
+The controls a caller may not press are drawn absent rather than disabled, on the
+composition's own answer (`Deps.Library`, a `*file.LibraryChrome` with the shell and the
+authorizer; `apps/platformkit`'s `media` module supplies it), and every sentence the page
+speaks is a key in `modules/file/messages/pt-PT.json`.
+
 **The wire gate reads the plan feature a door declares.** An operation's authorization
 declaration has three parts — its `kind`, its `permission`, and the plan feature a route
 names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and
@@ -793,6 +834,72 @@ copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
+**A seeded grant is only ever as wide as the composition, and there is a door for the
+rows an older seeder left.** The operator permissions a new tenant's administrator was
+created holding were a list each application wrote out by hand, and no application
+narrowed it when it dropped a module: one installation served from 2026-09-22 with an
+administrator granted `billing:catalog` and no billing module to exercise it against,
+and the only thing that said so was the hourly sweep — fourteen identical warnings by
+the next morning. `auth.SeedRoles` now takes the permission catalogue of the modules the
+application actually composed (`kit/module.Grants`, which the kernel's own manifest
+check already read) and seeds the operator permissions of that catalogue and nothing
+else; an initial role naming a permission no composed module defines is refused where it
+used to be written, and `contracts.SeededRoles` is what the seeder writes, so an
+application can ask what a composition seeds before it has a database. The two rules an
+initial role is held to — it may not name the wildcard, and it may not name an operator
+permission — are about the permission and not the spelling of it, so `" * "` is refused
+as `*` is and `" Tenant:Manage "` as `tenant:manage` is; until now a space or a capital
+walked past both and the role was seeded — the row indistinguishable from one that had
+been allowed. The rows already written belong to a customer and are not edited on the
+way past: `platformkit repair-roles` lists, per tenant and per role, the grants this
+installation's own seeder wrote that no composed module defines any more, and `--remove`
+is the decision — through the module's ordinary role write, so each removal takes the
+tenant's role lock, is held to the floor below and is in the audit as an
+`auth.role_set`. What the seeder did not write it does not touch: the built-in member is
+seeded holding nothing unless the application's initial roles name it, a customer
+tenant's administrator is seeded the wildcard and nothing else, and a permission
+somebody added through the roles screen stays where it is and goes on being reported by
+the sweep, which is the only thing entitled to say what its author meant by it. The one
+row that cannot be said of is the operator's own administrator while it still holds the
+wildcard, the only role the seeder writes named permissions into: once a module leaves,
+nothing records whether a departed grant was the seeder's or a hand's, so every dead
+grant there is taken — each dead either way, and beside a wildcard that still grants the
+rest. What `--remove` prints is what its transaction wrote, not what it read. A run reads
+a tenant's roles unlocked to find out whether it holds anything to take, and when it does
+it takes that tenant's role lock, reads again, and subtracts from what *that* read holds:
+derived from the first read instead, the list it writes revokes a permission somebody had
+just granted and hands back one they had just taken away, and only the second of those
+leaves no trace in what the command prints. Two operators running the command at once
+therefore both find the same dead grant, and the second finds the row already cleaned once
+it holds the lock and writes nothing at all — so it reports nothing. Two lines for one
+removal would tell a tenant twice that a person changed something nobody changed. The
+listing a run without `--remove` prints is bounded by that same guard, so a role the write
+could not finish is named by neither run and the
+sweep goes on being the only thing that says it is there.
+
+**One published signature moved, and that is this change's cost.** `auth.SeedRoles` is
+exported from a published package, and its fourth parameter changed type: the
+hand-written `[]string` of operator permissions is now `[]tenancy.Grant`, the catalogue
+of what the composition declares. Nothing a caller can write repairs the old shape,
+because the old shape is the defect; a caller asks its own composition with
+`kit/module.Grants`, the call the kernel's own manifest check already made. The second
+line is this branch's later one: `auth/contracts.Service` gains `SetRoleChanged`, the
+same write as `SetRole` plus whether the row changed — which the write already worked
+out for itself, to decide not to publish an event twice, and kept. `SetRole` keeps its
+shape, so a caller that renders the role it was given is untouched; an out-of-tree
+implementation of the service interface owes the new method, and `authtest.NewFake`
+ships one. Measured
+with the comparison the release process asks for (`python3 scripts/check_public_api.py
+v1.1.0 HEAD`): the v1.1.0 line answers 106 accepted incompatibilities at the merged
+tree, and the added lines are these two.
+[RELEASE.md](RELEASE.md#choose-the-compatible-release-line) measures a break against
+v1.1.0, and the accepted-break baseline is re-measured where a merge joins the two
+([scripts/PUBLIC-API.md](scripts/PUBLIC-API.md)); `check-apidiff` is a required line
+of `make check`, not a workflow that runs on a Sunday. the `usertest.NewFake` entry below names the same
+constraint and the `/v2` migration it owes. The reference composition, this repository's
+tests and the repair command are on the new shape; the products repository, whose
+`registry.go` passes the literal, is the caller left to move.
+
 **The migration lock belongs to one application's namespace, not to one database.**
 `db.Migrate` holds its advisory lock for the namespace it is about to write: the key
 carries the OID of `current_schema()` beside its own constant, because the ledger it
@@ -1146,6 +1253,37 @@ door names an alias row that answers 307, which `ui/assets/js/session.js` refuse
 by design, so the button told the person the outcome was unknown and sent nothing —
 `TestEveryAccountDoorPostsToAnAddressThatAnswers` now reads each page's own `action` and asks
 the running application what it says.
+
+**A notice says what it would reach; the module decides whether it does.** The ask used to be
+`contracts.Notice.Email`, a bool that either mailed or did not. `contracts.Notice` now carries
+`Intent` (what happened, which selects the template and the row of the person's preferences; `""` is
+the generic pair), `Class` (an ordinary notice, or `ClassSecurity`, which is told over the person's
+opt-out because opt-out exists so people are not marketed to and not so they cannot be told somebody
+took over their account), and `Wants`, a ceiling over the five channels `contracts.Channel` names —
+in-app, mail, push, browser push, webhook — whose zero value is in-app alone. `Email` is deprecated
+and still read: `Notice.Ceiling` folds it into `Wants`, so an application written against the older
+contract keeps asking for mail rather than stopping in silence, and a new caller writes
+`Wants: notificationcontracts.WantsEmail`. Either spelling gets in-app with it, because the row *is*
+the notice and no ceiling a caller raises can fall below telling the person in the application. What
+stays breaking is the carrier, not the ask: `notification.SMTP` and `notification.Mail` left with the
+SMTP conversation and `Deps` holds a map; the baseline records those, and no line about `Email`, which
+came back. `make check`'s `check-apidiff` refuses any break beside the ones that file names.
+
+What the ask buys is a decision, not a send. In the caller's own transaction `Service.Notify` reads the
+person's channel choices and quiet window (`notification_preferences`, `notification_quiet_hours`), the
+tenant's sending identity (`notification_senders`, one row per tenant, set and verified and removed by
+commands that recheck the caller's `sender:manage` grant and the copy's expected revision), and the
+channels this deployment wired (`contracts.Providers.Active`), runs `contracts.Decide` once, and opens a
+`requested` row and one outbox event for every channel it kept — one event name per channel, so an
+endpoint that answers 500 all afternoon delays nothing but webhooks — and a `suppressed` row carrying the
+sentence and the `Correction` naming whose decision it was for every channel it refused.
+`notification_deliveries` is append-only under the tenant's row-level security and
+`delivery_ledger_coverage` is the read that answers "was she told" per channel rather than as a count of
+sends; a provider that answers nil closes its row `sent`, `contracts.ErrPermanent` closes it `failed` with
+the reason and acknowledges, and anything else writes nothing and retries on the kernel's ladder. Mail
+leaves as the tenant that raised it — `From:` signed under DKIM, envelope from `mail.from` — when the
+product wires `Deps.Senders` and that tenant's row reads `verified`; a nil port sends `mail.from`
+unsigned. [modules/notification/README.md](modules/notification/README.md) accounts for all of it.
 
 ## [1.1.1] - 2026-09-18
 

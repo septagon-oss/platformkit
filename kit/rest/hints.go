@@ -3,6 +3,7 @@ package rest
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -25,7 +26,17 @@ import (
 // entryHintFault names what an entry's own hints get wrong, and "" when they are
 // coherent. Every refusal is a mount-time panic, like the rest of check.
 func (s Spec[T]) entryHintFault() string {
-	return entryHintsFault(s.Entity, s.Present, crud.Fields[T]())
+	if bad := entryHintsFault(s.Entity, s.Present, crud.Fields[T]()); bad != "" {
+		return bad
+	}
+	// A sub-count and a day breakdown are questions the list asks: the totals are
+	// refused for a Spec that mounts no list, so declaring either here would be a
+	// hint nothing would ever answer — the same question kit/rest/screens.go asks
+	// before it fills Count at all.
+	if (s.Present.Highlight != nil || s.Present.TrendField != "") && !s.offers(httpx.CRUDList) {
+		return "highlight and trendField name questions only a list route answers, and this resource mounts none"
+	}
+	return ""
 }
 
 func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) string {
@@ -68,6 +79,30 @@ func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) stri
 	if p.Sections != nil && len(p.Sections) == 0 {
 		return "sections declares no block; say nothing rather than nothing"
 	}
+	for _, named := range []struct {
+		key   string
+		field string
+		row   bool
+	}{
+		{"coverField", p.CoverField, false}, {"thumbnailField", p.ThumbnailField, true},
+	} {
+		// A picture a person cannot see is not a picture a screen opens on, and a
+		// thumbnail drawn from a field the entry keeps off the list is a declaration
+		// nothing honours: `detail` and `hidden` both take the column away from a row.
+		if named.field == "" {
+			continue
+		}
+		if bad := namedFieldFault(named.key, named.field, name, fields, false); bad != "" {
+			return bad
+		}
+		f, _ := entity.FieldNamed(fields, named.field)
+		if f.Present != "image" {
+			return fmt.Sprintf("%s %q is not a picture; present:image names the field that holds one", named.key, named.field)
+		}
+		if named.row && !f.OnList() {
+			return fmt.Sprintf("%s %q names a field kept off the list; a row cannot show what the entry hid from it", named.key, named.field)
+		}
+	}
 	// An empty name is silence, not a hint naming the empty string.
 	if p.PrimaryField != "" {
 		if bad := namedFieldFault("primaryField", p.PrimaryField, name, fields, false); bad != "" {
@@ -107,6 +142,138 @@ func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) stri
 			return fmt.Sprintf("sortable %q names a hidden field; a column nobody sees is not a column to order by", field)
 		}
 	}
+	bounds, bad := declaredBoundsFault(name, p.Highlight, fields)
+	if bad != "" {
+		return bad
+	}
+	if bad := emptyWindowFault(bounds); bad != "" {
+		return bad
+	}
+	if p.TrendField != "" {
+		f, ok := entity.FieldNamed(fields, p.TrendField)
+		if !ok {
+			return fmt.Sprintf("trendField %q is not a field of %s", p.TrendField, name)
+		}
+		if f.Type != entity.TypeTime {
+			return fmt.Sprintf("trendField %q is a %s; a day breakdown reads a column of days", p.TrendField, f.Type)
+		}
+	}
+	return ""
+}
+
+// bounds is one field's declared window: the two instants it is bounded by, when
+// the declaration named an instant, and the anchor word it named otherwise. Kept
+// per field because a window is a question about one column.
+type bounds struct {
+	from, to         time.Time
+	fromWord, toWord string
+	hasFrom, hasTo   bool
+}
+
+// declaredBoundsFault checks one declared sub-count: the words, the predicates,
+// and each predicate against the field it names. Every refusal here is about a
+// declaration that could only ever be answered wrongly — the honest answer to
+// "Due today" written against a column that cannot hold a day is nothing at all,
+// and the alternative is the total in a card that says "Due today".
+func declaredBoundsFault(name string, h *entity.EntryHighlight, fields []crud.Field) (map[string]*bounds, string) {
+	if h == nil {
+		return nil, ""
+	}
+	if h.Label == "" {
+		return nil, "highlight declares no label; a second number beside the total is a number a person has to be told the name of"
+	}
+	if len(h.Filter) == 0 {
+		return nil, "highlight declares no predicate; a label with no predicate is the total wearing a label"
+	}
+	window := map[string]*bounds{}
+	for _, pred := range h.Filter {
+		f, ok := entity.FieldNamed(fields, pred.Field)
+		if !ok {
+			return nil, fmt.Sprintf("highlight filter names %q, which is not a field of %s", pred.Field, name)
+		}
+		if f.Type == entity.TypeList {
+			return nil, fmt.Sprintf("highlight filter names %q, which is a list; a list holds many values and one of them is not what the count is about", pred.Field)
+		}
+		if !crud.ValidOp(pred.Op) {
+			return nil, fmt.Sprintf("highlight filter op %q is no operator; crud.Ops admits %s", pred.Op, strings.Join(crud.Ops, ", "))
+		}
+		switch crud.Op(pred.Op) {
+		case crud.OpEq:
+		case crud.OpLt, crud.OpLte, crud.OpGt, crud.OpGte:
+			if f.Type != entity.TypeTime && f.Type != entity.TypeInt && f.Type != entity.TypeFloat {
+				return nil, fmt.Sprintf("highlight filter %s %q %q compares a %s, and only a count, an amount or a moment is asked about with an order", pred.Field, pred.Op, pred.Value, f.Type)
+			}
+		default:
+			return nil, fmt.Sprintf("highlight filter %s %q %q names an operator nothing asks with", pred.Field, pred.Op, pred.Value)
+		}
+		if _, err := crud.Declared(f, pred.Value, time.Time{}); err != nil {
+			return nil, fmt.Sprintf("highlight filter %s %q %q is refused: %s", pred.Field, pred.Op, pred.Value, err)
+		}
+		w := window[pred.Field]
+		if w == nil {
+			w = &bounds{}
+			window[pred.Field] = w
+		}
+		switch crud.Op(pred.Op) {
+		case crud.OpGt, crud.OpGte:
+			if w.hasFrom {
+				return nil, fmt.Sprintf("highlight filter bounds %s from twice; one column has one lower edge in one question", pred.Field)
+			}
+			w.hasFrom, w.fromWord = true, pred.Value
+			w.from, _ = instantOf(f, pred.Value)
+		case crud.OpLt, crud.OpLte:
+			if w.hasTo {
+				return nil, fmt.Sprintf("highlight filter bounds %s from above twice; one column has one upper edge in one question", pred.Field)
+			}
+			w.hasTo, w.toWord = true, pred.Value
+			w.to, _ = instantOf(f, pred.Value)
+		}
+	}
+	return window, ""
+}
+
+// instantOf is the declared value as an instant, when the field is a moment and
+// the value is an RFC3339 instant. An anchor word answers no instant at mount —
+// it means a different one in every response — and is compared by rank instead.
+func instantOf(f entity.Field, raw string) (time.Time, bool) {
+	if f.Type != entity.TypeTime || entity.ValidAnchor(raw) {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	return t, err == nil
+}
+
+// anchorRank orders the three clock words without knowing the instant they are
+// read against, which is the whole reason a declaration can be checked at mount:
+// the day opens, the request arrives somewhere inside it, the next day opens.
+var anchorRank = map[string]float64{"today": 0, "now": 0.5, "tomorrow": 1}
+
+// emptyWindowFault refuses the pair of bounds that admit nothing — `dueAt >=
+// today AND dueAt < today` is a question with one answer, and a card that counts
+// zero is not that answer. Only a pair the mount can order is refused: an instant
+// against an anchor depends on the response, and a declaration that is sometimes
+// empty is a question, not a mistake.
+func emptyWindowFault(window map[string]*bounds) string {
+	for field, w := range window {
+		if !w.hasFrom || !w.hasTo {
+			continue
+		}
+		from, to := w.from, w.to
+		lower, upper := anchorRank[w.fromWord], anchorRank[w.toWord]
+		switch {
+		case entity.ValidAnchor(w.fromWord) && entity.ValidAnchor(w.toWord):
+			if lower < upper {
+				continue
+			}
+		case !entity.ValidAnchor(w.fromWord) && !entity.ValidAnchor(w.toWord) && !from.IsZero() && !to.IsZero():
+			if from.Before(to) {
+				continue
+			}
+		default:
+			continue
+		}
+		return fmt.Sprintf("highlight filter on %s admits nothing: %q is not before %q", field, w.fromWord, w.toWord)
+	}
 	return ""
 }
 
@@ -142,6 +309,9 @@ func fieldHintFault(name string, fields []crud.Field, p entity.EntryHints) strin
 			return fmt.Sprintf("field %q declares visibility %q, which is not a visibility entity.Visibilities admits", f.Name, h.Visibility)
 		}
 		if bad := enumHintFault(f); bad != "" {
+			return bad
+		}
+		if bad := doneValuesFault(f, p); bad != "" {
 			return bad
 		}
 		if bad := moneyFault(name, fields, f); bad != "" {
@@ -207,6 +377,41 @@ func enumHintFault(f crud.Field) string {
 	return ""
 }
 
+// doneValuesFault refuses the shapes where a list of "finished" values could
+// disagree with the field it sits on: no enum to name a value of, a value the
+// enum does not hold, the same value written twice, a list declared and emptied,
+// and a field that is not the entry's status field.
+//
+// That last refusal is the stricter of the two readings of "on a status field",
+// and it is the one that cannot lie: the state a shell celebrates is the one the
+// row's pill shows, and the pill is `statusField`'s. It costs nothing elsewhere —
+// a command's argument is checked against the zero EntryHints, so a form field is
+// never a record's state either.
+func doneValuesFault(f crud.Field, p entity.EntryHints) string {
+	done := f.Presentation.DoneValues
+	if done == nil {
+		return ""
+	}
+	if len(done) == 0 {
+		return fmt.Sprintf("field %q declares no done value; say nothing rather than nothing", f.Name)
+	}
+	if len(f.Enum) == 0 {
+		return fmt.Sprintf("field %q declares done values and has no enum", f.Name)
+	}
+	if p.StatusField != f.Name {
+		return fmt.Sprintf("field %q declares done values and is not this resource's status field", f.Name)
+	}
+	for i, value := range done {
+		if slicesContain(done[:i], value) {
+			return fmt.Sprintf("field %q names done value %q twice; one value is one value", f.Name, value)
+		}
+		if !slicesContain(f.Enum, value) {
+			return fmt.Sprintf("field %q names done value %q, which its enum does not hold", f.Name, value)
+		}
+	}
+	return ""
+}
+
 // moneyFault refuses the three shapes where a restated minor-unit scale could
 // disagree with the data: a money format on a column that does not hold minor
 // units, a scale with no currency to read, and a currency named by something
@@ -245,10 +450,8 @@ func moneyFault(name string, fields []crud.Field, f crud.Field) string {
 	return ""
 }
 
-// commandFault names what one command's hints get wrong, and "" when they are
-// coherent. It runs inside rest.Command rather than Spec.check because a command
-// is the one place the verb, its options, the entity's immutable list and the
-// argument's fields are all in hand at once.
+// commandFault checks a command's verb, presentation and argument ownership before
+// registration. It returns a fault, or "" for a coherent declaration.
 func commandFault(verb string, p entity.CommandHints, fields []crud.Field) string {
 	bad := ""
 	switch {
@@ -275,6 +478,11 @@ func commandFault(verb string, p entity.CommandHints, fields []crud.Field) strin
 	}
 	if bad != "" {
 		return bad
+	}
+	for _, f := range fields {
+		if entity.ServerOwned(f) {
+			return fmt.Sprintf("argument field %q is server-owned; use a caller-owned argument name instead (ifRevision for an observed revision)", f.Name)
+		}
 	}
 	// The argument's own hints run through the same gate. One consequence is
 	// worth naming: an argument cannot read its currency from a sibling field of
@@ -336,6 +544,56 @@ func CheckReferences(resources []httpx.Resource) string {
 		}
 	}
 	return ""
+}
+
+// CheckRowHints is the boot gate for the entry hints that speak of a row and a
+// verb: it answers whether a resource's `primaryCommand` names a command this
+// resource actually mounts, and one a swipe could run, and "" when they all do.
+//
+// It is asked at the same moment as CheckReferences, and for the same reason:
+// `entryHintsFault` runs in a Spec's own mount check, where no command exists yet
+// — commands arrive later, through a separate registration — so the first site
+// where an entry's declaration and its resource's verbs are in hand together is
+// the one that has the whole resource list. The refusal stays out of the command's
+// own gate, which runs from the verb's side and could never see a verb that was
+// never mounted.
+//
+// Three things make a mounted verb one a row cannot swipe to: it asks for values,
+// which a swipe sends none of (an argument is declared before the route is, so
+// this reads the fields a map-only argument would have produced and is not
+// satisfied by one that hides them), it is a system verb, which no person is
+// offered and which mounts no browser route at all, or it runs over the whole
+// collection, where a swipe names one row.
+func CheckRowHints(resources []httpx.Resource) string {
+	for _, r := range resources {
+		if r.Present.PrimaryCommand == "" {
+			continue
+		}
+		owner := resourceAddress(r.Module, r.Entity)
+		verb, found := namedCommand(r.Commands, r.Present.PrimaryCommand)
+		if !found {
+			return fmt.Sprintf("%s primaryCommand %q is not a command of %s", owner, r.Present.PrimaryCommand, r.Entity)
+		}
+		switch {
+		case len(verb.Fields) > 0:
+			return fmt.Sprintf("%s primaryCommand %q takes arguments; a row's swipe sends none", owner, verb.Verb)
+		case verb.Present.System:
+			return fmt.Sprintf("%s primaryCommand %q is a system command; no person is offered it", owner, verb.Verb)
+		case verb.Collection:
+			return fmt.Sprintf("%s primaryCommand %q runs on the collection; a row's swipe names one row", owner, verb.Verb)
+		}
+	}
+	return ""
+}
+
+// namedCommand is the verb a hint names, if this resource mounts one at all.
+func namedCommand(commands []httpx.Command, verb string) (httpx.Command, bool) {
+	for _, c := range commands {
+		if c.Verb == verb {
+			return c, true
+		}
+	}
+	return httpx.Command{}, false
 }
 
 // unresolvedReference names the first field that points beyond the composition,

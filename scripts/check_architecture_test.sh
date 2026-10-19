@@ -133,12 +133,12 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 # Makefile exports, so this fixture counts packages with the gate's own compiler.
 selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
-for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request \
+for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts pkit; do
+    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey kit/inference kit/inference/providers/openai modules/auth/contracts pkit; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -190,14 +190,20 @@ boundary_rejects kit/wire "$foundation/kit/db"
 boundary_rejects kit/trace "$foundation/kit/db"
 boundary_rejects kit/trace "$foundation/kit/events/transport"
 # kit/request is the call an event was caused by: its id, its peer address, its
-# trace context. Its allowance is kit/trace and nothing else, so the two edges
-# that would make it something else are refused here — a database behind a value
+# trace context and intent. Its allowance is trace and operation values, so the
+# edges that would make it something else are refused here — a database behind a value
 # type, and net/http, which would put a server in the closure of every worker
 # that publishes an event and is how the package would end up parsing a request
 # it was told not to parse.
 boundary_rejects kit/request "$foundation/kit/db"
 boundary_rejects kit/request net/http
 boundary_rejects kit/request "$foundation/kit/httpx"
+# Intent values stay portable when requests and transports carry them.
+fixture_import kit/request "$foundation/kit/operation"
+fixture_import kit/events/transport "$foundation/kit/operation"
+"${packages[@]}" >/dev/null
+boundary_rejects kit/operation "$foundation/kit/db"
+boundary_rejects kit/operation net/http
 # The runner selects a transport by name and builds none.
 boundary_rejects kit/app "$foundation/kit/events/providers/nats"
 fixture_import kit/tenancy/providers/topaz "$foundation/kit/tenancy"
@@ -764,7 +770,7 @@ race_commands() { # <TEST_COUNT> <goals…>: the same for the race goal, whose l
 # a part the fresh gate is made of, so pasting the failing line back in with `--packages` narrowed,
 # `-count=1` gone or the stated bound dropped is refused rather than rewarded — and it reads this pin,
 # not the Makefile, so it cannot be satisfied by the edit it watches.
-fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m"
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m -p=4"
 for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
 	case " $fresh " in
 	*" $fresh_part"*) ;;
@@ -775,8 +781,8 @@ for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
 		;;
 	esac
 done
-focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -timeout=30m -run Selected"
-if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' -- -timeout=30m" ]]; then
+focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -timeout=30m -p=4 -run Selected"
+if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' -- -timeout=30m -p=4" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package, under the stated clock' >&2
 	exit 1
 fi
@@ -817,7 +823,7 @@ if [[ "$(test_commands -count=1 check)" != "$fresh" ]]; then
 	printf 'FAIL: make check with TEST_COUNT=-count=1 lost the fresh suite line:\n%s\n' "$(test_commands -count=1 check)" >&2
 	exit 1
 fi
-if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m" ]]; then
+if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m -p=4" ]]; then
 	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all, and lose nothing else:\n%s\n' "$(test_commands '' check)" >&2
 	exit 1
 fi
@@ -840,7 +846,7 @@ for race_part in "-race" "-count=1" "-timeout"; do
 	esac
 done
 case "$race_pinned" in
-	'go test -race -count=1 -timeout='*m' ./'*) ;;
+	'go test -race -count=1 -timeout='*m' -p=4 ./'*) ;;
 	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$race_pinned" >&2; exit 1 ;;
 esac
 empty_race="$(race_commands '' check-race)"

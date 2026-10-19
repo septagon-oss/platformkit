@@ -274,6 +274,9 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 		for _, id := range tenants {
 			rec := LedgerMovedRecord{App: app.String(), Durables: durables,
 				Claims: claims[id], Dead: dead[id], RequestedBy: requestedBy}
+			if err := SucceedFor(ctx, tx, db.Now()); err != nil {
+				return err
+			}
 			if err := PublishFor(ctx, tx, id, EventLedgerMoved, rec); err != nil {
 				return err
 			}

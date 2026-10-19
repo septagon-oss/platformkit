@@ -17,6 +17,7 @@
         "webcontracts.Links",
         "rest.TranslationSource",
         "admincontracts.Signin",
+        "admincontracts.Pictures",
         "admincontracts.Locale",
         "tenantcontracts.Languages",
         "webhookcontracts.Catalogue"
@@ -34,6 +35,9 @@
             "change"
           ]
         }
+      ],
+      "reads": [
+        "config.Files"
       ]
     },
     {
@@ -186,32 +190,6 @@
       "implementation": {
         "name": "mailbox"
       }
-    },
-    {
-      "name": "file",
-      "provides": [
-        "filecontracts.Service",
-        "richtext.Files",
-        "rest.FileUses",
-        "rest.FileShown"
-      ],
-      "needs": [
-        {
-          "contract": "filecontracts.Storage",
-          "from": "product"
-        },
-        {
-          "contract": "jobs.TenantLister",
-          "from": "tenant"
-        }
-      ],
-      "after": [
-        "product",
-        "tenant"
-      ],
-      "reads": [
-        "config.Files"
-      ]
     },
     {
       "name": "task",
@@ -374,31 +352,38 @@
       ]
     },
     {
-      "name": "content",
+      "name": "scim",
       "provides": [
-        "contentcontracts.Service"
+        "scimcontracts.Service"
       ],
       "needs": [
         {
-          "contract": "richtext.Files",
-          "from": "file"
+          "contract": "usercontracts.Service",
+          "from": "user"
         },
         {
-          "contract": "rest.FileUses",
-          "from": "file"
-        },
-        {
-          "contract": "rest.Translations",
-          "from": "translation"
-        },
-        {
-          "contract": "rest.FileShown",
-          "from": "file"
+          "contract": "authcontracts.Auth",
+          "from": "auth"
         }
       ],
       "after": [
-        "file",
-        "translation"
+        "user",
+        "auth"
+      ]
+    },
+    {
+      "name": "media",
+      "provides": [
+        "*file.LibraryChrome"
+      ],
+      "needs": [
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        }
+      ],
+      "after": [
+        "auth"
       ]
     },
     {
@@ -451,6 +436,100 @@
       ]
     },
     {
+      "name": "file",
+      "provides": [
+        "filecontracts.Service",
+        "richtext.Files",
+        "rest.FileUses",
+        "rest.FileShown"
+      ],
+      "needs": [
+        {
+          "contract": "filecontracts.Storage",
+          "from": "product"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "*file.LibraryChrome",
+          "from": "media"
+        }
+      ],
+      "after": [
+        "product",
+        "tenant",
+        "media"
+      ],
+      "reads": [
+        "config.Files"
+      ]
+    },
+    {
+      "name": "change",
+      "provides": [
+        "changecontracts.Service"
+      ],
+      "uses": [
+        {
+          "contract": "changecontracts.Notifier",
+          "from": "access"
+        },
+        {
+          "contract": "changecontracts.ProposalPage",
+          "from": "access"
+        },
+        {
+          "contract": "*change.ReviewChrome",
+          "from": "access"
+        }
+      ],
+      "takes": [
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "from": [
+            "product",
+            "access"
+          ]
+        }
+      ],
+      "after": [
+        "product",
+        "access"
+      ]
+    },
+    {
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        },
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.FileShown",
+          "from": "file"
+        }
+      ],
+      "after": [
+        "file",
+        "translation"
+      ]
+    },
+    {
       "name": "web",
       "needs": [
         {
@@ -489,39 +568,6 @@
       ]
     },
     {
-      "name": "change",
-      "provides": [
-        "changecontracts.Service"
-      ],
-      "uses": [
-        {
-          "contract": "changecontracts.Notifier",
-          "from": "access"
-        },
-        {
-          "contract": "changecontracts.ProposalPage",
-          "from": "access"
-        },
-        {
-          "contract": "*change.ReviewChrome",
-          "from": "access"
-        }
-      ],
-      "takes": [
-        {
-          "contract": "changecontracts.SubjectBinding",
-          "from": [
-            "product",
-            "access"
-          ]
-        }
-      ],
-      "after": [
-        "product",
-        "access"
-      ]
-    },
-    {
       "name": "admin",
       "needs": [
         {
@@ -536,6 +582,10 @@
       "uses": [
         {
           "contract": "admincontracts.Signin",
+          "from": "product"
+        },
+        {
+          "contract": "admincontracts.Pictures",
           "from": "product"
         },
         {
@@ -570,5 +620,61 @@
       ]
     }
   ],
-  "problems": []
+  "problems": [],
+  "cloud": {
+    "profile": "local",
+    "environment": "development",
+    "seams": [
+      {
+        "seam": "storage",
+        "provider": "local-disk",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "cache",
+        "provider": "in-process",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "events",
+        "provider": "by-role",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "mail",
+        "provider": "mailbox",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "policy",
+        "provider": "rego-in-process",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      },
+      {
+        "seam": "telemetry",
+        "provider": "none",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "identity",
+        "provider": "password-only",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "flags",
+        "provider": "configuration",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      }
+    ]
+  }
 }

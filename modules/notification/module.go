@@ -16,15 +16,6 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
 )
 
-// Mail is one outgoing mail server. It has the same shape as config.Mail, so
-// main converts one to the other in a line.
-type Mail = internal.Mail
-
-// SMTP is the production Mailer for a configured server. main wires it, or
-// the in-memory Mailbox when there is none, so the choice is visible in the
-// file that composes the application.
-var SMTP = internal.NewSMTP
-
 // Deps is what this module cannot make for itself.
 type Deps struct {
 	// Recipients turns a user id into an email address. The interface is
@@ -32,6 +23,32 @@ type Deps struct {
 	// user module in apps/platformkit: the app adapts, so notification never
 	// names user. A nil lookup writes every row and sends no mail.
 	Recipients contracts.RecipientLookup
+
+	// Senders is the tenant's own sending address — its name, its domain, its
+	// DKIM pair and what proved them. The product builds it over its own
+	// configuration, because what proves a domain (a TXT record read by a
+	// resolver, an operator who looked, an installation with no egress at all) is
+	// the product's fact and not this module's.
+	//
+	// Nil is the other answer and it is not "no mail": it means this installation
+	// speaks as the address in its own configuration for every tenant it serves,
+	// which is what it did before per-tenant senders existed, and the decision
+	// says so rather than pretending the tenant chose it.
+	Senders contracts.Senders
+
+	// Providers are the carriers beyond mail — VAPID for a browser, T-0120's
+	// adapter for a phone, an HTTP client for a tenant's endpoint. Each one is
+	// carried by a subscription the manifest composes for it (internal.Carrier),
+	// named by the same event Notify asks that channel by, so a channel this list
+	// holds reaches its carrier and closes its ledger row with sent, failed or a
+	// suppression. A channel with no provider here is suppressed with a reason
+	// that names the deployment. Either way the ledger accounts for every channel
+	// a notice asked for, whatever this list holds — which is what
+	// delivery_ledger_coverage measures and what it would stop measuring the
+	// moment a provider were wired to nothing. Mail is not one of these: the
+	// module's own worker carries it, which is what Deps.Mailer is for, and
+	// wiring a provider for mail or for in-app panics where the mistake is.
+	Providers contracts.Providers
 
 	// Mailer sends the rendered message, in the worker.
 	Mailer contracts.Mailer
@@ -53,15 +70,43 @@ type Deps struct {
 // Module is the manifest, and the service it is built on: main holds the
 // service because the modules that raise notices are wired against it.
 //
-// permissions is what the manifest declares, and it is empty. It is a var
-// rather than a nil literal in the manifest so that all six modules answer the
-// question in the same place and in the same shape: a reader looking for what a
-// module lets a role be granted finds one name, whatever the answer is.
+// permissions is what the manifest declares. It is a var rather than a literal
+// in the manifest so that every module answers the question in the same place and
+// in the same shape: a reader looking for what a module lets a role be granted
+// finds one name, whatever the answer is.
 //
-// The answer here is nothing. Both routes are about the caller themselves,
-// which is what httpx.SignedIn is for, and a permission every signed-in person
-// must hold is a permission that decides nothing.
-var permissions []module.Permission
+// The answer is one key. The two routes this module mounts stay outside it —
+// both are about the caller themselves, which is what httpx.SignedIn is for, and
+// a permission every signed-in person must hold decides nothing — and it is not
+// there for them. It is there because the tenant's sending address is not about
+// the caller: the module enforces from inside the transaction that whoever calls
+// Put, Verify or Delete is somebody the transaction names, and the route a
+// product composes over that face guards it with this key, which kit/app refuses
+// to start unless the manifest that defines it says so.
+var permissions = []module.Permission{{Key: contracts.PermissionSenderManage, Label: "manage the tenant's sending address"}}
+
+// subscriptions is the manifest's list of who does this module's asynchronous
+// work: the mail this module sends itself, and one carrier per provider the
+// deployment wired, in contracts.Channels' order so the list a reader sees does
+// not depend on Go's map iteration. A provider is a channel this deployment
+// sends, and a channel it sends has to have somebody listening, so both halves
+// — this list and the decision that opens a ledger row — come from
+// contracts.Providers.Active over the same Deps value and cannot disagree.
+func subscriptions(deps Deps) []events.Subscription {
+	subs := []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)}
+	for _, c := range deps.Providers.Active() {
+		p := deps.Providers.Get(c)
+		if c == contracts.ChannelInApp || c == contracts.ChannelEmail {
+			// in-app is the row itself and mail is internal.SendMail above, which
+			// Module already refuses to compose without. A second carrier for either
+			// would be two subscriptions on one event and two sent rows for one
+			// delivery, so it fails at the wiring rather than in the worker.
+			panic("notification.Module: Deps.Providers carries a channel this module carries itself: " + string(c))
+		}
+		subs = append(subs, internal.Carrier(p, deps.Hosts, deps.Secure))
+	}
+	return subs
+}
 
 func New(deps Deps) (contracts.Service, module.Module) {
 	// A wiring mistake fails where it is written rather than as a nil
@@ -69,23 +114,52 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Mailer == nil {
 		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
 	}
-	svc := internal.NewService(deps.Recipients)
+	svc := internal.NewService(deps.Recipients,
+		internal.WithPreferences(internal.Prefs{}),
+		internal.WithSenders(deps.Senders),
+		internal.WithProviders(deps.Providers))
 	return svc, module.Module{
 		Name:        "notification",
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,
-		// No nav entry, and it is the same fact as the empty Permissions: a
-		// nav entry names the permission that decides who sees the link, and
-		// there is no permission here to name. Everybody's notifications are
-		// their own, so the link belongs in the chrome the admin shell puts
-		// around every page (E4) rather than in the module list.
+		// No nav entry: a nav entry names the permission that decides who sees the
+		// link, and the key this module defines guards the tenant's mail identity,
+		// not a page. Everybody's notifications are their own, so the link belongs
+		// in the chrome the admin shell puts around every page (E4) rather than in
+		// the module list.
 		Nav: nil,
 		// No periodic work: a notification is caused by something happening,
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
-		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Secure)},
+		Subscriptions: subscriptions(deps),
 		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
 	}
+}
+
+// Settings is this module's own answer about who may be told what: the channel
+// switches, the opt-out and the quiet window, as contracts.PreferenceService and
+// contracts.Preferences over the module's own two tables. It needs nothing from
+// the composition, because the rows are the module's and every read runs in the
+// caller's transaction under the tenant that transaction names.
+//
+// The screens and routes that reach it are the product's share of this brief:
+// every method — Mine's read as much as the three writes — compares the person
+// whose id it is handed against the credential the request carries
+// (internal.choosing), so the page is a form over one's own rows and there is no
+// shape of it that reaches another person's choices.
+func Settings() contracts.PreferenceService { return internal.Prefs{} }
+
+// Senders is the tenant's own sending address as a contracts.Senders and a
+// contracts.SenderAdmin: the module keeps the row, the token, the refusal and the
+// audit, and the three collaborators below are what it cannot be the authority
+// about — whether a domain says so, where the key that signs for it lives, and what
+// the caller's roles grant. Any may be nil: a deployment with no verifier cannot
+// verify anything, a deployment with no key suppresses the mail it could not sign,
+// and a deployment with no grant checker refuses a signed-in caller's sender
+// commands rather than guessing they were allowed (contracts.GrantChecker).
+func Senders(verifier contracts.SenderVerifier, keys contracts.DKIMKeys, grants contracts.GrantChecker) (contracts.Senders, contracts.SenderAdmin) {
+	s := &internal.Senders{Verifier: verifier, Keys: keys, Grants: grants}
+	return s, s
 }
