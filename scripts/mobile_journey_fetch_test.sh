@@ -80,6 +80,16 @@ else:
                         "read a release asset and a job token is nobody to it, so the download needs "
                         "a read-only token of its own")
     open(os.path.join(work, "fetch.sh"), "w").write(step["run"])
+probes = [i for i, step in enumerate(steps) if step.get("name") == "Probe the pinned asset with only the job token"]
+if len(probes) != 1 or not fetch or probes[0] >= fetch[0]:
+    problems.append("one isolated job-token probe must run before the real fetch")
+else:
+    probe = steps[probes[0]]
+    if (probe.get("env") or {}).get("GITHUB_TOKEN") != "${{ secrets.GITHUB_TOKEN }}":
+        problems.append("the diagnostic must use only the job token, with no repository secret fallback")
+    if "PK_MOBILE_TOKEN" in probe.get("run", "") or "GITHUB_ENV" in probe.get("run", ""):
+        problems.append("the diagnostic must not read the repository token or change the fetch handoff")
+    open(os.path.join(work, "probe.sh"), "w").write(probe["run"])
 open(os.path.join(work, "problems"), "w").write("".join(p + "\n" for p in problems))
 READ
 while IFS= read -r problem; do fail "$problem"; done <"$work/problems"
@@ -87,8 +97,12 @@ if [ ! -s "$work/fetch.sh" ]; then
 	echo "$failures failure(s)"
 	exit 1
 fi
+if [ ! -s "$work/probe.sh" ]; then
+	echo "$failures failure(s)"
+	exit 1
+fi
 
-# The forge double: two builds, three releases and the four credential answers the real one gives.
+# The forge double shares build fixtures across the authoritative fetch and diagnostic.
 mkdir -p "$work/srv" "$work/runner-temp"
 head -c 65536 /dev/urandom >"$work/srv/shell.apk"
 head -c 65536 /dev/urandom >"$work/srv/first-thing.apk"
@@ -110,7 +124,7 @@ BAD_TOKEN = b'{"message":"invalid username, password or token"}'
 # `off_forge`, an address the pin never named — a second server started beside this one, which
 # records every request it receives so the journey's token leaving the forge is a fact.
 RELEASES = {"pinned": ["first-thing.apk", "shell.apk"], "renamed": ["first-thing.apk"],
-            "elsewhere": ["shell.apk"]}
+            "elsewhere": ["shell.apk"], "redirected": ["shell.apk"], "local-redirect": ["shell.apk"]}
 
 
 class Forge(http.server.BaseHTTPRequestHandler):
@@ -143,13 +157,20 @@ class Forge(http.server.BaseHTTPRequestHandler):
         segs = [s for s in asked.path.split("/") if s]
         host = self.headers.get("Host")
         if segs[:2] == ["api", "v1"]:
-            if segs[2:3] != ["repos"] or segs[-2:-1] != ["tags"] or len(segs) < 7:
+            if segs[2:3] != ["repos"] or len(segs) < 7:
                 return self.reply(404)
-            if not token:
+            if not token or token == "denied-job-token":
                 return self.reply(403, NO_SESSION, "application/json")
             if token not in ("read-token", "job-token"):
                 return self.reply(401, BAD_TOKEN, "application/json")
+            if segs[-4:-1] == ["releases", "1", "assets"]:
+                address = "http://%s/attachments/shell.apk" % host
+                return self.reply(200, json.dumps({"id": 2, "browser_download_url": address}).encode(), "application/json")
+            if segs[-2:-1] != ["tags"]:
+                return self.reply(404)
             tag = urllib.parse.unquote(segs[-1])
+            if tag == "invalid-document":
+                return self.reply(200, SIGN_IN, "text/html")
             if tag not in RELEASES:
                 return self.reply(404)
             return self.reply(200, self.metadata(tag, "/".join(segs[3:-3]), host), "application/json")
@@ -162,10 +183,19 @@ class Forge(http.server.BaseHTTPRequestHandler):
                 return self.reply(404)
             if token != "read-token":
                 return self.reply(401, BAD_TOKEN, "application/json")
+            if tag == "redirected":
+                return self.reply(302, b"", location=off_forge)
+            if tag == "local-redirect":
+                return self.reply(302, b"", location="/attachments/shell.apk")
             if tag not in RELEASES or name not in RELEASES[tag]:
                 return self.reply(404)
             with open(os.path.join(fixture, name), "rb") as build:
                 return self.reply(200, build.read())
+        if asked.path == "/attachments/shell.apk":
+            if token != "read-token":
+                return self.reply(404)
+            with open(os.path.join(fixture, "shell.apk"), "rb") as build:
+                return self.reply(200, build.read(), "application/octet-stream")
         if asked.path == "/user/login":
             return self.reply(200, SIGN_IN, "text/html")
         return self.reply(404)
@@ -327,8 +357,68 @@ fi
 grep -q "PK_MOBILE_APK" "$work/out" && grep -q "PK_MOBILE_APK_SHA256" "$work/out" ||
 	fail "the refusal for an unset pin names neither variable: $(cat "$work/out")"
 
+# Run the diagnostic body with fixture credentials, never a live forge credential.
+probe() {
+	: >"$work/env"
+	: >"$work/requests"
+	: >"$work/foreign-requests"
+	if ! env -i PATH="$PATH" GITHUB_ENV="$work/env" GITHUB_TOKEN="$1" \
+		PK_MOBILE_TOKEN=repository-secret-must-not-be-read PK_MOBILE_APK="${2-$pinned}" \
+		PK_MOBILE_APK_SHA256="${3-$digest}" bash -e "$work/probe.sh" </dev/null >"$work/out" 2>&1; then
+		fail "the credential diagnostic failed the job: $(cat "$work/out")"
+	fi
+	[ ! -s "$work/env" ] || fail "the diagnostic changed the fetch handoff"
+	if grep -qE 'read-token|job-token-sentinel|repository-secret-must-not-be-read|Authorization' "$work/out"; then
+		fail "the diagnostic logged a credential or header"
+	fi
+}
+
+probe job-token-sentinel
+grep -q 'release API: HTTP 401' "$work/out" || fail "the probe hid an unauthorized API status"
+probe denied-job-token
+grep -q 'release API: HTTP 403' "$work/out" || fail "the probe hid a forbidden API status"
+probe read-token "$base/fixture-owner/fixture-repo/releases/download/missing/shell.apk"
+grep -q 'release API: HTTP 404' "$work/out" || fail "the probe hid a missing release status"
+probe job-token
+grep -q 'asset API: HTTP 200' "$work/out" || fail "the probe did not request the asset API"
+grep -q 'release bytes: HTTP 404' "$work/out" || fail "metadata success concealed refused asset bytes"
+grep -q 'attachment bytes: HTTP 404' "$work/out" || fail "the probe skipped the published attachment route"
+grep -q 'pin_match=true' "$work/out" && fail "metadata success was accepted as a pinned APK"
+probe read-token
+grep -q 'release bytes:.*pin_match=true' "$work/out" || fail "the probe missed readable pinned release bytes"
+grep -q 'attachment bytes:.*pin_match=true' "$work/out" || fail "the probe missed readable pinned attachment bytes"
+probe read-token "$pinned" "$other_digest"
+grep -q 'pin_match=false' "$work/out" || fail "the probe did not report the digest mismatch"
+probe read-token "$elsewhere"
+[ ! -s "$work/foreign-requests" ] || fail "the diagnostic sent its token outside the pin's forge"
+probe read-token "$base/fixture-owner/fixture-repo/releases/download/redirected/shell.apk"
+[ ! -s "$work/foreign-requests" ] || fail "the diagnostic forwarded its token through a foreign redirect"
+grep -q 'release bytes: HTTP 302' "$work/out" || fail "the diagnostic hid the refused foreign redirect"
+probe read-token "$base/fixture-owner/fixture-repo/releases/download/local-redirect/shell.apk"
+grep -q 'release bytes:.*pin_match=true' "$work/out" || fail "the diagnostic refused a same-origin attachment redirect"
+probe read-token "$base/fixture-owner/fixture-repo/releases/download/invalid-document/shell.apk"
+grep -q 'inconclusive' "$work/out" || fail "the diagnostic accepted a login page as release metadata"
+probe read-token "$asked_for"
+[ ! -s "$work/requests" ] || fail "the diagnostic requested an invalid pin"
+probe read-token ''
+grep -q 'inconclusive' "$work/out" || fail "the probe did not report missing input"
+probe read-token 'http://127.0.0.1:0/fixture-owner/fixture-repo/releases/download/pinned/shell.apk'
+grep -q 'inconclusive' "$work/out" || fail "the probe did not report a transport failure"
+
+mkdir "$work/bin"
+cat >"$work/bin/timeout" <<'TIMEOUT'
+#!/usr/bin/env bash
+exit 124
+TIMEOUT
+chmod +x "$work/bin/timeout"
+if ! env -i PATH="$work/bin:$PATH" bash -e "$work/probe.sh" </dev/null >"$work/out" 2>&1; then
+	fail "a diagnostic timeout failed the job"
+fi
+grep -q 'inconclusive' "$work/out" || fail "the diagnostic hid a timeout"
+
 if [ "$failures" -gt 0 ]; then
 	echo "$failures failure(s)"
 	exit 1
 fi
 echo "ok: the journey resolves its shell build through the forge's API and refuses a token it cannot read with"
+echo "ok: the isolated job-token probe reports statuses and pinned bytes without failing or exporting"
