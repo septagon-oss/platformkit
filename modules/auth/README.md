@@ -242,12 +242,15 @@ Either may be named alone; the empty one keeps its workspace screen, and naming
 neither mails exactly the links mailed before the field existed. A page that is
 not an absolute path on this site — relative, on another host, with a scheme or a
 backslash, or with a query or fragment the appended `?token=` would collide with
-— or that sits under the API root `/api/v1` is refused when the composition is
+— or that opens under the API root `/api/v1` once a browser has resolved its dot
+segments, percent-encoded ones included, is refused when the composition is
 built: `MailedLinksOpen` fails the plan, and `New` panics for a composition that
 fills `Deps` itself (`TestNamedPagesAreWhereTheMailedLinksAndTheResetNoticeLead`,
 `TestNewRefusesALinkPageThatIsNotAnAbsolutePath`,
 `TestNewRefusesALinkPageUnderTheAPIRoot`,
-`TestComposingARefusedLinkPageFailsThePlan`).
+`TestNewRefusesAnEncodedPageUnderTheAPIRoot`,
+`TestComposingARefusedLinkPageFailsThePlan`,
+`TestCompositionRefusesAnEncodedPageUnderTheAPIRoot`).
 
 ## The record a mail leaves
 
