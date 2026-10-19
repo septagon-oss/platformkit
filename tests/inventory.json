@@ -35723,6 +35723,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/browser_resolved_link_page_test.go",
+   "id": "modules/auth/browser_resolved_link_page_test.go#TestBrowserResolvedAPIPagesAreRefusedAtBothCompositionDoors",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestBrowserResolvedAPIPagesAreRefusedAtBothCompositionDoors",
+   "needs_db": true,
+   "pkg": "modules/auth",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/contracts/authtest/fake_test.go",
    "id": "modules/auth/contracts/authtest/fake_test.go#TestFakeConforms",
    "kind": "go",
@@ -70449,7 +70468,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1872,
+  "files": 1873,
   "forge_runs": [
    408,
    413,
@@ -70483,7 +70502,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3026,
+   "behaviour": 3027,
    "composition": 427,
    "contract": 21,
    "journey": 94
@@ -70502,9 +70521,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3568,
+  "rows": 3569,
   "tiers": {
-   "merge": 2285,
+   "merge": 2286,
    "nightly": 94,
    "push": 1189
   },
@@ -70512,13 +70531,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1645,
+   "keep": 1646,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3212,
+   "keep": 3213,
    "keep-rewrite": 140,
    "merge": 216
   }
