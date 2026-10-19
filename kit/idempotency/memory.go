@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/db"
 )
 
 // maxTracked starts pruning expired attempts. Unresolved identities survive
@@ -27,7 +29,7 @@ func Memory(now func() time.Time) Store {
 	if now == nil {
 		now = time.Now
 	}
-	return &memory{now: now, records: map[string]record{}, operations: map[operationKey]Receipt{}}
+	return &memory{now: now, records: map[string]record{}, operations: map[operationKey]Receipt{}, effects: map[string]uuid.UUID{}}
 }
 
 type memory struct {
@@ -35,6 +37,8 @@ type memory struct {
 	now        func() time.Time
 	records    map[string]record
 	operations map[operationKey]Receipt
+	// Mark cannot roll this in-memory fact back with a real transaction.
+	effects map[string]uuid.UUID
 }
 
 // record pairs an attempt with the tenant used to consult its receipt during pruning.
@@ -67,6 +71,7 @@ func (m *memory) Claim(_ context.Context, s Scope, at time.Time) (Verdict, error
 	var existing *row
 	if found {
 		r := cur.row
+		r.effect = m.effects[k] == r.claim || (s.Track && s.Method == "COMMAND")
 		if receipt, ok := m.operations[operationKey{s.Tenant, r.operationRef}]; ok {
 			r.receipt = &receipt
 		}
@@ -121,6 +126,24 @@ func (m *memory) Complete(_ context.Context, s Scope, claim uuid.UUID, a Answer,
 	return nil
 }
 
+// Mark records that this attempt's COMMIT was asked for. The fake holds no
+// transaction, so it cannot commit the marker with the work or lose it with a
+// rollback; kit/httpx asks at the moment it asks the database to commit, which is
+// the closest the map can come to postgres.Mark and the reason no case that turns on
+// a rolled-back marker runs here. The record is the fence the shared store keeps in
+// the effect row: an attempt whose key has moved on is refused, as postgres.Mark
+// refuses it.
+func (m *memory) Mark(_ context.Context, _ db.Tx[db.Tenant], s Scope, claim uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := s.key()
+	if cur, found := m.records[k]; found && cur.row.claim != claim {
+		return ErrLostClaim
+	}
+	m.effects[k] = claim
+	return nil
+}
+
 // clock supplies the fake's default for legacy claims that omitted an instant.
 // Tracked claims reject zero before reaching this helper.
 func (m *memory) clock(at time.Time) time.Time {
@@ -143,6 +166,7 @@ func (m *memory) prune(at time.Time) {
 		}
 		if claimExpired(&rr, at, retention) {
 			delete(m.records, k)
+			delete(m.effects, k)
 		}
 	}
 

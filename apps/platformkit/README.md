@@ -41,8 +41,8 @@ door this installation opens; `pkit.Composition` for the shell's navigation,
 `pkit.Config` for the settings a module cannot decide, `Wiring.Skin` for the
 theme and the copy the app named with `Theme` and `Languages`, and `pkit.Value`
 for the services `bootstrap`, `migrate` and these tests read off the resolved
-plan. **Added** — the two modules in [product.go](product.go), because a
-composition still has to say what is its own, and saying it as two modules that
+plan. **Added** — the three modules in [product.go](product.go), because a
+composition still has to say what is its own, and saying it as modules that
 declare what they provide is the only shape in which the resolver can check it,
 refuse a missing provider by name and print the edge; nothing existing could
 carry it, since the file they replace (`modules.go` and `wiring.go`) built every
@@ -65,12 +65,65 @@ holder, `user` reads it and `auth` fills it in its own build. That is
 `pkit`'s tested late-bound holder, and an unfilled holder fails the roles write
 with no row, no event and no stale read.
 
+What the counting door (`summary.go`, `/api/v1/app/summary`) composed and what it
+wrote: **Reused** — `crud.Count` for the total, `(*API).guard` and
+`Resource.Readable` for who may hear it, `httpx.TxFrom` for the tenant scope,
+`cache.Of`/`Get`/`Set` and their generations for the fifteen seconds a total is
+believed, `Options.WorkspaceCatalog` and `workspaceFace` for the address, the
+`connectionDocument` envelope for the way a body type survives into the published
+document, `entity.EntryHints` and `entryHintsFault` for the declaration and its
+refusal, `ui/screens`' pointer-per-key `declared`/`deviations` rule for the echo,
+`ui/resource.Words` for the one word. **Added** — `crud.CountWhere` and
+`crud.CountDays`, because `Query.Filter` reaches equality only and `comparable`
+says so in its own comment, and no grouped read of an entity's column existed;
+`Resource.CountFiltered`/`CountDays` and `API.Cache()`, the store having been
+reachable only as a private field; `screens.Summary` and `Summarise`, `ui/screens`
+having held no per-resource number; the `highlight` and `trendField` hints; and one
+partial index, `due_at` having never been read as a range before. **Made
+reusable** — the predicate grammar (`crud.Ops`, `Predicate`, `Where`) with the one
+coercion table `Coerce`, which `?filter=` now shares with a declared value, the
+anchor resolution (`Declared`, `DayStart`) that lets a declaration name "today"
+instead of a date, and a second worked `/api/v1/app` mount whose body type reaches
+the OpenAPI document.
+
+What the counting door does not do, stated here because a shell reading
+`/summary` decides what to draw from it:
+
+- **The budget bounds the wait, not the query.** `summaryBudget` is a deadline on
+  the parts of a request that carry it — the store round trips and the read-guard
+  decision. The counts run in the request's own transaction, whose session was
+  opened before that deadline existed and whose reads take no context, so a
+  statement is cut short by the installation's `database.statement_timeout` and by
+  nothing in this file.
+- **A card costs one statement per question it declares**, not one per card: the
+  task card asks a total, a sub-count and a daily series, so three.
+- **"Due today" is a window on `dueAt` and nothing else.** A task resolved or
+  closed during the same day is still counted in it, because the grammar has no
+  `ne` or `in` and the task entity's own `doneValues` vocabulary has no way to
+  reach a declared filter. The brief specified the window; narrowing it to open
+  work is the module's, and the operator it needs is not written here.
+- **"Today" is the UTC day**, not the person's, and no locale or time zone enters
+  the cache key — which is also why the body carries no word.
+- **One cache key per tenant and resource** is sound while a read grant is
+  tenant-wide, which every grant in this installation is. An authorizer that ever
+  decides per row makes that count the wrong answer, and the key would have to name
+  the grant set or the document would go uncached.
+- **A resource that carries no count closure has no number, permanently.** `file`
+  registers its routes and its own library page by hand and names no `Count`, so
+  its card is absent for every caller, including an administrator — which is the
+  truth rather than a zero, and is the file module's to add over the rows its page
+  lists.
+- **The count is the whole live set**, never the open one: the "total open" the
+  brief first asked for is not answered here, because "open" is a set of statuses
+  no shared module may name.
+
 ## What lives where
 
 | file | what it is |
 |---|---|
 | [app.go](app.go) | the sentence, the resolved composition, and the two entry points every command shares |
-| [product.go](product.go) | the two modules this application composes: the values it owns, and the joins |
+| [product.go](product.go) | the three modules this application composes: the values it owns, the chrome it hands a module's own screen, and the joins |
+| [summary.go](summary.go) | the workspace's counts: what each resource the caller may read holds, at one instant |
 | [roles.go](roles.go) | the list somebody wrote down of who a new tenant begins as |
 | [change.go](change.go) | the one subject under change control, its flag, and the gate |
 | [fault.go](fault.go) | the refusal page, the two ask pages, and the addresses they are pinned to |
@@ -85,25 +138,26 @@ rather than finding out at the first login.
 ## Authorization
 
 Decision 0011 asks every composed module's README the same six questions. This one
-answers for the two modules this application declares in `product.go`, because no
+answers for the three modules this application declares in `product.go`, because no
 `modules/<name>/README.md` exists to answer them. [authorization_readme_test.go](authorization_readme_test.go)
-reads this section against the two manifests, the same way it reads the kernel
+reads this section against their manifests, the same way it reads the kernel
 modules'.
 
 ### Permissions
 
-None of `product`, `access` or `media` declares a permission: a manifest with no
+None of `product`, `workspace`, `access` or `media` declares a permission: a manifest with no
 grant to hand out. Every permission the running application offers belongs to the module
 that owns the subject it governs — `user` for people and roles, `content` for
 pages, `billing` for plans — and this application adds none.
 
 ### Object scope
 
-All three work inside one tenant and never across two. `product` hands out values that
+All four work inside one tenant and never across two. `product` hands out values that
 are read once at composition — the session cookie, the rate buckets, the storage
 bucket, the scheduler cadence — and joins that are constructed from a `db.Tx`
 carrying the tenant the request resolved, which is where tenancy is enforced here.
-`access` joins a person, a notice and a site to decide who may be let in, and every
+`workspace` hands out one value, the shell a module's own page is drawn in, and
+reads nothing. `access` joins a person, a notice and a site to decide who may be let in, and every
 row it reads is behind that same transaction. `media` reads nothing: it hands
 `file.Module` the shell the library is drawn in and the authorizer that decides
 which of the page's two write controls a person is shown — the check itself is
@@ -112,7 +166,8 @@ which of the page's two write controls a person is shown — the check itself is
 ### Duties the module enforces itself
 
 None enforces anything. They provide no route of their own, no duty and no check:
-`product` answers contracts, `access` fills the reach an ask has here and the
+`product` answers contracts, `workspace` names the chrome and mounts nothing,
+`access` fills the reach an ask has here and the
 authorizer the sign-in page asks, and `media` hands the library its chrome — the
 guard on the page's two posts is `file`'s own permission, asked of the composition
 by the router. The enforcement is the modules' whose services they join, and

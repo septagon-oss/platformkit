@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // Deps is what this module cannot make for itself.
@@ -65,6 +66,22 @@ type Deps struct {
 	// the same decision the session cookie's Secure flag is: a laptop reached at
 	// a local name gets http, and everything else gets https.
 	Secure bool
+
+	// Page is the in-app list and the shell it is drawn in, handed in by the
+	// composition. Nil mounts no page at all, which is what this module was before
+	// it existed: the rows, the two JSON doors and the mail. A capability that
+	// guessed which chrome its list sits in would be a capability with a product in
+	// it, so the chrome arrives or the screen does not.
+	Page *Page
+}
+
+// Page is the in-app list as a composition hands it: the page.Shell it is drawn in
+// and how many rows one page holds. The screen is this module's and the chrome is
+// the composition's, which is why it arrives rather than being built here, and why
+// a deployment that provides none has simply no address to ask for.
+type Page struct {
+	Shell   page.Shell
+	PerPage int
 }
 
 // Module is the manifest, and the service it is built on: main holds the
@@ -84,6 +101,31 @@ type Deps struct {
 // product composes over that face guards it with this key, which kit/app refuses
 // to start unless the manifest that defines it says so.
 var permissions = []module.Permission{{Key: contracts.PermissionSenderManage, Label: "manage the tenant's sending address"}}
+
+// streams is what a live connection may watch: the two things that happen to one
+// person's own notices. The policy reads the payload's own recipient field, and
+// that field is the whole of who may watch — a notice is a hint to read, and the
+// read is the person's. A connection addressed to anybody else is never told, in
+// this tenant or in any other.
+//
+// The hint carries nothing: a frame says that something happened and when, and the
+// list then re-reads its own rows, so what a person sees is what they may read
+// rather than what one frame once carried.
+var streams = []module.Stream{
+	{Event: contracts.EventCreated, Policy: module.StreamRecipient("recipientId")},
+	{Event: contracts.EventRead, Policy: module.StreamRecipient("recipientId")},
+}
+
+// streamedTopics names what streams watches, in declaration order, for the one
+// page that lists these rows. The manifest and the page read this one list, so a
+// page cannot watch a topic its own module never declared.
+func streamedTopics() []string {
+	out := make([]string, 0, len(streams))
+	for _, s := range streams {
+		out = append(out, s.Event)
+	}
+	return out
+}
 
 // subscriptions is the manifest's list of who does this module's asynchronous
 // work: the mail this module sends itself, and one carrier per provider the
@@ -134,7 +176,20 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
 		Subscriptions: subscriptions(deps),
-		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
+		// The live door onto the two events this module raises for one person,
+		// watched by the recipient each payload names. An event not listed here
+		// keeps the durable path it has always had; listing one opens a connection
+		// onto it and changes nothing about the outbox.
+		Streams: streams,
+		Routes: func(s httpx.Surfaces) {
+			internal.RegisterRoutes(s.App, svc)
+			if deps.Page != nil {
+				internal.MountInApp(s, internal.InApp{
+					Shell: deps.Page.Shell, Read: svc, PerPage: deps.Page.PerPage,
+					Topics: streamedTopics(),
+				})
+			}
+		},
 	}
 }
 

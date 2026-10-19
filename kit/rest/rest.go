@@ -26,7 +26,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -79,6 +78,17 @@ type Spec[T crud.Entity] struct {
 	// that default is a resource whose images the sweep is entitled to delete
 	// under a published page, which is when this becomes a mount-time refusal.
 	FileUses FileUses
+	// History keeps a version of every write this Spec commits, in the same
+	// transaction as the write. It is a declaration and not a request: a resource
+	// whose content people revise wants a version per save, and a resource whose
+	// rows are counters does not. It requires two things, both refused at mount:
+	// Versions to keep them in, and a write count of the row's own to number them
+	// with — the version number is entity.RevisionField, and this module refuses
+	// to invent a second one.
+	History bool
+	// Versions is the store a History resource's versions are kept in, called
+	// inside the transaction that wrote the row. modules/history provides it.
+	Versions httpx.Versions
 	// Translations is the door a Spec with a `i18n:"translatable"` field knocks
 	// on: ?lang= reads through it, its commands write through it, and its delete
 	// forgets the record through it. modules/translation implements it and nothing
@@ -345,6 +355,9 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		res.WritePath = write.Prefix() + s.Path
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
+	if s.History {
+		s.mountHistory(surfaces, read)
+	}
 
 	// The two read doors come in two shapes, and the reason is one rule: a
 	// query parameter nothing reads is not advertised. A resource with a
@@ -550,6 +563,19 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
 	}
+	// The row's first version, at the number the row itself starts on. Nothing
+	// preceded it, so it names no changed fields: a version's `changed` answers
+	// "what did this write move", and the first write moved everything by being
+	// the beginning rather than by moving anything.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, nil); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Created, e, s.AfterCreate)
 }
 
@@ -662,6 +688,21 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return e, err
 	}
 	defer done()
+	// The version rides this transaction: the snapshot is the row as the UPDATE
+	// left it (normalised by the entity's own Validate, which is the same reason
+	// the diff below is taken here), taken before reportDiff put the diff on the
+	// entity, so no stored document holds a `changes` array that belongs to one
+	// event. It is recorded before the event is published, so a published
+	// `updated` never describes a version the database refused.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, changedNamesFrom(fields, beforeJSON, snap)); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Updated, e, nil)
 }
 
@@ -1228,6 +1269,9 @@ func (s Spec[T]) check() {
 		bad = s.operationsFault()
 	}
 	if bad == "" {
+		bad = s.historyFault()
+	}
+	if bad == "" {
 		bad = s.gateFault()
 	}
 	if bad == "" {
@@ -1558,30 +1602,11 @@ func (in *listInput) query(fields []crud.Field) (crud.Query, error) {
 // coerce reads a query parameter as the field's own type, so a filter on an
 // integer column compares integers. Postgres would raise on the mismatch, which
 // is a 500 for what is really a malformed request.
-func coerce(f crud.Field, raw string) (any, error) {
-	var (
-		v   any
-		err error
-	)
-	switch f.Type {
-	case crud.TypeInt:
-		v, err = strconv.ParseInt(raw, 10, 64)
-	case crud.TypeFloat:
-		v, err = strconv.ParseFloat(raw, 64)
-	case crud.TypeBool:
-		v, err = strconv.ParseBool(raw)
-	case crud.TypeUUID:
-		v, err = uuid.Parse(raw)
-	case crud.TypeTime:
-		v, err = time.Parse(time.RFC3339, raw)
-	default:
-		v = raw
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s is a %s and %q is not one", crud.ErrInvalid, f.Name, f.Type, raw)
-	}
-	return v, nil
-}
+// coerce reads a filter value as the field's own type. The table is kit/crud's,
+// because a declared highlight value and a ?filter= value are the same question —
+// what is this field's name worth as this field's type — and two tables answering
+// it would be two opinions about which filters do nothing.
+func coerce(f crud.Field, raw string) (any, error) { return crud.Coerce(f, raw) }
 
 // merge applies a PATCH body to an entity, field by field, through the schema,
 // and reports the database columns it changed so that Update writes those and

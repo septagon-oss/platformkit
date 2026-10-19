@@ -96,6 +96,25 @@ func current(ctx context.Context) (openTx, bool) {
 	return openTx{}, false
 }
 
+// TxFrom returns the tenant transaction this context is already inside — the one Run
+// applied with its own handle, or a request's transaction that has actually been
+// opened — and reports false for a context that is inside no transaction, inside a
+// system one, or inside a request whose transaction nobody has asked for yet.
+//
+// It is the read-only half of Run: a caller that has been handed a transaction by
+// Run, and a layer that has to reach the database through one it was not handed, need
+// the same answer, and an accessor that only knows one of the two opens a second
+// transaction beside the first. A context that carries a Pending it has not opened
+// reports false rather than opening it: asking for the transaction is Run's decision
+// or the caller's, never a reader's.
+func TxFrom(ctx context.Context) (Tx[Tenant], bool) {
+	cur, ok := current(ctx)
+	if !ok || cur.system {
+		return Tx[Tenant]{}, false
+	}
+	return Tx[Tenant]{db: cur.db, scope: Tenant{tenant: cur.tenant}}, true
+}
+
 // HasTransaction reports both active and lazy transactions carried by ctx.
 // A background owner uses it to refuse accidentally sharing a caller's commit.
 func HasTransaction(ctx context.Context) bool {
@@ -307,6 +326,18 @@ func endErr(span trace.Span, err error) {
 	span.RecordError(err)
 	span.SetStatus(codes.Error, err.Error())
 	span.End()
+}
+
+// Opened returns the transaction this Pending has opened, and false when it has
+// opened none. Asking opens nothing: a request that never queried wrote nothing a
+// caller could add a row beside.
+func (p *Pending) Opened() (Tx[Tenant], bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.gtx == nil {
+		return Tx[Tenant]{}, false
+	}
+	return Tx[Tenant]{db: p.gtx, scope: Tenant{tenant: p.tenant}}, true
 }
 
 // Err is the failure that stopped the transaction opening, if one did.

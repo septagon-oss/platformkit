@@ -60,7 +60,7 @@ func (s Spec[T]) resource() httpx.Resource {
 		return problem.Conflict("a " + s.Entity + " resource offers no " + verb + " route; its Operations name the verbs it has")
 	}
 	res := httpx.Resource{
-		Module: s.Module, Entity: s.Entity, Path: s.Path,
+		Module: s.Module, Entity: s.Entity, Path: s.Path, History: s.historyPort(),
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
 		ReadBy: s.ReadAuth, WriteBy: s.WriteAuth, Operations: s.Operations,
 		Immutable: s.Immutable, Present: s.Present, Schema: schema, RichTextFiles: s.RichTextFiles,
@@ -72,6 +72,26 @@ func (s Spec[T]) resource() httpx.Resource {
 			}
 			total, err := crud.Count[T](tx)
 			return total, Fault(err)
+		},
+		// The two narrowed counts a declared highlight and trendField ask, in the
+		// request's own transaction like the total beside them: the same tenant
+		// scope, the same lifecycle predicate, so a sub-count can only ever be a
+		// part of the whole one.
+		CountFiltered: func(ctx context.Context, w crud.Where) (int64, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return 0, err
+			}
+			total, err := crud.CountWhere[T](tx, w)
+			return total, Fault(err)
+		},
+		CountDays: func(ctx context.Context, field string, from, to time.Time) ([]crud.DayCount, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			days, err := crud.CountDays[T](tx, field, from, to)
+			return days, Fault(err)
 		},
 		List: func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error) {
 			tx, err := transaction(ctx)
@@ -154,6 +174,10 @@ func (s Spec[T]) resource() httpx.Resource {
 		// not mount. A refused count produces no card, which is the truth; a number
 		// on a card that leads nowhere is the lie.
 		res.Count = func(context.Context) (int64, error) { return 0, refused("list") }
+		res.CountFiltered = func(context.Context, crud.Where) (int64, error) { return 0, refused("list") }
+		res.CountDays = func(context.Context, string, time.Time, time.Time) ([]crud.DayCount, error) {
+			return nil, refused("list")
+		}
 		res.List = func(context.Context, crud.Query) ([]map[string]any, int64, error) {
 			return nil, 0, refused("list")
 		}
@@ -225,7 +249,31 @@ func decode[T crud.Entity](values map[string]any) (T, error) {
 // rather than dropped: dropping it would store something other than what was
 // sent and say nothing. The name is matched folded, as at every other door.
 func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, error) {
-	return formValues(body, fields, refuse, false)
+	return readForm(body, fields, formRead{refuse: refuse})
+}
+
+// CommandValues reads the form a command's arguments arrived in. It differs from
+// Values in one thing and that one thing is the reason it is a name of its own: a
+// command's argument struct may declare a field called entity.RevisionCondition,
+// because quoting the revision the caller read the row at is what makes a command
+// like a restore refuseable, and for a command that name is an argument to bind
+// rather than the condition an entity form carries beside its fields. Read the
+// other way round, the form that quotes a revision has its condition dropped and
+// the write it was meant to guard commits — which is what this door did until a
+// restore submitted from the generated form came back 303 instead of 412.
+func CommandValues(body []byte, fields []crud.Field) (map[string]any, error) {
+	return readForm(body, fields, formRead{arguments: true})
+}
+
+// formRead is how one of the three form doors reads the field list it was handed.
+type formRead struct {
+	// refuse names the fields that may not appear at all.
+	refuse []string
+	// update says this is an edit form: a submitted blank clears the value it
+	// holds, and the form may carry the row's condition.
+	update bool
+	// arguments says the fields are a command's arguments. See CommandValues.
+	arguments bool
 }
 
 // UpdateValues reads an edit form, retaining submitted blank text, empty lists
@@ -234,18 +282,18 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 // under entity.RevisionCondition, and conditional turns it into the tag the write
 // is made against.
 func UpdateValues(body []byte, fields []crud.Field, immutable []string) (map[string]any, error) {
-	values, err := formValues(body, fields, nil, true)
+	values, err := readForm(body, fields, formRead{update: true})
 	return Writable(values, immutable), err
 }
 
-func formValues(body []byte, fields []crud.Field, refuse []string, update bool) (map[string]any, error) {
+func readForm(body []byte, fields []crud.Field, o formRead) (map[string]any, error) {
 	form, err := url.ParseQuery(string(body))
 	if err != nil {
 		return nil, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
 	}
 	// Asked of every posted key before any field is read, so a key that folds
 	// onto a refused name is refused and not merely left out of the lookup.
-	if name := foldedName(form, refuse); name != "" {
+	if name := foldedName(form, o.refuse); name != "" {
 		return nil, invalid(name, "belongs to a route of its own, not to this form")
 	}
 	out := map[string]any{}
@@ -256,13 +304,15 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 		if entity.ServerOwned(f) {
 			continue
 		}
-		if slices.Contains(refuse, f.Name) {
+		if slices.Contains(o.refuse, f.Name) {
 			continue
 		}
-		if f.Name == entity.RevisionCondition {
+		if f.Name == entity.RevisionCondition && !o.arguments {
 			// Read once, by the code below, as the condition on the write rather than as
 			// a field to merge. An entity that named a column this way would have its own
-			// meaning for the name, which is why Spec.check refuses the collision.
+			// meaning for the name, which is why Spec.check refuses the collision, and a
+			// command that names it means the argument, which is why a command's fields are
+			// read with arguments set. See CommandValues.
 			continue
 		}
 		if f.Type == crud.TypeMap {
@@ -303,7 +353,7 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 		}
 		text := strings.TrimSpace(raw[0])
 		if text == "" {
-			if update {
+			if o.update {
 				switch f.Type {
 				case crud.TypeString, crud.TypeText:
 					out[f.Name] = ""
@@ -373,7 +423,7 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 	// fields rather than among them: it is no column's value, and a form that sent
 	// nothing under it keeps the unconditional write every caller written before this
 	// door has — the condition is how a screen says it read the row, not a tax it pays.
-	if update {
+	if o.update {
 		if raw, sent := form[entity.RevisionCondition]; sent {
 			if text := strings.TrimSpace(raw[0]); text != "" {
 				out[entity.RevisionCondition] = text

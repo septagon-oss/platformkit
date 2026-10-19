@@ -71,6 +71,10 @@ func TestTheAdapterCarriesEveryFieldTheRenderersRead(t *testing.T) {
 // file cannot show doors nobody authorized.
 var callerScoped = map[string]string{
 	"Commands": "TestACommandIsADoorOnTheScreenThatShowsTheRow in kit/rest/screens_commands_test.go",
+	// A version series is read per request, behind the record's read guard, so it
+	// has the same shape as Commands: two registered resources cannot be compared
+	// without the caller whose series one of them holds.
+	"History": "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
 }
 
 // shapesFor is one field in both its shapes, beside the screen that has to notice

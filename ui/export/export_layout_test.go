@@ -218,16 +218,22 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
 	// no example, schema, icon, class or notice.
 	//
-	// The merge lands main's rich text field's chrome on top of that move: its rules
-	// join @layer components, and the editing surface takes the published page's prose
-	// rules with them. Measured by exporting this tree and the tree this branch held
-	// before the merge and walking both documents leaf by leaf: 99,906 leaves each,
-	// none added, none removed, and exactly two changed — /css, which gains 197 lines
-	// and loses none, every one of them a [data-richtext…] rule, and /sha256, the
-	// digest of that CSS. No example's HTML, no token, theme, notice, icon, schema or
-	// font policy moves. The digest below is that measurement of this merged tree,
-	// printed by the refusal above the re-measure and copied from it.
-	if legacy.SHA256 != "77f1fd399a58fd14ff5eef4f524243805d3377ccdec5135e792f350b37f6607a" {
+	// main's 209 commits since 74f3529 land on top of that move. Measured by
+	// exporting this tree and the tree this branch held before the merge and walking
+	// both documents leaf by leaf, keyed by a capture's stable id so that a capture
+	// which only moved in the list reads as no change: 99,906 leaves become 99,947.
+	// Two captures arrive — Disclosure / permissions (24 leaves) and Standalone /
+	// access page (17) — and none is removed. Six leaves change: the html of the
+	// Sidebar, Sidebar / content flavor and Sidebar / collapsed captures, and,
+	// outside the captures, /css, /notices and /sha256. /css gains 23 lines and loses
+	// none, of .py-12, .lg:sticky, .lg:top-0 and .lg:max-h-[100vh], and no token or
+	// role value moves with them; /notices gains the attribution of the vendored htmx
+	// SSE extension the notice list now ships. Tokens, themes, icons, schema and font
+	// policy are byte-identical to the export this branch held before the merge. The
+	// digest below is that measurement of this merged tree, printed by the refusal
+	// above the re-measure and copied from it; it covers the composed examples,
+	// stylesheet and attribution together.
+	if legacy.SHA256 != "cf211bb2da85c6dcedfe5bdd83ede8521653178753f38f5235f2b6242ef85e57" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
