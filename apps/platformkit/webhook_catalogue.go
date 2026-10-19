@@ -20,12 +20,14 @@ package main
 // never refuses a socket on the strength of a name having left the list.
 
 import (
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -64,6 +66,17 @@ var webhookCatalogue = emittedEvents{
 	usercontracts.EventAdministrationRefused,
 	usercontracts.EventRegistrationPending, usercontracts.EventRegistrationApproved,
 	usercontracts.EventRegistrationUnverified, usercontracts.EventEmailVerified,
+	// The return an administrator's own command drives: a suspended person is an
+	// account that cannot sign in, and a subscriber watching who may enter would
+	// otherwise hear the door close and never hear it open again.
+	usercontracts.EventReactivated,
+	// scim, the five facts no user event describes: the collection declared with
+	// nobody in it, the collection renamed, the collection withdrawn, this tenant's
+	// binding of a collection to a role, and the attribute of a person this door
+	// writes and modules/user publishes nothing about. The person's own invitation,
+	// roles and deactivation stay the `user.` names above.
+	scimcontracts.EventGroupCreated, scimcontracts.EventGroupChanged, scimcontracts.EventGroupRemoved,
+	scimcontracts.EventMappingChanged, scimcontracts.EventUserChanged,
 	// tenant, whose lifecycle an installation's own operator acts drive.
 	tenantcontracts.EventCreated, tenantcontracts.EventSuspended, tenantcontracts.EventHostAdded,
 	tenantcontracts.EventHostRemoved, tenantcontracts.EventLocaleSet, tenantcontracts.EventRenamed,
@@ -91,6 +104,11 @@ var webhookCatalogue = emittedEvents{
 	contentcontracts.EventCreated, contentcontracts.EventUpdated, contentcontracts.EventDeleted,
 	contentcontracts.EventPublished, contentcontracts.EventUnpublished, contentcontracts.EventArchived,
 	sitecontracts.EventSettingsUpdated,
+	// history, whose one event says a stored version of a record came back. The
+	// name rides on the kit's Versions port and not on a module's contracts, for
+	// the reason that port gives: the kit publishes it for whichever resource asked
+	// for history, and modules/history declares it typed in its manifest.
+	httpx.RestoredEvent,
 	// translation, whose one event says a record's other languages moved.
 	translationcontracts.EventUpdated,
 	filecontracts.EventUploaded, filecontracts.EventDeleted, filecontracts.EventRetained,

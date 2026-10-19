@@ -69,9 +69,9 @@ this repository ships links or bundles it.
 ```go
 pkit.Provides[secrets.Secrets]()
 pkit.Provides[secrets.Keys]()
-store, err := secretStore(cfg) // env, file or openbao, by secrets.adapter
-pkit.Put[secrets.Secrets](w, store)
-pkit.Put[secrets.Keys](w, store)
+secretsStore, err := secretStore(cfg) // env, file or openbao, by secrets.adapter
+pkit.Put[secrets.Secrets](w, secretsStore)
+pkit.Put[secrets.Keys](w, secretsStore)
 ```
 
 `apps/platformkit`'s `secretStore` is the one place the reference application names a

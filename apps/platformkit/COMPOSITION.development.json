@@ -37,6 +37,15 @@
             "change"
           ]
         }
+      ],
+      "reads": [
+        "config.Files"
+      ]
+    },
+    {
+      "name": "workspace",
+      "provides": [
+        "*notification.Page"
       ]
     },
     {
@@ -182,10 +191,17 @@
           "from": "product"
         }
       ],
+      "uses": [
+        {
+          "contract": "*notification.Page",
+          "from": "workspace"
+        }
+      ],
       "after": [
         "product",
         "user",
-        "tenant"
+        "tenant",
+        "workspace"
       ],
       "reads": [
         "config.Mail",
@@ -356,6 +372,26 @@
       ]
     },
     {
+      "name": "scim",
+      "provides": [
+        "scimcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        }
+      ],
+      "after": [
+        "user",
+        "auth"
+      ]
+    },
+    {
       "name": "media",
       "provides": [
         "*file.LibraryChrome"
@@ -486,6 +522,27 @@
       ]
     },
     {
+      "name": "history",
+      "provides": [
+        "historycontracts.Service",
+        "httpx.Versions"
+      ],
+      "needs": [
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "after": [
+        "tenant",
+        "file"
+      ]
+    },
+    {
       "name": "content",
       "provides": [
         "contentcontracts.Service"
@@ -506,10 +563,15 @@
         {
           "contract": "rest.FileShown",
           "from": "file"
+        },
+        {
+          "contract": "httpx.Versions",
+          "from": "history"
         }
       ],
       "after": [
         "file",
+        "history",
         "translation"
       ]
     },
@@ -604,5 +666,61 @@
       ]
     }
   ],
-  "problems": []
+  "problems": [],
+  "cloud": {
+    "profile": "local",
+    "environment": "development",
+    "seams": [
+      {
+        "seam": "storage",
+        "provider": "local-disk",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "cache",
+        "provider": "in-process",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "events",
+        "provider": "by-role",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "mail",
+        "provider": "mailbox",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "policy",
+        "provider": "rego-in-process",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      },
+      {
+        "seam": "telemetry",
+        "provider": "none",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "identity",
+        "provider": "password-only",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "flags",
+        "provider": "configuration",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      }
+    ]
+  }
 }

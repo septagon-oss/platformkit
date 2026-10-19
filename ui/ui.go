@@ -34,7 +34,12 @@
 // # Application controllers
 //
 // htmx is vendored, minified, under its MIT licence, and it is the only
-// eagerly loaded third-party script. Calendar and map engines load on demand. The optional Storybook.js development
+// eagerly loaded third-party script. Calendar and map engines load on demand.
+// The SSE extension (SSEExtension) is the other third-party script in this
+// directory and it is not eagerly loaded either: only a page that declares a
+// live region fetches it, as one ES module tag in that page's head, because a
+// connection is a thing a page opted into and not a thing every page pays for.
+// The optional Storybook.js development
 // interface is built separately under ui/storybook and served through authorization.
 // The application enhancements live in assets/js, listed in Controllers.
 //
@@ -100,6 +105,18 @@ var Controllers = []string{
 	"specialists.js",
 	"gallery.js",
 }
+
+// SSEExtension is the htmx extension that owns a live region's EventSource,
+// named for the version it is pinned at in the way every other third-party
+// engine in this directory is. It is not in Controllers: those are the scripts
+// every page downloads, and this one belongs to the pages that name topics,
+// which load it the way a page with a rich text field loads its editor —
+// through document.View.Modules' own row, rendered by ui/document's head.
+//
+// NOTICE pins the bytes by SHA-256 beside the licence that covers them, and a
+// test re-reads the digest from the embedded tree, so an edit to the file fails
+// the record here rather than a person's browser.
+const SSEExtension = "htmx-ext-sse-2.2.4.min.js"
 
 // Sheet is a composed stylesheet: the bytes a browser downloads and the first
 // eight bytes of their SHA-256 as hex. A page puts the fingerprint in the

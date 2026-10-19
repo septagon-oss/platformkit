@@ -145,8 +145,24 @@ type FormSentenceProps struct {
 // same sentence into a frame that is already narrow; a form has no frame to
 // borrow, so the measure travels with the sentence and not with the caller.
 func FormSentence(p FormSentenceProps) g.Node {
+	return FormSentenceWithSlots(p, FormSentenceSlots{})
+}
+
+// FormSentenceSlots carries trusted Go adornment around the sentence: Body is
+// drawn in place of Content, so a caller that renders one comparison — the words
+// a write kept, the words it added, the words it removed — keeps the frame's own
+// paragraph and its measure rather than inventing a paragraph of its own.
+type FormSentenceSlots struct {
+	Body []g.Node
+}
+
+// FormSentenceWithSlots is FormSentence around content the caller brings.
+func FormSentenceWithSlots(p FormSentenceProps, slots FormSentenceSlots) g.Node {
 	nodes := baseAttrs(p.ComponentProps)
 	nodes = append(nodes, classes(clFormSentence.Compile(), p.Class))
+	if len(slots.Body) > 0 {
+		return h.P(append(nodes, g.Group(slots.Body)...)...)
+	}
 	return h.P(append(nodes, g.Text(p.Text))...)
 }
 

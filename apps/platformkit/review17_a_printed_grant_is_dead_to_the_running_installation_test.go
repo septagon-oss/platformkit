@@ -52,7 +52,7 @@ import (
 func TestNoGrantTheRepairPrintsIsOneTheRunningInstallationStillHonours(t *testing.T) {
 	const dead, live = "ghost:read", "task:read"
 
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 	c := compose(cfg)
 	conn, err := db.Open(t.Context(), cfg.Database.URL)

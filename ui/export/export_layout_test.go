@@ -218,7 +218,15 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// exactly two changed — /css, which carries the new rules, and /sha256, which is
 	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
 	// schema or font policy moves. The digest below is that measurement of this tree.
-	if legacy.SHA256 != "5004fa12de463e88646fdb918286ee332c335a402a8d20a2b4b0a4077d1ba99c" {
+	//
+	// The vendored SSE extension's attribution joined NOTICE, and the export's
+	// notices field carries that file verbatim. Measured by exporting this tree with
+	// the previous attribution list in its place and the current one: the former
+	// export is byte-for-byte the digest above and the latter is the one below, so
+	// of every leaf in the document only `notices` moved — no example, CSS, token,
+	// theme, icon, schema or font policy. The digest below is that measurement of
+	// this tree, printed by the refusal and copied from it.
+	if legacy.SHA256 != "ef79fadbcfcea108429e09ca6cce847ea5578734e74c96c4311b6eb89328c433" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

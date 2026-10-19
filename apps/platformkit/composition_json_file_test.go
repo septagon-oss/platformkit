@@ -5,8 +5,8 @@ package main
 // application resolves to, the contract each one supplies to which other, what
 // Choose settled, which implementation the environment picked and which
 // configuration sections were read. It is written by pkit.App.Describe — the
-// same resolved plan Explain renders as sentences — and refused on drift by the
-// UPDATE_GOLDEN discipline the text file already uses, so a change to the
+// same resolved plan Explain renders as sentences — written by `make generate`
+// and refused on drift as the text file is, so a change to the
 // composition that nobody described in words fails a check in either encoding.
 //
 // The second assertion is the reason the file may exist: a committed JSON
@@ -16,7 +16,6 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,19 +24,13 @@ import (
 )
 
 func TestCompositionJSONFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(compositionConfig), 0o600); err != nil {
-		t.Fatalf("write the configuration: %v", err)
-	}
-	cfg, err := config.Load(path)
+	cfg, err := config.Load(compositionConfig)
 	if err != nil {
 		t.Fatalf("load the configuration: %v", err)
 	}
-	write := os.Getenv("UPDATE_GOLDEN") != ""
 	for _, env := range []pkit.Environment{pkit.Development, pkit.Production} {
 		name := "COMPOSITION." + string(env) + ".json"
-		ref := composeReference(cfg, env)
-		want, err := ref.describe()
+		_, want, err := compositionDocuments(cfg, env)
 		if err != nil {
 			t.Fatalf("%s: the reference composition does not describe itself: %v", name, err)
 		}
@@ -53,19 +46,13 @@ func TestCompositionJSONFile(t *testing.T) {
 				t.Errorf("%s carries %q, which is a value the deployment supplied and not a name the composition declares", name, secret)
 			}
 		}
-		if write {
-			if err := os.WriteFile(name, want, 0o644); err != nil {
-				t.Fatalf("write %s: %v", name, err)
-			}
-			continue
-		}
 		got, err := os.ReadFile(name)
 		if err != nil {
 			t.Errorf("%s is not committed: %v", name, err)
 			continue
 		}
 		if string(got) != string(want) {
-			t.Errorf("%s is not what the composition resolves to today; regenerate with UPDATE_GOLDEN=1 go test ./apps/platformkit -run TestCompositionJSONFile\n--- committed ---\n%s\n--- resolved now ---\n%s",
+			t.Errorf("%s is not what the composition resolves to today; regenerate with make generate\n--- committed ---\n%s\n--- resolved now ---\n%s",
 				name, got, want)
 		}
 	}

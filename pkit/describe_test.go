@@ -150,7 +150,7 @@ func TestDescribeRefusesWhatValidateRefuses(t *testing.T) {
 		{"a missing provider", pkit.NewApp("collect").Use(collectibles.Module), dev, "Use",
 			"collectibles needs cartcontracts.Service: add cart.Module to collect"},
 		{"a cycle", pkit.NewApp("collect").Use(cart.Module, collectibles.Module), dev, "Use",
-			"cart → collectibles → cart is a cycle"},
+			"cart → collectibles → cart is a cycle: cart takes cartcontracts.Extension from collectibles; collectibles needs cartcontracts.Service from cart"},
 		{"two modules after everything", pkit.NewApp("collect").Use(admin.Module, audit.Module), dev, "Use",
 			"admin and audit both ask to run after everything: only one module may"},
 		{"a deployment that names no environment", pkit.NewApp("collect").Use(user.Module),

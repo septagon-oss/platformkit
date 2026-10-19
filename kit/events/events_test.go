@@ -49,6 +49,12 @@ func (r *recorder) Publish(_ context.Context, ev events.Event) error {
 
 func (r *recorder) Subscribe(context.Context, string, string, events.Sink) error { return nil }
 
+// Observe refuses: this double answers the durable path, and a watch over a
+// transport that keeps nothing is a connection that would receive nothing.
+func (r *recorder) Observe(context.Context, uuid.UUID, string, func(events.Event)) (func(), error) {
+	return nil, errors.New("events: this transport double observes nothing")
+}
+
 func (r *recorder) names() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
