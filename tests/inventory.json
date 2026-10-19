@@ -61178,6 +61178,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/page/live_refresh_session_test.go",
+   "id": "ui/page/live_refresh_session_test.go#TestALiveRefreshCannotReadTheRegionWithoutItsSession",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestALiveRefreshCannotReadTheRegionWithoutItsSession",
+   "needs_db": true,
+   "pkg": "ui/page",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/page/live_region_served_test.go",
    "id": "ui/page/live_region_served_test.go#TestALivePageIsDrawnAsAConnectionAndARegion",
    "kind": "go",
@@ -70639,7 +70658,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1876,
+  "files": 1877,
   "forge_runs": [
    408,
    413,
@@ -70673,7 +70692,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3034,
+   "behaviour": 3035,
    "composition": 429,
    "contract": 21,
    "journey": 94
@@ -70692,9 +70711,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3578,
+  "rows": 3579,
   "tiers": {
-   "merge": 2286,
+   "merge": 2287,
    "nightly": 94,
    "push": 1198
   },
@@ -70702,13 +70721,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1649,
+   "keep": 1650,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3222,
+   "keep": 3223,
    "keep-rewrite": 140,
    "merge": 216
   }
