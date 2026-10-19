@@ -49276,6 +49276,25 @@
   {
    "area": "pkit",
    "evidence": "not-round-named",
+   "file": "pkit/build_gives_the_general_fix_outside_a_contracts_package_test.go",
+   "id": "pkit/build_gives_the_general_fix_outside_a_contracts_package_test.go#TestBuildGivesTheGeneralFixForAContractOutsideAnyContractsPackage",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestBuildGivesTheGeneralFixForAContractOutsideAnyContractsPackage",
+   "needs_db": true,
+   "pkg": "pkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "pkit",
+   "evidence": "not-round-named",
    "file": "pkit/build_refusal_reaches_its_caller_test.go",
    "id": "pkit/build_refusal_reaches_its_caller_test.go#TestAModuleDownstreamOfARefusedBuildIsNotBuilt",
    "kind": "go",
@@ -68372,7 +68391,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1811,
+  "files": 1812,
   "forge_runs": [
    408,
    413,
@@ -68406,7 +68425,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2921,
+   "behaviour": 2922,
    "composition": 425,
    "contract": 21,
    "journey": 93
@@ -68425,9 +68444,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3460,
+  "rows": 3461,
   "tiers": {
-   "merge": 2187,
+   "merge": 2188,
    "nightly": 93,
    "push": 1180
   },
@@ -68435,13 +68454,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1584,
+   "keep": 1585,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3104,
+   "keep": 3105,
    "keep-rewrite": 140,
    "merge": 216
   }
