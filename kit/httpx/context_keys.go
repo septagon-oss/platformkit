@@ -33,10 +33,20 @@ type (
 // a tenant host while the database is down: a request that never queries never
 // needs a database.
 //
+// A context already inside a transaction answers with that one, and not with the
+// request's: work running under db.Run — a re-check opened outside the request, a
+// detached control-plane write — is inside a transaction whose commit somebody else
+// decided, and opening the request's beside it would hold two, pinning one of them
+// open until the request ended. This is the reader's own rule read back: the caller
+// that chose the transaction is the caller that ends it.
+//
 // This is how a handler reaches the database: there is no other door, and a
 // repository that takes db.Tx[db.Tenant] cannot be called without going through
 // one.
 func TxFrom(ctx context.Context) (db.Tx[db.Tenant], bool) {
+	if tx, ok := db.TxFrom(ctx); ok {
+		return tx, true
+	}
 	p, ok := ctx.Value(txKey{}).(*db.Pending)
 	if !ok {
 		return db.Tx[db.Tenant]{}, false

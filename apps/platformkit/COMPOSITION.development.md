@@ -5,11 +5,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 21 modules · role `all`.
+App `platformkit` · environment `development` · 22 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 21 modules.
+pkit: platformkit in development builds 22 modules.
 pkit: cloud profile local in development.
 pkit: seam storage runs local-disk (default).
 pkit: seam cache runs in-process (default).
@@ -132,11 +132,16 @@ pkit: change.Module uses *change.ReviewChrome from access.Module.
 pkit: change.Module defines the permission change:read, change:propose and change:decide.
 pkit: change.Module emits change.proposal_proposed, change.proposal_reviewed, change.proposal_applied and change.proposal_withdrawn.
 pkit: change.Module handles change.proposal_reviewed and change.proposal_applied.
-pkit: content.Module is built after file.Module and translation.Module.
+pkit: history.Module is built after tenant.Module and file.Module.
+pkit: history.Module needs rest.FileUses from file.Module.
+pkit: history.Module needs jobs.TenantLister from tenant.Module.
+pkit: history.Module emits history.restored.
+pkit: content.Module is built after file.Module, history.Module and translation.Module.
 pkit: content.Module needs richtext.Files from file.Module.
 pkit: content.Module needs rest.FileUses from file.Module.
 pkit: content.Module needs rest.Translations from translation.Module.
 pkit: content.Module needs rest.FileShown from file.Module.
+pkit: content.Module needs httpx.Versions from history.Module.
 pkit: content.Module defines the permission content:read and content:manage.
 pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
 pkit: web.Module is built after product.Module, file.Module, translation.Module, content.Module and site.Module.
@@ -162,6 +167,7 @@ pkit: auth.Module provides pkit.Authenticator; no module in platformkit needs it
 pkit: scim.Module provides scimcontracts.Service; no module in platformkit needs it.
 pkit: file.Module provides filecontracts.Service; no module in platformkit needs it.
 pkit: change.Module provides changecontracts.Service; no module in platformkit needs it.
+pkit: history.Module provides historycontracts.Service; no module in platformkit needs it.
 
 ## What the application answers the kernel
 

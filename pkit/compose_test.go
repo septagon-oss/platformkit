@@ -121,8 +121,42 @@ func TestTwoProvidersOfOneContractAskForChoose(t *testing.T) {
 }
 
 func TestACycleIsNamedByTheModulesItPassesThrough(t *testing.T) {
-	app := pkit.NewApp("collect").Use(cart.Module, collectibles.Module)
-	says(t, app.Validate(dev), "pkit: collect: Use: cart → collectibles → cart is a cycle")
+	noBuild := func(*pkit.Wiring) (module.Module, error) {
+		t.Fatal("a cycle must be refused before any module builds")
+		return module.Module{}, nil
+	}
+	optional := pkit.NewModule("optional", noBuild,
+		pkit.Optional[cartcontracts.Service](), pkit.Contributes[cartcontracts.Extension]())
+	many := pkit.NewModule("many", noBuild,
+		pkit.Provides[cartcontracts.Service](), pkit.Optional[[]cartcontracts.Extension](),
+		pkit.Needs[[]cartcontracts.Extension](), pkit.Optional[paymentcontracts.Provider]())
+	chosen := pkit.NewModule("chosen", noBuild,
+		pkit.Contributes[cartcontracts.Extension](), pkit.Provides[paymentcontracts.Provider](),
+		pkit.Needs[cartcontracts.Service]())
+	for _, tc := range []struct {
+		name string
+		app  *pkit.App
+		want string
+	}{
+		{"required and contributions", pkit.NewApp("collect").Use(cart.Module, collectibles.Module),
+			"cart → collectibles → cart is a cycle: cart takes cartcontracts.Extension from collectibles; collectibles needs cartcontracts.Service from cart"},
+		{"optional scalar", pkit.NewApp("collect").Use(cart.Module, optional),
+			"cart → optional → cart is a cycle: cart takes cartcontracts.Extension from optional; optional uses cartcontracts.Service from cart"},
+		{"selected reasons in declaration order", pkit.NewApp("collect").Use(many, stripe.Module, chosen).Choose(chosen),
+			"many → chosen → many is a cycle: many takes cartcontracts.Extension from chosen, many uses paymentcontracts.Provider from chosen; chosen needs cartcontracts.Service from many"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for range 2 {
+				err := tc.app.Validate(dev)
+				if err == nil || err.Error() != "pkit: collect: Use: "+tc.want {
+					t.Fatalf("Validate = %v, want %q", err, tc.want)
+				}
+			}
+			if text, err := tc.app.Explain(dev); text != "" || err == nil || err.Error() != "pkit: collect: Use: "+tc.want {
+				t.Fatalf("Explain = %q, %v, want only the cycle refusal", text, err)
+			}
+		})
+	}
 }
 
 func TestTwoModulesCannotBothRunAfterEverything(t *testing.T) {

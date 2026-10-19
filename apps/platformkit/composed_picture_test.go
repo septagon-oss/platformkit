@@ -87,7 +87,7 @@ func TestComposedPictureUsesTheGeneratedListAndSessionDoor(t *testing.T) {
 			}})
 		}}, nil
 	}, pkit.Provides[picturecontracts.Source](), pkit.Provides[picturecontracts.Templates]())
-	application, _, _, _, grants, _ := sentence(cfg, catalogues(), "product")
+	application, _, _, _, grants, _, _ := sentence(cfg, catalogues(), "product")
 	plan, err := application.Use(productPictures(cfg, grants, admincontracts.Pictures{Source: filecontracts.PictureSource, ComposedSource: picturecontracts.PictureSource}), fixture, picture.Module).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg, Inputs: deploymentInputs(cfg), Transports: transports(), Caches: caches()})
 	if err != nil {
 		t.Fatal(err)

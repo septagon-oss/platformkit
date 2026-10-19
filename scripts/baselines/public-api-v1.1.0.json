@@ -8,6 +8,7 @@
     "./kit/config.Config: old is comparable, new is not",
     "./kit/config.Files: old is comparable, new is not",
     "./kit/events/providers/nats.JetStream: changed from func(string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error) to func(github.com/septagon-oss/platformkit/kit/appname.Name, string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error)",
+    "./kit/events/transport.Transport.Observe: added",
     "./kit/health.Mux: changed from func(*log/slog.Logger, ...Check) net/http.Handler to func(*log/slog.Logger, []Check, ...Report) net/http.Handler",
     "./kit/health.Register: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, ...Check) to func(*github.com/septagon-oss/platformkit/kit/httpx.API, []Check, ...Report)",
     "./kit/httpx.(*API).InvalidateHost: changed from func(string) to func(...string) error",
