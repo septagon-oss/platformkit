@@ -171,6 +171,9 @@ func (a *API) failedOperation(n *claimNote) error {
 	c, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(n.ctx)), 5*time.Second)
 	defer cancel()
 	return db.Run(c, a.opts.Conn, func(c context.Context, tx db.Tx[db.Tenant]) error {
+		if err := n.store.Mark(c, tx, n.scope, n.claim); err != nil {
+			return err
+		}
 		op, _ := request.OperationFrom(c)
 		r, err := a.opts.Operations.Current(c, tx, op)
 		if err != nil {

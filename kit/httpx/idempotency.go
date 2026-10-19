@@ -30,6 +30,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/operation"
 	"github.com/septagon-oss/platformkit/kit/request"
@@ -399,6 +400,15 @@ type claimNote struct {
 	// and read through WithoutCancel rather than kept live: the transaction this
 	// context may cancel is closed by now, and the pool handle in it is not.
 	ctx context.Context
+	// uncommitted says this attempt's transaction ended without a COMMIT this process
+	// could read the answer to. That covers the two failures the transaction middleware
+	// can report and the record cannot resolve on its own: the commit was refused, so
+	// nothing was written, and the commit was sent and its acknowledgement was lost, so
+	// the write may or may not be there. Neither is an answer worth remembering, because
+	// the answer the caller was given — a 500, or a 200 that never reached anybody —
+	// describes an outcome the kernel does not know. The attempt keeps its key and
+	// settles no verdict; the effect marker resolves it on the next press (Store.Mark).
+	uncommitted bool
 }
 
 // noteClaim records this attempt on the request's note. It does nothing on a request
@@ -414,6 +424,35 @@ func noteClaim(ctx huma.Context, store idempotency.Store, scope idempotency.Scop
 // request, holding the slot its defer reads, and the guard below fills it.
 func withClaim(ctx context.Context) context.Context {
 	return context.WithValue(ctx, claimKey{}, &claimNote{})
+}
+
+// noteUncommitted marks that the attempt holding this request's claim may not record
+// an answer. It does nothing on a request that claimed no key, which is every request
+// the guard stepped around and every one that was refused before it got a claim.
+func noteUncommitted(ctx context.Context) {
+	if n, ok := ctx.Value(claimKey{}).(*claimNote); ok {
+		n.uncommitted = true
+	}
+}
+
+// markEffect asks the request's transaction to write this command's effect marker as
+// part of itself, on the way to a COMMIT.
+//
+// The marker has to be inside the transaction to be worth anything — see Store.Mark —
+// and a transaction that never opened wrote nothing to mark, so asking costs nothing
+// there and returns nothing. A request that claimed no key leaves no marker either:
+// the marker exists so that one key's next press can read what its last press's COMMIT
+// did, and there is no such press on a write that was never keyed.
+func markEffect(ctx context.Context, p *db.Pending) error {
+	n, ok := ctx.Value(claimKey{}).(*claimNote)
+	if !ok || n.store == nil || n.claim == uuid.Nil {
+		return nil
+	}
+	tx, open := p.Opened()
+	if !open {
+		return nil
+	}
+	return n.store.Mark(ctx, tx, n.scope, n.claim)
 }
 
 // keptHeaders are the response headers an answer is not the same answer without.
@@ -486,6 +525,17 @@ const completeBudget = 5 * time.Second
 // this row is for.
 func (a *API) complete(ctx context.Context, n *claimNote, status int, header http.Header, body []byte, held bool, counted []measured) {
 	if n == nil || n.store == nil || n.claim == uuid.Nil {
+		return
+	}
+	if n.uncommitted {
+		// What the caller was given describes a transaction this process cannot place.
+		// Recording it would spend the key on an answer to nothing; leaving the record
+		// begun hands it to the effect marker, which is the one row that knows whether
+		// this command's COMMIT reached the database. This is the one branch here that
+		// logs at Info: a caller that gets a 500 here will retry, and the retry is
+		// answered by the resolution rather than by this line.
+		a.rlog(ctx).InfoContext(ctx, "httpx: the keyed write's transaction did not commit; its answer is not remembered",
+			"method", n.scope.Method, "path", n.scope.Route, "status", status)
 		return
 	}
 	now := n.ctx

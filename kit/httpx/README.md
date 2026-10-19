@@ -300,10 +300,29 @@ transaction. Pending approval is recorded only by a committed proposal.
 Answer replay lasts 24 hours from occurrence admission. An unresolved or
 approval-pending identity survives that answer window and is then spent. A
 terminal identity survives until at least 24 hours after its last outcome.
-The five-minute lease can replace an unbegun attempt, preserving its operation
-reference; it never permits another execution of a begun request.
+The five-minute lease preserves the operation reference on takeover. A begun
+HTTP attempt is takeable only when its effect fence proves it did not commit.
 `Options.Clock` supplies operation instants. [The receipt contract](../idempotency/README.md)
 owns transitions, retention and person reads.
+
+**An unanswered COMMIT.** A transaction can end without this process learning which way
+it went: the COMMIT was refused, or it was sent and its answer never came back. Either way
+the attempt records no answer and its claim stays begun. The claim writes a row into
+`platformkit_command_effect` (migration `000072`) naming the attempt it hands the key to,
+and every keyed command marks that row inside its own transaction (`idempotency.Store.Mark`),
+so the mark is in the database exactly when the command's effect is. The press that
+arrives after the lease reads the mark of the attempt the record names, across an
+advisory lock the marking transaction holds until it ends: a lock still held means a
+COMMIT is executing, answered 409 `IDEMPOTENCY_IN_FLIGHT`; a mark means the command
+committed and its answer is gone, answered 409 `IDEMPOTENCY_ANSWER_NOT_RECORDED` and never
+re-run; an existing unmarked fence permits an identical retry. Missing fences belong to
+legacy or non-HTTP command roots and do not prove rollback. Taking the key
+over re-names the row, which is the fence: an attempt still running past its lease finds
+the row naming its retry, cannot mark it, and is rolled back. A mark that cannot be
+written — that fence, or a store outage — rolls the command back and answers 503
+`IDEMPOTENCY_UNAVAILABLE`, never a success without its mark. The row is the one here a
+tenant transaction writes, under the shared tenant policy; a tenant can only mark its own
+keys, which spends a key and never frees one.
 
 A keyed upload is still bounded to `MaxBodyBytes` and returns 413 past that
 ceiling; an unkeyed upload uses the configured upload ceiling. The guard restores
@@ -383,6 +402,14 @@ both implementations — internal reuse inside that package, not a unit anybody 
 the same is true of `limitPolicy`'s encoder above; and
 the `publicWrite*` constants, which name the limit that used to be two literals at its
 one call site.
+
+The marker that resolves an unanswered COMMIT: **Reused** — `kit/idempotency`'s `decide`,
+`Store` and `Purge`, `kit/db`'s `Pending`, this package's `claimNote` and request
+transaction, and the shared `platformkit_tenant_match` policy. **Added** — the
+`platformkit_command_effect` table, `Store.Mark` and `Pending.Opened`, because the claim
+row is written outside the command's transaction and so cannot say whether that
+transaction committed. **Made reusable** — `Pending.Opened`, for any step that must write
+a row inside the request transaction only when one was opened.
 
 
 ## The database boundary

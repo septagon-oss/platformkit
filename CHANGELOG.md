@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**An unanswered COMMIT is resolved, not refused.** A keyed command marks its row in
+`platformkit_command_effect` (`migrations/000072`) inside its own transaction. A begun
+claim whose lease ran out is now read against it: a mark on that attempt's row answers 409
+`IDEMPOTENCY_ANSWER_NOT_RECORDED` as before, no mark runs the command again, and a
+COMMIT still executing answers 409 `IDEMPOTENCY_IN_FLIGHT`. An attempt whose COMMIT was
+refused or went unacknowledged records no answer, so its retry is resolved by the mark
+rather than replaying a 500. An attempt whose key was taken over while it ran, or whose
+mark could not be written, is rolled back and answered 503 `IDEMPOTENCY_UNAVAILABLE`.
+
 **A `widget:richtext` field is an editor now, and still a textarea.** The field
 draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
 link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
