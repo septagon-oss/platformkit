@@ -125,8 +125,20 @@ type View struct {
 	// It says nothing about the markup: the body of a view that declares it and
 	// the body of one that does not are the same bytes.
 	RunsWASM bool
-	Head     []g.Node
-	Body     []g.Node
+	// Live names the events this page's body is a region for — the topics a
+	// connection is opened for, each one declared by the module that owns the
+	// rows the body lists. It is the page's claim about its own body and nothing
+	// else: the shell keeps no list, and a page that names none is drawn exactly
+	// as it was before the field existed.
+	//
+	// The name is the browser's, not a new fact: the same strings are the SSE
+	// event names the server sends and the names the module declared in its
+	// manifest. Nothing here reads a topic's payload — the frame is a hint to
+	// read again, so what the person sees is a fresh read of rows they may
+	// already read, never what the frame carried.
+	Live []string
+	Head []g.Node
+	Body []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
@@ -224,13 +236,36 @@ func RequestNoticeExamples(signIn string) []examples.Example {
 	return captures
 }
 
+// liveBefore and liveAfter are what a live region needs in the document besides
+// the extension tag: htmx, which the extension registers itself with the moment
+// it is evaluated, and the controller file whose live controller turns a frame
+// into one refresh. A page that declares Live asks the kernel to draw a region,
+// so the head gives the page what that region runs on rather than assuming the
+// chrome thought of it: the chrome that carries neither is a real one (a light
+// page with no controllers at all), and a document that loaded the extension
+// alone threw on load and never opened its connection.
+//
+// htmx goes ahead of a chrome's own controllers, because the list a chrome gives
+// runs in the order it is given and htmx-config.js configures a global that has
+// to exist first; components.js goes after them, because it is the file that
+// reads what the others configure. A file the chrome already lists is never
+// handed to it twice.
+var (
+	liveBefore = []string{"htmx.min.js"}
+	liveAfter  = []string{"components.js"}
+)
+
 // head is every page's head: the stylesheet with its fingerprint, the inline
 // snippets, the controllers as deferred scripts in order — deferred, so the
 // document parses before any of them runs and the order is still theirs — and
 // whatever the view adds.
 func head(c Chrome, r Request, v View) g.Node {
-	scripts := make([]g.Node, 0, len(c.Scripts))
-	for _, name := range c.Scripts {
+	listed := c.Scripts
+	if len(v.Live) > 0 {
+		listed = liveScripts(c.Scripts)
+	}
+	scripts := make([]g.Node, 0, len(listed))
+	for _, name := range listed {
 		scripts = append(scripts, h.Script(h.Src(c.Assets+"/js/"+name), g.Attr("defer")))
 	}
 	// A module is fetched with the document it belongs to and never deferred: it
@@ -239,6 +274,15 @@ func head(c Chrome, r Request, v View) g.Node {
 	modules := make([]g.Node, 0, len(v.Modules))
 	for _, path := range v.Modules {
 		modules = append(modules, h.Script(h.Src(c.Assets+"/"+path), g.Attr("type", "module")))
+	}
+	// A live region is bound by the pinned extension, and only a page that names
+	// a topic pays for it. It is a module script rather than a deferred classic
+	// one because module scripts and deferred scripts share the one in-order list
+	// that runs before DOMContentLoaded, which is when htmx reads the document —
+	// so the extension is defined before any element is read, with no coordination
+	// between the two files and no inline script the policy would have to forgive.
+	if len(v.Live) > 0 {
+		modules = append(modules, h.Script(h.Src(c.Assets+"/js/"+ui.SSEExtension), g.Attr("type", "module")))
 	}
 	return h.Head(
 		h.Meta(h.Charset("utf-8")),
@@ -251,6 +295,24 @@ func head(c Chrome, r Request, v View) g.Node {
 		g.Group(modules),
 		g.Group(v.Head),
 	)
+}
+
+// liveScripts is the chrome's own controller list with whatever a live region
+// still runs on added around it, in the order the runtime needs.
+func liveScripts(listed []string) []string {
+	out := make([]string, 0, len(listed)+len(liveBefore)+len(liveAfter))
+	for _, name := range liveBefore {
+		if !slices.Contains(listed, name) {
+			out = append(out, name)
+		}
+	}
+	out = append(out, listed...)
+	for _, name := range liveAfter {
+		if !slices.Contains(listed, name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // Brand is what the page calls the installation: the tenant's name, or the

@@ -41,6 +41,12 @@
       ]
     },
     {
+      "name": "workspace",
+      "provides": [
+        "*notification.Page"
+      ]
+    },
+    {
       "name": "seed",
       "contributes": [
         {
@@ -179,9 +185,16 @@
           "from": "tenant"
         }
       ],
+      "uses": [
+        {
+          "contract": "*notification.Page",
+          "from": "workspace"
+        }
+      ],
       "after": [
         "user",
-        "tenant"
+        "tenant",
+        "workspace"
       ],
       "reads": [
         "config.Mail",
