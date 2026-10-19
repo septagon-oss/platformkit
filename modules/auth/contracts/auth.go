@@ -246,9 +246,10 @@ type Users interface {
 // path, which a bell shows and a page renders.
 //
 // It never carries the secret. The notice raised beside a reset link points at
-// ResetPath and nothing more, because a notification row is an ordinary row —
-// listed by a route, copied into no audit trail but readable by anybody who can
-// read the table — and a token in it is a live credential sitting in one.
+// the set-password page and nothing more, because a notification row is an
+// ordinary row — listed by a route, copied into no audit trail but readable by
+// anybody who can read the table — and a token in it is a live credential
+// sitting in one.
 type Notifier interface {
 	Notify(ctx context.Context, tx db.Tx[db.Tenant], n notificationcontracts.Notice) (*notificationcontracts.Notification, error)
 }

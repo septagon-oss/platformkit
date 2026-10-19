@@ -35799,6 +35799,82 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go",
+   "id": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go#TestNewRefusesALinkPageThatIsNotAnAbsolutePath",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestNewRefusesALinkPageThatIsNotAnAbsolutePath",
+   "needs_db": true,
+   "pkg": "modules/auth",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go",
+   "id": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go#TestNewRefusesALinkPageUnderTheAPIRoot",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestNewRefusesALinkPageUnderTheAPIRoot",
+   "needs_db": true,
+   "pkg": "modules/auth",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go",
+   "id": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go#TestNewTakesAnAbsolutePageOutsideTheAPIRoot",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestNewTakesAnAbsolutePageOutsideTheAPIRoot",
+   "needs_db": true,
+   "pkg": "modules/auth",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go",
+   "id": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go#TestComposingARefusedLinkPageFailsThePlan",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestComposingARefusedLinkPageFailsThePlan",
+   "needs_db": true,
+   "pkg": "modules/auth",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/contracts/authtest/fake_test.go",
    "id": "modules/auth/contracts/authtest/fake_test.go#TestFakeConforms",
    "kind": "go",
@@ -37491,6 +37567,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/internal/named_link_pages_test.go",
+   "id": "modules/auth/internal/named_link_pages_test.go#TestNamedPagesAreWhereTheMailedLinksAndTheResetNoticeLead",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestNamedPagesAreWhereTheMailedLinksAndTheResetNoticeLead",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
    "verdict": "keep"
   },
   {
@@ -70964,7 +71059,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1888,
+  "files": 1890,
   "forge_runs": [
    408,
    413,
@@ -70998,7 +71093,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3049,
+   "behaviour": 3054,
    "composition": 429,
    "contract": 21,
    "journey": 96
@@ -71017,9 +71112,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3595,
+  "rows": 3600,
   "tiers": {
-   "merge": 2294,
+   "merge": 2299,
    "nightly": 96,
    "push": 1205
   },
@@ -71027,13 +71122,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1661,
+   "keep": 1663,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3239,
+   "keep": 3244,
    "keep-rewrite": 140,
    "merge": 216
   }
