@@ -55,14 +55,14 @@ A resource grant decides who may reach a door. The domain's eligibility,
 ownership and revision checks decide whether this actor may do this act now, so
 in every scenario below neither one stands in for the other.
 
-**Reused** — pkit's resolver and its cycle walk (`cycleThrough` over the
-`from`/`contributors` maps in [resolve.go](pkit/resolve.go)), the existing
-composition and Describe fixtures, and the resource, content, operation and
+**Reused** — pkit's resolver ([resolve.go](pkit/resolve.go)): `cycleThrough`
+walks the dependency edges and `cycleReasons` reads the `from`/`contributors`
+maps; the composition and Describe fixtures; the resource, content, operation and
 migration owners each row below names. **Added** — the declared contract and
 supplier on each edge of a cycle refusal, because a module path alone does not
-say which declaration to remove, and this baseline. **Made reusable** — that
-edge explanation, which Validate, Build, Explain and Describe return alike
-because all four resolve through the same plan.
+say which declaration to remove, and this baseline. **Made reusable** — no new
+unit: the edge explanation is the refusal's sentence, which Validate, Plan/Build,
+Explain and Describe return alike because all four resolve through one plan.
 
 | Scenario | Observed contract, transaction owner and visible result | Constraint exposed by the consumer |
 |---|---|---|
@@ -216,9 +216,10 @@ the resolver checks selections and orders their builders before infrastructure
 opens. Builders supply typed dependencies to implementations and return kernel
 manifests. There is one declared composition path, with no runtime discovery.
 
-Missing-provider errors name the consumer, contract and provider to add;
-conflicting providers require Choose. A cycle error names the first cycle in
-Use/dependency order and explains its selected contracts, for example:
+Missing-provider errors name the consumer and the contract, and the module to
+add when the contract's package names one; conflicting providers require Choose.
+A cycle error names the first cycle in Use/dependency order and explains its
+selected contracts, for example:
 `cart → collectibles → cart is a cycle: cart takes cartcontracts.Extension from collectibles; collectibles needs cartcontracts.Service from cart`.
 Needs says “needs”, a selected scalar Optional says “uses”, and a contribution
 collection says “takes”. Reasons follow declaration order, without duplicates.

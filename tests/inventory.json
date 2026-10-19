@@ -49295,6 +49295,25 @@
   {
    "area": "pkit",
    "evidence": "not-round-named",
+   "file": "pkit/build_refuses_a_cycle_before_any_effect_test.go",
+   "id": "pkit/build_refuses_a_cycle_before_any_effect_test.go#TestBuildRefusesACycleBeforeAnyEffect",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestBuildRefusesACycleBeforeAnyEffect",
+   "needs_db": true,
+   "pkg": "pkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "pkit",
+   "evidence": "not-round-named",
    "file": "pkit/build_test.go",
    "id": "pkit/build_test.go#TestBuildRefusesAMissingProviderBeforeAnyEffect",
    "kind": "go",
@@ -68334,7 +68353,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1809,
+  "files": 1810,
   "forge_runs": [
    408,
    413,
@@ -68368,7 +68387,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2919,
+   "behaviour": 2920,
    "composition": 425,
    "contract": 21,
    "journey": 93
@@ -68387,9 +68406,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3458,
+  "rows": 3459,
   "tiers": {
-   "merge": 2185,
+   "merge": 2186,
    "nightly": 93,
    "push": 1180
   },
@@ -68397,13 +68416,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1582,
+   "keep": 1583,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3102,
+   "keep": 3103,
    "keep-rewrite": 140,
    "merge": 216
   }
