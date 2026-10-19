@@ -31,11 +31,14 @@
 //
 // That split is also what a deployment's mount has to honour. A derived key refuses
 // a call that carries no context; a key created without `derived` answers a call
-// that carries one by ignoring it, measured against the container. So the tenant's
-// own key address is the binding that holds whatever the mount looks like, and the
-// derivation is the second one a deployment adds by mounting a customer's keys
-// `derived: true` — which is why the mount, and not only this file, decides how far
-// a stolen ciphertext reaches.
+// that carries one by ignoring it, measured against the container. So the first
+// binding is the address and it holds whatever the mount looks like: KeyAddress
+// spells a customer's key and the installation's key in two forms that cannot be the
+// same string, which is the only promise that still holds on a key an operator
+// mounted without `derived`. The derivation is the second one a deployment adds by
+// mounting a customer's keys `derived: true`, and it is what stops a ciphertext
+// stolen with the key itself — which is why the mount, and not only this file,
+// decides how far a stolen ciphertext reaches.
 package openbao
 
 import (
@@ -224,8 +227,14 @@ func (s *store) kv(ctx context.Context, ref secrets.Ref) (kvResponse, error) {
 	return response, nil
 }
 
-// KeyAddress is a key's whole path inside the transit mount: the name for the
-// installation's own key, and the tenant's UUID as a prefix for a customer's.
+// sharedKeyPrefix marks a transit key as the installation's own. It is not a name an
+// operator chooses and not part of a name: it is the seam that keeps the two key
+// address spaces from spelling each other — see KeyAddress.
+const sharedKeyPrefix = "shared-"
+
+// KeyAddress is a key's whole path inside the transit mount: the name under a fixed
+// prefix for the installation's own key, and the tenant's UUID as a prefix for a
+// customer's.
 //
 // One segment rather than KV's nested `<tenant>/<name>`, because the transit mount
 // refuses a nested key name before it looks at anything else: `POST
@@ -234,14 +243,20 @@ func (s *store) kv(ctx context.Context, ref secrets.Ref) (kvResponse, error) {
 // spelled in full so a policy may be written for `transit/encrypt/<tenant>-*` and
 // one customer's request cannot address another's key by guessing a suffix.
 //
-// The two address spaces can only overlap in spelling — a shared name written as
-// `<uuid>-k` and a customer's `k` under Of(uuid) — and one key cannot serve both:
-// a customer's key has to be created `derived: true` for its tenant context to reach
-// it and the installation's has to be created without that flag, so the overlap is
-// two mounts or a refusal, never one key with two owners.
+// The prefix on the installation's spelling is what makes the two spellings unable
+// to meet. A name is 1 to 63 bytes of lower-case letters, digits, dot, underscore
+// and hyphen, so `Shared("<uuid>-relay")` is a legal address, and it is exactly what
+// a customer's `relay` key is spelled as — one shared name and one tenant's key
+// would then be one key in one mount. The two halves of a tenant address are fixed
+// by types rather than by an operator: it always begins with a canonical UUID, whose
+// first character is a lower-case hex digit, and no shared address can begin with
+// `shared-`, whose first character is not one. So the disjointness is a property of
+// the two spellings, needs no parsing to check, and holds whatever the mount looks
+// like — including a key created without `derived`, which answers a call that
+// carries a tenant context by ignoring it.
 func KeyAddress(ref secrets.Ref) string {
 	if ref.Tenant() == uuid.Nil {
-		return ref.Name()
+		return sharedKeyPrefix + ref.Name()
 	}
 	return ref.Tenant().String() + "-" + ref.Name()
 }

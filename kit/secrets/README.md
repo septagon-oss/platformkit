@@ -111,14 +111,22 @@ secret the process has not needed yet and a rotation reaches the next send.
   `deploy/openbao-dev.sh` mounts KV v2 at `secret` and transit at `transit` before the
   healthcheck is satisfied — dev mode mounts the first and not the second, and a stack
   that came up without `transit` would read as a broken adapter rather than as an
-  unmounted engine. `PLATFORMKIT_TEST_OPENBAO_URL` is exported only when something
-  answers the port, and the suite skips with that sentence when it is not.
+  unmounted engine. `PLATFORMKIT_TEST_OPENBAO_URL` is exported only when that port
+  answers the seal-status question an OpenBao answers and nothing else, and the suite
+  skips with that sentence when it is not — a probe of the port alone would point the
+  suite at whatever else a stack happens to have published there.
 - **A key's address in the transit mount is one path segment.** The engine refuses a
   nested key name — `transit/keys/<tenant>/<key>` answers 404 `unsupported path`,
   measured against the container — so a customer's key is `<tenant-uuid>-<name>`,
   prefixed rather than nested, and a policy reads `transit/encrypt/<tenant>-*`. KV v2
   keeps the nested `<tenant>/<name>`: its paths nest freely and per-customer policy is
   better served by a directory there.
+- **The two key address spaces are two spellings, and that is the whole of the
+  binding when a mount has none.** A name is legal bytes for a hyphen and a UUID, so
+  `Shared("<tenant-uuid>-relay")` is a name somebody could write, and it is exactly
+  how `Of(tenant, "relay")`'s key is spelled. `KeyAddress` therefore writes the
+  installation's own keys under `shared-`, which no canonical UUID begins with, and so
+  no tenant address can be.
 - **Whether the derivation is real is the mount's, not the adapter's.** A key created
   `derived: true` refuses a call with no context, and a key created without that flag
   answers a call that carries one by ignoring it — both measured against the

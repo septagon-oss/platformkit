@@ -399,6 +399,39 @@ func TenantKeys(t *testing.T, a Adapter) {
 			t.Errorf("its own tenant opening the seal: %v", err)
 		}
 	})
+
+	// The port's name grammar admits a shared name that reads as a customer's key
+	// address: a UUID, a hyphen and a name are legal name bytes, and a shared address
+	// is open to every context. A store that folds the two address spaces onto one
+	// handle hands that customer's key to a request which resolved somebody else, so
+	// the two spellings have to be two keys wherever a key lives. What this case can
+	// prove of a store holding its own material is the address inside the envelope; a
+	// store behind a key service proves it of the service only against a server, and
+	// the OpenBao adapter's container case is the run that does that.
+	t.Run("a shared name that spells a tenant's address is not that address", func(t *testing.T) {
+		c := a.Store(t)
+		spelled := secrets.Shared(tenantA.String() + "-" + SuiteKey)
+		a.WriteKey(t, secrets.Of(tenantA, SuiteKey))
+		a.WriteKey(t, spelled)
+
+		underTenant, err := c.Seal(tenantContext(tenantA), secrets.Of(tenantA, SuiteKey), plaintext)
+		if err != nil {
+			t.Fatalf("a tenant sealing under its own key: %v", err)
+		}
+		if got, err := c.Open(tenantContext(tenantB), spelled, underTenant); err == nil || len(got) != 0 {
+			t.Errorf("tenant B opening tenant A's seal under %s = %q, %v; want a refusal and no bytes", spelled, got, err)
+		}
+		underShared, err := c.Seal(context.Background(), spelled, plaintext)
+		if err != nil {
+			t.Fatalf("sealing under %s: %v", spelled, err)
+		}
+		if _, err := c.Open(tenantContext(tenantA), secrets.Of(tenantA, SuiteKey), underShared); !errors.Is(err, secrets.ErrSealed) {
+			t.Errorf("a tenant opening the shared spelling's seal = %v; want ErrSealed", err)
+		}
+		if _, err := c.Open(context.Background(), spelled, underShared); err != nil {
+			t.Errorf("opening the shared spelling's own seal: %v", err)
+		}
+	})
 }
 
 // otherKeySeal is a seal made under a different key of the same width, which is the

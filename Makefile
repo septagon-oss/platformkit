@@ -72,13 +72,20 @@ PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/local
 export PLATFORMKIT_TEST_VALKEY_URL
 
 # The secret service kit/secrets' OpenBao adapter speaks, and the token its dev mode
-# answers to. Like PLATFORMKIT_TEST_VALKEY_URL it is exported only when something
-# answers there: kit/secrets boots and runs every case without a server, so a checkout
-# with no OpenBao running takes the named skip rather than a failure, and whoever
-# exports this variable at a store that is not answering gets failures instead — an
-# address you set yourself is a promise.
+# answers to. Like PLATFORMKIT_TEST_VALKEY_URL it is exported only when the service is
+# there: kit/secrets boots and runs every case without a server, so a checkout with no
+# OpenBao running takes the named skip rather than a failure, and whoever exports this
+# variable at a store that is not answering gets failures instead — an address you set
+# yourself is a promise.
+#
+# The question asked of the port is OpenBao's own `sys/seal-status`, and not whether
+# anything answers: this stack's ports come from whoever starts it, two services can
+# be handed the same one, and a suite dialled at whatever else happens to be published
+# there reads a mail catcher's 404 as a broken adapter. The space after the colon is
+# what a pretty-printing client writes and nothing writes the other way, so the
+# pattern admits both.
 PLATFORMKIT_OPENBAO_PORT ?= 8200
-PLATFORMKIT_TEST_OPENBAO_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_OPENBAO_PORT)' 2>/dev/null && echo http://localhost:$(PLATFORMKIT_OPENBAO_PORT))
+PLATFORMKIT_TEST_OPENBAO_URL ?= $(shell timeout 3 curl -fs http://localhost:$(PLATFORMKIT_OPENBAO_PORT)/v1/sys/seal-status 2>/dev/null | grep -q '"initialized": *true' && echo http://localhost:$(PLATFORMKIT_OPENBAO_PORT))
 export PLATFORMKIT_TEST_OPENBAO_URL
 export PLATFORMKIT_TEST_OPENBAO_TOKEN ?= dev-only-unseal-token
 
