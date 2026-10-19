@@ -111,7 +111,7 @@ services:
     ports:
       - "${PLATFORMKIT_OPENBAO_PORT:-8200}:8200"
     healthcheck:
-      test: ["CMD-SHELL", "bao status -format=json | grep -q '\"initialized\":true'"]
+      test: ["CMD-SHELL", "bao status -format=json | grep -q '\"initialized\": *true'"]
       interval: 5s
       timeout: 5s
       retries: 12
