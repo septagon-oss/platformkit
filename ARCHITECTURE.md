@@ -543,7 +543,12 @@ vocabulary of its own.
 **Where it lives.** `kit/events` — `Publish` (`kit/events/events.go:61`),
 `PublishFor` (`:80`) for a system transaction that has to name its tenant,
 `Consume` (`:208`), and the claim and dead-letter paths (`:284`, `:293`). The
-wire format is its own file, `kit/events/transport/cloudevents.go`.
+wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
+(`kit/events/transport/transport.go:192`) is the other door onto the same stream:
+one tenant's one event, watched from now on, claiming nothing, retrying nothing
+and holding no history — what a live connection is built on (`kit/stream`), and
+what an app opens for its own events by declaring `Streams`
+(`kit/module/module.go:96`).
 
 **Builds on.** CloudEvents 1.0 in structured content mode, hand-built: the
 envelope (`kit/events/transport/cloudevents.go:41`) is what crosses a broker, so

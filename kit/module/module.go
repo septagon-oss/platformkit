@@ -91,6 +91,11 @@ type Module struct {
 	// subscribes each one; the name has to be an event some module emits.
 	Subscriptions []events.Subscription
 
+	// Streams are the events this module lets a live connection watch, and who
+	// may. A stream is a notice and never a payload, and an event nothing streams
+	// stays exactly as it was: the durable path never reads this list. See Stream.
+	Streams []Stream
+
 	// SubscribeAll says this module handles every event the application emits,
 	// whichever module emits it: the kernel expands the one subscription above
 	// into one per declared event, after every manifest has been read.
@@ -516,6 +521,12 @@ func Validate(mods []Module) error {
 			if _, ok := owner[n.Permission]; !ok {
 				add("module %q: nav entry %q requires permission %q, which no module defines", m.Name, n.Label, n.Permission)
 			}
+		}
+		// A stream is a door onto an event, so it is checked beside the subscription
+		// that is the other door onto the same set: the event has to exist, and the
+		// policy has to name someone who may walk through it.
+		for _, problem := range streamProblems(m, emitted, owner) {
+			add("%s", problem)
 		}
 	}
 
