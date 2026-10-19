@@ -703,6 +703,7 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/mobile_journey_fetch_token_precedence_test.sh
+	bash scripts/mobile_journey_probe_environment_test.sh
 	bash scripts/ci_go_cache_test.sh
 	# scripts/ci_browser_host_share_test.sh asks the three browser suites of the workflow the question
 	# their refusals cannot answer from inside a runner: does a step that starts a Chromium ask the host
