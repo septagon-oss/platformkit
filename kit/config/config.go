@@ -353,9 +353,6 @@ func (n NATS) Validate() error {
 	return nil
 }
 
-// Cache names where a value every replica must read is kept. Empty Adapter is the
-// in-process store: complete for one process, and it says so in one boot log line,
-// because forgetting a value there reaches only that process.
 // Secrets names the store kit/secrets reads: the environment, a mounted directory,
 // or an OpenBao. See kit/secrets/README.md for what each one answers and what it
 // cannot.
@@ -415,6 +412,9 @@ func (s Secrets) Validate() error {
 	return nil
 }
 
+// Cache names where a value every replica must read is kept. Empty Adapter is the
+// in-process store: complete for one process, and it says so in one boot log line,
+// because forgetting a value there reaches only that process.
 type Cache struct {
 	Adapter  string `yaml:"adapter"`
 	App      string `yaml:"app"`

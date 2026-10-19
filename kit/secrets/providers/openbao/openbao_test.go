@@ -292,6 +292,13 @@ func TestTheContainerPinIsWhereTheSkipSaysItIs(t *testing.T) {
 	if !bytes.Contains(makefile, []byte("PLATFORMKIT_TEST_OPENBAO_URL")) {
 		t.Error("the Makefile never sets PLATFORMKIT_TEST_OPENBAO_URL, so `make check` skips the OpenBao adapter's conformance run")
 	}
+	// The address is exported because the service answered a question of its own, and
+	// not because a port did: the stack's ports come from whoever starts it and two
+	// services can be handed one, and a suite dialled at the stranger that lost the
+	// race reads its 404s as a broken adapter.
+	if !bytes.Contains(makefile, []byte("/v1/sys/seal-status")) {
+		t.Error("the Makefile exports the OpenBao address because something answers the port, which is not the same question as whether OpenBao does")
+	}
 	// The two mounts are half of what this suite reads, and only the stack's own
 	// start-up makes them: dev mode mounts KV v2 and not transit, so a service that
 	// lost its mount step would answer the sealing cases as a broken adapter.
@@ -400,7 +407,9 @@ func put(t *testing.T, client *http.Client, url, token, path string, body any) {
 // the field would pass every case above with the binding missing.
 func TestATransitContextIsNotOptionalToTheKey(t *testing.T) {
 	server := newStub()
-	server.keys["suite-key"] = []byte(secretstest.KeyMaterial)
+	// Mounted by the same function the adapter addresses by, so this case asks about
+	// the derivation context and not about where a key sits in the mount.
+	server.keys[openbao.KeyAddress(secrets.Shared("suite-key"))] = []byte(secretstest.KeyMaterial)
 	httpServer := httptest.NewServer(server)
 	defer httpServer.Close()
 	store := mustStore(t, config.Secrets{Adapter: "openbao", URL: httpServer.URL, Token: "x"})
