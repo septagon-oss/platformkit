@@ -50454,6 +50454,25 @@
   {
    "area": "pkit",
    "evidence": "not-round-named",
+   "file": "pkit/cycle_named_beside_missing_cloud_settings_test.go",
+   "id": "pkit/cycle_named_beside_missing_cloud_settings_test.go#TestACycleIsNamedBesideTheSettingsACloudProfileStillOwes",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACycleIsNamedBesideTheSettingsACloudProfileStillOwes",
+   "needs_db": true,
+   "pkg": "pkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "pkit",
+   "evidence": "not-round-named",
    "file": "pkit/cycle_reasons_name_answered_contracts_test.go",
    "id": "pkit/cycle_reasons_name_answered_contracts_test.go#TestACycleNamesOnlyTheContractsItsNextModuleAnswers",
    "kind": "go",
@@ -68391,7 +68410,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1812,
+  "files": 1813,
   "forge_runs": [
    408,
    413,
@@ -68425,7 +68444,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2922,
+   "behaviour": 2923,
    "composition": 425,
    "contract": 21,
    "journey": 93
@@ -68444,9 +68463,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3461,
+  "rows": 3462,
   "tiers": {
-   "merge": 2188,
+   "merge": 2189,
    "nightly": 93,
    "push": 1180
   },
@@ -68454,13 +68473,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1585,
+   "keep": 1586,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3105,
+   "keep": 3106,
    "keep-rewrite": 140,
    "merge": 216
   }
