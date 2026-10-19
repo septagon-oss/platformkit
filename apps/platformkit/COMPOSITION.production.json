@@ -41,6 +41,12 @@
       ]
     },
     {
+      "name": "workspace",
+      "provides": [
+        "*notification.Page"
+      ]
+    },
+    {
       "name": "seed",
       "contributes": [
         {
@@ -183,11 +189,16 @@
         {
           "contract": "push.Adapters",
           "from": ""
+        },
+        {
+          "contract": "*notification.Page",
+          "from": "workspace"
         }
       ],
       "after": [
         "user",
-        "tenant"
+        "tenant",
+        "workspace"
       ],
       "reads": [
         "config.Mail",
@@ -508,6 +519,27 @@
       ]
     },
     {
+      "name": "history",
+      "provides": [
+        "historycontracts.Service",
+        "httpx.Versions"
+      ],
+      "needs": [
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "after": [
+        "tenant",
+        "file"
+      ]
+    },
+    {
       "name": "content",
       "provides": [
         "contentcontracts.Service"
@@ -528,10 +560,15 @@
         {
           "contract": "rest.FileShown",
           "from": "file"
+        },
+        {
+          "contract": "httpx.Versions",
+          "from": "history"
         }
       ],
       "after": [
         "file",
+        "history",
         "translation"
       ]
     },

@@ -21,6 +21,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
+	"github.com/septagon-oss/platformkit/modules/history"
 	"github.com/septagon-oss/platformkit/modules/translation/contracts/translationtest"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -32,7 +33,10 @@ import (
 // record filed) and must leave nothing public — an anonymous read after the
 // delete finds no image, because the only public user of those bytes is gone.
 func TestDeletingThePublishedRecordMakesItsImagePrivateAgain(t *testing.T) {
-	_, conn := dbtest.Schema(t, file.Migrations, content.Migrations)
+	// The version table comes along with the page table: the composition
+	// below names the keeper of versions, because content's writes keep a
+	// version of every save, and a plan that named none would be refused.
+	_, conn := dbtest.Schema(t, file.Migrations, content.Migrations, history.Migrations)
 	store := file.Local(t.TempDir())
 	inputs := pkit.NewModule("inputs", func(w *pkit.Wiring) (module.Module, error) {
 		who := caller{hosts: map[string]tenancy.Tenant{host: acme}}
@@ -52,7 +56,7 @@ func TestDeletingThePublishedRecordMakesItsImagePrivateAgain(t *testing.T) {
 	}, pkit.Provides[httpx.TenantLoader](), pkit.Provides[httpx.Authorizer](),
 		pkit.Provides[pkit.Authenticator](), pkit.Provides[contracts.Storage](),
 		pkit.Provides[jobs.TenantLister](), pkit.Provides[rest.Translations]())
-	plan, err := pkit.NewApp("illustrated").Use(inputs, file.Module, content.Module).Plan(pkit.Deployment{
+	plan, err := pkit.NewApp("illustrated").Use(inputs, file.Module, history.Module, content.Module).Plan(pkit.Deployment{
 		Environment: pkit.Development, Config: config.Config{Files: config.Files{MaxBytes: 16 << 20}},
 	})
 	if err != nil {

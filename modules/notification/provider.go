@@ -49,6 +49,11 @@ var Module = pkit.NewModule("notification", wire,
 	// interface — so one Put answers both spellings, and the module that records
 	// the attempt is the module that owns the record's table.
 	pkit.Provides[contracts.MailLedger](),
+	// The module's own screen. Which chrome a person's list of their own notices
+	// sits in is an installation's fact — the same shape change's two review
+	// screens take — and a deployment that hands in none has no list page to ask
+	// for, exactly as it had none before this line existed.
+	pkit.Optional[*Page](),
 	pkit.FromDeployment(
 		pkit.Implementation{Name: "smtp", Inputs: []string{"mail.host", "mail.port", "mail.from"}},
 		pkit.Implementation{Name: "mailbox"},
@@ -74,8 +79,11 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	}
 	svc, manifest := New(Deps{
 		Recipients: pkit.Get[contracts.RecipientLookup](w),
-		Mailer:     mailer,
-		Hosts:      pkit.Get[contracts.HostLookup](w),
+		// Nil when this composition hands in no chrome, which is the module's
+		// own answer to a screen nobody composed: no route, and the surface's 404.
+		Page:   pkit.Get[*Page](w),
+		Mailer: mailer,
+		Hosts:  pkit.Get[contracts.HostLookup](w),
 		// The same rule the session cookie's Secure flag follows, so there is
 		// one answer to "is this deployment https" and one place it is written.
 		Secure: !config.Local(server.PublicHost),
