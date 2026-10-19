@@ -21161,6 +21161,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/operation_commit_resolution_test.go",
+   "id": "kit/httpx/operation_commit_resolution_test.go#TestTrackedCommandResolvesItsCommitWithoutChangingItsOccurrence",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTrackedCommandResolvesItsCommitWithoutChangingItsOccurrence",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/operation_receipt_test.go",
    "id": "kit/httpx/operation_receipt_test.go#TestAdmittedWritesCarryTheirReceiptAndFinalOutcome",
    "kind": "go",
@@ -68467,7 +68486,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1814,
+  "files": 1815,
   "forge_runs": [
    408,
    413,
@@ -68501,7 +68520,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2926,
+   "behaviour": 2927,
    "composition": 425,
    "contract": 21,
    "journey": 93
@@ -68520,9 +68539,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3465,
+  "rows": 3466,
   "tiers": {
-   "merge": 2192,
+   "merge": 2193,
    "nightly": 93,
    "push": 1180
   },
@@ -68530,13 +68549,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1587,
+   "keep": 1588,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3109,
+   "keep": 3110,
    "keep-rewrite": 140,
    "merge": 216
   }
