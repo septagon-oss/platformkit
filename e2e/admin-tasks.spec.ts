@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
 test('the admin shell renders and a generated CRUD screen works', async ({ page }) => {
   // The dashboard is the shell: navigation the caller may follow, and a card
   // per resource with the count its own list route would report.
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Platform overview' })).toBeVisible();
   await page.getByRole('link', { name: 'Tasks' }).first().click();
   await expect(page).toHaveURL(/\/app\/task\/tasks$/);
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
@@ -85,7 +85,7 @@ test('an empty generated list keeps its message within the visible page', async 
   await page.setViewportSize({ width: 390, height: 900 });
   const response = await page.goto('/app/billing/plans');
   expect(response?.status()).toBe(200);
-  const message = page.getByText('No plans yet.', { exact: true });
+  const message = page.getByText('Create a plan with its price and billing interval.', { exact: true });
   await expect(message).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const text = await message.evaluate(element => {
