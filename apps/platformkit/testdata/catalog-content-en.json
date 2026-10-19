@@ -141,6 +141,7 @@
     },
     "singular": "page",
     "plural": "pages",
+    "description": "Write, review and publish the pages your audience sees.",
     "icon": "document",
     "group": {
       "key": "content",
@@ -151,6 +152,7 @@
       "kind"
     ],
     "statusField": "status",
+    "emptyDescription": "Create a page and save a draft before publishing.",
     "sortable": [
       "title",
       "publishedAt",
