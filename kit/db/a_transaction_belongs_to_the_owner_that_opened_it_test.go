@@ -55,24 +55,16 @@ func TestAnUnusedLazyTransactionTouchesNoConnection(t *testing.T) {
 
 func TestACancelledCallerLeavesTheRequestsTransactionToTheNextCaller(t *testing.T) {
 	recorder := recordSpans(t)
-	admin, app := dbtest.Schema(t)
-	createThings(t, t.Context(), admin)
-	acme := newTenant("acme")
-	owner, p := lazy(t, app, acme)
+	admin, app, acme := acmeThings(t)
+	owner, p, _ := lazy(t, app, acme)
 
 	first, cancelFirst := context.WithCancel(owner)
-	tx, err := p.Tx(first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := insert(tx.DB(), acme.ID, "a"); err != nil {
-		t.Fatal(err)
-	}
+	insertThrough(t, first, p, acme, "a")
 	cancelFirst()
 
 	second, cancelSecond := context.WithCancel(owner)
 	defer cancelSecond()
-	tx, err = p.Tx(second)
+	tx, err := p.Tx(second)
 	if err != nil {
 		t.Fatalf("a live caller after a cancelled one was refused: %v", err)
 	}
@@ -95,18 +87,10 @@ func TestACancelledCallerLeavesTheRequestsTransactionToTheNextCaller(t *testing.
 }
 
 func TestAStatementPastItsDeadlineTakesTheTransactionWithIt(t *testing.T) {
-	admin, app := dbtest.Schema(t)
-	createThings(t, t.Context(), admin)
-	acme := newTenant("acme")
-	owner, p := lazy(t, app, acme)
+	admin, app, acme := acmeThings(t)
+	owner, p, _ := lazy(t, app, acme)
 
-	tx, err := p.Tx(owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := insert(tx.DB(), acme.ID, "a"); err != nil {
-		t.Fatal(err)
-	}
+	insertThrough(t, owner, p, acme, "a")
 	short, cancel := context.WithTimeout(owner, 300*time.Millisecond)
 	defer cancel()
 	slow, err := p.Tx(short)
@@ -128,12 +112,9 @@ func TestAStatementPastItsDeadlineTakesTheTransactionWithIt(t *testing.T) {
 }
 
 func TestAnOwnerCancelledMidHandlerReleasesItsTransaction(t *testing.T) {
-	admin, app := dbtest.Schema(t)
-	createThings(t, t.Context(), admin)
-	acme := newTenant("acme")
+	admin, app, acme := acmeThings(t)
 	base := app.Stats().InUse
-	owner, p := lazy(t, app, acme)
-	cancelOwner := cancelOf(t, owner)
+	owner, p, cancelOwner := lazy(t, app, acme)
 
 	wrote, release, done := make(chan error), make(chan struct{}), make(chan error)
 	go func() {
@@ -170,10 +151,8 @@ func TestAnOwnerCancelledMidHandlerReleasesItsTransaction(t *testing.T) {
 
 func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 	t.Run("operation ended before begin", func(t *testing.T) {
-		admin, app := dbtest.Schema(t)
-		createThings(t, t.Context(), admin)
-		acme := newTenant("acme")
-		owner, p := lazy(t, app, acme)
+		admin, app, acme := acmeThings(t)
+		owner, p, _ := lazy(t, app, acme)
 		gone, cancel := context.WithCancel(owner)
 		cancel()
 		if _, err := p.Tx(gone); !errors.Is(err, context.Canceled) {
@@ -198,8 +177,8 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 	})
 	t.Run("owner ended before begin", func(t *testing.T) {
 		_, app := dbtest.Schema(t)
-		owner, p := lazy(t, app, newTenant("acme"))
-		cancelOf(t, owner)()
+		owner, p, cancelOwner := lazy(t, app, newTenant("acme"))
+		cancelOwner()
 		if _, err := p.Tx(context.WithoutCancel(owner)); !errors.Is(err, context.Canceled) {
 			t.Fatalf("Tx after the owner ended = %v, want context.Canceled", err)
 		}
@@ -228,14 +207,14 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 		}()
 		<-held
 		before := app.Stats().WaitCount
-		owner, p := lazy(t, app, acme)
+		owner, p, cancelOwner := lazy(t, app, acme)
 		opened := make(chan error, 1)
 		go func() {
 			_, err := p.Tx(context.WithoutCancel(owner))
 			opened <- err
 		}()
 		waitUntil(t, "the open to wait for the pool", func() bool { return app.Stats().WaitCount > before })
-		cancelOf(t, owner)()
+		cancelOwner()
 		if err := <-opened; !errors.Is(err, context.Canceled) {
 			t.Errorf("an open whose owner ended while it waited = %v, want context.Canceled", err)
 		}
@@ -261,7 +240,7 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 func TestConcurrentCallersOpenOneTransaction(t *testing.T) {
 	recorder := recordSpans(t)
 	_, app := dbtest.Schema(t)
-	owner, p := lazy(t, app, newTenant("acme"))
+	owner, p, _ := lazy(t, app, newTenant("acme"))
 
 	// The opens race; the statements then run one at a time, because one
 	// connection answers one statement at a time.
@@ -270,12 +249,10 @@ func TestConcurrentCallersOpenOneTransaction(t *testing.T) {
 	errs := make([]error, 8)
 	var wg sync.WaitGroup
 	for i := range txs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			txs[i], errs[i] = p.Tx(owner)
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()
@@ -300,29 +277,19 @@ func TestConcurrentCallersOpenOneTransaction(t *testing.T) {
 }
 
 func TestACancelRacingTheCommitFinalisesOnceAndNeverReopens(t *testing.T) {
-	admin, app := dbtest.Schema(t)
-	createThings(t, t.Context(), admin)
-	acme := newTenant("acme")
+	admin, app, acme := acmeThings(t)
 	for i := range 50 {
-		owner, p := lazy(t, app, acme)
-		cancelOwner := cancelOf(t, owner)
-		tx, err := p.Tx(owner)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := insert(tx.DB(), acme.ID, "x"); err != nil {
-			t.Fatal(err)
-		}
+		owner, p, cancelOwner := lazy(t, app, acme)
+		insertThrough(t, owner, p, acme, "x")
 		before := committed(t, admin)
 		start := make(chan struct{})
 		closed := make(chan error, 1)
 		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() { defer wg.Done(); <-start; cancelOwner() }()
-		go func() { defer wg.Done(); <-start; closed <- p.Close(true) }()
+		wg.Go(func() { <-start; cancelOwner() })
+		wg.Go(func() { <-start; closed <- p.Close(true) })
 		close(start)
 		wg.Wait()
-		err = <-closed
+		err := <-closed
 		added := committed(t, admin) - before
 		if err == nil && added != 1 {
 			t.Fatalf("iteration %d: Close reported a commit and %d rows landed", i, added)
@@ -347,7 +314,7 @@ func TestAStatementCarriesItsCallersValuesAndTheTransactionSpan(t *testing.T) {
 	_, app := dbtest.Schema(t)
 	parent, ownerSpan := otel.Tracer("test").Start(tenancy.WithTenant(t.Context(), newTenant("acme")), "request")
 	defer ownerSpan.End()
-	owner, p := lazyFrom(t, app, parent)
+	owner, p, _ := lazyFrom(t, app, parent)
 
 	op, cancel := context.WithTimeout(context.WithValue(owner, valueKey{}, "first"), time.Minute)
 	defer cancel()
@@ -390,10 +357,8 @@ func TestAStatementCarriesItsCallersValuesAndTheTransactionSpan(t *testing.T) {
 }
 
 func TestATransactionFoundOnTheContextIsTheFindersOperation(t *testing.T) {
-	admin, app := dbtest.Schema(t)
-	createThings(t, t.Context(), admin)
-	acme := newTenant("acme")
-	owner, p := lazy(t, app, acme)
+	admin, app, acme := acmeThings(t)
+	owner, p, _ := lazy(t, app, acme)
 	if _, err := p.Tx(owner); err != nil {
 		t.Fatal(err)
 	}
@@ -432,21 +397,13 @@ func TestATransactionFoundOnTheContextIsTheFindersOperation(t *testing.T) {
 }
 
 func TestACancelAfterCommitIsReportedAsCommitted(t *testing.T) {
-	admin, app := dbtest.Schema(t)
-	createThings(t, t.Context(), admin)
-	acme := newTenant("acme")
-	owner, p := lazy(t, app, acme)
-	tx, err := p.Tx(owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := insert(tx.DB(), acme.ID, "a"); err != nil {
-		t.Fatal(err)
-	}
+	admin, app, acme := acmeThings(t)
+	owner, p, cancelOwner := lazy(t, app, acme)
+	insertThrough(t, owner, p, acme, "a")
 	if err := p.Close(true); err != nil {
 		t.Fatal(err)
 	}
-	cancelOf(t, owner)()
+	cancelOwner()
 	if err := p.Close(true); err != nil {
 		t.Errorf("Close after a commit and a cancel = %v, want nil", err)
 	}
@@ -458,17 +415,22 @@ func TestACancelAfterCommitIsReportedAsCommitted(t *testing.T) {
 	}
 }
 
-// cancels maps an owner context to the function that ends it.
-var cancels sync.Map
+// acmeThings opens a schema holding the things table, for the tenant acme.
+func acmeThings(t *testing.T) (*sql.DB, *db.Conn, tenancy.Tenant) {
+	t.Helper()
+	admin, app := dbtest.Schema(t)
+	createThings(t, t.Context(), admin)
+	return admin, app, newTenant("acme")
+}
 
-func lazy(t *testing.T, app *db.Conn, tenant tenancy.Tenant) (context.Context, *db.Pending) {
+func lazy(t *testing.T, app *db.Conn, tenant tenancy.Tenant) (context.Context, *db.Pending, context.CancelFunc) {
 	t.Helper()
 	return lazyFrom(t, app, tenancy.WithTenant(t.Context(), tenant))
 }
 
-// lazyFrom creates a Pending whose owner is a cancellable child of parent;
-// cancelOf returns the owner's cancel.
-func lazyFrom(t *testing.T, app *db.Conn, parent context.Context) (context.Context, *db.Pending) {
+// lazyFrom creates a Pending whose owner is a cancellable child of parent, and
+// returns the owner, the Pending and the cancel that ends the owner.
+func lazyFrom(t *testing.T, app *db.Conn, parent context.Context) (context.Context, *db.Pending, context.CancelFunc) {
 	t.Helper()
 	owner, cancel := context.WithCancel(parent)
 	t.Cleanup(cancel)
@@ -476,18 +438,20 @@ func lazyFrom(t *testing.T, app *db.Conn, parent context.Context) (context.Conte
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancels.Store(ctx, cancel)
-	t.Cleanup(func() { cancels.Delete(ctx) })
-	return ctx, p
+	return ctx, p, cancel
 }
 
-func cancelOf(t *testing.T, owner context.Context) context.CancelFunc {
+// insertThrough opens ctx's operation of p and inserts one of tenant's things,
+// failing the test if either is refused.
+func insertThrough(t *testing.T, ctx context.Context, p *db.Pending, tenant tenancy.Tenant, name string) {
 	t.Helper()
-	cancel, ok := cancels.Load(owner)
-	if !ok {
-		t.Fatal("no owner was created for this context")
+	tx, err := p.Tx(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return cancel.(context.CancelFunc)
+	if err := insert(tx.DB(), tenant.ID, name); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // waitUntil polls cond until it holds, failing after ten seconds.
@@ -524,7 +488,5 @@ func transactionSpans(r *tracetest.SpanRecorder) []sdktrace.ReadOnlySpan {
 // committed counts the rows of things as the owner role, which no policy binds.
 func committed(t *testing.T, admin *sql.DB) int {
 	t.Helper()
-	var n int
-	scan(t, admin, "SELECT count(*) FROM things", &n)
-	return n
+	return countRows(t, admin, "SELECT count(*) FROM things")
 }
