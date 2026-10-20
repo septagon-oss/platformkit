@@ -80,14 +80,17 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	return svc, module.Module{
 		Name:       "scim",
 		Migrations: Migrations.Files,
-		// No person's words sit in this module's SQL — a person is modules/user's
-		// row, and the package comment says why there is no second copy — but three
-		// uuid columns resolve to one: whose membership this is, and whose provider
-		// identifier this is. A group is this module's own row, never a person.
+		// Three uuid columns of this module's SQL resolve to a person, and one text
+		// column may hold their words: the identifier is whatever string the
+		// provisioning client sent, and a directory that keys people by mail sends
+		// their address (internal/personaldata.go is what takes it out again). A
+		// group is this module's own row, never a person, and a membership is two
+		// uuids and no words.
 		PersonalData: personaldata.Implements(
 			personaldata.Table{Name: "scim_group_members", About: []string{"user_id"}, NotPerson: []string{"group_id"}},
 			personaldata.Table{Name: "scim_group_mappings", NotPerson: []string{"group_id"}},
-			personaldata.Table{Name: "scim_user_external", About: []string{"user_id"}},
+			personaldata.Table{Name: "scim_user_external", About: []string{"user_id"},
+				Text: []string{"external_id"}},
 		),
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
@@ -121,3 +124,10 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		},
 	}
 }
+
+// PersonalData is this module's part of a person's export and erasure, for the
+// composition to hand to the module that walks them. It is a package function and
+// not a method of the service because the wiring that places it lives where this
+// module's two ports are answered — in the application — and neither of its two
+// operations asks the provisioning door anything.
+func PersonalData() personaldata.Part { return internal.PersonalData() }

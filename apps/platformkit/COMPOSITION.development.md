@@ -112,6 +112,7 @@ pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_
 pkit: scim.Module is built after user.Module and auth.Module.
 pkit: scim.Module needs usercontracts.Service from user.Module.
 pkit: scim.Module needs authcontracts.Auth from auth.Module.
+pkit: scim.Module contributes one personaldata.Part to subject.Module.
 pkit: scim.Module defines the permission scim:provision.
 pkit: scim.Module emits scim.group_created, scim.group_changed, scim.group_removed, scim.mapping_changed and scim.user_changed.
 pkit: media.Module is built after auth.Module.
@@ -157,8 +158,8 @@ pkit: web.Module needs richtext.Files from file.Module.
 pkit: web.Module uses webcontracts.Links from product.Module.
 pkit: web.Module uses rest.Translations from translation.Module.
 pkit: web.Module uses rest.TranslationSource from product.Module.
-pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
-pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, scim.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, scim.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
 pkit: subject.Module needs usercontracts.Service from user.Module.
 pkit: subject.Module needs filecontracts.Service from file.Module.
 pkit: subject.Module needs notificationcontracts.Service from notification.Module.

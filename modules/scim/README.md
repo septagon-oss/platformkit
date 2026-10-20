@@ -230,6 +230,17 @@ a group write auditable at all — and `audit` is why the payloads carry identif
 rather than content: a group's id and the name its provider spells it by, how many
 members it now holds, and which role stopped being granted.
 
+## Personal data
+
+This door holds two of a person's facts, so it answers `personaldata.Data` for them
+(ADR 0020 §8): the person's copy carries `externalId`, whether this door stopped them
+signing in, and which collections they belong to, and the erasure scrubs
+`external_id`. The column is scrubbed over every row of the tenant and not only the
+person's own, because it holds whatever string the provisioning client sent and a
+directory that keys people by mail sends an address — so the person asking may be
+named in a row this module thought was somebody else's. An identifier the provider
+invented for itself survives, as their uuid survives in every other row.
+
 ## Limits
 
 What this door refuses, and what a caller has to do instead.

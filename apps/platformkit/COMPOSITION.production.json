@@ -422,6 +422,14 @@
           "from": "auth"
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
         "user",
         "auth"
@@ -677,6 +685,7 @@
             "user",
             "notification",
             "auth",
+            "scim",
             "file",
             "task",
             "translation",
@@ -692,6 +701,7 @@
         "tenant",
         "notification",
         "auth",
+        "scim",
         "file",
         "task",
         "translation",

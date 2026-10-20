@@ -333,10 +333,17 @@ the brief's list is not the whole list.
 | content | `contents` | slug, title, body, kind, status, published-at of what they authored | keeps the row and `author_id`, scrubs `title` and `body` — a published page that silently disappeared is a lie about the tenant's own site |
 | change | `change_proposals` | proposals they proposed or reviewed, with the diff | keeps `proposer`/`reviewer` ids, scrubs `comment` and the strings inside the `diff` document — the diff is `text` holding JSON, so the scrub reads it as JSON and writes it back as JSON |
 | audit | `audit_events` | the person's trail: name, occurred_at, payload, request_id, client_ip | keeps `actor` and `name`, scrubs the strings inside `payload`, `client_ip` → NULL |
+| scim | `scim_group_members` (About `user_id`, NotPerson `group_id`), `scim_group_mappings` (NotPerson `group_id`), `scim_user_external` (About `user_id`, Text `external_id`) | the identifier the provisioning client calls them by, whether this door is the one that stopped them signing in, and which of the provider's collections they belong to | keeps the row and `user_id`; scrubs `external_id` over the tenant — the column holds the string the client sent, and a directory that keys people by mail sends an address |
 | kernel | `platformkit_outbox`, `platformkit_dead_letters` | the rows this person's requests caused that are still held, and any dead letter naming them | scrubs `actor`'s payloads and leaves `actor` — the same rule as the trail. Supplied by `modules/subject`, which is the only module that may import the kernel's own tables, and it says so in the manifest rather than in a comment |
 | billing | `billing_subscriptions` (`NotPerson` `plan_id`) | nothing — no row of this module is a person's | nothing; **it cannot declare `none`**, because `plan_id` is a uuid and the completeness rule admits no exception for a name that answers its own question |
 | site | `site_settings` (`NotPerson` `logo_file_id`) | nothing | nothing, and the same rule applies to `logo_file_id` |
 | tenant, admin, web | not asked — **they own no SQL**: `modules/tenant`'s tables are the kernel's `migrations/`, `modules/admin` generates screens, `modules/web` serves the public surface | — | "the organisation is the data subject where a tenant row is concerned: `tenants.name` is a company's name, `tenant_hosts.host` is a domain, `tenant_locales` is a language row" — the reason lives in this record, because §3 asks nothing of a module that creates no table |
+
+The scim row postdates this record: the module arrived later (`f7762a0`), and the walk above predated
+it. It belongs here for §4's reason and not because anybody asked — `external_id` is a `text` column
+whose value is whatever the provisioning client sent, so the person's own address is in this tree's SQL
+by a route no column name predicts, and the completeness rule refuses a module that files such a column
+as nothing.
 
 ### 9. What the new module owes the kernel's conventions
 
