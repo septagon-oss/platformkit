@@ -5,6 +5,7 @@ go 1.26.6
 toolchain go1.27.2
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/aserto-dev/go-authorizer v0.24.1
 	github.com/beevik/etree v1.7.0
 	github.com/coreos/go-oidc/v3 v3.21.0
