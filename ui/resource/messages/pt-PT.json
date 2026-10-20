@@ -1,9 +1,9 @@
 {
   "screens.count": {
-    "translation": "%d %s",
+    "translation": "%d %s registados",
     "plural": {
-      "one": "%d %s",
-      "other": "%d %s"
+      "one": "%d %s registados",
+      "other": "%d %s registados"
     }
   },
   "screens.new": {
