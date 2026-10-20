@@ -84,10 +84,10 @@ func TestTheProfileWritesNoSecret(t *testing.T) {
 	surface := config.Keys()
 
 	secrets := []string{
-		"auth.oidc.client_secret", "auth.factor_key", "mail.password", "nats.username", "nats.password",
+		"auth.oidc.client_secret", "auth.factor_key", "nats.username", "nats.password",
 		"cache.password", "webhook.secret_key", "database.url", "database.migrate_url", "database.retain_url",
 		"files.s3.secret_key", "files.s3.access_key", "bootstrap.password", "demo.password",
-		"seed.operator_password",
+		"seed.operator_password", "secrets.token",
 	}
 	for _, profile := range config.Profiles() {
 		for _, cell := range config.CloudProfile(profile) {
