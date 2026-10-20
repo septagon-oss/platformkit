@@ -1,19 +1,11 @@
 package internal
 
-// count_card_words_test.go pins the words a dashboard card counts with. The card
-// is the one place the shell turns an entity's stored name into a sentence, and it
-// writes that sentence at three counts: none, one, and however many there are. The
-// three must agree on the noun — a person who read "No sla_policys yet" and came
-// back to a page reading "2 Sla policys" would conclude the empty grid and the full
-// one were about different things — so the cases below include an entity whose
-// stored name is two words, which is the shape that makes the humanising visible.
-//
-// No database and no browser: the count is the resource's own function, and with no
-// connection on the context the health check answers nothing (see checks), which
-// leaves the card as the only variable in the page.
+// Dashboard counts keep the collection's noun in the destination heading.
+// An empty collection says so in words; positive counts keep their numeric badge.
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -21,18 +13,25 @@ import (
 
 	g "maragu.dev/gomponents"
 
+	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
 // countedDashboard renders the dashboard for one resource holding total.
 func countedDashboard(t *testing.T, entity string, total int64) string {
 	t.Helper()
-	p := pages{resources: []httpx.Resource{{
-		Module: "sla", Entity: entity, Screen: "/app/sla/policies",
-		Count: func(context.Context) (int64, error) { return total, nil },
-	}}}
-	return render(t, g.Group(p.dashboard(context.Background(), tenancy.Tenant{ID: uuid.New()}).Body))
+	p := pages{Shell: Shell{Authorize: allow(true)},
+		nav: page.NewNavigation([]module.NavEntry{{Label: display.Plural(display.Humanize(entity)), Screen: "sla/policies"}}, []string{"/app/sla/policies"}, nil),
+		resources: []httpx.Resource{{
+			Module: "sla", Entity: entity, Screen: "/app/sla/policies",
+			Count: func(context.Context) (int64, error) { return total, nil },
+		}}}
+	body := render(t, g.Group(p.dashboard(t.Context(), tenancy.Tenant{ID: uuid.New()}, resource.Options{}).Body))
+	return strings.Join(strings.Fields(regexp.MustCompile(`<[^>]*>`).ReplaceAllString(body, " ")), " ")
 }
 
 func TestTheDashboardCountsTheSameNounAtEveryCount(t *testing.T) {
@@ -43,18 +42,17 @@ func TestTheDashboardCountsTheSameNounAtEveryCount(t *testing.T) {
 		want   string
 	}{
 		{"note", 0, "No notes yet"},
-		{"note", 1, "1 Note"},
-		{"note", 3, "3 Notes"},
-		// A mass noun asks no plural at any count, and "1 Settings" is the oddity the
-		// rule accepts rather than invents a singular for.
+		{"note", 1, "Notes 1"},
+		{"note", 3, "Notes 3"},
+		// A mass noun keeps its shape at every count.
 		{"settings", 0, "No settings yet"},
-		{"settings", 1, "1 Settings"},
-		{"settings", 12, "12 Settings"},
+		{"settings", 1, "Settings 1"},
+		{"settings", 12, "Settings 12"},
 		// Two words in the stored name: the zero card humanises the way the other two
 		// do, so the only difference a person meets between 0 and 2 is the number.
 		{"sla_policy", 0, "No sla policys yet"},
-		{"sla_policy", 1, "1 Sla policy"},
-		{"sla_policy", 2, "2 Sla policys"},
+		{"sla_policy", 1, "Sla policys 1"},
+		{"sla_policy", 2, "Sla policys 2"},
 	} {
 		body := countedDashboard(t, c.entity, c.total)
 		if !strings.Contains(body, c.want) {

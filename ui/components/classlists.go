@@ -28,8 +28,9 @@ var (
 
 	// The application frame. See shell.go: markup written outside this package
 	// would have no rules in the stylesheet, so the frame is a component too.
-	clShell = style.New().Display(style.DisplayFlex).MinHeightScreen().
-		Bg(style.SurfaceSecondary).TextColor(style.FgPrimary)
+	clStandalone = style.New().PaddingY(style.S12).PaddingX(style.S4).MinHeightScreen()
+	clShell      = style.New().Display(style.DisplayFlex).MinHeightScreen().
+			Bg(style.SurfaceSecondary).TextColor(style.FgPrimary)
 	// min-w-0 and no overflow of its own: a flex child defaults to min-width
 	// auto, so a wide table would push the column instead of scrolling inside
 	// it, and clipping here would hide the columns rather than let the table's
@@ -743,7 +744,7 @@ var (
 	// Sidebar.
 	clSidebarRootAdmin = style.New().Display(style.DisplayHidden).
 				Breakpoint(style.BreakpointLG, func(c style.ClassList) style.ClassList {
-			return c.Display(style.DisplayFlex).FlexShrink0()
+			return c.Display(style.DisplayFlex).FlexShrink0().Position(style.PositionSticky).Top(style.S0).MaxHeightViewport(style.VH100)
 		}).Transition(style.TransitionAll)
 	clSidebarRootContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).
 				Transition(style.TransitionAll)
@@ -754,12 +755,7 @@ var (
 		return c.Width(style.S64)
 	})
 	clSidebarDisabled = style.New().Opacity(style.Opacity50)
-	// clSidebarInner fills the aside it sits in. The aside is the one that carries the width
-	// (lg:w-64 expanded, lg:w-16 collapsed) and paints nothing; this div is a flex item in a flex row,
-	// so without a width it sized to its content and the leftover of the aside showed the page's own
-	// background — the blank band between the sidebar and the content at desktop width. The painted
-	// column below it is a flex-1 child of this column, so it fills the box this rule now gives it.
-	clSidebarInner = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull).Width(style.SFull)
+	clSidebarInner    = style.New().Width(style.SFull).Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
 	// The column paints an inverse surface, so it names the text colour that reads on it. Without this,
 	// every descendant that chooses no colour of its own — the nav `<li>` around each link, a plain
 	// <span> — inherits the page's foreground token, and both this package's floor probe and the
@@ -789,7 +785,7 @@ var (
 	clSidebarBrandTextContent = clSidebarBrandText.TextColor(style.FgPrimary)
 	clSidebarNavWrapAdmin     = style.New().MarginTop(style.S5).Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
 	clSidebarNavWrapContent   = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
-	clSidebarNavAdmin         = style.New().Flex1().PaddingX(style.S2).SpaceY(style.S1)
+	clSidebarNavAdmin         = style.New().Flex1().PaddingX(style.S3).SpaceY(style.S3)
 	clSidebarNavContent       = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
 	clSidebarLinkAdmin        = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S3).
 					FontSize(style.TextSM).FontWeight(style.FontMedium).Rounded(style.RadiusMD).
@@ -938,6 +934,7 @@ func GalleryClassLists() []style.ClassList {
 // application's own pages render. ui.Stylesheet is composed from these.
 func ShellClassLists() []style.ClassList {
 	out := []style.ClassList{
+		clStandalone, clDisclosure, clDisclosureSummary, clDisclosureDescription, clDisclosureBody,
 		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clShellFooterMeasure,
 		clSkipLink,
 		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions, clFormSentence,

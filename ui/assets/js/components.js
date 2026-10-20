@@ -232,6 +232,30 @@
     if (text !== null) el.textContent = text;
   }
 
+  // A live region re-reads itself when the server says its state changed. The sse
+  // extension owns the connection; this owns the rate: at most one request a
+  // second, and always one after the last notice. htmx's own `throttle` modifier
+  // is not used because it drops the last event of a burst, and the last event is
+  // the state the person came back to see.
+  const liveWindow = 1000;
+  const liveRefreshes = new WeakMap();
+  function mountLive(region) {
+    if (liveRefreshes.has(region)) return;
+    liveRefreshes.set(region, null);
+    region.addEventListener('htmx:sseBeforeMessage', event => {
+      // A frame says "read again" and carries no markup: cancelling the default
+      // is what keeps a notice's body out of the document.
+      event.preventDefault();
+      if (liveRefreshes.get(region) !== null) return;
+      // A resync says this connection is not current, so the refresh is now.
+      const overdue = event.detail && event.detail.type === 'resync';
+      liveRefreshes.set(region, setTimeout(() => {
+        liveRefreshes.set(region, null);
+        htmx.trigger(region, 'refresh');
+      }, overdue ? 0 : liveWindow));
+    });
+  }
+
   function init() {
     for (const el of document.querySelectorAll('time[datetime]')) {
       // One pass per element: a page left open keeps the now it was read at, rather than
@@ -295,6 +319,7 @@
       updateCheckbox(root);
     }
     for (const input of document.querySelectorAll('[data-textarea-input]')) updateTextarea(input);
+    for (const region of document.querySelectorAll('[data-controller="live"]')) mountLive(region);
   }
 
   document.addEventListener('click', event => {

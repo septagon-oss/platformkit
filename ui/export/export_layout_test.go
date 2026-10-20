@@ -211,29 +211,6 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// The digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
 	//
-	// The workspace loses its rough edges: every breadcrumb crumb takes a class of its own
-	// (the links truncate, the separators stop shrinking, the current entry breaks by
-	// words), the sidebar's inner column takes w-full so it fills the aside that carries its
-	// width, and the timeline's <time> is emitted by one exported renderer. Measured leaf by
-	// leaf against the export of the revision this branch starts on: 99,906 leaves stay
-	// 99,906, none added or removed, and 28 change — /sha256 and 27 examples' html (one
-	// breadcrumb, one pagination, which borrows the same separator list and so gains
-	// flex-shrink-0 on its two ellipsis gaps too, three sidebars, and twenty-two timeline
-	// rows whose <time> now carries its instant in the machine attribute). No token, theme,
-	// notice, icon, schema or CSS leaf moves: break-normal, truncate, min-w-0,
-	// flex-shrink-0 and w-full are already compiled into this sheet by the table, the
-	// pagination and the sidebar. The digest below is that measurement of this tree, printed
-	// by the refusal above the re-measure and copied from it.
-	// The same task then lost its own rough edge: `break-normal` on every crumb beat the
-	// frame's inherited `anywhere`, so a record named with one unbreakable token stopped
-	// breaking and set the page sideways at 390px — three refusals in `make e2e`, the goal
-	// that had never been run. The trail now wraps instead of refusing the rule, which
-	// needs no new utility: measured leaf by leaf against the export of this tree before
-	// that change, 99,906 leaves stay 99,906, none added or removed, and two change —
-	// /sha256 and the html of pk-ui.component.breadcrumb/default. No CSS, token, theme,
-	// notice, icon or schema leaf moves: `flex-wrap` was already emitted, and no utility
-	// was taken away, since only the crumbs stopped naming one.
-	//
 	// The rich text field's chrome joins @layer components, and the editing surface
 	// takes the published page's prose rules with it. Measured by exporting this
 	// tree and the same tree with those two merges removed and walking both
@@ -241,10 +218,26 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// exactly two changed — /css, which carries the new rules, and /sha256, which is
 	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
 	// schema or font policy moves. The digest below is that measurement of this tree.
-	// Together, the workspace chrome and rich text styles retain all 99,906 leaves.
-	// Against the rich text baseline, only the digest and 27 examples' HTML change;
-	// CSS, tokens, schemas, themes, icons and notices remain identical.
-	if legacy.SHA256 != "a1e7bc3c99e694f7b925e1e412fb0571936a6f4b00b9664bbe2e6a2551f1cec9" {
+	//
+	// Two attributions joined NOTICE since that digest, and the export's notices field
+	// carries that file verbatim: main's vendored SSE extension, and the Web Push
+	// library this branch links, since NOTICE lists what the binary links. Measured by
+	// exporting this tree with main's attribution list in place of the merged one and
+	// with the merged one: 99,947 leaves each, none added and none removed, and the two
+	// documents differ in `notices` and in the whole document's digest only — no
+	// example, CSS, token, theme, icon, schema or font policy moves. With main's list
+	// the tree exports main's recorded digest
+	// bf53d791f4544e0cd2fb3e305021f916d78464e1e7c5537d951f8021291496d3 byte for byte, so
+	// one more dependency moves one leaf; with the merged list it exports the digest
+	// below, which the refusal printed while this line still held main's number.
+	// Admin experience: comparing exports by stable capture ID adds Standalone
+	// and Disclosure, removes no capture and changes only the HTML of the three
+	// sidebar captures plus CSS and this digest. Schema, font policy, notices,
+	// themes and icons are byte-identical to the previous export.
+	// The digest covers the composed examples, stylesheet and attribution together.
+	// Breadcrumb wrapping changes 24 gallery HTML values and the digest; CSS,
+	// schemas, tokens, themes, icons and notices retain their existing bytes.
+	if legacy.SHA256 != "24b68056c824890ff426c7b579af25cf624c5144b184e3d66bb9b17196417ca0" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

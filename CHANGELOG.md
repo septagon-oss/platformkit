@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+**Composed pictures have a private image door.** `modules/picture` validates inert
+SVG templates and complete values, authorizes each read in the request tenant
+transaction, and serves derived `entity.Picture` references through generated
+lists. The resource catalog advances from version 2 to 3 for the new scalar and
+optional `pictures.composedSource`; native shells must add authenticated SVG
+decoding before displaying it. Stored-file UUID images retain their meaning.
+
+**An unanswered COMMIT is resolved, not refused.** A keyed command marks its row in
+`platformkit_command_effect` (`migrations/000072`) inside its own transaction. A begun
+claim whose lease ran out is now read against it: a mark on that attempt's row answers 409
+`IDEMPOTENCY_ANSWER_NOT_RECORDED` as before, no mark runs the command again, and a
+COMMIT still executing answers 409 `IDEMPOTENCY_IN_FLIGHT`. An attempt whose COMMIT was
+refused or went unacknowledged records no answer, so its retry is resolved by the mark
+rather than replaying a 500. An attempt whose key was taken over while it ran, or whose
+mark could not be written, is rolled back and answered 503 `IDEMPOTENCY_UNAVAILABLE`.
+
 **A `widget:richtext` field is an editor now, and still a textarea.** The field
 draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
 link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
@@ -24,6 +40,21 @@ set for a bearer caller and zero otherwise, and `modules/auth/contracts.Tokens` 
 `ErrCallerWithoutKey` — an implementer of `Tokens` outside this repository must add the method.
 `authtest.RunTokens` is the conformance suite for `Tokens`. See
 [ADR 0020](docs/adr/0020-a-credential-may-retire-itself.md).
+
+**The conformance suite hands every case a store of its own.** `cachetest.Store` said only that the suite
+"closes what it is given", and the in-process double keyed its store by `t.Name()` — so a case run a
+second time in one process was handed the store its first run had closed and every case of the suite
+answered `cache: this store is closed`. That is what `-count` costs a suite with a shared fixture, and the
+nightly reaches it: `make flakes` runs the push tier with `-count=5` in one `gotestsum` invocation, and
+`kit/cache` is in that tier. The case, not its name, is now the identity — `Store`'s contract says that two
+calls made with one `*testing.T` are two handles onto one store, which is what "two replicas" means here,
+and that a call made with another `t` returns a store that case owns alone; the double keys its map by the
+case and forgets the entry in that case's own cleanup. A new case, `every case is handed a store of its
+own`, holds the lifecycle claim and proves it inside itself: it closes its own store and mints the cases it
+asks about with nested `t.Run`s, so the verdict does not depend on which case runs next — `-shuffle=on`
+moves the top level of a package and never the cases inside a suite. The close case is last and says the
+order is a decision: a backend with one connection cannot hand every case a store of its own, so the
+handle it returns has to release only that handle.
 
 **The delivery ledger moves onto its app's durable.** `kit/appname.Durable` puts the app in front of a
 consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an

@@ -54,6 +54,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
@@ -80,6 +81,12 @@ import (
 // and the catalogue the hook seeds from belongs to the resolution this module's
 // own manifest is a part of. See lateCatalogue.
 func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
+	return productPictures(cfg, grants, admincontracts.Pictures{Source: filecontracts.PictureSource})
+}
+
+// productPictures uses the application's declared picture doors in its ordinary
+// provider, so fixture and production compositions share the same typed wiring.
+func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures) *pkit.Module {
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
@@ -201,7 +208,7 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		// generated screens fetch through it; the door is the file module's and the
 		// document is the kernel's, so this composition is the only party that has met
 		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
-		pkit.Put[admincontracts.Pictures](w, admincontracts.Pictures{Source: filecontracts.PictureSource})
+		pkit.Put[admincontracts.Pictures](w, pictures)
 		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
@@ -261,6 +268,24 @@ func objectStore(files config.Files) (filecontracts.Storage, error) {
 		Secure:       files.S3.Scheme != config.S3SchemeHTTP,
 		BucketLookup: files.S3.BucketLookup,
 	})
+}
+
+// workspace is the chrome this product hands to a module's own screen. It names no
+// service and needs none: which shell a person's own list of notices sits in is the
+// installation's answer, and the module that owns the screen asks for it the same way
+// change asks for the shell of its two review pages. It is its own module rather than
+// another value inside access because access needs the notification service, and a
+// chrome provided by the module that needs the service it lists would be a cycle.
+//
+// Where the unread bell sits, and how many are in it, stays the shell's decision:
+// the module mounts its list at its own address and names no link to it.
+func workspace() *pkit.Module {
+	return pkit.NewModule("workspace", func(w *pkit.Wiring) (module.Module, error) {
+		pkit.Put[*notification.Page](w, &notification.Page{Shell: noticeShell(catalogues())})
+		return module.Module{Name: "workspace"}, nil
+	},
+		pkit.Provides[*notification.Page](),
+	)
 }
 
 // access is the reach an ask for access has in this product, and the site settings

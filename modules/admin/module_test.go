@@ -585,20 +585,15 @@ func TestTheDashboardCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("the dashboard = %d %s", code, body)
 	}
-	// "No notes yet" is the count card's own title, which nothing else on the page
-	// renders — the sidebar's own filter is a separate claim, tested above. It is
-	// what the card says when the count is nil or zero; the sentence used to be
-	// "0 Notes" with a description naming the module, and the description went
-	// because a card that named which module stores the entity said less about the
-	// entity than a card that says how much of it there is.
-	if strings.Contains(body, "No notes yet") {
+	// Inspect the card in main; the sidebar has its own authorization check.
+	if dashboardCard(body, "/app/note/notes") != "" {
 		t.Error("the dashboard shows a card for an entity the caller may not read")
 	}
 
 	// The same page for a caller who may: the card is there, with the count its
 	// own list route would report.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if !strings.Contains(body, "No notes yet") {
+	if card := dashboardCard(body, "/app/note/notes"); !strings.Contains(card, "Notes No notes yet. ") {
 		t.Errorf("the dashboard hides a card the caller may read: %s", body)
 	}
 }
@@ -1079,10 +1074,10 @@ func callAnon(t *testing.T, r http.Handler, method, path, body string) (int, str
 func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
 	// Counted nothing, opens one screen: the hand-written one, named and linked.
 	_, body, _ := call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())), http.MethodGet, "/app", "")
-	if strings.Contains(body, "No notes yet") {
+	if dashboardCard(body, "/app/note/notes") != "" {
 		t.Error("the dashboard drew a count for a caller who may not read it")
 	}
-	if !strings.Contains(body, "What your role opens") {
+	if dashboardCard(body, "/app/auth/roles") == "" {
 		t.Error("the dashboard names no screen for a role that opens one")
 	}
 	if !strings.Contains(body, `href="/app/auth/roles"`) {
@@ -1094,20 +1089,33 @@ func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
 
 	// Counted nothing, opens nothing: the page says which of the two it is.
 	_, body, _ = call(t, mountAs(t, member{}), http.MethodGet, "/app", "")
-	if !strings.Contains(body, "No screens open yet") {
+	if !strings.Contains(body, "Ask your administrator to give you access") {
 		t.Error("the dashboard leaves a caller who may reach nothing with an empty grid")
 	}
-	if strings.Contains(body, "What your role opens") {
+	if dashboardCard(body, "/app/auth/roles") != "" {
 		t.Error("the dashboard names screens for a role that opens none")
 	}
 
 	// And the page that has counts keeps drawing them: this page's first answer
 	// is still the tenant's contents, not a panel about the caller's role.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if !strings.Contains(body, "No notes yet") {
+	if !strings.Contains(dashboardCard(body, "/app/note/notes"), "Notes No notes yet. ") {
 		t.Error("the dashboard lost its counts for a caller who may read them")
 	}
-	if strings.Contains(body, "What your role opens") || strings.Contains(body, "No screens open yet") {
+	if strings.Contains(body, "Ask your administrator to give you access") {
 		t.Error("the dashboard speaks about the caller's role where it has counts to show")
 	}
+}
+
+// Inspect the destination in main, not the sidebar, so navigation cannot make
+// a missing or unauthorized dashboard card pass this check.
+func dashboardCard(body, href string) string {
+	main := regexp.MustCompile(`(?s)<main\b.*?</main>`).FindString(body)
+	for _, card := range regexp.MustCompile(`(?s)<a [^>]*>.*?</a>`).FindAllString(main, -1) {
+		if attribute(card, "href") == href && attribute(card, "data-component") == "card" {
+			text := regexp.MustCompile(`(?s)<!--.*?-->|<[^>]+>`).ReplaceAllString(card, " ")
+			return strings.Join(strings.Fields(html.UnescapeString(text)), " ")
+		}
+	}
+	return ""
 }
