@@ -205,7 +205,7 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	if err := s.mail.Mailer.Send(ctx, notification.Message{
 		To: current.Email, Subject: "Verify your email address",
 		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
-			base + VerifyEmailPath + "?token=" + token +
+			base + s.mail.ConfirmEmailPage + "?token=" + token +
 			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
 	}); err != nil {
 		// The credential goes back exactly as this attempt found it. The row went in

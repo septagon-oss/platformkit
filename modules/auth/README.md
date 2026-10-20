@@ -200,6 +200,58 @@ written. Two other walks of `m.Permissions` remain, and they are different
 questions: `validatePermissions` wants a kind per key and `module.Valid` wants an
 owner and a duplicate check, neither of which `Grants` produces.
 
+For the pages a mailed link opens: **Reused** — `internal.Delivery` and the
+tenant's host of record every link is built on, unchanged; `ResetPath` and
+`VerifyEmailPath` as the defaults an empty page keeps; `httpx.LocalPath` for "a
+path on this site"; the `pkit.Optional` and `pkit.Get` pair the SAML providers
+already use; and the signup doors' one-line module shape for `MailedLinksOpen`.
+**Added** — `LinkPages` and `Deps.LinkPages`, because no field let a composition
+name a page other than the admin shell's, and `httpx.UnderAPI`, so the API root
+keeps its one spelling in `kit/httpx`. **Made reusable:** `httpx.UnderAPI`, for
+the next module that must refuse a named page under the API, and
+`MailedLinksOpen`'s shape — a value the composition supplies, refused at the plan
+rather than at its first use.
+
+## The pages a mailed link opens
+
+The set-password link (an invitation or a reset) and the sign-up confirmation
+link open the admin shell's workspace screens, `/app/auth/reset` and
+`/app/auth/verify-email`, on the host the tenant is served at. A composition whose
+people never see the admin shell names its own pages in `Deps.LinkPages`:
+`SetPassword` and `ConfirmEmail`, each a path on the tenant's host. The reset
+notice leads to the same set-password page without the token, which stays in the
+mail and nowhere else. The page reads `token` from its query and calls the door
+that exists for it — `POST /api/v1/auth/password/reset` or
+`POST /api/v1/public/auth/verify-email` — because this module serves no page at
+either address.
+
+A pkit composition names them with one module beside `auth.Module`:
+
+```go
+pkit.NewApp("shop").Use(
+	auth.Module,
+	auth.MailedLinksOpen(auth.LinkPages{
+		SetPassword:  "/account/password",
+		ConfirmEmail: "/account/confirm",
+	}),
+	// the rest of the composition
+)
+```
+
+Either may be named alone; the empty one keeps its workspace screen, and naming
+neither mails exactly the links mailed before the field existed. A page that is
+not an absolute path on this site — relative, on another host, with a scheme or a
+backslash, or with a query or fragment the appended `?token=` would collide with
+— or that opens under the API root `/api/v1` once a browser has resolved its dot
+segments, percent-encoded ones included, is refused when the composition is
+built: `MailedLinksOpen` fails the plan, and `New` panics for a composition that
+fills `Deps` itself (`TestNamedPagesAreWhereTheMailedLinksAndTheResetNoticeLead`,
+`TestNewRefusesALinkPageThatIsNotAnAbsolutePath`,
+`TestNewRefusesALinkPageUnderTheAPIRoot`,
+`TestNewRefusesAnEncodedPageUnderTheAPIRoot`,
+`TestComposingARefusedLinkPageFailsThePlan`,
+`TestCompositionRefusesAnEncodedPageUnderTheAPIRoot`).
+
 ## The record a mail leaves
 
 Two mails go out of this module with no notice behind them — a set-password

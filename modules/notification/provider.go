@@ -3,6 +3,7 @@ package notification
 import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/push"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	gomail "github.com/septagon-oss/platformkit/modules/notification/providers/gomail"
@@ -41,6 +42,12 @@ import (
 var Module = pkit.NewModule("notification", wire,
 	pkit.Needs[contracts.RecipientLookup](),
 	pkit.Needs[contracts.HostLookup](),
+	// The device adapters this installation carries, if it carries any. Optional
+	// because a deployment with no push credentials is the normal one today: with
+	// nothing wired, the two device channels are suppressed with a reason and no
+	// subscription is composed for them — the same reading of Deps.Providers that
+	// decides whether a notice's push row is ever opened.
+	pkit.Optional[push.Adapters](),
 	pkit.Provides[contracts.Service](),
 	// auth declares Notifier as its own port — the one command it has of
 	// telling somebody something — and this module's Service is the answer to
@@ -106,6 +113,9 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// The same rule the session cookie's Secure flag follows, so there is
 		// one answer to "is this deployment https" and one place it is written.
 		Secure: !config.Local(server.PublicHost),
+		// The zero map when nothing put it: no device channel is carried, and the
+		// decision says so in the ledger rather than at send time.
+		Push: pkit.Get[push.Adapters](w),
 	})
 	pkit.Put(w, svc)
 	pkit.Put[authcontracts.Notifier](w, svc)

@@ -188,6 +188,10 @@
       ],
       "uses": [
         {
+          "contract": "push.Adapters",
+          "from": ""
+        },
+        {
           "contract": "*notification.Page",
           "from": "workspace"
         }
@@ -355,6 +359,10 @@
         {
           "contract": "authcontracts.ConfirmationChrome",
           "from": "product"
+        },
+        {
+          "contract": "auth.LinkPages",
+          "from": ""
         }
       ],
       "after": [

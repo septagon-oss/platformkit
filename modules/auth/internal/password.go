@@ -125,10 +125,10 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // either: an outbox row is kept for a week and modules/audit copies every
 // payload into the audit trail.
 //
-// So the notice raised here carries ResetPath and nothing else — the person has
-// something to see in the application, and it tells them to check their mail —
-// and the secret goes straight from this transaction to the mail server. The
-// composition wires notification's own Mailer, so there is still one sender.
+// So the notice raised here carries the set-password page and nothing else —
+// the person has something to see in the application, telling them to check
+// their mail — and the secret goes from this transaction straight to the mail
+// server. The composition wires notification's Mailer, so there is one sender.
 //
 // ON CONFLICT on (tenant_id, user_id) is the single-pending rule: asking again
 // replaces the last link rather than adding a second, so a mailbox with four of
@@ -249,7 +249,7 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		if _, err := s.notify.Notify(ctx, tx, notificationcontracts.Notice{
 			Recipient: user.ID, Title: title,
 			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
-			Link: ResetPath,
+			Link: s.mail.SetPasswordPage,
 		}); err != nil {
 			return err
 		}
@@ -522,14 +522,15 @@ func (s *Service) markOfferSent(ctx context.Context, userID uuid.UUID, token str
 }
 
 // send renders the one message this module writes and hands it to the mail
-// server. The link is absolute and on the recipient's own tenant's host,
-// because a mail client has no base to resolve a path against and one
-// customer's people must not be sent to another's front door. The base is read
-// by the caller, ahead of the commit: see offer.
+// server. The link opens the page the composition named (Delivery.SetPasswordPage,
+// the workspace screen when it names none), absolute and on the recipient's own
+// tenant's host, because a mail client has no base to resolve a path against and
+// one customer's people must not be sent to another's front door. The base is
+// read by the caller, ahead of the commit: see offer.
 func (s *Service) send(ctx context.Context, user *usercontracts.User, title, body, base, token string) error {
 	return s.mail.Mailer.Send(ctx, notificationcontracts.Message{
 		To: user.Email, Subject: title,
-		Body: body + "\n\n" + base + ResetPath + "?token=" + token +
+		Body: body + "\n\n" + base + s.mail.SetPasswordPage + "?token=" + token +
 			"\n\nThe link works once and stops working in an hour.",
 	})
 }
@@ -702,7 +703,8 @@ const (
 	resetBody     = "Somebody asked to reset the password for this address. If it was not you, ignore this message and nothing changes."
 )
 
-// ResetPath is where the link points, and it is the workspace address rather than
+// ResetPath is where the link points when the composition names no page of its
+// own (Delivery.SetPasswordPage), and it is the workspace address rather than
 // a bare path: the page that reads the token lives under the workspace prefix the
 // kernel composes (httpx.Workspace), in the namespace this module's screens are
 // mounted at. The bare "/auth/reset" this constant used to carry was an address no
@@ -712,10 +714,10 @@ const (
 // is still the tenant's own, from the host of record, never a configured port.
 var ResetPath = httpx.Workspace("/auth/reset")
 
-// VerifyEmailPath is the confirmation link a sign-up mail carries. It is the
-// contracts constant, not a workspace screen: unlike ResetPath, this address is
-// answered, by the page this module mounts on its public face, and a person who
-// follows the link has no session to open the workspace with.
+// VerifyEmailPath is the confirmation link a sign-up mail carries when the
+// composition names none (Delivery.ConfirmEmailPage). It is the contracts
+// constant, and unlike ResetPath this address is answered: the page sits on this
+// module's public face, where a person with no session can reach it.
 // modules/auth/internal's TestTheModuleAnswersWithExactlyTheSurfaceItDeclares
 // pins the address on the module's own surface, and apps/platformkit's
 // TestTheEmailedLinkOpensAPageThatConfirms asks the running application the same
