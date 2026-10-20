@@ -69297,6 +69297,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/auth-challenge-schemes.spec.ts",
+   "id": "e2e/auth-challenge-schemes.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "auth challenges an unrecognised key and refuses a session at the key-only command",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/auth-sessions.spec.ts",
    "id": "e2e/auth-sessions.spec.ts",
    "kind": "playwright",
@@ -74854,7 +74874,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2017,
+  "files": 2018,
   "forge_runs": [
    408,
    413,
@@ -74891,7 +74911,7 @@
    "behaviour": 3220,
    "composition": 452,
    "contract": 21,
-   "journey": 102
+   "journey": 103
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -74907,23 +74927,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3795,
+  "rows": 3796,
   "tiers": {
    "merge": 2408,
-   "nightly": 102,
+   "nightly": 103,
    "push": 1285
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1790,
+   "keep": 1791,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3439,
+   "keep": 3440,
    "keep-rewrite": 140,
    "merge": 216
   }
