@@ -1,21 +1,7 @@
-// Package idempotency remembers a write the caller said was one write, so the
-// retry of it is not a second one.
-//
-// A phone on a bad network retries the POST it already sent. Without a memory of
-// the first attempt the server does the work twice and the caller is told the
-// invoice was raised twice. The IETF's answer (draft-ietf-httpapi-idempotency-key-header)
-// is a header the caller chooses and the server keys everything else on; this
-// package is the memory behind that header and nothing else — the middleware that
-// reads the header, refuses the requests that make no promise, and answers the
-// retries is kit/httpx.
-//
-// The memory has to outlive the process that made it. A retried write arrives at
-// whichever replica the load balancer chose, minutes later, after a deploy that
-// emptied every map in the fleet. That is why the record is a row: the same
-// argument, the same shape and the same purge schedule as kit/limit's counters
-// (docs/adr/0010-a-limit-is-a-row.md), which faced the identical problem one
-// package over — a counter in one pod's memory is three limits when three pods
-// are running, and a memory in one pod's map is a promise three pods cannot keep.
+// Package idempotency remembers request retries and records tenant operation outcomes.
+// Key claims are durable protocol state; receipt outcomes share the authoritative
+// tenant transaction. kit/httpx owns admission and answer replay; kit/events
+// couples outcomes to the outbox. README.md describes scope and retention.
 package idempotency
 
 import (
@@ -24,12 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/request"
 )
 
 // Scope is what one write is remembered under. Every field is part of the
@@ -46,13 +34,15 @@ import (
 type Scope struct {
 	Tenant uuid.UUID // tenancy.FromContext; uuid.Nil for a host that resolved no tenant
 	Caller uuid.UUID // The authenticated subject: UserID, or TokenID for a key-only command; uuid.Nil when anonymous.
-	Method string    // "POST" or "PATCH", exactly as the request spelled it
+	Method string    // The request verb, or COMMAND at an in-process root.
 	Route  string    // the mounted pattern, never the request's own path
 	Key    string    // the caller's Idempotency-Key, syntax-gated before it gets here
 	// Fingerprint is what the request was: a digest over the method, the route,
 	// the query, the content type and the body. Two attempts are the same write
 	// when it matches, and a different write when it does not.
 	Fingerprint [sha256.Size]byte
+	// Track binds this claim to an operation receipt; old untracked rows stay unbound.
+	Track bool
 }
 
 // Answer is what the caller was finally given, held so the next attempt of the
@@ -124,10 +114,12 @@ const (
 // nothing else — the Postgres store and the in-memory fake answer from the same
 // function, which is what entitles kit/httpx's cases to run on the fake.
 type Verdict struct {
-	Kind   VerdictKind
-	Claim  uuid.UUID     // First: the token this attempt holds the record with
-	Stored Answer        // Replay: what the first attempt was answered with
-	Lease  time.Duration // InFlight: how much longer the claim may be held
+	OperationRef uuid.UUID
+	StartedAt    time.Time
+	Kind         VerdictKind
+	Claim        uuid.UUID     // First: the token this attempt holds the record with
+	Stored       Answer        // Replay: what the first attempt was answered with
+	Lease        time.Duration // InFlight: how much longer the claim may be held
 }
 
 // Store is the memory: two writes, one to take a key and one to land an answer
@@ -136,23 +128,66 @@ type Store interface {
 	// Claim takes a key nobody holds, or reads what whoever holds it has.
 	Claim(ctx context.Context, s Scope, at time.Time) (Verdict, error)
 
-	// Begin marks that the attempt holding claim was let in to do the write. It is
-	// the one fact that separates a claim nobody acted on from a write that may have
-	// committed and never got its answer recorded, and only the record can carry it:
-	// the process that knows is the one that may have died. An abandoned claim the
-	// handler never entered may be taken up again by the next attempt; a begun one
-	// may not, because re-running it is the second write the key exists to prevent.
-	// Only the attempt that still owns the claim may mark it; nothing else changes.
+	// Begin admits the current claim to execution. Unbegun claims can be taken over
+	// after their lease; begun HTTP claims require an uncommitted effect fence.
+	// ErrLostClaim refuses an obsolete or already-begun attempt without a write.
 	Begin(ctx context.Context, s Scope, claim uuid.UUID, at time.Time) error
 
 	// Complete lands an answer, and only for the attempt that still owns the
 	// claim. The zero Status is the spent record: the write happened and its
 	// answer could not be kept.
 	Complete(ctx context.Context, s Scope, claim uuid.UUID, a Answer, at time.Time) error
+
+	// Mark fences this attempt and marks its effect in the supplied tenant
+	// transaction. The caller must roll back on any error, including ErrLostClaim.
+	// The marker commits with the command and resolves a lost COMMIT acknowledgement.
+	// Memory records the request to commit but cannot undo it on rollback.
+	Mark(ctx context.Context, tx db.Tx[db.Tenant], s Scope, claim uuid.UUID) error
 }
 
 // table is the one this package owns. See migrations/000062_idempotency.
 const table = "platformkit_idempotency"
+
+// effectTable is the marker of a COMMIT that was never acknowledged, and the only
+// thing that can tell a begun claim's write from its absence. See
+// migrations/000072_command_effect.
+const effectTable = "platformkit_command_effect"
+
+const (
+	// effectLockTakeSQL and effectLockTrySQL are the two ends of one advisory lock,
+	// named after the effect row it guards. The transaction that marks that row takes
+	// it before it writes (Mark), and the attempt that would read the mark's absence
+	// tries for it first (resolveEffect). The lock is what turns an absent mark into
+	// evidence.
+	//
+	// A COMMIT still executing holds the lock taken inside it: Postgres releases a
+	// transaction-level advisory lock at the end of the transaction, after the commit
+	// record is written and after that commit became visible to a new snapshot — the
+	// same ordering this repository relies on wherever it serializes with an advisory
+	// lock. So the attempt that gets the lock is looking at a database the write has
+	// either reached or not. It is the only thing that can say so: a plain read of the
+	// row sees the version before an uncommitted mark and does not wait for it.
+	//
+	// The lock does not cover a transaction that has not reached Mark yet — a command
+	// still running past its lease. The fence does: such a transaction finds the row
+	// re-named by the takeover and is refused at Mark (see Store.Mark).
+	//
+	// hashtextextended over 64 bits, as modules/user's administration lock does: two
+	// unrelated records colliding in that space cost one refusal that one more press
+	// clears, never a second run of a command.
+	effectLockTakeSQL = "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))"
+	effectLockTrySQL  = "SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))"
+)
+
+// effectLockTarget is the identity the lock is named after: the five columns the
+// record is keyed on, so one attempt's write and another attempt's reading of its
+// absence are the two ends of one lock. The claim id is deliberately absent — the
+// reader knows which record it is resolving, not which attempt is committing.
+func effectLockTarget(s Scope) string {
+	return strings.Join([]string{
+		"command-effect/", s.Tenant.String(), "/", s.Caller.String(), "/", s.Method, " ", s.Route, "/", s.Key,
+	}, "")
+}
 
 const (
 	// budget bounds every statement here, for kit/limit's reason verbatim
@@ -223,85 +258,195 @@ func Postgres(conns Connections) Store { return postgres{conns: conns} }
 type postgres struct{ conns Connections }
 
 func (p postgres) Claim(ctx context.Context, s Scope, at time.Time) (Verdict, error) {
-	// Take the key if nobody holds it. One statement, and ON CONFLICT DO NOTHING
-	// is the whole of the race: two retries of one dropped response arrive at two
-	// replicas at once, and exactly one of them gets a row back.
-	claim := uuid.New()
-	var own uuid.UUID
-	taken := false
+	at = at.UTC().Truncate(time.Microsecond)
+	if err := validClaim(s, at); err != nil {
+		return Verdict{}, err
+	}
+	if at.IsZero() {
+		return Verdict{}, fmt.Errorf("idempotency: claim needs an instant")
+	}
+	claim, ref := uuid.New(), uuid.Nil
+	var started any
+	if s.Track {
+		ref = uuid.New()
+		started = at
+	}
+	var verdict Verdict
 	err := p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		rows, err := tx.DB().Raw(`INSERT INTO `+table+` (tenant, caller, method, route, key, fingerprint, claim, claimed_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT (tenant, caller, method, route, `+keyColumn+`) DO NOTHING
-			RETURNING claim`,
-			s.Tenant, s.Caller, s.Method, s.Route, s.Key, s.Fingerprint[:], claim, at).Rows()
+		res := tx.DB().Exec(`INSERT INTO `+table+` (tenant, caller, method, route, key, fingerprint, claim, claimed_at, operation_ref, started_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tenant, caller, method, route, `+keyColumn+`) DO NOTHING`,
+			s.Tenant, s.Caller, s.Method, s.Route, s.Key, s.Fingerprint[:], claim, at, nullableUUID(ref), started)
+		if res.Error != nil {
+			return res.Error
+		}
+		existing, err := readClaim(tx, s, true)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		if rows.Next() {
-			return rows.Scan(&own)
+		if existing.claim == claim {
+			verdict = Verdict{Kind: First, Claim: claim, OperationRef: ref, StartedAt: at}
+			return fence(tx, s, claim)
 		}
-		taken = true
-		return rows.Err()
+		if existing.operationRef != uuid.Nil {
+			var receipt operationRow
+			err := tx.DB().Raw(`SELECT * FROM platformkit_operations WHERE tenant_id = ? AND id = ? FOR UPDATE`, s.Tenant, existing.operationRef).Scan(&receipt).Error
+			if err != nil {
+				return err
+			}
+			if receipt.ID != uuid.Nil {
+				r := receipt.receipt()
+				existing.receipt = &r
+			}
+		}
+		if existing.began && !existing.completed && at.Sub(existing.claimedAt) >= lease {
+			proved, committed, err := resolveEffect(tx, s, existing.claim)
+			if err != nil {
+				return err
+			}
+			if !proved {
+				verdict = Verdict{Kind: InFlight, OperationRef: existing.operationRef, StartedAt: existing.startedAt}
+				return nil
+			}
+			existing.effect = committed
+		}
+		verdict = decide(existing, true, s, at, claim, lease, retention)
+		if verdict.Kind != First {
+			return nil
+		}
+		fresh := claimExpired(existing, at, retention)
+		if !fresh {
+			ref = existing.operationRef
+			started = existing.startedAt
+			if ref == uuid.Nil {
+				started = nil
+			}
+		}
+		res = tx.DB().Exec(`UPDATE `+table+` SET claim=?, claimed_at=?, fingerprint=?, completed_at=NULL,
+   recorded=FALSE, status=NULL, content_type=NULL, body=NULL, headers=NULL, limits=NULL, began=FALSE,
+   operation_ref=?, started_at=? WHERE tenant=? AND caller=? AND method=? AND route=? AND `+keyColumn+`=?`,
+			claim, at, s.Fingerprint[:], nullableUUID(ref), started, s.Tenant, s.Caller, s.Method, s.Route, s.Key)
+		if res.Error != nil {
+			return res.Error
+		}
+		verdict.OperationRef = ref
+		if t, ok := started.(time.Time); ok {
+			verdict.StartedAt = t
+		}
+		return fence(tx, s, claim)
 	})
 	if err != nil {
 		return Verdict{}, fmt.Errorf("idempotency: claim: %w", err)
 	}
-	if !taken {
-		return Verdict{Kind: First, Claim: own}, nil
-	}
+	return verdict, nil
+}
 
-	existing, found, err := p.read(ctx, s)
-	if err != nil {
-		return Verdict{}, err
+// Mark sets this attempt's effect marker inside the caller's own transaction, under
+// the marker's lock, which that transaction then holds until it ends.
+func (p postgres) Mark(_ context.Context, tx db.Tx[db.Tenant], s Scope, claim uuid.UUID) error {
+	if err := tx.DB().Exec(effectLockTakeSQL, effectLockTarget(s)).Error; err != nil {
+		return fmt.Errorf("idempotency: mark: %w", err)
 	}
-	v := decide(existing, found, s, at, claim, lease, retention)
-	if v.Kind != First || !found {
-		return v, nil
+	// One statement, conditional on the attempt the row names: the row Claim wrote when
+	// it handed this attempt the key, or a retry's once the key has moved on. A row
+	// naming somebody else is left alone and answers zero rows, which is the fence. The
+	// insert is for a key no claim named, which a request through kit/httpx never is.
+	res := tx.DB().Exec(`INSERT INTO `+effectTable+`
+			(tenant_id, caller, method, route, `+keyColumn+`, claim, committed)
+			VALUES (?, ?, ?, ?, ?, ?, TRUE)
+			ON CONFLICT (tenant_id, caller, method, route, `+keyColumn+`)
+			DO UPDATE SET committed = TRUE, applied_at = clock_timestamp()
+			WHERE `+effectTable+`.claim = EXCLUDED.claim`,
+		s.Tenant, s.Caller, s.Method, s.Route, s.Key, claim)
+	if res.Error != nil {
+		return fmt.Errorf("idempotency: mark: %w", res.Error)
 	}
-	// decide has just said First about a row that exists, which leaves exactly two
-	// reasons it can say that: the claim is older than its lease, so whoever held it
-	// has stopped being able to answer for it, or the record is older than the
-	// retention, so the memory it holds is one this package no longer owes anybody.
-	// Taking it is one conditional statement rather than a read and a write, so two
-	// simultaneous attempts cannot both take it; the loser gets InFlight and the row
-	// it did not write.
-	//
-	// The two conditions are the two comparisons decide made, restated in SQL rather
-	// than read back into Go and acted on — and both are needed. A takeover that
-	// could touch only an unfinished row would leave a caller whose key aged out
-	// told that a write which finished a day ago is still in flight, until the
-	// hourly purge happened to run; `retention` is a day and the purge is what the
-	// brief calls a schedule, not a guarantee.
-	//
-	// The SET list clears the answer along with the claim, because the row that comes
-	// back out of this statement is a new write's record: a stale fingerprint behind a
-	// new claim would make the next attempt of the caller's own write a conflict, and
-	// a stale answer behind a new claim would be replayed as this one's.
-	taken = false
-	err = p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		res := tx.DB().Exec(`UPDATE `+table+` SET claim = ?, claimed_at = ?, fingerprint = ?,
-				completed_at = NULL, recorded = FALSE, status = NULL, content_type = NULL, body = NULL,
-				headers = NULL, limits = NULL, began = FALSE
-			WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?
-			  AND (claimed_at <= ? OR (completed_at IS NULL AND began = FALSE AND claimed_at <= ?))`,
-			claim, at, s.Fingerprint[:],
-			s.Tenant, s.Caller, s.Method, s.Route, s.Key,
-			at.Add(-retention), at.Add(-lease))
-		if res.Error != nil {
-			return res.Error
-		}
-		taken = res.RowsAffected > 0
+	if res.RowsAffected == 0 {
+		return ErrLostClaim
+	}
+	return nil
+}
+
+// fence names the attempt Claim has just handed the key to in the key's effect row,
+// unmarked, inside the transaction that hands it over. From then on only that
+// attempt's transaction can mark the row, so an earlier attempt still running past its
+// lease cannot commit beside it (Mark). A scope with no tenant has no tenant
+// transaction to mark it from, and gets no row. Non-HTTP COMMAND roots retain
+// conservative refusal because their transaction owners do not call Mark.
+func fence(tx db.Tx[db.System], s Scope, claim uuid.UUID) error {
+	if s.Tenant == uuid.Nil || (s.Track && s.Method == "COMMAND") {
 		return nil
-	})
+	}
+	return tx.DB().Exec(`INSERT INTO `+effectTable+`
+			(tenant_id, caller, method, route, `+keyColumn+`, claim, committed)
+			VALUES (?, ?, ?, ?, ?, ?, FALSE)
+			ON CONFLICT (tenant_id, caller, method, route, `+keyColumn+`)
+			DO UPDATE SET claim = EXCLUDED.claim, committed = FALSE, applied_at = clock_timestamp()`,
+		s.Tenant, s.Caller, s.Method, s.Route, s.Key, claim).Error
+}
+
+// resolveEffect asks whether the transaction that held this record's claim reached its
+// COMMIT, and answers whether that reading is evidence at all.
+//
+// It asks for the mark of the attempt the record names, and that is the whole
+// question: the row names the record's current claim (fence) and no other attempt can
+// mark it, so an unmarked row is an attempt whose transaction is not in the database.
+//
+// proved is false when the lock belongs to somebody else — a COMMIT of this command is
+// executing, and its mark is written but not yet visible — in which case committed
+// says nothing and the caller must not act on it.
+func resolveEffect(tx db.Tx[db.System], s Scope, claim uuid.UUID) (proved, committed bool, err error) {
+	if err := tx.DB().Raw(effectLockTrySQL, effectLockTarget(s)).Row().Scan(&proved); err != nil {
+		return false, false, fmt.Errorf("idempotency: resolve: %w", err)
+	}
+	if !proved {
+		return false, false, nil
+	}
+	// Missing fences predate this protocol or belong to non-HTTP command roots.
+	// Neither absence proves rollback; only an existing unmarked fence does.
+	err = tx.DB().Raw(`SELECT COALESCE((SELECT committed FROM `+effectTable+`
+		WHERE tenant_id = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ? AND claim = ?), TRUE)`,
+		s.Tenant, s.Caller, s.Method, s.Route, s.Key, claim).Row().Scan(&committed)
+	return true, committed, err
+}
+
+func readClaim(tx db.Tx[db.System], s Scope, lock bool) (*row, error) {
+	q := `SELECT fingerprint, claim, claimed_at, completed_at IS NOT NULL, recorded,
+  COALESCE(status,0), COALESCE(content_type,''), body, headers, limits, began, operation_ref, started_at
+  FROM ` + table + ` WHERE tenant=? AND caller=? AND method=? AND route=? AND ` + keyColumn + `=?`
+	if lock {
+		q += ` FOR UPDATE`
+	}
+	rows, err := tx.DB().Raw(q, s.Tenant, s.Caller, s.Method, s.Route, s.Key).Rows()
 	if err != nil {
-		return Verdict{}, fmt.Errorf("idempotency: take over: %w", err)
+		return nil, err
 	}
-	if taken {
-		return Verdict{Kind: First, Claim: claim}, nil
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, errors.New("idempotency: claim disappeared")
 	}
-	return Verdict{Kind: InFlight, Lease: remaining(existing, at, lease)}, nil
+	var r row
+	var fp, kept, counted []byte
+	var ref *uuid.UUID
+	var started *time.Time
+	if err := rows.Scan(&fp, &r.claim, &r.claimedAt, &r.completed, &r.recorded, &r.answer.Status, &r.answer.ContentType, &r.answer.Body, &kept, &counted, &r.began, &ref, &started); err != nil {
+		return nil, err
+	}
+	copy(r.fingerprint[:], fp)
+	if ref != nil {
+		r.operationRef = *ref
+	}
+	if started != nil {
+		r.startedAt = *started
+	}
+	r.answer.Headers, err = decodeHeaders(kept)
+	if err != nil {
+		return nil, err
+	}
+	r.answer.Limits, err = decodeLimits(counted)
+	if err != nil {
+		return nil, err
+	}
+	return &r, rows.Err()
 }
 
 func (p postgres) Begin(ctx context.Context, s Scope, claim uuid.UUID, at time.Time) error {
@@ -362,49 +507,6 @@ func (p postgres) Complete(ctx context.Context, s Scope, claim uuid.UUID, a Answ
 	return err
 }
 
-func (p postgres) read(ctx context.Context, s Scope) (*row, bool, error) {
-	var (
-		r    row
-		got  bool
-		body []byte
-	)
-	err := p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		rows, err := tx.DB().Raw(`SELECT fingerprint, claim, claimed_at, completed_at IS NOT NULL, recorded,
-			COALESCE(status, 0), COALESCE(content_type, ''), body, headers, limits, began
-			FROM `+table+` WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?`,
-			s.Tenant, s.Caller, s.Method, s.Route, s.Key).Rows()
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		if !rows.Next() {
-			return rows.Err()
-		}
-		got = true
-		var fp, kept, counted []byte
-		if err := rows.Scan(&fp, &r.claim, &r.claimedAt, &r.completed, &r.recorded, &r.answer.Status, &r.answer.ContentType, &body, &kept, &counted, &r.began); err != nil {
-			return err
-		}
-		copy(r.fingerprint[:], fp)
-		r.answer.Body = body
-		r.answer.Headers, err = decodeHeaders(kept)
-		if err != nil {
-			return err
-		}
-		if r.answer.Limits, err = decodeLimits(counted); err != nil {
-			return err
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return nil, false, fmt.Errorf("idempotency: read: %w", err)
-	}
-	if !got {
-		return nil, false, nil
-	}
-	return &r, true, nil
-}
-
 // run opens the record's own transaction: detached, so the claim outlives the
 // rollback of the request that made it, and bounded, so neither of those may turn
 // a stalled database into a request that never ends. It is deliberately not the
@@ -421,21 +523,77 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 	return db.RunSystem(detached, conn, systemToken, fn)
 }
 
-// Purge deletes the records whose claim is a day old.
-//
-// It is a scheduled job and never a side effect of Claim, for the reason kit/limit
-// gives for its own (kit/limit/limit.go's Purge): the hot path is the path of a
-// request that is about to be refused, and a refusal that also deleted somebody
-// else's row is a memory paying for the traffic it is refusing. It is also the
-// only thing that bounds the table, which holds a caller's own request and answer
-// for the day it is kept.
-func Purge(ctx context.Context, conn *db.Conn) error {
+// Purge uses db.Now to retire eligible receipts and their remembered requests.
+// Call PurgeAt when the transaction owner supplies a clock.
+func Purge(ctx context.Context, conn *db.Conn) error { return PurgeAt(ctx, conn, db.Now()) }
+
+// PurgeAt retires eligible terminal receipts and their retry identities under
+// their row locks. Unknown and approval-pending outcomes are never discarded.
+func PurgeAt(ctx context.Context, conn *db.Conn, at time.Time) error {
+	if at.IsZero() {
+		return fmt.Errorf("idempotency: purge needs an instant")
+	}
 	return db.RunSystem(ctx, conn, systemToken, func(_ context.Context, tx db.Tx[db.System]) error {
-		stmt := "DELETE FROM " + table + " WHERE claimed_at < now() - ?::interval"
-		if err := tx.DB().Exec(stmt, interval(retention)).Error; err != nil {
-			return fmt.Errorf("idempotency: purge: %w", err)
+		var scopes []struct {
+			Tenant uuid.UUID
+			Caller uuid.UUID
+			Method string
+			Route  string
+			Key    string
 		}
-		return nil
+		if err := tx.DB().Raw(`SELECT tenant,caller,method,route,key FROM platformkit_idempotency
+   WHERE claimed_at <= ? ORDER BY tenant,caller,method,route,key FOR UPDATE SKIP LOCKED`, at.Add(-retention)).Scan(&scopes).Error; err != nil {
+			return err
+		}
+		for _, s := range scopes {
+			scope := Scope{Tenant: s.Tenant, Caller: s.Caller, Method: s.Method, Route: s.Route, Key: s.Key}
+			r, err := readClaim(tx, scope, false)
+			if err != nil {
+				return err
+			}
+			if r.operationRef != uuid.Nil {
+				if err := tx.DB().Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?,0))`, "platformkit.operation-set."+s.Tenant.String()).Error; err != nil {
+					return err
+				}
+				var row operationRow
+				if err := tx.DB().Raw(`SELECT * FROM platformkit_operations WHERE tenant_id=? AND id=? FOR UPDATE`, s.Tenant, r.operationRef).Scan(&row).Error; err != nil {
+					return err
+				}
+				if row.ID != uuid.Nil {
+					receipt := row.receipt()
+					r.receipt = &receipt
+				}
+			}
+			if !claimExpired(r, at, retention) {
+				continue
+			}
+			if err := tx.DB().Exec(`DELETE FROM platformkit_idempotency WHERE tenant=? AND caller=? AND method=? AND route=? AND `+keyColumn+`=?`, s.Tenant, s.Caller, s.Method, s.Route, s.Key).Error; err != nil {
+				return err
+			}
+			if r.operationRef != uuid.Nil {
+				if err := tx.DB().Exec(`DELETE FROM platformkit_operations WHERE tenant_id=? AND id=?`, s.Tenant, r.operationRef).Error; err != nil {
+					return err
+				}
+			}
+		}
+		var orphans []*operationRow
+		if err := tx.DB().Raw(`SELECT o.* FROM platformkit_operations o WHERE o.outcome IN ('succeeded','failed')
+   AND NOT EXISTS (SELECT 1 FROM platformkit_idempotency k WHERE k.tenant=o.tenant_id AND k.operation_ref=o.id)
+   ORDER BY o.tenant_id,o.id FOR UPDATE OF o SKIP LOCKED`).Scan(&orphans).Error; err != nil {
+			return err
+		}
+		for _, row := range orphans {
+			if expired(row.receipt(), at) {
+				if err := tx.DB().Exec(`DELETE FROM platformkit_operations WHERE tenant_id=? AND id=?`, row.TenantID, row.ID).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		// A retained retry identity still needs its fence, including async receipts.
+		return tx.DB().Exec(`DELETE FROM `+effectTable+` e WHERE applied_at < ?
+			AND NOT EXISTS (SELECT 1 FROM `+table+` k WHERE k.tenant=e.tenant_id
+			AND k.caller=e.caller AND k.method=e.method AND k.route=e.route AND k.key=e.key)`, at.Add(-retention)).Error
 	})
 }
 
@@ -452,16 +610,20 @@ const Lease = lease
 // row is one record as it is stored, and the shape decide reads. The in-memory
 // fake holds the same struct, which is why the two agree.
 type row struct {
-	fingerprint [sha256.Size]byte
-	claim       uuid.UUID
-	claimedAt   time.Time
-	completed   bool
-	recorded    bool
+	operationRef uuid.UUID
+	startedAt    time.Time
+	receipt      *Receipt
+	fingerprint  [sha256.Size]byte
+	claim        uuid.UUID
+	claimedAt    time.Time
+	completed    bool
+	recorded     bool
 	// began says the attempt that holds this claim was let in to do the write. It
 	// is a boolean and not a timestamp because nothing reads the moment: the one
 	// question it answers is whether a claim whose lease ran out may be taken up
 	// again, and a time would be a field nothing consults.
 	began  bool
+	effect bool
 	answer Answer
 }
 
@@ -473,60 +635,49 @@ type row struct {
 // next; the purge is the only thing that deletes, and a store that has not run
 // one yet still answers a two-day-old claim as First.
 func decide(existing *row, found bool, want Scope, at time.Time, claim uuid.UUID, lease, retention time.Duration) Verdict {
-	if !found || existing == nil || at.Sub(existing.claimedAt) >= retention {
+	if !found || existing == nil || claimExpired(existing, at, retention) {
 		return Verdict{Kind: First, Claim: claim}
+	}
+	result := func(v Verdict) Verdict {
+		v.OperationRef = existing.operationRef
+		v.StartedAt = existing.startedAt
+		return v
 	}
 	if existing.fingerprint != want.Fingerprint {
 		// Said before any look at the state: a different write under this key is
 		// the caller's mistake whether or not the first one finished, and the
 		// answer they need — send it under a fresh key — does not change.
-		return Verdict{Kind: ConflictBody}
+		return result(Verdict{Kind: ConflictBody})
+	}
+	if existing.operationRef != uuid.Nil && at.Sub(existing.startedAt) >= retention {
+		return result(Verdict{Kind: Spent})
 	}
 	if existing.completed {
 		if !existing.recorded {
-			return Verdict{Kind: Spent}
+			return result(Verdict{Kind: Spent})
 		}
-		return Verdict{Kind: Replay, Stored: existing.answer}
+		return result(Verdict{Kind: Replay, Stored: existing.answer})
 	}
 	if held := at.Sub(existing.claimedAt); held < lease {
-		return Verdict{Kind: InFlight, Lease: lease - held}
+		return result(Verdict{Kind: InFlight, Lease: lease - held})
 	}
-	// The lease has run out and no answer came. Two very different attempts look
-	// like this, and only the record can tell them apart: one died before anybody
-	// acted on it, and taking it up again costs nothing; the other was let in to do
-	// the write, may have committed it, and simply never got its answer down — the
-	// store went away mid-request, or the process with it. Re-running the second is
-	// the duplicate the key exists to prevent, and no length of lease makes that
-	// window shorter, because the window is the write itself. So a begun claim is
-	// spent and its caller is refused, which is the direction that costs a retry and
-	// never a second write. See kit/httpx's Begin call for the other half: the mark
-	// is put on before the handler runs, so an attempt that never reached it stays
-	// takeable.
-	if existing.began {
-		return Verdict{Kind: Spent}
+	// A known outcome already settled the intent, even if answer recording failed.
+	if existing.began && (existing.effect || (existing.receipt != nil && existing.receipt.Outcome != "")) {
+		return result(Verdict{Kind: Spent})
 	}
-	return Verdict{Kind: First, Claim: claim}
+	return result(Verdict{Kind: First, Claim: claim})
 }
 
-// remaining is how much longer the current holder's claim runs, for the attempt
-// that lost the race to inherit it.
-func remaining(existing *row, at time.Time, lease time.Duration) time.Duration {
-	if existing == nil {
-		return lease
+func claimExpired(r *row, at time.Time, span time.Duration) bool {
+	if r.operationRef != uuid.Nil {
+		return r.receipt != nil && expired(*r.receipt, at)
 	}
-	return max(lease-at.Sub(existing.claimedAt), 0)
+	return at.Sub(r.claimedAt) >= span
 }
 
 // keyColumn is the column holding the caller's key, named once because it is a
 // reserved word in the middle of five statements.
 const keyColumn = `"key"`
-
-// interval is a span as Postgres reads one. Milliseconds, so a test may use a
-// lease or a retention shorter than a second, and the same helper kit/limit uses
-// for the same reason.
-func interval(span time.Duration) string {
-	return fmt.Sprintf("%d milliseconds", span.Milliseconds())
-}
 
 // answerBody keeps nil for a spent record, so a row that holds no answer holds
 // no empty bytea either.
@@ -597,4 +748,11 @@ func decodeLimits(counted []byte) ([]Limit, error) {
 		return nil, err
 	}
 	return l, nil
+}
+
+func validClaim(s Scope, at time.Time) error {
+	if s.Track && (s.Tenant == uuid.Nil || !request.ValidToken(s.Key) || s.Method == "" || s.Route == "" || at.IsZero()) {
+		return fmt.Errorf("idempotency: invalid tracked claim")
+	}
+	return nil
 }

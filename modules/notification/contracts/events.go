@@ -6,11 +6,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/push"
 )
 
-// The three events this module emits. A subscriber names one of these constants
-// rather than a string, so renaming one is a compile error where it is listened
-// for.
+// The events this module emits. A subscriber names one of these constants rather
+// than a string, so renaming one is a compile error where it is listened for.
 //
 // EventEmailRequested is the odd one, and it is the point of this module's
 // shape: it is how "and send it by mail" leaves the request. The row and the
@@ -22,13 +22,75 @@ const (
 	EventCreated        = "notification.created"
 	EventEmailRequested = "notification.email_requested"
 	EventRead           = "notification.read"
+
+	// The other channels, named one per event on purpose. One event carrying a
+	// channel field would be one retry ladder for four transports: a tenant's
+	// endpoint that answers 500 all afternoon would hold its own notices'
+	// mail back with it, and the mail was fine. One name per channel is one
+	// outbox row per channel, so a webhook that is down delays nothing but
+	// webhooks.
+	//
+	// EventEmailRequested keeps the name it shipped with: an installation's
+	// outbox has rows with it, subscriptions are named by it, and renaming a
+	// live event is a migration of somebody's queue rather than of this file.
+	EventPushRequested    = "notification.push_requested"
+	EventWebPushRequested = "notification.web_push_requested"
+	EventWebhookRequested = "notification.webhook_requested"
+
+	// The settings events. A preference change, a sender change and a device
+	// registration are all state changes this module introduces, and modules/
+	// audit records published events rather than rows, so publishing is how
+	// they are audited (actor, tenant, moment, cause — the audit module's own
+	// shape) and how they are not.
+	EventPreferenceSet  = "notification.preference_set"
+	EventSenderSet      = "notification.sender_set"
+	EventSenderVerified = "notification.sender_verified"
+	// EventSenderRemoved is the deletion of a sender that was not believed. It is
+	// its own name and not a sender_set saying "pending": the row is gone, and an
+	// audit trail that says "this tenant had a pending sender" when somebody removed
+	// it answers the wrong question.
+	EventSenderRemoved = "notification.sender_removed"
+
+	// The device events: a token somebody registered, and a row that stopped being
+	// a device — taken away by its person, or by the provider that no longer knows
+	// it. Both are published, so both are in the audit trail with their actor,
+	// which is the difference between the two and the only place it is written.
+	EventDeviceRegistered = "notification.device_registered"
+	EventDeviceRemoved    = "notification.device_removed"
 )
 
-// Events is every event this module emits, for the manifest.
+// Events is every event this module emits, for the manifest. The two device
+// events return with the table and the command that writes them, which is what
+// the note beside them used to say was missing: a consumer that subscribed to
+// either before migrations/000058 would have waited for an event nothing could
+// publish.
+//
+// Every channel's ask carries contracts.DeliveryRequested, which is what the
+// worker reads to find the row; mail keeps contracts.EmailRequested because that
+// is the name and shape an installation's own consumers already subscribe to.
 var Events = []events.Declared{
 	events.Declare[Created](EventCreated),
 	events.Declare[EmailRequested](EventEmailRequested),
 	events.Declare[Read](EventRead),
+	events.Declare[DeliveryRequested](EventPushRequested),
+	events.Declare[DeliveryRequested](EventWebPushRequested),
+	events.Declare[DeliveryRequested](EventWebhookRequested),
+	events.Declare[PreferenceSet](EventPreferenceSet),
+	events.Declare[SenderSet](EventSenderSet),
+	events.Declare[Verified](EventSenderVerified),
+	events.Declare[SenderRemoved](EventSenderRemoved),
+	events.Declare[DeviceRegistered](EventDeviceRegistered),
+	events.Declare[DeviceRemoved](EventDeviceRemoved),
+}
+
+// RequestedEvent is the event a chosen channel is asked for by — the one table
+// a channel and an event name meet, so Notify and the manifest never disagree.
+// in-app has no entry's twin: the row is the delivery, so nothing is asked for.
+var RequestedEvent = map[Channel]string{
+	ChannelEmail:   EventEmailRequested,
+	ChannelPush:    EventPushRequested,
+	ChannelWebPush: EventWebPushRequested,
+	ChannelWebhook: EventWebhookRequested,
 }
 
 // Created is the payload of EventCreated: somebody was told something.
@@ -69,4 +131,85 @@ type Read struct {
 	NotificationID uuid.UUID `json:"notificationId"`
 	Recipient      uuid.UUID `json:"recipientId"`
 	At             time.Time `json:"at"`
+}
+
+// DeliveryRequested is the payload of every channel request but mail's, and it
+// is the same three identifiers for the same reason: an outbox row is kept for a
+// week and copied into the audit trail, so it carries who and which, never what.
+// The worker reads the row back in the event's own tenant transaction.
+type DeliveryRequested struct {
+	NotificationID uuid.UUID `json:"notificationId"`
+	Recipient      uuid.UUID `json:"recipientId"`
+	At             time.Time `json:"at"`
+}
+
+// PreferenceSet is the payload of EventPreferenceSet: one person changed one
+// answer about one channel. It is audited because a person who says "I never
+// turned mail off" is answered from the trail, and it carries no address, which
+// is the convention every payload here follows.
+type PreferenceSet struct {
+	Recipient uuid.UUID `json:"recipientId"`
+	Intent    string    `json:"intent,omitempty"`
+	Channel   Channel   `json:"channel"`
+	Enabled   bool      `json:"enabled"`
+	At        time.Time `json:"at"`
+}
+
+// SenderSet is the payload of EventSenderSet, and it names the sender without
+// the key, the token or the proof: the row it describes carries those, and an
+// audit trail is not a keystore.
+type SenderSet struct {
+	SenderID uuid.UUID `json:"senderId"`
+	Domain   string    `json:"domain"`
+	Selector string    `json:"selector"`
+	Status   string    `json:"status"`
+	Actor    uuid.UUID `json:"actorId"`
+	At       time.Time `json:"at"`
+}
+
+// Verified is the payload of EventSenderVerified: this tenant may send
+// from this address as of this moment, which is the fact a delivery dispute
+// turns on.
+type Verified struct {
+	SenderID uuid.UUID `json:"senderId"`
+	Domain   string    `json:"domain"`
+	Selector string    `json:"selector"`
+	Actor    uuid.UUID `json:"actorId"`
+	At       time.Time `json:"at"`
+}
+
+// SenderRemoved is the payload of EventSenderRemoved: this tenant's sending
+// identity at this domain and selector was taken away, by whom and when. Like
+// SenderSet it names the sender without the key, the token or the proof.
+type SenderRemoved struct {
+	SenderID uuid.UUID `json:"senderId"`
+	Domain   string    `json:"domain"`
+	Selector string    `json:"selector"`
+	Actor    uuid.UUID `json:"actorId"`
+	At       time.Time `json:"at"`
+}
+
+// DeviceRegistered is the payload of EventDeviceRegistered. Like every payload
+// here it carries identifiers and not content — and here the omission is the
+// point: a push token replays a person's notifications to their phone, so the
+// event that says a token arrived does not carry it. Whoever needs the token
+// reads the row.
+type DeviceRegistered struct {
+	DeviceID  uuid.UUID     `json:"deviceId"`
+	Recipient uuid.UUID     `json:"recipientId"`
+	Platform  push.Platform `json:"platform"`
+	At        time.Time     `json:"at"`
+}
+
+// DeviceRemoved is the payload of EventDeviceRemoved, and Reason is the one
+// field that tells the two ways a device row ends apart: the person's own
+// removal, whose Actor is that person, and the provider reporting the token
+// gone, whose Actor is uuid.Nil because no person did it.
+type DeviceRemoved struct {
+	DeviceID  uuid.UUID     `json:"deviceId"`
+	Recipient uuid.UUID     `json:"recipientId"`
+	Platform  push.Platform `json:"platform"`
+	Reason    string        `json:"reason"`
+	Actor     uuid.UUID     `json:"actorId"`
+	At        time.Time     `json:"at"`
 }

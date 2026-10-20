@@ -17,6 +17,7 @@
         "webcontracts.Links",
         "rest.TranslationSource",
         "admincontracts.Signin",
+        "admincontracts.Pictures",
         "admincontracts.Locale",
         "tenantcontracts.Languages",
         "webhookcontracts.Catalogue"
@@ -34,6 +35,15 @@
             "change"
           ]
         }
+      ],
+      "reads": [
+        "config.Files"
+      ]
+    },
+    {
+      "name": "workspace",
+      "provides": [
+        "*notification.Page"
       ]
     },
     {
@@ -175,9 +185,20 @@
           "from": "tenant"
         }
       ],
+      "uses": [
+        {
+          "contract": "push.Adapters",
+          "from": ""
+        },
+        {
+          "contract": "*notification.Page",
+          "from": "workspace"
+        }
+      ],
       "after": [
         "user",
-        "tenant"
+        "tenant",
+        "workspace"
       ],
       "reads": [
         "config.Mail",
@@ -333,6 +354,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "auth.LinkPages",
+          "from": ""
         }
       ],
       "after": [
@@ -345,6 +370,26 @@
       "reads": [
         "config.Auth",
         "config.Server"
+      ]
+    },
+    {
+      "name": "scim",
+      "provides": [
+        "scimcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        }
+      ],
+      "after": [
+        "user",
+        "auth"
       ]
     },
     {
@@ -478,6 +523,27 @@
       ]
     },
     {
+      "name": "history",
+      "provides": [
+        "historycontracts.Service",
+        "httpx.Versions"
+      ],
+      "needs": [
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "after": [
+        "tenant",
+        "file"
+      ]
+    },
+    {
       "name": "content",
       "provides": [
         "contentcontracts.Service"
@@ -498,10 +564,15 @@
         {
           "contract": "rest.FileShown",
           "from": "file"
+        },
+        {
+          "contract": "httpx.Versions",
+          "from": "history"
         }
       ],
       "after": [
         "file",
+        "history",
         "translation"
       ]
     },
@@ -561,6 +632,10 @@
           "from": "product"
         },
         {
+          "contract": "admincontracts.Pictures",
+          "from": "product"
+        },
+        {
           "contract": "admincontracts.Locale",
           "from": "product"
         },
@@ -592,5 +667,61 @@
       ]
     }
   ],
-  "problems": []
+  "problems": [],
+  "cloud": {
+    "profile": "local",
+    "environment": "production",
+    "seams": [
+      {
+        "seam": "storage",
+        "provider": "local-disk",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "cache",
+        "provider": "in-process",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "events",
+        "provider": "by-role",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "mail",
+        "provider": "mailbox",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "policy",
+        "provider": "rego-in-process",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      },
+      {
+        "seam": "telemetry",
+        "provider": "none",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "identity",
+        "provider": "password-only",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "flags",
+        "provider": "configuration",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      }
+    ]
+  }
 }

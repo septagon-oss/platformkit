@@ -231,6 +231,9 @@ func replay(ctx context.Context, conn *db.Conn, app appname.Name, eventID uuid.U
 		// here so it commits with the clearings or not at all. Audit records
 		// it as it records every event; the actor is the operator's, read off
 		// the request context by the one INSERT every event passes through.
+		if err := SucceedFor(ctx, tx, db.Now()); err != nil {
+			return err
+		}
 		return PublishFor(ctx, tx, tenantID, EventReplayed, rec)
 	})
 	if err != nil {

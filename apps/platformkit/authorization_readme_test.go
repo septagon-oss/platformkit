@@ -25,11 +25,12 @@ var authorizationQuestions = []string{
 // in its operator-boundary subsection. So the documentation of who may do what
 // cannot drift from the declaration the kernel enforces.
 // declaredElsewhere is the census's one exception, written down rather than
-// guessed: five of the modules the reference composition names are not a
+// guessed: six of the modules the reference composition names are not a
 // directory of their own under modules/, so the README that answers for them is
-// not the one the rule `modules/<name>/README.md` would find. `product` and
-// `access` are declared by this application in product.go and `media` in
-// library.go, and their answers belong in this application's own README: all three
+// not the one the rule `modules/<name>/README.md` would find. `product`,
+// `workspace` and `access` are declared by this application in product.go and
+// `media` in library.go, and their answers belong in this application's own
+// README: all four
 // are this product's own module rather than a capability, and `media` declares no
 // permission and mounts no route — it hands the media library this app's chrome and
 // this app's authorizer, which is a fact about the installation;
@@ -41,6 +42,7 @@ var authorizationQuestions = []string{
 // that grows a README-less sibling still fails here.
 var declaredElsewhere = map[string]string{
 	"product":           "README.md",
+	"workspace":         "README.md",
 	"access":            "README.md",
 	"media":             "README.md",
 	"emailregistration": filepath.Join("..", "..", "modules", "auth", "README.md"),

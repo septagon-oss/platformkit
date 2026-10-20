@@ -62,19 +62,21 @@ var spec = rest.Spec[*contracts.User]{
 	Read:   contracts.PermissionUserRead,
 	Write:  contracts.PermissionUserManage,
 	// Present is how a person reads. `primaryField` is the address and not
-	// displayName: displayName defaults to empty, so the documented default would
-	// name an invited person "Untitled person", and an email is required, unique
-	// per tenant and never blank. `summaryFields` is written nowhere: the status is
-	// already the row's pill, and a summary that repeats it is the fault the mount
-	// gate refuses.
+	// displayName: displayName defaults to empty, so a catalogue reader titling
+	// by it would name an invited person "Untitled person", and an email is
+	// required, unique per tenant and never blank. The display name and handle
+	// follow as the summary; timestamps remain on the record.
 	Present: entity.EntryHints{
-		Singular:     "person",
-		Plural:       "people",
-		Icon:         "people",
-		Group:        &entity.ResourceGroup{Key: "people", Label: "People"},
-		PrimaryField: "email",
-		StatusField:  "status",
-		Sortable:     []string{"email", "displayName", "updatedAt"},
+		Description:      "Invite and manage the people who can access this workspace.",
+		EmptyDescription: "Add a person, then assign the role they need.",
+		Singular:         "person",
+		Plural:           "people",
+		Icon:             "people",
+		Group:            &entity.ResourceGroup{Key: "people", Label: "People"},
+		PrimaryField:     "email",
+		SummaryFields:    []string{"displayName", "handle"},
+		StatusField:      "status",
+		Sortable:         []string{"email", "displayName", "updatedAt"},
 	},
 	SoftDelete: true,
 	// The two fields a command owns. Lifecycle commands move status, and
@@ -180,6 +182,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.PasswordSet](contracts.EventPasswordSet),
 			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
 			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
+			events.Declare[contracts.Reactivated](contracts.EventReactivated),
 			events.Declare[contracts.HandleSet](contracts.EventHandleSet),
 			events.Declare[contracts.AdministrationRefused](contracts.EventAdministrationRefused),
 			events.Declare[contracts.RegistrationPending](contracts.EventRegistrationPending),

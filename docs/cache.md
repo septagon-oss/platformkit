@@ -43,6 +43,7 @@ not allowed to be a different cache.
 | Value | Where it may live | Lifetime | Invalidation | Forbidden |
 | --- | --- | --- | --- | ---|
 | host → tenant resolution (`kit/httpx`) | the shared store, one copy, no second copy in the process | 30 s (`hostTTL`) | `Move` of the host namespace — `InvalidateHost`, whatever hosts the change names (everything expires within `hostTTL` regardless) | caching a failure or an unknown host; caching the zero tenant; a second local copy, which would need a second invalidation; a `Delete` of the named hosts, which loses the load that raced the change |
+| a workspace total, per tenant, per resource (`apps/platformkit`'s `/api/v1/app/summary`) | the shared store, one copy, no second copy in the process | 15 s (`summaryTTL`) | nothing wired: the TTL only | a key formed before the read guard was asked (the guard runs first, and is the reason a per-tenant key is safe for a permission-filtered number); caching a refused, failed or cancelled count, which would read back as a decision; a key without the tenant; a whole response body, which would key one caller's grant-derived resource list; a second in-process copy |
 | a composed value, per key | this process's memory, bounded at 16, LRU; its *marker* in the shared store | the entry's own TTL, and the marker expires with it | `Delete` of that entry's key, plus the TTL | composing eagerly for a host nobody asked for; caching a failed composition; a value that owns a resource needing release |
 | a session, a permission grant, an entitlement | **nowhere** — not on this port, not in a process map, not in the store | — | — | every form of caching. `modules/auth/internal/kernel.go` says why: *"A permission cache is a window in which a revoked grant still works."* The read path is the transaction under RLS |
 | anything a tenant owns | only through `cache.Of(tenant, …)`, the tenant from `tenancy.FromContext` or a `db.Tx[db.Tenant]` | the caller's own TTL | `Delete` of the key, `Move` of the namespace | a key without the tenant in it. `cache.Shared` is a greppable declaration that the entry belongs to the installation, and it is the only way to say so |
@@ -80,7 +81,14 @@ serving private answers from a cache its invalidations will never reach.
 ## Not yet in this policy
 
 - Fingerprinted script URLs, which would move the controllers to the immutable row.
-- A second consumer of the port. `cache.Group[V]` — the bounded lazy composition of decision 0028 §4 — is shipped
-  and conforms, and nothing in this repository composes one yet: the client-composition caches this row was written
-  for live in the applications that install these modules, so "a composed value, per key" above names a shape with
-  no in-tree caller. `InvalidateHost` and `cache.Shared("host")` are the only uses in this repository.
+## Composed pictures
+
+`modules/picture` is the in-tree consumer of lazy composed values. Its `Pool[V]`
+facade shares Group's LRU, marker, TTL and singleflight implementation while
+bounding the total working set across tenant scopes in one namespace. It accepts
+only tenant-owned keys in that namespace and takes an immutable miss closure per
+call. Group's exact-scope contract remains unchanged. The request borrows the
+runtime store through `httpx.CacheFrom` after Connect; dry mounts open no store.
+Source authorization and value validation precede every pool lookup and HTTP
+conditional. No grant or source row enters the pool. See the
+[picture contract](../modules/picture/README.md) for its private delivery policy.

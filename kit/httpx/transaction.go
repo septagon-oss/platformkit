@@ -36,7 +36,18 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	// Close is idempotent, so this covers the panic path and nothing else.
-	defer func() { _ = p.Close(false) }()
+	closed := false
+	defer func() {
+		if !closed {
+			rollbackErr := p.Close(false)
+			if n, ok := operationNote(ctx.Context()); ok && rollbackErr == nil {
+				if err := a.failedOperation(n); err != nil {
+					n.failureErr = err
+					a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: could not persist failed operation", "error", err)
+				}
+			}
+		}
+	}()
 
 	// The connection travels with the transaction: a control-plane route needs
 	// both it and a token to open a transaction of its own. See ConnFrom.
@@ -59,15 +70,62 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// thinks, so commit and say so; if nothing has been sent, nobody decided,
 	// and a transaction nobody decided about must not commit.
 	keep, undecided := statusOf(ctx, a, inner.Status())
+	if n, ok := operationNote(ctx.Context()); ok {
+		if b, ok := bufferFrom(ctx.Context()); ok && b.streamRefused {
+			keep = false
+			undecided = true
+		}
+		if keep {
+			if finishErr := a.finishOperation(n); finishErr != nil {
+				keep = false
+				undecided = true
+				a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: operation completion refused", "error", finishErr)
+			}
+		}
+	}
+	// A command that claimed an idempotency key leaves its marker inside this
+	// transaction, so the marker and the effect it stands for commit or roll back as
+	// one. Nothing else can tell the caller, later, which way an unanswered COMMIT
+	// went: see idempotency.Store.Mark.
+	var unmarked error
+	if keep {
+		if unmarked = markEffect(ctx.Context(), p); unmarked != nil {
+			// Work without its marker, or beside a retry that took the key over, is the
+			// second write the key exists to prevent, so it does not commit. The claim
+			// stays begun and unmarked, which the next press reads as a command that
+			// never ran — once the lease is over, as it reads a refused COMMIT.
+			keep = false
+			noteUncommitted(ctx.Context())
+		}
+	}
 	err = p.Close(keep)
+	closed = true
+	if err != nil {
+		noteUncommitted(ctx.Context())
+	}
+	if n, ok := operationNote(ctx.Context()); ok && !keep && err == nil && unmarked == nil {
+		if failureErr := a.failedOperation(n); failureErr != nil {
+			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: failed operation evidence could not persist", "error", failureErr)
+			if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
+				a.refuse(ctx, http.StatusServiceUnavailable, "")
+			}
+			return
+		}
+	}
 	b, buffered := bufferFrom(ctx.Context())
 	switch {
+	case err == nil && unmarked != nil:
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the keyed command could not be marked; it was rolled back",
+			"method", ctx.Method(), "path", ctx.URL().Path, "error", unmarked)
+		if buffered && b.reset() {
+			a.refuse(ctx, http.StatusServiceUnavailable, CodeIdempotencyUnavailable+": this write could not be remembered, so it was not made")
+		}
 	case err == nil:
 		if undecided && buffered && b.reset() {
 			a.refuse(ctx, http.StatusInternalServerError, "")
 		}
 	case hungUp(ctx.Context(), err):
-		// Nobody is waiting for this answer and nothing was written. See hungUp.
+		// Nobody is waiting for this answer. See hungUp.
 		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: the client hung up before the request transaction ended",
 			"method", ctx.Method(), "path", ctx.URL().Path)
 	case buffered && b.reset():
@@ -89,7 +147,10 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 // refuses to commit whatever status the handler decided, answering with the
 // context's cause; a cancel landing after that check but before COMMIT has
 // database/sql roll back first, and the commit answers sql.ErrTxDone. Either
-// reads as a fault and is not one: nothing was written, and nobody is left to tell.
+// reads as a fault and is not one: nobody is left to tell. A cancellation that
+// lands while the COMMIT's answer is on its way may follow a write that did
+// commit; this reading only chooses the log line, and the idempotency record is
+// left to the effect marker before it.
 //
 // It matters because the alternative was an ERROR line per abandoned request.
 // An alert that fires on ordinary browsing is an alert people turn off, and the

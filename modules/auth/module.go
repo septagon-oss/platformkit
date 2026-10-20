@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -76,9 +77,9 @@ type Deps struct {
 	EmailRegistration *contracts.EmailRegistration
 
 	// Notify is how somebody is told, inside the application, that a link was
-	// sent. It never carries the link: the notice points at /auth/reset and the
-	// secret is in the mail and nowhere else. A composition that wires none
-	// still sends the mail.
+	// sent. It never carries the link: the notice points at the set-password
+	// page (LinkPages), the secret is in the mail and nowhere else. A
+	// composition that wires none still sends the mail.
 	Notify contracts.Notifier
 
 	// Mailer is where the link itself goes, and it is the only place it goes.
@@ -168,11 +169,47 @@ type Deps struct {
 	// existed.
 	Messages locale.Messages
 
+	// LinkPages names the pages the set-password and confirmation links open on
+	// the tenant's host. Zero is the admin shell's workspace screens, which is what
+	// every composition mailed before the field existed. See LinkPages.
+	LinkPages LinkPages
+
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
 	// browser refuses a Secure cookie over http://localhost, so a development
 	// machine would be a development machine nobody could sign in to.
 	PublicHost string
+}
+
+// LinkPages names the pages a mailed link opens, as paths on the host the tenant
+// is served at: SetPassword for an invitation or a reset, ConfirmEmail for a
+// sign-up's confirmation. The page reads the token from the link's query and
+// calls the API door that exists for it (/api/v1/auth/password/reset,
+// /api/v1/public/auth/verify-email); this module serves no page at either.
+//
+// Each is an absolute path with no query or fragment and never under the API
+// root, and New panics on anything else. Empty is the workspace screen the admin
+// shell mounts, /app/auth/reset or /app/auth/verify-email, so either may be named
+// alone.
+type LinkPages struct {
+	SetPassword  string
+	ConfirmEmail string
+}
+
+// check answers why a named page is one a mailed link cannot open: it is not a
+// path on this site, it carries the query or fragment the appended token would
+// collide with, or it is under the API root. Nil when both are empty or usable.
+func (p LinkPages) check() error {
+	for _, page := range []string{p.SetPassword, p.ConfirmEmail} {
+		switch {
+		case page == "":
+		case !httpx.LocalPath(page) || strings.ContainsAny(page, "?#"):
+			return fmt.Errorf("auth: a mailed link cannot open %q: name an absolute path on the tenant's host, with no query or fragment", page)
+		case httpx.UnderAPI(page):
+			return fmt.Errorf("auth: a mailed link cannot open %q: it is under the API root, and a link opens a page that calls the API", page)
+		}
+	}
+	return nil
 }
 
 // NewPasskeyDoor returns the one read of a tenant's usernameless door, as
@@ -209,9 +246,13 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		}
 		deps.ApprovalRegistration = &policy
 	}
+	if err := deps.LinkPages.check(); err != nil {
+		panic(err)
+	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
+		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
 	})
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
@@ -350,9 +391,18 @@ var permissions = []module.Permission{
 }
 
 // SeedRoles provisions a newly created tenant through auth's own storage path,
-// independently of sessions, delivery and periodic jobs. Pass trusted defaults
-// checked against the composition with contracts.CheckedPermissions before
-// bootstrap or startup. Existing role grants are preserved on repeated calls.
-func SeedRoles(ctx context.Context, tx db.Tx[db.System], tenant tenancy.Tenant, operator []string, defaults []contracts.Role) error {
-	return internal.SeedRoles(ctx, tx, tenant, operator, defaults)
+// independently of sessions, delivery and periodic jobs. Existing role grants
+// are preserved on repeated calls.
+//
+// declared is the application's permission catalogue, which it gets from
+// kit/module.Grants over the modules it composed — never a list written out
+// here or at the call site. That is the whole point of the parameter: the
+// operator grants the administrator's role is created holding are the operator
+// permissions of the composed modules, so an application that does not compose
+// the module owning a permission cannot seed it, and an initial role naming one
+// no module defines is refused here instead of warned about on the hour.
+// contracts.SeededRoles is the same decision without a database, for an
+// application that wants it refused before it opens one.
+func SeedRoles(ctx context.Context, tx db.Tx[db.System], tenant tenancy.Tenant, declared []tenancy.Grant, defaults []contracts.Role) error {
+	return internal.SeedRoles(ctx, tx, tenant, declared, defaults)
 }

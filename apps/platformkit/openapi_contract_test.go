@@ -70,6 +70,11 @@ var deviceContractPaths = []struct {
 	{operation: "auth-me", method: http.MethodGet, path: "/api/v1/auth/me"},
 	{operation: "auth-logout", method: http.MethodPost, path: "/api/v1/auth/logout"},
 	{operation: "app-resources", method: http.MethodGet, path: "/api/v1/app/resources"},
+	// What those resources hold. It joined in the commit that mounted it, for the
+	// same reason the catalogue is here: a shell is generated against this address
+	// before it draws a single number, and a field of the body that never reached
+	// the published document would be a field no generated client would have.
+	{operation: "app-summary", method: http.MethodGet, path: "/api/v1/app/summary"},
 	// The workspace's face, which a shell reads *before* it can authenticate: it is
 	// the one address in this list a caller reaches with no credential at all, and
 	// it joined in the round that mounted it rather than the round that documented

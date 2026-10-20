@@ -13,7 +13,8 @@
 # prove one flow. The probe below is the check on that claim: an image that stops
 # carrying these fails this job naming the tool it could not find.
 #
-# Nothing here continues on error. A journey that quietly skipped would leave
+# The credential probe reports refusals without failing; every journey step fails on error.
+# A journey that quietly skipped would leave
 # mobile_flow_pass_rate reading like a number nobody earned, which is the failure the
 # Makefile names for a suite that skips the transport it ships.
 name: mobile
@@ -22,6 +23,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The journey is the only proof this repository has that a device can use the
+  # contract it publishes, and it is the only one that needs a device: the branch
+  # that changed the fetch, the pin or the flow is dispatchable so its author reads
+  # the journey on the runner that has /dev/kvm rather than guessing from `make
+  # check`. Nightly and the public-consumption report declare the same trigger.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -53,14 +60,15 @@ jobs:
       # the mobile owner's: both values are set on the repository, and the harness
       # refuses to run when either is missing rather than downloading something it
       # cannot name. The digest is checked before anything is installed. The URL is
-      # deliberately not a job-level entry: "Fetch the pinned shell build" reads it
-      # from the repository itself, authorises the download with the job's token, and
-      # exports PK_MOBILE_APK as a file:// URL on the job environment. No job-level
-      # entry of that name stands here, and that is the point of the arrangement and
-      # not its mechanism: whether a job's env: outranks a $GITHUB_ENV export is
-      # act_runner's ordering, which nothing in this repository establishes, so a
-      # second PK_MOBILE_APK could outrank the export and hand the harness the
-      # sign-in-gated URL back — the failure this step exists to remove.
+      # deliberately not a job-level entry: "Fetch the pinned shell build through the
+      # forge's API" reads it from the repository itself, resolves the asset it names
+      # through the forge's API with the selected token, and exports PK_MOBILE_APK as a
+      # file:// URL on the job environment. No job-level entry of that name stands
+      # here, and that is the point of the arrangement and not its mechanism: whether a
+      # job's env: outranks a $GITHUB_ENV export is act_runner's ordering, which nothing
+      # in this repository establishes, so a second PK_MOBILE_APK could outrank the
+      # export and hand the harness the sign-in-gated URL back — the failure this step
+      # exists to remove.
       # scripts/mobile_journey_fetch_test.sh refuses a job-level entry by that name on
       # that reading alone, without waiting for the ordering to be measured.
       PK_MOBILE_APK_SHA256: ${{ vars.PK_MOBILE_APK_SHA256 }}
@@ -74,6 +82,13 @@ jobs:
         env:
           POSTGRES_PASSWORD: platformkit
           POSTGRES_DB: platformkit
+          # This cluster is created for the job and deleted with it, so it does not
+          # force its writes to a device: the same three settings compose.yaml names
+          # on its server's command line, whose comment says why. initdb writes them
+          # into the configuration of the data directory this job creates and never
+          # reuses, which is the carrier a service container has and a developer's
+          # persistent volume must not rely on.
+          POSTGRES_INITDB_ARGS: "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=256"
         options: >-
           --health-cmd "pg_isready -U postgres -d platformkit"
           --health-interval 5s
@@ -138,6 +153,90 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - name: Probe the pinned asset with only the job token
+        # API metadata can answer 200 without granting access to APK bytes.
+        # Report both reads and the digest without changing the authoritative fetch.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PK_MOBILE_APK: ${{ vars.PK_MOBILE_APK }}
+        run: |
+          timeout 120 python3 - <<'PROBE' || echo 'job-token probe: inconclusive (diagnostic could not finish)'
+          import hashlib
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          class SameForgeRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  where = urllib.parse.urlsplit(newurl)
+                  if (where.scheme, where.netloc) != (pin.scheme, pin.netloc) or where.username:
+                      return None
+                  return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+          def read(url, label, binary=False, accept="application/json"):
+              where = urllib.parse.urlsplit(url)
+              if (where.scheme, where.netloc) != (pin.scheme, pin.netloc) or where.username:
+                  print("job-token %s: refused foreign address" % label)
+                  return None
+              request = urllib.request.Request(url, headers={
+                  "Authorization": "token " + os.environ["GITHUB_TOKEN"],
+                  "Accept": "application/octet-stream" if binary else accept,
+              })
+              try:
+                  with client.open(request, timeout=20) as response:
+                      print("job-token %s: HTTP %s" % (label, response.status), flush=True)
+                      if binary:
+                          digest = hashlib.sha256()
+                          size = 0
+                          while chunk := response.read(1024 * 1024):
+                              digest.update(chunk)
+                              size += len(chunk)
+                          matches = digest.hexdigest() == os.environ.get("PK_MOBILE_APK_SHA256", "").lower()
+                          print("job-token %s: bytes=%d sha256=%s pin_match=%s" % (
+                              label, size, digest.hexdigest(), str(matches).lower()))
+                          return matches
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  print("job-token %s: HTTP %s" % (label, error.code))
+                  error.close()
+              except Exception:
+                  print("job-token %s: inconclusive (transport or response failure)" % label)
+              return None
+
+          def probe():
+              parts = [urllib.parse.unquote(s) for s in pin.path.split("/") if s]
+              edges = [i for i, s in enumerate(parts[:-1]) if s == "releases" and parts[i + 1] == "download"]
+              if pin.scheme not in ("http", "https") or not pin.netloc or pin.username or len(edges) != 1:
+                  raise ValueError("invalid pin")
+              edge = edges[0]
+              tag = "/".join(parts[edge + 2:-1])
+              if edge < 2 or not tag or not os.environ.get("GITHUB_TOKEN"):
+                  raise ValueError("missing input")
+              repos = "/".join(urllib.parse.quote(s, safe="") for s in parts[:edge])
+              releases = "%s://%s/api/v1/repos/%s/releases" % (pin.scheme, pin.netloc, repos)
+              release = read(releases + "/tags/" + urllib.parse.quote(tag, safe=""), "release API")
+              if release is None:
+                  return
+              assets = [a for a in release.get("assets", []) if a.get("name") == parts[-1]]
+              if len(assets) != 1:
+                  raise ValueError("ambiguous asset")
+              asset = assets[0]
+              attachment = read("%s/%d/assets/%d" % (releases, int(release["id"]), int(asset["id"])),
+                                "asset API", accept="application/octet-stream")
+              read(str(asset.get("browser_download_url") or ""), "release bytes", binary=True)
+              if isinstance(attachment, dict):
+                  read(str(attachment.get("browser_download_url") or ""), "attachment bytes", binary=True)
+
+          try:
+              pin = urllib.parse.urlsplit(os.environ.get("PK_MOBILE_APK", ""))
+              client = urllib.request.build_opener(SameForgeRedirect())
+              probe()
+          except Exception:
+              print("job-token probe: inconclusive (missing input or invalid release document)")
+          PROBE
+
       - name: Name what this host owes a device journey
         # First, and it is the step that decides whether the rest can mean anything.
         # This job runs on the pkit-ci-android label, whose image keeps adb and the
@@ -184,20 +283,89 @@ jobs:
           done
           adb version
           emulator -version | head -3
+          # The one tool the journey cannot do without that this step does not require, because
+          # requiring it here would refuse every run of an image that buys it further down. The
+          # harness decides whether the application this job started owns the socket it is answering
+          # /health on, and it decides that from `ss`, falling back to `lsof` (its wait_healthy). Both
+          # probes send their own "command not found" to /dev/null, so a runner carrying neither gets
+          # an empty list, and an empty list is read there as "that listener is not mine": the journey
+          # is refused for a stranger's socket while its own process holds the port. iproute2 is
+          # bought by the install step below, which runs after this one, and the receipt for it is
+          # that step's own — `The socket probe on this runner names the listener it holds`.
+          for probe in ss lsof; do
+            path="$(command -v "$probe" 2>/dev/null || true)"
+            echo "$probe: ${path:-absent from this image}"
+          done
 
       # The same retry the kernel's check job asks for, and the same measured reason: `apt-get update`
-      # ends this step under `bash -e`, so a mirror mid-sync leaves this job no `psql` and the role
-      # below never gets prepared. scripts/ci_apt_index.sh holds why a retry is the answer; this is the
-      # line that stops the journey's job from being the one half of the program that still pays a
-      # mirror's bad minute in full. scripts/ci_apt_index_test.sh runs this body against a stub apt-get
-      # that refuses the way the mirror refused.
-      - name: Install the database client and prepare the role
+      # ends this step under `bash -e`, so a mirror mid-sync leaves this job no `psql` and no `ss`: the
+      # role below never gets prepared and the journey cannot say whose socket it holds.
+      # scripts/ci_apt_index.sh holds why a retry is the answer; this is the line that stops the
+      # journey's job from being the one half of the program that still pays a mirror's bad minute in
+      # full. scripts/ci_apt_index_test.sh runs this body against a stub apt-get that refuses the way
+      # the mirror refused.
+      - name: Install the database client, the socket probe and prepare the role
         env:
           PGPASSWORD: platformkit
         run: |
           bash scripts/ci_apt_index.sh
-          apt-get install --yes --no-install-recommends postgresql-client
+          apt-get install --yes --no-install-recommends postgresql-client iproute2
           psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
+
+      # The receipt for the line above. scripts/mobile_e2e.sh attributes the listener on the journey's
+      # port to the application it started by reading the socket table, and both of its probes — `ss
+      # -ltnp` and `lsof` — write their own "command not found" into /dev/null. On a runner that
+      # carries neither, the answer is an empty list, and the empty list is read as "somebody else
+      # holds this port": the run is refused for a listener it does not have, with the socket table
+      # the refusal offers as its evidence equally silent. So the mechanism is tried against a
+      # listener this step started itself, on a port the kernel allocated, because a probe that has
+      # never named a socket of its own is exactly the silence that failure is made of. The question
+      # goes to scripts/free_port.sh's port_listeners — the reader scripts/e2e.sh asks, iproute2 first
+      # with lsof behind it — rather than to a copy of the harness's inline shape, and the listener is
+      # the `python3 -m http.server` shape scripts/e2e_health_owner_test.sh already uses for a
+      # stranger's, because free_port.sh's own port_attribution_works binds through node, which is
+      # gate 10's prerequisite and nothing this job has ever required. It runs before the emulator
+      # boots, so a runner that cannot answer the question says so in seconds rather than after
+      # twenty minutes of device.
+      - name: The socket probe on this runner names the listener it holds
+        run: |
+          # shellcheck source=scripts/free_port.sh
+          . scripts/free_port.sh
+          # What this job was given, after the install above and not before it: the probe step asks
+          # the same question of the image, and the two answers are minutes and one apt run apart.
+          for probe in ss lsof; do
+            path="$(command -v "$probe" 2>/dev/null || true)"
+            echo "$probe: ${path:-absent from this image}"
+          done
+          # The project and its version, which is what "the package is there" would only assert.
+          if command -v ss >/dev/null 2>&1; then ss -V; fi
+          banner="$(mktemp)"
+          python3 -u -m http.server 0 --bind 127.0.0.1 >"$banner" 2>&1 &
+          listener=$!
+          # The server prints the port the kernel gave it; the wait is for that line, not for a
+          # moment's sleep, and port 0 keeps this off the number the journey is going to bind.
+          for try in 1 2 3 4 5 6 7 8 9 10; do
+            if grep -q 'port ' "$banner"; then break; fi
+            sleep 0.3
+          done
+          port="$(sed -n 's/.*port \([0-9]*\).*/\1/p' "$banner" | head -1)"
+          # `|| true` because this step's verdict is the pid match below and not the exit code of the
+          # question: a machine that will not answer it at all is still a refusal, and it has to be
+          # this step's refusal, in its own words.
+          holders="$(port_listeners "$port" 2>/dev/null || true)"
+          kill "$listener" 2>/dev/null || true
+          wait "$listener" 2>/dev/null || true
+          rm -f "$banner"
+          # No walk up the parents, which the harness does because an application may be started
+          # through a wrapper: this listener is this step's own child, so the holder it names is
+          # $listener or the answer proves nothing.
+          if ! printf '%s\n' "$holders" | grep -qxF "$listener"; then
+            echo "neither ss nor lsof on this runner named the listener this step started (pid $listener on port ${port:-none})." >&2
+            echo "scripts/mobile_e2e.sh attributes the journey's /health answer with the same probe, so a journey whose own socket this is" >&2
+            echo "would be refused for a listener it does not have. The runner label needs iproute2; the flow does not get skipped." >&2
+            exit 1
+          fi
+          echo "the socket probe names its own listener: pid $listener on port $port"
 
       - name: Start NATS with JetStream on this job's network
         id: nats
@@ -243,17 +411,13 @@ jobs:
           tail -40 emulator.log >&2
           exit 1
 
-      - name: Fetch the pinned shell build with the job's token
-        # Gitea answers an anonymous download of a release asset with the sign-in page,
-        # so the harness's plain curl would hash a login page and refuse it on the
-        # digest. The job therefore downloads the pin with its own token into the job's
-        # work directory, checks it against PK_MOBILE_APK_SHA256 here, and hands the
-        # harness a file:// URL it can open without signing in; the harness's own digest
-        # check still runs on that file, so the pin is checked twice and trusted once.
-        # When the variables are unset this refuses naming them, as the harness would:
-        # the download is not the place a missing pin becomes a green step.
+      - name: Fetch the pinned shell build through the forge's API
+        # Resolve the release and its named asset, then verify the downloaded bytes
+        # before exporting them. The harness checks the same digest before installing.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Retain the fallback until the isolated probe establishes job-token access.
+          # PAT scopes come from owner provisioning, not this expression.
+          GITHUB_TOKEN: ${{ secrets.PK_MOBILE_TOKEN || secrets.GITHUB_TOKEN }}
           PK_MOBILE_APK: ${{ vars.PK_MOBILE_APK }}
         run: |
           if [ -z "$PK_MOBILE_APK" ] || [ -z "$PK_MOBILE_APK_SHA256" ]; then
@@ -262,12 +426,77 @@ jobs:
           fi
           test -n "$RUNNER_TEMP" || { echo "RUNNER_TEMP is unset: this job has no work directory to fetch the shell build into." >&2; exit 1; }
           dest="$RUNNER_TEMP/shell.apk"
-          if ! curl -fsSL --header "Authorization: token $GITHUB_TOKEN" "$PK_MOBILE_APK" -o "$dest"; then
-            echo "the job could not download PK_MOBILE_APK with its own token: the pin names something this forge will not hand to this job." >&2
+          meta="$RUNNER_TEMP/release.json"
+          # The pin is the address the forge publishes for the asset, and what its API resolves a
+          # release by is owner, repository and tag. Reading those out of the pin here keeps the
+          # mobile owner's one repository variable the only naming of the build: a second variable
+          # pointing at the same asset is the divergence the note on this job's env: refuses.
+          resolved="$(python3 - "$PK_MOBILE_APK" <<'PIN'
+          import sys
+          import urllib.parse
+
+          pin = urllib.parse.urlsplit(sys.argv[1])
+          segs = [urllib.parse.unquote(s) for s in pin.path.split("/") if s]
+          edge = [i for i, s in enumerate(segs[:-1]) if s == "releases" and segs[i + 1] == "download"]
+          if pin.scheme not in ("http", "https") or not pin.netloc or len(segs) < 5 or len(edge) != 1:
+              sys.exit("PK_MOBILE_APK=%s is not an address of the form "
+                       "<forge>/<owner>/<repo>/releases/download/<tag>/<asset>, which is the address "
+                       "a forge publishes for a release asset, so this job cannot resolve the build "
+                       "it names." % sys.argv[1])
+          first, last = edge[0], segs[-1]
+          tag = "/".join(segs[first + 2:-1])
+          if first < 2 or not tag:
+              sys.exit("PK_MOBILE_APK=%s names no owner, repository or tag before its release "
+                       "download address, so this job cannot resolve the build it names." % sys.argv[1])
+          repos = "/".join(urllib.parse.quote(s, safe="") for s in segs[:first])
+          sys.stdout.write("%s\t%s\t%s\n" % (
+              "%s://%s/api/v1/repos/%s/releases/tags/%s" % (
+                  pin.scheme, pin.netloc, repos, urllib.parse.quote(tag, safe="")), last, pin.netloc))
+          PIN
+          )"
+          IFS=$'\t' read -r release_url asset_name forge_host <<<"$resolved"
+          # No -L here, where the download below has it: a redirect would put this header on an
+          # address neither the pin nor this job named, and the API answers a signed-in read of a
+          # release with the document itself, so a redirect is never the shape that works.
+          if ! curl -fsS --header "Authorization: token $GITHUB_TOKEN" "$release_url" -o "$meta"; then
+            echo "the job could not read the release at $release_url to find $asset_name: the API refused this token; set PK_MOBILE_TOKEN on this repository to a read-only token for it." >&2
+            exit 1
+          fi
+          asset_url="$(python3 - "$meta" "$asset_name" "$forge_host" <<'ASSET'
+          import json
+          import sys
+          import urllib.parse
+
+          meta, name, host = sys.argv[1:4]
+          try:
+              with open(meta) as handle:
+                  release = json.load(handle)
+          except ValueError:
+              sys.exit("the release address answered something that is not a release document: a "
+                       "sign-in page is what a forge that requires sign-in answers a read it does "
+                       "not authorise, and no build is in it.")
+          assets = release.get("assets") or []
+          named = [asset for asset in assets if asset.get("name") == name]
+          if len(named) != 1:
+              sys.exit("the release %s carries no single asset named %s (it names: %s): PK_MOBILE_APK "
+                       "names a build this forge does not have under that tag." % (
+                           release.get("tag_name"), name,
+                           ", ".join(str(asset.get("name")) for asset in assets) or "nothing"))
+          published = str(named[0].get("browser_download_url") or "")
+          where = urllib.parse.urlsplit(published)
+          if where.scheme not in ("http", "https") or where.netloc != host:
+              sys.exit("the asset %s is published at %s, which is not the forge PK_MOBILE_APK names "
+                       "(%s): this job sends its token to the forge the pin names and nowhere else." % (
+                           name, published or "nowhere", host))
+          sys.stdout.write(published + "\n")
+          ASSET
+          )"
+          if ! curl -fsSL --header "Authorization: token $GITHUB_TOKEN" "$asset_url" -o "$dest"; then
+            echo "the job could not download $asset_url with its own token: the pin names something this forge will not hand to this job (PK_MOBILE_APK is $PK_MOBILE_APK), and PK_MOBILE_TOKEN, a read-only token for this repository, is the credential the sign-in rule answers." >&2
             exit 1
           fi
           if ! echo "$PK_MOBILE_APK_SHA256  $dest" | sha256sum --check --status; then
-            echo "the file downloaded from $PK_MOBILE_APK is not the build PK_MOBILE_APK_SHA256 names; nothing is installed." >&2
+            echo "the file downloaded from $asset_url is not the build PK_MOBILE_APK_SHA256 names; nothing is installed." >&2
             exit 1
           fi
           echo "PK_MOBILE_APK=file://$dest" >> "$GITHUB_ENV"

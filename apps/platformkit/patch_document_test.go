@@ -31,6 +31,21 @@ func TestNoRequestBodyDocumentsAnOpenUntypedObject(t *testing.T) {
 	}
 }
 
+// protocolPatchDocuments names the PATCH operations this composition serves that
+// are not one resource's merge-patch, and the specification whose document their
+// body is. A registered Resource says which fields its writer accepts, which is
+// what makes the question above answerable at full strength; a module that mounts
+// a machine protocol at the address that protocol names has no Resource to ask,
+// because the body is the specification's own document and not a projection of one
+// row. The list is what lets this gate say which operations it asked about, and it
+// buys no latitude about their bodies: each one is still refused an open object, an
+// untyped or undescribed property, a document that stopped serving it, and — for
+// any PATCH in neither set — the refusal it already gave.
+var protocolPatchDocuments = map[string]string{
+	"scim-user-patch":  "RFC 7644 §3.5.2's Operations document, asked at /scim/v2/Users/{id}",
+	"scim-group-patch": "RFC 7644 §3.5.2's Operations document, asked at /scim/v2/Groups/{id}",
+}
+
 func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 	cfg, mods, fixture := deviceComposition(t)
 	var mu sync.Mutex
@@ -53,6 +68,15 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 		t.Fatalf("document = %d %s", code, body)
 	}
 	doc := wireDocument(t, []byte(body))
+	// A cover is a file this tenant owns, so the fixture uploads one through the file
+	// module's own door. The content write path refuses a file id it cannot find in
+	// this tenant, so an invented uuid is not a fixture for a picture key: the value
+	// has to arrive the way a person's would.
+	code, body = putFile(t, cfg, admin, filesPath, "cover.svg", "image/svg+xml", "<svg xmlns='http://www.w3.org/2000/svg'/>")
+	if code != http.StatusCreated {
+		t.Fatalf("POST %s = %d %s, want 201", filesPath, code, body)
+	}
+	cover := field(t, body, "id")
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +108,7 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 			"title": "changed task", "description": "new description", "status": "in_progress", "priority": "high", "source": "fixture", "sourceRef": "fixture-1", "dueAt": "2030-01-02T03:04:05Z", "slaDeadline": "2030-01-03T03:04:05Z",
 		}},
 		"content-content-update": {seed: `{"slug":"patch-content","title":"Patch content","body":"Before","kind":"page"}`, values: map[string]any{
-			"slug": "changed-content", "title": "Changed content", "body": "New **body**\n", "kind": "post",
+			"slug": "changed-content", "title": "Changed content", "body": "New **body**\n", "kind": "post", "coverImageId": cover,
 		}},
 		"user-user-update": {seed: `{"email":"patch-person@example.test","displayName":"Patch person"}`, values: map[string]any{
 			"email": "changed-person@example.test", "displayName": "Changed person",
@@ -228,10 +252,34 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 			}
 		})
 	}
+	for id, speaks := range protocolPatchDocuments {
+		route, ok := wireRoute(doc, id)
+		if !ok {
+			t.Errorf("PATCH %s is listed as a protocol document that no longer answers: %s", id, speaks)
+			continue
+		}
+		if seen[id] {
+			t.Errorf("PATCH %s is a registered resource's merge-patch and no longer needs the protocol list", id)
+			continue
+		}
+		shape := wireResolveRef(doc, patchRequestSchema(route))
+		properties := wireMap(shape["properties"])
+		if shape["type"] != "object" || shape["additionalProperties"] != false || len(properties) == 0 {
+			t.Errorf("PATCH %s (%s) is not a closed typed body: %v", id, speaks, shape)
+			continue
+		}
+		for key, raw := range properties {
+			property, _ := raw.(map[string]any)
+			if property["type"] == nil || property["description"] == nil {
+				t.Errorf("PATCH %s documents %s with no type or no description: %v", id, key, property)
+			}
+		}
+	}
 	for _, item := range wireMap(doc["paths"]) {
 		route := wireMap(wireMap(item)["patch"])
-		if len(route) > 0 && !seen[route["operationId"].(string)] {
-			t.Errorf("PATCH %s has no registered resource conformance case", route["operationId"])
+		id, _ := route["operationId"].(string)
+		if len(route) > 0 && !seen[id] && protocolPatchDocuments[id] == "" {
+			t.Errorf("PATCH %s has no registered resource conformance case and names no protocol document", id)
 		}
 	}
 	if len(seen) != len(fixtures) {

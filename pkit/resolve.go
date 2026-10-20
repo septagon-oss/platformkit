@@ -3,6 +3,7 @@ package pkit
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -56,6 +57,7 @@ type plan struct {
 	last         *Module                    // the module that runs after everything
 	cfg          config.Config              // the deployment's configuration, read by Config
 	reads        map[*Module][]reflect.Type // which section each built module asked Config for
+	cloud        cloudPlan                  // what the deployment's configuration answers about its seams
 }
 
 type choice struct {
@@ -89,6 +91,16 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 		said[id] = true
 		fail(method, format, args...)
 	}
+
+	// The cloud profile is resolved here, once, before anything reads a setting, so
+	// the sections modules read, the implementation a FromDeployment picks, the
+	// configuration the engine starts on and the seams Describe prints are one answer
+	// rather than four readings of one file. A Config built in Go never passed through
+	// Load, and resolving the profile only where the seams are answered would leave a
+	// deployment described from settings the composition never used. An unknown
+	// profile name fills nothing here and is refused below, with every other problem
+	// the deployment has.
+	d.Config = config.ApplyCloudProfile(d.Config)
 
 	p := &plan{
 		from:         map[edge]*Module{},
@@ -419,6 +431,16 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 		}
 	}
 
+	// What the deployment's configuration answers about its seams, and what it
+	// still owes the cloud profile it named. Read here rather than at Build because
+	// it is a problem with the deployment in the same sense a missing input is one,
+	// and a person who is told about both at once fixes one file once.
+	if envKnown {
+		cloud, cloudIssues := resolveCloud(d)
+		p.cloud = cloud
+		issues = append(issues, cloudIssues...)
+	}
+
 	// Contributors and takers, read off the survivors.
 	for _, m := range lives {
 		if dead[m] {
@@ -438,7 +460,7 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 	order, cycle, unplaced := a.order(lives, dead, p)
 	p.order = order
 	if cycle != nil {
-		fail("Use", "%s is a cycle", strings.Join(cycle, " → "))
+		fail("Use", "%s is a cycle: %s", strings.Join(names(cycle), " → "), p.cycleReasons(cycle))
 	}
 	for _, m := range unplaced {
 		fail("Use", "%s is in Use but no build order places it: it waits for %s, which no order reaches before it",
@@ -529,7 +551,7 @@ func (a *App) pickImplementation(p *plan, fail func(string, string, ...any), m *
 // cycle the graph has, and — when the graph has no cycle but still cannot
 // place a module — the modules it could not place: a composition is never
 // answerable by leaving a module somebody named in Use out of it in silence.
-func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module, []string, []*Module) {
+func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module, []*Module, []*Module) {
 	deps := map[*Module][]*Module{}
 	var queue []*Module
 	for _, m := range lives {
@@ -612,33 +634,27 @@ func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module,
 	if len(left) == 0 {
 		return out, nil, nil
 	}
-	if cycle := cycleThrough(lives, deps, left[0]); cycle != nil {
+	if cycle := cycleThrough(deps, left[0]); cycle != nil {
 		return out, cycle, nil
 	}
 	return out, nil, left
 }
 
 // cycleThrough walks dependency edges from the first unplaced module in Use
-// order and returns the names of the first cycle it closes, head repeated
+// order and returns the modules of the first cycle it closes, head repeated
 // at the tail: cart → collectibles → cart.
-func cycleThrough(lives []*Module, deps map[*Module][]*Module, from *Module) []string {
+func cycleThrough(deps map[*Module][]*Module, from *Module) []*Module {
 	state := map[*Module]int{} // 0 unvisited, 1 on the walk, 2 done
 	var stack []*Module
-	var namesOf []string
-	var walk func(*Module) []string
-	walk = func(m *Module) []string {
+	var walk func(*Module) []*Module
+	walk = func(m *Module) []*Module {
 		state[m] = 1
 		stack = append(stack, m)
-		namesOf = append(namesOf, m.name)
 		for _, dep := range deps[m] {
 			switch state[dep] {
 			case 1:
-				for si, s := range stack {
-					if s == dep {
-						path := append([]string{}, namesOf[si:]...)
-						return append(path, dep.name)
-					}
-				}
+				si := slices.Index(stack, dep)
+				return append(slices.Clone(stack[si:]), dep)
 			case 0:
 				if c := walk(dep); c != nil {
 					return c
@@ -646,11 +662,45 @@ func cycleThrough(lives []*Module, deps map[*Module][]*Module, from *Module) []s
 			}
 		}
 		stack = stack[:len(stack)-1]
-		namesOf = namesOf[:len(namesOf)-1]
 		state[m] = 2
 		return nil
 	}
 	return walk(from)
+}
+
+// cycleReasons explains each selected dependency in cycle order, preserving
+// declaration order within an edge and saying identical reasons only once.
+func (p *plan) cycleReasons(cycle []*Module) string {
+	var edges []string
+	for i, consumer := range cycle[:len(cycle)-1] {
+		supplier := cycle[i+1]
+		var reasons []string
+		for _, dl := range consumer.decls {
+			if dl.kind != needs && dl.kind != optional {
+				continue
+			}
+			verb := "needs"
+			if dl.many {
+				if !slices.Contains(p.contributors[dl.key], supplier) {
+					continue
+				}
+				verb = "takes"
+			} else {
+				if p.from[edge{consumer, dl.key}] != supplier {
+					continue
+				}
+				if dl.kind == optional {
+					verb = "uses"
+				}
+			}
+			reason := fmt.Sprintf("%s %s %s from %s", consumer.name, verb, contract(dl.key), supplier.name)
+			if !slices.Contains(reasons, reason) {
+				reasons = append(reasons, reason)
+			}
+		}
+		edges = append(edges, strings.Join(reasons, ", "))
+	}
+	return strings.Join(edges, "; ")
 }
 
 // fixFor names the fix a missing provider needs: the module that owns the

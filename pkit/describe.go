@@ -65,6 +65,37 @@ type Description struct {
 	Choices     []DescribedChoice  `json:"choices,omitempty"`
 	Roles       []DescribedRole    `json:"roles,omitempty"`
 	Problems    []DescribedProblem `json:"problems"`
+	// Cloud is the deployment's answer about its seams: which object store, cache,
+	// transport, mail sender, policy engine, telemetry exporter, identity door and
+	// flag source the resolved configuration runs. It is absent on a refusal with
+	// the rest of the composition, because a deployment that does not resolve has no
+	// answer about what runs. It names key names and never a value: an address is the
+	// deployment's and is nowhere in this document.
+	Cloud *DescribedCloud `json:"cloud,omitempty"`
+}
+
+// DescribedCloud is one deployment read against the cloud profile it named.
+// Profile is the resolved name — an empty setting resolves to local and reads as
+// local — and Seams is one entry per seam in the order Explain prints.
+type DescribedCloud struct {
+	Profile     string          `json:"profile"`
+	Environment Environment     `json:"environment"`
+	Seams       []DescribedSeam `json:"seams"`
+}
+
+// DescribedSeam is one infrastructure question and the answer the configuration
+// gives it. Provider is the name this kernel prints for the thing that runs;
+// Source says where the setting behind it came from — cloud profile, deployment,
+// default or kernel; Keys names the settings the profile wrote for this seam, and
+// writes no value; Served is false for the two seams no profile moves and for any
+// seam the chosen profile declines to name, which Note then explains.
+type DescribedSeam struct {
+	Seam     Seam     `json:"seam"`
+	Provider string   `json:"provider"`
+	Source   string   `json:"source"`
+	Keys     []string `json:"keys,omitempty"`
+	Served   bool     `json:"served"`
+	Note     string   `json:"note,omitempty"`
 }
 
 // DescribedModule is one module as the resolution placed it. Every array is in
@@ -217,7 +248,23 @@ func (a *App) described(p *plan, env Environment) *Description {
 		Choices:     describedChoices(p.choices),
 		Roles:       describedRoles(a.roles),
 		Problems:    []DescribedProblem{},
+		Cloud:       describedCloud(p.cloud, env),
 	}
+}
+
+// describedCloud projects the seams resolveCloud settled. The environment travels
+// with them because the sentence about a profile is incomplete without it, and the
+// renderer reads the projection rather than the plan — which is the one reason the
+// text and this document cannot answer about different deployments.
+func describedCloud(c cloudPlan, env Environment) *DescribedCloud {
+	out := &DescribedCloud{Profile: c.profile, Environment: env, Seams: make([]DescribedSeam, 0, len(c.seams))}
+	for _, s := range c.seams {
+		out.Seams = append(out.Seams, DescribedSeam{
+			Seam: s.seam, Provider: s.provider, Source: s.source,
+			Keys: s.keys, Served: s.served, Note: s.note,
+		})
+	}
+	return out
 }
 
 // describedModules walks the build order, which is the order the kernel builds

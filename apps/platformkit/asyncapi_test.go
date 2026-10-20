@@ -85,12 +85,12 @@ func TestEveryDeclaredEventIsInTheDocumentAndCovered(t *testing.T) {
 	if doc.AsyncAPI != app.AsyncAPIVersion {
 		t.Errorf("the document says asyncapi %q, which is not what this code emits (%s)", doc.AsyncAPI, app.AsyncAPIVersion)
 	}
-	// The kernel declares three events of its own — the record kit/events.Replay
+	// The kernel declares four events of its own — the record kit/events.Replay
 	// writes, the refusal kit/app records and the ask that follows one — and the
 	// generator adds them to whatever list it is handed: a document rendered from
 	// an app's own modules still says the installation replays things and records
 	// what it refused and who asked.
-	kernel := []string{events.EventReplayed, app.EventDenied, app.EventAccessRequested}
+	kernel := []string{events.EventReplayed, app.EventDenied, app.EventAccessRequested, events.EventOperationOutcome}
 	if want := len(declared) + len(kernel); len(doc.Channels) != want {
 		t.Errorf("%d channels for %d declared events plus the kernel's %d", len(doc.Channels), len(declared), len(kernel))
 	}
@@ -162,12 +162,12 @@ func TestTheDocumentIsRenderedFromTheManifestsAlone(t *testing.T) {
 	if uncovered, _ := doc["x-uncovered-events"].([]any); len(uncovered) != 1 || uncovered[0] != "ledger.entry_posted" {
 		t.Errorf("an event with no payload type is not named as uncovered: %v", doc["x-uncovered-events"])
 	}
-	// The one module's one event, plus the three the kernel's own manifest
+	// The one module's one event, plus the four the kernel's own manifest
 	// declares (platformkit.event_replayed, security.denied and
 	// security.access_requested): the generator adds no event of its own beyond
 	// what a manifest says.
-	if got := doc["channels"].(map[string]any); len(got) != 4 {
-		t.Errorf("channels = %d, want 4", len(got))
+	if got := doc["channels"].(map[string]any); len(got) != 5 {
+		t.Errorf("channels = %d, want 5", len(got))
 	}
 }
 

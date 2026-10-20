@@ -52,7 +52,10 @@
           "in_progress": "warning",
           "open": "info",
           "resolved": "success"
-        }
+        },
+        "doneValues": [
+          "resolved"
+        ]
       }
     },
     {
@@ -159,6 +162,7 @@
   "presentation": {
     "singular": "task",
     "plural": "tasks",
+    "description": "Set priorities, assign work and keep track of what is due.",
     "icon": "task",
     "group": {
       "key": "work",
@@ -171,11 +175,28 @@
       "dueAt"
     ],
     "statusField": "status",
+    "emptyDescription": "Create a task to give the work a clear next step.",
     "sortable": [
       "title",
       "dueAt",
       "updatedAt"
-    ]
+    ],
+    "highlight": {
+      "label": "Due today",
+      "filter": [
+        {
+          "field": "dueAt",
+          "op": "gte",
+          "value": "today"
+        },
+        {
+          "field": "dueAt",
+          "op": "lt",
+          "value": "tomorrow"
+        }
+      ]
+    },
+    "trendField": "createdAt"
   },
   "screen": "/app/task/tasks",
   "immutable": [

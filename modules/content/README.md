@@ -6,19 +6,29 @@ archived lifecycle and its events, a public read at
 `/api/v1/public/content/contents` (one published row per `{slug}`) that answers only for published rows, and the
 Markdown renderer `contracts.Render` the [web module](../web/README.md) uses.
 `content:read` and `content:manage` guard the routes and the admin entry at
-`/app/content/contents`. There are no versions by design; see
-[module.go](module.go).
+`/app/content/contents`. Every write a page commits keeps a version, recorded in
+the write's own transaction and stored by [modules/history](../history/README.md)
+— which owns the series, the retention rule and the restore — numbered with the
+row's own `revision`; see [module.go](module.go).
 
 ## Interface
 
 **Reused** — `kit/rest`, `kit/entity`, `kit/richtext`, `ui/forms`,
 `ui/components.Prose`, and `modules/file.RichTextFiles` compose the rich text
-field, with the file resolver passed as `content.Deps.Files` per request.
+field, with the file resolver passed as `content.Deps.Files` per request; the
+cover picture reuses that same ledger (`rest.FileUses`, filled inside the
+transaction that writes the row) rather than a second one, and the same
+`present:image` vocabulary any other module declares.
 **Added** — `kit/richtext` owns the validated Markdown subset and tenant-scoped
 image resolution because no earlier kernel package could validate, normalize,
-extract, and render one stored format for both generated screens and public pages.
-**Made reusable** — the `widget:richtext` tag, `richtext.Files` port and fake,
-and `Prose` component let another `rest.Spec` entity use the same field path.
+extract, and render one stored format for both generated screens and public pages;
+`coverImageId` is new because no reference resource that is a *list* had a picture
+to name as its opening photo and its row thumbnail.
+**Made reusable** — the `widget:richtext` tag, `richtext.Files` port and fake, and
+`Prose` component let another `rest.Spec` entity use the same field path, and the
+cover's adoption (`ui:"present:image"` on the column, `coverField`/`thumbnailField`
+on the entry, one nullable column in one migration) is the shape another module's
+picture takes.
 
 When `Deps.Files` is absent, image references are refused on write; text-only
 Markdown still works. `Body` is limited to 262,144 Markdown code points and

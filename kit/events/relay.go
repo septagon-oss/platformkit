@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
@@ -60,10 +61,16 @@ type row struct {
 	// The attribution the publisher stored beside the actor, pointers for the same
 	// reason Actor is: an event with no attribution is a person's request, and the
 	// envelope says so by leaving the attributes out.
-	ActorKind  *string
-	SourceFile *string
-	SourceLine *int
-	Initiator  *uuid.UUID
+	ActorKind         *string
+	SourceFile        *string
+	SourceLine        *int
+	Initiator         *uuid.UUID
+	OperationID       *string
+	OperationRef      *uuid.UUID
+	OperationTenantID *uuid.UUID
+	OperationPersonID *uuid.UUID
+	OperationOutcome  *request.Outcome
+	OperationRevision *int64
 }
 
 // lagKey is one pkit.outbox.lag time series: one tenant's share of one event name.
@@ -308,7 +315,7 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Nam
 			COALESCE(o.traceparent, '') AS traceparent, COALESCE(o.tracestate, '') AS tracestate,
 			COALESCE(o.baggage, '') AS baggage, COALESCE(o.request_id, '') AS request_id,
 			COALESCE(host(o.client_ip), '') AS client_ip,
-			o.actor_kind, o.source_file, o.source_line, o.initiator FROM ` + table + ` o
+			o.actor_kind, o.source_file, o.source_line, o.initiator, o.operation_id, o.operation_ref, o.operation_tenant_id, o.operation_person_id, o.operation_outcome, o.operation_revision FROM ` + table + ` o
 			LEFT JOIN tenants tn ON tn.id = o.tenant_id
 			WHERE o.published_at IS NULL AND coalesce(tn.app, '') = ?
 			ORDER BY o.created_at, o.id LIMIT ? FOR UPDATE OF o SKIP LOCKED`
@@ -357,6 +364,24 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Nam
 			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt,
 				TraceParent: r.TraceParent, TraceState: r.TraceState, Baggage: r.Baggage,
 				RequestID: r.RequestID, ClientIP: r.ClientIP}
+			if r.OperationID != nil {
+				ev.Operation.ID = *r.OperationID
+			}
+			if r.OperationRef != nil {
+				ev.Operation.Ref = r.OperationRef.String()
+			}
+			if r.OperationTenantID != nil {
+				ev.Operation.Tenant = r.OperationTenantID.String()
+			}
+			if r.OperationPersonID != nil {
+				ev.Operation.Person = r.OperationPersonID.String()
+			}
+			if r.OperationOutcome != nil {
+				ev.Operation.Outcome = *r.OperationOutcome
+			}
+			if r.OperationRevision != nil {
+				ev.Operation.Revision = *r.OperationRevision
+			}
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
 			}
