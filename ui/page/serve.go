@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -91,9 +92,16 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 // Serve mounts one page as an operation, exactly like every JSON route: the
 // same recording, the same authorization declaration, the same transaction. It
 // is the edge: it reads the request into a Request, renders the View through
-// the frame, turns a SeeOther into the redirect and a 4xx problem into the same
+// the frame, turns a SeeOther into the redirect and a refusal into the same
 // refusal page a kernel guard renders — worded through the locale this shell
-// negotiated — and lets a 5xx keep the kernel's problem document and log line.
+// negotiated — whatever the verdict.
+//
+// A read that broke is drawn as that page too, at its own 5xx, for the person who
+// opened the address: what they can act on is "we couldn't load the tasks, try again
+// here", and no page in this repository has ever been improved by their seeing
+// "Internal Server Error". The reason behind the failure goes to the log, which is where
+// a cause belongs, and the request keeps its 500, so a monitor watching statuses still
+// sees the failure the page refuses to name.
 func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
@@ -130,7 +138,10 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			}
 			status, detail := refusal(err)
 			if status >= http.StatusInternalServerError {
-				return nil, err
+				// The page says what could not be loaded and offers the address again; the
+				// reason stays here, with the caller who can fix it.
+				slog.ErrorContext(ctx, "page: the read behind this page failed",
+					"path", r.Path, "status", status, "error", err)
 			}
 			// The refusal of a handler is the same page the kernel's guards render
 			// (fault.go) and is worded the same way: through the locale this shell just

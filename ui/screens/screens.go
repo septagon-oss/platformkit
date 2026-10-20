@@ -349,12 +349,18 @@ func localized(o Options, req page.Request) Options {
 // with the heading and tone to show it under. A failure that page has no words for keeps
 // the line its writer wrote: for a field the caller sent, or a row rule that named its
 // reason, that line is the one thing the person can act on.
+//
+// An error carrying no problem at all is not such a line. kit/rest maps everything a
+// caller may act on into a problem — a missing row, a field, a revision that moved — so
+// what arrives unmapped is a failure of ours whose text is a driver's or a subsystem's,
+// and it is worded as the server fault it is. The person keeps a sentence and the typed
+// value; the text itself stays out of the page.
 func refusedWrite(loc *page.Locale, err error, kept string) (string, *resource.Refusal) {
-	var p *problem.Problem
-	if !errors.As(err, &p) {
-		return kept, nil
+	status, detail := http.StatusInternalServerError, ""
+	if p, ok := errors.AsType[*problem.Problem](err); ok {
+		status, detail = p.Status, p.Detail
 	}
-	title, line, tone, ok := page.RefusalWords(loc, p.Status, p.Detail)
+	title, line, tone, ok := page.RefusalWords(loc, status, detail)
 	if !ok {
 		return kept, nil
 	}

@@ -451,5 +451,23 @@
     "plural": {
       "": "Acesso retirado"
     }
+  },
+  "fault.save_failed": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível guardar. Nada foi guardado.",
+    "plural": {
+      "": "Não foi possível guardar. Nada foi guardado."
+    }
+  },
+  "fault.save_failed.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível guardar",
+    "plural": {
+      "": "Não foi possível guardar"
+    }
   }
 }

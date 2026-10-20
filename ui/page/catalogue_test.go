@@ -41,6 +41,7 @@ func raisedFaults(t *testing.T) []string {
 	// offer. No faultKey call can produce these, so the loop above is silent about
 	// them and this is the only gate that asks the catalogue for them.
 	keys = append(keys, faultSubjectKeys()...)
+	keys = append(keys, faultFormKeys()...)
 	keys = append(keys, faultSubjectWayKeys()...)
 	keys = append(keys, faultTitleKeys()...)
 	slices.Sort(keys)

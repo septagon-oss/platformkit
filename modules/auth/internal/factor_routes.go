@@ -291,7 +291,7 @@ func handleVerifyFactor(factors contracts.Factors, cookies Cookies) func(context
 			return nil, refusal(err)
 		}
 		return &sessionOutput{
-			SetCookie: cookies.Session(session.ID, session.ExpiresAt),
+			SetCookie: cookies.Session(session.ID, session.CreatedAt),
 			Body:      identity,
 		}, nil
 	}

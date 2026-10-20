@@ -117,7 +117,16 @@ const (
 	recordDeniedKey  = "fault.record.denied"
 	retryKey         = "fault.retry"
 	backToKey        = "fault.back_to"
+	saveFailedKey    = "fault.save_failed"
 )
+
+// saveFailed is what a person is told when a write broke on the server. The line the
+// failure carries is a driver's text or a subsystem's name — "pq: could not serialize
+// access", "authorization is temporarily unavailable" — which is what the operator
+// greps a log for and not a reason anyone at a form can act on. The write is not
+// there: a refusal rolls the request's transaction back, so nothing of the submission
+// was stored, and the sentence says so rather than leaving it unknown.
+const saveFailed = "We couldn't save this. Nothing was saved."
 
 // planKey is the verdict a plan exclusion travels under. It is the one published code
 // whose sentence this layer replaces outright rather than translating after the code:
@@ -141,6 +150,7 @@ var faultTitles = map[string]string{
 	"fault.503":                 "Not available right now",
 	"fault." + httpx.CodeDenied: "You don't have access",
 	planKey:                     "Not in this plan",
+	saveFailedKey:               "We couldn't save this",
 	loadFailedKey:               "We couldn't load this",
 	loadFailedOneKey:            "We couldn't load this",
 	recordMissingKey:            "No longer available",
@@ -154,6 +164,13 @@ var faultTitles = map[string]string{
 // every status could never ask about these.
 func faultSubjectKeys() []string {
 	return []string{loadFailedKey, loadFailedOneKey, recordMissingKey, recordDeniedKey}
+}
+
+// faultFormKeys is every sentence this package writes for a refusal a generated form
+// shows which no faultKey call can produce: the write that broke on the server, whose
+// sentence belongs to this layer wherever it is shown, subject declared or not.
+func faultFormKeys() []string {
+	return []string{saveFailedKey}
 }
 
 // plainWords is the row of the copy table a refusal is shown in when this layer writes
@@ -300,6 +317,9 @@ func faultTitleKeys() []string {
 		seen[key] = true
 	}
 	for _, key := range faultSubjectKeys() {
+		seen[key] = true
+	}
+	for _, key := range faultFormKeys() {
 		seen[key] = true
 	}
 	for code := 100; code < 600; code++ {
@@ -559,8 +579,16 @@ func fault(rf verdict) View {
 // line then shows what the writer wrote, untranslated and unsoftened. A form that was
 // refused on submit uses this to stop printing a code and a problem's `detail` where a
 // person is reading for a reason.
+//
+// A verdict of 500 or above is the exception and is always worded: whatever the writer
+// put in the detail is the reason the server broke, and that is a log line. The subject
+// rows above still win where a page declared one, because "We couldn't load tasks." says
+// more than "We couldn't save this." about a read.
 func RefusalWords(loc *Locale, status int, detail string) (title, sentence, tone string, ok bool) {
 	key, english, args, _ := plainWords(Subject{}, status, detail)
+	if key == "" && status >= http.StatusInternalServerError {
+		key, english = saveFailedKey, saveFailed
+	}
 	if key == "" {
 		return "", "", "", false
 	}
