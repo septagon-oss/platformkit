@@ -497,7 +497,7 @@ func header(r page.Request, navigation components.SidebarProps, line string) []g
 // always was.
 func about(r page.Request) g.Node {
 	o := resource.Options{Locale: r.Locale}
-	return components.Disclosure(components.DisclosureProps{Label: o.Text("admin.workspace.about", "About this workspace")},
+	return components.Disclosure(components.DisclosureProps{Label: o.Text("admin.workspace.about", "About this workspace"), Flush: true},
 		components.Text(components.TextProps{Content: workspaceScope(r.Tenant, o), Size: chromeTextSize, Color: "muted"}),
 		components.Text(components.TextProps{Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"}))
 }
