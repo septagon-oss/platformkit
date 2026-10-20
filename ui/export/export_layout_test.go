@@ -219,13 +219,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// no example, schema, icon, class or notice.
 	//
 	//
-	// main's frame work lands on that export: the header names the person and the
-	// workspace, a set keeps its own name, and an instant states the reader's own zone.
-	// The trail's wrapping and the sidebar's own rules join the composed sheet, which
-	// carries this branch's role values with them, and the gallery captures the frame
-	// renders move with it. The digest below is this merged tree's measurement, printed
-	// by the refusal above the re-measure and copied from it; it covers the composed
-	// examples, stylesheet and attributions together.
+	// main's frame work lands on that export beside this branch's colour work: the
+	// header names the person and the workspace, a set keeps its own name, and an
+	// instant states the reader's own zone. No leaf-by-leaf walk of the two documents
+	// was run for this merge, because the document before it can only be produced by
+	// switching this worktree off the merge it is merged into, so no count of moved
+	// leaves is claimed here. The digest below is this merged tree's own measurement,
+	// printed by the refusal above the re-measure and copied from it; it covers the
+	// composed examples, stylesheet and attributions together.
 	if legacy.SHA256 != "436f7e040a2fc6103cb4216a4b8c26b8cbcc3fac13cf7666b7fa771fd87b1415" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
