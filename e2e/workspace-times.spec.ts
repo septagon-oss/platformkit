@@ -166,14 +166,14 @@ test.describe('in Portuguese', () => {
 
   test('an instant is said in the language the page declares', async ({ page }) => {
     const record = await signedInRecord(page, 'A mesma altura, noutra língua');
-    // The dashboard is English by its own declaration (modules/admin's `writtenHere`), and this is
-    // the line that says the case below is not measuring that page by accident.
-    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    // The dashboard and generated record both use the negotiated request language.
+    await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
     await page.clock.install({ time: new Date(Date.now() + 6 * 60_000) });
     // A generated screen declares the negotiated language — its document.View.Language is empty —
     // so at a pt-PT browser it declares pt-PT. If this fails, the premise of the two assertions
     // below is the thing that broke: the page, not the formatter.
     await page.goto(record, { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(record);
     await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
     for (const row of await said(page)) {
       expect(row.text, `a pt-PT page shows the reader's own words, and these are English: ${row.text}`).toMatch(/^há \d+ minutos$/);
