@@ -179,7 +179,10 @@ type Command struct {
 	// resource's reads do not. The catalog publishes it for those commands and
 	// only those, so a document that could be derived still is.
 	Endpoint string
-	Fields   []entity.Field
+	// EmptyInputFault records why the typed input cannot be invoked without values.
+	// Empty means audited zero input or valid explicit defaults for every field.
+	EmptyInputFault string
+	Fields          []entity.Field
 	// Present is how this command's author described it: the word on the button,
 	// whether it is the one to offer, what a person reads before it runs. Carried
 	// to the shells by the same hop that carries Fields, and validated by
