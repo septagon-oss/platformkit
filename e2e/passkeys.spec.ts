@@ -336,7 +336,7 @@ test('a tenant that has not opened the usernameless door is refused with the rea
   expect(begun.status()).toBe(403);
   const refusal = await begun.json();
   expect(`${refusal?.detail ?? refusal?.title ?? ''}`).not.toBe('');
-  expect((await page.request.get('/api/v1/auth/me')).status()).toBe(403);
+  expect((await page.request.get('/api/v1/auth/me')).status()).toBe(401);
 });
 
 // axe over the two screens this feature puts a control on. The rest of the suite
