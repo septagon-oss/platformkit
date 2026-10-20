@@ -187,6 +187,10 @@
       ],
       "uses": [
         {
+          "contract": "push.Adapters",
+          "from": ""
+        },
+        {
           "contract": "*notification.Page",
           "from": "workspace"
         }

@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/push"
 )
 
 // The events this module emits. A subscriber names one of these constants rather
@@ -49,13 +50,20 @@ const (
 	// audit trail that says "this tenant had a pending sender" when somebody removed
 	// it answers the wrong question.
 	EventSenderRemoved = "notification.sender_removed"
+
+	// The device events: a token somebody registered, and a row that stopped being
+	// a device — taken away by its person, or by the provider that no longer knows
+	// it. Both are published, so both are in the audit trail with their actor,
+	// which is the difference between the two and the only place it is written.
+	EventDeviceRegistered = "notification.device_registered"
+	EventDeviceRemoved    = "notification.device_removed"
 )
 
-// Events is every event this module emits, for the manifest. Device registration
-// is not among them, and it is not a trimming of something promised: the device
-// table those two events described was never written, so a consumer that
-// subscribed to either would wait for an event nothing could publish. It returns
-// with the table and the command that writes it.
+// Events is every event this module emits, for the manifest. The two device
+// events return with the table and the command that writes them, which is what
+// the note beside them used to say was missing: a consumer that subscribed to
+// either before migrations/000058 would have waited for an event nothing could
+// publish.
 //
 // Every channel's ask carries contracts.DeliveryRequested, which is what the
 // worker reads to find the row; mail keeps contracts.EmailRequested because that
@@ -71,6 +79,8 @@ var Events = []events.Declared{
 	events.Declare[SenderSet](EventSenderSet),
 	events.Declare[Verified](EventSenderVerified),
 	events.Declare[SenderRemoved](EventSenderRemoved),
+	events.Declare[DeviceRegistered](EventDeviceRegistered),
+	events.Declare[DeviceRemoved](EventDeviceRemoved),
 }
 
 // RequestedEvent is the event a chosen channel is asked for by — the one table
@@ -177,4 +187,29 @@ type SenderRemoved struct {
 	Selector string    `json:"selector"`
 	Actor    uuid.UUID `json:"actorId"`
 	At       time.Time `json:"at"`
+}
+
+// DeviceRegistered is the payload of EventDeviceRegistered. Like every payload
+// here it carries identifiers and not content — and here the omission is the
+// point: a push token replays a person's notifications to their phone, so the
+// event that says a token arrived does not carry it. Whoever needs the token
+// reads the row.
+type DeviceRegistered struct {
+	DeviceID  uuid.UUID     `json:"deviceId"`
+	Recipient uuid.UUID     `json:"recipientId"`
+	Platform  push.Platform `json:"platform"`
+	At        time.Time     `json:"at"`
+}
+
+// DeviceRemoved is the payload of EventDeviceRemoved, and Reason is the one
+// field that tells the two ways a device row ends apart: the person's own
+// removal, whose Actor is that person, and the provider reporting the token
+// gone, whose Actor is uuid.Nil because no person did it.
+type DeviceRemoved struct {
+	DeviceID  uuid.UUID     `json:"deviceId"`
+	Recipient uuid.UUID     `json:"recipientId"`
+	Platform  push.Platform `json:"platform"`
+	Reason    string        `json:"reason"`
+	Actor     uuid.UUID     `json:"actorId"`
+	At        time.Time     `json:"at"`
 }

@@ -229,11 +229,19 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// none, of .py-12, .lg:sticky, .lg:top-0 and .lg:max-h-[100vh], and no token or
 	// role value moves with them; /notices gains the attribution of the vendored htmx
 	// SSE extension the notice list now ships. Tokens, themes, icons, schema and font
-	// policy are byte-identical to the export this branch held before the merge. The
-	// digest below is that measurement of this merged tree, printed by the refusal
-	// above the re-measure and copied from it; it covers the composed examples,
-	// stylesheet and attribution together.
-	if legacy.SHA256 != "cf211bb2da85c6dcedfe5bdd83ede8521653178753f38f5235f2b6242ef85e57" {
+	// policy are byte-identical to the export this branch held before the merge.
+	//
+	// main's push port lands on that export. Measured by exporting this tree and the
+	// tree this branch held before the merge and walking both documents leaf by leaf,
+	// keyed by a capture's stable id so that a capture which only moved in the list
+	// reads as no change: 99,947 leaves each, none added and none removed, and the two
+	// documents differ in exactly two leaves — `notices`, which gains the attribution
+	// block for the Web Push library kit/push links, and `sha256`, which is the digest
+	// of the whole document. No example's HTML, no CSS, token, theme, icon, schema or
+	// font policy moves. The digest below is that measurement of this merged tree,
+	// printed by the refusal above the re-measure and copied from it; it covers the
+	// composed examples, stylesheet and attributions together.
+	if legacy.SHA256 != "17c668a1ef1783feec854d0832bd3fd9d755ec18a375047713c519e0030c2873" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
