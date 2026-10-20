@@ -593,7 +593,7 @@ func TestTheDashboardCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 	// The same page for a caller who may: the card is there, with the count its
 	// own list route would report.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if card := dashboardCard(body, "/app/note/notes"); !strings.Contains(card, "Notes 0 ") {
+	if card := dashboardCard(body, "/app/note/notes"); !strings.Contains(card, "Notes No notes yet. ") {
 		t.Errorf("the dashboard hides a card the caller may read: %s", body)
 	}
 }
@@ -1099,7 +1099,7 @@ func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
 	// And the page that has counts keeps drawing them: this page's first answer
 	// is still the tenant's contents, not a panel about the caller's role.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if !strings.Contains(dashboardCard(body, "/app/note/notes"), "Notes 0 ") {
+	if !strings.Contains(dashboardCard(body, "/app/note/notes"), "Notes No notes yet. ") {
 		t.Error("the dashboard lost its counts for a caller who may read them")
 	}
 	if strings.Contains(body, "Ask your administrator to give you access") {
