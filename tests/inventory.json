@@ -28545,6 +28545,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/deck_command_revocation_test.go",
+   "id": "kit/rest/deck_command_revocation_test.go#TestARetainedDeckCommandRechecksItsGrantAfterRevocation",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARetainedDeckCommandRechecksItsGrantAfterRevocation",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/deck_input_schema_test.go",
    "id": "kit/rest/deck_input_schema_test.go#TestDeckRefusesPromotedArgumentsWithDistinctJSONNames",
    "kind": "go",
@@ -28559,6 +28578,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/deck_queue_list_test.go",
+   "id": "kit/rest/deck_queue_list_test.go#TestTheServedDeckQueueSelectsOnlyTheTenantsQueuedRowsInOrder",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheServedDeckQueueSelectsOnlyTheTenantsQueuedRowsInOrder",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
    "verdict": "keep"
   },
   {
@@ -72098,7 +72136,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1925,
+  "files": 1927,
   "forge_runs": [
    408,
    413,
@@ -72132,7 +72170,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3105,
+   "behaviour": 3107,
    "composition": 431,
    "contract": 21,
    "journey": 96
@@ -72151,9 +72189,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3653,
+  "rows": 3655,
   "tiers": {
-   "merge": 2329,
+   "merge": 2331,
    "nightly": 96,
    "push": 1228
   },
@@ -72161,13 +72199,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1698,
+   "keep": 1700,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3297,
+   "keep": 3299,
    "keep-rewrite": 140,
    "merge": 216
   }
