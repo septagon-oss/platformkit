@@ -74,9 +74,9 @@ type Pictures struct {
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
-// an unreadable resource is not in the document — save a CommandsOnly one whose
-// command the caller holds, listed with empty operations: what a caller may not
-// look at, they are not offered. `writable` is the caller's guard narrowed by
+// an unreadable resource is not in the document — save the one whose command the
+// caller holds, listed with empty operations: what a caller may not look at, they
+// are not offered. `writable` is the caller's guard narrowed by
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
@@ -133,8 +133,10 @@ type Entry struct {
 	// let that move be a memory. An absent key means all five, so it is the shell's
 	// next build that has to require it, reading this field.
 	//
-	// An empty list, printed as [], is a CommandsOnly resource: nothing to read
-	// or write, only its commands to call (see DescribeLanguage). omitzero
+	// An empty list, printed as [], is a resource this caller may reach only through
+	// one of its commands — a CommandsOnly registration, or a readable one whose rows
+	// this caller is refused: nothing to read or write, only those commands to call
+	// (see DescribeLanguage). omitzero
 	// keeps nil — all five — absent, so no entry printed before reads otherwise.
 	Operations []string `json:"operations,omitzero"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
@@ -212,7 +214,10 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 		r.Commands = r.CommandsFor(ctx)
 		if r.CommandsOnly {
 			if len(r.Commands) > 0 {
-				out.Resources = append(out.Resources, commandsOnly(Localise(r, text)))
+				// A key retiring itself reads nothing about keys: the resource mounts
+				// no read route at all, so the entry is the command alone, for the one
+				// caller that command admits.
+				out.Resources = append(out.Resources, commandsNotRows(Localise(r, text)))
 			}
 			continue
 		}
@@ -220,14 +225,17 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 		// exists even where its rows stay unreadable: CommandsFor asks each command's
 		// guard, not the resource's, and an account command (rest.CommandOptions.Self)
 		// is the case where that answer is yes while the rows are none of the caller's
-		// business. What such a caller is given is the name and those commands; the
-		// screen, the row schema and the write path describe rows not to read.
-		readable := r.Readable(ctx)
-		if !readable {
+		// business. What such a caller is given is the name and those commands, and
+		// nothing else — see commandsNotRows.
+		if !r.Readable(ctx) {
 			if len(r.Commands) == 0 {
 				continue
 			}
-			r.Schema.Fields, r.Screen, r.Immutable = nil, "", nil
+			// The row schema names fields of rows this caller may not look at, and the
+			// screen is the list of them: both go before the resource is translated.
+			r.Schema.Fields, r.Immutable = nil, nil
+			out.Resources = append(out.Resources, commandsNotRows(Localise(r, text)))
+			continue
 		}
 		r = Localise(r, text)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
@@ -235,14 +243,21 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 	return out
 }
 
-// commandsOnly is the entry of a CommandsOnly resource for a caller who holds
-// one of its commands — a key retiring itself reads nothing about keys. It
-// names no screen and offers no operation, so a shell draws the commands and no
-// list or form; the caller is told the resource exists because a door on it is
-// theirs.
-func commandsOnly(r httpx.Resource) Entry {
+// commandsNotRows is the entry a caller is given for a resource they may reach only
+// through one of its commands, which is the case two different ways: a CommandsOnly
+// resource mounts no read route at all, and a readable resource can be readable to
+// everybody but this caller. Either way the entry names no screen, describes no row
+// and offers no operation, so a shell draws the commands and no list or form.
+//
+// The operation list prints empty rather than absent for the one reason that
+// matters to a build in a pocket: an absent list means all five, so leaving it out
+// of an entry the document carries for a command's sake would hand the shell five
+// doors to draw on the very routes that answer this caller nothing. Writable
+// follows the same rule — with no create, update or delete on offer, no guard on a
+// write route makes a write possible here.
+func commandsNotRows(r httpx.Resource) Entry {
 	e := Describe1(r, false)
-	e.Screen = ""
+	e.Screen, e.Operations = "", []string{}
 	return e
 }
 

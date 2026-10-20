@@ -17,8 +17,8 @@ import (
 // guard: the administrator's read stores the tenant's task count first, and the
 // people asking after it hold less.
 
-// listedEntries is the entries this caller is given that are list-bearing — their own
-// operations name `list`; a command-only entry carries no operations key (omitzero).
+// listedEntries is the set of list-bearing catalogue entries this caller is
+// given, which is the set of cards the summary may answer for them.
 func listedEntries(t *testing.T, cfg config.Config, as *http.Client) []string {
 	t.Helper()
 	code, body := do(t, cfg, as, http.MethodGet, acmeHost, "/api/v1/app/resources", "")
@@ -33,7 +33,7 @@ func listedEntries(t *testing.T, cfg config.Config, as *http.Client) []string {
 	}
 	out := []string{}
 	for _, e := range document.Resources {
-		if slices.Contains(e.Operations, "list") {
+		if e.Operations == nil || slices.Contains(e.Operations, "list") {
 			out = append(out, e.Module+"/"+e.Entity)
 		}
 	}
