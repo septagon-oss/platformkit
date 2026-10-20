@@ -62360,6 +62360,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/generated_identity_sheet_isolation_test.go",
+   "id": "ui/generated_identity_sheet_isolation_test.go#TestGeneratedIdentitySheetsKeepTheirOwnTokensAndStorage",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestGeneratedIdentitySheetsKeepTheirOwnTokensAndStorage",
+   "needs_db": false,
+   "pkg": "ui",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/hooks_test.go",
    "id": "ui/hooks_test.go#TestEveryKernelHookRenderedOutsideComponentsIsListed",
    "kind": "go",
@@ -73570,7 +73589,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1942,
+  "files": 1943,
   "forge_runs": [
    408,
    413,
@@ -73604,7 +73623,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3174,
+   "behaviour": 3175,
    "composition": 429,
    "contract": 21,
    "journey": 96
@@ -73623,23 +73642,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 3720,
+  "rows": 3721,
   "tiers": {
    "merge": 2306,
    "nightly": 96,
-   "push": 1318
+   "push": 1319
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1697,
+   "keep": 1698,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3334,
+   "keep": 3335,
    "keep-rewrite": 170,
    "merge": 216
   }
