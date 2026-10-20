@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+**A task queue row says when the response is overdue.** `modules/task` declares
+`slaBreached` a summary field, so every app composing it shows *Response overdue* on
+the queue row, "Yes" or "No" exactly as the record does, read from the stored fact.
+The served catalogue's `summaryFields` for `task/task` gains `slaBreached`.
+
 **Composed pictures have a private image door.** `modules/picture` validates inert
 SVG templates and complete values, authorizes each read in the request tenant
 transaction, and serves derived `entity.Picture` references through generated
