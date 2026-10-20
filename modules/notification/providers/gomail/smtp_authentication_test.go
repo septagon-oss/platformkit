@@ -8,9 +8,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/septagon-oss/platformkit/kit/secrets"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail"
 )
+
+// mailPassword is the store this relay's credential comes from: the in-process
+// store of the port, so the case still asserts what the relay sees and says nothing
+// about which store a deployment runs. The trailing newline is on purpose: a mounted
+// secret carries the one its producer wrote, and the relay must still be given the
+// password.
+func mailPassword(t *testing.T, password string) secrets.Secrets {
+	t.Helper()
+	return secrets.Map(map[secrets.Ref]secrets.Secret{
+		secrets.Shared("mail.password"): {Bytes: []byte(password + "\n")},
+	}, nil)
+}
 
 func TestConfiguredCredentialsAuthenticateBeforeMail(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -65,7 +78,9 @@ func TestConfiguredCredentialsAuthenticateBeforeMail(t *testing.T) {
 			}
 		}
 	}()
-	cfg := gomail.Config{Host: "localhost", Port: port(listener.Addr().String()), Username: "test-user", Password: "test-password", EnvelopeFrom: "sender@example.com", Timeout: 5 * time.Second}
+	cfg := gomail.Config{Host: "localhost", Port: port(listener.Addr().String()), Username: "test-user",
+		Secrets: mailPassword(t, "test-password"), SecretName: "mail.password",
+		EnvelopeFrom: "sender@example.com", Timeout: 5 * time.Second}
 	err = gomail.New(cfg).Send(t.Context(), contracts.Message{To: "recipient@example.com", Subject: "Authenticated mail", Body: "Message"})
 	if err != nil {
 		t.Errorf("configured SMTP credentials did not deliver through an AUTH-required relay: %v", err)
