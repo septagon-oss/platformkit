@@ -169,6 +169,8 @@ type Resource struct {
 // the resource's write permission), and Fields is the shape of its argument,
 // derived from the request body the way an entity's is derived from T.
 type Command struct {
+	// MintsCredential carries the response replay policy to generated routes.
+	MintsCredential bool
 	// Bindings declares observed row values used by forms and deck clients.
 	Bindings map[string]string
 	// Undo names the token command. HasResult declares authoritative reply data.

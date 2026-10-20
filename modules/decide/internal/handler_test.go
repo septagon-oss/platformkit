@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/decide/contracts"
 	"github.com/septagon-oss/platformkit/modules/decide/contracts/decidetest"
@@ -29,9 +30,10 @@ func (authority) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, 
 
 func mountedDecide(t *testing.T, w *world) (*httpx.API, http.Handler) {
 	t.Helper()
-	api, router := httpx.New(httpx.Options{Conn: w.conn, Cache: cache.Memory("decide"), PublicHost: "decide.test", Tenants: authority{}, Authorize: authority{}, Log: slog.New(slog.DiscardHandler),
+	api, router := httpx.New(httpx.Options{Conn: w.conn, Idempotency: idempotency.Postgres(httpx.ConnFrom), Operations: idempotency.PostgresOperations(), Cache: cache.Memory("decide"), PublicHost: "decide.test", Tenants: authority{}, Authorize: authority{}, Log: slog.New(slog.DiscardHandler),
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
-			return tenancy.Principal{UserID: decidetest.Alice}, true, nil
+			principal, _ := tenancy.PrincipalFrom(w.ctx)
+			return principal, true, nil
 		}})
 	w.svc.Routes(api.Surfaces("decide"))
 	if err := api.ValidateDeclarations(); err != nil {
@@ -43,12 +45,18 @@ func mountedDecide(t *testing.T, w *world) (*httpx.API, http.Handler) {
 	return api, router
 }
 
-func request(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
+func request(t *testing.T, handler http.Handler, method, path, body string, key ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := httptest.NewRequest(method, "http://decide.test"+path, strings.NewReader(body))
+	if len(key) > 0 {
+		r.Header.Set(httpx.IdempotencyKeyHeader, key[0])
+	}
 	r.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	if method == http.MethodPost {
 		r.Header.Set("Content-Type", "application/json")
+		if strings.HasPrefix(path, "/app/") {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
 		r.Header.Set("X-Requested-With", "XMLHttpRequest")
 		r.Header.Set("Origin", "http://decide.test")
 	}

@@ -34,7 +34,8 @@ func classified(err error) error {
 	}
 }
 
-type revisionBody struct {
+// RevisionBody carries the caller's observed question revision.
+type RevisionBody struct {
 	IfRevision int64 `json:"ifRevision" minimum:"1"`
 }
 type questionPath struct {
@@ -52,15 +53,17 @@ func (s *Service) Routes(surfaces httpx.Surfaces) {
 	questions, cards := s.specs()
 	questions.Mount(surfaces)
 	cards.Mount(surfaces)
-	manage, vote, read := httpx.Permission(contracts.PermissionManage), httpx.Permission(contracts.PermissionVote), httpx.Permission(contracts.PermissionRead)
+	manage := httpx.Permission(contracts.PermissionManage).RecheckingReplay(s.replayAccess(true))
+	vote := httpx.Permission(contracts.PermissionVote).RecheckingReplay(s.replayAccess(false))
+	read := httpx.Permission(contracts.PermissionRead)
 	rest.CommandResult(surfaces, questions, "close", "Close question", "Finish voting on this question.", []string{contracts.EventClosed},
-		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in revisionBody) (rest.Response[contracts.Question], error) {
+		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in RevisionBody) (rest.Response[contracts.Question], error) {
 			out, err := s.Close(ctx, tx, contracts.QuestionInput{QuestionID: id, IfRevision: in.IfRevision})
 			return rest.Response[contracts.Question]{Result: out}, classified(err)
 		}, rest.CommandOptions{Auth: manage, Present: entity.CommandHints{Label: "Close question"}})
 	rest.CommandResult(surfaces, questions, "remove-option", "Remove option", "Keep at least one option available.", nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in struct {
-			revisionBody
+			RevisionBody
 			OptionID uuid.UUID `json:"optionId" format:"uuid"`
 		}) (rest.Response[contracts.Question], error) {
 			out, err := s.RemoveOption(ctx, tx, contracts.RemoveOptionInput{QuestionInput: contracts.QuestionInput{QuestionID: id, IfRevision: in.IfRevision}, OptionID: in.OptionID})
@@ -68,7 +71,7 @@ func (s *Service) Routes(surfaces httpx.Surfaces) {
 		}, rest.CommandOptions{Auth: manage, Present: entity.CommandHints{Label: "Remove option"}})
 	rest.CommandResult(surfaces, questions, "add-participant", "Add participant", "Invite an existing workspace person.", nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in struct {
-			revisionBody
+			RevisionBody
 			PersonID uuid.UUID `json:"personId" format:"uuid"`
 		}) (rest.Response[contracts.ParticipantChange], error) {
 			out, err := s.AddParticipant(ctx, tx, contracts.AddParticipantInput{QuestionInput: contracts.QuestionInput{QuestionID: id, IfRevision: in.IfRevision}, PersonID: in.PersonID})
@@ -76,14 +79,14 @@ func (s *Service) Routes(surfaces httpx.Surfaces) {
 		}, rest.CommandOptions{Auth: manage, Present: entity.CommandHints{Label: "Add participant"}})
 	rest.CommandResult(surfaces, questions, "issue-invite", "Create invite link", "Replace any previous invitation.", nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in struct {
-			revisionBody
+			RevisionBody
 			ExpiresAt time.Time `json:"expiresAt"`
 		}) (rest.Response[contracts.InviteReply], error) {
 			out, err := s.IssueInvite(ctx, tx, contracts.IssueInviteInput{QuestionInput: contracts.QuestionInput{QuestionID: id, IfRevision: in.IfRevision}, ExpiresAt: in.ExpiresAt})
 			return rest.Response[contracts.InviteReply]{Result: out}, classified(err)
-		}, rest.CommandOptions{Auth: manage, Present: entity.CommandHints{Label: "Create invite link"}})
+		}, rest.CommandOptions{Auth: manage, MintsCredential: true, Present: entity.CommandHints{Label: "Create invite link"}})
 	rest.CommandResult(surfaces, questions, "revoke-invite", "Revoke invite link", "Stop further admission through the current link.", nil,
-		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in revisionBody) (rest.Response[contracts.Question], error) {
+		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in RevisionBody) (rest.Response[contracts.Question], error) {
 			out, err := s.RevokeInvite(ctx, tx, contracts.QuestionInput{QuestionID: id, IfRevision: in.IfRevision})
 			return rest.Response[contracts.Question]{Result: out}, classified(err)
 		}, rest.CommandOptions{Auth: manage, Present: entity.CommandHints{Label: "Revoke invite link"}})
@@ -125,7 +128,7 @@ func (s *Service) Routes(surfaces httpx.Surfaces) {
 		}, private)
 	rest.Operation(surfaces.App, op("add-option", http.MethodPost, "/questions/{id}/add-option", nil), manage,
 		func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *questionBody[struct {
-			revisionBody
+			RevisionBody
 			Option contracts.OptionInput `json:"option"`
 		}]) (contracts.OptionChange, error) {
 			out, err := s.AddOption(ctx, tx, contracts.AddOptionInput{QuestionInput: contracts.QuestionInput{QuestionID: in.ID, IfRevision: in.Body.IfRevision}, Option: in.Body.Option})
@@ -136,6 +139,26 @@ func (s *Service) Routes(surfaces httpx.Surfaces) {
 	readOperation(surfaces, op("options", http.MethodGet, "/questions/{id}/options", nil), read, s.Options)
 	readOperation(surfaces, op("participants", http.MethodGet, "/questions/{id}/participants", nil), read, s.Participants)
 	readOperation(surfaces, op("export", http.MethodGet, "/questions/{id}/export", nil), read, s.Export)
+}
+
+// replayAccess holds current grants without taking an aggregate lock: recovery
+// runs no command and creator/participant identities cannot change in this version.
+func (s *Service) replayAccess(manage bool) httpx.ReplayCheck {
+	return func(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error) {
+		if err := scope(ctx, tx); err != nil {
+			return false, err
+		}
+		actor, err := s.access.Current(ctx, tx, nil)
+		if errors.Is(err, contracts.ErrDenied) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		principal, _ := tenancy.PrincipalFrom(ctx)
+		return actor.PersonID != uuid.Nil && actor.PersonID == principal.UserID && actor.Read &&
+			((manage && actor.Manage) || (!manage && actor.Vote)), nil
+	}
 }
 
 func readOperation[O any](surfaces httpx.Surfaces, op huma.Operation, auth httpx.Auth, run func(context.Context, db.Tx[db.Tenant], uuid.UUID) (O, error)) {

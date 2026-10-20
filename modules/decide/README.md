@@ -7,9 +7,9 @@ call the same [ballot decisions](contracts/decision.go). The shared
 SQL suite additionally exercises RLS, concurrent ballots, outbox rollback,
 signed credentials, deadlines and notification delivery claims.
 
-This is an implementation checkpoint awaiting a source budget decision. The
-remaining integration and verification limits below are explicit; a passing
-module suite does not establish every accepted contract boundary.
+This is an implementation checkpoint. The remaining integration and verification
+limits below are explicit; a passing module suite does not establish every
+accepted contract boundary.
 
 ## Reuse and boundaries
 
@@ -309,8 +309,8 @@ revision=postRevision+1 and the restored prior value; all other revisions refuse
 Current authorization and time are checked even on a recognizable replay.
 Undo produces no further undo token, preventing a rewind loop. Normal vote
 editing remains available without a token while the question accepts votes.
-Same-value no-ops also omit a new token; exact operation receipt recovery can
-recover the original private command response without another domain write.
+Same-value no-ops also omit a new token. Vote and invitation responses declare
+credentials: the kernel retains no answer, and a keyed retry is spent (409).
 
 ## Deck and generated surface integration
 
@@ -450,7 +450,7 @@ Open/add-participant/issue/revoke/undo and internal deadline close are explicit
 splits needed to make the decided requirements operable. No brief event or vote
 value was dropped. No application composes this module yet, so it remains uncomposed rather than
 being specific to one client. No client renderer or dependency pin is changed;
-source budget files remain at their approved specification allocation. The task identifier is not an import path:
+source budgets are priced separately from implementation. The task identifier is not an import path:
 the intended module lives at `modules/decide`; literal phase commands aimed at
 `modules/T-0393-a-group-decides-together-the-decide-module` name no package.
 
@@ -491,12 +491,12 @@ fixture are available to the next scoped resource.
 
 ## Remaining checkpoint obligations
 
-The kernel's HTTP receipt layer can recover a cached response before calling a
-service again. This checkpoint has not yet proved retained current Read/Vote
-Access locks on that path, or reconciled private undo/invite credential recovery
-with the kernel's `CredentialExtension` policy. Do not treat keyed HTTP recovery
-or generated-form retry as verified authority or credential behavior. This must
-be resolved before the module is composed in an application.
+Noncredential HTTP recovery calls the declared current-authority check in its
+request transaction. Decide resolves Access again, retaining current Read and
+Manage/Vote locks through commit; a denial returns no cached row, and an outage
+refuses recovery. SQL HTTP probes revoke Read, Manage and account activity before
+retrying a completed close. Invite and vote responses declare CredentialExtension;
+JSON and generated vote-form probes prove their credentials cannot be replayed.
 
 SQL deadline/ballot and concurrent-ballot tests do not establish every requested
 vote/close, join/revoke or vote/remove ordering. Current-authority retention is
@@ -504,5 +504,5 @@ required of the composing adapter; the fixture adapter uses row share locks but
 has not yet been raced against revocation. Browser/mobile journeys, generated
 command outcome design-floor measurements and a real user/notification product
 composition are still unverified. These are delivery obligations rather than
-alternative domain policies. The source budget decision is required before the
-complete repository gate can pass; no owner approval is inferred.
+alternative domain policies. Source-budget approval and repository checks are
+reported separately; no verification of these remaining boundaries is inferred.

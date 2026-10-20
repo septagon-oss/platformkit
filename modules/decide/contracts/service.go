@@ -8,10 +8,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 )
 
-// Access re-resolves active identity and current grants/credential ceilings after
-// the question lock. It also checks every target as an active same-tenant person.
-// Nil targets means only the actor. Implementations acquire the whole identity/
-// revocation lock set in canonical owner order and retain it until commit.
+// Access resolves active identity, current grants and credential ceilings.
+// Commands lock an existing question first; HTTP recovery takes no question lock.
+// Targets must be active same-tenant people; nil targets means only the actor.
+// Acquire identity/revocation locks in canonical owner order; retain them until commit.
 type Access interface {
 	Current(context.Context, db.Tx[db.Tenant], []uuid.UUID) (Actor, error)
 }

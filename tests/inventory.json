@@ -43228,6 +43228,63 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/decide/internal/receipt_test.go",
+   "id": "modules/decide/internal/receipt_test.go#TestAQuestionReceiptRechecksCurrentAuthority",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAQuestionReceiptRechecksCurrentAuthority",
+   "needs_db": true,
+   "pkg": "modules/decide/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/decide/internal/receipt_test.go",
+   "id": "modules/decide/internal/receipt_test.go#TestInviteAndUndoCredentialsAreNotRetainedForHTTPReplay",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestInviteAndUndoCredentialsAreNotRetainedForHTTPReplay",
+   "needs_db": true,
+   "pkg": "modules/decide/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/decide/internal/receipt_test.go",
+   "id": "modules/decide/internal/receipt_test.go#TestAGeneratedVoteFormDoesNotRetainItsUndoCredential",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGeneratedVoteFormDoesNotRetainItsUndoCredential",
+   "needs_db": true,
+   "pkg": "modules/decide/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/decide/internal/service_test.go",
    "id": "modules/decide/internal/service_test.go#TestSQLBallotConformance",
    "kind": "go",
@@ -55503,6 +55560,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestDatabaseStaysClaimedUntilBothSuccessfulLifecyclesClose",
+   "needs_db": true,
+   "pkg": "pkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "pkit",
+   "evidence": "not-round-named",
+   "file": "pkit/replay_authorization_consistency_test.go",
+   "id": "pkit/replay_authorization_consistency_test.go#TestBuildRefusesAChangedReplayGuardBeforeMigration",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestBuildRefusesAChangedReplayGuardBeforeMigration",
    "needs_db": true,
    "pkg": "pkit",
    "round_named": false,
@@ -73003,7 +73079,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1953,
+  "files": 1955,
   "forge_runs": [
    408,
    413,
@@ -73037,7 +73113,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3145,
+   "behaviour": 3149,
    "composition": 435,
    "contract": 21,
    "journey": 97
@@ -73056,9 +73132,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3698,
+  "rows": 3702,
   "tiers": {
-   "merge": 2354,
+   "merge": 2358,
    "nightly": 97,
    "push": 1247
   },
@@ -73066,13 +73142,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1726,
+   "keep": 1728,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3342,
+   "keep": 3346,
    "keep-rewrite": 140,
    "merge": 216
   }

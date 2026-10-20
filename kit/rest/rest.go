@@ -880,6 +880,9 @@ func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // fact the module already holds, and one the author could simply forget to
 // write. The door asks the module by verb instead — Spec.Gate says how.
 type CommandOptions struct {
+	// MintsCredential prevents retained responses in JSON and generated forms.
+	// Undoable commands also declare this automatically for their rewind token.
+	MintsCredential bool
 	// Bindings copies observed row fields into named command arguments. It is
 	// presentation metadata; execution validates submitted values without reload.
 	Bindings *RowBindings
@@ -1008,6 +1011,13 @@ func registerCommand[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec 
 	if len(events) > 0 {
 		op.Extensions = map[string]any{httpx.EventsExtension: events}
 	}
+	credential := opts.MintsCredential || opts.Undo != ""
+	if credential {
+		if op.Extensions == nil {
+			op.Extensions = map[string]any{}
+		}
+		op.Extensions[httpx.CredentialExtension] = true
+	}
 	// The same declaration, recorded on the resource, so a shell generated
 	// from the catalog offers this door rather than inventing one — and recorded
 	// with the work beside it, because "offers this door" was always a promise
@@ -1069,7 +1079,7 @@ func registerCommand[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec 
 	// catalog publishes it for exactly that reason — see screens.Command.Path.
 	surfaces.AddCommand(spec.Module, spec.Entity, httpx.Command{
 		Verb: verb, Summary: summary, Description: description,
-		Collection: opts.Collection, Auth: auth,
+		Collection: opts.Collection, Auth: auth, MintsCredential: credential,
 		Endpoint: router.Prefix() + path,
 		Fields:   fields, EmptyInputFault: emptyFault, Present: opts.Present,
 		Bindings: bindings, Undo: opts.Undo, HasResult: result, Output: output, Execute: execute,
