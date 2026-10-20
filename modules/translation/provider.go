@@ -2,8 +2,10 @@ package translation
 
 import (
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	translationcontracts "github.com/septagon-oss/platformkit/modules/translation/contracts"
+	"github.com/septagon-oss/platformkit/modules/translation/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -28,6 +30,7 @@ import (
 var Module = pkit.NewModule("translation", wire,
 	pkit.Needs[rest.TranslationSource](),
 	pkit.Provides[translationcontracts.Service](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -35,5 +38,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Sources: []rest.TranslationSource{pkit.Get[rest.TranslationSource](w)},
 	})
 	pkit.Put[translationcontracts.Service](w, svc)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

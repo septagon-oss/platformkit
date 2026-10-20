@@ -30,6 +30,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/file/internal"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -235,8 +236,33 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		}
 	}
 	return svc, module.Module{
-		Name:        "file",
-		Migrations:  Migrations.Files,
+		Name:       "file",
+		Migrations: Migrations.Files,
+		// Bytes go, rows stay, and the certificate names both a subject and an actor.
+		PersonalData: personaldata.Implements(
+			// files.alt (000063) is the sentence somebody typed about a picture, and a
+			// caption is their own words about themselves as much as a file name is — with
+			// the difference that the caption is what a screen reader hands out to whoever
+			// cannot see the picture. It is claimed beside `name` and scrubbed with it, in
+			// the one statement that also moves the row's instant: see personalData.Erase.
+			personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name", "alt"}},
+			personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+			personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+			// file_uses (000045) says which record's field displays which file. `record`
+			// is a polymorphic reference — `module` and `entity` say whose row it is — so
+			// it is filed as about rather than not-person: a richtext field of a user's
+			// own record names this person's row in it, and the module that writes the
+			// row is not the module that decides what it points at. `module`, `entity`,
+			// `field` and `locale` name no identifier: the first three are CHECKed
+			// vocabulary (000045_file_uses.up.sql:33-39) and the last is a language tag,
+			// so none of them is a column an address was ever copied into.
+			personaldata.Table{Name: "file_uses", About: []string{"record"}, NotPerson: []string{"file_id"}},
+			// file_variants (000054) is one width of one picture: the file it belongs
+			// to is a row, not a person, and the two text columns hold no sentence —
+			// `state` is a CHECKed vocabulary and `reason` is a failed encode's own
+			// word for itself, capped at 24 characters by the same CHECK.
+			personaldata.Table{Name: "file_variants", NotPerson: []string{"file_id"}},
+		),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

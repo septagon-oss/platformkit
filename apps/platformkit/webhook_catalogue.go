@@ -29,6 +29,7 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	subjectcontracts "github.com/septagon-oss/platformkit/modules/subject/contracts"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	translationcontracts "github.com/septagon-oss/platformkit/modules/translation/contracts"
@@ -117,6 +118,14 @@ var webhookCatalogue = emittedEvents{
 	httpx.RestoredEvent,
 	// translation, whose one event says a record's other languages moved.
 	translationcontracts.EventUpdated,
+	// subject, the two moments of a person's own request and the erasure itself. An
+	// installation that serves a person's export has to be able to tell whoever holds
+	// the link that the bundle exists, and a tenant that erased a person wants the
+	// fact pushed rather than polled: all three names are emitted in the transaction
+	// that writes the row they describe, so a subscriber that watches the queue sees
+	// the queue move.
+	subjectcontracts.EventExportRequested, subjectcontracts.EventExportReady,
+	subjectcontracts.EventErased,
 	filecontracts.EventUploaded, filecontracts.EventDeleted, filecontracts.EventRetained,
 	filecontracts.EventReleased, filecontracts.EventErased,
 	// The flip the image widths added: a file's audience is recomputed whenever the
