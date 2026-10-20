@@ -214,3 +214,23 @@ test('a generated list and a generated record hold the whole design floor', asyn
     expect(refusals(m), diagnosed(m, `generated record ${unbreakableId} at ${width}px fails the design floor`)).toEqual([]);
   }
 });
+
+// The two generated screens the case above does not reach: the form a person writes a record in, and
+// a list with no rows. The list is asked for a page past the last, which the screen answers with its
+// empty state rather than a refusal, so no other spec's tasks can fill it. The list is first seen to
+// draw no row link, so a list that answered rows cannot pass as the empty one; the empty sentence's
+// wording is the resource's own and is not pinned here.
+test('a generated form and an empty generated list hold the whole design floor', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const empty = `${tasks}?page=9999`;
+  for (const width of [390, 1440]) {
+    const page = await signedInAt(browser, width);
+    await page.goto(`${tasks}/new`);
+    await expect(page.getByLabel('Title')).toBeVisible();
+    await expectFloor(page, `generated form ${tasks}/new`, width);
+    await page.goto(empty);
+    await expect(page.locator('table'), `${empty} draws no table`).toBeVisible();
+    await expect(page.locator(`table a[href^="${tasks}/"]`), `${empty} still lists a task`).toHaveCount(0);
+    await expectFloor(page, `empty generated list ${empty}`, width);
+  }
+});
