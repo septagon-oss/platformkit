@@ -84,7 +84,7 @@ test('source recovery notices retain alert semantics, keyboard navigation and re
 test('real recovery notices retain linked components and editable messages through two saves', async t => {
   const source = await requestNoticeSource(t)
   const snapshot = source({}), immutable = structuredClone(snapshot), ids = snapshot.examples.map(example => example.id)
-  assert.deepEqual(ids, ['pk-auth-anonymous', 'pk-auth-changed', 'pk-auth-denied', 'pk-auth-transport', 'pk-auth-uncertain'])
+  assert.deepEqual(ids, ['pk-auth-anonymous', 'pk-auth-changed', 'pk-auth-denied', 'pk-auth-uncertain'])
   const fonts = completePlexFonts()
   const browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
   const origin = node => JSON.parse(node.pluginData.find(item => item.key === 'platformkit.source')?.value ?? 'null')

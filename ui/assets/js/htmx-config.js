@@ -14,11 +14,6 @@
   // Pure classification of the existing problem contract. Status alone cannot
   // distinguish a missing session from a permission or account-change refusal.
   function failureKind(status, contentType, body) {
-    // No response at all: the request went out and nothing came back. This is not
-    // "uncertain", which warns that a write may have landed — with no response there is
-    // nothing to have landed — and it is not a claim about the device being offline,
-    // which a page cannot see.
-    if (status === 0) return "transport";
     if (status === 403 && /^application\/problem\+json(?:\s*;|$)/i.test(contentType || "")) {
       try {
         const detail = JSON.parse(body)?.detail;

@@ -219,10 +219,6 @@ func RequestNoticeExamples(signIn string) []examples.Example {
 		{"denied", "You don't have access", "Keep this page open to retain your input. Ask an administrator for the access this needs.", false},
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
 		{"uncertain", "We couldn't confirm whether your changes were saved.", "Keep this page open and check whether the action completed before trying again.", false},
-		// The one failure no status code answers: the request went out and nothing came
-		// back. It says what is known — no response — and not what is not: whether the
-		// device has a network at all, which a page cannot see.
-		{"transport", "We couldn't connect.", "Check your connection and try again.", false},
 	} {
 		body := []g.Node{examples.ExampleWithSlots(
 			examples.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},

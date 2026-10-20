@@ -44,7 +44,6 @@ func TestDocumentOffersRecoveryWithoutSerializingInputs(t *testing.T) {
 	for _, want := range []string{
 		`data-principal="bf81ba02-7ae1-468e-a908-842736ba7246"`,
 		`id="pk-auth-anonymous" hidden`, `id="pk-auth-denied" hidden`, `id="pk-auth-changed" hidden`,
-		`id="pk-auth-transport" hidden`,
 		// The apostrophe reaches the page as an entity: this is rendered HTML.
 		`role="alert"`, "Sign-in required", "You don&#39;t have access", "Account changed",
 		`href="/admin/login" target="_blank" rel="noopener noreferrer"`, "Sign in (opens a new tab)",

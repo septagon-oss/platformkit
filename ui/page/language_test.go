@@ -86,8 +86,8 @@ func TestEnglishRecoveryCopyKeepsItsLanguageInAPortugueseDocument(t *testing.T) 
 		}
 	}
 	visit(root, "")
-	if notices != 5 {
-		t.Fatalf("recovery notices = %d, want one per controller failure", notices)
+	if notices != 4 {
+		t.Fatalf("recovery notices = %d, want 4", notices)
 	}
 	fault := page.Fault(404, "", "/", "Home")
 	root = parseDocument(t, render(t, page.Document(c, page.Request{}, fault, g.Group(fault.Body))))
