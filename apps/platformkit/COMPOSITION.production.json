@@ -354,6 +354,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "auth.LinkPages",
+          "from": ""
         }
       ],
       "after": [
