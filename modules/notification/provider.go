@@ -5,6 +5,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/push"
+	"github.com/septagon-oss/platformkit/kit/secrets"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
@@ -31,6 +32,11 @@ import (
 var Module = pkit.NewModule("notification", wire,
 	pkit.Needs[contracts.RecipientLookup](),
 	pkit.Needs[contracts.HostLookup](),
+	// The relay's credential. A module that read it from the environment itself
+	// would know the deployment — which store a secret comes from is the
+	// deployment's fact and never the module's — so this module names the need and
+	// the composition answers it, exactly as it answers a storage port.
+	pkit.Needs[secrets.Secrets](),
 	// The device adapters this installation carries, if it carries any. Optional
 	// because a deployment with no push credentials is the normal one today: with
 	// nothing wired, the two device channels are suppressed with a reason and no
@@ -63,6 +69,11 @@ var Module = pkit.NewModule("notification", wire,
 	),
 )
 
+// mailSecret is the name this module's SMTP carrier reads its password under. The
+// deployment's own, not a tenant's: a tenant that held an SMTP credential would name
+// its own address here, and that decision belongs to the product.
+const mailSecret = "mail.password"
+
 func wire(w *pkit.Wiring) (module.Module, error) {
 	mail := pkit.Config(w, func(c config.Config) config.Mail { return c.Mail })
 	server := pkit.Config(w, func(c config.Config) config.Server { return c.Server })
@@ -75,7 +86,11 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// contracts/; this pick is the only thing in the module that reads it.
 		mailer = gomail.New(gomail.Config{
 			Host: mail.Host, Port: mail.Port, Username: mail.Username,
-			Password: mail.Password, EnvelopeFrom: mail.From,
+			// The name, not the bytes: the carrier reads the password off the port
+			// when it dials, so a secret that arrives mid-incident is picked up by
+			// the next attempt rather than needing a restart.
+			Secrets: pkit.Get[secrets.Secrets](w), SecretName: mailSecret,
+			EnvelopeFrom: mail.From,
 		})
 	} else {
 		mailer = NewMailbox()
