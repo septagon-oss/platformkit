@@ -31,7 +31,7 @@ type Text = resource.Text
 // refuses to do to it — additive, optional, never a change of meaning — and moves
 // for a listed resource losing a verb, whose button that build drew and whose
 // address now answers nothing. A verb hidden by a new entry strands nobody.
-const CatalogVersion = 2
+const CatalogVersion = 3
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell
@@ -67,7 +67,9 @@ type Catalog struct {
 // composition writes this and a resource-bearing document never invents it.
 type Pictures struct {
 	Source string `json:"source"`
-	Widths []int  `json:"widths,omitempty"`
+	// ComposedSource is optional and substitutes one canonical {reference} token.
+	ComposedSource string `json:"composedSource,omitempty"`
+	Widths         []int  `json:"widths,omitempty"`
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because

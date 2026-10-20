@@ -516,6 +516,14 @@ if "$default_output"; then
 	results="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/platformkit-e2e-results.XXXXXX")"
 	output_args=(--output "$results")
 fi
+# The composed-picture journey needs its source-owning test composition. The Go
+# harness starts it, supplies its session address and stops it before returning.
+if [ "$#" -eq 0 ]; then
+	(cd "$root" && PLATFORMKIT_PICTURE_BROWSER="$root/e2e/node_modules/.bin/playwright" \
+		NODE_PATH="$root/e2e/node_modules" \
+		timeout 600s go test ./apps/platformkit -run '^TestComposedPictureUsesTheGeneratedListAndSessionDoor$' -count=1 -v </dev/null)
+fi
+
 # PLATFORMKIT_E2E_SECOND_URL is the same installation reached at a host the first
 # tenant is not served at. Chromium resolves *.localhost to the loopback address
 # itself, so no /etc/hosts entry and no operator is needed to reach it.
