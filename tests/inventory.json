@@ -12332,6 +12332,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/provisioning_successor_isolation_test.go",
+   "id": "kit/db/provisioning_successor_isolation_test.go#TestProvisioningJoinsCannotReachTheNextTenantsRows",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestProvisioningJoinsCannotReachTheNextTenantsRows",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 8,
    "evidence": "renamed from a round name; no unique reach, and no kept sibling in its package to inherit it: the rule it names has to be read before anything is deleted",
    "file": "kit/db/refusal_id_is_declared_wherever_the_runner_keeps_it_test.go",
@@ -59941,7 +59960,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1548,
+  "files": 1549,
   "forge_runs": [
    408,
    413,
@@ -59975,7 +59994,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2568,
+   "behaviour": 2569,
    "composition": 353,
    "contract": 19,
    "journey": 88
@@ -59994,9 +60013,9 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3028,
+  "rows": 3029,
   "tiers": {
-   "merge": 1917,
+   "merge": 1918,
    "nightly": 88,
    "push": 1023
   },
@@ -60004,13 +60023,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1363,
+   "keep": 1364,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2738,
+   "keep": 2739,
    "keep-rewrite": 117,
    "merge": 173
   }
