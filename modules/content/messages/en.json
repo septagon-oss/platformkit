@@ -528,6 +528,24 @@
       "": "Unpublish"
     }
   },
+  "hints.content/content.deck.left.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Archive",
+    "plural": {
+      "": "Archive"
+    }
+  },
+  "hints.content/content.deck.right.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publish",
+    "plural": {
+      "": "Publish"
+    }
+  },
   "hints.content/content.field.coverImageId.help": {
     "references": [
       "modules/content/module.go"
