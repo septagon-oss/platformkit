@@ -2885,6 +2885,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/erasure_reaches_the_identifier_a_provisioning_client_sent_test.go",
+   "id": "apps/platformkit/erasure_reaches_the_identifier_a_provisioning_client_sent_test.go#TestErasureLeavesNoAddressInTheIdentifierAProvisioningClientSent",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestErasureLeavesNoAddressInTheIdentifierAProvisioningClientSent",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/erasure_scrubs_the_export_requests_own_words_test.go",
    "id": "apps/platformkit/erasure_scrubs_the_export_requests_own_words_test.go#TestErasureScrubsTheExportRequestsOwnWords",
    "kind": "go",
@@ -33377,6 +33396,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestColumnAppenderCannotExpireHistory",
+   "needs_db": true,
+   "pkg": "modules/audit/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/audit/internal/erasure_fence_upgrades_past_the_applied_head_test.go",
+   "id": "modules/audit/internal/erasure_fence_upgrades_past_the_applied_head_test.go#TestAnInstallationWithTheOperationColumnsTakesTheErasureFence",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnInstallationWithTheOperationColumnsTakesTheErasureFence",
    "needs_db": true,
    "pkg": "modules/audit/internal",
    "round_named": false,
@@ -68636,7 +68674,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1821,
+  "files": 1823,
   "forge_runs": [
    408,
    413,
@@ -68670,8 +68708,8 @@
    578
   ],
   "layers": {
-   "behaviour": 2938,
-   "composition": 422,
+   "behaviour": 2939,
+   "composition": 423,
    "contract": 21,
    "journey": 93
   },
@@ -68689,9 +68727,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3474,
+  "rows": 3476,
   "tiers": {
-   "merge": 2194,
+   "merge": 2196,
    "nightly": 93,
    "push": 1187
   },
@@ -68699,13 +68737,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1594,
+   "keep": 1596,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3118,
+   "keep": 3120,
    "keep-rewrite": 140,
    "merge": 216
   }
