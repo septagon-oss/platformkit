@@ -91,16 +91,27 @@ fi
 # sets the three names itself, and wins over the derivation.
 mail_host="${PLATFORMKIT_E2E_MAIL_HOST:-localhost}"
 mail_port="${PLATFORMKIT_E2E_MAIL_PORT:-${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025}}"
-mailpit_url="${PLATFORMKIT_E2E_MAILPIT_URL:-http://${mail_host}:${PLATFORMKIT_MAILPIT_PORT:-8025}}"
+# PLATFORMKIT_MAIL_UI_PORT is the name this repository's own stack carried before
+# compose.yaml renamed the catcher's ports to PLATFORMKIT_MAILPIT_SMTP_PORT and
+# PLATFORMKIT_MAILPIT_PORT; it is read here as the older spelling of the catcher's API,
+# and the newer name wins where both are set.
+mailpit_url="${PLATFORMKIT_E2E_MAILPIT_URL:-http://${mail_host}:${PLATFORMKIT_MAILPIT_PORT:-${PLATFORMKIT_MAIL_UI_PORT:-8025}}}"
 # The same catcher, spelled for the specs that read an inbox: e2e/steps/inbox.ts opens
 # the URL in PLATFORMKIT_E2E_MAIL_URL rather than deriving one, and
-# e2e/inbox-pagination.spec.ts names the SMTP port it injects a message through. Both
-# are exported below, after this run has resolved the catcher it actually reached, so a
-# spec never carries a port of its own. PLATFORMKIT_MAIL_UI_PORT is the name this
-# repository's own stack carried before compose.yaml renamed it to
-# PLATFORMKIT_MAILPIT_SMTP_PORT/PLATFORMKIT_MAILPIT_PORT; it is read here as the older
-# spelling of the same inbox, and the newer name wins where both are set.
-mail_url="${PLATFORMKIT_E2E_MAIL_URL:-http://127.0.0.1:${PLATFORMKIT_MAILPIT_PORT:-${PLATFORMKIT_MAIL_UI_PORT:-8025}}}"
+# e2e/inbox-pagination.spec.ts dials the SMTP host and port it injects a message
+# through. All three are exported below, after this run has resolved the catcher it
+# actually reached, so a spec never carries an address of its own.
+#
+# The inbox URL is the API address above and not a second derivation over it, because
+# the probe above asks that one and a journey that reads a different one is reading
+# somewhere the run never proved exists. A spelling of the catcher by host name rather
+# than by loopback — .gitea/workflows/ci.yml reaches it as `mailpit`, on the network its
+# services share — left the older form dialling 127.0.0.1 while the application mailed
+# through `mailpit`: every journey that reads a mailbox failed on a connection refused,
+# and the journeys that read Mailpit by its API address, which the recipe does name,
+# passed beside them. PLATFORMKIT_E2E_MAIL_URL still wins, for a catcher whose API and
+# inbox really are two addresses.
+mail_url="${PLATFORMKIT_E2E_MAIL_URL:-$mailpit_url}"
 
 # Asked for before the binary is built, not after the browser starts clicking. With
 # no catcher the application boots happily and logs the messages it will not send
@@ -530,6 +541,7 @@ fi
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
 	PLATFORMKIT_E2E_PORT="$port" \
 	PLATFORMKIT_E2E_MAIL_URL="$mail_url" \
+	PLATFORMKIT_E2E_MAIL_HOST="$mail_host" \
 	PLATFORMKIT_MAIL_PORT="$mail_port" \
 	PLATFORMKIT_E2E_SECOND_URL="http://tenantb.localhost:$second_port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \

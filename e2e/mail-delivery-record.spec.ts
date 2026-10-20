@@ -36,6 +36,14 @@ async function held(request: import('@playwright/test').APIRequestContext, to: s
   return (messages ?? []).length;
 }
 
+// The address a sign-up mail opens: the confirmation page of the module that owns the
+// credential, on the tenant's public face (contracts.VerifyEmailPath, which
+// modules/auth/internal/ui/page.go mounts and refuses to be parted from). Matched as a
+// parsed address rather than as a substring of the body, so a message that merely
+// mentions the confirmation screen somewhere else cannot answer for the link, and the
+// credential is read out of the query that carries it.
+const confirmEmailPage = '/auth/verify-email';
+
 // The one-time credential the mailed link carries, for the assertion that it is the
 // only place it appears on this side of the socket.
 async function credential(request: import('@playwright/test').APIRequestContext, to: string): Promise<string> {
@@ -46,9 +54,18 @@ async function credential(request: import('@playwright/test').APIRequestContext,
   const detail = await request.get(`${mailpit}/api/v1/message/${messages![0].ID}`);
   expect(detail.ok(), await detail.text()).toBe(true);
   const { Text, HTML } = (await detail.json()) as { Text?: string; HTML?: string };
-  const link = `${Text ?? ''}\n${HTML ?? ''}`.match(/\/app\/auth\/verify-email\?token=([A-Za-z0-9_\-]+)/);
-  expect(link, 'the confirmation carries its credential').not.toBeNull();
-  return link![1];
+  const links: URL[] = [];
+  for (const one of `${Text ?? ''}\n${HTML ?? ''}`.matchAll(/https?:\/\/[^\s>"']+/g)) {
+    // Run-on punctuation is not an address a reader could open, and the assertion
+    // below is about the confirmation link rather than about anything else the body
+    // happens to carry, so a name that will not parse is left out of the list.
+    try { links.push(new URL(one[0])); } catch { /* left out */ }
+  }
+  const link = links.find((one) => one.pathname === confirmEmailPage);
+  expect(link, `the confirmation carries a link to ${confirmEmailPage}`).toBeTruthy();
+  const token = link!.searchParams.get('token') ?? '';
+  expect(token, 'the confirmation carries its credential').not.toBe('');
+  return token;
 }
 
 test('the mail one sign-up caused leaves a record, and the door says only that nothing was refused', async ({ page }) => {
