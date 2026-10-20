@@ -18,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/push"
 	pushlog "github.com/septagon-oss/platformkit/kit/push/providers/log"
+	"github.com/septagon-oss/platformkit/kit/secrets"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
@@ -31,8 +32,13 @@ func TestARegisteredDeviceReceivesThePersonsPushNotice(t *testing.T) {
 		pkit.Put[contracts.RecipientLookup](w, directory{})
 		pkit.Put[contracts.HostLookup](w, hosts{})
 		pkit.Put[push.Adapters](w, hub.Adapters())
+		// notification names secrets.Secrets as its need, so a composition of it
+		// answers that need even to test a channel that never reads one: these
+		// cases run the mailbox sender, which dials nothing.
+		pkit.Put[secrets.Secrets](w, secrets.Map(nil, nil))
 		return module.Module{Name: "delivery_inputs"}, nil
-	}, pkit.Provides[contracts.RecipientLookup](), pkit.Provides[contracts.HostLookup](), pkit.Provides[push.Adapters]())
+	}, pkit.Provides[contracts.RecipientLookup](), pkit.Provides[contracts.HostLookup](),
+		pkit.Provides[push.Adapters](), pkit.Provides[secrets.Secrets]())
 	var svc contracts.Service
 	var manifest module.Module
 	reader := pkit.NewModule("delivery_reader", func(w *pkit.Wiring) (module.Module, error) {

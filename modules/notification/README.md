@@ -11,7 +11,9 @@ logged, which is what a development machine wants.
 
 Compose it with `notification.Deps{Recipients, Senders, Providers, Mailer, Hosts,
 Secure}`: the mailer is `providers/gomail` — `gomail.New(gomail.Config{…})` over
-`config.example.yaml`'s `mail` section (password through `PLATFORMKIT_MAIL_PASSWORD`),
+`config.example.yaml`'s `mail` section, with the password read through `kit/secrets`
+under the name `mail.password` — `PLATFORMKIT_MAIL_PASSWORD` on a laptop, a mounted
+file or an OpenBao mount in a deployment that has one —
 the dependency the register names — or `NewMailbox()`, the in-memory one, and
 `Senders` and `Providers` may each be nil — every nil is a named refusal inside the
 decision rather than a surprise at send time, and a deployment with no `Senders` speaks
