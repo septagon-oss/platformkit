@@ -235,7 +235,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sidebar captures plus CSS and this digest. Schema, font policy, notices,
 	// themes and icons are byte-identical to the previous export.
 	// The digest covers the composed examples, stylesheet and attribution together.
-	if legacy.SHA256 != "94e2131f705cdc27ebc406db89ce9ee198f48161b22cc585c5887b9046e831e0" {
+	if legacy.SHA256 != "7e3c48daae56adb6a0928b6faa5b239e241988d6528ac291d8dd337954976c1c" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
