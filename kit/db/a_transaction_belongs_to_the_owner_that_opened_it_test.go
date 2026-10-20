@@ -389,6 +389,48 @@ func TestAStatementCarriesItsCallersValuesAndTheTransactionSpan(t *testing.T) {
 	}
 }
 
+func TestATransactionFoundOnTheContextIsTheFindersOperation(t *testing.T) {
+	admin, app := dbtest.Schema(t)
+	createThings(t, t.Context(), admin)
+	acme := newTenant("acme")
+	owner, p := lazy(t, app, acme)
+	if _, err := p.Tx(owner); err != nil {
+		t.Fatal(err)
+	}
+
+	op, cancel := context.WithTimeout(context.WithValue(owner, valueKey{}, "finder"), time.Minute)
+	defer cancel()
+	found, ok := db.TxFrom(op)
+	if !ok {
+		t.Fatal("TxFrom found no transaction on a request that opened one")
+	}
+	h := found.DB()
+	if got := h.Statement.Context.Value(valueKey{}); got != "finder" {
+		t.Errorf("the found handle's context value = %v, want the finder's", got)
+	}
+	want, _ := op.Deadline()
+	if got, ok := h.Statement.Context.Deadline(); !ok || !got.Equal(want) {
+		t.Errorf("the found handle's deadline = %v, want the finder's %v", got, want)
+	}
+	cancel()
+	if err := insert(h, acme.ID, "cancelled"); !errors.Is(err, context.Canceled) {
+		t.Errorf("a cancelled finder's write = %v, want context.Canceled", err)
+	}
+	live, ok := db.TxFrom(owner)
+	if !ok {
+		t.Fatal("TxFrom found no transaction after a finder was cancelled")
+	}
+	if err := insert(live.DB(), acme.ID, "kept"); err != nil {
+		t.Fatalf("a live finder's write after a cancelled one = %v", err)
+	}
+	if err := p.Close(true); err != nil {
+		t.Fatalf("commit = %v", err)
+	}
+	if n := committed(t, admin); n != 1 {
+		t.Errorf("committed rows = %d, want only the live finder's", n)
+	}
+}
+
 func TestACancelAfterCommitIsReportedAsCommitted(t *testing.T) {
 	admin, app := dbtest.Schema(t)
 	createThings(t, t.Context(), admin)

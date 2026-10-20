@@ -109,12 +109,20 @@ func current(ctx context.Context) (openTx, bool) {
 // transaction beside the first. A context that carries a Pending it has not opened
 // reports false rather than opening it: asking for the transaction is Run's decision
 // or the caller's, never a reader's.
+//
+// What it hands back is what Run's join hands: an operation of ctx, whose statements
+// carry ctx's deadline and values inside the transaction, never the shared handle,
+// and which a provisioning view still ends with its callback. See README.md, "The
+// transaction's owner".
 func TxFrom(ctx context.Context) (Tx[Tenant], bool) {
 	cur, ok := current(ctx)
 	if !ok || cur.system {
 		return Tx[Tenant]{}, false
 	}
-	return Tx[Tenant]{db: cur.db, scope: Tenant{tenant: cur.tenant}}, true
+	if cur.view != nil {
+		ctx = cur.view.bind(ctx)
+	}
+	return Tx[Tenant]{db: operation(cur.db, cur.span, ctx), scope: Tenant{tenant: cur.tenant}}, true
 }
 
 // HasTransaction reports both active and lazy transactions carried by ctx.

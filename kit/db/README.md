@@ -342,16 +342,17 @@ and releases the connection, `Close` reports the owner's cause whatever `keep` a
 later `Tx` opens: a request whose client went away commits neither its rows nor its outbox events,
 even when its handler answered 2xx.
 
-An **operation** is each caller of `Tx`, and each nested `Run`. It gets a clone of the shared GORM
-handle bound to its own context, so its statements carry its deadline, its values and the
-transaction span, and the shared handle is never changed. An operation ending stops its statements
-and nothing else. If PostgreSQL aborted the transaction underneath — a statement cancelled mid-way —
-nothing later commits it: there are no savepoints.
+An **operation** is each caller of `Tx`, each nested `Run`, and each `TxFrom` on a context already
+inside the transaction. It gets a clone of the shared GORM handle bound to its own context, so its
+statements carry its deadline, its values and the transaction span, and the shared handle is never
+changed. An operation ending stops its statements alone. If PostgreSQL aborted the transaction
+underneath — a statement cancelled mid-way — nothing later commits it: there are no savepoints.
 
-`InTenant` also bounds its borrowed handles to the provisioning callback. Nested `Run` calls
-retain that restriction even when their caller uses `context.WithoutCancel`: their own deadlines
-and values still apply, but every borrowed handle is cancelled before system access is restored.
-A saved callback context cannot open a fresh usable handle after the callback has returned.
+`InTenant` also bounds its borrowed handles to the provisioning callback. Nested `Run` and `TxFrom`
+calls retain that restriction even when their caller uses `context.WithoutCancel`: their own
+deadlines and values still apply, but every borrowed handle is cancelled before system access is
+restored. A saved callback context cannot open a fresh usable handle after the callback has
+returned.
 
 What follows from that:
 
