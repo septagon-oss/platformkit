@@ -95,7 +95,13 @@ type Options struct {
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
-	Text                                   func(key, fallback string) string
+	// DetailTone is how the refused line is announced: "" for a fault, drawn and read
+	// as one, or the quiet tone of an outcome the application reached by working as
+	// designed — a feature this workspace's plan does not carry — which nothing broke
+	// and no alarm is owed. It says nothing where Model.Detail is empty, because no
+	// notice is drawn then.
+	DetailTone string
+	Text       func(key, fallback string) string
 }
 
 // ErrNamespace reports an unusable instance scope before any example is returned.
@@ -193,7 +199,7 @@ func example(id string, model Model, options Options) examples.Example {
 	body := []g.Node{}
 	if model.Detail != "" {
 		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
-			components.AlertProps{Tone: "danger", Title: cmp.Or(options.FailureTitle, "That could not be saved"), Message: model.Detail, Bordered: true},
+			components.AlertProps{Tone: cmp.Or(options.DetailTone, "danger"), Title: cmp.Or(options.FailureTitle, "That could not be saved"), Message: model.Detail, Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node)
 		var links []g.Node
 		richtextError := false

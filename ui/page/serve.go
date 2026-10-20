@@ -68,6 +68,12 @@ type Route struct {
 	// See httpx.StreamedBody. A page that sets it declares no body field: nothing
 	// above it is going to decode one.
 	StreamsBody bool
+	// Subject says what this page is about, so that the refusal it may answer is
+	// about the same thing: a person sent away from one record is told the record is
+	// gone and offered its list, not told the address is missing. A hand-written page
+	// leaves it empty and is refused about its address, which is what a page that names
+	// no subject can truthfully say.
+	Subject Subject
 }
 
 // Handler is a page. It reads through ctx and knows the caller through r; what
@@ -135,7 +141,8 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			// actually replaced, so a verdict no catalogue speaks stays English and says
 			// so — and the reference is empty here because a handler's own 4xx carries no
 			// request id of its own.
-			refused := fault(status, detail, r.Locale, "", s.Back, s.BackLabel)
+			refused := fault(verdict{status: status, detail: detail, loc: r.Locale,
+				back: s.Back, backLabel: s.BackLabel, path: r.Path, sub: rt.Subject})
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -159,8 +166,14 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 		// and none of its content — and a page that named no topic is answered as a
 		// whole document whatever the request carried, because nothing said it had a
 		// region to swap.
+		//
+		// A refusal of a region read is the same case and used not to be drawn that
+		// way: the refresh that found the row gone, the caller refused or the service
+		// down got a whole document dropped into the element that was showing the rows,
+		// which is a page inside a page and no sentence either. The refusal is the
+		// region's new contents, in the element that asked for it.
 		var out *httpx.Page
-		if len(v.Live) > 0 && regionRequested(ctx) {
+		if regionRequested(ctx) && (len(v.Live) > 0 || status >= http.StatusBadRequest) {
 			out, err = RenderFragment(g.Group(v.Body), status)
 		} else {
 			region := v.Body

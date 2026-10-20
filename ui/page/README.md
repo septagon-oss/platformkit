@@ -165,11 +165,24 @@ it renders as a page, the tenant the person was standing in front of.
 **Reused** — `faultKeys`, `refusalLocale` and `Locale.Text`: the refusal page's
 parts are looked up through the same table, the same negotiated locale and the same
 seam the verdict's own sentence already used, and `ui/document`'s Toolbar, Alert,
-Text, Form, Button and Link draw them.
+Text, Form, Button and Link draw them. The plain-word table this package shows today
+reuses that same mechanism and its same gate: `document.Fault`, `components.Alert`
+with the tone it already takes, `rest.FieldErrorsIn` and the generated screens'
+`EntryHints`, which are where an entry's readable names already come from.
 **Added** — `Refusal` next to `Fault` in `ui/document`, and `Shell.Granter`/
 `Shell.Ask`: `Fault` draws one alert and one link and cannot carry a form, and a
 shell had no way to say who may hand out a missing grant or where an ask posts.
+Also `document.FaultProps`/`FaultPage` (a refusal page with a tone and a way out,
+beside the five-argument `Fault` that still stands), `page.Subject` with
+`Route.Subject` (nothing per page said what the page was about, so a refused record
+read could only name its address), `page.RefusalWords` (the same table, reached from
+a form's notice rather than from a page) and the transport notice, because a request
+that got no response is not a request whose outcome is unknown.
 **Made reusable** — `MountAccess`, the two page routes behind one kernel command,
 and `refusalParts`, the list the catalogue-coverage test reads: a part that ships
 without Portuguese is now a red test rather than an English line on a Portuguese
-page.
+page. `faultSubjectKeys` and `faultSubjectWayKeys` join that reading — no `faultKey`
+call can produce those keys, so the gate that asks `faultKey` about every status is
+silent about them and these are the only way the catalogue is asked; and
+`Route.Subject` is the pattern any hand-written page follows to get the record-sized
+words without a lookup by string.

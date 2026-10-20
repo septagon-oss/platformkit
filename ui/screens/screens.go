@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
@@ -87,7 +89,8 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	}
 
 	if res.Offers(httpx.CRUDList) {
-		page.Serve(router, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " list"}, read,
+		page.Serve(router, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " list",
+			Subject: subject(res, o, at, false)}, read,
 			func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
 				pageNo := max(in.Page, 1)
 				rows, total, err := res.List(ctx, crud.Query{Limit: perPage, Offset: (pageNo - 1) * perPage, Sort: in.Sort})
@@ -121,12 +124,14 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 				}
 				o := localized(o, req)
 				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
+				detail, o.Refusal = refusedWrite(req.Locale, err, detail)
 				return Form(res, o, at, o.Text("screens.new", "New %s", entryName(res, o)), sent, errs, detail, true), nil
 			})
 	}
 
 	if res.Offers(httpx.CRUDRead) {
-		page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity}, read,
+		page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity,
+			Subject: subject(res, o, at, true)}, read,
 			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
 				row, err := res.Get(ctx, in.ID)
 				if err != nil {
@@ -137,7 +142,8 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	}
 
 	if res.Offers(httpx.CRUDUpdate) {
-		page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form"}, write,
+		page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form",
+			Subject: subject(res, o, at, true)}, write,
 			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
 				row, err := res.Get(ctx, in.ID)
 				if err != nil {
@@ -160,6 +166,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 				}
 				o := localized(o, req)
 				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
+				detail, o.Refusal = refusedWrite(req.Locale, err, detail)
 				return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", entryName(res, o)), sent, errs, detail, false), nil
 			})
 	}
@@ -335,4 +342,21 @@ func words(o Options, req page.Request) func(key, fallback string) string {
 func localized(o Options, req page.Request) Options {
 	o.Locale = req.Locale
 	return o
+}
+
+// refusedWrite is the verdict behind a refused write as the refusal page words it: the
+// sentence its notice shows, replacing the code-prefixed line the write door hands back,
+// with the heading and tone to show it under. A failure that page has no words for keeps
+// the line its writer wrote: for a field the caller sent, or a row rule that named its
+// reason, that line is the one thing the person can act on.
+func refusedWrite(loc *page.Locale, err error, kept string) (string, *resource.Refusal) {
+	var p *problem.Problem
+	if !errors.As(err, &p) {
+		return kept, nil
+	}
+	title, line, tone, ok := page.RefusalWords(loc, p.Status, p.Detail)
+	if !ok {
+		return kept, nil
+	}
+	return line, &resource.Refusal{Heading: title, Tone: tone}
 }

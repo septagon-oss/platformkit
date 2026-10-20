@@ -347,7 +347,7 @@ test('a committed write with a lost response is reported as uncertain and never 
     await route.abort('failed');
   });
   await field.press('Enter');
-  await expect(page.locator('#pk-auth-uncertain').getByRole('alert')).toContainText('Check the result');
+  await expect(page.locator('#pk-auth-uncertain').getByRole('alert')).toContainText("We couldn't confirm whether your changes were saved.");
   expect(committedStatus).toBe(204);
   await expect(page.locator('#pk-auth-anonymous')).toBeHidden();
   await expect(field).toHaveValue(title);

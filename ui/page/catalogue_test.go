@@ -37,6 +37,11 @@ func raisedFaults(t *testing.T) []string {
 	// and they are copy a person reads: a missing entry is the same defect one
 	// sentence down.
 	keys = append(keys, refusalParts...)
+	// The sentences a page that declared its subject shows, and the ways out they
+	// offer. No faultKey call can produce these, so the loop above is silent about
+	// them and this is the only gate that asks the catalogue for them.
+	keys = append(keys, faultSubjectKeys()...)
+	keys = append(keys, faultSubjectWayKeys()...)
 	keys = append(keys, faultTitleKeys()...)
 	slices.Sort(keys)
 	return slices.Compact(keys)

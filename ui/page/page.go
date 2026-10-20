@@ -18,8 +18,6 @@
 package page
 
 import (
-	"net/http"
-
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -110,10 +108,10 @@ func Brand(c Chrome, r Request) string { return document.Brand(c, r.document()) 
 // Bare is the frame with no navigation: a narrow column of cards.
 func Bare(body []g.Node) g.Node { return document.Bare(body) }
 
-// Fault is the page for a refusal a person can act on: the status text, the
-// detail, and one way back. A 5xx never reaches it — see Serve.
+// Fault is the page for a refusal a person can act on: what this package calls the
+// verdict, the detail, and one way back. A 5xx never reaches it — see Serve.
 func Fault(status int, detail, back, backLabel string) View {
-	return document.Fault(status, http.StatusText(status), detail, back, backLabel)
+	return fault(verdict{status: status, detail: detail, back: back, backLabel: backLabel})
 }
 
 // Empty is the input of a page that takes none. huma needs a type per shape.
