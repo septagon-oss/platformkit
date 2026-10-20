@@ -56,9 +56,9 @@ That is now true of the database and not only of this module's code.
 `kit/db/migrate.go` uses for the runner's own ledger, because a module may name no
 role), and installs four triggers: `audit_events_never_rewritten` refuses every
 `UPDATE`, from every role including the table's owner and a superuser, with the one
-exception an erasure needs and nothing wider: `000055_audit_erasure_scrub.up.sql`
+exception an erasure needs and nothing wider: `000073_audit_erasure_scrub.up.sql`
 grants the `payload` and `client_ip` columns, and
-`000056_audit_erasure_scrub_reads_the_document.up.sql` lets a write through only when
+`000074_audit_erasure_scrub_reads_the_document.up.sql` lets a write through only when
 the rest of the row is byte-identical, the client address went to NULL, and the new
 document is the old one with spans replaced by an erasure token;
 `audit_events_expire_only_after` admits a `DELETE` only when the role holding it may
@@ -183,7 +183,7 @@ append-only table this kernel takes over.
 Five things this delivery leaves open, named where the reviewer will look.
 
 * **The erasure's two columns are a capability the deployment hands out.** With
-  `000055`'s grant a role may take text *out* of a payload and leave an erasure token
+  `000073`'s grant a role may take text *out* of a payload and leave an erasure token
   where it was, because which span an erasure removed is not recoverable from the two
   documents and no rule about them can tell a removal that was asked for from one that
   was not. What no statement can now do is put text in, move a fact, or set
