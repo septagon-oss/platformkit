@@ -656,7 +656,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 			}
 			if !c.Primary {
 				if c.Key == r.Present.StatusField {
-					return components.Badge(components.BadgeProps{Label: display.Text(row.Cells[c.Key]), Tone: tones[row.ID], Dot: true})
+					return components.Badge(components.BadgeProps{Label: display.Text(row.Cells[c.Key]), Tone: tones[row.ID], Variant: "secondary", Dot: true})
 				}
 				return nil
 			}
