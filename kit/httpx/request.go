@@ -17,6 +17,9 @@ import (
 func (a *API) carry(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := withRefusalNote(r.Context())
+		if a.opts.Cache != nil {
+			ctx = context.WithValue(ctx, cacheKey{}, a.opts.Cache)
+		}
 		if a.access != nil {
 			ctx = withAccessDoor(ctx, a.access)
 		}

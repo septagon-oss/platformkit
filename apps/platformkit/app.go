@@ -38,6 +38,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
+	"github.com/septagon-oss/platformkit/modules/history"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
@@ -286,6 +287,9 @@ func sentence(cfg config.Config, served pkit.Catalogue, ports *latePorts, withou
 			user.Module,
 			tenant.Module,
 			notification.Module,
+			// The chrome the module above draws its own list in, named beside it: the
+			// screen is notification's and the shell is this product's.
+			workspace(),
 			auth.Module,
 			auth.EmailRegistration,
 			// The door a tenant's identity provider provisions through, which needs
@@ -295,6 +299,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, ports *latePorts, withou
 			// the page: the authorizer its controls ask is the auth service above it.
 			media(),
 			file.Module,
+			history.Module,
 			task.Module,
 			billing.Module,
 			// The translations of the module below: one table, no routes and no

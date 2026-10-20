@@ -85,6 +85,21 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 			}
 		}
 	}
+	// A command that claimed an idempotency key leaves its marker inside this
+	// transaction, so the marker and the effect it stands for commit or roll back as
+	// one. Nothing else can tell the caller, later, which way an unanswered COMMIT
+	// went: see idempotency.Store.Mark.
+	var unmarked error
+	if keep {
+		if unmarked = markEffect(ctx.Context(), p); unmarked != nil {
+			// Work without its marker, or beside a retry that took the key over, is the
+			// second write the key exists to prevent, so it does not commit. The claim
+			// stays begun and unmarked, which the next press reads as a command that
+			// never ran — once the lease is over, as it reads a refused COMMIT.
+			keep = false
+			noteUncommitted(ctx.Context())
+		}
+	}
 	err = p.Close(keep)
 	closed = true
 	b, buffered := bufferFrom(ctx.Context())
@@ -104,7 +119,10 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 			}
 		}
 	}
-	if n, ok := operationNote(ctx.Context()); ok && !keep && err == nil {
+	if err != nil {
+		noteUncommitted(ctx.Context())
+	}
+	if n, ok := operationNote(ctx.Context()); ok && !keep && err == nil && unmarked == nil {
 		if failureErr := a.failedOperation(n); failureErr != nil {
 			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: failed operation evidence could not persist", "error", failureErr)
 			if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
@@ -114,12 +132,18 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		}
 	}
 	switch {
+	case err == nil && unmarked != nil:
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the keyed command could not be marked; it was rolled back",
+			"method", ctx.Method(), "path", ctx.URL().Path, "error", unmarked)
+		if buffered && b.reset() {
+			a.refuse(ctx, http.StatusServiceUnavailable, CodeIdempotencyUnavailable+": this write could not be remembered, so it was not made")
+		}
 	case err == nil:
 		if undecided && buffered && b.reset() {
 			a.refuse(ctx, http.StatusInternalServerError, "")
 		}
 	case hungUp(ctx.Context(), err):
-		// Nobody is waiting for this answer and nothing was written. See hungUp.
+		// Nobody is waiting for this answer. See hungUp.
 		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: the client hung up before the request transaction ended",
 			"method", ctx.Method(), "path", ctx.URL().Path)
 	case buffered && b.reset():
@@ -140,8 +164,10 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 // notices before this middleware does and rolls the transaction back itself, so
 // the commit asked for a moment later comes back "sql: transaction has already
 // been committed or rolled back", and the settings re-read before it fails on
-// the same cancelled context. Both read as faults and neither is one: nothing
-// was written, and there is nobody left to tell.
+// the same cancelled context. Both read as faults and neither is one: there is
+// nobody left to tell. A cancellation that lands while the COMMIT's answer is on
+// its way may follow a write that did commit; this reading only chooses the log
+// line, and the idempotency record is left to the effect marker before it.
 //
 // It matters because the alternative was an ERROR line per abandoned request.
 // An alert that fires on ordinary browsing is an alert people turn off, and the

@@ -472,5 +472,23 @@
     "plural": {
       "": "esta subscrição deve o período terminado em %s; é liquidada antes de o plano mudar"
     }
+  },
+  "hints.billing/plan.description": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Gira os planos e preços disponíveis para os seus clientes.",
+    "plural": {
+      "": "Gira os planos e preços disponíveis para os seus clientes."
+    }
+  },
+  "hints.billing/plan.emptyDescription": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Crie um plano com o preço e o intervalo de faturação.",
+    "plural": {
+      "": "Crie um plano com o preço e o intervalo de faturação."
+    }
   }
 }

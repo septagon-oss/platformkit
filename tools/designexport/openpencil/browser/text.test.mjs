@@ -101,19 +101,10 @@ test('gallery construction coverage is explicit under the supplied-font comparis
   // text, which is what this loop and the adapter's own gates verify. No built fill,
   // stroke or radius is compared with the browser's computed style here; only
   // browser/media.test.mjs makes that claim today, for Media's two error states.
-  // Remeasured across the complete shared-component catalog. The dismissible
-  // Alert now contains a dormant, uncaptured close-control boundary; its exact
-  // refusal is pinned below rather than flattening that source-owned content.
-  //
-  // 813 and 767 are this tree's run of this file, not arithmetic. The previous
-  // numbers, 812 and 767, were main's: this change adds one shared component, the
-  // sentence a command form prints about its own consequence, and a Gallery example
-  // to go with it. That example constructs — it is a paragraph of text at a bounded
-  // measure, which is a shape the adapter already reproduces — so the catalog gains
-  // one example and one acceptance and no refusal. Measured here, not inferred: the
-  // diagnostic this same run prints holds 44 accepted, 767 refused and the same two
-  // capture refusals, and the accepted list below is that run's, entry for entry.
-  assert.equal(snapshot.examples.length, 813)
+  // The complete catalog measures 815 examples: 44 accepted, 769 refused at
+  // construction and two refused captures. Standalone and Disclosure retain opaque
+  // source composition; their exact refusals are pinned beside Alert's boundary.
+  assert.equal(snapshot.examples.length, 815)
   assert.deepEqual(accepted, [
     'pk-ui.component.alert/bordered', 'pk-ui.component.alert/compact', 'pk-ui.component.alert/danger',
     'pk-ui.component.alert/info', 'pk-ui.component.alert/success',
@@ -134,14 +125,16 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.select/invalid', 'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 767)
+  assert.equal(refused.length, 769)
   const namedRefusals = {
     'pk-ui.component.alert/dismissible': 'Native component: composition cannot flatten an uncaptured component boundary',
+    'pk-ui.component.disclosure/default': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.grid/responsive': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.heading/display': 'Native component: composition text requires one supplied actual face',
     'pk-ui.component.hero/default': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.section-header/default': 'Native component: inline composition cannot flatten a source component or non-inline child',
     'pk-ui.component.section/default': 'Native component: typed, nonopaque source composition required',
+    'pk-ui.component.standalone/default': 'Native component: typed, nonopaque source composition required',
     // Media's two error panels are the only Media state that constructs today, so the
     // states beside them are named here: a picture needing an aspect ratio, a waiting
     // picture with no bytes, and a refusal that delegates to the shelf.

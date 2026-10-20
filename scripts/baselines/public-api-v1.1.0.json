@@ -123,7 +123,7 @@
     "./ui/page.Serve: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I]) to func(*github.com/septagon-oss/platformkit/kit/httpx.Router, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I])",
     "./ui/resource.Options.Root: removed",
     "./ui/resource.Path: removed",
-    "./ui/screens.CatalogVersion: value changed from 1 to 2",
+    "./ui/screens.CatalogVersion: value changed from 1 to 3",
     "./ui/screens.Mount: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, github.com/septagon-oss/platformkit/ui/page.Shell, Options, github.com/septagon-oss/platformkit/kit/httpx.Resource) to func(*github.com/septagon-oss/platformkit/kit/httpx.Router, github.com/septagon-oss/platformkit/ui/page.Shell, Options, github.com/septagon-oss/platformkit/kit/httpx.Resource)",
     "./ui/screens.Path: removed"
   ]

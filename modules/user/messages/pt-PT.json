@@ -690,5 +690,23 @@
     "plural": {
       "": "a função %q não é um identificador em minúsculas"
     }
+  },
+  "hints.user/user.description": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Convide e gira as pessoas com acesso a este espaço de trabalho.",
+    "plural": {
+      "": "Convide e gira as pessoas com acesso a este espaço de trabalho."
+    }
+  },
+  "hints.user/user.emptyDescription": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Adicione uma pessoa e atribua-lhe a função necessária.",
+    "plural": {
+      "": "Adicione uma pessoa e atribua-lhe a função necessária."
+    }
   }
 }

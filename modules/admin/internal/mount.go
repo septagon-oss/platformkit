@@ -22,6 +22,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
@@ -111,6 +112,8 @@ type Shell struct {
 	// composition names it for the same reason it names SignIn: the door belongs
 	// to the module that stores the bytes. Empty draws the plain value.
 	PictureSource string
+	// ComposedSource is the composed-picture address with a {reference} placeholder.
+	ComposedSource string
 	// Registration is the composition saying a stranger may make an account
 	// here. Nil offers no way in but the password, which is the answer for
 	// every composition that wired no registration service.
@@ -237,7 +240,8 @@ func Mount(s httpx.Surfaces, sh Shell) {
 
 	opts := screens.Options{
 		Workspace: a.workspace.at, Home: "Dashboard",
-		PictureSource: sh.PictureSource,
+		PictureSource:  sh.PictureSource,
+		ComposedSource: sh.ComposedSource,
 	}
 	resources := s.Resources()
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Screen < resources[j].Screen })
@@ -294,13 +298,17 @@ func Mount(s httpx.Surfaces, sh Shell) {
 			"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
 	}
 
+	frameAt := a
+	if sh.Sessions == nil {
+		frameAt.sessions = route{}
+	}
 	shell := page.Shell{
 		Chrome: page.Chrome{
 			Brand: brand, Assets: a.assets.at, Stylesheet: sheet,
 			Scripts: ui.Controllers, SignIn: a.login.at,
 		},
-		Frame: frame(a, nav, frameDeps{
-			Authorize: sh.Authorize, Storybook: sh.storybook,
+		Frame: frame(frameAt, nav, frameDeps{
+			Authorize: sh.Authorize, Storybook: sh.storybook, Resources: resources,
 			Language: sh.Language, LanguageVersion: sh.LanguageVersion,
 			LanguagePath: sh.languagePath,
 		}),
@@ -348,13 +356,15 @@ func Mount(s httpx.Surfaces, sh Shell) {
 // system is dark gets dark, and the inline snippet page.Serve adds sets the
 // attribute only when they have chosen one for themselves.
 // frameDeps is what the frame closes over, as values: who may be asked whether a
-// caller is in, which composition the gallery link is worth offering for, and the
-// account command the language control reads and writes. A bag rather than four
-// parameters because the frame is built once and read on every request, and a
-// fifth positional argument past a navigation value is a call nobody can read.
+// caller is in, which composition the gallery link is worth offering for, the
+// resources the workspace groups by, and the account command the language control
+// reads and writes. A bag rather than six parameters because the frame is built
+// once and read on every request, and a positional list that long is a call nobody
+// can read.
 type frameDeps struct {
 	Authorize       httpx.Authorizer
 	Storybook       func(context.Context) (export.Storybook, error)
+	Resources       []httpx.Resource
 	Language        AccountLanguage
 	LanguageVersion AccountLanguageVersion
 	LanguagePath    string
@@ -381,7 +391,7 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 				tenancy.Grant{Permission: tenantcontracts.PermissionLocaleManage})
 			maySetLanguages = err == nil && allowed
 		}
-		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery, maySetLanguages)
+		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery, maySetLanguages, deps.Resources...)
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{
 				SkipTarget: "content",
@@ -452,31 +462,67 @@ func (a addresses) writtenHere(screen string) (string, bool) {
 // two pages about the installation. What the caller may reach is decided
 // before this is called — see page.Navigation.Visible — so this renders a
 // list and hides nothing of its own.
-func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, maySetLanguages bool) components.SidebarProps {
-	items := []components.SidebarItem{{Label: chrome(r, "nav.dashboard", "Dashboard"), Href: a.dashboard.at, Icon: "gear"}}
-	for _, entry := range visible {
-		key, own := a.writtenHere(entry.Screen)
-		label := entry.Label
-		if own {
-			label = chrome(r, key, entry.Label)
+func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, maySetLanguages bool, resources ...httpx.Resource) components.SidebarProps {
+	o := resource.Options{Locale: r.Locale}
+	sections := []components.SidebarSection{{ID: "overview", Items: []components.SidebarItem{
+		{Label: o.Text("admin.workspace.dashboard", "Dashboard"), Href: a.dashboard.at, Icon: "gear"},
+	}}}
+	work := components.SidebarSection{ID: "workspace", Label: o.Text("admin.workspace.workspace", "Workspace")}
+	for _, group := range workspaceSections(a, visible, resources, o) {
+		if group.ID == "platform" {
+			sections = append(sections, group)
+		} else {
+			work.Items = append(work.Items, group.Items...)
 		}
-		items = append(items, components.SidebarItem{Label: navLabel(r, entry, label), Href: entry.Screen, Icon: "file-text"})
 	}
 	// A tenant's own languages, in its own namespace, offered to whoever the
 	// authorizer says may set them — the same answer the page's guard gives, so the
 	// link and the door cannot disagree.
 	if maySetLanguages {
-		items = append(items, components.SidebarItem{Label: chrome(r, "nav.languages", "Languages"), Href: a.languages.at, Icon: "globe"})
+		work.Items = append(work.Items, components.SidebarItem{
+			Label: o.Text("admin.nav.languages", "Languages"), Href: a.languages.at, Icon: "globe"})
 	}
-	items = append(items, components.SidebarItem{Label: chrome(r, "nav.health", "Health"), Href: a.health.at, Icon: "check-circle"})
-	// Use the same permission and composition selection as the direct routes.
+	if len(work.Items) > 0 {
+		sections = append(sections, work)
+	}
+	label := o.Text("admin.workspace.support", "Support")
+	if r.Tenant.Operator {
+		label = o.Text("admin.workspace.system", "System")
+	}
+	sections = append(sections, components.SidebarSection{ID: "system", Label: label,
+		Items: []components.SidebarItem{{Label: o.Text("admin.workspace.health", "Health"), Href: a.health.at, Icon: "check-circle"}},
+	})
 	if gallery {
-		items = append(items, components.SidebarItem{Label: chrome(r, "nav.components", "Components"), Href: a.gallery.at, Icon: "info"})
+		sections = append(sections, components.SidebarSection{ID: "developer", Label: o.Text("admin.workspace.developer", "Developer tools"),
+			Items: []components.SidebarItem{{Label: o.Text("admin.workspace.components", "Components"), Href: a.gallery.at, Icon: "info"}},
+		})
 	}
-	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the
-	// colour that is legible on it is one the component owns.
+	if r.SignedIn && a.sessions.at != "" {
+		sections = append(sections, components.SidebarSection{ID: "account", Label: o.Text("admin.workspace.account", "Your account"), Items: []components.SidebarItem{{Label: o.Text("admin.workspace.sessions", "Sessions"), Href: a.sessions.at, Icon: "user"}}})
+	}
+	// A module's navigation label is copy as much as a page title is, so each label
+	// workspaceSections grouped is asked of the reader's catalogue under the address
+	// that destination serves. The frame's own destinations — Dashboard, Health,
+	// Sessions — keep the admin.workspace.* keys above, which name them by what this
+	// shell serves rather than by the module behind an address.
+	for i, section := range sections {
+		for j, item := range section.Items {
+			for _, entry := range visible {
+				if entry.Screen != item.Href {
+					continue
+				}
+				key, own := a.writtenHere(entry.Screen)
+				label := entry.Label
+				if own {
+					label = chrome(r, key, entry.Label)
+				}
+				sections[i].Items[j].Label = navLabel(r, entry, label)
+				break
+			}
+		}
+	}
 	return components.SidebarProps{
-		Current: r.Path, NavigationLabel: chrome(r, "nav.label", "Admin navigation"), Items: items,
+		Current: r.Path, NavigationLabel: o.Text("admin.workspace.navigation", "Admin navigation"), Sections: sections,
 		DisclosureLabel: chrome(r, "nav.menu", "Menu"),
 		BrandLabel:      fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
 	}
@@ -531,12 +577,13 @@ func chromeCount(r page.Request, key string, count int64, one, other string) str
 // header is the tenant, the caller, the theme switch and the way out — and, below the large
 // breakpoint where the sidebar is not shown, the disclosure that lists the same sections.
 func header(ctx context.Context, deps frameDeps, r page.Request, navigation components.SidebarProps) []g.Node {
+	o := resource.Options{Locale: r.Locale}
 	right := []g.Node{
 		components.ButtonWithSlots(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"data-theme-toggle": "", "aria-pressed": "false"}},
 			Variant: "ghost", Size: "sm", IconOnly: true,
-			AriaLabel: chrome(r, "theme.toggle", "Switch between the light and dark theme"),
+			AriaLabel: o.Text("admin.workspace.theme", "Switch between the light and dark theme"),
 		}, components.ButtonSlots{Content: []g.Node{
 			components.Icon(components.IconProps{Name: "moon", Size: "sm"})}}),
 	}
@@ -546,20 +593,20 @@ func header(ctx context.Context, deps frameDeps, r page.Request, navigation comp
 	if r.SignedIn {
 		right = append([]g.Node{
 			components.Text(components.TextProps{
-				Content: short(r.Principal.UserID.String()) + " · " +
-					fallback(strings.Join(r.Principal.Roles, ", "), chrome(r, "account.no_roles", "no roles")),
-				Size: chromeTextSize, Color: "muted"}),
+				Content: o.Text("admin.workspace.signed_in", "Signed in · %s", fallback(strings.Join(r.Principal.Roles, ", "), o.Text("admin.workspace.no_roles", "no roles"))),
+				Size:    chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
-			Label:          chrome(r, "account.sign_out", "Sign out"), Variant: "secondary", Size: "sm",
+			Label:          o.Text("admin.workspace.sign_out", "Sign out"), Variant: "secondary", Size: "sm",
 		}))
 	}
 	return []g.Node{
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
 			components.SidebarDisclosure(navigation),
 			components.Text(components.TextProps{
-				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize})),
+				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize}),
+			components.Badge(components.BadgeProps{Label: workspaceScope(r.Tenant, o), Tone: "neutral"})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}
 }

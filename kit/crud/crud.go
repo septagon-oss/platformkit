@@ -387,6 +387,8 @@ func comparable(fields []Field, name, what string) (Field, error) {
 	switch {
 	case !ok:
 		return Field{}, fmt.Errorf("%w: there is no field %q to %s on", ErrInvalid, name, what)
+	case f.Type == entity.TypePicture:
+		return Field{}, fmt.Errorf("%w: %s is a derived picture, which is not something to %s on", ErrInvalid, name, what)
 	case f.Type == TypeList:
 		return Field{}, fmt.Errorf("%w: %s is a list, which is not something to %s on", ErrInvalid, name, what)
 	}

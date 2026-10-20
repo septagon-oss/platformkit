@@ -412,6 +412,17 @@ func verdictSaid(kind, state string) (title, body string) {
 // running server says whether the composition really put it there.
 const pinnedProposals = "/app/change/proposals"
 
+// noticeShell is the chrome the notification module's in-app list is drawn in:
+// this product's chrome and frame again, tagged for the module whose page it is
+// and returning to the same home. Where the unread bell sits, and how many are
+// in it, stays the shell's own decision — the module mounts its list at its own
+// address and names no link to it.
+func noticeShell(messages page.Messages) page.Shell {
+	s := reviewShell(messages)
+	s.Tag = "notification"
+	return s
+}
+
 // reviewShell is the chrome the two review pages are drawn in: the composition's own
 // brand, stylesheet, way back and merged catalogue, which are the same four facts the
 // fault pages use. modules/change owns the two pages and no opinion about the chrome

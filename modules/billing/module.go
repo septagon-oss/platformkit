@@ -93,13 +93,15 @@ var spec = rest.Spec[*contracts.Plan]{
 	// status enum, and `active` is a bool, which no tone vocabulary colours —
 	// inferring a status from "the first enum" is what decision 0085 refuses.
 	Present: entity.EntryHints{
-		Singular:      "plan",
-		Plural:        "plans",
-		Icon:          "plan",
-		Group:         &entity.ResourceGroup{Key: "billing", Label: "Billing"},
-		PrimaryField:  "name",
-		SummaryFields: []string{"priceCents", "active"},
-		Sortable:      []string{"name", "priceCents"},
+		Description:      "Manage the plans and prices available to your customers.",
+		EmptyDescription: "Create a plan with its price and billing interval.",
+		Singular:         "plan",
+		Plural:           "plans",
+		Icon:             "plan",
+		Group:            &entity.ResourceGroup{Key: "billing", Label: "Billing"},
+		PrimaryField:     "name",
+		SummaryFields:    []string{"priceCents", "active"},
+		Sortable:         []string{"name", "priceCents"},
 	},
 }
 

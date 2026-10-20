@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
 // Sessions is what the shell needs of the auth module: the list a person reads
@@ -132,7 +132,7 @@ func (p pages) sessionsView(ctx context.Context, r page.Request) (page.View, err
 	}
 	return sessionsPage(p.at.sessions.at, p.at.sessionRevoke.at, p.at.sessionsRest.at,
 		strings.TrimSuffix(p.SignIn, "/login")+"/factors/passkey/begin",
-		strings.TrimSuffix(p.SignIn, "/login")+"/factors/passkey/finish", items, r.Locale), nil
+		strings.TrimSuffix(p.SignIn, "/login")+"/factors/passkey/finish", items, resource.Options{Locale: r.Locale}), nil
 }
 
 // currentSession is the session answering this request, or uuid.Nil.
@@ -163,30 +163,23 @@ func currentSession(ctx context.Context) uuid.UUID {
 // sessionsPage is the screen as a function of values: what is there, and the
 // three addresses the forms post to, with the two ceremony legs a person who
 // wants a passkey rather than an authenticator app posts to.
-//
-// Every word on it is asked of admin.sessions.* in the language the request was
-// answered in, so the page declares no language of its own and takes the one that
-// was negotiated — the rule the dashboard and the health page follow too, and the
-// reason the shell above a Portuguese tenant is not English.
-func sessionsPage(where, revokeOne, revokeRest, passkeyBegin, passkeyFinish string,
-	items []*authcontracts.SessionListing, selected *page.Locale) page.View {
-	said := sessionsWords(selected)
+func sessionsPage(where, revokeOne, revokeRest, passkeyBegin, passkeyFinish string, items []*authcontracts.SessionListing, o resource.Options) page.View {
 	body := []g.Node{components.Toolbar(components.ToolbarProps{
-		Title:    said("title", "Sessions"),
-		Subtitle: said("subtitle", "Every place you are signed in, most recently seen first. Ending one signs that device out; it does not change your password."),
+		Title:    o.Text("admin.workspace.sessions", "Sessions"),
+		Subtitle: o.Text("admin.workspace.sessions_description", "Every place you are signed in, most recently seen first. Ending one signs that device out; it does not change your password."),
 	})}
 	if len(items) == 0 {
 		// No rows is not an error and not an empty table: it is the answer to
 		// "was that me?" when there is nothing to ask about.
 		body = append(body, components.EmptyState(components.EmptyStateProps{
-			Title:       said("empty_title", "Nothing is signed in"),
-			Description: said("empty_body", "This request opened no session, so there is nothing here to end."),
+			Title:       o.Text("admin.workspace.sessions_empty", "Nothing is signed in"),
+			Description: o.Text("admin.workspace.sessions_empty_description", "This request opened no session, so there is nothing here to end."),
 			Bordered:    true,
 		}))
-		body = append(body, passkeyEnrolment(passkeyBegin, passkeyFinish, selected)...)
-		return page.View{Title: said("title", "Sessions"), Body: body}
+		body = append(body, passkeyEnrolment(passkeyBegin, passkeyFinish, o)...)
+		return page.View{Title: o.Text("admin.workspace.sessions", "Sessions"), Body: body}
 	}
-	body = append(body, sessionsTable(revokeOne, items, said))
+	body = append(body, sessionsTable(revokeOne, items, o))
 	// The count is the rows that are not this one, counted where they are. The
 	// command ends whatever the caller's own session is, wherever it sits, and the
 	// order this list arrives in is last_seen_at — a column the module slides at
@@ -201,30 +194,14 @@ func sessionsPage(where, revokeOne, revokeRest, passkeyBegin, passkeyFinish stri
 		}
 	}
 	if rest > 0 {
-		body = append(body, components.Divider(components.DividerProps{Text: said("others", "Everywhere else")}),
-			components.Form(components.FormProps{Action: revokeRest,
-				Label: said("end_all_label", "End every session but this one")},
+		body = append(body, components.Divider(components.DividerProps{Text: o.Text("admin.workspace.elsewhere", "Everywhere else")}),
+			components.Form(components.FormProps{Action: revokeRest, Label: o.Text("admin.workspace.end_rest", "End every session but this one")},
 				components.FormActions(components.FormActionsProps{},
 					components.Button(components.ButtonProps{
-						Label: said("end_others", "End the other %d", rest), Type: "submit", Tone: "danger"}))))
+						Label: o.Text("admin.workspace.end_others", "End the other %d", rest), Type: "submit", Tone: "danger"}))))
 	}
-	body = append(body, passkeyEnrolment(passkeyBegin, passkeyFinish, selected)...)
-	return page.View{Title: said("title", "Sessions"), Body: body}
-}
-
-// sessionsWords asks this page's catalogue for one word in the language the request
-// was answered in. With no language behind the render — a unit test, a shell that
-// negotiated nothing — the sentence written here answers, which is the source copy
-// rather than a guess at another one.
-func sessionsWords(selected *page.Locale) func(key, fallback string, args ...any) string {
-	if selected == nil {
-		return func(_, fallback string, args ...any) string {
-			return fmt.Sprintf(fallback, args...)
-		}
-	}
-	return func(key, fallback string, args ...any) string {
-		return selected.Text("admin.sessions."+key, fallback, args...)
-	}
+	body = append(body, passkeyEnrolment(passkeyBegin, passkeyFinish, o)...)
+	return page.View{Title: o.Text("admin.workspace.sessions", "Sessions"), Body: body}
 }
 
 // passkeyEnrolment is the person's own half of the ceremony: a label for the
@@ -233,39 +210,29 @@ func sessionsWords(selected *page.Locale) func(key, fallback string, args ...any
 // appears on this page, and nothing here can be copy-pasted into another
 // device. A tab closed mid-enrolment enrolled nothing — the auth module's
 // begin leg writes a nonce and no factor.
-func passkeyEnrolment(begin, finish string, selected *page.Locale) []g.Node {
-	said := sessionsWords(selected)
-	// The error alert holds what the ceremony's finish leg answers with, which that
-	// leg writes in English today, so it declares English. The message alert holds a
-	// sentence just asked of the reader's own catalogue, so it declares that language.
-	// A wrapper naming the wrong one sends a screen reader off with the wrong voice
-	// over the line a person most needs to hear correctly.
-	understood := writtenHere
-	if selected != nil {
-		understood = selected.Language
-	}
+func passkeyEnrolment(begin, finish string, o resource.Options) []g.Node {
 	return []g.Node{
-		components.Divider(components.DividerProps{Text: said("passkeys", "Passkeys")}),
+		components.Divider(components.DividerProps{Text: o.Text("admin.workspace.passkeys", "Passkeys")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"data-passkey-enrol": "", "data-begin": begin, "data-finish": finish}},
-			Label: said("passkey_add", "Add a passkey"),
+			Label: o.Text("admin.workspace.add_passkey", "Add a passkey"),
 		},
 			components.Alert(components.AlertProps{
 				ComponentProps: components.ComponentProps{
-					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": writtenHere}},
+					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
 				Tone: "danger", Message: "", Bordered: true,
 			}),
 			components.Alert(components.AlertProps{
 				ComponentProps: components.ComponentProps{
-					Hidden: true, Attrs: map[string]string{"data-auth-message": "", "lang": understood}},
-				Tone: "success", Message: said("passkey_enrolled", "That passkey is enrolled."), Bordered: true,
+					Hidden: true, Attrs: map[string]string{"data-auth-message": ""}},
+				Tone: "success", Message: o.Text("admin.workspace.passkey_enrolled", "That passkey is enrolled."), Bordered: true,
 			}),
 			components.Input(components.InputProps{
-				Name: "name", Label: said("passkey_name", "What this device is called"), MaxLength: 40,
-				Placeholder: said("passkey_placeholder", "Office laptop"), FullWidth: true}),
+				Name: "name", Label: o.Text("admin.workspace.device_name", "What this device is called"), MaxLength: 40,
+				Placeholder: o.Text("admin.workspace.device_placeholder", "Office laptop"), FullWidth: true}),
 			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{Label: said("passkey_add", "Add a passkey"), Type: "submit", Variant: "outline"})),
+				components.Button(components.ButtonProps{Label: o.Text("admin.workspace.add_passkey", "Add a passkey"), Type: "submit", Variant: "outline"})),
 		),
 	}
 }
@@ -288,11 +255,11 @@ func passkeyEnrolment(begin, finish string, selected *page.Locale) []g.Node {
 // own screen must not read like a sheet of live credentials. The device string is
 // what the browser said, clipped by the module to 400 characters, and an empty
 // one says so rather than rendering a blank row.
-func sessionsTable(revokeOne string, items []*authcontracts.SessionListing, said func(key, fallback string, args ...any) string) g.Node {
+func sessionsTable(revokeOne string, items []*authcontracts.SessionListing, o resource.Options) g.Node {
 	rows := make([]components.TableRow, 0, len(items))
 	for _, s := range items {
 		rows = append(rows, components.TableRow{ID: s.Ref, Cells: map[string]any{
-			"device":    deviceNamed(s, said),
+			"device":    deviceNamed(s, o),
 			"current":   s.Current,
 			"signed_in": when(s.CreatedAt),
 			"last_used": when(s.LastSeenAt),
@@ -302,15 +269,15 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing, said
 	}
 	return components.TableWithSlots(components.TableProps{
 		Columns: []components.TableColumn{
-			{Key: "device", Label: said("column_device", "Device"), Primary: true},
-			{Key: "signed_in", Label: said("column_signed_in", "Signed in")},
-			{Key: "last_used", Label: said("column_last_used", "Last used")},
-			{Key: "ends", Label: said("column_ends", "Ends")},
-			{Key: "from", Label: said("column_from", "From")},
-			{Key: "end", Label: said("column_end", "End"), Align: "right"},
+			{Key: "device", Label: o.Text("admin.workspace.device", "Device"), Primary: true},
+			{Key: "signed_in", Label: o.Text("admin.workspace.session_started", "Signed in")},
+			{Key: "last_used", Label: o.Text("admin.workspace.last_used", "Last used")},
+			{Key: "ends", Label: o.Text("admin.workspace.ends", "Ends")},
+			{Key: "from", Label: o.Text("admin.workspace.from", "From")},
+			{Key: "end", Label: o.Text("admin.workspace.end", "End"), Align: "right"},
 		},
 		Rows:  rows,
-		Label: said("table_label", "Your sessions, most recently seen first"),
+		Label: o.Text("admin.workspace.sessions_table", "Your sessions, most recently seen first"),
 	}, components.TableSlots{
 		Cell: func(row components.TableRow, c components.TableColumn) g.Node {
 			device := rest.Text(row.Cells["device"])
@@ -322,7 +289,7 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing, said
 				return components.Flex(components.FlexProps{Gap: "2", Align: "center"},
 					g.Text(device),
 					components.Badge(components.BadgeProps{
-						Label: said("this_device", "This device"), Tone: "success", Variant: "outline"}))
+						Label: o.Text("admin.workspace.this_device", "This device"), Tone: "success", Variant: "outline"}))
 			case "from":
 				if rest.Text(row.Cells["from"]) == "" {
 					// The session recorded no address: the row says so rather than
@@ -343,13 +310,12 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing, said
 				// about what a person sees first and not about which media query their
 				// browser matched. So this row carries no fill at all, and the page
 				// paints one filled control above the fold whoever is looking at it.
-				return components.Form(components.FormProps{Action: revokeOne,
-					Label: said("end_one", "End the session on %s", device)},
+				return components.Form(components.FormProps{Action: revokeOne, Label: o.Text("admin.workspace.end_on", "End the session on %s", device)},
 					components.Input(components.InputProps{
 						Type: "hidden", Name: "ref", Value: rest.Text(row.ID)}),
 					components.Button(components.ButtonProps{
-						Label: said("end_this", "End this session"), Type: "submit", Variant: "ghost",
-						AriaLabel: said("end_one", "End the session on %s", device)}))
+						Label: o.Text("admin.workspace.end_session", "End this session"), Type: "submit", Variant: "ghost",
+						AriaLabel: o.Text("admin.workspace.end_on", "End the session on %s", device)}))
 			}
 			return nil
 		},
@@ -357,12 +323,10 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing, said
 }
 
 // deviceNamed is the row's headline: what the browser said, or the truth about a
-// session that arrived without a user agent. What the browser said is data and
-// stays as it arrived; the truth about the one that said nothing is this file's
-// sentence, so the catalogue is asked for it.
-func deviceNamed(s *authcontracts.SessionListing, said func(key, fallback string, args ...any) string) string {
+// session that arrived without a user agent.
+func deviceNamed(s *authcontracts.SessionListing, o resource.Options) string {
 	if s.UserAgent == "" {
-		return said("unknown_device", "A device that would not say what it is")
+		return o.Text("admin.workspace.unknown_device", "A device that would not say what it is")
 	}
 	return s.UserAgent
 }

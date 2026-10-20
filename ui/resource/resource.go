@@ -55,12 +55,9 @@ type Resource struct {
 	// record lives, and a browser that guessed an API path would be guessing which
 	// surface its caller may read on.
 	API string
-	// Present is how this resource's author said it reads. The renderer consults
-	// three parts of it and no others: `visibility`, which keeps a field off the
-	// list and off the record; `section`, which groups the record; and
-	// `sortable`, which names the columns a header may be clicked on. The words,
-	// the icon and the tones are the document's, and the web screen keeps drawing
-	// what it drew until the design decides how they are read.
+	// Present supplies the resource names, reading order, status, empty-state
+	// guidance, visibility, sections and supported sorts. The catalogue and web
+	// screens resolve the same declarations through Words.
 	Present entity.EntryHints
 	// Screen is the workspace address of this resource's collection screen:
 	// /app/<module>/<entity>, composed by the kernel at registration. Every
@@ -94,6 +91,11 @@ type Resource struct {
 	// "may I do this?" has no answer there, and a control that would be refused is
 	// not worth drawing. ui/screens fills this in from httpx.Resource.
 	Commands []Command
+	// History is this record's versions, read for the caller the page is rendered
+	// for, and nil for a resource whose Spec keeps none. The command it carries is
+	// left out of Commands by the adapter, so the panel is the one place a person
+	// restores from. ui/screens fills this in from httpx.Resource.History.
+	History *HistoryPanel
 }
 
 // PerPage is a screenful, and the page the list renders and links. kit/crud's
@@ -122,6 +124,8 @@ type Options struct {
 	// and every picture cell then draws the plain value it drew before this field
 	// existed.
 	PictureSource string
+	// ComposedSource substitutes {reference} with a validated composed-picture token.
+	ComposedSource string
 	// Locale is the request's selected language when the shell composes
 	// page.Shell.Messages; the adapter sets it per request. The fixed labels
 	// — New, Edit, Delete, the count, the pager and the empty state — are
@@ -198,6 +202,7 @@ func (o Options) count(total int64, r Resource) string {
 // two is checked by anyone.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
 	at, one := r.Screen, o.noun(r, 1)
+	reading := r.reading(o)
 	// The heading is the resource's own plural word, read through the catalogue like
 	// every other word on this screen. It is also the accessible name of the
 	// screen's scrolling table region, in the same words: the region is the list, so
@@ -220,7 +225,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		CurrentPageLabel: o.Text("screens.current_page", "Page %s, current page", "%d"),
 	}
 	body := []g.Node{table(o, r, at, title, rows, sort, o.count(total, r), &pager, components.DataListSlots{
-		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title}, actions...)},
+		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title, Subtitle: reading.Description}, actions...)},
 		// Collection commands retain their native forms and precede the pager.
 		// Generated CRUD does not gain selected-row writes from a UI control.
 		Footer: commandForms(o, o.Words(r.Schema), r.Commands, at, true),
@@ -249,7 +254,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	if !r.Singleton {
 		item = at + "/" + display.Text(row["id"])
 	}
-	named := label(row, readable(r.Schema.Fields))
+	named := r.rowName(row, readable(r.Schema.Fields))
 	if r.Singleton {
 		// A singleton is one row nobody chose, so it is called what the resource is
 		// called. Naming it after the first field that happens to hold a value made
@@ -281,8 +286,27 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.Commands, item, false, locales)...)
+	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales)...)
+	body = append(body, historyDisclosure(o, r.History))
 	return document.View{Title: named, Body: body}
+}
+
+// offeredCommands is the commands to draw a form for: every one this caller may
+// use, except the one the history panel carries. The panel is that command's
+// control, per version, with the version it names in it; a second form above it
+// asking for a version number by hand would be the same door twice, once usable
+// and once a guess.
+func (r Resource) offeredCommands() []Command {
+	if r.History == nil || r.History.Carries == "" {
+		return r.Commands
+	}
+	out := make([]Command, 0, len(r.Commands))
+	for _, c := range r.Commands {
+		if c.Verb != r.History.Carries {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // Form is the create and edit screen: one control per writable field, derived
@@ -337,12 +361,13 @@ const fileUploadRoute = "/api/v1/file/files"
 const fileImageSrc = "/api/v1/file/files/{file}/content"
 
 // richtextEditor is the server's answer to "what may this field's editor do, and
-// where". An author who is writing has no record yet, so there is nothing to save
-// against and nothing to keep a draft under: the two attributes appear together
-// with the record's id. An entity that keeps no write count has no tag to quote,
-// so the editor saves nothing as the author writes and keeps the draft instead —
-// which is the honest mode, not a degraded one: a conflict panel needs a revision
-// to disagree about.
+// where". An author who is writing has no record yet, so there is nothing to keep
+// a draft under: the draft key appears with the record's id and nowhere else. No
+// write address is offered beside it, because this form is the write: it posts the
+// field and quotes the row's own write count as the condition on that post. A
+// browser handed the same address would PATCH the field as the person types, move
+// the row off the revision the form still carries, and refuse the Save pressed a
+// moment later — keeping no draft in which unsaved words would then live.
 //
 // submitted says this render is the answer to a write that was refused: its
 // controls carry the person's own post rather than the record's text. Nothing
@@ -358,10 +383,6 @@ func richtextEditor(r Resource, row map[string]any, create bool, name string, su
 		return editor
 	}
 	editor.DraftKey = r.API + "/" + id + "/" + name
-	if revision, quoted := revisionCondition(r, row, create); quoted {
-		editor.Endpoint = r.API + "/" + id
-		editor.ETag = `"` + revision + `"`
-	}
 	return editor
 }
 
@@ -534,17 +555,8 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	// and a table that led with a value its author kept off every row would put that
 	// value back through the one column every row links on.
 	listed := onList(r.Schema.Fields)
-	primary := known(listed)
-	shown := []entity.Field{primary}
-	for _, f := range listed {
-		// `hidden` is off every screen and `detail` is off this one; both keep
-		// their value in the schema, the PATCH and the JSON, because what a person
-		// is shown and what a caller may read are two questions.
-		if f.Name == primary.Name || f.Name == "id" {
-			continue
-		}
-		shown = append(shown, f)
-	}
+	primary := r.primary(listed)
+	shown := r.listFields()
 	columns := make([]components.TableColumn, 0, len(shown))
 	words := o.Words(r.Schema)
 	for i, f := range shown {
@@ -560,7 +572,11 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	// on the screen that is not a field: it is the row, and so it takes the row's name.
 	named := make(map[string]string, len(rows))
 	nothing := words.Value(primary, nil)
+	tones := make(map[string]string, len(rows))
 	for _, row := range rows {
+		if f, ok := fieldFor(shown, r.Present.StatusField); ok {
+			tones[display.Text(row["id"])] = f.Presentation.EnumTones[display.Text(row[f.Name])]
+		}
 		cells := map[string]any{}
 		for _, f := range shown {
 			cells[f.Name] = words.Value(f, row[f.Name])
@@ -585,7 +601,14 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	state := components.ContentState{}
 	groups := []components.DataGroup{{Key: "rows", Rows: out}}
 	if len(rows) == 0 {
-		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: o.Text("screens.empty", "No %s yet.", strings.ToLower(o.noun(r, 2)))}
+		description := r.reading(o).EmptyDescription
+		if description == "" && r.Present.Plural != "" {
+			description = o.Text("screens.empty_collection", "No %s yet.", r.reading(o).Plural)
+		}
+		if description == "" {
+			description = o.Text("screens.empty", "No %s yet.", strings.ToLower(o.noun(r, 2)))
+		}
+		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: description}
 		groups = nil
 	}
 	p := components.DataListProps{
@@ -627,6 +650,9 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 				}
 			}
 			if !c.Primary {
+				if c.Key == r.Present.StatusField {
+					return components.Badge(components.BadgeProps{Label: display.Text(row.Cells[c.Key]), Tone: tones[row.ID], Dot: true})
+				}
 				return nil
 			}
 			text := display.Text(row.Cells[c.Key])
@@ -792,7 +818,7 @@ func direction(sort string) string {
 // clickable; when it names none, every field that is not a list is, which is what
 // every resource drawn before the declaration existed gets.
 func (r Resource) sortable(f entity.Field) bool {
-	if f.Type == entity.TypeList {
+	if f.Type == entity.TypeList || f.Type == entity.TypePicture {
 		return false
 	}
 	if len(r.Present.Sortable) == 0 {

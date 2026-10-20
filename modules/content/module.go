@@ -5,10 +5,11 @@
 // function taking a struct of typed dependencies and returning a module.Module.
 // Two absences are decisions rather than omissions.
 //
-// There are no versions. A history table, a diff, a restore and a retention
-// rule are a module of their own, and the private catalogue has one; what a
-// reference architecture owes is the lifecycle — draft, published, archived —
-// and the events that announce it.
+// No version is stored here. A history table, a diff, a restore and a retention
+// rule are a module of their own — modules/history — and a page's writes record
+// through the httpx.Versions port that module provides, numbered with this
+// entity's own write count. What content owns is the lifecycle: draft, published,
+// archived, and the events that announce it.
 //
 // There is no stored HTML. The body is Markdown and the public route renders it
 // on read, through goldmark with raw HTML left out and bluemonday over the
@@ -39,6 +40,16 @@ type Deps struct {
 	// says so in the log: rest.RecordNoUses is that answer, and it is safe only
 	// for as long as no sweep releases a file nobody reads.
 	Uses rest.FileUses
+	// Versions is where a page's committed writes are kept, in the transaction
+	// that wrote them. Content turns history on and does not own the keeping:
+	// modules/history answers this port, and this module declares the need, so a
+	// composition with no version store is refused where the plan is checked —
+	// before anything opens — rather than serving pages whose writes silently keep
+	// no version. Called by hand with the field left empty, mount says the same
+	// thing in its own refusal. The files a stored body shows are filed under the
+	// version that shows them, so a retained version holds its pictures and no
+	// longer through the same ledger the body files them under.
+	Versions httpx.Versions
 	// Translations is the record's door onto another module's table: the title
 	// and the body declare themselves translatable, and a mount that says so
 	// without a port to answer `?lang=` is refused by the Spec's own check. The
@@ -97,12 +108,14 @@ var Spec = rest.Spec[*contracts.Content]{
 	// is written nowhere here: the body is Markdown source, and a row previewing
 	// raw Markdown is the fault decision 0085 photographs.
 	Present: entity.EntryHints{
-		Singular:     "page",
-		Plural:       "pages",
-		Icon:         "document",
-		Group:        &entity.ResourceGroup{Key: "content", Label: "Content"},
-		PrimaryField: "title",
-		StatusField:  "status",
+		Description:      "Write, review and publish the pages your audience sees.",
+		EmptyDescription: "Create a page and save a draft before publishing.",
+		Singular:         "page",
+		Plural:           "pages",
+		Icon:             "document",
+		Group:            &entity.ResourceGroup{Key: "content", Label: "Content"},
+		PrimaryField:     "title",
+		StatusField:      "status",
 		// The one picture this entity holds, and so both the record's opening
 		// photo and the row's thumbnail: `thumbnailField` is said anyway, because
 		// a document that echoes what a shell would have computed still answers
@@ -137,6 +150,12 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	resource := Spec
 	resource.RichTextFiles = files
 	resource.FileUses = uses
+	// A page keeps a version of every write this Spec commits, inside the write.
+	// The store, the retention rule and the restore's event belong to
+	// modules/history; what is declared here is that a page's writes are worth
+	// keeping, which is the one decision content makes about history.
+	resource.History = true
+	resource.Versions = deps.Versions
 	resource.Translations = deps.Translations
 	svc := internal.NewService(internal.Deps{Shown: deps.Shown})
 	return svc, module.Module{

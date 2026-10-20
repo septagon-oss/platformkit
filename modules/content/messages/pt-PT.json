@@ -743,5 +743,68 @@
     "plural": {
       "": "O utilizador que criou este conte\u00fado"
     }
+  },
+  "hints.content/content.command.restore.confirmation.body": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Será gravada uma nova versão com este conteúdo. Nada é eliminado.",
+    "plural": {
+      "": "Será gravada uma nova versão com este conteúdo. Nada é eliminado."
+    }
+  },
+  "hints.content/content.command.restore.confirmation.confirmLabel": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restaurar",
+    "plural": {
+      "": "Restaurar"
+    }
+  },
+  "hints.content/content.command.restore.confirmation.title": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restaurar esta versão?",
+    "plural": {
+      "": "Restaurar esta versão?"
+    }
+  },
+  "hints.content/content.command.restore.label": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restaurar esta versão",
+    "plural": {
+      "": "Restaurar esta versão"
+    }
+  },
+  "hints.content/content.command.restore.successMessage": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Foi gravada uma nova versão com o conteúdo que restaurou.",
+    "plural": {
+      "": "Foi gravada uma nova versão com o conteúdo que restaurou."
+    }
+  },
+  "hints.content/content.description": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Escreva, reveja e publique as páginas que o seu público vê.",
+    "plural": {
+      "": "Escreva, reveja e publique as páginas que o seu público vê."
+    }
+  },
+  "hints.content/content.emptyDescription": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Crie uma página e guarde um rascunho antes de publicar.",
+    "plural": {
+      "": "Crie uma página e guarde um rascunho antes de publicar."
+    }
   }
 }

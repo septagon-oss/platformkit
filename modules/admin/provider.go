@@ -70,7 +70,8 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// A generated picture cell fetches through the file module's door, which this
 		// shell does not mount and so cannot name: the composition that published that
 		// door to the workspace catalogue hands it here as the same string.
-		PictureSource: pkit.Get[admincontracts.Pictures](w).Source,
+		PictureSource:  pkit.Get[admincontracts.Pictures](w).Source,
+		ComposedSource: pkit.Get[admincontracts.Pictures](w).ComposedSource,
 		// The form on the shell's login page posts to the auth module's door, and
 		// the link to it is the same value, so neither half can offer what the
 		// other did not mount.

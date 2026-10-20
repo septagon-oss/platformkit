@@ -53,8 +53,9 @@ type Field struct {
 // a permission of its own.
 type Editor struct {
 	// Endpoint is the record's own REST address, and ETag the quoted revision this
-	// form was drawn from. Both empty means the resource takes no expected
-	// version, so the editor saves nothing as the author writes.
+	// form was drawn from. Both empty means the editor saves nothing as the author
+	// writes and keeps an unsaved draft instead. A form that posts the field itself
+	// leaves them empty: its own save is then the row's only writer.
 	Endpoint, ETag string
 	// DraftKey is where an unsaved draft is kept in this browser, composed here
 	// from the tenant, the resource, the record and the field — never by the page.

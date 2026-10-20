@@ -34,7 +34,7 @@ test('Portuguese sign-in keeps accessible labels and the existing keyboard authe
   // than passing on a half-localised render.
   await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  await expect(page.getByRole('heading', { name: 'Painel', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Visão geral da plataforma', exact: true })).toBeVisible();
 });
 
 test('an English URL preference overrides the Portuguese browser without persisting it', async ({ page }) => {

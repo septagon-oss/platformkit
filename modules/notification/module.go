@@ -12,8 +12,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/push"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // Deps is what this module cannot make for itself.
@@ -65,6 +67,37 @@ type Deps struct {
 	// the same decision the session cookie's Secure flag is: a laptop reached at
 	// a local name gets http, and everything else gets https.
 	Secure bool
+
+	// Push is what this installation can carry to a device, one adapter per
+	// platform (kit/push). It is how the two device channels get carried: a
+	// platform present here opens its channel — every phone family under push,
+	// the browser under web_push — through one carrier this manifest composes
+	// (internal.PushCarrier), which reads the recipient's registered devices and
+	// closes the ledger row around what the provider answers.
+	//
+	// Nil, or a map with no adapter that reaches a channel, is not "broken": it
+	// is the same sentence a missing key in Providers says, so Decide suppresses
+	// the channel with a reason naming the deployment and no subscription waits
+	// on an event nobody will publish. The one reading of "does this deployment
+	// send it" stays contracts.Providers.Active, which is where these carriers
+	// land rather than beside it.
+	Push push.Adapters
+
+	// Page is the in-app list and the shell it is drawn in, handed in by the
+	// composition. Nil mounts no page at all, which is what this module was before
+	// it existed: the rows, the two JSON doors and the mail. A capability that
+	// guessed which chrome its list sits in would be a capability with a product in
+	// it, so the chrome arrives or the screen does not.
+	Page *Page
+}
+
+// Page is the in-app list as a composition hands it: the page.Shell it is drawn in
+// and how many rows one page holds. The screen is this module's and the chrome is
+// the composition's, which is why it arrives rather than being built here, and why
+// a deployment that provides none has simply no address to ask for.
+type Page struct {
+	Shell   page.Shell
+	PerPage int
 }
 
 // Module is the manifest, and the service it is built on: main holds the
@@ -84,6 +117,31 @@ type Deps struct {
 // product composes over that face guards it with this key, which kit/app refuses
 // to start unless the manifest that defines it says so.
 var permissions = []module.Permission{{Key: contracts.PermissionSenderManage, Label: "manage the tenant's sending address"}}
+
+// streams is what a live connection may watch: the two things that happen to one
+// person's own notices. The policy reads the payload's own recipient field, and
+// that field is the whole of who may watch — a notice is a hint to read, and the
+// read is the person's. A connection addressed to anybody else is never told, in
+// this tenant or in any other.
+//
+// The hint carries nothing: a frame says that something happened and when, and the
+// list then re-reads its own rows, so what a person sees is what they may read
+// rather than what one frame once carried.
+var streams = []module.Stream{
+	{Event: contracts.EventCreated, Policy: module.StreamRecipient("recipientId")},
+	{Event: contracts.EventRead, Policy: module.StreamRecipient("recipientId")},
+}
+
+// streamedTopics names what streams watches, in declaration order, for the one
+// page that lists these rows. The manifest and the page read this one list, so a
+// page cannot watch a topic its own module never declared.
+func streamedTopics() []string {
+	out := make([]string, 0, len(streams))
+	for _, s := range streams {
+		out = append(out, s.Event)
+	}
+	return out
+}
 
 // subscriptions is the manifest's list of who does this module's asynchronous
 // work: the mail this module sends itself, and one carrier per provider the
@@ -114,6 +172,8 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Mailer == nil {
 		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
 	}
+	deps = withDeviceCarriers(deps)
+	devices := internal.DeviceStore{Adapters: deps.Push}
 	svc := internal.NewService(deps.Recipients,
 		internal.WithPreferences(internal.Prefs{}),
 		internal.WithSenders(deps.Senders),
@@ -134,8 +194,44 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
 		Subscriptions: subscriptions(deps),
-		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
+		// The live door onto the two events this module raises for one person,
+		// watched by the recipient each payload names. An event not listed here
+		// keeps the durable path it has always had; listing one opens a connection
+		// onto it and changes nothing about the outbox.
+		Streams: streams,
+		Routes: func(s httpx.Surfaces) {
+			internal.RegisterRoutes(s.App, svc)
+			internal.RegisterDeviceRoutes(s.App, devices)
+			if deps.Page != nil {
+				internal.MountInApp(s, internal.InApp{
+					Shell: deps.Page.Shell, Read: svc, PerPage: deps.Page.PerPage,
+					Topics: streamedTopics(),
+				})
+			}
+		},
 	}
+}
+
+// withDeviceCarriers puts a channel in Deps.Providers for every device channel
+// these adapters reach, so that the two halves of the wiring — the decision that
+// opens a requested row and the subscription that closes it — stay one reading of
+// one Deps value. A channel somebody already wired a Provider for keeps theirs:
+// the adapters fill the channels nothing else staffs, and never replace them.
+func withDeviceCarriers(deps Deps) Deps {
+	if len(deps.Push) == 0 {
+		return deps
+	}
+	providers := contracts.Providers{}
+	for c, p := range deps.Providers {
+		providers[c] = p
+	}
+	for _, c := range []contracts.Channel{contracts.ChannelPush, contracts.ChannelWebPush} {
+		if providers[c] == nil {
+			providers[c] = internal.PushCarrier(c, deps.Push)
+		}
+	}
+	deps.Providers = providers
+	return deps
 }
 
 // Settings is this module's own answer about who may be told what: the channel
@@ -150,6 +246,20 @@ func New(deps Deps) (contracts.Service, module.Module) {
 // (internal.choosing), so the page is a form over one's own rows and there is no
 // shape of it that reaches another person's choices.
 func Settings() contracts.PreferenceService { return internal.Prefs{} }
+
+// Devices is this module's device table as contracts.DeviceService: the three
+// commands a person has over the tokens they registered, over the module's own
+// rows, in the caller's transaction. It is the face the module's three device
+// routes are mounted on, and a product that reaches the same commands from Go
+// builds it the way it builds Settings — with no arguments and no fixture.
+//
+// Adapters is what registration asks whether a token is carryable, so pass the
+// same push.Adapters the composition wired into Deps.Push: a device registered
+// against a platform nobody carries is a token that fails every notice to that
+// person, and refusing it is the adapter's answer rather than a pattern here.
+func Devices(adapters push.Adapters) contracts.DeviceService {
+	return internal.DeviceStore{Adapters: adapters}
+}
 
 // Senders is the tenant's own sending address as a contracts.Senders and a
 // contracts.SenderAdmin: the module keeps the row, the token, the refusal and the

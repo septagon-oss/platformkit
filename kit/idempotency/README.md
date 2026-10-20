@@ -23,7 +23,10 @@ the current revision changes nothing. Instants are explicit UTC microseconds.
 owner's successful result before its successful event. A rolled-back mutation
 keeps neither state nor its domain events. Its root boundary records failed
 kernel evidence only after a definite rollback. Commit/network uncertainty
-never creates failure evidence or permits another begun execution.
+never creates failure evidence. HTTP retries resolve it through the command effect
+fence: only an existing unmarked fence permits another execution after the lease.
+A known receipt outcome is spent even if its answer was lost. Non-HTTP command
+roots retain their conservative begun-claim refusal; they do not write HTTP markers.
 
 `kit/app` admits every unsafe HTTP method and supplies SQL storage and a clock.
 The response's `Operation-ID` is the key token or a generated UUID string.
@@ -80,3 +83,9 @@ unlinked retry rows supply no completion proof. Migrate before deploying new
 publishers and close that rollout window before requiring bound completion.
 If schema expansion paused at a data migration, drain it and migrate again
 before admitting writes that require the receipt table.
+
+HTTP effect fences commit with domain writes. Claim holds the key row and resolves
+the fence under its transaction advisory lock; takeover replaces the fence owner,
+so a stale handler must roll back. Missing fences from before this protocol do not
+prove rollback. Purge retains a fence while its retry identity remains, including
+unresolved operation receipts. Memory cannot undo a marker after a real rollback.

@@ -12,10 +12,12 @@ package httpx
 import (
 	"context"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 )
 
 type (
+	cacheKey      struct{}
 	bufferKey     struct{}
 	txKey         struct{}
 	answerNoteKey struct{}
@@ -58,4 +60,11 @@ func TxFrom(ctx context.Context) (db.Tx[db.Tenant], bool) {
 		return db.Tx[db.Tenant]{}, false
 	}
 	return tx, true
+}
+
+// CacheFrom returns the runtime store borrowed by this real request. Outside a
+// request it returns false; it grants neither tenant scope nor source access.
+func CacheFrom(ctx context.Context) (cache.Cache, bool) {
+	c, ok := ctx.Value(cacheKey{}).(cache.Cache)
+	return c, ok && c != nil
 }

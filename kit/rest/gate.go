@@ -107,6 +107,14 @@ func changedNames(fields []crud.Field, before map[string]json.RawMessage, after 
 	if err != nil {
 		return nil, err
 	}
+	return changedNamesFrom(fields, before, now), nil
+}
+
+// changedNamesFrom is that comparison on two encodings already taken, for the door
+// that needed the encoding of the row anyway: the version a write records is
+// written from the same snapshot its changed names are read out of, and one way
+// of comparing a row against its predecessor must not exist twice here.
+func changedNamesFrom(fields []crud.Field, before, now map[string]json.RawMessage) []string {
 	var out []string
 	for _, f := range fields {
 		if entity.ServerOwned(f) {
@@ -118,7 +126,7 @@ func changedNames(fields []crud.Field, before map[string]json.RawMessage, after 
 		}
 		out = append(out, f.Name)
 	}
-	return out, nil
+	return out
 }
 
 // jsonSnapshot encodes an entity as its top-level fields, each left as the bytes

@@ -1,4 +1,44 @@
-# Tenant component galleries
+# Administration workspace
+
+This module owns the shared web workspace, access pages and operator navigation.
+Applications supply modules, permissions and resource presentation at composition;
+the shell draws only destinations the current tenant and role may open.
+
+## Find the right experience
+
+| Experience | Starting point and next action |
+|---|---|
+| Sign in and recover access | The access page names the workspace and keeps its form and recovery links together. Password, passkey and email-link controllers retain their existing routes. |
+| Tenant administration | Dashboard names the tenant and groups available tools. Counts describe that workspace; they are not installation-wide analytics. |
+| Platform operations | Dashboard prioritizes the tenant directory. The operator label stays in the header; open a tenant's host to work in its separate scope. |
+| People, work, content and billing | Resource lists use the owner's names, primary field, summaries, status and empty-state guidance. Open a named record before editing or running its authorized commands. |
+| Roles | Read the access summary, expand the role, then save its permissions. The existing last-administrator refusal still protects access. |
+| Personal sessions | Sessions appears when the composition supplies a session store. It lists the signed-in person's sessions, independently of administrative permissions. |
+| Health and developer tools | Health reports observed checks. Component galleries remain subject to both permission and tenant composition. |
+
+The same authorized navigation drives desktop and mobile. Platform operations,
+workspace tools, system support, developer tools and personal access remain distinct.
+Application-specific workspaces such as file management and review queues retain
+their own routes and composition; this shell does not replace their workflows.
+
+## Give a resource a useful reading
+
+Declare `Present` on the existing resource specification. `Group` and `Icon` guide
+workspace organization. `Singular`, `Plural` and `Description` name the experience;
+`PrimaryField` names a record. A nonempty `SummaryFields` selects compact list
+columns beside the primary, status and thumbnail fields. Hidden and detail-only fields stay
+off the list. Without summaries the existing visible columns remain available.
+`EmptyDescription` explains the next step without inventing a control or permission.
+Declared strings use the existing `Words` translation seam, including form names.
+
+The owners are [workspace composition](internal/workspace.go),
+[resource rendering](../../ui/resource/reading.go) and the shared
+[components](../../ui/components/README.md). To verify an integration, follow the
+[browser setup](../../CONTRIBUTING.md#verify-at-the-relevant-boundary) and run the
+admin workspace and role journeys against a disposable reference application.
+These checks cover the shared flows, not every product's custom workspace.
+
+## Tenant component galleries
 
 ## Composition (T-0196)
 
@@ -229,7 +269,7 @@ with no permission, because these are the caller's own rows. It renders through 
 them — a composition without a session store mounts no screen and answers 404, rather than a page with
 nothing in it. The screen's own words and why a ref never appears as row text are modules/auth's
 (`modules/auth/README.md`); this module owns only that it is drawn inside the shell's chrome. It carries no
-sidebar entry, because `kit/module.Validate` refuses a nav entry that names no permission.
+module navigation declaration; the shell adds it under Your account when the session store is supplied.
 
 ## Authorization
 
@@ -256,3 +296,33 @@ The module declares no permission with `Operator: true`. Its one manifest permis
 ### Provisioning
 
 The module does not grant anything itself. `gallery:read` is held by any role that names it, or by the `*` wildcard that `SeedRoles` in `modules/auth/internal/seed.go` gives the built-in `admin` role. A composition grants it by editing a role on the roles page or through `PUT /api/v1/auth/roles/{name}`, or by passing default roles to `auth.SeedRoles` (called from `seedRoles` in `apps/platformkit/roles.go`). A role in a client's `client.yaml` is not shown by the code read for this section. The operator tenant needs `Deps.Storybook` or `tenant.Operator` to serve any gallery content.
+
+## Composition
+
+**Reused** — the shell's `components.Shell`, `Sidebar`, `SectionHeader`, `FormSentence`
+and `Badge`; the `Present` reading each resource already declares (`entity.EntryHints`)
+and the `Words` translation seam; `ui/screens`' generated register; and this module's
+existing dashboard, health, roles and sessions pages. **Added** — workspace sections
+(`workspaceSections` and `workspacePurpose` in `internal/workspace.go`), which group
+only what `Navigation.Visible` admitted and say what each destination is for; a
+dashboard count that fails leaves its destination without a figure, and neither the
+home nor the health page reports a check that never ran as passing; one disclosure
+per role on the roles page; and the declared reading in `ui/resource/reading.go`,
+which picks the field that names a row and the columns a list shows. Before this,
+the admin's navigation ignored a resource's declared `Group`, and the web's resource
+screens did not read `SummaryFields`. **Made reusable** — `components.Disclosure`,
+`components.Standalone` for access pages, and the declared reading: a module that
+declares `PrimaryField`, `SummaryFields`, `Description` and `EmptyDescription` gets
+its list, record and empty state read that way without a page of its own.
+
+## Limits
+
+- The dashboard intro is a `SectionHeader` title over a `FormSentence`, because a
+  `SectionHeader` description has no reading measure. Giving it one is a change to
+  the shared component and its design export.
+- The roles page's summaries and the tenant list's subtitle are written in English
+  and are not catalogued, so a Portuguese tenant reads them in English.
+- On the web a row is named by its `ui:"display"` field when that field is shown and
+  filled, then by `PrimaryField`, then by the first named field with a value. A
+  catalogue reader names it by `PrimaryField` alone, which must therefore be a field
+  every row has: people are named by their address.

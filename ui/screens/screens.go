@@ -104,7 +104,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 		page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
 			func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 				o := localized(o, req)
-				return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), nil, nil, "", true), nil
+				return Form(res, o, at, o.Text("screens.new", "New %s", entryName(res, o)), nil, nil, "", true), nil
 			})
 	}
 
@@ -123,7 +123,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 				}
 				o := localized(o, req)
 				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{req.Locale})
-				return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), sent, errs, detail, true), nil
+				return Form(res, o, at, o.Text("screens.new", "New %s", entryName(res, o)), sent, errs, detail, true), nil
 			})
 	}
 
@@ -146,7 +146,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 					return page.View{}, err
 				}
 				o := localized(o, req)
-				return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
+				return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", entryName(res, o)), row, nil, "", false), nil
 			})
 	}
 
@@ -162,7 +162,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 				}
 				o := localized(o, req)
 				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{req.Locale})
-				return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
+				return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", entryName(res, o)), sent, errs, detail, false), nil
 			})
 	}
 
@@ -262,7 +262,7 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 // to the same 422 the API gives, so the form is not a second opinion about what a bad
 // argument means.
 func perform(c httpx.Command, ctx context.Context, id uuid.UUID, body []byte) error {
-	values, err := rest.Values(body, c.Fields, nil)
+	values, err := rest.CommandValues(body, c.Fields)
 	if err != nil {
 		return rest.Fault(err)
 	}
@@ -300,7 +300,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 				return page.View{}, err
 			}
 			o := localized(o, req)
-			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
+			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", entryName(res, o)), row, nil, "", false), nil
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel, Summary: "Update the " + res.Entity}, write,
@@ -313,7 +313,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 			}
 			o := localized(o, req)
 			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{req.Locale})
-			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
+			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", entryName(res, o)), sent, errs, detail, false), nil
 		})
 }
 

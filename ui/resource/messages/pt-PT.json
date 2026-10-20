@@ -306,5 +306,59 @@
     "plural": {
       "": "Atualizado em"
     }
+  },
+  "screens.empty_collection": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Ainda sem %s.",
+    "plural": {
+      "": "Ainda sem %s."
+    }
+  },
+  "screens.history": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "Histórico",
+    "plural": {
+      "": "Histórico"
+    }
+  },
+  "screens.history.first": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "O registo tal como foi escrito pela primeira vez.",
+    "plural": {
+      "": "O registo tal como foi escrito pela primeira vez."
+    }
+  },
+  "screens.history.restore": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "Restaurar esta versão",
+    "plural": {
+      "": "Restaurar esta versão"
+    }
+  },
+  "screens.history.restored": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "Restaurado de",
+    "plural": {
+      "": "Restaurado de"
+    }
+  },
+  "screens.history.unchanged": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "Nenhum campo alterado.",
+    "plural": {
+      "": "Nenhum campo alterado."
+    }
   }
 }

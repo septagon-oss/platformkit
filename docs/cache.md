@@ -81,8 +81,14 @@ serving private answers from a cache its invalidations will never reach.
 ## Not yet in this policy
 
 - Fingerprinted script URLs, which would move the controllers to the immutable row.
-- `cache.Group[V]` — the bounded lazy composition of decision 0028 §4 — is shipped
-  and conforms, and nothing in this repository composes one yet: the client-composition caches this row was written
-  for live in the applications that install these modules, so "a composed value, per key" above names a shape with
-  no in-tree caller. `InvalidateHost` and `cache.Shared("host")` are the port's uses besides the summary's totals,
-  which are `cache.Of(tenant, "summary")` and the second consumer of the port.
+## Composed pictures
+
+`modules/picture` is the in-tree consumer of lazy composed values. Its `Pool[V]`
+facade shares Group's LRU, marker, TTL and singleflight implementation while
+bounding the total working set across tenant scopes in one namespace. It accepts
+only tenant-owned keys in that namespace and takes an immutable miss closure per
+call. Group's exact-scope contract remains unchanged. The request borrows the
+runtime store through `httpx.CacheFrom` after Connect; dry mounts open no store.
+Source authorization and value validation precede every pool lookup and HTTP
+conditional. No grant or source row enters the pool. See the
+[picture contract](../modules/picture/README.md) for its private delivery policy.

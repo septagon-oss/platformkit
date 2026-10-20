@@ -51,6 +51,10 @@ type streamInput struct {
 // arrive on"; the guard is httpx.SignedIn(), because which topics a caller may watch
 // is decided per topic by the policy each module declared, and one route cannot
 // declare N permissions.
+//
+// The tail mounted here composes to httpx.StreamAddress, the one address a live
+// region links: the path is written here and the whole of it there, so a page
+// cannot point a connection at an address this route stopped answering.
 func mountStream(api *httpx.API, hub func() (*stream.Hub, error), log *slog.Logger) {
 	kernel := api.Surfaces("")
 	httpx.Register(kernel.App, huma.Operation{
