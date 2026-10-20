@@ -12154,6 +12154,25 @@
    "area": "kit",
    "evidence": "not-round-named",
    "file": "kit/db/a_transaction_belongs_to_the_owner_that_opened_it_test.go",
+   "id": "kit/db/a_transaction_belongs_to_the_owner_that_opened_it_test.go#TestATransactionFoundOnTheContextIsTheFindersOperation",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestATransactionFoundOnTheContextIsTheFindersOperation",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/a_transaction_belongs_to_the_owner_that_opened_it_test.go",
    "id": "kit/db/a_transaction_belongs_to_the_owner_that_opened_it_test.go#TestACancelAfterCommitIsReportedAsCommitted",
    "kind": "go",
    "layer": "behaviour",
@@ -13990,6 +14009,25 @@
    "unique_reach": [],
    "unique_reach_kind": "symbols",
    "verdict": "merge"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/late_provisioning_join_test.go",
+   "id": "kit/db/late_provisioning_join_test.go#TestAJoinOpenedAfterItsProvisioningCallbackCannotReachTheNextTenant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAJoinOpenedAfterItsProvisioningCallbackCannotReachTheNextTenant",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
   },
   {
    "area": "kit",
@@ -72409,7 +72447,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1934,
+  "files": 1935,
   "forge_runs": [
    408,
    413,
@@ -72443,7 +72481,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3118,
+   "behaviour": 3120,
    "composition": 432,
    "contract": 21,
    "journey": 97
@@ -72462,9 +72500,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3668,
+  "rows": 3670,
   "tiers": {
-   "merge": 2334,
+   "merge": 2336,
    "nightly": 97,
    "push": 1237
   },
@@ -72472,13 +72510,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1707,
+   "keep": 1708,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3312,
+   "keep": 3314,
    "keep-rewrite": 140,
    "merge": 216
   }
