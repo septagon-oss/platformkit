@@ -1,16 +1,18 @@
 package personaldata
 
-// This file holds the two statements every contributor's Erase is made of, so the
-// eight owners of a person's rows do not each write their own answer to "remove
-// what this row says about this person". One implementation is the house rule, and
-// here it is also the only way the rule can be checked: the erasure's verification
-// (ADR 0020 §4) has to ask the same question the scrub asked, and eight copies can
-// only drift.
+// This file holds the statements every contributor's Erase is made of, so the
+// owners of a person's rows do not each write their own answer to "remove what this
+// row says about this person". One implementation is the house rule, and here it is
+// also the only way the rule can be checked: the erasure's verification (ADR 0020 §4)
+// has to ask the same question the scrub asked, and eight copies can only drift.
 //
-// Both statements run in the caller's transaction, which is the transaction row-level
-// security already bounded to one tenant, so neither names tenant_id: the policy is
-// the bound, and a hand-written filter would be a second, weaker answer to a question
-// the database already answers.
+// Every statement here runs in the caller's transaction, which is the transaction
+// row-level security already bounded to one tenant, so none names tenant_id: the policy
+// is the bound, and a hand-written filter would be a second, weaker answer to a question
+// the database already answers. They differ only in what a row whose value names the
+// subject is rewritten to: the placeholder Scrub writes, or the column's own empty value,
+// which is the answer for a column the table holds unique and cannot hold the same
+// placeholder twice.
 
 import (
 	"context"
@@ -144,6 +146,74 @@ func ResidueJSON(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table stri
 	return rows(ctx, tx, s, table, columns, true, where, args)
 }
 
+// Blank removes what a row says about the subject by taking the whole value of the named
+// text columns, for a column whose value has to stay unique in the table: the row keeps
+// everything else it holds and the column takes the empty string.
+//
+// Scrub cannot serve such a column, and this is the one place an erasure asks for the
+// whole value rather than the matched span. The replacement a scrub writes is one token
+// per subject, and the rows of one tenant can carry the same identifier in two spellings
+// — a directory that keys people by mail may send "Jo.Jones@Example.COM" as one person's
+// identifier and "jo.jones@example.com" as another's — and a case-insensitive rewrite
+// makes both rows the same string. In prose that is the right answer. In a column the
+// table holds unique it is a duplicate key, and the erasure is refused by its own rewrite
+// over two identifiers the module's own commands accepted: the person cannot be forgotten
+// because of a spelling difference nobody can see.
+//
+// The empty value is the answer because the match is the reason the value cannot be kept
+// at all: a key with a person's address replaced in it is a string nothing will ever send
+// again, so the text around it is decoration on a key that no longer keys anything, and
+// keeping it would keep the refusal with it. A caller reaches this for a column whose
+// empty value means "no value" and is allowed by the column's own CHECK and index — the
+// partial unique index that excludes it, in this repository's tables — and a column that
+// refuses the empty string refuses this statement the same way.
+//
+// The rows it finds are the rows Scrub finds: one match rule, in matchTerms below, which
+// is the whole reason this is a second statement over the same table rather than a caller
+// writing its own WHERE. A person with no identifiers is a no-op and not a request to
+// empty a column: the same guard Scrub has.
+func Blank(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
+	columns []string, where string, args ...any) (int64, error) {
+	q, err := blanking(s, table, columns, where, args...)
+	if err != nil {
+		return 0, err
+	}
+	if q == nil {
+		return 0, nil
+	}
+	sql := "UPDATE " + table + " SET " + strings.Join(q.sets, ", ")
+	if q.filter != "" {
+		sql += " WHERE " + q.filter
+	}
+	res := tx.DB().WithContext(ctx).Exec(sql, q.args...)
+	return res.RowsAffected, res.Error
+}
+
+// blanking builds the statement Blank runs: Scrub's own filter, with a SET list that
+// binds nothing. It is a function apart so the shape can be read and tested without a
+// server, which is how Scrub's rewrite is read too.
+func blanking(s Subject, table string, columns []string, where string, args ...any) (*rewrite, error) {
+	if err := writableNames(table, columns); err != nil {
+		return nil, err
+	}
+	ids := matches(s, false)
+	if len(ids) == 0 || len(columns) == 0 {
+		return nil, nil
+	}
+	filter, filterArgs, err := scoped(s, table, columns, ids, false, where, args)
+	if err != nil {
+		return nil, err
+	}
+	sets := make([]string, 0, len(columns))
+	for _, c := range columns {
+		sets = append(sets, c+" = ''")
+	}
+	// No SET expression binds anything, so the statement's whole argument list is the
+	// filter's: the caller's own values, then this file's terms, which is the order the
+	// finished SQL asks for them in.
+	return &rewrite{sets: sets, filter: filter, args: filterArgs}, nil
+}
+
 func scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, g guard, table string,
 	columns []string, isJSON bool, where string, args []any) (int64, error) {
 	rooms, err := bounds(ctx, tx, table, columns)
@@ -170,19 +240,23 @@ func rows(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	// No bounds and no guard: a count writes nothing, so it has nothing to keep inside
 	// a column's width and nothing to advance. The filter it asks with is the one the
 	// rewrite uses, which is the whole point of the re-read.
-	q, err := query(s, guard{}, table, columns, isJSON, nil, where, args)
+	if err := writableNames(table, columns); err != nil {
+		return 0, err
+	}
+	ids := matches(s, isJSON)
+	if len(ids) == 0 || len(columns) == 0 {
+		return 0, nil
+	}
+	filter, filterArgs, err := scoped(s, table, columns, ids, isJSON, where, args)
 	if err != nil {
 		return 0, err
 	}
-	if q == nil {
-		return 0, nil
-	}
 	sql := "SELECT count(*) FROM " + table
-	if q.filter != "" {
-		sql += " WHERE " + q.filter
+	if filter != "" {
+		sql += " WHERE " + filter
 	}
 	var n int64
-	if err := tx.DB().WithContext(ctx).Raw(sql, q.args...).Scan(&n).Error; err != nil {
+	if err := tx.DB().WithContext(ctx).Raw(sql, filterArgs...).Scan(&n).Error; err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -349,13 +423,8 @@ func bound(parts ...piece) piece {
 // nowhere to hunt — rewriting everything, or nothing, would both be a lie.
 func query(s Subject, g guard, table string, columns []string, isJSON bool, rooms map[string]extent,
 	where string, args []any) (*rewrite, error) {
-	if !namePattern.MatchString(table) {
-		return nil, fmt.Errorf("personaldata: %q is not a table name this scrub will write into SQL", table)
-	}
-	for _, c := range columns {
-		if !namePattern.MatchString(c) {
-			return nil, fmt.Errorf("personaldata: %s.%s is not a column name this scrub will write into SQL", table, c)
-		}
+	if err := writableNames(table, columns); err != nil {
+		return nil, err
 	}
 	ids := matches(s, isJSON)
 	if len(ids) == 0 || len(columns) == 0 {
@@ -368,8 +437,6 @@ func query(s Subject, g guard, table string, columns []string, isJSON bool, room
 	// caller ever counts a placeholder, which is why the caller's own arguments go
 	// last: their `?` sit in the filter, written after the SET expressions.
 	q := &rewrite{}
-	var terms []string
-	var termArgs []any
 	for _, c := range columns {
 		text := c
 		if isJSON {
@@ -417,18 +484,6 @@ func query(s Subject, g guard, table string, columns []string, isJSON bool, room
 		}
 		q.sets = append(q.sets, set.sql)
 		q.args = append(q.args, set.args...)
-		for _, m := range ids {
-			// The same pattern the rewrite used, and not a plain substring test: the
-			// re-read has to ask what the rewrite would find, or a row the rewrite left
-			// alone reads as residue and a row it could not reach reads as clean.
-			if m.ownPattern != "" {
-				terms = append(terms, "(("+own+" AND "+text+" ~* ?) OR "+text+" ~* ?)")
-				termArgs = append(termArgs, s.ID, m.ownPattern)
-			} else {
-				terms = append(terms, text+" ~* ?")
-			}
-			termArgs = append(termArgs, m.pattern)
-		}
 	}
 
 	if g.counter != "" {
@@ -443,25 +498,89 @@ func query(s Subject, g guard, table string, columns []string, isJSON bool, room
 		q.args = append(q.args, g.at)
 	}
 
-	q.filter = strings.Join(terms, " OR ")
+	filter, filterArgs, err := scoped(s, table, columns, ids, isJSON, where, args)
+	if err != nil {
+		return nil, err
+	}
+	q.filter = filter
+	// The SET list's values already sit in q.args, and they are the first group of the
+	// finished statement: filterArgs carries the caller's own filter values and then this
+	// file's terms, in the order their placeholders sit after the SET expressions. Neither
+	// this file nor a caller counts a placeholder, which is why that order lives here and
+	// nowhere else. Getting it wrong is not a failure anybody sees as one: every value lands
+	// one placeholder away from the expression that means it, and the statement either dies
+	// on a type the server will not coerce (an address in a uuid column, which is how the
+	// auth scrub was found mis-bound) or, worse, runs, matches nothing, and reports a clean
+	// erasure.
+	q.args = append(q.args, filterArgs...)
+	return q, nil
+}
+
+// writableNames refuses a name this file would not put into SQL. A contributor passes
+// names out of its own source and never out of a request, so this is the reason a table
+// or column may be written into a statement at all, and it turns a mistyped claim into a
+// refusal at the call instead of a syntax error from the server.
+func writableNames(table string, columns []string) error {
+	if !namePattern.MatchString(table) {
+		return fmt.Errorf("personaldata: %q is not a table name this scrub will write into SQL", table)
+	}
+	for _, c := range columns {
+		if !namePattern.MatchString(c) {
+			return fmt.Errorf("personaldata: %s.%s is not a column name this scrub will write into SQL", table, c)
+		}
+	}
+	return nil
+}
+
+// matchTerms is the test that one row of table names the subject in one of columns: one
+// term per column and identifier, joined by scoped below.
+//
+// Both the rewrite and the re-read ask with these, and now a third statement does too.
+// The terms are not a plain substring test but the same pattern the rewrite searches
+// with, or a row the rewrite left alone reads as residue and a row it could not reach
+// reads as clean. A blank that asked a different question would certify a row clean it
+// had never looked at, which is why no caller writes its own WHERE over a table these
+// functions already know.
+func matchTerms(s Subject, table string, columns []string, ids []match, isJSON bool) ([]string, []any) {
+	var terms []string
+	var out []any
+	own := ownRow(table)
+	for _, c := range columns {
+		text := c
+		if isJSON {
+			text = c + "::text"
+		}
+		for _, m := range ids {
+			if m.ownPattern != "" {
+				terms = append(terms, "(("+own+" AND "+text+" ~* ?) OR "+text+" ~* ?)")
+				out = append(out, s.ID, m.ownPattern)
+			} else {
+				terms = append(terms, text+" ~* ?")
+			}
+			out = append(out, m.pattern)
+		}
+	}
+	return terms, out
+}
+
+// scoped puts the caller's own filter in front of the match terms and returns the WHERE
+// with the values its placeholders stand for: the caller's first, then this package's,
+// because the caller's `?` sit in the left half of the finished WHERE.
+//
+// The arity check is here for the reason it has always had: a filter whose `?` and
+// arguments disagree binds every value one placeholder away from the expression that
+// means it, and nothing downstream can tell that from a row that simply did not match.
+func scoped(s Subject, table string, columns []string, ids []match, isJSON bool,
+	where string, args []any) (string, []any, error) {
+	terms, termArgs := matchTerms(s, table, columns, ids, isJSON)
+	filter := strings.Join(terms, " OR ")
 	if strings.TrimSpace(where) != "" {
 		if n := strings.Count(where, "?"); n != len(args) {
-			return nil, fmt.Errorf("personaldata: %s's filter carries %d placeholders and %d arguments", table, n, len(args))
+			return "", nil, fmt.Errorf("personaldata: %s's filter carries %d placeholders and %d arguments", table, n, len(args))
 		}
-		q.filter = "(" + where + ") AND (" + q.filter + ")"
+		filter = "(" + where + ") AND (" + filter + ")"
 	}
-	// The three groups are appended in the order their placeholders sit in the finished
-	// SQL, which is one SET list, then the caller's own filter, then this file's own
-	// terms. The caller's `?` are in the left half of the WHERE, so their values go
-	// before the terms', not after them. Neither this file nor a caller counts a
-	// placeholder, which is why that order lives here and nowhere else. Getting it wrong
-	// is not a failure anybody sees as one: every value lands one placeholder away from
-	// the expression that means it, and the statement either dies on a type the server
-	// will not coerce (an address in a uuid column, which is how the auth scrub was found
-	// mis-bound) or, worse, runs, matches nothing, and reports a clean erasure.
-	q.args = append(q.args, args...)
-	q.args = append(q.args, termArgs...)
-	return q, nil
+	return filter, append(append(make([]any, 0, len(args)+len(termArgs)), args...), termArgs...), nil
 }
 
 // fits rewrites one bounded column inside the room the server says it holds: the wide

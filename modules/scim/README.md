@@ -234,12 +234,26 @@ members it now holds, and which role stopped being granted.
 
 This door holds two of a person's facts, so it answers `personaldata.Data` for them
 (ADR 0020 §8): the person's copy carries `externalId`, whether this door stopped them
-signing in, and which collections they belong to, and the erasure scrubs
-`external_id`. The column is scrubbed over every row of the tenant and not only the
-person's own, because it holds whatever string the provisioning client sent and a
-directory that keys people by mail sends an address — so the person asking may be
-named in a row this module thought was somebody else's. An identifier the provider
-invented for itself survives, as their uuid survives in every other row.
+signing in, and which collections they belong to, and the erasure takes
+`external_id`. It asks every row of the tenant and not only the person's own, because
+the column holds whatever string the provisioning client sent and a directory that keys
+people by mail sends an address — so the person asking may be named in a row this module
+thought was somebody else's.
+
+A row that carries one of the person's strings gives up its identifier whole, rather
+than keeping the text around the match as prose does. The reason is the column's own:
+it is unique per tenant while it holds anything, and a rewrite that leaves the same
+placeholder for one person makes two rows that spelled one address differently into the
+same string, which that index refuses — the erasure would then be refused by its own
+write, over two identifiers this door's own `CreateUser` accepts. A replacement address
+is not something a connector will send again, so the empty value is the difference
+between an erasure and a refusal, not between a kept string and a lost one.
+
+So a colleague whose identifier quoted the erased address is emptied with it: this door
+keeps their row, their name, their address and their collections, and gives up a string
+whose own index says one row holds it. What survives everywhere is what survives in
+every other table: the row, its `user_id`, and an identifier the provider invented for
+itself, which is as anonymous as the uuid sits in every other row.
 
 ## Limits
 

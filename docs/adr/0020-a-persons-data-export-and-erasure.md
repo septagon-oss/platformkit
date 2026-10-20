@@ -239,7 +239,18 @@ The brief's rule, and the reason a per-person command is not a `DELETE`:
   command returns the list of columns that lied. This is why `Text` is in the declaration and not in a
   comment: a rule nobody checks is a rule that quietly stops holding, and an erasure that "succeeded"
   over a row that still names the person is a certificate that lied — the same failure
-  [ADR 0019](0019-the-tenant-is-in-the-object-name.md) refuses for a storage delete that missed a copy.
+  [ADR 0019](0019-the-tenant-is-in-the-object-name.md) refuses for a storage delete that missed a copy;
+- a column the table holds **unique** gives up its **whole value** rather than the matched span, and
+  takes the empty string (`personaldata.Blank`, which asks the same rows `Scrub` asks and rewrites
+  none of them). The placeholder is one per person, and the rows of one tenant can carry one
+  identifier in two spellings — "Jo.Jones@Example.COM" for one person and "jo.jones@example.com"
+  for another, both of which a provisioning door accepts — so a case-insensitive rewrite makes two
+  rows the same string and the unique index refuses the write. The person would then be unable to
+  be erased because of a difference in case nobody can see, over data the module's own commands
+  wrote. An identifier with a person's address replaced inside it is not a string anything will
+  send again, so nothing that still worked is given up; the empty value has to be the value the
+  column's own CHECK and partial index allow, which is why the caller names the column rather than
+  the kernel guessing at it.
 
 What is **not** scrubbed, and says so: `audit_events.name` (an event name is a contract, not a
 person), and any row of another person's whose text does not contain one of the three strings. The
@@ -333,7 +344,7 @@ the brief's list is not the whole list.
 | content | `contents` | slug, title, body, kind, status, published-at of what they authored | keeps the row and `author_id`, scrubs `title` and `body` — a published page that silently disappeared is a lie about the tenant's own site |
 | change | `change_proposals` | proposals they proposed or reviewed, with the diff | keeps `proposer`/`reviewer` ids, scrubs `comment` and the strings inside the `diff` document — the diff is `text` holding JSON, so the scrub reads it as JSON and writes it back as JSON |
 | audit | `audit_events` | the person's trail: name, occurred_at, payload, request_id, client_ip | keeps `actor` and `name`, scrubs the strings inside `payload`, `client_ip` → NULL |
-| scim | `scim_group_members` (About `user_id`, NotPerson `group_id`), `scim_group_mappings` (NotPerson `group_id`), `scim_user_external` (About `user_id`, Text `external_id`) | the identifier the provisioning client calls them by, whether this door is the one that stopped them signing in, and which of the provider's collections they belong to | keeps the row and `user_id`; scrubs `external_id` over the tenant — the column holds the string the client sent, and a directory that keys people by mail sends an address |
+| scim | `scim_group_members` (About `user_id`, NotPerson `group_id`), `scim_group_mappings` (NotPerson `group_id`), `scim_user_external` (About `user_id`, Text `external_id`) | the identifier the provisioning client calls them by, whether this door is the one that stopped them signing in, and which of the provider's collections they belong to | keeps the row and `user_id`; empties `external_id` over the tenant — the column holds the string the client sent, a directory that keys people by mail sends an address, and the column is unique while it holds anything, so §4's rule for such a column is the empty value rather than the placeholder |
 | kernel | `platformkit_outbox`, `platformkit_dead_letters` | the rows this person's requests caused that are still held, and any dead letter naming them | scrubs `actor`'s payloads and leaves `actor` — the same rule as the trail. Supplied by `modules/subject`, which is the only module that may import the kernel's own tables, and it says so in the manifest rather than in a comment |
 | billing | `billing_subscriptions` (`NotPerson` `plan_id`) | nothing — no row of this module is a person's | nothing; **it cannot declare `none`**, because `plan_id` is a uuid and the completeness rule admits no exception for a name that answers its own question |
 | site | `site_settings` (`NotPerson` `logo_file_id`) | nothing | nothing, and the same rule applies to `logo_file_id` |
