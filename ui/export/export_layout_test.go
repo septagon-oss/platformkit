@@ -218,30 +218,15 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
 	// no example, schema, icon, class or notice.
 	//
-	// main's 209 commits since 74f3529 land on top of that move. Measured by
-	// exporting this tree and the tree this branch held before the merge and walking
-	// both documents leaf by leaf, keyed by a capture's stable id so that a capture
-	// which only moved in the list reads as no change: 99,906 leaves become 99,947.
-	// Two captures arrive — Disclosure / permissions (24 leaves) and Standalone /
-	// access page (17) — and none is removed. Six leaves change: the html of the
-	// Sidebar, Sidebar / content flavor and Sidebar / collapsed captures, and,
-	// outside the captures, /css, /notices and /sha256. /css gains 23 lines and loses
-	// none, of .py-12, .lg:sticky, .lg:top-0 and .lg:max-h-[100vh], and no token or
-	// role value moves with them; /notices gains the attribution of the vendored htmx
-	// SSE extension the notice list now ships. Tokens, themes, icons, schema and font
-	// policy are byte-identical to the export this branch held before the merge.
 	//
-	// main's push port lands on that export. Measured by exporting this tree and the
-	// tree this branch held before the merge and walking both documents leaf by leaf,
-	// keyed by a capture's stable id so that a capture which only moved in the list
-	// reads as no change: 99,947 leaves each, none added and none removed, and the two
-	// documents differ in exactly two leaves — `notices`, which gains the attribution
-	// block for the Web Push library kit/push links, and `sha256`, which is the digest
-	// of the whole document. No example's HTML, no CSS, token, theme, icon, schema or
-	// font policy moves. The digest below is that measurement of this merged tree,
-	// printed by the refusal above the re-measure and copied from it; it covers the
-	// composed examples, stylesheet and attributions together.
-	if legacy.SHA256 != "17c668a1ef1783feec854d0832bd3fd9d755ec18a375047713c519e0030c2873" {
+	// main's frame work lands on that export: the header names the person and the
+	// workspace, a set keeps its own name, and an instant states the reader's own zone.
+	// The trail's wrapping and the sidebar's own rules join the composed sheet, which
+	// carries this branch's role values with them, and the gallery captures the frame
+	// renders move with it. The digest below is this merged tree's measurement, printed
+	// by the refusal above the re-measure and copied from it; it covers the composed
+	// examples, stylesheet and attributions together.
+	if legacy.SHA256 != "436f7e040a2fc6103cb4216a4b8c26b8cbcc3fac13cf7666b7fa771fd87b1415" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
@@ -350,7 +335,11 @@ func TestSourceLayoutUnknownOverridesAndUnobservedChildren(t *testing.T) {
 	}
 	for _, media := range []bool{false, true} {
 		sheet := css.NewSheet()
-		write := func(s *css.Sheet) { s.Select(".flex", css.Decl("flex-direction", css.Literal("column"))) }
+		// A consumer rule of its own, on a class the kernel renders nowhere: what
+		// invalidates the claim is that a sheet the kernel did not write reaches
+		// the page, which is true of any rule, and a sheet naming one of the
+		// kernel's own classes is refused at Compose before it can.
+		write := func(s *css.Sheet) { s.Select(".store-layout", css.Decl("flex-direction", css.Literal("column"))) }
 		if media {
 			sheet.Media("(min-width: 4000px)", write)
 		} else {
