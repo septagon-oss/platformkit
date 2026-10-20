@@ -44359,6 +44359,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/scim/internal/erasure_empties_only_the_identifiers_that_name_the_person_test.go",
+   "id": "modules/scim/internal/erasure_empties_only_the_identifiers_that_name_the_person_test.go#TestErasureEmptiesOnlyTheIdentifiersThatNameThePersonInTheRequestTenant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestErasureEmptiesOnlyTheIdentifiersThatNameThePersonInTheRequestTenant",
+   "needs_db": true,
+   "pkg": "modules/scim/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/scim/internal/group_administrator_scope_test.go",
    "id": "modules/scim/internal/group_administrator_scope_test.go#TestAGroupRemovalCountsOnlyActiveAdministratorsOfItsTenant",
    "kind": "go",
@@ -68731,7 +68750,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1825,
+  "files": 1826,
   "forge_runs": [
    408,
    413,
@@ -68765,7 +68784,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2941,
+   "behaviour": 2942,
    "composition": 424,
    "contract": 21,
    "journey": 93
@@ -68784,9 +68803,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3479,
+  "rows": 3480,
   "tiers": {
-   "merge": 2197,
+   "merge": 2198,
    "nightly": 93,
    "push": 1189
   },
@@ -68794,13 +68813,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1598,
+   "keep": 1599,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3123,
+   "keep": 3124,
    "keep-rewrite": 140,
    "merge": 216
   }
