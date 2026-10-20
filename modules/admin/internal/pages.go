@@ -577,7 +577,11 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 					continue
 				}
 				if total, err := r.Count(ctx); err == nil {
-					count = components.Badge(components.BadgeProps{Label: strconv.FormatInt(total, 10), Tone: "neutral"})
+					label := strconv.FormatInt(total, 10)
+					if total == 0 {
+						label = o.Text("screens.empty_collection", "No %s yet.", strings.ToLower(item.Label))
+					}
+					count = components.Badge(components.BadgeProps{Label: label, Tone: "neutral"})
 				}
 				break
 			}

@@ -43,6 +43,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	subjectcontracts "github.com/septagon-oss/platformkit/modules/subject/contracts"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
@@ -58,6 +59,13 @@ var initialRoles = []authcontracts.Role{
 		taskcontracts.PermissionTaskRead, taskcontracts.PermissionTaskUpdate,
 	}},
 	{Name: "observer", Grants: authcontracts.Permissions{taskcontracts.PermissionTaskRead}},
+	// The officer who answers a person's request on the tenant's behalf. The two grants
+	// are the module's own declaration; which of this application's roles may erase is
+	// this application's decision (ADR 0020, Limits), and the person's own right to ask
+	// for either is the reason neither of them is how a person gets their own copy.
+	{Name: "subject_officer", Grants: authcontracts.Permissions{
+		subjectcontracts.PermissionExport, subjectcontracts.PermissionErase,
+	}},
 }
 
 // seedRoles is this application's tenant-creation hook: auth's defaults plus the

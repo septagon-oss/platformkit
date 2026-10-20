@@ -3,7 +3,9 @@ package change
 import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
+	"github.com/septagon-oss/platformkit/modules/change/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -47,6 +49,7 @@ var Module = pkit.NewModule("change", wire,
 	pkit.Optional[changecontracts.ProposalPage](),
 	pkit.Optional[*ReviewChrome](),
 	pkit.Provides[changecontracts.Service](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -71,5 +74,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	}
 	manifest := New(deps)
 	pkit.Put[changecontracts.Service](w, svc)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

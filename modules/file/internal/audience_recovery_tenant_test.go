@@ -29,7 +29,12 @@ func TestAudienceRecoveryIgnoresOtherTenantsUploadEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range names {
-		if name == "000064_file_upload_visibility.up.sql" {
+		// The column under recovery arrives in 000064, so the layout this walks is the
+		// schema as it stood before that file: every file below version 64, and nothing
+		// at or above it. A later file of this source (000071 adds a column of its own)
+		// would be built into the old schema and then refused when the real migration
+		// ran — one version is one ledger row, applied in order.
+		if version, _, _ := strings.Cut(name, "_"); version >= "000064" {
 			continue
 		}
 		data, err := fs.ReadFile(legacy.Files, name)

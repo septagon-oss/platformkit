@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/push"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
@@ -179,8 +180,23 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		internal.WithSenders(deps.Senders),
 		internal.WithProviders(deps.Providers))
 	return svc, module.Module{
-		Name:        "notification",
-		Migrations:  Migrations.Files,
+		Name:       "notification",
+		Migrations: Migrations.Files,
+		// What a person was told is their own record; the delivery ledger reaches
+		// them only through the notification it delivered. The two preference tables
+		// hold no words of the person's, only their id and what they chose, so each
+		// names the person it is about and no text.
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "notifications", Person: "recipient_id", Text: []string{"title", "body", "link"}},
+			personaldata.Table{Name: "notification_deliveries", Text: []string{"reason"}, NotPerson: []string{"notification_id"}},
+			personaldata.Table{Name: "notification_preferences", About: []string{"recipient_id"}},
+			personaldata.Table{Name: "notification_quiet_hours", About: []string{"recipient_id"}},
+			// The device list is the person's own, and the token is their device's
+			// address: not words somebody wrote about them, so nothing is claimed as
+			// text to scrub, and an erasure removes the rows outright. A token that
+			// outlived the person it reaches would still deliver to them.
+			personaldata.Table{Name: "notification_devices", Person: "recipient_id"},
+		),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

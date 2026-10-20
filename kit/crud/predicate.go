@@ -2,11 +2,8 @@ package crud
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -93,29 +90,13 @@ func predicateSQL(fields []Field, p Predicate) (string, []any, error) {
 
 // Coerce reads a filter value as the field's own type. A field the grammar reads
 // as a string takes the text; a number, a moment, a uuid and a flag are refused
-// when the text is not one, because a filter that silently compared nothing would
-// answer with the whole set.
+// with ErrInvalid when the text is not one, because a filter that silently
+// compared nothing would answer with the whole set. The table is entity.Coerce,
+// which a declared default and a deck's swipe argument read too.
 func Coerce(f Field, raw string) (any, error) {
-	var (
-		v   any
-		err error
-	)
-	switch f.Type {
-	case TypeInt:
-		v, err = strconv.ParseInt(raw, 10, 64)
-	case TypeFloat:
-		v, err = strconv.ParseFloat(raw, 64)
-	case TypeBool:
-		v, err = strconv.ParseBool(raw)
-	case TypeUUID:
-		v, err = uuid.Parse(raw)
-	case TypeTime:
-		v, err = time.Parse(time.RFC3339, raw)
-	default:
-		v = raw
-	}
+	v, err := entity.Coerce(f, raw)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s is a %s and %q is not one", ErrInvalid, f.Name, f.Type, raw)
+		return nil, fmt.Errorf("%w: %s", ErrInvalid, err)
 	}
 	return v, nil
 }
