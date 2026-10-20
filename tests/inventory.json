@@ -63626,6 +63626,25 @@
   },
   {
    "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/page/restore_refusal_language_test.go",
+   "id": "ui/page/restore_refusal_language_test.go#TestARestoreRefusalIsWordedInEachLanguageTheDeploymentShips",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARestoreRefusalIsWordedInEachLanguageTheDeploymentShips",
+   "needs_db": true,
+   "pkg": "ui/page",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
    "assertions_in_file": 7,
    "evidence": "round-named, no unique reach, and no kept sibling in its package to inherit it: the rule it names has to be read before anything is deleted",
    "file": "ui/page/review_r3_verdict_copy_test.go",
@@ -72809,7 +72828,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1963,
+  "files": 1964,
   "forge_runs": [
    408,
    413,
@@ -72843,7 +72862,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3127,
+   "behaviour": 3128,
    "composition": 440,
    "contract": 21,
    "journey": 102
@@ -72862,9 +72881,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3690,
+  "rows": 3691,
   "tiers": {
-   "merge": 2363,
+   "merge": 2364,
    "nightly": 102,
    "push": 1225
   },
@@ -72872,13 +72891,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1736,
+   "keep": 1737,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3334,
+   "keep": 3335,
    "keep-rewrite": 140,
    "merge": 216
   }
