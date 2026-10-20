@@ -45,6 +45,12 @@ type Delivery struct {
 	// before the record existed and leaves no trace of the attempt, which is the bug
 	// the record exists to close rather than a mode to preserve.
 	Mails contracts.MailLedger
+
+	// SetPasswordPage and ConfirmEmailPage are the paths the invitation or reset
+	// link and the sign-up confirmation link open on the tenant's host. Empty is
+	// ResetPath and VerifyEmailPath, the workspace screens.
+	SetPasswordPage  string
+	ConfirmEmailPage string
 }
 
 // Service is signing in and what a role may do.
@@ -84,6 +90,12 @@ func (s *Service) declared() []tenancy.Grant {
 
 // NewService returns the auth service. module.go constructs it.
 func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery) *Service {
+	if mail.SetPasswordPage == "" {
+		mail.SetPasswordPage = ResetPath
+	}
+	if mail.ConfirmEmailPage == "" {
+		mail.ConfirmEmailPage = VerifyEmailPath
+	}
 	// The counters every replica shares. httpx.ConnFrom is where they find the
 	// pool: this module is constructed before kit/app opens one, and every
 	// caller below is inside a request that carries it.

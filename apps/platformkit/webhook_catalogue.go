@@ -20,6 +20,7 @@ package main
 // never refuses a socket on the strength of a name having left the list.
 
 import (
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
@@ -99,11 +100,22 @@ var webhookCatalogue = emittedEvents{
 	// identity wants the same distinction — see modules/notification/contracts/events.go.
 	notificationcontracts.EventPreferenceSet, notificationcontracts.EventSenderSet,
 	notificationcontracts.EventSenderVerified, notificationcontracts.EventSenderRemoved,
+	// Where a person can be reached, and where that stopped being true. A registration
+	// is the holder's own act, so the event is the only way an installation watching its
+	// own delivery floor learns the reachability changed; a removal is the provider's
+	// answer rather than anybody's command, and its payload names no actor for that
+	// reason — see modules/notification/internal/carrier_push.go.
+	notificationcontracts.EventDeviceRegistered, notificationcontracts.EventDeviceRemoved,
 	taskcontracts.EventCreated, taskcontracts.EventUpdated, taskcontracts.EventDeleted,
 	taskcontracts.EventAssigned, taskcontracts.EventResolved, taskcontracts.EventSLABreached,
 	contentcontracts.EventCreated, contentcontracts.EventUpdated, contentcontracts.EventDeleted,
 	contentcontracts.EventPublished, contentcontracts.EventUnpublished, contentcontracts.EventArchived,
 	sitecontracts.EventSettingsUpdated,
+	// history, whose one event says a stored version of a record came back. The
+	// name rides on the kit's Versions port and not on a module's contracts, for
+	// the reason that port gives: the kit publishes it for whichever resource asked
+	// for history, and modules/history declares it typed in its manifest.
+	httpx.RestoredEvent,
 	// translation, whose one event says a record's other languages moved.
 	translationcontracts.EventUpdated,
 	// subject, the two moments of a person's own request and the erasure itself. An

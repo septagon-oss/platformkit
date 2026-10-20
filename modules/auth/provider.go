@@ -53,6 +53,7 @@ var Module = pkit.NewModule("auth", wire,
 	// no SAML leg at all rather than three doors that answer 404 for everybody.
 	pkit.Optional[authcontracts.SAMLProviders](),
 	pkit.Optional[authcontracts.RegistrationMode](),
+	pkit.Optional[LinkPages](),
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[httpx.Authorizer](),
 	pkit.Provides[pkit.Authenticator](),
@@ -109,7 +110,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// Empty FactorKey leaves the second-factor routes unmounted, as it does
 		// today: without a key the only secret this module could write is a
 		// plaintext one.
-		FactorKey:  settings.FactorKey,
+		FactorKey: settings.FactorKey,
+		// The pages the two mailed links open, when the composition names its own
+		// with MailedLinksOpen; none composed is the admin shell's screens.
+		LinkPages:  pkit.Get[LinkPages](w),
 		PublicHost: server.PublicHost,
 	}
 	// Which public signup door this installation mounted is a composed module of
@@ -162,6 +166,20 @@ func fillGranting(g usercontracts.Granting, svc authcontracts.Auth) {
 		}
 		return svc.Allowed(ctx, t, tenancy.Grant{Permission: authcontracts.PermissionRoleManage})
 	}
+}
+
+// MailedLinksOpen is how a composition names the pages its mailed links open:
+// `Use(auth.Module, auth.MailedLinksOpen(auth.LinkPages{SetPassword: "/account/password"}))`.
+// A page New would refuse fails the build here, before auth is built and before
+// anything opens.
+func MailedLinksOpen(pages LinkPages) *pkit.Module {
+	return pkit.NewModule("authlinks", func(w *pkit.Wiring) (module.Module, error) {
+		if err := pages.check(); err != nil {
+			return module.Module{}, err
+		}
+		pkit.Put(w, pages)
+		return module.Module{Name: "authlinks"}, nil
+	}, pkit.Provides[LinkPages]())
 }
 
 // The three public signup doors. Each is a module of its own, so the app's

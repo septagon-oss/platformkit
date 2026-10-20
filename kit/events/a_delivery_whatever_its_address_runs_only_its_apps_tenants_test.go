@@ -2,6 +2,7 @@ package events_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -24,6 +25,14 @@ func (k *sinkKeeper) Subscribe(_ context.Context, durable, _ string, sink events
 	k.sinks[durable] = sink
 	return nil
 }
+
+// Observe refuses: the keeper holds durable sinks, and an ephemeral watch over it
+// would be an observation no publish could ever answer.
+func (k *sinkKeeper) Observe(context.Context, uuid.UUID, string, func(events.Event)) (func(), error) {
+	return nil, errKeeperObservesNothing
+}
+
+var errKeeperObservesNothing = errors.New("events: this transport double observes nothing")
 
 // TestADeliveryWhateverItsAddressRunsOnlyItsOwnAppsTenants is the delivery
 // boundary with the address taken out of it: the brief requires delivery to

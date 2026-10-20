@@ -41,6 +41,12 @@
       ]
     },
     {
+      "name": "workspace",
+      "provides": [
+        "*notification.Page"
+      ]
+    },
+    {
       "name": "seed",
       "contributes": [
         {
@@ -195,6 +201,16 @@
           "from": "tenant"
         }
       ],
+      "uses": [
+        {
+          "contract": "push.Adapters",
+          "from": ""
+        },
+        {
+          "contract": "*notification.Page",
+          "from": "workspace"
+        }
+      ],
       "contributes": [
         {
           "contract": "personaldata.Part",
@@ -205,7 +221,8 @@
       ],
       "after": [
         "user",
-        "tenant"
+        "tenant",
+        "workspace"
       ],
       "reads": [
         "config.Mail",
@@ -385,6 +402,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "auth.LinkPages",
+          "from": ""
         }
       ],
       "contributes": [
@@ -582,6 +603,35 @@
       ]
     },
     {
+      "name": "history",
+      "provides": [
+        "historycontracts.Service",
+        "httpx.Versions"
+      ],
+      "needs": [
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
+      "after": [
+        "tenant",
+        "file"
+      ]
+    },
+    {
       "name": "content",
       "provides": [
         "contentcontracts.Service"
@@ -602,6 +652,10 @@
         {
           "contract": "rest.FileShown",
           "from": "file"
+        },
+        {
+          "contract": "httpx.Versions",
+          "from": "history"
         }
       ],
       "contributes": [
@@ -614,6 +668,7 @@
       ],
       "after": [
         "file",
+        "history",
         "translation"
       ]
     },
@@ -687,6 +742,7 @@
             "auth",
             "scim",
             "file",
+            "history",
             "task",
             "translation",
             "content",
@@ -703,6 +759,7 @@
         "auth",
         "scim",
         "file",
+        "history",
         "task",
         "translation",
         "content",

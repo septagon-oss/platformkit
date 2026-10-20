@@ -23,3 +23,18 @@ func SetFieldMediaType[T any](router *Router, field, mediaType string) {
 	}
 	property.Extensions["contentMediaType"] = mediaType
 }
+
+// SetFieldPicture constrains a derived picture's wire schema without changing
+// its string representation or importing HTTP into the entity vocabulary.
+func SetFieldPicture[T any](router *Router, field string) {
+	registry := router.api.api.OpenAPI().Components.Schemas
+	schema := registry.Schema(reflect.TypeFor[T](), false, "")
+	property := schema.Properties[field]
+	if property == nil {
+		panic("httpx: picture schema is missing: " + field)
+	}
+	property.Type = huma.TypeString
+	property.MaxLength = new(686)
+	property.Pattern = `^(?:|c1\.[A-Za-z0-9_-]+)$`
+	property.ReadOnly = true
+}

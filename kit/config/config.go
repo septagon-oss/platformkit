@@ -258,6 +258,25 @@ type Server struct {
 	// second and held the request — and, before the file module was made to
 	// stream outside one, a database transaction — for as long as it liked.
 	ReadTimeout time.Duration `yaml:"read_timeout"`
+
+	// Streams bounds the live connections this process serves. There is one number
+	// because there is one thing a deployment knows and the kernel does not: how many
+	// replicas stand behind the load balancer, and therefore how many browsers one
+	// tenant may have open at once.
+	Streams Streams `yaml:"streams"`
+}
+
+// Streams is the configuration of the live connections this process holds.
+type Streams struct {
+	// MaxPerTenant is how many live connections one tenant may hold in this one
+	// process. A cluster of N replicas admits N times this number, which is the
+	// honest meaning of the word "process" here: a cluster-wide cap is not what this
+	// counts, and kit/stream/README.md says so beside the follow-up that would.
+	//
+	// The per-person ceiling is not configurable: it is the number of tabs one
+	// person plausibly has open, and a deployment that wanted more of them would be
+	// asking for a different feature.
+	MaxPerTenant int `yaml:"max_per_tenant"`
 }
 
 // Database holds the three roles: the app appends as one, migrations run as
@@ -590,6 +609,19 @@ const DefaultServiceName = "platformkit"
 // deployment overrides it for.
 const DefaultReadTimeout = 30 * time.Second
 
+// DefaultStreamMaxPerTenant is how many live connections one tenant may hold in
+// one process when the deployment names no number. It is a browser per tab per
+// person, times the people of a tenant who happen to be looking at the same
+// screen — and it is per process, so a deployment that runs ten replicas admits ten
+// times this many and should say so to itself before it is surprised.
+const DefaultStreamMaxPerTenant = 500
+
+// MaxStreamMaxPerTenant is the largest number a deployment may write there. It
+// exists to refuse a mistyped one — a zero meant as "unlimited", or a six-figure
+// count that would be a file-descriptor budget pretending to be a policy — rather
+// than to price anyone's plan.
+const MaxStreamMaxPerTenant = 100_000
+
 // keys is every string-valued key a deployment or a composition may set from
 // outside the file: its name, the environment variable that overrides it, where
 // it lives in a Config, and whether the application refuses to start without it.
@@ -864,6 +896,13 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if c.Server.ReadTimeout < 0 {
 		return Config{}, fmt.Errorf("config %s: server.read_timeout is %s; a client either has a deadline or the server has none", path, c.Server.ReadTimeout)
+	}
+	if c.Server.Streams.MaxPerTenant == 0 {
+		c.Server.Streams.MaxPerTenant = DefaultStreamMaxPerTenant
+	}
+	if c.Server.Streams.MaxPerTenant < 1 || c.Server.Streams.MaxPerTenant > MaxStreamMaxPerTenant {
+		return Config{}, fmt.Errorf("config %s: server.streams.max_per_tenant is %d; a tenant's live connections per process are between 1 and %d",
+			path, c.Server.Streams.MaxPerTenant, MaxStreamMaxPerTenant)
 	}
 	if c.Files.Dir == "" {
 		c.Files.Dir = DefaultFilesDir

@@ -10,6 +10,7 @@
 package display
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -19,20 +20,29 @@ import (
 )
 
 // Text is a value as a form control and a link read it: the raw one. Everything
-// arrives as encoding/json made it, so a number is a float64 and a list is a
-// []any.
+// arrives as encoding/json made it: a number is float64 or json.Number when
+// decoded with UseNumber, and a list is []any.
 //
 // It is not Display. A select's value attribute has to be the enum's own
 // spelling and a checkbox's has to be "true"; what a person reads is Display's
 // business, and confusing the two is how a form posts back "Yes".
 func Text(v any) string {
 	switch typed := v.(type) {
+	case entity.Picture:
+		return string(typed)
+	case *entity.Picture:
+		if typed == nil {
+			return ""
+		}
+		return string(*typed)
 	case string:
 		return typed
 	case bool:
 		return strconv.FormatBool(typed)
 	case float64:
 		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case json.Number:
+		return typed.String()
 	case []any:
 		parts := make([]string, 0, len(typed))
 		for _, item := range typed {

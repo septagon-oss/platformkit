@@ -169,7 +169,7 @@ func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Gra
 	status := 0
 	body := []g.Node{components.Toolbar(components.ToolbarProps{
 		Title:    "Roles",
-		Subtitle: counted(total) + " What each role name grants here, which is what everybody holding one may do.",
+		Subtitle: counted(total) + " Choose a role to review its permissions. Changes apply to everyone with that role.",
 	})}
 	if detail != "" {
 		status = http.StatusUnprocessableEntity
@@ -177,15 +177,25 @@ func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Gra
 			Tone: "danger", Message: detail, Bordered: true}))
 	}
 	for _, role := range shown {
-		body = append(body, roleFieldset(where, role.Name, role.Grants, offered, at, words))
+		summary := strconv.Itoa(len(role.Grants)) + " permissions"
+		if len(role.Grants) == 1 {
+			summary = "1 permission"
+		}
+		if slices.Contains(role.Grants, authcontracts.Wildcard) {
+			summary = "Full access to this tenant"
+		}
+		if len(role.Grants) == 0 {
+			summary = "No permissions assigned"
+		}
+		body = append(body, components.Disclosure(components.DisclosureProps{Label: role.Name, Description: summary, Open: detail != ""},
+			roleFieldset(where, role.Name, role.Grants, offered, at, words)))
 	}
 	body = append(body,
 		components.Pagination(components.PaginationProps{
 			CurrentPage: at, TotalPages: last, BaseURL: where,
 			NavigationLabel: "Roles pagination",
 		}),
-		components.Divider(components.DividerProps{Text: "New role"}),
-		newRoleFieldset(where, offered, at))
+		components.Disclosure(components.DisclosureProps{Label: "New role", Description: "Create a role with only the access it needs", Open: detail != ""}, newRoleFieldset(where, offered, at)))
 	return page.View{Title: "Roles", Status: status, Body: body}
 }
 

@@ -26,7 +26,8 @@ import (
 // personalData is what a tenant was told about a person, and what was told to them. The
 // row stays: notification_deliveries reaches a recipient only through notification_id,
 // so deleting a notification would silently orphan a ledger that carries an index and a
-// CHECK, and the anonymised row still answers "when did we tell them".
+// CHECK, and the anonymised row still answers "when did we tell them". The device rows are
+// the exception: they hold a credential rather than a memory, and Erase says why.
 type personalData struct{}
 
 // PersonalData is this module's contribution to a person's export and erasure.
@@ -37,6 +38,7 @@ func PersonalData() personaldata.Part {
 type notificationPart struct {
 	Notifications []notificationRow `json:"notifications"`
 	Deliveries    []deliveryRow     `json:"deliveries"`
+	Devices       []deviceRow       `json:"devices"`
 }
 
 type notificationRow struct {
@@ -52,6 +54,16 @@ type deliveryRow struct {
 	Channel   string    `json:"channel"`
 	Outcome   string    `json:"outcome"`
 	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// deviceRow is a device without its token. The token is a bearer address for the
+// person's phone or browser, and the door onto an export is a permission somebody
+// other than the person can hold; a bundle that carried tokens would let that holder
+// send to the person's device. Which platform, and since when, is the fact a person
+// asks about; the credential is nobody's business but the carrier's.
+type deviceRow struct {
+	Platform  string    `json:"platform"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -72,6 +84,13 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	if err != nil {
 		return nil, fmt.Errorf("notification: export %s's deliveries: %w", s.ID, err)
 	}
+	err = db_.Table("notification_devices").
+		Select("platform, created_at").
+		Where("recipient_id = ? AND deleted_at IS NULL", s.ID).
+		Order("created_at, id").Find(&out.Devices).Error
+	if err != nil {
+		return nil, fmt.Errorf("notification: export %s's devices: %w", s.ID, err)
+	}
 	return json.Marshal(out)
 }
 
@@ -88,5 +107,14 @@ func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personalda
 		return err
 	}
 	_, err := personaldata.Scrub(ctx, tx, s, "notification_deliveries", []string{"reason"}, "")
-	return err
+	if err != nil {
+		return err
+	}
+	// A device row exists to reach the person, and its token is their device's
+	// address. Soft-deleting it would keep that address findable in a table nothing
+	// reads again, so the erasure is the one DELETE here: no notice can be sent to a
+	// person who asked to stop being told, and a device they register again after an
+	// erasure arrives as a new row, which is what the live-token index already expects.
+	return tx.DB().WithContext(ctx).
+		Exec("DELETE FROM notification_devices WHERE recipient_id = ?", s.ID).Error
 }

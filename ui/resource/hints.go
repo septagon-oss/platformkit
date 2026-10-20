@@ -21,18 +21,20 @@ import (
 // where `<module>/<entity>` is the resource address `rest.resourceAddress` keys
 // the registry by (and `reference:` spells a target), and `<aspect>` names the
 // declaration: `singular`, `plural`, `description`, `emptyDescription`,
-// `group.<key>`, `section.<key>`, `field.<name>.label`, `field.<name>.help`,
-// `enum.<field>.<value>`, `command.<verb>.label`,
+// `group.<key>`, `section.<key>`, `highlight.label`, `field.<name>.label`,
+// `field.<name>.help`, `enum.<field>.<value>`, `command.<verb>.label`,
 // `command.<verb>.confirmation.<title|body|confirmLabel>`,
 // `command.<verb>.successMessage`, and a command argument's
-// `command.<verb>.field.<name>.label` / `.help`.
+// `command.<verb>.field.<name>.label` / `.help`, and `deck.<direction>.label`.
 //
 // What is *not* resolved is the rest of the vocabulary, and the reason is one
 // sentence: `icon`, `group.key`, `section.key`, `order`, `primaryField`,
 // `previewField`, `statusField`, `summaryFields`, `sortable`, `visibility`,
 // `format`, `money`, `reference`, `enumTones`, `system`, `primary`,
-// `destructive` and `verb` are names a screen draws, not words a person reads —
-// translating `warning` or `detail` would be a bug, not a localisation.
+// `destructive`, `verb`, `trendField` and a highlight's `filter` are names a
+// screen draws, not words a person reads — translating `warning` or `detail` would
+// be a bug, not a localisation, and a translated predicate would count a different
+// set of rows than the one its author asked about.
 //
 // The declared literal is always the fallback, which is why no `en.json` exists
 // anywhere: the sentence the code author wrote is the English (decision 0012 rule
@@ -110,26 +112,23 @@ func (w Words) say(aspect, declared string) string {
 	return declared
 }
 
-// Entry is this resource's entry declaration in the request's language, and
-// returns the same value untouched when nothing is translated.
-//
-// It starts from the declared value and overwrites the four words and the two
-// label-carrying blocks, because which parts of a reading are words is the
-// translation scheme's business and not this function's: a rebuild that lists
-// fields has to be told, every time, that the next hint a shell reads is not a
-// word, and a hint nobody told it about reaches a served document in one language
-// only. `entity.EntryHints` carries no unexported field and no pointer a caller
-// mutates, so the copy is the whole declaration.
-//
-// The entry hints ride on the registration, shared by every request, so the two
-// values whose labels change — the group, each section — are copied out of the
-// shared value before they are written. Every slice stays shared: nothing here
-// writes one.
+// Entry returns declared entry words in this request's language.
+// Mutable blocks are copied before localization; deck queue and directions are
+// always copied so callers may safely narrow them to authorized commands.
 func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
-	if w.text == nil {
-		return p
-	}
 	out := p
+	out.Deck = p.Deck.Clone()
+	if out.Deck != nil {
+		for key, d := range out.Deck.Directions {
+			if !d.Skip {
+				d.Label = w.say("deck."+key+".label", d.Label)
+				out.Deck.Directions[key] = d
+			}
+		}
+	}
+	if w.text == nil {
+		return out
+	}
 	out.Singular = w.say("singular", p.Singular)
 	out.Plural = w.say("plural", p.Plural)
 	out.Description = w.say("description", p.Description)
@@ -138,6 +137,14 @@ func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 		group := *p.Group
 		group.Label = w.say("group."+group.Key, group.Label)
 		out.Group = &group
+	}
+	if p.Highlight != nil {
+		// The label is a word and the filter is not: which rows a sub-count counts
+		// is a question the server asks, and a translated operator would answer a
+		// different one. The predicates stay shared — nothing writes one.
+		highlight := *p.Highlight
+		highlight.Label = w.say("highlight.label", highlight.Label)
+		out.Highlight = &highlight
 	}
 	if p.Sections != nil {
 		sections := make([]entity.EntitySection, 0, len(p.Sections))

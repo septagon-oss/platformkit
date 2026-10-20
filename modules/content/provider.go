@@ -1,6 +1,7 @@
 package content
 
 import (
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -27,11 +28,17 @@ import (
 // after the module that holds the other languages, and an application that names
 // content and no translation is refused by name rather than mounting a record
 // screen whose Translate form has nowhere to write.
+//
+// The fourth is where a page's committed writes are kept, which is
+// modules/history's. Declaring it is what makes a composition with no version
+// store a refusal naming the need rather than a page whose writes keep no
+// version.
 var Module = pkit.NewModule("content", wire,
 	pkit.Needs[richtext.Files](),
 	pkit.Needs[rest.FileUses](),
 	pkit.Needs[rest.Translations](),
 	pkit.Needs[rest.FileShown](),
+	pkit.Needs[httpx.Versions](),
 	pkit.Provides[contentcontracts.Service](),
 	pkit.Contributes[personaldata.Part](),
 )
@@ -42,6 +49,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Uses:         pkit.Get[rest.FileUses](w),
 		Translations: pkit.Get[rest.Translations](w),
 		Shown:        pkit.Get[rest.FileShown](w),
+		Versions:     pkit.Get[httpx.Versions](w),
 	})
 	pkit.Put(w, svc)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())

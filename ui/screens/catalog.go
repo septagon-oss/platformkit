@@ -31,7 +31,7 @@ type Text = resource.Text
 // refuses to do to it — additive, optional, never a change of meaning — and moves
 // for a listed resource losing a verb, whose button that build drew and whose
 // address now answers nothing. A verb hidden by a new entry strands nobody.
-const CatalogVersion = 2
+const CatalogVersion = 3
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell
@@ -67,7 +67,9 @@ type Catalog struct {
 // composition writes this and a resource-bearing document never invents it.
 type Pictures struct {
 	Source string `json:"source"`
-	Widths []int  `json:"widths,omitempty"`
+	// ComposedSource is optional and substitutes one canonical {reference} token.
+	ComposedSource string `json:"composedSource,omitempty"`
+	Widths         []int  `json:"widths,omitempty"`
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
@@ -250,7 +252,7 @@ func Localise(r httpx.Resource, text Text) httpx.Resource {
 func Describe1(r httpx.Resource, writable bool) Entry {
 	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
 		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
-	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present), Screen: r.Screen,
+	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present, r.Commands), Screen: r.Screen,
 		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
 		Operations: r.OperationWords()}
 	if writable {

@@ -36,7 +36,7 @@ import (
 // case that asks the resolver a question and reads nothing else. The four values
 // sentences also returns belong to the composition's own chrome.
 func sentencesOf(cfg config.Config, without ...string) *pkit.App {
-	a, _, _, _, _, _ := sentences(cfg, without...)
+	a, _, _, _, _, _, _ := sentences(cfg, without...)
 	return a
 }
 
@@ -47,7 +47,8 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 	// module the resolver placed is one the sentence named: Use is the whole of
 	// what is composed, and nothing is found that Use does not name.
 	for _, name := range []string{
-		"product", "seed", "user", "tenant", "notification", "auth", "emailregistration", "file",
+		"product", "seed", "user", "tenant", "notification", "workspace", "auth",
+		"emailregistration", "file", "history",
 		"task", "billing", "translation", "content", "site", "web", "audit", "webhook",
 		"change", "access", "subject", "media", "admin", "scim",
 	} {
@@ -55,8 +56,8 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 			t.Errorf("%s.Module is named in Use and answers no manifest in the resolved composition", name)
 		}
 	}
-	if len(r.modules) != 22 {
-		t.Errorf("the composition resolved to %d modules, want the 22 the sentence names: %v", len(r.modules), moduleNames(r.modules))
+	if len(r.modules) != 24 {
+		t.Errorf("the composition resolved to %d modules, want the 24 the sentence names: %v", len(r.modules), moduleNames(r.modules))
 	}
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted.

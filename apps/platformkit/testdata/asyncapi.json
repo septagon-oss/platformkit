@@ -1583,6 +1583,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slug": {
                 "type": "string"
               },
@@ -1604,7 +1607,8 @@
               "slug",
               "title",
               "kind",
-              "status"
+              "status",
+              "revision"
             ],
             "type": "object"
           },
@@ -1666,6 +1670,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slug": {
                 "type": "string"
               },
@@ -1687,7 +1694,8 @@
               "slug",
               "title",
               "kind",
-              "status"
+              "status",
+              "revision"
             ],
             "type": "object"
           },
@@ -1749,6 +1757,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slug": {
                 "type": "string"
               },
@@ -1770,7 +1781,8 @@
               "slug",
               "title",
               "kind",
-              "status"
+              "status",
+              "revision"
             ],
             "type": "object"
           },
@@ -2212,6 +2224,62 @@
       "summary": "Every tenant's delivery of file.visibility.",
       "title": "file.visibility"
     },
+    "history.restored": {
+      "address": "platformkit.*.history.restored",
+      "description": "Published at platformkit.{tenantId}.history.restored; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "history.restored": {
+          "contentType": "application/json",
+          "name": "history.restored",
+          "payload": {
+            "properties": {
+              "actor": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "entity": {
+                "type": "string"
+              },
+              "from": {
+                "type": "integer"
+              },
+              "locale": {
+                "type": "string"
+              },
+              "module": {
+                "type": "string"
+              },
+              "record": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "to": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "module",
+              "entity",
+              "record",
+              "from",
+              "to",
+              "locale",
+              "actor",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "history — history.restored",
+          "title": "history.restored"
+        }
+      },
+      "summary": "Every tenant's delivery of history.restored.",
+      "title": "history.restored"
+    },
     "notification.created": {
       "address": "platformkit.*.notification.created",
       "description": "Published at platformkit.{tenantId}.notification.created; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -2251,6 +2319,95 @@
       },
       "summary": "Every tenant's delivery of notification.created.",
       "title": "notification.created"
+    },
+    "notification.device_registered": {
+      "address": "platformkit.*.notification.device_registered",
+      "description": "Published at platformkit.{tenantId}.notification.device_registered; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.device_registered": {
+          "contentType": "application/json",
+          "name": "notification.device_registered",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "deviceId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "deviceId",
+              "recipientId",
+              "platform",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.device_registered",
+          "title": "notification.device_registered"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.device_registered.",
+      "title": "notification.device_registered"
+    },
+    "notification.device_removed": {
+      "address": "platformkit.*.notification.device_removed",
+      "description": "Published at platformkit.{tenantId}.notification.device_removed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "notification.device_removed": {
+          "contentType": "application/json",
+          "name": "notification.device_removed",
+          "payload": {
+            "properties": {
+              "actorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "deviceId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "recipientId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "deviceId",
+              "recipientId",
+              "platform",
+              "reason",
+              "actorId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "notification — notification.device_removed",
+          "title": "notification.device_removed"
+        }
+      },
+      "summary": "Every tenant's delivery of notification.device_removed.",
+      "title": "notification.device_removed"
     },
     "notification.email_requested": {
       "address": "platformkit.*.notification.email_requested",
@@ -6013,6 +6170,23 @@
         }
       ]
     },
+    "history.restored": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/history.restored"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/history.restored/messages/history.restored"
+        }
+      ],
+      "summary": "The history module publishes history.restored.",
+      "tags": [
+        {
+          "name": "history"
+        }
+      ]
+    },
     "notification.created": {
       "action": "send",
       "channel": {
@@ -6024,6 +6198,40 @@
         }
       ],
       "summary": "The notification module publishes notification.created.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
+    "notification.device_registered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.device_registered"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.device_registered/messages/notification.device_registered"
+        }
+      ],
+      "summary": "The notification module publishes notification.device_registered.",
+      "tags": [
+        {
+          "name": "notification"
+        }
+      ]
+    },
+    "notification.device_removed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/notification.device_removed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/notification.device_removed/messages/notification.device_removed"
+        }
+      ],
+      "summary": "The notification module publishes notification.device_removed.",
       "tags": [
         {
           "name": "notification"

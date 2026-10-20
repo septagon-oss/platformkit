@@ -16,6 +16,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -63,6 +64,14 @@ func (w *slugWorker) Subscribe(_ context.Context, durable, _ string, _ events.Si
 	}
 	return nil
 }
+
+// Observe refuses: the worker stands for the durable subscription path, and a watch
+// over a transport that keeps nothing is a connection that would receive nothing.
+func (w *slugWorker) Observe(context.Context, uuid.UUID, string, func(events.Event)) (func(), error) {
+	return nil, errDoubleObservesNothing
+}
+
+var errDoubleObservesNothing = errors.New("events: this transport double observes nothing")
 
 func (w *slugWorker) seen() (durables []string, published []string) {
 	w.mu.Lock()

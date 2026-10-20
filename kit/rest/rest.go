@@ -26,7 +26,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -79,6 +78,17 @@ type Spec[T crud.Entity] struct {
 	// that default is a resource whose images the sweep is entitled to delete
 	// under a published page, which is when this becomes a mount-time refusal.
 	FileUses FileUses
+	// History keeps a version of every write this Spec commits, in the same
+	// transaction as the write. It is a declaration and not a request: a resource
+	// whose content people revise wants a version per save, and a resource whose
+	// rows are counters does not. It requires two things, both refused at mount:
+	// Versions to keep them in, and a write count of the row's own to number them
+	// with — the version number is entity.RevisionField, and this module refuses
+	// to invent a second one.
+	History bool
+	// Versions is the store a History resource's versions are kept in, called
+	// inside the transaction that wrote the row. modules/history provides it.
+	Versions httpx.Versions
 	// Translations is the door a Spec with a `i18n:"translatable"` field knocks
 	// on: ?lang= reads through it, its commands write through it, and its delete
 	// forgets the record through it. modules/translation implements it and nothing
@@ -345,6 +355,9 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		res.WritePath = write.Prefix() + s.Path
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
+	if s.History {
+		s.mountHistory(surfaces, read)
+	}
 
 	// The two read doors come in two shapes, and the reason is one rule: a
 	// query parameter nothing reads is not advertised. A resource with a
@@ -498,6 +511,9 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		if field.Widget == "richtext" {
 			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")
 		}
+		if field.Type == entity.TypePicture {
+			httpx.SetFieldPicture[T](read, field.Name)
+		}
 	}
 	if s.offers(httpx.CRUDUpdate) {
 		var writable []crud.Field
@@ -549,6 +565,19 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	// the patch, the delete, and the commands that declare them.
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
+	}
+	// The row's first version, at the number the row itself starts on. Nothing
+	// preceded it, so it names no changed fields: a version's `changed` answers
+	// "what did this write move", and the first write moved everything by being
+	// the beginning rather than by moving anything.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, nil); err != nil {
+			return e, err
+		}
 	}
 	return e, s.emit(ctx, tx, Created, e, s.AfterCreate)
 }
@@ -662,6 +691,21 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return e, err
 	}
 	defer done()
+	// The version rides this transaction: the snapshot is the row as the UPDATE
+	// left it (normalised by the entity's own Validate, which is the same reason
+	// the diff below is taken here), taken before reportDiff put the diff on the
+	// entity, so no stored document holds a `changes` array that belongs to one
+	// event. It is recorded before the event is published, so a published
+	// `updated` never describes a version the database refused.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, changedNamesFrom(fields, beforeJSON, snap)); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Updated, e, nil)
 }
 
@@ -890,8 +934,9 @@ type CommandOptions struct {
 // that forgot the events extension is a route the boot gate cannot see.
 //
 // I is the request body and it is optional, so a command that takes no
-// arguments is a POST with no body at all; run is handed the zero I in that
-// case. A command whose argument is missing is refused by run, with
+// arguments is a POST with no body at all; explicit field defaults are applied
+// before run, or the zero I when no defaults are declared. Missing arguments
+// are refused by run, with
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
 //
@@ -947,6 +992,10 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	if err != nil {
 		panic("rest: " + err.Error())
 	}
+	prepare, emptyFault, err := commandDefaults[I](fields)
+	if err != nil {
+		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + err.Error())
+	}
 	// Endpoint is the command's own absolute address, which is the one path a
 	// shell can no longer derive for itself: once a command may live on the
 	// control-plane surface, {path}/{id}/{verb} stops being the rule. The
@@ -955,7 +1004,7 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
 		Endpoint: router.Prefix() + path,
-		Fields:   fields, Present: opts.Present,
+		Fields:   fields, EmptyInputFault: emptyFault, Present: opts.Present,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -965,11 +1014,14 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 			// The same decode the PATCH route uses: one set of rules for "3" as an
 			// int and for null as an empty pointer, and a field the command does not
 			// take is refused rather than quietly dropped.
-			var in I
-			if _, err := merge(&in, fields, nil, values); err != nil {
+			in, err := prepare(values)
+			if err != nil {
 				return err
 			}
-			_, err := run(ctx, tx, id, in)
+			if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
+				return err
+			}
+			_, err = run(ctx, tx, id, in)
 			return err
 		},
 	})
@@ -987,6 +1039,10 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 			return zero, err
 		}
 		return run(ctx, tx, id, in)
+	}
+	if slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
+		mountDefaultCommand(router, op, auth, opts.Collection, prepare, answer)
+		return
 	}
 	if opts.Collection {
 		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (T, error) {
@@ -1041,7 +1097,8 @@ func declareMapArgs(in reflect.Type, fields []crud.Field, declared *MapArgs) ([]
 		fields = append(fields, crud.Field{
 			Name: jsonNameOf(sf), Type: crud.TypeMap, Elem: declared.Elem,
 			Doc: cmp.Or(declared.Doc, sf.Tag.Get("doc")), Keys: slices.Clone(declared.Keys),
-			Index: sf.Index,
+			Default: sf.Tag.Get("default"),
+			Index:   sf.Index,
 		})
 	}
 	if len(args) > 0 {
@@ -1228,6 +1285,9 @@ func (s Spec[T]) check() {
 		bad = s.operationsFault()
 	}
 	if bad == "" {
+		bad = s.historyFault()
+	}
+	if bad == "" {
 		bad = s.gateFault()
 	}
 	if bad == "" {
@@ -1268,6 +1328,14 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		for _, f := range crud.Fields[T]() {
+			if f.Type == entity.TypePicture && (s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate)) && !slices.Contains(s.Immutable, f.Name) {
+				bad = fmt.Sprintf("picture field %q must be Immutable", f.Name)
+				break
+			}
+		}
 	}
 	if bad == "" {
 		bad = s.entryHintFault()
@@ -1558,30 +1626,11 @@ func (in *listInput) query(fields []crud.Field) (crud.Query, error) {
 // coerce reads a query parameter as the field's own type, so a filter on an
 // integer column compares integers. Postgres would raise on the mismatch, which
 // is a 500 for what is really a malformed request.
-func coerce(f crud.Field, raw string) (any, error) {
-	var (
-		v   any
-		err error
-	)
-	switch f.Type {
-	case crud.TypeInt:
-		v, err = strconv.ParseInt(raw, 10, 64)
-	case crud.TypeFloat:
-		v, err = strconv.ParseFloat(raw, 64)
-	case crud.TypeBool:
-		v, err = strconv.ParseBool(raw)
-	case crud.TypeUUID:
-		v, err = uuid.Parse(raw)
-	case crud.TypeTime:
-		v, err = time.Parse(time.RFC3339, raw)
-	default:
-		v = raw
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s is a %s and %q is not one", crud.ErrInvalid, f.Name, f.Type, raw)
-	}
-	return v, nil
-}
+// coerce reads a filter value as the field's own type. The table is kit/crud's,
+// because a declared highlight value and a ?filter= value are the same question —
+// what is this field's name worth as this field's type — and two tables answering
+// it would be two opinions about which filters do nothing.
+func coerce(f crud.Field, raw string) (any, error) { return crud.Coerce(f, raw) }
 
 // merge applies a PATCH body to an entity, field by field, through the schema,
 // and reports the database columns it changed so that Update writes those and
@@ -1617,7 +1666,20 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
-		if err := json.Unmarshal(encoded, target.FieldByIndex(f.Index).Addr().Interface()); err != nil {
+		field := target
+		for _, index := range f.Index {
+			if field.Kind() == reflect.Pointer {
+				if field.IsNil() {
+					if !field.CanSet() {
+						return nil, fmt.Errorf("%w: %s cannot initialize an unexported embedded field", crud.ErrInvalid, name)
+					}
+					field.Set(reflect.New(field.Type().Elem()))
+				}
+				field = field.Elem()
+			}
+			field = field.Field(index)
+		}
+		if err := json.Unmarshal(encoded, field.Addr().Interface()); err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
 		columns = append(columns, f.Column)
@@ -1752,7 +1814,7 @@ func immutableRefusal(name string) error {
 func names(fields []crud.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.Type != crud.TypeList {
+		if f.Type != crud.TypeList && f.Type != entity.TypePicture {
 			out = append(out, f.Name)
 		}
 	}

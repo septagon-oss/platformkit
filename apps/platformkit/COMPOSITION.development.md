@@ -5,11 +5,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 22 modules · role `all`.
+App `platformkit` · environment `development` · 24 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 22 modules.
+pkit: platformkit in development builds 24 modules.
 pkit: cloud profile local in development.
 pkit: seam storage runs local-disk (default).
 pkit: seam cache runs in-process (default).
@@ -26,6 +26,7 @@ pkit: product.Module needs no other module.
 pkit: product.Module reads config.Files.
 pkit: product.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: product.Module contributes one changecontracts.SubjectBinding to change.Module.
+pkit: workspace.Module needs no other module.
 pkit: seed.Module needs no other module.
 pkit: seed.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: user.Module is built after product.Module.
@@ -52,15 +53,17 @@ pkit: tenant.Module defines the permission tenant:manage.
 pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.renamed, tenant.host_removed, tenant.reactivated, tenant.deleted, tenant.lifecycle_recorded, tenant.oidc_set, tenant.oidc_cleared, tenant.saml_set and tenant.saml_cleared.
 pkit: emailregistration.Module is built after user.Module.
 pkit: emailregistration.Module needs usercontracts.Service from user.Module.
-pkit: notification.Module is built after user.Module and tenant.Module.
+pkit: notification.Module is built after user.Module, tenant.Module and workspace.Module.
 pkit: notification.Module needs notificationcontracts.RecipientLookup from user.Module.
 pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Module.
+pkit: notification.Module could use push.Adapters; platformkit composes no provider, so it will not.
+pkit: notification.Module uses *notification.Page from workspace.Module.
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
 pkit: notification.Module contributes one personaldata.Part to subject.Module.
 pkit: notification.Module runs on mailbox, which the deployment picked.
 pkit: notification.Module defines the permission sender:manage.
-pkit: notification.Module emits notification.created, notification.email_requested, notification.read, notification.push_requested, notification.web_push_requested, notification.webhook_requested, notification.preference_set, notification.sender_set, notification.sender_verified and notification.sender_removed.
+pkit: notification.Module emits notification.created, notification.email_requested, notification.read, notification.push_requested, notification.web_push_requested, notification.webhook_requested, notification.preference_set, notification.sender_set, notification.sender_verified, notification.sender_removed, notification.device_registered and notification.device_removed.
 pkit: notification.Module handles notification.email_requested.
 pkit: task.Module is built after product.Module and tenant.Module.
 pkit: task.Module needs jobs.TenantLister from tenant.Module.
@@ -103,6 +106,7 @@ pkit: auth.Module needs jobs.TenantLister from tenant.Module.
 pkit: auth.Module needs usercontracts.Granting from product.Module.
 pkit: auth.Module uses authcontracts.SAMLProviders from tenant.Module.
 pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Module.
+pkit: auth.Module could use auth.LinkPages; platformkit composes no provider, so it will not.
 pkit: auth.Module reads config.Auth.
 pkit: auth.Module reads config.Server.
 pkit: auth.Module contributes one personaldata.Part to subject.Module.
@@ -143,11 +147,17 @@ pkit: change.Module contributes one personaldata.Part to subject.Module.
 pkit: change.Module defines the permission change:read, change:propose and change:decide.
 pkit: change.Module emits change.proposal_proposed, change.proposal_reviewed, change.proposal_applied and change.proposal_withdrawn.
 pkit: change.Module handles change.proposal_reviewed and change.proposal_applied.
-pkit: content.Module is built after file.Module and translation.Module.
+pkit: history.Module is built after tenant.Module and file.Module.
+pkit: history.Module needs rest.FileUses from file.Module.
+pkit: history.Module needs jobs.TenantLister from tenant.Module.
+pkit: history.Module contributes one personaldata.Part to subject.Module.
+pkit: history.Module emits history.restored.
+pkit: content.Module is built after file.Module, history.Module and translation.Module.
 pkit: content.Module needs richtext.Files from file.Module.
 pkit: content.Module needs rest.FileUses from file.Module.
 pkit: content.Module needs rest.Translations from translation.Module.
 pkit: content.Module needs rest.FileShown from file.Module.
+pkit: content.Module needs httpx.Versions from history.Module.
 pkit: content.Module contributes one personaldata.Part to subject.Module.
 pkit: content.Module defines the permission content:read and content:manage.
 pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
@@ -158,8 +168,8 @@ pkit: web.Module needs richtext.Files from file.Module.
 pkit: web.Module uses webcontracts.Links from product.Module.
 pkit: web.Module uses rest.Translations from translation.Module.
 pkit: web.Module uses rest.TranslationSource from product.Module.
-pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, scim.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
-pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, scim.Module, file.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, scim.Module, file.Module, history.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, scim.Module, file.Module, history.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
 pkit: subject.Module needs usercontracts.Service from user.Module.
 pkit: subject.Module needs filecontracts.Service from file.Module.
 pkit: subject.Module needs notificationcontracts.Service from notification.Module.
@@ -181,6 +191,7 @@ pkit: auth.Module provides httpx.Authorizer; no module in platformkit needs it.
 pkit: auth.Module provides pkit.Authenticator; no module in platformkit needs it.
 pkit: scim.Module provides scimcontracts.Service; no module in platformkit needs it.
 pkit: change.Module provides changecontracts.Service; no module in platformkit needs it.
+pkit: history.Module provides historycontracts.Service; no module in platformkit needs it.
 pkit: subject.Module provides subjectcontracts.Service; no module in platformkit needs it.
 
 ## What the application answers the kernel

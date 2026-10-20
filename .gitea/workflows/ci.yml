@@ -625,6 +625,13 @@ jobs:
           bash scripts/ci_browser_host_share.sh wait 600
           bash scripts/ci_browser_host_share.sh watch 30 make e2e
 
+      # An installation refuses to boot on a migration file that changed after it ran, so the
+      # change is judged against this event's base, on pull requests and pushes alike.
+      - name: Applied migrations never change
+        env:
+          MIGRATIONS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: make check-applied-migrations
+
       # Last, and deliberately. A ceiling that rose is a decision for an owner
       # to review, not a reason to stop the job before it has said whether the
       # code works. The cleanup below still runs, because it runs always().
