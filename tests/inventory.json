@@ -3896,6 +3896,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/member_catalog_unreadable_entry_test.go",
+   "id": "apps/platformkit/member_catalog_unreadable_entry_test.go#TestAMembersCatalogueOffersNoOperationOnPeopleItMayNotRead",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestAMembersCatalogueOffersNoOperationOnPeopleItMayNotRead",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/member_language_discovery_test.go",
    "id": "apps/platformkit/member_language_discovery_test.go#TestMemberCanDiscoverItsAccountLanguageCommand",
    "kind": "go",
@@ -66101,6 +66120,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/status_pill_primary_action_test.go",
+   "id": "ui/resource/status_pill_primary_action_test.go#TestAListWithAStatusColumnOffersOnePrimaryAction",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAListWithAStatusColumnOffersOnePrimaryAction",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/unmarked_text_entity_title_test.go",
    "id": "ui/resource/unmarked_text_entity_title_test.go#TestAnUnmarkedTextEntityIsTitledByItsFirstTextField",
    "kind": "go",
@@ -74073,7 +74111,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2019,
+  "files": 2021,
   "forge_runs": [
    408,
    413,
@@ -74107,8 +74145,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3173,
-   "composition": 461,
+   "behaviour": 3174,
+   "composition": 462,
    "contract": 21,
    "journey": 100
   },
@@ -74126,23 +74164,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3755,
+  "rows": 3757,
   "tiers": {
-   "merge": 2409,
+   "merge": 2410,
    "nightly": 100,
-   "push": 1246
+   "push": 1247
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1792,
+   "keep": 1794,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3399,
+   "keep": 3401,
    "keep-rewrite": 140,
    "merge": 216
   }
