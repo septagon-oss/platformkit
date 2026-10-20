@@ -124,5 +124,23 @@
     "plural": {
       "": "escrever tarefas"
     }
+  },
+  "hints.task/task.description": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Defina prioridades, atribua trabalho e acompanhe os prazos.",
+    "plural": {
+      "": "Defina prioridades, atribua trabalho e acompanhe os prazos."
+    }
+  },
+  "hints.task/task.emptyDescription": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Crie uma tarefa para definir o próximo passo do trabalho.",
+    "plural": {
+      "": "Crie uma tarefa para definir o próximo passo do trabalho."
+    }
   }
 }

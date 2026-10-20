@@ -98,6 +98,18 @@
       "": "Despublicar"
     }
   },
+  "hints.content/content.deck.left.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar"
+  },
+  "hints.content/content.deck.right.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publicar"
+  },
   "hints.content/content.field.coverImageId.help": {
     "references": [
       "modules/content/module.go"
@@ -195,6 +207,24 @@
     "translation": "ler conteúdos",
     "plural": {
       "": "ler conteúdos"
+    }
+  },
+  "hints.content/content.description": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Escreva, reveja e publique as páginas que o seu público vê.",
+    "plural": {
+      "": "Escreva, reveja e publique as páginas que o seu público vê."
+    }
+  },
+  "hints.content/content.emptyDescription": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Crie uma página e guarde um rascunho antes de publicar.",
+    "plural": {
+      "": "Crie uma página e guarde um rascunho antes de publicar."
     }
   }
 }

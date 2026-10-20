@@ -161,10 +161,10 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // either: an outbox row is kept for a week and modules/audit copies every
 // payload into the audit trail.
 //
-// So the notice raised here carries ResetPath and nothing else — the person has
-// something to see in the application, and it tells them to check their mail —
-// and the secret goes straight from this transaction to the mail server. The
-// composition wires notification's own Mailer, so there is still one sender.
+// So the notice raised here carries the set-password page and nothing else —
+// the person has something to see in the application, telling them to check
+// their mail — and the secret goes from this transaction straight to the mail
+// server. The composition wires notification's Mailer, so there is one sender.
 //
 // ON CONFLICT on (tenant_id, user_id) is the single-pending rule: asking again
 // replaces the last link rather than adding a second, so a mailbox with four of
@@ -271,7 +271,7 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if err != nil {
 		return err
 	}
-	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base, token)); err != nil {
+	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base+s.mail.SetPasswordPage, token)); err != nil {
 		// The row goes back the way it came, and the attempt is acknowledged rather
 		// than retried: the record of a refused mail is written in this transaction,
 		// so this transaction has to commit for the record to exist (SPECIFY §3). A
@@ -296,7 +296,7 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
 			Recipient: user.ID, Title: title,
 			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
-			Link: ResetPath,
+			Link: s.mail.SetPasswordPage,
 		})
 		if err != nil {
 			return err
@@ -305,18 +305,18 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, notificationcontracts.MailSent, "")
 }
 
-// mailMessage renders the one message this module writes. The link is absolute
-// and on the recipient's own tenant's host, because a mail client has no base to
-// resolve a path against and one customer's people must not be sent to another's
-// front door.
+// mailMessage renders the one message this module writes. page is the link
+// without its token, absolute and on the recipient's own tenant's host, because
+// a mail client has no base to resolve a path against and one customer's people
+// must not be sent to another's front door.
 //
 // The token is in this string and in nothing it returns to: the caller hands it
 // straight to the mail server, and the record written beside the send names no
 // subject, body, link or credential.
-func mailMessage(to, title, body, base, token string) notificationcontracts.Message {
+func mailMessage(to, title, body, page, token string) notificationcontracts.Message {
 	return notificationcontracts.Message{
 		To: to, Subject: title,
-		Body: body + "\n\n" + base + ResetPath + "?token=" + token +
+		Body: body + "\n\n" + page + "?token=" + token +
 			"\n\nThe link works once and stops working in an hour.",
 	}
 }
@@ -457,7 +457,8 @@ const (
 	resetBody     = "Somebody asked to reset the password for this address. If it was not you, ignore this message and nothing changes."
 )
 
-// ResetPath is where the link points, and it is the workspace address rather than
+// ResetPath is where the link points when the composition names no page of its
+// own (Delivery.SetPasswordPage), and it is the workspace address rather than
 // a bare path: the page that reads the token lives under the workspace prefix the
 // kernel composes (httpx.Workspace), in the namespace this module's screens are
 // mounted at. The bare "/auth/reset" this constant used to carry was an address no
@@ -467,7 +468,8 @@ const (
 // is still the tenant's own, from the host of record, never a configured port.
 var ResetPath = httpx.Workspace("/auth/reset")
 
-// VerifyEmailPath is the confirmation link a sign-up mail carries, and it is the
+// VerifyEmailPath is the confirmation link a sign-up mail carries when the
+// composition names no page of its own (Delivery.ConfirmEmailPage), and it is the
 // workspace screen the shell mounts for it — the same correction ResetPath got.
 // The bare "/auth/verify-email" this used to be an address no route answered:
 // the API door is /api/v1/public/auth/verify-email and the page sits under the

@@ -73,6 +73,8 @@ const (
 type Pictures struct {
 	// Source is the address template, `{id}` standing for the file id.
 	Source string
+	// ComposedSource is the composed-picture address with a {reference} placeholder.
+	ComposedSource string
 }
 
 // Locale selects a language for the sign-in page before the browser negotiates

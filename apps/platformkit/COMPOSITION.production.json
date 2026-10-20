@@ -193,6 +193,10 @@
       ],
       "uses": [
         {
+          "contract": "push.Adapters",
+          "from": ""
+        },
+        {
           "contract": "*notification.Page",
           "from": "workspace"
         }
@@ -357,6 +361,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "auth.LinkPages",
+          "from": ""
         }
       ],
       "after": [

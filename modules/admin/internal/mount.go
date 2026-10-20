@@ -21,6 +21,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
@@ -93,6 +94,8 @@ type Shell struct {
 	// composition names it for the same reason it names SignIn: the door belongs
 	// to the module that stores the bytes. Empty draws the plain value.
 	PictureSource string
+	// ComposedSource is the composed-picture address with a {reference} placeholder.
+	ComposedSource string
 	// Registration is the composition saying a stranger may make an account
 	// here. Nil offers no way in but the password, which is the answer for
 	// every composition that wired no registration service.
@@ -208,7 +211,8 @@ func Mount(s httpx.Surfaces, sh Shell) {
 
 	opts := screens.Options{
 		Workspace: a.workspace.at, Home: "Dashboard",
-		PictureSource: sh.PictureSource,
+		PictureSource:  sh.PictureSource,
+		ComposedSource: sh.ComposedSource,
 	}
 	resources := s.Resources()
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Screen < resources[j].Screen })
@@ -253,12 +257,16 @@ func Mount(s httpx.Surfaces, sh Shell) {
 			"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
 	}
 
+	frameAt := a
+	if sh.Sessions == nil {
+		frameAt.sessions = route{}
+	}
 	shell := page.Shell{
 		Chrome: page.Chrome{
 			Brand: brand, Assets: a.assets.at, Stylesheet: sheet,
 			Scripts: ui.Controllers, SignIn: a.login.at,
 		},
-		Frame:     frame(a, nav, sh.Authorize, sh.storybook),
+		Frame:     frame(frameAt, nav, sh.Authorize, sh.storybook, resources...),
 		Tag:       "admin",
 		Back:      a.dashboard.at,
 		BackLabel: "Back to the dashboard",
@@ -299,7 +307,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 // stylesheet's dark rules are behind prefers-color-scheme, so a person whose
 // system is dark gets dark, and the inline snippet page.Serve adds sets the
 // attribute only when they have chosen one for themselves.
-func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybook func(context.Context) (export.Storybook, error)) page.Frame {
+func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybook func(context.Context) (export.Storybook, error), resources ...httpx.Resource) page.Frame {
 	return func(ctx context.Context, r page.Request, body []g.Node) g.Node {
 		gallery := false
 		if r.SignedIn && authorize != nil {
@@ -311,7 +319,7 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 		}
 		// One list of sections for both surfaces: the sidebar from the large breakpoint up, and the
 		// header's disclosure below it, where the sidebar is not shown.
-		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, authorize), r, gallery)
+		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, authorize), r, gallery, resources...)
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
 				Sidebar: []g.Node{components.Sidebar(navigation)},
@@ -329,20 +337,39 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 // two pages about the installation. What the caller may reach is decided
 // before this is called — see page.Navigation.Visible — so this renders a
 // list and hides nothing of its own.
-func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool) components.SidebarProps {
-	items := []components.SidebarItem{{Label: "Dashboard", Href: a.dashboard.at, Icon: "gear"}}
-	for _, entry := range visible {
-		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Screen, Icon: "file-text"})
+func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool, resources ...httpx.Resource) components.SidebarProps {
+	o := resource.Options{Locale: r.Locale}
+	sections := []components.SidebarSection{{ID: "overview", Items: []components.SidebarItem{
+		{Label: o.Text("admin.workspace.dashboard", "Dashboard"), Href: a.dashboard.at, Icon: "gear"},
+	}}}
+	work := components.SidebarSection{ID: "workspace", Label: o.Text("admin.workspace.workspace", "Workspace")}
+	for _, group := range workspaceSections(a, visible, resources, o) {
+		if group.ID == "platform" {
+			sections = append(sections, group)
+		} else {
+			work.Items = append(work.Items, group.Items...)
+		}
 	}
-	items = append(items, components.SidebarItem{Label: "Health", Href: a.health.at, Icon: "check-circle"})
-	// Use the same permission and composition selection as the direct routes.
+	if len(work.Items) > 0 {
+		sections = append(sections, work)
+	}
+	label := o.Text("admin.workspace.support", "Support")
+	if r.Tenant.Operator {
+		label = o.Text("admin.workspace.system", "System")
+	}
+	sections = append(sections, components.SidebarSection{ID: "system", Label: label,
+		Items: []components.SidebarItem{{Label: o.Text("admin.workspace.health", "Health"), Href: a.health.at, Icon: "check-circle"}},
+	})
 	if gallery {
-		items = append(items, components.SidebarItem{Label: "Components", Href: a.gallery.at, Icon: "info"})
+		sections = append(sections, components.SidebarSection{ID: "developer", Label: o.Text("admin.workspace.developer", "Developer tools"),
+			Items: []components.SidebarItem{{Label: o.Text("admin.workspace.components", "Components"), Href: a.gallery.at, Icon: "info"}},
+		})
 	}
-	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the
-	// colour that is legible on it is one the component owns.
+	if r.SignedIn && a.sessions.at != "" {
+		sections = append(sections, components.SidebarSection{ID: "account", Label: o.Text("admin.workspace.account", "Your account"), Items: []components.SidebarItem{{Label: o.Text("admin.workspace.sessions", "Sessions"), Href: a.sessions.at, Icon: "user"}}})
+	}
 	return components.SidebarProps{
-		Current: r.Path, NavigationLabel: "Admin navigation", Items: items,
+		Current: r.Path, NavigationLabel: o.Text("admin.workspace.navigation", "Admin navigation"), Sections: sections,
 		BrandLabel: fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
 	}
 }
@@ -350,31 +377,33 @@ func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery boo
 // header is the tenant, the caller, the theme switch and the way out — and, below the large
 // breakpoint where the sidebar is not shown, the disclosure that lists the same sections.
 func header(r page.Request, navigation components.SidebarProps) []g.Node {
+	o := resource.Options{Locale: r.Locale}
 	right := []g.Node{
 		components.ButtonWithSlots(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"data-theme-toggle": "", "aria-pressed": "false"}},
 			Variant: "ghost", Size: "sm", IconOnly: true,
-			AriaLabel: "Switch between the light and dark theme",
+			AriaLabel: o.Text("admin.workspace.theme", "Switch between the light and dark theme"),
 		}, components.ButtonSlots{Content: []g.Node{
 			components.Icon(components.IconProps{Name: "moon", Size: "sm"})}}),
 	}
 	if r.SignedIn {
 		right = append([]g.Node{
 			components.Text(components.TextProps{
-				Content: short(r.Principal.UserID.String()) + " · " + fallback(strings.Join(r.Principal.Roles, ", "), "no roles"),
+				Content: o.Text("admin.workspace.signed_in", "Signed in · %s", fallback(strings.Join(r.Principal.Roles, ", "), o.Text("admin.workspace.no_roles", "no roles"))),
 				Size:    chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
-			Label:          "Sign out", Variant: "secondary", Size: "sm",
+			Label:          o.Text("admin.workspace.sign_out", "Sign out"), Variant: "secondary", Size: "sm",
 		}))
 	}
 	return []g.Node{
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
 			components.SidebarDisclosure(navigation),
 			components.Text(components.TextProps{
-				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize})),
+				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize}),
+			components.Badge(components.BadgeProps{Label: workspaceScope(r.Tenant, o), Tone: "neutral"})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}
 }

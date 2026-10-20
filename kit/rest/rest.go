@@ -511,6 +511,9 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		if field.Widget == "richtext" {
 			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")
 		}
+		if field.Type == entity.TypePicture {
+			httpx.SetFieldPicture[T](read, field.Name)
+		}
 	}
 	if s.offers(httpx.CRUDUpdate) {
 		var writable []crud.Field
@@ -931,8 +934,9 @@ type CommandOptions struct {
 // that forgot the events extension is a route the boot gate cannot see.
 //
 // I is the request body and it is optional, so a command that takes no
-// arguments is a POST with no body at all; run is handed the zero I in that
-// case. A command whose argument is missing is refused by run, with
+// arguments is a POST with no body at all; explicit field defaults are applied
+// before run, or the zero I when no defaults are declared. Missing arguments
+// are refused by run, with
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
 //
@@ -988,6 +992,10 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	if err != nil {
 		panic("rest: " + err.Error())
 	}
+	prepare, emptyFault, err := commandDefaults[I](fields)
+	if err != nil {
+		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + err.Error())
+	}
 	// Endpoint is the command's own absolute address, which is the one path a
 	// shell can no longer derive for itself: once a command may live on the
 	// control-plane surface, {path}/{id}/{verb} stops being the rule. The
@@ -996,7 +1004,7 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
 		Endpoint: router.Prefix() + path,
-		Fields:   fields, Present: opts.Present,
+		Fields:   fields, EmptyInputFault: emptyFault, Present: opts.Present,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -1006,11 +1014,14 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 			// The same decode the PATCH route uses: one set of rules for "3" as an
 			// int and for null as an empty pointer, and a field the command does not
 			// take is refused rather than quietly dropped.
-			var in I
-			if _, err := merge(&in, fields, nil, values); err != nil {
+			in, err := prepare(values)
+			if err != nil {
 				return err
 			}
-			_, err := run(ctx, tx, id, in)
+			if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
+				return err
+			}
+			_, err = run(ctx, tx, id, in)
 			return err
 		},
 	})
@@ -1028,6 +1039,10 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 			return zero, err
 		}
 		return run(ctx, tx, id, in)
+	}
+	if slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
+		mountDefaultCommand(router, op, auth, opts.Collection, prepare, answer)
+		return
 	}
 	if opts.Collection {
 		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (T, error) {
@@ -1082,7 +1097,8 @@ func declareMapArgs(in reflect.Type, fields []crud.Field, declared *MapArgs) ([]
 		fields = append(fields, crud.Field{
 			Name: jsonNameOf(sf), Type: crud.TypeMap, Elem: declared.Elem,
 			Doc: cmp.Or(declared.Doc, sf.Tag.Get("doc")), Keys: slices.Clone(declared.Keys),
-			Index: sf.Index,
+			Default: sf.Tag.Get("default"),
+			Index:   sf.Index,
 		})
 	}
 	if len(args) > 0 {
@@ -1312,6 +1328,14 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		for _, f := range crud.Fields[T]() {
+			if f.Type == entity.TypePicture && (s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate)) && !slices.Contains(s.Immutable, f.Name) {
+				bad = fmt.Sprintf("picture field %q must be Immutable", f.Name)
+				break
+			}
+		}
 	}
 	if bad == "" {
 		bad = s.entryHintFault()
@@ -1642,7 +1666,20 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
-		if err := json.Unmarshal(encoded, target.FieldByIndex(f.Index).Addr().Interface()); err != nil {
+		field := target
+		for _, index := range f.Index {
+			if field.Kind() == reflect.Pointer {
+				if field.IsNil() {
+					if !field.CanSet() {
+						return nil, fmt.Errorf("%w: %s cannot initialize an unexported embedded field", crud.ErrInvalid, name)
+					}
+					field.Set(reflect.New(field.Type().Elem()))
+				}
+				field = field.Elem()
+			}
+			field = field.Field(index)
+		}
+		if err := json.Unmarshal(encoded, field.Addr().Interface()); err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
 		columns = append(columns, f.Column)
@@ -1777,7 +1814,7 @@ func immutableRefusal(name string) error {
 func names(fields []crud.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.Type != crud.TypeList {
+		if f.Type != crud.TypeList && f.Type != entity.TypePicture {
 			out = append(out, f.Name)
 		}
 	}

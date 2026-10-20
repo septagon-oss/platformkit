@@ -126,13 +126,15 @@ means. Ask the two tables two questions.
 
 `contracts/` is the whole surface: `Service` (notify, list, mark read), `PreferenceService`
 and `Preferences` (one person's channel switches and quiet window), `Senders` and
-`SenderAdmin` (the tenant's one sending address), `Decide` and the channel vocabulary, the
-ten names in `Events`, and the ports the composition owes the module (`RecipientLookup`,
+`SenderAdmin` (the tenant's one sending address), `DeviceService` (the devices a
+person registered), `Decide` and the channel vocabulary, the
+twelve names in `Events`, and the ports the composition owes the module (`RecipientLookup`,
 `HostLookup`, `Mailer`, `Senders`, `DKIMKeys`, `SenderVerifier`, `GrantChecker`, `Provider`).
 Consumers import that and `contracts/notificationtest` — a fake `Service`, a fake `Mailer`
-and `RunService`, the suite the real service also runs — and never `internal/`. The two
-faces the composition reaches are `notification.Settings()` and
-`notification.Senders(verifier, keys, grants)`; the two HTTP routes are hand-written, because a
+and `RunService`, the suite the real service also runs — and never `internal/`. The three
+faces the composition reaches are `notification.Settings()`,
+`notification.Devices(adapters)` and
+`notification.Senders(verifier, keys, grants)`; the five HTTP routes are hand-written, because a
 `rest.Spec` list route is the whole tenant and these rows are addressed to a person.
 
 There is no mobile counterpart to derive or compose here, and this module is why not: with
@@ -192,13 +194,14 @@ module never opened would be watching a door no module opened.
 One key: `sender:manage` (`contracts.PermissionSenderManage`, declared in `permissions` in `modules/notification/module.go`). It is the tenant's own sending address — `Put`, `Verify` and `Delete` in `internal/senders.go` — and it is defined here rather than beside a route because `kit/app` refuses a route whose permission no manifest defines. Its `Label` — `manage the tenant's sending address` — is the grant in words, which is what a refusal reads out and what `kit/module.Validate` refuses a permission for lacking.
 The key is checked inside the transaction, not only at a route: `Senders.administered` asks the composition's `contracts.GrantChecker` whether the caller's roles grant it, and refuses when the deployment wires no checker to answer. A deployment that grants it to nobody therefore has working sender commands refused, which is the failure it will notice.
 No nav entry names it: a nav entry decides who sees a link, and this key guards a mail identity, not a page.
-The module's two routes stay outside it, guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`) — both are about the caller, and a permission every signed-in person must hold decides nothing.
+The module's two notification routes stay outside it, guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`) — both are about the caller, and a permission every signed-in person must hold decides nothing. So do the three device routes in `internal/handler_devices.go` — `GET /notifications/devices` (`notification-device-list`), `POST /notifications/devices` (`notification-device-register`) and `POST /notifications/devices/{id}/remove` (`notification-device-remove`) — for the same reason in the same shape: the caller is the person the rows name, and `internal.owning` rechecks that inside the transaction each command writes in, refusing a principal that is not the recipient it was handed.
 The `SendMail` event subscription (`modules/notification/internal/mail.go`), and the one carrier subscription per wired provider (`internal.Carrier`), are run by the kernel and are not guarded by a permission.
 
 ### Object scope
 
 None. No call to `tenancy.Policy` and no `Resource.Kind` appears in the module.
 Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.PrincipalFrom`, never from a parameter, and `ListFor` and `MarkRead` take that id.
+`notification_devices` (migration 000058) is the same fact one level down: `RegisterDevice` writes the caller, `ListDevices` sets the recipient filter rather than reading it from the query, and `RemoveDevice` answers `crud.ErrNotFound` for a row that is not the caller's live device — somebody else's, an already-removed one and one that never existed are one answer, which is what lets the route stay `SignedIn`.
 `MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read one way — by the request id of the caller's own call — bounded to that tenant by the table's own row-level security; `direct_mail_deliveries` has no route and no permission of its own.
 
 ### Duties the module enforces itself
@@ -242,11 +245,23 @@ What this module does not do, stated here rather than only in the branch that le
 - **No templates per event per locale, and no HTML alternative.** `internal/templates` holds
   one text template, `contracts.Message.HTML` and `Lang` are read by the carrier and written
   by nobody, and `internal/mail.go` sets `Lang: "en"`; locale is the product's copy table.
-- **Mail is the only carrier that reaches a device.** The module can host a carrier for any
-  channel — `internal.Carrier` asks it and closes the ledger row around the answer — and
-  `contracts.Provider` is the shape, but nothing in this repository implements it: a wired
-  push carrier gets `Delivery.Target` empty, because device tokens, browser subscriptions
-  and tenant endpoint URLs live outside this module.
+- **Mail and push are the carriers that reach a device.** The module can host a carrier
+  for any channel — `internal.Carrier` asks it and closes the ledger row around the answer —
+  and `contracts.Provider` is the shape. `Deps.Push` is how a `kit/push` adapter becomes two
+  of those providers: the channel a platform reaches gets `internal.PushCarrier`, which
+  reads this person's live rows in the delivery's own transaction, sends one message per
+  device, deletes a row the provider reports gone beside the ledger row that closes the
+  channel, and publishes `notification.device_removed` with no actor because no person did
+  it. `ChannelWebhook` is carried by nobody here: a tenant's endpoint URL, its HMAC secret
+  and the product's decision to accept one are outside this module, and
+  `contracts.Delivery.Secret` waits for them.
+- **No device screen, and no composition that carries one.** The three routes
+  answer a client that already knows them; nothing renders them here, and
+  `apps/platformkit` wires no `push.Adapters`, so its registrations are refused
+  with "this installation carries no web push" until the product picks a platform
+  and hands over a VAPID pair. The person's own tokens are the export this table
+  owes, and erasure is not: a product that promises to forget somebody must delete
+  `notification_devices` by `(tenant_id, recipient_id)`, which no command here does.
 - **One expected revision, on one row.** `Put` refuses a copy that names a `Revision` the
   row has gone past — `crud.ErrConflict`, nothing written, published or returned; migration
   000057 keeps the counter and `Verify` advances it. A copy naming none (`Revision 0`, a
@@ -291,6 +306,17 @@ nil (`TestAnAbsentProviderClosesItsChannelAsSuppressed`).
 `TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
 never authenticated to. What a real relay answers — DKIM as the far end verifies it, and
 STARTTLS negotiation — is observed by no test here.
+
+Four cases read the device table:
+`TestARegisteredDeviceReceivesThePersonsPushNotice` (a device registered over its own
+route, the delivery event reaching the composed adapter with the recipient and the
+tenant on it), `TestAPushNoticeReachesTheCarrierAndAGoneDeviceIsRemoved` (the gone
+answer closes the ledger row `failed`, deletes the row and publishes the removal with no
+actor), `TestAnotherPersonsDeviceIsNotTheirsToRemove` (a member of the same tenant, a
+command naming no person and a person of another tenant refused without writing,
+publishing or losing a row) and `TestATokenReregisteredByAnotherPersonBecomesTheirs`
+(one live token is one row). Against them: no device screen, so no browser journey, and
+no live push service, so a provider's gone answer is a stand-in's.
 
 The list page is checked beside those: the declaration the live door asks before a byte
 leaves (`TestTheModuleOpensItsTwoNoticeEventsToTheirRecipientOnly`,

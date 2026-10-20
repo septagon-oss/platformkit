@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**Composed pictures have a private image door.** `modules/picture` validates inert
+SVG templates and complete values, authorizes each read in the request tenant
+transaction, and serves derived `entity.Picture` references through generated
+lists. The resource catalog advances from version 2 to 3 for the new scalar and
+optional `pictures.composedSource`; native shells must add authenticated SVG
+decoding before displaying it. Stored-file UUID images retain their meaning.
+
 **An unanswered COMMIT is resolved, not refused.** A keyed command marks its row in
 `platformkit_command_effect` (`migrations/000072`) inside its own transaction. A begun
 claim whose lease ran out is now read against it: a mark on that attempt's row answers 409

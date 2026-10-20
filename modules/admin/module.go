@@ -80,6 +80,8 @@ type Deps struct {
 	// fields existed: a shell with no file module has no door to name. See
 	// admincontracts.Pictures.
 	PictureSource string
+	// ComposedSource is the composed-picture address with a {reference} placeholder.
+	ComposedSource string
 
 	// Registration is the composition saying that a person with no account may
 	// make one. Nil — the default — means the sign-in page shows the password
@@ -167,10 +169,11 @@ func New(deps Deps) module.Module {
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
-				Token:         s.SystemToken(),
-				SignIn:        deps.SignIn,
-				PictureSource: deps.PictureSource,
-				Registration:  deps.Registration,
+				Token:          s.SystemToken(),
+				SignIn:         deps.SignIn,
+				PictureSource:  deps.PictureSource,
+				ComposedSource: deps.ComposedSource,
+				Registration:   deps.Registration,
 			})
 		},
 	}
