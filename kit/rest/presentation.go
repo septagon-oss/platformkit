@@ -35,21 +35,27 @@ func presentationFault(fields []crud.Field) string {
 	return ""
 }
 
-// pictureFault refuses the three ways a picture name could disagree with the
-// column it sits on: a value that is not a file id, a second reading of the same
-// column (`format`, `money`), and a `reference` pointing the id at a resource.
-//
-// A reference is refused rather than checked because a file id is not a resource
-// a screen may point at: `file` registers no resource of its own, so the boot
-// gate would refuse the composition for naming it and every installation that
-// mounted such a hint would fail to start. Saying it here names the declaration
-// that is wrong instead of refusing the whole composition for it.
+// pictureFault checks the scalar, read-only declaration and competing hints for
+// stored or composed images. A composed reference is never a file or resource id.
 func pictureFault(f crud.Field) string {
+	if f.Type == entity.TypeList && f.Elem == entity.TypePicture {
+		return fmt.Sprintf("field %q is a list of composed pictures, which has no presentation", f.Name)
+	}
+	if f.Type == entity.TypePicture && f.Present != "image" {
+		return fmt.Sprintf("picture field %q requires present:image", f.Name)
+	}
 	if !entity.PicturesAre(f.Present) {
 		return ""
 	}
 	list := f.Type == entity.TypeList && f.Elem == entity.TypeUUID
 	switch {
+	case f.Present == "image" && f.Type == entity.TypePicture:
+		if !f.ReadOnly {
+			return fmt.Sprintf("picture field %q must declare readOnly", f.Name)
+		}
+		if f.Widget != "" {
+			return fmt.Sprintf("picture field %q cannot declare a widget", f.Name)
+		}
 	case f.Present == "images" && list:
 	case f.Present != "images" && f.Type == entity.TypeUUID:
 	default:

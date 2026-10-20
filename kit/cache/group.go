@@ -63,8 +63,8 @@ type Group[V any] struct {
 	log     *slog.Logger
 
 	mu     sync.Mutex
-	order  []string
-	values map[string]composed[V]
+	order  []Key
+	values map[Key]composed[V]
 	flight singleflight.Group
 }
 
@@ -93,7 +93,7 @@ func GroupOf[V any](c Cache, scope Scope, ttl time.Duration, max int, compose fu
 	}
 	return &Group[V]{
 		cache: c, scope: scope, ttl: ttl, max: max, compose: compose,
-		log: slog.Default(), values: map[string]composed[V]{},
+		log: slog.Default(), values: map[Key]composed[V]{},
 	}
 }
 
@@ -127,10 +127,15 @@ func (g *Group[V]) Get(ctx context.Context, key Key) (V, error) {
 	if key.scope != g.scope {
 		return zero, fmt.Errorf("cache: group %s: %w (%s)", g.scope.ns, ErrScope, key)
 	}
+	return g.load(ctx, key, func(ctx context.Context) (V, error) { return g.compose(ctx, key) })
+}
+
+func (g *Group[V]) load(ctx context.Context, key Key, compose func(context.Context) (V, error)) (V, error) {
+	var zero V
 	if v, ok := g.local(ctx, key); ok {
 		return v, nil
 	}
-	shared, err, _ := g.flight.Do(key.name, func() (any, error) {
+	shared, err, _ := g.flight.Do(key.scope.tenant.String()+"/"+key.scope.ns+"/"+key.name, func() (any, error) {
 		// The second look is inside the singleflight: fifty concurrent requests
 		// for a cold entry ask the loader once, and the forty-nine that waited
 		// read what the one that went first composed.
@@ -148,7 +153,7 @@ func (g *Group[V]) Get(ctx context.Context, key Key) (V, error) {
 			// same outage the failed write below costs and is logged there.
 			under = Generation{}
 		}
-		v, err := g.compose(ctx, key)
+		v, err := compose(ctx)
 		if err != nil {
 			// A failed composition is remembered nowhere. Caching it would turn
 			// one blink into a TTL of refusals for this host, and 0028 §4's rule
@@ -156,14 +161,14 @@ func (g *Group[V]) Get(ctx context.Context, key Key) (V, error) {
 			// client and nothing else.
 			return zero, err
 		}
-		g.remember(key, v)
+		// A local reader must not see a value before its shared marker.
 		if err := g.cache.Set(ctx, key, markerValue, g.ttl, under); err != nil {
-			// The value is composed and this process holds it; a marker nobody
-			// can write costs the next request one lookup and costs this one
-			// nothing. Refusing here would be a cache deciding the answer.
+			// A marker write failure still serves the composed value; the next
+			// request checks the store again.
 			g.log.WarnContext(ctx, "cache: composed an entry this process cannot mark shared",
 				"entry", key.String(), "error", err)
 		}
+		g.remember(key, v)
 		return v, nil
 	})
 	if err != nil {
@@ -224,15 +229,15 @@ func (g *Group[V]) peek(key Key) (V, bool) {
 	var zero V
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	c, ok := g.values[key.name]
+	c, ok := g.values[key]
 	if !ok {
 		return zero, false
 	}
 	if !c.expires.After(time.Now()) {
-		g.forget(key.name)
+		g.forget(key)
 		return zero, false
 	}
-	g.touch(key.name)
+	g.touch(key)
 	return c.value, true
 }
 
@@ -241,8 +246,8 @@ func (g *Group[V]) peek(key Key) (V, bool) {
 func (g *Group[V]) remember(key Key, value V) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.values[key.name] = composed[V]{value: value, expires: time.Now().Add(g.ttl)}
-	g.touch(key.name)
+	g.values[key] = composed[V]{value: value, expires: time.Now().Add(g.ttl)}
+	g.touch(key)
 	for len(g.order) > g.max {
 		g.forget(g.order[0])
 	}
@@ -251,18 +256,18 @@ func (g *Group[V]) remember(key Key, value V) {
 func (g *Group[V]) drop(key Key) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.forget(key.name)
+	g.forget(key)
 }
 
 // forget is the eviction. Its whole cost is one recomposition on the next request
 // for this entry: no refusal, no dropped tenant, nothing closed.
-func (g *Group[V]) forget(name string) {
+func (g *Group[V]) forget(name Key) {
 	delete(g.values, name)
-	g.order = slices.DeleteFunc(g.order, func(n string) bool { return n == name })
+	g.order = slices.DeleteFunc(g.order, func(n Key) bool { return n == name })
 }
 
 // touch moves a name to the back of the recency list. The caller holds the lock.
-func (g *Group[V]) touch(name string) {
-	g.order = slices.DeleteFunc(g.order, func(n string) bool { return n == name })
+func (g *Group[V]) touch(name Key) {
+	g.order = slices.DeleteFunc(g.order, func(n Key) bool { return n == name })
 	g.order = append(g.order, name)
 }
