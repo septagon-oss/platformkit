@@ -40,9 +40,12 @@
 #       naming the ceiling it read them from, one that exposes none says so — so the ceiling is asked
 #       of every sample and the answer never depends on which layout the host happens to run.
 #   ci_browser_host_share.sh watch [INTERVAL_SECONDS] COMMAND [ARG...]
-#       Run COMMAND, printing `report` every INTERVAL_SECONDS (default 30) while it runs, and return
-#       COMMAND's own status. The highest /dev/shm usage seen is printed at the end, because a pool
-#       that filled and emptied between two samples would otherwise leave no trace.
+#       Run COMMAND, printing `report` once before it starts and then every INTERVAL_SECONDS (default
+#       30) while it runs, and return COMMAND's own status. The sample before COMMAND starts is the
+#       step's own rather than the sampler's: a suite answered before the scheduler gives the sampler
+#       its turn would otherwise leave a run watched by a sampler that never spoke, which is the
+#       silence this file refuses everywhere else. The highest /dev/shm usage seen is printed at the
+#       end, because a pool that filled and emptied between two samples would otherwise leave no trace.
 set -euo pipefail
 
 mem_report() { # the host's own memory, in MB available
@@ -159,10 +162,20 @@ watch_suite() { # <interval> <command...>: the suite in the foreground, one samp
     local interval="$1" samples sampler rc
     shift
     samples=$(mktemp)
+    # The first sample is taken here, in the step's own process, before COMMAND is started. Left to
+    # the loop below it belongs to a fork the scheduler may not run before a quick suite is over and
+    # this step has killed it — measured 24 refusals of 960 asks on a host at load 37, each printing a
+    # peak of unknown for a suite that ran. Sampling first also names the baseline: the host and the
+    # pool as the suite found them, which is what a death is compared against.
+    report
+    shm_used_kb >> "$samples"
     ( while :; do
+        # The wait answers to /dev/null: the sampler's reports belong to the step's log, but its
+        # sleeps do not. A sampler killed between two reports otherwise holds the step's output open
+        # for the rest of its interval, which is a step that finished its suite and then waits.
+        sleep "$interval" >/dev/null 2>&1
         report
         shm_used_kb >> "$samples"
-        sleep "$interval"
       done ) &
     sampler=$!
     # The sampler belongs to this step and dies with it: a cancelled step would otherwise leave a
