@@ -683,12 +683,12 @@ func TestAnAnonymousBrowserIsSentToTheSignInForm(t *testing.T) {
 		t.Errorf("the sign-in form = %d", code)
 	}
 	// A program asking for JSON keeps the problem document.
-	if code, location := visit(t, router, "/api/v1/note/notes", "application/json"); code != http.StatusForbidden || location != "" {
-		t.Errorf("an anonymous API call = %d to %q, want 403", code, location)
+	if code, location := visit(t, router, "/api/v1/note/notes", "application/json"); code != http.StatusUnauthorized || location != "" {
+		t.Errorf("an anonymous API call = %d to %q, want 401", code, location)
 	}
 	// And so does a program asking for a page's URL without asking for a page.
-	if code, location := visit(t, router, "/app", "application/json"); code != http.StatusForbidden || location != "" {
-		t.Errorf("an anonymous JSON call to a page = %d to %q, want 403", code, location)
+	if code, location := visit(t, router, "/app", "application/json"); code != http.StatusUnauthorized || location != "" {
+		t.Errorf("an anonymous JSON call to a page = %d to %q, want 401", code, location)
 	}
 }
 
