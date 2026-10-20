@@ -130,6 +130,13 @@ out="$(bash "$guard" watch 1 sh -c 'exit 3')" || rc=$?
 rc="${rc:-0}"
 [ "$rc" = 3 ] || fail "a suite that failed answered $rc instead of 3: $out"
 case "$out" in *"runner MemAvailable"*) ;; *) fail "watch sampled nothing while the suite ran: $out" ;; esac
+# The first sample belongs to the step, not to the sampler behind it, and the order is the whole
+# difference: a sampler left to take the first reading can be killed before the scheduler gives it a
+# turn, which leaves a quick run with no number at all. The interval is 60 so the only sample this
+# case can see is the one taken before COMMAND starts, and the suite's own line has to arrive last.
+out="$(bash "$guard" watch 60 sh -c 'echo the-suite-spoke')" || fail "watch refused a suite that only spoke"
+case "$out" in *"the-suite-spoke"*) ;; *) fail "watch ran no suite at all: $out" ;; esac
+case "$out" in "the-suite-spoke"*) fail "watch ran the suite before its first sample: $out" ;; esac
 out="$(bash "$guard" watch 1 sh -c 'sleep 1')" || fail "a suite that passed failed the step"
 case "$out" in *"peaked at"*"MB used"*) ;; *) fail "watch printed no peak for the pool it was watching: $out" ;; esac
 
