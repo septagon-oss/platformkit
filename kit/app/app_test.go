@@ -192,8 +192,8 @@ func TestBootMigratesAndServes(t *testing.T) {
 	if code, _ := get(t, cfg.Server.Addr, "elsewhere.test", "/api/v1/hello/me"); code != http.StatusNotFound {
 		t.Errorf("/me at an unknown host = %d, want 404", code)
 	}
-	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/hello/me"); code != http.StatusForbidden {
-		t.Errorf("/me as an anonymous caller = %d, want 403", code)
+	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/hello/me"); code != http.StatusUnauthorized {
+		t.Errorf("/me as an anonymous caller = %d, want 401", code)
 	}
 
 	cancel()

@@ -64,7 +64,7 @@ func mountStream(api *httpx.API, hub func() (*stream.Hub, error), log *slog.Logg
 		Summary:     "Watch declared events until the connection ends",
 		Description: "Server-Sent Events: one frame per notice, and no payload in any of them. Every topic must be declared by a composed module, and a topic whose policy names a grant this caller does not hold refuses the whole connection. The first frame is always a resync: what the caller knew before this connection is not what this connection can promise.",
 		Tags:        []string{"kernel"},
-		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusInternalServerError},
+		Errors:      []int{http.StatusBadRequest, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusInternalServerError},
 		Extensions:  map[string]any{httpx.StreamedResponseExtension: true},
 	}, httpx.SignedIn(), func(ctx context.Context, in *streamInput) (*huma.StreamResponse, error) {
 		built, err := hub()
