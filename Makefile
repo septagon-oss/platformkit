@@ -754,6 +754,14 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# suite started to be in it: a first sample only ever taken behind the suite leaves the baseline the
 	# guard compares against unwritten. Two shells and no interval actually waited, nothing listening.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_sampler_output_lifetime_test.py
+	# scripts/ci_sampler_pin_is_a_check_recipe_line_test.sh asks whether the line above is still in the
+	# recipe at all. tests/inventory.json files a scripts/ pin at tier push from its path alone and
+	# `go tool gotestsum --packages='./...'` sees no Python, so a recipe that dropped that line would
+	# leave an inventory row pointing at a case nothing runs — the same gap this goal's own wiring cases
+	# refuse for the lines they name. The case reads this goal's dry-run recipe for that exact command and
+	# refuses a recipe it was handed without it, so the file and the line that runs it cannot part. One dry
+	# run of this goal and one mutation of the recipe in memory; nothing is compiled, started or tested.
+	bash scripts/ci_sampler_pin_is_a_check_recipe_line_test.sh
 	bash scripts/make_check_count_default_test.sh
 	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
 	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —
