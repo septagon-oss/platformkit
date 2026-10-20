@@ -45,6 +45,8 @@ func Gallery() []Example {
 	}
 
 	entries := []Example{
+		ExampleWithChildren(info("pk-ui.component.standalone/default", "Layout", "Standalone / access page"), components.ComponentProps{}, []g.Node{components.Heading(components.HeadingProps{Text: "Sign in", Level: 1})}, components.Standalone),
+		ExampleWithChildren(info("pk-ui.component.disclosure/default", "Layout", "Disclosure / permissions"), components.DisclosureProps{Label: "Coordinator", Description: "Review permissions"}, []g.Node{components.Text(components.TextProps{Content: "Choose the permissions this role needs."})}, components.Disclosure),
 		ExampleOf(info("pk-ui.component.prose/default", "Type", "Prose / headings, lists, quote, code, table and figure"), components.ProseProps{HTML: `<h2 id="pk-opening">Opening</h2><p>Formatted <strong>body</strong> text.</p><ul><li>First<ul><li>Second<ul><li>Third</li></ul></li></ul></li></ul><blockquote><p>A quoted note.</p></blockquote><pre><code>fmt.Println(1)</code></pre><table><thead><tr><th>Day</th></tr></thead><tbody><tr><td>Monday</td></tr></tbody></table><figure data-missing-image="true"><figcaption>Image unavailable</figcaption></figure>`}, components.Prose),
 		ExampleOf(info("pk-ui.component.heading/display", "Sections", "Heading / independent size"), components.HeadingProps{Text: "A section with presence", Level: 2, Size: 1}, components.Heading),
 		ExampleOf(info("pk-ui.component.section-header/default", "Sections", "Section header"), components.SectionHeaderProps{Eyebrow: "Your workspace", Title: "Everything in its place", Description: "A shared introduction for composed pages.", Level: 2}, components.SectionHeader),

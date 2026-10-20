@@ -39,7 +39,9 @@ type Runtime struct {
 	// same way it refuses Run's — before anything is served. Reachable and wired
 	// are two claims, and only the first is this one's: New still asks the
 	// configuration which transport a mode would use, so a web composition names a
-	// constructor for its transport even though Start never calls it.
+	// constructor for its transport even though Start never calls it — the live door
+	// may, for the connections it serves, and only the door ever does for this role
+	// (heldTransport).
 	transport events.Transport
 
 	// working makes Work one-per-Runtime: a second scheduler on this connection
@@ -347,6 +349,11 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 			_ = rt.Close()
 			return nil, err
 		}
+		// The live door watches this transport rather than dialling one of its own.
+		// It is the transport the relay of this Runtime runs on — the one the outbox
+		// is published onto — and with the in-process transport anything else is a
+		// bus nobody publishes to (heldTransport).
+		a.observed.fill(rt.transport)
 	}
 	// The process's providers go up here, as the boot's last act and the only thing
 	// it changes in the process for good. Everything above this line can still be
@@ -407,14 +414,22 @@ func (r *Runtime) Work(ctx context.Context) error {
 // once the served requests and the work have stopped — an in-flight handler holds a
 // detached transaction on this pool, and a running Work keeps its ticks until its
 // own context is done. Work started after this returns is refused: what Close
-// released — the connection, the cache, and the transport whether Start built it
-// or the application injected it — is not reusable, so a new lifecycle starts from
-// a new App rather than from this Runtime again.
+// released — the connection, the cache, and the transport whether Start built it,
+// the application injected it or this Runtime's live door dialled it — is not
+// reusable, so a new lifecycle starts from a new App rather than from this Runtime
+// again.
 func (r *Runtime) Close() error {
 	r.closeOnce.Do(func() {
 		r.closed.Store(true)
 		if closer, ok := r.transport.(io.Closer); ok {
 			r.closeErr = closer.Close()
+		}
+		// The transport a live connection watched is released beside this Runtime's
+		// own, and only when the door dialled it: a role with a worker half was just
+		// closed above, and a role without one holds nothing but what it dialled
+		// itself (heldTransport).
+		if err := r.app.observed.release(); r.closeErr == nil {
+			r.closeErr = err
 		}
 		if err := r.conn.Close(); r.closeErr == nil {
 			r.closeErr = err

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -12,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/ui/document"
 )
 
 // Frame arranges a view's body inside a shell: the admin's sidebar and header
@@ -164,13 +167,31 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 		if status == 0 {
 			status = http.StatusOK
 		}
-		var body g.Node
-		if v.Bare {
-			body = Bare(v.Body)
+		// A live region re-reads its own address when the server tells it that its
+		// state moved, and the answer to that read is the region's contents and
+		// nothing else: htmx puts these bytes inside the element the region already
+		// is, so a document here would put a page inside a page and repeat the element
+		// holding the connection. The rows behind the two answers come from the same
+		// guarded read on the same route — the header changes the shape of an answer
+		// and none of its content — and a page that named no topic is answered as a
+		// whole document whatever the request carried, because nothing said it had a
+		// region to swap.
+		var out *httpx.Page
+		if len(v.Live) > 0 && regionRequested(ctx) {
+			out, err = RenderFragment(g.Group(v.Body), status)
 		} else {
-			body = s.Frame(ctx, r, v.Body)
+			region := v.Body
+			if len(v.Live) > 0 {
+				region = []g.Node{document.LiveRegion(streamConnect(v.Live), regionAddress(ctx, r), v.Live, v.Body)}
+			}
+			var body g.Node
+			if v.Bare {
+				body = Bare(region)
+			} else {
+				body = s.Frame(ctx, r, region)
+			}
+			out, err = Render(Document(s.Chrome, r, v, body), status)
 		}
-		out, err := Render(Document(s.Chrome, r, v, body), status)
 		if err != nil {
 			return nil, err
 		}
@@ -233,6 +254,50 @@ func read(ctx context.Context, c Chrome) Request {
 	return r
 }
 
+// regionRequested says the fetch in hand is a region asking for its own contents:
+// htmx puts HX-Request on every fetch it makes, and two of those fetches ask for a
+// page rather than a piece of one.
+//
+// A boosted link (hx-boost) is the browser navigating with the address in the bar,
+// and a history restore is the controller replaying a GET for a document the person
+// is going back to: both expect a document, and answering either with a fragment
+// would leave a person looking at a bare list where a page used to be. The region's
+// own refresh is neither — it is the plain fetch htmx makes when the controller
+// triggers it, and it is the only fetch of this address that wants the swap answer.
+//
+// The header is a client's claim, read for one decision and one only — whether to
+// wrap a body in a document — and never for who may see it, which the route's own
+// guard decided before this line.
+func regionRequested(ctx context.Context) bool {
+	req, ok := httpx.RequestFrom(ctx)
+	if !ok || req.Header.Get("HX-Request") != "true" {
+		return false
+	}
+	return req.Header.Get("HX-Boosted") != "true" &&
+		req.Header.Get("HX-History-Restore-Request") != "true"
+}
+
+// streamConnect is the address a live region opens its connection at: the
+// kernel's live door, with this page's topics named once in its query.
+func streamConnect(topics []string) string {
+	return httpx.StreamAddress + "?" + url.Values{"topics": {strings.Join(topics, ",")}}.Encode()
+}
+
+// regionAddress is the address a refresh re-reads: the one the region was drawn
+// at, paging included, so a person on the second page of a list is not returned
+// to the first by somebody else's notice. The composed value has to pass the
+// kernel's own local-path rule to be used: the path and the query are the
+// caller's bytes, and a refresh must not be pointed at another site.
+func regionAddress(ctx context.Context, r Request) string {
+	req, ok := httpx.RequestFrom(ctx)
+	if !ok || req.URL.RawQuery == "" {
+		return r.Path
+	}
+	if paged := r.Path + "?" + req.URL.RawQuery; httpx.LocalPath(paged) {
+		return paged
+	}
+	return r.Path
+}
 // refusal is a handler's error read as the verdict it is: its own problem, or the 500
 // standing in for anything else. The verdict is handed over whole rather than flattened to
 // a status and a sentence, because the two fields a person's page needs are precisely the

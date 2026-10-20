@@ -179,6 +179,15 @@
       "": "Demasiados pedidos"
     }
   },
+  "fault.VERSION_UNUSABLE.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Versão indisponível",
+    "plural": {
+      "": "Versão indisponível"
+    }
+  },
   "fault.404": {
     "references": [
       "ui/page/fault.go"
@@ -377,6 +386,15 @@
     "translation": "Já tem o que isto pede; a regra desta registo recusou-o: %s",
     "plural": {
       "": "Já tem o que isto pede; a regra desta registo recusou-o: %s"
+    }
+  },
+  "fault.VERSION_UNUSABLE": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Uma versão é numerada a partir de 1, e o número pedido não é uma versão deste registo.",
+    "plural": {
+      "": "Uma versão é numerada a partir de 1, e o número pedido não é uma versão deste registo."
     }
   },
   "fault.retry": {

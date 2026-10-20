@@ -38,6 +38,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
+	"github.com/septagon-oss/platformkit/modules/history"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
@@ -191,7 +192,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell, provision, grants, face := sentence(cfg, served)
+	a, ask, shell, provision, grants, face, _ := sentence(cfg, served)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -257,15 +258,16 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	return reference{app: a, once: once, composition: c}
 }
 
-// sentences is the one statement of this application's composition, and the five
+// sentences is the one statement of this application's composition, and the six
 // values its own chrome reads: the reach an ask has here, which the access module
 // fills once the services it joins exist, the shell of the ask's two pages, which
 // is drawn from the skin the resolved composition answered with, the seed's
 // tenant-creation hook, which composeReference fills from the resolved plan for
 // the reason seeding gives, the permission catalogue the roles hook seeds from,
-// which the same line fills for the same reason, and the workspace's own face,
-// whose mount is part of the sentence below while the answers it serves come out
-// of the plan.
+// which the same line fills for the same reason, the workspace's own face, whose
+// mount is part of the sentence below while the answers it serves come out of the
+// plan, and the counting door's face, whose mount the same line takes while its
+// count arrives from the resources the plan resolved.
 // that boots the reference application goes through it: `run` and `start`, which
 // hand the whole thing to pkit, and appOptions, which is what a test in this
 // repository boots the same composition with when it wants the handler rather
@@ -275,14 +277,18 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 // `served` is the copy that one sentence is worded from: for every caller in this
 // binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
 // different value to name, and sentences is what everybody else calls.
-func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace) {
+func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace, *summaryFace) {
 	ask, shell, provision, grants, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}
+	counts := &summaryFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg, grants),
 			user.Module,
 			tenant.Module,
 			notification.Module,
+			// The chrome the module above draws its own list in, named beside it: the
+			// screen is notification's and the shell is this product's.
+			workspace(),
 			auth.Module,
 			auth.EmailRegistration,
 			// The door a tenant's identity provider provisions through, which needs
@@ -292,6 +298,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 			// the page: the authorizer its controls ask is the auth service above it.
 			media(),
 			file.Module,
+			history.Module,
 			task.Module,
 			billing.Module,
 			// The translations of the module below: one table, no routes and no
@@ -320,14 +327,14 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
-		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
-	return a, ask, shell, provision, grants, face
+		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount, counts.mount))
+	return a, ask, shell, provision, grants, face, counts
 }
 
 // sentences is that sentence in the copy this installation ships, for every caller
 // with no opinion about the words — including the cases that take a module out of
 // the list to ask what the composition resolves to without its provider.
-func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace) {
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace, *summaryFace) {
 	return sentence(cfg, catalogues(), without...)
 }
 

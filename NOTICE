@@ -37,6 +37,19 @@ Third-party assets shipped to the browser:
                              because a reader of this repository should know
                              what the one third-party byte the browser runs is.
 
+  ui/assets/js/htmx-ext-sse-2.2.4.min.js
+                             htmx-ext-sse 2.2.4 (package dist/sse.min.js), by
+                             Big Sky Software, under the same Zero-Clause BSD
+                             licence as htmx, whose full text is below. The
+                             package's own LICENSE file carries that text and
+                             the copyright line "Copyright (c) 2023, Alexander
+                             Petros". Vendored unmodified, and the same bytes
+                             htmx.org 2.0.8 releases as dist/sse.min.js, so the
+                             extension in this tree is byte-for-byte the one
+                             that shipped beside the htmx build served above.
+                             A page loads it only where it renders a live
+                             region; it is pinned with htmx's licence below.
+
   ui/icon/icon.go            vector path data from phosphor-icons/core,
                              Copyright (c) 2023 Phosphor Icons, under the MIT
                              licence. Its full text is below; the MIT licence
@@ -44,6 +57,25 @@ Third-party assets shipped to the browser:
 
 --------------------------------------------------------------------------------
 htmx — Zero-Clause BSD
+
+The same licence covers ui/assets/js/htmx-ext-sse-2.2.4.min.js, the SSE
+extension of the same package family (npm htmx-ext-sse 2.2.4, file
+dist/sse.min.js, tarball sha256
+90b46f5ab915ba2f64e6348448c8dba509277a47e15c125ffb65754eb4f6b5dc,
+https://registry.npmjs.org/htmx-ext-sse/-/htmx-ext-sse-2.2.4.tgz), whose
+shipped LICENSE file carries the text below with the copyright line
+"Copyright (c) 2023, Alexander Petros". The two served bytes are pinned by
+SHA-256, in the shape the calendar and map assets below are pinned in:
+
+js/htmx.min.js                 c641c51eb7b610244083536d1978935a0b65886d22f602afa224a78f99163b6d
+js/htmx-ext-sse-2.2.4.min.js   98a46496de0c3605fbffdce9167ba427bdd9553184f83f149c261891a92c0136
+
+The htmx bytes are the released 2.0.8 with two configuration defaults turned off
+before the file was vendored — allowEval and allowScriptTags — which is why its
+digest is this tree's own rather than the registry's, and why the SSE extension
+is pinned as the unmodified upstream file it is: it carries the digest the
+registry answers for dist/sse.min.js, and any edit to it must restate this line
+in the same commit.
 
 Permission to use, copy, modify, and/or distribute this software for
 any purpose with or without fee is hereby granted.
