@@ -88,7 +88,9 @@ test('the page that says an access request was sent keeps its sentences to a rea
   // The ask is waited for as the 303 `ui/page/access.go` answers with, for the reason
   // and the measured numbers written out in `e2e/refusal-floor.spec.ts` — this case
   // was the second one CI run 503 refused, at 15:45:26Z, on the URL alone.
-  const asked = person.waitForResponse((r) => r.url().endsWith('/app/access-request'), { timeout: 30_000 });
+  const asked = person.waitForResponse(response =>
+    new URL(response.url()).pathname === '/app/access-request'
+      && response.request().method() === 'POST', { timeout: 30_000 });
   await person.locator('form[action="/app/access-request"] button[type="submit"]').click();
   const answer = await asked;
   // The body of a redirect is not readable — Playwright says so — so the sentence a

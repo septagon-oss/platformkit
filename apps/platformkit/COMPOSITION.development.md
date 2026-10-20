@@ -178,6 +178,7 @@ pkit: subject.Module defines the permission subject:export and subject:erase.
 pkit: subject.Module emits subject.erased, subject.export_requested and subject.export_ready.
 pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
+pkit: admin.Module uses usercontracts.Service from user.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
 pkit: admin.Module uses admincontracts.Pictures from product.Module.
 pkit: admin.Module uses admincontracts.Locale from product.Module.
