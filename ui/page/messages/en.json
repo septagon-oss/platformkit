@@ -199,6 +199,16 @@
       "": "This page promises nobody standing here is remembered."
     }
   },
+  "fault.VERSION_UNUSABLE": {
+    "references": [
+      "kit/rest/history.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "A version is numbered from 1, and the number asked for is not one of this record's versions.",
+    "plural": {
+      "": "A version is numbered from 1, and the number asked for is not one of this record's versions."
+    }
+  },
   "fault.ask": {
     "references": [
       "ui/page/fault.go"
@@ -404,6 +414,15 @@
     "translation": "Too Many Requests",
     "plural": {
       "": "Too Many Requests"
+    }
+  },
+  "fault.VERSION_UNUSABLE.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Version unavailable",
+    "plural": {
+      "": "Version unavailable"
     }
   },
   "fault.400.title": {
