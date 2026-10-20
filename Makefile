@@ -71,6 +71,24 @@ PLATFORMKIT_VALKEY_PORT ?= 6379
 PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_VALKEY_PORT)' 2>/dev/null && echo redis://localhost:$(PLATFORMKIT_VALKEY_PORT))
 export PLATFORMKIT_TEST_VALKEY_URL
 
+# The secret service kit/secrets' OpenBao adapter speaks, and the token its dev mode
+# answers to. Like PLATFORMKIT_TEST_VALKEY_URL it is exported only when the service is
+# there: kit/secrets boots and runs every case without a server, so a checkout with no
+# OpenBao running takes the named skip rather than a failure, and whoever exports this
+# variable at a store that is not answering gets failures instead — an address you set
+# yourself is a promise.
+#
+# The question asked of the port is OpenBao's own `sys/seal-status`, and not whether
+# anything answers: this stack's ports come from whoever starts it, two services can
+# be handed the same one, and a suite dialled at whatever else happens to be published
+# there reads a mail catcher's 404 as a broken adapter. The space after the colon is
+# what a pretty-printing client writes and nothing writes the other way, so the
+# pattern admits both.
+PLATFORMKIT_OPENBAO_PORT ?= 8200
+PLATFORMKIT_TEST_OPENBAO_URL ?= $(shell timeout 3 curl -fs http://localhost:$(PLATFORMKIT_OPENBAO_PORT)/v1/sys/seal-status 2>/dev/null | grep -q '"initialized": *true' && echo http://localhost:$(PLATFORMKIT_OPENBAO_PORT))
+export PLATFORMKIT_TEST_OPENBAO_URL
+export PLATFORMKIT_TEST_OPENBAO_TOKEN ?= dev-only-unseal-token
+
 # Local feedback uses Go's package/dependency cache. The full check below runs
 # fresh at TEST_COUNT's default of -count=1, independently of these local
 # selectors or an earlier test goal: only a caller that sets TEST_COUNT itself
@@ -725,6 +743,25 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# answered the ceiling question only when it had no numbers to give would leave this red and that
 	# host's log silent. Two fixture trees, one copied recipe, nothing started.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_guard_readable_cgroup_test.py
+	# scripts/ci_sampler_output_lifetime_test.py asks the sampler wrapped around a suite the one question
+	# the suite's own verdict cannot answer: when the watched suite finishes, does the sampler let go of
+	# its output? The guard sleeps between samples, and a sleep holds the write end of the suite's output
+	# pipe open, so a sampler still asleep when its suite died keeps a reader waiting for the sleep rather
+	# than for the suite — and the reader that waits for end-of-output never reaches the status the suite
+	# exited with. The case runs the guard's `watch` over a suite that prints one line and exits, once at
+	# the passing status and once at a refusal, at a sampling interval of thirty seconds, and requires the
+	# output to close within ten, carrying that line and that status, and the sample taken before the
+	# suite started to be in it: a first sample only ever taken behind the suite leaves the baseline the
+	# guard compares against unwritten. Two shells and no interval actually waited, nothing listening.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_sampler_output_lifetime_test.py
+	# scripts/ci_sampler_pin_is_a_check_recipe_line_test.sh asks whether the line above is still in the
+	# recipe at all. tests/inventory.json files a scripts/ pin at tier push from its path alone and
+	# `go tool gotestsum --packages='./...'` sees no Python, so a recipe that dropped that line would
+	# leave an inventory row pointing at a case nothing runs — the same gap this goal's own wiring cases
+	# refuse for the lines they name. The case reads this goal's dry-run recipe for that exact command and
+	# refuses a recipe it was handed without it, so the file and the line that runs it cannot part. One dry
+	# run of this goal and one mutation of the recipe in memory; nothing is compiled, started or tested.
+	bash scripts/ci_sampler_pin_is_a_check_recipe_line_test.sh
 	bash scripts/make_check_count_default_test.sh
 	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
 	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —
@@ -1015,7 +1052,7 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres, NATS, Valkey, the object store and the mail catcher, and wait for all five to be healthy
+up: ## Start Postgres, NATS, Valkey, the secret store, the object store and the mail catcher, and wait for all six to be healthy
 	docker compose up -d --wait
 
 # The collector is a profile rather than a second service in `up` because the
