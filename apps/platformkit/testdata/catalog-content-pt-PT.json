@@ -35,7 +35,11 @@
       "maxLength": 200,
       "required": true,
       "doc": "Headline",
-      "translatable": true
+      "translatable": true,
+      "presentation": {
+        "label": "Título",
+        "help": "O que uma lista e um cabeçalho mostram"
+      }
     },
     {
       "name": "body",
@@ -44,7 +48,11 @@
       "maxLength": 262144,
       "hideList": true,
       "doc": "The content itself, in Markdown",
-      "translatable": true
+      "translatable": true,
+      "presentation": {
+        "label": "Corpo",
+        "help": "O conteúdo em si, em Markdown"
+      }
     },
     {
       "name": "coverImageId",
@@ -67,7 +75,12 @@
       "default": "post",
       "doc": "page or post",
       "presentation": {
-        "label": "Tipo"
+        "label": "Tipo",
+        "help": "Página ou publicação",
+        "enumLabels": {
+          "page": "Página",
+          "post": "Publicação"
+        }
       }
     },
     {
@@ -82,6 +95,13 @@
       "default": "draft",
       "doc": "Lifecycle state",
       "presentation": {
+        "label": "Estado",
+        "help": "Estado do ciclo de vida",
+        "enumLabels": {
+          "archived": "Arquivado",
+          "draft": "Rascunho",
+          "published": "Publicado"
+        },
         "enumTones": {
           "archived": "neutral",
           "draft": "neutral",
@@ -95,7 +115,8 @@
       "widget": "datetime",
       "doc": "When this was published",
       "presentation": {
-        "label": "Publicada"
+        "label": "Publicada",
+        "help": "Momento em que foi publicado"
       }
     },
     {
@@ -103,6 +124,8 @@
       "type": "uuid",
       "doc": "The user who created this",
       "presentation": {
+        "label": "Autor",
+        "help": "O utilizador que criou este conteúdo",
         "visibility": "detail",
         "reference": {
           "resource": "user/user"
@@ -115,6 +138,10 @@
       "doc": "This row's own write count, from 1"
     }
   ],
+  "name": {
+    "one": "Content item",
+    "other": "Content items"
+  },
   "presentation": {
     "deck": {
       "queue": [

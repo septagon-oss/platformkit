@@ -35,7 +35,11 @@
       "maxLength": 200,
       "required": true,
       "doc": "Headline",
-      "translatable": true
+      "translatable": true,
+      "presentation": {
+        "label": "Title",
+        "help": "Headline"
+      }
     },
     {
       "name": "body",
@@ -44,7 +48,11 @@
       "maxLength": 262144,
       "hideList": true,
       "doc": "The content itself, in Markdown",
-      "translatable": true
+      "translatable": true,
+      "presentation": {
+        "label": "Body",
+        "help": "The content itself in Markdown"
+      }
     },
     {
       "name": "coverImageId",
@@ -67,7 +75,12 @@
       "default": "post",
       "doc": "page or post",
       "presentation": {
-        "label": "Type"
+        "label": "Type",
+        "help": "Page or post",
+        "enumLabels": {
+          "page": "Page",
+          "post": "Post"
+        }
       }
     },
     {
@@ -82,6 +95,13 @@
       "default": "draft",
       "doc": "Lifecycle state",
       "presentation": {
+        "label": "Status",
+        "help": "Lifecycle state",
+        "enumLabels": {
+          "archived": "Archived",
+          "draft": "Draft",
+          "published": "Published"
+        },
         "enumTones": {
           "archived": "neutral",
           "draft": "neutral",
@@ -95,7 +115,8 @@
       "widget": "datetime",
       "doc": "When this was published",
       "presentation": {
-        "label": "Published"
+        "label": "Published",
+        "help": "When this was published"
       }
     },
     {
@@ -103,6 +124,8 @@
       "type": "uuid",
       "doc": "The user who created this",
       "presentation": {
+        "label": "Author",
+        "help": "The user who created this",
         "visibility": "detail",
         "reference": {
           "resource": "user/user"
@@ -115,6 +138,10 @@
       "doc": "This row's own write count, from 1"
     }
   ],
+  "name": {
+    "one": "Content item",
+    "other": "Content items"
+  },
   "presentation": {
     "deck": {
       "queue": [
