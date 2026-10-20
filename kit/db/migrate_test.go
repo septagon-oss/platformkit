@@ -297,21 +297,28 @@ const migrationKeyGiveBack = 5 * time.Second
 // queue time they can count.
 const migrationPoll = 10 * time.Millisecond
 
-// compositionKeyHolds counts the sessions of *this* test's own schema that hold the
+// holdsCompositionKey says whether a session of *this* test's own schema holds the
 // composition key right now. The key is the pair the run takes it under —
 // (compositionLockKey, the OID of the namespace its own session resolves to), which is
 // what kit/db/migrate.go's holdCompositionLock passes to
 // `pg_advisory_lock($1::int, $2::oid::int)` and what pg_locks therefore spells
 // classid = compositionLockKey, objid = that namespace, objsubid = 2 for the two-key
 // form (the same reading kit/db/composition_lock_oid_test.go asserts). Before T-0314 the
-// run locked the single key, and this read folded (classid, objid) into one int; that
-// predicate answers nothing at all now, which is what made
+// run locked the single key, and a read that folded (classid, objid) into one int
+// answers nothing at all now, which is what made
 // TestMigrationCancellationRollsBackAndReleasesTheLock report a run that "returned first"
 // while it was still inside its pg_sleep. dbtest makes application_name the schema
 // (kit/db/dbtest/dbtest.go), so the read is of this run's session and of nothing else:
 // waiting behind another namespace's queue is then something the case can see, which is
 // what stops that queue from being read as a broken cancellation.
-func compositionKeyHolds(t *testing.T, admin sqlDB) int {
+//
+// The count is the reading and the bool is the answer: nothing here asks how many
+// sessions hold the key, only whether any do, so the count stays inside this one read
+// rather than becoming a second predicate that could disagree with it. The tree's lock
+// observation guard runs these exact bytes against a live server — this namespace's
+// hold, another namespace's, the single-key form, none — so a change to the predicate
+// below is answered by that guard and its mutations, not by a re-read.
+func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
 	t.Helper()
 	var held int
 	scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
@@ -319,17 +326,10 @@ func compositionKeyHolds(t *testing.T, admin sqlDB) int {
 			AND l.classid = `+strconv.FormatInt(compositionLockKey, 10)+`::oid
 			AND l.objid = coalesce(to_regnamespace(a.application_name), 0)::oid
 			AND a.application_name = current_setting('search_path')`, &held)
-	return held
+	return held > 0
 }
 
-// holdsCompositionKey says whether that count is anything: this schema's own sessions,
-// and no other namespace's queue.
-func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
-	t.Helper()
-	return compositionKeyHolds(t, admin) > 0
-}
-
-// awaitKeyReleased answers with how many sessions of this test still hold the
+// awaitKeyReleased says whether this test's sessions are out of the
 // composition key, giving up at migrationKeyGiveBack. This is the claim the case's name
 // makes — that a cancelled run releases the lock — read off pg_locks rather than
 // inferred from how quickly the retry below happens to get its turn: a session still
@@ -337,16 +337,16 @@ func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
 // reading origin/main's `awaitKeyReleased` reached for, at the key the merged runner
 // actually takes: the `l.objid = 7240101` it asked was the single-key form, whose half
 // this namespace is now, and which answers nothing at all since T-0314.
-func awaitKeyReleased(t *testing.T, admin sqlDB) int {
+func awaitKeyReleased(t *testing.T, admin sqlDB) bool {
 	t.Helper()
 	deadline := time.Now().Add(migrationKeyGiveBack)
-	for {
-		held := compositionKeyHolds(t, admin)
-		if held == 0 || time.Now().After(deadline) {
-			return held
+	for holdsCompositionKey(t, admin) {
+		if time.Now().After(deadline) {
+			return false
 		}
 		time.Sleep(migrationPoll)
 	}
+	return true
 }
 
 // runIsInsideItsFile says the run reached the SQL of its file, on the server's own
@@ -428,8 +428,8 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	if err := <-done; err == nil {
 		t.Fatal("migration ignored cancellation")
 	}
-	if held := awaitKeyReleased(t, admin); held != 0 {
-		t.Fatalf("%d sessions of this test still hold the composition key after the run returned: the cancelled session took it and never gave it back", held)
+	if !awaitKeyReleased(t, admin) {
+		t.Fatal("sessions of this test still hold the composition key after the run returned: the cancelled session took it and never gave it back")
 	}
 	files["1_slow.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE slow (value int); INSERT INTO slow VALUES (1)")}
 	// The retry queues for the same namespace's key the way every other migration run
