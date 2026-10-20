@@ -168,7 +168,7 @@
       "": "Roles this person holds in this tenant"
     }
   },
-  "field.user.user.password.help":   {
+  "field.user.user.password.help": {
     "references": [
       "modules/user/internal/handler.go"
     ],
@@ -177,7 +177,7 @@
       "": "The new password; at least twelve characters"
     }
   },
-  "field.user.user.roles":   {
+  "field.user.user.roles": {
     "references": [
       "modules/user/contracts/user.go"
     ],
@@ -186,7 +186,7 @@
       "": "Roles"
     }
   },
-  "field.user.user.displayName.help":   {
+  "field.user.user.displayName.help": {
     "references": [
       "modules/user/contracts/user.go"
     ],
@@ -689,6 +689,24 @@
     "translation": "The revision the current choice was read at — a stale one writes nothing",
     "plural": {
       "": "The revision the current choice was read at — a stale one writes nothing"
+    }
+  },
+  "hints.user/user.description": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Invite and manage the people who can access this workspace.",
+    "plural": {
+      "": "Invite and manage the people who can access this workspace."
+    }
+  },
+  "hints.user/user.emptyDescription": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Add a person, then assign the role they need.",
+    "plural": {
+      "": "Add a person, then assign the role they need."
     }
   }
 }

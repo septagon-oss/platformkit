@@ -314,5 +314,59 @@
     "plural": {
       "": "Updated at"
     }
+  },
+  "screens.empty_collection": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "No %s yet.",
+    "plural": {
+      "": "No %s yet."
+    }
+  },
+  "screens.history": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "History",
+    "plural": {
+      "": "History"
+    }
+  },
+  "screens.history.first": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "The record as it was first written.",
+    "plural": {
+      "": "The record as it was first written."
+    }
+  },
+  "screens.history.restore": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "Restore this version",
+    "plural": {
+      "": "Restore this version"
+    }
+  },
+  "screens.history.restored": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "Restored from",
+    "plural": {
+      "": "Restored from"
+    }
+  },
+  "screens.history.unchanged": {
+    "references": [
+      "ui/resource/history.go"
+    ],
+    "translation": "No field changed.",
+    "plural": {
+      "": "No field changed."
+    }
   }
 }

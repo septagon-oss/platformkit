@@ -231,7 +231,7 @@
       "": "When the task was resolved"
     }
   },
-  "field.task.task.id":   {
+  "field.task.task.id": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -240,7 +240,7 @@
       "": "Id"
     }
   },
-  "field.task.task.revision":   {
+  "field.task.task.revision": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -249,7 +249,7 @@
       "": "Revision"
     }
   },
-  "field.task.task.revision.help":   {
+  "field.task.task.revision.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -787,6 +787,24 @@
     "translation": "Critical",
     "plural": {
       "": "Critical"
+    }
+  },
+  "hints.task/task.description": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Set priorities, assign work and keep track of what is due.",
+    "plural": {
+      "": "Set priorities, assign work and keep track of what is due."
+    }
+  },
+  "hints.task/task.emptyDescription": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Create a task to give the work a clear next step.",
+    "plural": {
+      "": "Create a task to give the work a clear next step."
     }
   }
 }

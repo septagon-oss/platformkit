@@ -1211,5 +1211,531 @@
     "plural": {
       "": "%d"
     }
+  },
+  "admin.workspace.workspace": {
+    "references": [
+      "modules/admin/internal/workspace.go",
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Workspace",
+    "plural": {
+      "": "Workspace"
+    }
+  },
+  "admin.workspace.people": {
+    "references": [
+      "modules/admin/internal/workspace.go"
+    ],
+    "translation": "People",
+    "plural": {
+      "": "People"
+    }
+  },
+  "admin.workspace.platform_operations": {
+    "references": [
+      "modules/admin/internal/workspace.go"
+    ],
+    "translation": "Platform operations",
+    "plural": {
+      "": "Platform operations"
+    }
+  },
+  "admin.workspace.roles_purpose": {
+    "references": [
+      "modules/admin/internal/workspace.go"
+    ],
+    "translation": "Review permissions and decide who can do what.",
+    "plural": {
+      "": "Review permissions and decide who can do what."
+    }
+  },
+  "admin.workspace.tenants_purpose": {
+    "references": [
+      "modules/admin/internal/workspace.go"
+    ],
+    "translation": "Review tenant status and open the workspace you need.",
+    "plural": {
+      "": "Review tenant status and open the workspace you need."
+    }
+  },
+  "admin.workspace.open": {
+    "references": [
+      "modules/admin/internal/workspace.go"
+    ],
+    "translation": "Open %s in this workspace.",
+    "plural": {
+      "": "Open %s in this workspace."
+    }
+  },
+  "admin.workspace.dashboard": {
+    "references": [
+      "modules/admin/internal/pages.go",
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Dashboard",
+    "plural": {
+      "": "Dashboard"
+    }
+  },
+  "admin.workspace.support": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Support",
+    "plural": {
+      "": "Support"
+    }
+  },
+  "admin.workspace.system": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "System",
+    "plural": {
+      "": "System"
+    }
+  },
+  "admin.workspace.health": {
+    "references": [
+      "modules/admin/internal/pages.go",
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Health",
+    "plural": {
+      "": "Health"
+    }
+  },
+  "admin.workspace.developer": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Developer tools",
+    "plural": {
+      "": "Developer tools"
+    }
+  },
+  "admin.workspace.components": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Components",
+    "plural": {
+      "": "Components"
+    }
+  },
+  "admin.workspace.account": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Your account",
+    "plural": {
+      "": "Your account"
+    }
+  },
+  "admin.workspace.sessions": {
+    "references": [
+      "modules/admin/internal/sessions.go",
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Sessions",
+    "plural": {
+      "": "Sessions"
+    }
+  },
+  "admin.workspace.navigation": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Admin navigation",
+    "plural": {
+      "": "Admin navigation"
+    }
+  },
+  "admin.workspace.signed_in": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Signed in · %s",
+    "plural": {
+      "": "Signed in · %s"
+    }
+  },
+  "admin.workspace.no_roles": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "no roles",
+    "plural": {
+      "": "no roles"
+    }
+  },
+  "admin.workspace.theme": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Switch between the light and dark theme",
+    "plural": {
+      "": "Switch between the light and dark theme"
+    }
+  },
+  "admin.workspace.sign_out": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Sign out",
+    "plural": {
+      "": "Sign out"
+    }
+  },
+  "admin.workspace.operator": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Platform operator",
+    "plural": {
+      "": "Platform operator"
+    }
+  },
+  "admin.workspace.tenant_workspace": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Tenant workspace",
+    "plural": {
+      "": "Tenant workspace"
+    }
+  },
+  "admin.workspace.your_workspace": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Your workspace",
+    "plural": {
+      "": "Your workspace"
+    }
+  },
+  "admin.workspace.tenant_description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Manage your team and the work happening here.",
+    "plural": {
+      "": "Manage your team and the work happening here."
+    }
+  },
+  "admin.workspace.overview": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Platform overview",
+    "plural": {
+      "": "Platform overview"
+    }
+  },
+  "admin.workspace.operator_description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Manage tenants and access. Open a tenant workspace to work with its data.",
+    "plural": {
+      "": "Manage tenants and access. Open a tenant workspace to work with its data."
+    }
+  },
+  "admin.workspace.healthy": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "System checks passed",
+    "plural": {
+      "": "System checks passed"
+    }
+  },
+  "admin.workspace.unhealthy": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "System needs attention",
+    "plural": {
+      "": "System needs attention"
+    }
+  },
+  "admin.workspace.review_health": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Review health",
+    "plural": {
+      "": "Review health"
+    }
+  },
+  "admin.workspace.no_access": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Your workspace is ready for access",
+    "plural": {
+      "": "Your workspace is ready for access"
+    }
+  },
+  "admin.workspace.ask_access": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Ask your administrator to give you access to the tools you need.",
+    "plural": {
+      "": "Ask your administrator to give you access to the tools you need."
+    }
+  },
+  "admin.workspace.ok": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "ok",
+    "plural": {
+      "": "ok"
+    }
+  },
+  "admin.workspace.failing": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "failing",
+    "plural": {
+      "": "failing"
+    }
+  },
+  "admin.workspace.health_description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Service availability at the time this page was loaded.",
+    "plural": {
+      "": "Service availability at the time this page was loaded."
+    }
+  },
+  "admin.workspace.check": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Check",
+    "plural": {
+      "": "Check"
+    }
+  },
+  "admin.workspace.state": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "State",
+    "plural": {
+      "": "State"
+    }
+  },
+  "admin.workspace.health_unknown": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Health information is unavailable. Try again or contact your operator.",
+    "plural": {
+      "": "Health information is unavailable. Try again or contact your operator."
+    }
+  },
+  "admin.workspace.end_others": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End the other %d",
+    "plural": {
+      "": "End the other %d"
+    }
+  },
+  "admin.workspace.end_on": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End the session on %s",
+    "plural": {
+      "": "End the session on %s"
+    }
+  },
+  "admin.workspace.sessions_description": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Every place you are signed in, most recently seen first. Ending one signs that device out; it does not change your password.",
+    "plural": {
+      "": "Every place you are signed in, most recently seen first. Ending one signs that device out; it does not change your password."
+    }
+  },
+  "admin.workspace.sessions_empty": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Nothing is signed in",
+    "plural": {
+      "": "Nothing is signed in"
+    }
+  },
+  "admin.workspace.sessions_empty_description": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "This request opened no session, so there is nothing here to end.",
+    "plural": {
+      "": "This request opened no session, so there is nothing here to end."
+    }
+  },
+  "admin.workspace.elsewhere": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Everywhere else",
+    "plural": {
+      "": "Everywhere else"
+    }
+  },
+  "admin.workspace.end_rest": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End every session but this one",
+    "plural": {
+      "": "End every session but this one"
+    }
+  },
+  "admin.workspace.passkeys": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Passkeys",
+    "plural": {
+      "": "Passkeys"
+    }
+  },
+  "admin.workspace.add_passkey": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Add a passkey",
+    "plural": {
+      "": "Add a passkey"
+    }
+  },
+  "admin.workspace.passkey_enrolled": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "That passkey is enrolled.",
+    "plural": {
+      "": "That passkey is enrolled."
+    }
+  },
+  "admin.workspace.device_name": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "What this device is called",
+    "plural": {
+      "": "What this device is called"
+    }
+  },
+  "admin.workspace.device_placeholder": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Office laptop",
+    "plural": {
+      "": "Office laptop"
+    }
+  },
+  "admin.workspace.device": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Device",
+    "plural": {
+      "": "Device"
+    }
+  },
+  "admin.workspace.session_started": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Signed in",
+    "plural": {
+      "": "Signed in"
+    }
+  },
+  "admin.workspace.last_used": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Last used",
+    "plural": {
+      "": "Last used"
+    }
+  },
+  "admin.workspace.ends": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Ends",
+    "plural": {
+      "": "Ends"
+    }
+  },
+  "admin.workspace.from": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "From",
+    "plural": {
+      "": "From"
+    }
+  },
+  "admin.workspace.end": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End",
+    "plural": {
+      "": "End"
+    }
+  },
+  "admin.workspace.sessions_table": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "Your sessions, most recently seen first",
+    "plural": {
+      "": "Your sessions, most recently seen first"
+    }
+  },
+  "admin.workspace.this_device": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "This device",
+    "plural": {
+      "": "This device"
+    }
+  },
+  "admin.workspace.end_session": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "End this session",
+    "plural": {
+      "": "End this session"
+    }
+  },
+  "admin.workspace.unknown_device": {
+    "references": [
+      "modules/admin/internal/sessions.go"
+    ],
+    "translation": "A device that would not say what it is",
+    "plural": {
+      "": "A device that would not say what it is"
+    }
   }
 }

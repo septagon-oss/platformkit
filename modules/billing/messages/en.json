@@ -58,7 +58,7 @@
       "": "Code"
     }
   },
-  "field.billing.plan.id":   {
+  "field.billing.plan.id": {
     "references": [
       "modules/billing/contracts/billing.go"
     ],
@@ -471,6 +471,24 @@
     "translation": "plan",
     "plural": {
       "": "plan"
+    }
+  },
+  "hints.billing/plan.description": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Manage the plans and prices available to your customers.",
+    "plural": {
+      "": "Manage the plans and prices available to your customers."
+    }
+  },
+  "hints.billing/plan.emptyDescription": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Create a plan with its price and billing interval.",
+    "plural": {
+      "": "Create a plan with its price and billing interval."
     }
   }
 }

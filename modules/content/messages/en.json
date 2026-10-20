@@ -761,5 +761,68 @@
     "plural": {
       "": "This row's own write count, from 1"
     }
+  },
+  "hints.content/content.command.restore.confirmation.body": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "A new version will be written with this content. Nothing is deleted.",
+    "plural": {
+      "": "A new version will be written with this content. Nothing is deleted."
+    }
+  },
+  "hints.content/content.command.restore.confirmation.confirmLabel": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restore",
+    "plural": {
+      "": "Restore"
+    }
+  },
+  "hints.content/content.command.restore.confirmation.title": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restore this version?",
+    "plural": {
+      "": "Restore this version?"
+    }
+  },
+  "hints.content/content.command.restore.label": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restore this version",
+    "plural": {
+      "": "Restore this version"
+    }
+  },
+  "hints.content/content.command.restore.successMessage": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "A new version was written with the content you restored.",
+    "plural": {
+      "": "A new version was written with the content you restored."
+    }
+  },
+  "hints.content/content.description": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Write, review and publish the pages your audience sees.",
+    "plural": {
+      "": "Write, review and publish the pages your audience sees."
+    }
+  },
+  "hints.content/content.emptyDescription": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Create a page and save a draft before publishing.",
+    "plural": {
+      "": "Create a page and save a draft before publishing."
+    }
   }
 }
