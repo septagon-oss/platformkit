@@ -220,6 +220,13 @@ mail:
   host: "$mail_host"
   port: $mail_port
   from: "PlatformKit E2E <e2e@platformkit.test>"
+# A development instance signs people up all day. Every sign-up, verification resend
+# and forgotten-password ask in the browser suite comes from this one address and
+# spends the one account-request counter, about a dozen times a run; a thousand per
+# window is that suite many times over. The window stays the module's fifteen minutes.
+auth:
+  account_requests:
+    quota: 1000
 YAML
 }
 
@@ -252,6 +259,12 @@ files:
 # a deployment of its own. None of what it signs is verified anywhere by this fixture.
 webhook:
   secret_key: "fedcba9876543210fedcba9876543210"
+# The same development-sized account-request budget as the first installation: it
+# is the same composition, and a journey that signs somebody up at tenantb.localhost
+# should not meet a production budget the first installation does not have.
+auth:
+  account_requests:
+    quota: 1000
 YAML
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -65,7 +66,9 @@ const (
 	// built around.
 	//
 	// Ten, because a person who has lost a password asks two or three times and
-	// an office behind one NAT is several people doing that at once.
+	// an office behind one NAT is several people doing that at once. It is the
+	// default of AccountRequestBudget.Quota: a deployment names its own in
+	// auth.account_requests, and a development instance names a large one.
 	ResetRequests = 10
 
 	// ResetRedemptions is how many reset tokens one address may present inside
@@ -191,11 +194,56 @@ const (
 // It lives in contracts rather than in internal/ because the lockout is part of
 // what Login promises, so the fake keeps it too and the conformance suite can
 // check that both do.
-type Limiter struct{ store limit.Limiter }
+type Limiter struct {
+	store limit.Limiter
+	// requests is the account-request budget with its defaults applied, set at
+	// construction and never written again, so no request reads a half-made one.
+	requests AccountRequestBudget
+}
 
-// NewLimiter returns a limiter over a store: kit/limit's Postgres one in the
-// application, its memory one in a fake.
-func NewLimiter(store limit.Limiter) *Limiter { return &Limiter{store: store} }
+// NewLimiter returns a limiter over a store with the default account-request
+// budget: kit/limit's Postgres one in the application, its memory one in a fake.
+func NewLimiter(store limit.Limiter) *Limiter {
+	return NewBudgetedLimiter(store, AccountRequestBudget{})
+}
+
+// NewBudgetedLimiter is NewLimiter whose Requested spends requests, each zero
+// field given its default. requests is one Check accepted: the composition's
+// refusal is auth's, and this does not repeat it.
+func NewBudgetedLimiter(store limit.Limiter, requests AccountRequestBudget) *Limiter {
+	if requests.Quota == 0 {
+		requests.Quota = ResetRequests
+	}
+	if requests.Window == 0 {
+		requests.Window = AttemptWindow
+	}
+	return &Limiter{store: store, requests: requests}
+}
+
+// AccountRequestBudget is how many account requests one address may make inside
+// Window: the quota and window of the counter AccountRequestsPolicyName names. A
+// zero field is its default — ResetRequests, AttemptWindow — so the zero value is
+// the budget every deployment had before it was configurable.
+type AccountRequestBudget struct {
+	Quota  int
+	Window time.Duration
+}
+
+// Check refuses a budget the counter cannot keep: a negative quota (every
+// request refused) or window (no request counted), and a window longer than
+// limit.MaxWindow, which the sweep would end before the clock did. Zero fields
+// are not refused: they are the default.
+func (b AccountRequestBudget) Check() error {
+	switch {
+	case b.Quota < 0:
+		return fmt.Errorf("the quota is %d; it is how many account requests one address may make in a window, so at least 1", b.Quota)
+	case b.Window < 0:
+		return fmt.Errorf("the window is %s; it is a positive duration, like %s", b.Window, AttemptWindow)
+	case b.Window > limit.MaxWindow:
+		return fmt.Errorf("the window is %s; kit/limit keeps a counter for at most %s, and a longer window would be forgotten before it closed", b.Window, limit.MaxWindow)
+	}
+	return nil
+}
 
 // The keys, each namespaced by what it counts. kit/limit puts the tenant in
 // front of them, so these say nothing about which customer is being attacked.
@@ -348,12 +396,12 @@ func (l *Limiter) Succeeded(ctx context.Context, email string) {
 	}
 }
 
-// Requested counts one forgotten-password request from an address and reports the
-// cap that decided it, with its numbers. The address is the one asking; the address
-// being asked about is never counted, because a cap that depended on it would answer
-// the question the route exists not to answer.
+// Requested counts one account request from an address against the configured
+// budget and reports the cap that decided it, with its numbers. The address is
+// the one asking; the address being asked about is never counted, because a cap
+// that depended on it would answer the question the route exists not to answer.
 func (l *Limiter) Requested(ctx context.Context, ip string) Decision {
-	return l.reserve(ctx, AccountRequestsPolicyName, forgotKey(ip), ResetRequests)
+	return l.reserve(ctx, AccountRequestsPolicyName, forgotKey(ip), l.requests.Quota, l.requests.Window)
 }
 
 // VerificationMail reserves one resend per tenant/mailbox before any lookup.
@@ -370,7 +418,7 @@ func (l *Limiter) VerificationMail(ctx context.Context, email string) (bool, err
 // never the token, for the reason Requested counts the address asking: a cap that
 // depended on what was presented would answer a question about it.
 func (l *Limiter) Redeemed(ctx context.Context, ip string) Decision {
-	return l.reserve(ctx, ResetRedemptionsPolicyName, redeemKey(ip), ResetRedemptions)
+	return l.reserve(ctx, ResetRedemptionsPolicyName, redeemKey(ip), ResetRedemptions, AttemptWindow)
 }
 
 // Prompted counts one passkey ceremony begun from an address and reports whether
@@ -442,20 +490,21 @@ func (l *Limiter) within(ctx context.Context, key string, max int) bool {
 // window left, all three out of the one statement that recorded the event. They are
 // kept because a route that refuses on a counter has to say which counter it refused
 // on and for how long, and a limit stated from a reading taken after the decision is a
-// guess — which is kit/limit's reason to answer in one call rather than two.
+// guess — which is kit/limit's reason to answer in one call rather than two. The
+// window is the caller's, because one of these caps is configured and the rest are not.
 //
 // A store that cannot be reached gives the zero Decision, not a refusal: that is
 // Limiter's stated failure mode, and the zero value cannot be "not allowed" without
 // turning an unreachable counter table into an installation nobody can use. A handler
 // reads Decided before it states anything.
-func (l *Limiter) reserve(ctx context.Context, name, key string, max int) Decision {
-	allowed, remaining, left, err := l.store.Reserve(ctx, key, max, AttemptWindow)
+func (l *Limiter) reserve(ctx context.Context, name, key string, max int, window time.Duration) Decision {
+	allowed, remaining, left, err := l.store.Reserve(ctx, key, max, window)
 	if err != nil {
 		slog.ErrorContext(ctx, "auth: the limiter could not be written; the attempt is allowed", "key", key, "error", err)
 		return Decision{}
 	}
 	return Decision{
-		Policy:    Policy{Name: name, Quota: max, Window: AttemptWindow},
+		Policy:    Policy{Name: name, Quota: max, Window: window},
 		Allowed:   allowed,
 		Remaining: remaining,
 		Left:      left,

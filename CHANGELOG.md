@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**A deployment names its account-request budget.** `auth.account_requests.quota`
+and `auth.account_requests.window` set how many account requests — a sign-up, a
+verification resend, a forgotten-password link — one address may make in a window.
+Omitted keeps the module's 10 per 15m; an explicit zero or negative is refused at
+start-up, as is a window over the day `kit/limit` keeps a counter for. The browser
+fixture names a development-sized quota so the sign-up journeys pass together.
+
 **Composed pictures have a private image door.** `modules/picture` validates inert
 SVG templates and complete values, authorizes each read in the request tenant
 transaction, and serves derived `entity.Picture` references through generated

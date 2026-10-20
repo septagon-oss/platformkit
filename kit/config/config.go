@@ -442,7 +442,9 @@ type Log struct {
 // Auth is what the auth module cannot decide for itself. Passwords and sessions
 // need no configuration — the parameters are constants in the module, because a
 // deployment that lowers them is a deployment that has weakened itself — so this
-// is one optional identity provider and the key that seals a second factor.
+// is one optional identity provider, the key that seals a second factor, and the
+// one figure that is traffic rather than strength: how many account requests an
+// address may make in a window.
 type Auth struct {
 	OIDC OIDC `yaml:"oidc"`
 	// FactorKey seals a second factor's shared secret at rest. Empty means no
@@ -452,6 +454,37 @@ type Auth struct {
 	// file, and it is not required: a deployment that has not decided to offer a
 	// second factor is not broken, it is one that has not decided.
 	FactorKey string `yaml:"factor_key"`
+	// AccountRequests is the budget of the one counter every account request
+	// spends: a sign-up, a verification resend, a forgotten-password link. A
+	// development instance that signs people up all day names a large one; a
+	// deployment that names nothing keeps the module's own figure.
+	AccountRequests AccountRequests `yaml:"account_requests"`
+}
+
+// AccountRequests is how many account requests one address may make inside a
+// window. Each field is a pointer for the reason Telemetry.SampleRatio is: an
+// omitted key keeps the auth module's default and an explicit zero is refused,
+// never read as unlimited. The defaults are the module's, stated once there
+// (modules/auth/contracts: ResetRequests, AttemptWindow), so Load writes none
+// here.
+type AccountRequests struct {
+	Quota  *int           `yaml:"quota"`
+	Window *time.Duration `yaml:"window"`
+}
+
+// validate refuses a budget that counts nothing: a present quota under one or a
+// present window of no length. An omitted field is the module's default and is
+// not looked at.
+func (a AccountRequests) validate(path string) error {
+	if a.Quota != nil && *a.Quota < 1 {
+		return fmt.Errorf("config %s: auth.account_requests.quota is %d; it is how many account requests one address may make in a window, so at least 1 — omit it to keep the module's default",
+			path, *a.Quota)
+	}
+	if a.Window != nil && *a.Window <= 0 {
+		return fmt.Errorf("config %s: auth.account_requests.window is %s; it is a positive duration written Go's way, like 15m — omit it to keep the module's default",
+			path, *a.Window)
+	}
+	return nil
 }
 
 // OIDC is one OpenID Connect provider. An empty issuer means there is none, and
@@ -864,6 +897,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.Auth.OIDC.validate(path); err != nil {
+		return Config{}, err
+	}
+	if err := c.Auth.AccountRequests.validate(path); err != nil {
 		return Config{}, err
 	}
 	if err := c.Mail.validate(path); err != nil {

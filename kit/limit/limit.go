@@ -122,6 +122,11 @@ const (
 	// day is far longer than any window a caller here uses and short enough
 	// that the table is bounded by one day of distinct keys.
 	keep = 24 * time.Hour
+
+	// MaxWindow is the longest window a counter here keeps whole: Purge deletes
+	// a row once its window opened keep ago, so a caller's window longer than
+	// this is ended by the sweep rather than by the clock.
+	MaxWindow = keep
 )
 
 // systemToken is the capability the counters need. They belong to no tenant —

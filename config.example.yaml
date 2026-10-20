@@ -181,6 +181,16 @@ auth:
   # enrolled factor, which is a decision to make having withdrawn them.
   factor_key: ""
 
+  # How many account requests — a sign-up, a verification resend, a forgotten-password
+  # link — one address may make inside a window. It is a traffic figure, not a
+  # strength: a development instance that signs people up all day names a large
+  # quota, and production keeps the module's own. Omitted keeps 10 per 15m; an
+  # explicit 0 is refused, never read as unlimited; the window is a Go duration of at
+  # most 24h. This key is read from the file alone: no environment variable names it.
+  # account_requests:
+  #   quota: 10
+  #   window: 15m
+
 # The one outgoing mail server. An empty host — which is the default — means
 # there is none: every notification is still recorded and the ones marked for
 # email are logged rather than sent, which is what a machine with no relay wants
