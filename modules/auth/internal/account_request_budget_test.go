@@ -10,6 +10,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
@@ -58,6 +59,50 @@ func TestAConfiguredBudgetIsOneCounterAcrossTheRoutesThatSpendIt(t *testing.T) {
 		if rate := got.Header().Get(httpx.RateLimitHeader); !strings.HasPrefix(rate, `"`+contracts.AccountRequestsPolicyName+`";r=0;`) {
 			t.Errorf("the third ask on %s stated RateLimit=%q, want %s with nothing left", route, rate, contracts.AccountRequestsPolicyName)
 		}
+	}
+}
+
+// The largest budget Check accepts is still refused past its quota, again and
+// again, with its headers and no event: the counter stops at its ceiling rather
+// than failing open. The route's one counter is advanced to the last ask by hand.
+func TestTheLargestAccountRequestBudgetKeepsRefusingPastItsQuota(t *testing.T) {
+	budget := contracts.AccountRequestBudget{Quota: limit.MaxQuota, Window: time.Hour}
+	if err := budget.Check(); err != nil {
+		t.Fatalf("Check(%+v) = %v; the ceiling is a budget a deployment may name", budget, err)
+	}
+	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
+	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, true, func(d *auth.Deps) { d.AccountRequests = budget })
+	addr := from("203.0.113.42")
+	ask := func(route, body string) *httptest.ResponseRecorder {
+		return call(t, router, http.MethodPost, route, body, addr)
+	}
+	if got := ask("/api/v1/public/auth/password/forgot", `{"email":"unknown@acme.localhost"}`); got.Code != http.StatusOK {
+		t.Fatalf("the first ask = %d: %s", got.Code, got.Body)
+	}
+	if _, err := admin.ExecContext(t.Context(), "UPDATE platformkit_limits SET count = $1", budget.Quota-1); err != nil {
+		t.Fatal(err)
+	}
+	if got := ask("/api/v1/public/auth/password/forgot", `{"email":"unknown@acme.localhost"}`); got.Code != http.StatusOK {
+		t.Fatalf("the last ask inside the quota = %d: %s", got.Code, got.Body)
+	}
+	events := func() (n int) {
+		if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := events()
+	policy := `"` + contracts.AccountRequestsPolicyName + `";q=` + strconv.Itoa(limit.MaxQuota) + ";w=3600"
+	for i := range 3 {
+		got := ask("/api/v1/public/auth/register", `{"email":"over@acme.localhost"}`)
+		rate := got.Header().Get(httpx.RateLimitHeader)
+		if got.Code != http.StatusTooManyRequests || got.Header().Get(httpx.RateLimitPolicyHeader) != policy ||
+			!strings.HasPrefix(rate, `"`+contracts.AccountRequestsPolicyName+`";r=0;t=`) {
+			t.Errorf("registration %d past the quota = %d, RateLimit=%q; want 429 under %s with nothing left", i+1, got.Code, rate, policy)
+		}
+	}
+	if after := events(); after != before {
+		t.Errorf("registrations past the quota published %d events; want none", after-before)
 	}
 }
 

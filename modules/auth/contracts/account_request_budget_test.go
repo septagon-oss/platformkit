@@ -61,13 +61,14 @@ func TestAnOmittedBudgetFieldKeepsItsDefault(t *testing.T) {
 }
 
 // Check refuses what the counter cannot keep and names the field; the zero value
-// and every budget inside the counter's horizon pass.
+// and every budget inside the counter's horizon and ceiling pass.
 func TestABudgetTheCounterCannotKeepIsRefused(t *testing.T) {
 	for _, tt := range []struct {
 		budget contracts.AccountRequestBudget
 		names  string
 	}{
 		{contracts.AccountRequestBudget{Quota: -1}, "quota"},
+		{contracts.AccountRequestBudget{Quota: limit.MaxQuota + 1}, "quota"},
 		{contracts.AccountRequestBudget{Window: -time.Second}, "window"},
 		{contracts.AccountRequestBudget{Window: limit.MaxWindow + time.Second}, "window"},
 	} {
@@ -81,6 +82,7 @@ func TestABudgetTheCounterCannotKeepIsRefused(t *testing.T) {
 		{Quota: 1, Window: time.Millisecond},
 		{Window: limit.MaxWindow},
 		{Quota: 1000},
+		{Quota: limit.MaxQuota},
 	} {
 		if err := budget.Check(); err != nil {
 			t.Errorf("Check(%+v) refused: %v", budget, err)

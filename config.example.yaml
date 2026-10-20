@@ -185,8 +185,9 @@ auth:
   # link — one address may make inside a window. It is a traffic figure, not a
   # strength: a development instance that signs people up all day names a large
   # quota, and production keeps the module's own. Omitted keeps 10 per 15m; an
-  # explicit 0 is refused, never read as unlimited; the window is a Go duration of at
-  # most 24h. This key is read from the file alone: no environment variable names it.
+  # explicit 0 is refused, never read as unlimited; the quota is at most 2147483646,
+  # the most the counter can refuse past, and the window a Go duration of at most 24h.
+  # This key is read from the file alone: no environment variable names it.
   # account_requests:
   #   quota: 10
   #   window: 15m

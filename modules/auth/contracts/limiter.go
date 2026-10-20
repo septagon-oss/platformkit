@@ -230,13 +230,16 @@ type AccountRequestBudget struct {
 }
 
 // Check refuses a budget the counter cannot keep: a negative quota (every
-// request refused) or window (no request counted), and a window longer than
+// request refused) or window (no request counted), a quota over limit.MaxQuota,
+// which the counter could never refuse past, and a window longer than
 // limit.MaxWindow, which the sweep would end before the clock did. Zero fields
 // are not refused: they are the default.
 func (b AccountRequestBudget) Check() error {
 	switch {
 	case b.Quota < 0:
 		return fmt.Errorf("the quota is %d; it is how many account requests one address may make in a window, so at least 1", b.Quota)
+	case b.Quota > limit.MaxQuota:
+		return fmt.Errorf("the quota is %d; kit/limit counts to at most %d, and a larger quota could never be refused past", b.Quota, limit.MaxQuota)
 	case b.Window < 0:
 		return fmt.Errorf("the window is %s; it is a positive duration, like %s", b.Window, AttemptWindow)
 	case b.Window > limit.MaxWindow:
