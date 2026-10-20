@@ -192,6 +192,20 @@ type File struct {
 	// does not name one. An unknown kind is never deleted, never guessed at.
 	Kind string `json:"kind" gorm:"type:varchar(32);not null;default:''" maxLength:"32" ui:"hide:list" doc:"Retention class, as the product names it" required:"false"`
 
+	// Sealed says these bytes have no door of this module: no content route streams
+	// them and no presigned URL opens them. It is the server's account, stamped by
+	// the Upload that stored the bytes, and no command and no form field sets it —
+	// the same rule Width and Height follow, for the same reason.
+	//
+	// It exists for the bytes another module stores on its own authority and hands
+	// out through its own door: a person's export bundle, which the module that made
+	// it releases to one person through one single-use token, and which is not the
+	// kind of object the tenant's ordinary file reader may walk up to and download.
+	// The row stays listed, because the tenant's record of what it holds is not a
+	// secret from the tenant; the door beside it is closed to everybody but the
+	// module that sealed it.
+	Sealed bool `json:"sealed" gorm:"column:sealed;not null;default:false" doc:"Whether only the module that stored it serves its bytes" readOnly:"true" required:"false" ui:"hide:list"`
+
 	// UnusedSince is when this image stopped being shown by anything: the moment
 	// its last use ended. It is the grace period's start, stamped by SetUses when it
 	// ends a file's last use, cleared by SetUses when a use restarts, and read by the
@@ -486,6 +500,14 @@ type Upload struct {
 	// deployment's, and the only thing the module knows is that a kind with no
 	// configured policy is never deleted.
 	Kind string
+	// Sealed stores the bytes with no door of this module: the file module's content
+	// routes refuse the row and mint no presigned URL for it, so the only thing that
+	// can answer its bytes is the caller that stored them, through its own door and
+	// its own authorisation. A module that seals what it stores takes responsibility
+	// for handing it back, and an upload that seals and never serves is a file
+	// nobody can read — which is why nothing here infers the flag from a name or a
+	// media type, and only the storing module says it.
+	Sealed bool
 	// Declared is the length the request declared, or -1, which is what a
 	// streamed part honestly declares. It is a hint a Storage may use to ask
 	// the store for one write instead of several, and nothing else: the size

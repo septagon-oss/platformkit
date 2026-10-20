@@ -263,7 +263,11 @@ func (s Singleton[T]) check() {
 		bad = presentationFault(crud.Fields[T]())
 	}
 	if bad == "" {
-		bad = entryHintsFault(s.Entity, s.Present, crud.Fields[T]())
+		if s.Present.Deck != nil {
+			bad = "deck requires a list resource"
+		} else {
+			bad = entryHintsFault(s.Entity, s.Present, crud.Fields[T]())
+		}
 	}
 	if bad == "" {
 		bad = fieldHintFault(s.Entity, crud.Fields[T](), s.Present)

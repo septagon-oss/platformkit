@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/modules/scim/contracts"
 	"github.com/septagon-oss/platformkit/modules/scim/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -77,8 +78,20 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	}
 	svc := internal.NewService(deps.Users, deps.Roles, deps.Authority)
 	return svc, module.Module{
-		Name:        "scim",
-		Migrations:  Migrations.Files,
+		Name:       "scim",
+		Migrations: Migrations.Files,
+		// Three uuid columns of this module's SQL resolve to a person, and one text
+		// column may hold their words: the identifier is whatever string the
+		// provisioning client sent, and a directory that keys people by mail sends
+		// their address (internal/personaldata.go is what takes it out again). A
+		// group is this module's own row, never a person, and a membership is two
+		// uuids and no words.
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "scim_group_members", About: []string{"user_id"}, NotPerson: []string{"group_id"}},
+			personaldata.Table{Name: "scim_group_mappings", NotPerson: []string{"group_id"}},
+			personaldata.Table{Name: "scim_user_external", About: []string{"user_id"},
+				Text: []string{"external_id"}},
+		),
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
@@ -111,3 +124,10 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		},
 	}
 }
+
+// PersonalData is this module's part of a person's export and erasure, for the
+// composition to hand to the module that walks them. It is a package function and
+// not a method of the service because the wiring that places it lives where this
+// module's two ports are answered — in the application — and neither of its two
+// operations asks the provisioning door anything.
+func PersonalData() personaldata.Part { return internal.PersonalData() }
