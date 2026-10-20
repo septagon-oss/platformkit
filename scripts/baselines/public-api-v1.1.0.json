@@ -110,6 +110,7 @@
     "./modules/user/contracts.Service.ByHandle: added",
     "./modules/user/contracts.Service.Holders: added",
     "./modules/user/contracts.Service.Reactivate: added",
+    "./modules/user/contracts.Service.Retained: added",
     "./modules/user/contracts.Service.SetHandle: added",
     "./modules/web.Deps: old is comparable, new is not",
     "./modules/web.Module: changed from func(Deps) github.com/septagon-oss/platformkit/kit/module.Module to *github.com/septagon-oss/platformkit/pkit.Module",

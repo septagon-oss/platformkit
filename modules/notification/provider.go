@@ -3,10 +3,12 @@ package notification
 import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/push"
 	"github.com/septagon-oss/platformkit/kit/secrets"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification/internal"
 	gomail "github.com/septagon-oss/platformkit/modules/notification/providers/gomail"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -55,6 +57,7 @@ var Module = pkit.NewModule("notification", wire,
 	// interface — so one Put answers both spellings, and the module that records
 	// the attempt is the module that owns the record's table.
 	pkit.Provides[contracts.MailLedger](),
+	pkit.Contributes[personaldata.Part](),
 	// The module's own screen. Which chrome a person's list of their own notices
 	// sits in is an installation's fact — the same shape change's two review
 	// screens take — and a deployment that hands in none has no list page to ask
@@ -110,5 +113,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put[authcontracts.Notifier](w, svc)
 	pkit.Put[contracts.MailLedger](w, svc)
 	pkit.Put[contracts.Mailer](w, mailer)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

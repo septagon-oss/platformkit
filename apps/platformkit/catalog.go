@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/scim"
 	"github.com/septagon-oss/platformkit/modules/site"
+	"github.com/septagon-oss/platformkit/modules/subject"
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	"github.com/septagon-oss/platformkit/modules/user"
@@ -60,6 +61,7 @@ func catalogues() xtext.Catalog {
 		notification.Catalogue(),
 		scim.Catalogue(),
 		site.Catalogue(),
+		subject.Catalogue(),
 		task.Catalogue(),
 		tenant.Catalogue(),
 		user.Catalogue(),

@@ -37,6 +37,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/modules/audit/contracts"
 	"github.com/septagon-oss/platformkit/modules/audit/internal"
 )
@@ -84,10 +85,25 @@ func New(deps Deps) module.Module {
 		days = retentionDays
 	}
 	return module.Module{
-		Name:        "audit",
-		Migrations:  Migrations.Files,
-		Adopts:      Migrations.Adopts,
-		RulesFrom:   Migrations.RulesFrom,
+		Name:       "audit",
+		Migrations: Migrations.Files,
+		Adopts:     Migrations.Adopts,
+		RulesFrom:  Migrations.RulesFrom,
+		// The trail names a person by `actor` and repeats whatever the event carried
+		// inside `payload` — an address verbatim today — so the payload is filed as
+		// text an erasure has to scrub and not as a column that names nobody.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:   "audit_events",
+			Person: "actor",
+			// The person a run served without signing in, and the person the
+			// admitted operation names as its own: a uuid that names a person the
+			// trail is about, and an erasure that left it behind would keep pointing
+			// at the person it says it forgot.
+			About: []string{"initiator", "operation_person_id"},
+			Text:  []string{"payload"},
+			// The operation record and the tenant it ran under: rows, not people.
+			NotPerson: []string{"event_id", "records", "operation_ref", "operation_tenant_id"},
+		}),
 		Permissions: permissions,
 		// None, and the absence is the decision: see the package comment.
 		Declared: nil,

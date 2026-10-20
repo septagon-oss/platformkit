@@ -123,8 +123,15 @@ test('the frame\'s chrome is one body step, and a generated page stays inside th
     const m = await probe(page, width);
     console.log(`  generated list @${width}px chrome=${JSON.stringify(m.chrome)} body=${JSON.stringify(m.body_font_sizes)}`);
     expectChromeOneStep(m, `the chrome above a generated list at ${width}px`);
-    // Signed in, the chrome is three lines: the tenant, the caller and the stamp.
-    expect(m.chrome.length, `signed in at ${width}px the chrome should draw tenant, caller and stamp: ${JSON.stringify(m.chrome)}`).toBe(3);
+    // Signed in, the chrome is the caller and the stamp — and, below the large breakpoint only, the
+    // workspace's own name. That is item 5 of the rough-edges brief, and this is the line that has to
+    // move with it: `components.ChromeContext` is the sidebar's mirror, painted where the sidebar is
+    // not, so the name is in the header at 390px and hidden at 1440px where the sidebar carries it.
+    // One name at exactly one width is the claim; the count of chrome sentences follows from it. What
+    // the floor actually refuses — the chrome taking more than one body step, a page left with none —
+    // is asserted on the two lines below this one and is unchanged.
+    expect(m.chrome.length, `signed in at ${width}px the chrome should draw ${width < 1024 ? 'the workspace, the caller and the stamp' : 'the caller and the stamp'}: ${JSON.stringify(m.chrome)}`)
+      .toBe(width < 1024 ? 3 : 2);
     // The floor's rule, asserted as itself: the page gets a body size because the chrome takes one.
     expect(m.body_font_sizes.length, `a generated list at ${width}px sets body text in ${m.body_font_sizes.length} sizes ${JSON.stringify(m.body_font_sizes)}`)
       .toBeLessThanOrEqual(2);
@@ -212,5 +219,116 @@ test('a generated list and a generated record hold the whole design floor', asyn
     const m = await probe(page, width);
     console.log(report(`generated record ${unbreakableId}`, m));
     expect(refusals(m), diagnosed(m, `generated record ${unbreakableId} at ${width}px fails the design floor`)).toEqual([]);
+  }
+});
+
+// Two more properties of the frame, both of them found by looking at a served page rather than at
+// markup: a blank band between the sidebar and the content at desktop width, and a breadcrumb that
+// split a record's name mid-word at phone width. Both are cured by one rule each, and both cures
+// are invisible to the Go floor probes in this package, which assert the *class list* a component
+// compiles to (`ui/components/sidebar_inner_width_test.go`, `breadcrumb_break_test.go`). A class
+// list is a promise about the compiled sheet; the band and the split word are facts about boxes.
+//
+// The band's cause: the `<aside>` is the element that carries a width (`lg:w-64` expanded, `lg:w-16`
+// collapsed) and paints nothing itself. The inverse column a person sees sits two levels inside it,
+// and its wrapper is a flex item in a flex row, so with no width of its own it sized to its content
+// and the leftover of the aside showed the page's own background — 43px of it, measured at 1440.
+// The measurement below is therefore of three right edges, not of a class: the box that carries the
+// width, the box that paints, and the content region that begins where the painting has to end.
+test('the sidebar paints the whole width the aside carries, leaving no band beside the content', async ({ browser }) => {
+  test.setTimeout(60_000);
+  const page = await signedInAt(browser, 1440);
+  await page.goto(tasks);
+  const box = await page.evaluate(() => {
+    const aside = document.querySelector('aside[data-component="sidebar"]');
+    // aside > div (the column's own wrapper) > div (the column, which is what paints).
+    const painted = aside?.firstElementChild?.firstElementChild ?? null;
+    const main = document.querySelector('main');
+    const edge = (el: Element | null, side: 'left' | 'right') =>
+      el ? Math.round(el.getBoundingClientRect()[side]) : null;
+    return {
+      aside_right: edge(aside, 'right'),
+      painted_right: edge(painted, 'right'),
+      main_left: edge(main, 'left'),
+      aside_width: aside ? Math.round(aside.getBoundingClientRect().width) : null,
+    };
+  });
+  console.log(`  sidebar band @1440: ${JSON.stringify(box)}`);
+  expect(box.aside_right, 'the frame drew no <aside data-component="sidebar"> to measure').not.toBeNull();
+  expect(box.painted_right, 'the aside holds no painted column: nothing inside it is a box').not.toBeNull();
+  // The 16rem the aside names, in px, at a breakpoint where `lg` applies.
+  expect(box.aside_width, 'the sidebar is not the 16rem the aside says it is at 1440px').toBe(256);
+  expect(Math.abs((box.aside_right ?? 0) - (box.painted_right ?? 0)), 'the painted column stops short of the aside that carries its width — the band').toBeLessThanOrEqual(1);
+  expect(Math.abs((box.main_left ?? 0) - (box.painted_right ?? 0)), 'the content begins before the painted column ends, so the column is not what the person sees').toBeLessThanOrEqual(1);
+});
+
+// The trail's cure, measured on a record named in words. `components.clShellMain` sets
+// `overflow-wrap: anywhere` on the content region and it inherits, which is right for prose and
+// wrong for a trail: at 390px a crumb split "Dashboard" into "Dashboa" and "rd", and the page
+// scrolled sideways. `break-normal` on each item is the refusal, `min-w-0` lets the links give
+// way, and the current crumb carries no `truncate` because the name the person came to read is the
+// one thing on the page that is never clipped. Each of those is a class the Go tests already pin;
+// what only a browser can say is that the computed value arrives, that the name is not clipped,
+// and that the page still does not scroll sideways.
+test('a crumb breaks by words, and the record\'s own name is never clipped or split', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const wordy = 'A record whose name is long enough to need more than one line at phone width';
+  let wordyId = '';
+  {
+    const setup = await signedInAt(browser, 1440);
+    await setup.goto(`${tasks}/new`);
+    await setup.getByLabel('Title').fill(wordy);
+    await setup.getByRole('button', { name: 'Save' }).click();
+    await expect(setup).toHaveURL(new RegExp(`${tasks}/[0-9a-f-]{36}$`));
+    wordyId = setup.url().split('/').pop() || '';
+    await setup.context().close();
+  }
+  expect(wordyId).toBeTruthy();
+
+  for (const width of [390, 1440]) {
+    const page = await signedInAt(browser, width);
+    await page.goto(`${tasks}/${wordyId}`);
+    const m = await probe(page, width);
+    const trail = await page.evaluate((name: string) => {
+      const nav = document.querySelector('nav[data-component="breadcrumb"]');
+      const list = nav?.querySelector('ol');
+      const items = [...(nav?.querySelectorAll('li') ?? [])] as HTMLLIElement[];
+      // The trail's own items — the links and the current entry. A separator is a `<li>` too, and
+      // carries no word to break.
+      const crumbs = items.filter((li) => li.querySelector('a') || li.getAttribute('aria-current') === 'page');
+      const current = crumbs.find((li) => li.getAttribute('aria-current') === 'page');
+      const line = current ? Math.round(parseFloat(getComputedStyle(current).lineHeight) || 20) : 0;
+      return {
+        count: crumbs.length,
+        wraps: list ? getComputedStyle(list).flexWrap : null,
+        // The region's rule reaching every crumb: a crumb that overrode it would read differently.
+        overrides: crumbs.filter((li) => getComputedStyle(li).overflowWrap !== getComputedStyle(list!).overflowWrap).length,
+        region: list ? getComputedStyle(list).overflowWrap : null,
+        name: current?.textContent?.trim() ?? '',
+        given: name,
+        clipped: current ? current.scrollWidth - current.clientWidth : 0,
+        height: current ? Math.round(current.getBoundingClientRect().height) : 0,
+        line,
+        scroll_width: document.documentElement.scrollWidth,
+        inner: window.innerWidth,
+      };
+    }, wordy);
+    console.log(`  crumb trail @${width}px: ${JSON.stringify(trail)}`);
+    expect(trail.count, `the record page draws no breadcrumb items at ${width}px`).toBeGreaterThan(1);
+    // The cure, as the browser computes it: the row wraps, so a crumb is given a line rather than a
+    // share of one, and no crumb overrides the frame's own break rule. A squeezed crumb is what
+    // split "Dashboard" into "Dashboa / rd"; a crumb that overrode the region's rule is what sent a
+    // one-token name sideways past the viewport, which is the refusal this case exists to catch.
+    expect(trail.wraps, `the trail does not wrap at ${width}px, so its crumbs are squeezed and split`).toBe('wrap');
+    expect(trail.overrides, `a crumb overrides the region's break rule (${trail.region}) at ${width}px`).toBe(0);
+    expect(trail.name, `the current crumb does not show the record's whole name at ${width}px`).toBe(trail.given);
+    expect(trail.clipped, `the current crumb clips its own name at ${width}px`).toBeLessThanOrEqual(1);
+    expect(trail.scroll_width, `the trail sets the page sideways at ${width}px`).toBeLessThanOrEqual(trail.inner);
+    expect(m.scroll_width_overflow, diagnosed(m, `the record scrolls sideways at ${width}px`)).toBe(false);
+    // At phone width the name has to be read in more than one line of whole words. One line means
+    // it was clipped or scaled rather than broken.
+    if (width === 390) {
+      expect(trail.height, `the current crumb draws ${trail.height}px at ${width}px, which is not the ${trail.line}px line the name is set in`).toBeGreaterThan(trail.line);
+    }
   }
 });
