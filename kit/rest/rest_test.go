@@ -118,7 +118,7 @@ func mount(t *testing.T, s rest.Spec[*Task]) (*httpx.API, chi.Router, *sql.DB) {
 // where one auth module is both the host resolver and the authorizer — so a case
 // that needs the request to resolve to a different tenant (the operator's, for a
 // control-plane route) brings its own resolver rather than mounting a second API.
-func mountAs[T crud.Entity](t *testing.T, s rest.Spec[T], authorize httpx.Authorizer) (*httpx.API, chi.Router, *sql.DB) {
+func mountAs[T crud.Entity](t *testing.T, s rest.Spec[T], authorize httpx.Authorizer, register ...func(*httpx.API)) (*httpx.API, chi.Router, *sql.DB) {
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	if _, err := admin.ExecContext(t.Context(), ddl); err != nil {
@@ -143,6 +143,9 @@ func mountAs[T crud.Entity](t *testing.T, s rest.Spec[T], authorize httpx.Author
 		Log: slog.New(slog.DiscardHandler),
 	})
 	s.Mount(api.Surfaces(s.Module))
+	for _, add := range register {
+		add(api)
+	}
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}

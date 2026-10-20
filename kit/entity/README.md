@@ -101,3 +101,40 @@ because `httpx.{Resource,Command}` carried nothing a hint could ride. **Made
 reusable** — the mount gate (`kit/rest/hints.go`), the declared-or-absent
 predicate (`ui/screens/hints.go`) and `CheckReferences`, which answers the
 reference question at boot where the whole resource list exists.
+
+## Review decks
+
+`EntryHints.Deck` declares a review reading for a list resource. `Queue` uses
+existing repeated `filter=field:value` equality filters: the first colon splits
+the field, other colons and commas are literal, different fields are ANDed, and
+the last duplicate field wins. A nil queue reads all rows; a declared empty
+queue is refused. `Order` is an existing sort value (`title` or `-title`), naming
+a visible scalar field also listed in `Sortable`; the list retains its id tie
+breaker. `DeckFault` and the list adapter share `Coerce` for scalar values.
+
+`Directions` maps any of `right`, `left`, `up`, `down` to a command, label, tone
+and icon from the existing vocabulary. The command must be a non-system row
+command on that resource, with no inputs or explicit decodable defaults for
+every input. Optional inputs without defaults do not qualify. The alternative
+`down: {Skip: true}` has no other fields and sends no command: a client moves
+the card to the back of its current queue without changing stored order.
+
+`rest.Spec.Mount` checks the local declaration; `httpx.API.ValidateDeclarations`
+checks command references after all registrations, before boot effects.
+`rest.CheckRowHints` delegates to that same decision. Singleton, commands-only
+and resources without a list cannot declare a deck. Manual `httpx.Command`
+registrants must accurately declare their fields and `EmptyInputFault`.
+
+The catalogue adds `presentation.deck` at version 2 and omits directions the
+caller cannot run. An empty authorized set is `directions: {}`; a local skip
+remains. Direction labels use `hints.<module>/<entity>.deck.<direction>.label`
+and the declared English fallback. The registered queue and directions are
+copied before projection. Existing picture, title, status and summary hints
+still describe the card. No `resolved` or `undoable` key is produced: commands
+do not yet expose an authoritative undo-token capability. An inverse command
+does not imply undo.
+
+A deck is a list-reading suggestion, not a command precondition, reservation or
+security boundary. Tenant transactions, authorization and lifecycle rules
+remain authoritative on the existing command routes. Client card rendering,
+gestures, confirmation, pagination and local session order are separate work.

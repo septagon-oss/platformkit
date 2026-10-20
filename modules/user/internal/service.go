@@ -439,6 +439,24 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*co
 	return crud.Get[*contracts.User](tx, id)
 }
 
+// Retained is contracts.Service.Retained: the same row, without the directory's filter.
+//
+// It is one statement rather than crud.Get plus a second query because the point is the
+// filter that is absent, and a reader should see that rather than trust a comment. The
+// tenant bound is row-level security's, the same one every other read of this table gets;
+// nothing here widens what one transaction may see, only what it hides.
+func (s *Service) Retained(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	var u contracts.User
+	err := tx.DB().Where("id = ?", id).Take(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, crud.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("user: retain %s: %w", id, err)
+	}
+	return &u, nil
+}
+
 // ByEmail is the login lookup. The comparison is lower(email), which is the
 // expression the unique index in migrations/000007 is built on, so this is an
 // index scan and not a sequential one.

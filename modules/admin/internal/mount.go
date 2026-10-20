@@ -107,6 +107,13 @@ type Shell struct {
 	// nothing declares one, nothing is reported unserved either: a composition
 	// with no auth module has no session list to miss.
 	Sessions Sessions
+	// People is the caller's own account row, for the one header line that names
+	// them. Nil — the default — draws "Signed in" instead of a name: a frame that
+	// cannot ask still renders, and an id fragment is not a name.
+	//
+	// Unlike Roles it mounts no screen and so reports nothing when absent: the
+	// header is not a door a nav entry leads to.
+	People People
 	// PictureSource is the address template a generated picture cell fetches its
 	// bytes from, handed straight to the screen renderer that draws the cell. The
 	// composition names it for the same reason it names SignIn: the door belongs
@@ -309,7 +316,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		},
 		Frame: frame(frameAt, nav, frameDeps{
 			Authorize: sh.Authorize, Storybook: sh.storybook, Resources: resources,
-			Language: sh.Language, LanguageVersion: sh.LanguageVersion,
+			People: sh.People, Language: sh.Language, LanguageVersion: sh.LanguageVersion,
 			LanguagePath: sh.languagePath,
 		}),
 		Tag:       "admin",
@@ -365,6 +372,7 @@ type frameDeps struct {
 	Authorize       httpx.Authorizer
 	Storybook       func(context.Context) (export.Storybook, error)
 	Resources       []httpx.Resource
+	People          People
 	Language        AccountLanguage
 	LanguageVersion AccountLanguageVersion
 	LanguagePath    string
@@ -392,13 +400,17 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 			maySetLanguages = err == nil && allowed
 		}
 		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery, maySetLanguages, deps.Resources...)
+		line := ""
+		if r.SignedIn {
+			line = caller(ctx, deps.People, r.Principal.UserID)
+		}
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{
 				SkipTarget: "content",
 				SkipLabel:  chrome(r, "shell.skip", "Skip to content"),
 			}, components.ShellSlots{
 				Sidebar: []g.Node{components.Sidebar(navigation)},
-				Header:  header(ctx, deps, r, navigation),
+				Header:  header(ctx, deps, r, navigation, line),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
 					Content: brand + " " + version(), Size: chromeTextSize, Color: "muted",
@@ -509,7 +521,7 @@ func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, ma
 	return components.SidebarProps{
 		Current: r.Path, NavigationLabel: o.Text("admin.workspace.navigation", "Admin navigation"), Sections: sections,
 		DisclosureLabel: chrome(r, "nav.menu", "Menu"),
-		BrandLabel:      fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
+		BrandLabel:      workspace(r, brand), BrandHref: a.workspace.at,
 	}
 }
 
@@ -559,9 +571,65 @@ func chromeCount(r page.Request, key string, count int64, one, other string) str
 	return r.Locale.Plural("admin."+key, count, one, other)
 }
 
-// header is the tenant, the caller, the theme switch and the way out — and, below the large
+// workspace is what this installation is called: the tenant's own name, or the
+// host the request arrived at, or — when the request arrived at no host anybody
+// could show — the installation's name, which is at least true.
+//
+// It is said once on a screen at a time. The sidebar paints it from the large
+// breakpoint up and paints nothing below it; components.ChromeContext is its
+// mirror and is hidden from that breakpoint up, so a phone reader knows which
+// workspace they are in and a desktop reader is not told twice.
+func workspace(r page.Request, brand string) string {
+	return fallback(r.Tenant.Name, hostLabel(r.Host, brand))
+}
+
+// hostLabel is a Host header as a name. It is the one string on this page that
+// came from the request rather than from the database, and a Host header is what
+// anybody sends, so anything outside a host grammar answers the fallback: the
+// installation's own name.
+//
+// *http.Request.Host is already scheme-free and path-free; what is left to refuse
+// is a path or query smuggled in, credentials, whitespace, a port that is not
+// digits, and a name longer than DNS allows.
+func hostLabel(host, or string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" || len(host) > 253 {
+		return or
+	}
+	if at := strings.LastIndexByte(host, ':'); at >= 0 {
+		port := host[at+1:]
+		if !onlyDigits(port) {
+			return or // a colon that does not precede digits is not a port
+		}
+		if port == "80" || port == "443" {
+			host = host[:at] // the default port for the scheme says nothing a reader needs
+		}
+	}
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+		default:
+			return or
+		}
+	}
+	if strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.Contains(host, "..") {
+		return or
+	}
+	return host
+}
+
+func onlyDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// header is the workspace, the caller, the theme switch and the way out — and, below the large
 // breakpoint where the sidebar is not shown, the disclosure that lists the same sections.
-func header(ctx context.Context, deps frameDeps, r page.Request, navigation components.SidebarProps) []g.Node {
+func header(ctx context.Context, deps frameDeps, r page.Request, navigation components.SidebarProps, line string) []g.Node {
 	o := resource.Options{Locale: r.Locale}
 	right := []g.Node{
 		components.ButtonWithSlots(components.ButtonProps{
@@ -576,10 +644,18 @@ func header(ctx context.Context, deps frameDeps, r page.Request, navigation comp
 		right = append(right, control)
 	}
 	if r.SignedIn {
+		// The person, by the name they chose or the address they signed in with.
+		// Never an id fragment: "8258e4cc · admin" is what a machine knows this
+		// account by, printed where a greeting should be.
+		//
+		// The roles leave this line. They stay where they are authoritative and
+		// readable — /app/auth/roles, and the sidebar the person is looking at is
+		// already the filtered answer of the same grants. Keeping them here would
+		// make the no-name fallback read "admin", a role standing where a person's
+		// name should be, and would put a second fact on a line this frame measures
+		// as one.
 		right = append([]g.Node{
-			components.Text(components.TextProps{
-				Content: o.Text("admin.workspace.signed_in", "Signed in · %s", fallback(strings.Join(r.Principal.Roles, ", "), o.Text("admin.workspace.no_roles", "no roles"))),
-				Size:    chromeTextSize, Color: "muted"}),
+			components.Text(components.TextProps{Content: line, Size: chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
@@ -589,8 +665,7 @@ func header(ctx context.Context, deps frameDeps, r page.Request, navigation comp
 	return []g.Node{
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
 			components.SidebarDisclosure(navigation),
-			components.Text(components.TextProps{
-				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize}),
+			components.ChromeContext(components.ChromeContextProps{Name: workspace(r, brand), Size: chromeTextSize}),
 			components.Badge(components.BadgeProps{Label: workspaceScope(r.Tenant, o), Tone: "neutral"})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}

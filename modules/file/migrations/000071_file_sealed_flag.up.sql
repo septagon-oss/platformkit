@@ -1,0 +1,24 @@
+-- The bytes whose door belongs to another module.
+--
+-- One file, transactional, no down file (as everywhere in this source): a column
+-- added with a default is metadata-only on Postgres 11+, so a deployment holding a
+-- hundred million files is not rewritten by an upgrade that records a flag.
+--
+-- `sealed` is not a third `visibility`, and the reason is the published contract
+-- rather than taste: `visibility` is what a caller chooses about its own upload,
+-- kit/wire refuses a document that widens a value an installed device has no branch
+-- for, and a value nobody may choose would have been published anyway because the
+-- entity and the document are rendered from the same field. Sealing is therefore a
+-- second axis — the server's account of who may serve these bytes, which no command
+-- and no form field writes, in the same company as the image dimensions beside it.
+--
+-- No CHECK: a bool has two values and the column has no other. No index either —
+-- nothing lists sealed files as a filter; the file doors read one row by primary key
+-- and consult this on the way past, and a screen that ever wants the list is a
+-- migration with its own reason and its own CONCURRENTLY file.
+--
+-- The version is 000071 and not the 000064 it was written as: main took 000064 for
+-- this source's own upload_visibility while this branch was open, one version is one
+-- ledger row per owner, and the rule this source follows is to continue past the
+-- highest number anywhere in the composition.
+ALTER TABLE files ADD COLUMN sealed boolean NOT NULL DEFAULT false;

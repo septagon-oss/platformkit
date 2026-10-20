@@ -6,7 +6,9 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/modules/webhook/contracts"
+	"github.com/septagon-oss/platformkit/modules/webhook/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -33,6 +35,7 @@ var Module = pkit.NewModule("webhook", wire,
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Needs[contracts.Catalogue](),
 	pkit.Optional[contracts.Alerts](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -43,12 +46,14 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 			"webhook: its signing key is %d bytes and it is %d; it is deployment configuration, written in webhook.secret_key or PLATFORMKIT_WEBHOOK_SECRET_KEY",
 			len(key), contracts.SecretKeyBytes)
 	}
-	return New(Deps{
+	m := New(Deps{
 		SecretKey:           key,
 		Catalogue:           pkit.Get[contracts.Catalogue](w),
 		Alerts:              pkit.Get[contracts.Alerts](w),
 		Tenants:             pkit.Get[jobs.TenantLister](w),
 		AllowLocalEndpoints: settings.AllowLocalEndpoints,
 		RetentionDays:       settings.RetentionDays,
-	}), nil
+	})
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
+	return m, nil
 }

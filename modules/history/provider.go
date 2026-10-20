@@ -4,8 +4,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	historycontracts "github.com/septagon-oss/platformkit/modules/history/contracts"
+	"github.com/septagon-oss/platformkit/modules/history/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -26,6 +28,7 @@ var Module = pkit.NewModule("history", wire,
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Provides[historycontracts.Service](),
 	pkit.Provides[httpx.Versions](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -38,5 +41,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	}
 	pkit.Put(w, svc)
 	pkit.Put[httpx.Versions](w, versions)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

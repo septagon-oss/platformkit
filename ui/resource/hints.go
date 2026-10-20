@@ -26,7 +26,7 @@ import (
 // `field.<name>.help`, `enum.<field>.<value>`, `command.<verb>.label`,
 // `command.<verb>.confirmation.<title|body|confirmLabel>`,
 // `command.<verb>.successMessage`, and a command argument's
-// `command.<verb>.field.<name>.label` / `.help`.
+// `command.<verb>.field.<name>.label` / `.help`, and `deck.<direction>.label`.
 //
 // A word nobody declared — the label computed off a field's name, the field's own
 // `doc:` sentence, an enum value's own spelling, a command's Summary and Description —
@@ -195,26 +195,23 @@ func (w Words) RouteWords(verb, summary, description string) (string, string) {
 		orSaid(w.text(at+".description", description), description)
 }
 
-// Entry is this resource's entry declaration in the request's language, and
-// returns the same value untouched when nothing is translated.
-//
-// It starts from the declared value and overwrites the four words and the two
-// label-carrying blocks, because which parts of a reading are words is the
-// translation scheme's business and not this function's: a rebuild that lists
-// fields has to be told, every time, that the next hint a shell reads is not a
-// word, and a hint nobody told it about reaches a served document in one language
-// only. `entity.EntryHints` carries no unexported field and no pointer a caller
-// mutates, so the copy is the whole declaration.
-//
-// The entry hints ride on the registration, shared by every request, so the two
-// values whose labels change — the group, each section — are copied out of the
-// shared value before they are written. Every slice stays shared: nothing here
-// writes one.
+// Entry returns declared entry words in this request's language.
+// Mutable blocks are copied before localization; deck queue and directions are
+// always copied so callers may safely narrow them to authorized commands.
 func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
-	if w.text == nil {
-		return p
-	}
 	out := p
+	out.Deck = p.Deck.Clone()
+	if out.Deck != nil {
+		for key, d := range out.Deck.Directions {
+			if !d.Skip {
+				d.Label = w.say("deck."+key+".label", d.Label)
+				out.Deck.Directions[key] = d
+			}
+		}
+	}
+	if w.text == nil {
+		return out
+	}
 	out.Singular = w.say("singular", p.Singular)
 	out.Plural = w.say("plural", p.Plural)
 	out.Description = w.say("description", p.Description)

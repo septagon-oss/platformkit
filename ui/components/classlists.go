@@ -739,13 +739,15 @@ var (
 
 	// Breadcrumb.
 	// A breadcrumb carries a row's name in its current entry, and a name can be one token nobody can
-	// hyphenate: without a break rule the entry measured 1352px wide inside a 390px viewport and the page
-	// scrolled sideways. The rule that stops it is the frame's — clShellMain, inherited by every crumb and
-	// its separator — and not one on this list, which the design tool projects as text.
+	// hyphenate: with no break rule the entry measured 1352px inside a 390px viewport and the page scrolled
+	// sideways. The frame owns that rule (clShellMain, `overflow-wrap: anywhere`) and it inherits; what split
+	// "Dashboard" was never the rule but the row squeezing every crumb below its own name. So the trail wraps,
+	// the links give way with an ellipsis, and no crumb declares a rule — which keeps them all projectable.
 	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
-			ListStyle("none").Margin(style.S0).Padding(style.S0)
-	clBreadcrumbSep = style.New().TextColor(style.FgTertiary)
-	clBreadcrumbCur = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium)
+			ListStyle("none").Margin(style.S0).Padding(style.S0).FlexWrap()
+	clBreadcrumbItem = style.New().Truncate().MinWidth(style.S0)
+	clBreadcrumbSep  = style.New().TextColor(style.FgTertiary).FlexShrink0()
+	clBreadcrumbCur  = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium).MinWidth(style.S0)
 
 	// Sidebar.
 	clSidebarRootAdmin = style.New().Display(style.DisplayHidden).
@@ -979,7 +981,8 @@ func ShellClassLists() []style.ClassList {
 		clCardHeader, clCardFooter, clCardImageVertical, clCardImageHorizontal,
 		clImageCover, clImageContain,
 		clCardHorizontal, clCardVertical,
-		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur,
+		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur, clBreadcrumbItem,
+		clChromeContext,
 		clSidebarRootAdmin, clSidebarRootContent, clSidebarWidthCollapsed,
 		clSidebarDisclosure, clSidebarDisclosureSummary, clSidebarDisclosurePanel,
 		clSidebarWidthExpanded, clSidebarDisabled, clSidebarInner,

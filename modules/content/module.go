@@ -24,6 +24,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
@@ -125,6 +126,14 @@ var Spec = rest.Spec[*contracts.Content]{
 		ThumbnailField: "coverImageId",
 		SummaryFields:  []string{"kind"},
 		Sortable:       []string{"title", "publishedAt", "updatedAt"},
+		Deck: &entity.DeckHints{
+			Queue: []string{"status:draft"}, Order: "updatedAt",
+			Directions: map[string]entity.DeckDirection{
+				"right": {Command: "publish", Label: "Publish", Tone: "success", Icon: "document"},
+				"left":  {Command: "archive", Label: "Archive", Tone: "warning", Icon: "folder"},
+				"down":  {Skip: true},
+			},
+		},
 	},
 }
 
@@ -159,8 +168,19 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	resource.Translations = deps.Translations
 	svc := internal.NewService(internal.Deps{Shown: deps.Shown})
 	return svc, module.Module{
-		Name:        "content",
-		Migrations:  Migrations.Files,
+		Name:       "content",
+		Migrations: Migrations.Files,
+		// `author_id` carries no foreign key on purpose, so the claim that it names a
+		// person is the module's to make.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:   "contents",
+			Person: "author_id",
+			Text:   []string{"title", "body"},
+			// A cover is a row of the file ledger, not a person: the erasure that
+			// anonymises a page leaves the picture alone and lets the file owner's
+			// own contributor deal with the picture it points at.
+			NotPerson: []string{"cover_image_id"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

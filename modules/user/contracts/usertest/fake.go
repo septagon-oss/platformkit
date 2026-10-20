@@ -242,6 +242,19 @@ func (f *Fake) Get(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contra
 	return f.get(id)
 }
 
+// Retained mirrors internal.Service.Retained: the row the store holds after Delete hid
+// it, and the same ErrNotFound for an id that was never anybody.
+func (f *Fake) Retained(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, ok := f.users[id]
+	if !ok {
+		return nil, crud.ErrNotFound
+	}
+	stored.Roles = slices.Clone(stored.Roles)
+	return &stored, nil
+}
+
 // ByEmail mirrors internal.Service.ByEmail.
 func (f *Fake) ByEmail(_ context.Context, _ db.Tx[db.Tenant], email string) (*contracts.User, error) {
 	f.mu.Lock()

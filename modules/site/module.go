@@ -18,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/site/internal"
@@ -109,8 +110,13 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		},
 	}
 	return svc, module.Module{
-		Name:        "site",
-		Migrations:  Migrations.Files,
+		Name:       "site",
+		Migrations: Migrations.Files,
+		// One row of a tenant's own presentation choices: a uuid that names a file.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:      "site_settings",
+			NotPerson: []string{"logo_file_id"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

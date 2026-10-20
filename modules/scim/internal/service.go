@@ -227,7 +227,7 @@ func (s *Service) ListUsers(_ context.Context, tx db.Tx[db.Tenant], q contracts.
 		StartIndex: offset + 1, ItemsPerPage: limit,
 	}
 	for _, row := range rows {
-		groups, err := s.groupsOf(tx, row.ID)
+		groups, err := groupsOf(tx, row.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -238,8 +238,11 @@ func (s *Service) ListUsers(_ context.Context, tx db.Tx[db.Tenant], q contracts.
 
 // groupsOf is the read-only half of membership: which of the provider's
 // collections this person is in. It is a query and not a column because the
-// membership lives in one table with one door — the Groups one.
-func (s *Service) groupsOf(tx db.Tx[db.Tenant], userID uuid.UUID) ([]contracts.GroupRef, error) {
+// membership lives in one table with one door — the Groups one. It is a function
+// and not a method because it consults nothing a Service holds: the module's
+// personal-data part (internal/personaldata.go) asks the same question of the same
+// two tables, and one spelling of it is the point.
+func groupsOf(tx db.Tx[db.Tenant], userID uuid.UUID) ([]contracts.GroupRef, error) {
 	var rows []struct {
 		ID   uuid.UUID `gorm:"column:id"`
 		Name string    `gorm:"column:name"`
@@ -267,7 +270,7 @@ func (s *Service) GetUser(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) 
 	if err != nil {
 		return nil, err
 	}
-	groups, err := s.groupsOf(tx, id)
+	groups, err := groupsOf(tx, id)
 	if err != nil {
 		return nil, err
 	}

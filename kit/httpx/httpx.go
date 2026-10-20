@@ -813,6 +813,9 @@ func (a *API) ValidateDeclarations() error {
 			return fmt.Errorf("httpx: %d route(s) contradict the router they are mounted on:\n  %s",
 				len(refusals), strings.Join(refusals, "\n  "))
 		}
+		if why := CheckRowHints(a.Resources()); why != "" {
+			return fmt.Errorf("httpx: %s", why)
+		}
 		return nil
 	}
 	sort.Strings(bad)

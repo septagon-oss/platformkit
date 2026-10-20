@@ -113,6 +113,7 @@
     "./modules/user/contracts.Service.Holders: added",
     "./modules/user/contracts.Service.OwnLanguage: added",
     "./modules/user/contracts.Service.Reactivate: added",
+    "./modules/user/contracts.Service.Retained: added",
     "./modules/user/contracts.Service.SetHandle: added",
     "./modules/user/contracts.Service.SetPreferredLocale: added",
     "./modules/user/contracts.Service.SetPreferredLocaleAt: added",

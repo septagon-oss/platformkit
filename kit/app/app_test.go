@@ -26,6 +26,7 @@ import (
 	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/migrations"
@@ -124,6 +125,8 @@ func hello() module.Module {
 		Migrations: fstest.MapFS{
 			"000001_notes.up.sql": {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
 		},
+		// The only uuid on the row is the tenant it belongs to.
+		PersonalData: personaldata.None("a note belongs to a tenant and its key is a serial"),
 		Routes: func(s httpx.Surfaces) {
 			httpx.Register(s.App, huma.Operation{
 				OperationID: "hello", Method: http.MethodGet, Path: "/",
@@ -354,7 +357,8 @@ func TestNewRefusesAnInvalidComposition(t *testing.T) {
 func TestMigrationSourcesFollowComposition(t *testing.T) {
 	mods := []module.Module{hello(), {Name: "no-sql"}, {Name: "another", Migrations: fstest.MapFS{
 		"000001_other.up.sql": {Data: []byte("SELECT 1")},
-	}, Adopts: []db.Adoption{{Owner: "elsewhere", Versions: []int64{1}}}}}
+	}, PersonalData: personaldata.None("its one file selects nothing into a table"),
+		Adopts: []db.Adoption{{Owner: "elsewhere", Versions: []int64{1}}}}}
 	sources := MigrationSources(mods)
 	var owners []string
 	for _, source := range sources {

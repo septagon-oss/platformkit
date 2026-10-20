@@ -139,6 +139,32 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
+		// What a person asked to stop being held is not answered by the filter that hides
+		// them: Delete leaves the row, and Get stops finding it. Retained is the read that
+		// sees it, and the only one whose absence would let an erasure certify a person
+		// whose address is still in the table.
+		"a deleted person is hidden and still held": func(t *testing.T, f Fixture) {
+			deleteDoor(t, f)
+			ada := administrator(t, f, "ada@acme.example.com")
+			administrator(t, f, "grace@acme.example.com")
+			if err := f.Delete(ada.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if _, err := f.Service.Get(f.Ctx, f.Tx, ada.ID); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("the directory answers a deleted person with %v, want ErrNotFound", err)
+			}
+			held, err := f.Service.Retained(f.Ctx, f.Tx, ada.ID)
+			if err != nil {
+				t.Fatalf("Retained: %v", err)
+			}
+			if held.ID != ada.ID || held.DeletedAt == nil {
+				t.Errorf("Retained answered %+v: it is the hidden row, not a live one", held)
+			}
+			if _, err := f.Service.Retained(f.Ctx, f.Tx, uuid.New()); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("Retained for an id that was never anybody = %v, want ErrNotFound", err)
+			}
+		},
+
 		"setting a password makes an invited user active": func(t *testing.T, f Fixture) {
 			u, err := f.Service.Invite(f.Ctx, f.Tx, "ada@acme.example.com", "Ada")
 			if err != nil {

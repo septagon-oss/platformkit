@@ -44,6 +44,7 @@ import (
 	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	"github.com/septagon-oss/platformkit/modules/subject"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
@@ -320,6 +321,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, ports *latePorts, withou
 			seeding(provision),
 			access(ask, ports),
 			change.Module,
+			subject.Module,
 			admin.Module,
 		}, without)...).
 		Theme(design.Default()).
