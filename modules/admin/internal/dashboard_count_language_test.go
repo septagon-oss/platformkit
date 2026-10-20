@@ -10,20 +10,26 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
+	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task"
+	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
 func TestDashboardNumbersUseTheReadersLocale(t *testing.T) {
 	catalog := xtext.Load("en", task.Catalogue())
-	p := pages{resources: []httpx.Resource{{
-		Module: "task", Entity: "task", Name: entity.Name{One: "Task", Other: "Tasks"},
-		Screen: "/app/task/tasks", Count: func(context.Context) (int64, error) { return 12345, nil },
-	}}}
+	p := pages{Shell: Shell{Authorize: allow(true)},
+		nav: page.NewNavigation([]module.NavEntry{{Label: "Tasks", Screen: "task/tasks", Permission: "task:read"}},
+			[]string{"/app/task/tasks"}, nil),
+		resources: []httpx.Resource{{
+			Module: "task", Entity: "task", Name: entity.Name{One: "Task", Other: "Tasks"},
+			Screen: "/app/task/tasks", Count: func(context.Context) (int64, error) { return 12345, nil },
+		}}}
 	for _, tag := range []string{"en", "pt-PT"} {
 		t.Run(tag, func(t *testing.T) {
 			selected := catalog.Select(tag)
-			view := p.dashboard(t.Context(), tenancy.Tenant{}, &selected)
+			view := p.dashboard(t.Context(), tenancy.Tenant{}, resource.Options{Locale: &selected})
 			body := render(t, g.Group(view.Body))
 			noun := selected.Plural("resource.task.task", 12345, "Task", "Tasks")
 			want := selected.Text("dashboard_count_number", "%d", 12345) + " " + noun
