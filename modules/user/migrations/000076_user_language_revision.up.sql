@@ -1,6 +1,6 @@
 -- The revision a language choice was read at.
 --
--- Migration 000072 refused this column while the choice had one writer and no
+-- Migration 000075 refused this column while the choice had one writer and no
 -- reader of a revision, and it was right then: a counter nobody compares is a
 -- fact nobody reads. Both halves changed with the account door. The choice is now
 -- written from two places — the command's own write and the versioned
