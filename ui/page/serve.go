@@ -298,6 +298,7 @@ func regionAddress(ctx context.Context, r Request) string {
 	}
 	return r.Path
 }
+
 // refusal is a handler's error read as the verdict it is: its own problem, or the 500
 // standing in for anything else. The verdict is handed over whole rather than flattened to
 // a status and a sentence, because the two fields a person's page needs are precisely the
