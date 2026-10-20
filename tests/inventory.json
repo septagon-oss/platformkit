@@ -69842,12 +69842,52 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/auth-anonymous-task-write.spec.ts",
+   "id": "e2e/auth-anonymous-task-write.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "auth refuses an anonymous task edit with 401 and preserves the committed row",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/auth-challenge-schemes.spec.ts",
    "id": "e2e/auth-challenge-schemes.spec.ts",
    "kind": "playwright",
    "layer": "journey",
    "merge_into": "",
    "name": "auth challenges an unrecognised key and refuses a session at the key-only command",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
+   "file": "e2e/auth-key-refusal-preserves-session.spec.ts",
+   "id": "e2e/auth-key-refusal-preserves-session.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "auth keeps the same identity and session after refusing a key-only command",
    "needs_db": true,
    "pkg": "e2e",
    "round_named": false,
@@ -75459,7 +75499,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2027,
+  "files": 2029,
   "forge_runs": [
    408,
    413,
@@ -75496,7 +75536,7 @@
    "behaviour": 3247,
    "composition": 454,
    "contract": 21,
-   "journey": 103
+   "journey": 105
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -75512,23 +75552,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3825,
+  "rows": 3827,
   "tiers": {
    "merge": 2408,
-   "nightly": 103,
+   "nightly": 105,
    "push": 1314
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1800,
+   "keep": 1802,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3469,
+   "keep": 3471,
    "keep-rewrite": 140,
    "merge": 216
   }
