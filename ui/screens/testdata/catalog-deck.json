@@ -1,0 +1,115 @@
+{
+  "catalogVersion": 3,
+  "resources": [
+    {
+      "module": "note",
+      "entity": "note",
+      "path": "/api/v1/note/notes",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "readOnly": true
+        },
+        {
+          "name": "createdAt",
+          "type": "time",
+          "readOnly": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "time",
+          "readOnly": true
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true,
+          "doc": "What this note is about"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "widget": "textarea",
+          "hideList": true
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "enum": [
+            "open",
+            "done"
+          ],
+          "default": "open"
+        },
+        {
+          "name": "rank",
+          "type": "int"
+        },
+        {
+          "name": "pinned",
+          "type": "bool"
+        },
+        {
+          "name": "tags",
+          "type": "list",
+          "elem": "string"
+        }
+      ],
+      "presentation": {
+        "deck": {
+          "queue": [
+            "status:open"
+          ],
+          "order": "-title",
+          "directions": {
+            "down": {
+              "command": "later",
+              "label": "Later",
+              "tone": "neutral",
+              "icon": "task"
+            },
+            "left": {
+              "command": "archive",
+              "label": "Archive",
+              "tone": "warning",
+              "icon": "folder"
+            },
+            "right": {
+              "command": "publish",
+              "label": "Publish",
+              "tone": "success",
+              "icon": "document"
+            },
+            "up": {
+              "command": "publish",
+              "label": "Keep",
+              "tone": "info",
+              "icon": "tag"
+            }
+          }
+        },
+        "primaryField": "title",
+        "sortable": [
+          "title"
+        ]
+      },
+      "screen": "/app/note/notes",
+      "immutable": [
+        "status"
+      ],
+      "writable": true,
+      "commands": [
+        {
+          "verb": "publish"
+        },
+        {
+          "verb": "archive"
+        },
+        {
+          "verb": "later"
+        }
+      ]
+    }
+  ]
+}

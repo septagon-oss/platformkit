@@ -252,7 +252,7 @@ func Localise(r httpx.Resource, text Text) httpx.Resource {
 func Describe1(r httpx.Resource, writable bool) Entry {
 	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
 		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
-	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present), Screen: r.Screen,
+	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present, r.Commands), Screen: r.Screen,
 		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
 		Operations: r.OperationWords()}
 	if writable {
