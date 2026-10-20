@@ -35,7 +35,7 @@ var Migrations = db.MigrationSource{
 	// 72 and 73 while this delivery was open, main took 000072 for its own
 	// command-effect marker underneath them, and the upgrade fixture reads one
 	// version as one ledger row whatever the owner, so 75 and 76 — past this
-	// delivery's own 000074 — are the numbers they carry.
+	// delivery's own 000077 — are the numbers they carry.
 	//
 	// 000025 indexes users twice in a file that does not create it. Applied, so
 	// unmarkable; the guard takes version 26 onwards.

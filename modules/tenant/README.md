@@ -81,7 +81,7 @@ writers is not refusing the older one, and only the comparison does that.
   number go unnamed, because `tenant.Bootstrap` declares the languages of a row that
   has no history to have read, and the tenant's own door has taken the revision as a
   required argument since the page began to carry it.
-- `migrations/000074_tenant_locale_self_service.up.sql` splits `tenants_scope` into
+- `migrations/000077_tenant_locale_self_service.up.sql` splits `tenants_scope` into
   read-your-own-row and change-your-own-languages, grants `tenant_locales` self
   insert/update/delete scoped to this tenant, and adds a `BEFORE UPDATE` trigger for
   the column rule a policy cannot state. PostgreSQL applies `WITH CHECK` to
@@ -118,7 +118,7 @@ the administrator and expects a page with controls for each served language.
 /api/v1/tenant/languages` route, or where that route is on the wrong surface, or
 where the write is missing from resource command discovery.
 `modules/tenant/internal` covers the operator's door and the floor under the last
-language, and `own_row_column_rule_test.go` runs the column rule of 000074 at the
+language, and `own_row_column_rule_test.go` runs the column rule of 000077 at the
 application role: `slug`, `name`, `status`, `operator` and `created_at` are refused to
 the tenant's own transaction, and `default_locale`, `locale_revision` and `updated_at`
 are not. `tenant_soft_deletion_refusal_test.go` holds the same boundary on the column
