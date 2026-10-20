@@ -143,13 +143,8 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 		// it precisely because it needs nobody and so is built first.
 		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
 		pkit.Put[filecontracts.Storage](w, store)
-		// The door to the deployment's secrets, opened once here. `store` above is
-		// the object store, so this one is named for what it is: which secret store
-		// it is — the environment, a mounted directory, an OpenBao — is
-		// secrets.adapter's answer, and a module that knew which would know the
-		// deployment. Both halves of the port go under their own keys, because a
-		// module that reads a secret and a module that seals one are two needs the
-		// same store answers.
+		// The secret store, opened once and put under both halves of the port;
+		// `store` above is the object store, and the why sits with the Provides.
 		secretsStore, err := secretStore(cfg)
 		if err != nil {
 			return module.Module{}, err
