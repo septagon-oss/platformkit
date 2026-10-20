@@ -66895,12 +66895,12 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
-   "file": "e2e/inbox-pagination.spec.ts",
-   "id": "e2e/inbox-pagination.spec.ts",
+   "file": "e2e/history-restore.spec.ts",
+   "id": "e2e/history-restore.spec.ts",
    "kind": "playwright",
    "layer": "journey",
    "merge_into": "",
-   "name": "the inbox finds a recipient beyond its first page of messages",
+   "name": "the version panel shows what an edit moved and brings the older words back",
    "needs_db": true,
    "pkg": "e2e",
    "round_named": false,
@@ -66915,12 +66915,12 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
-   "file": "e2e/history-restore.spec.ts",
-   "id": "e2e/history-restore.spec.ts",
+   "file": "e2e/inbox-pagination.spec.ts",
+   "id": "e2e/inbox-pagination.spec.ts",
    "kind": "playwright",
    "layer": "journey",
    "merge_into": "",
-   "name": "the version panel shows what an edit moved and brings the older words back",
+   "name": "the inbox finds a recipient beyond its first page of messages",
    "needs_db": true,
    "pkg": "e2e",
    "round_named": false,
@@ -72112,7 +72112,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1888,
+  "files": 1939,
   "forge_runs": [
    408,
    413,
@@ -72146,10 +72146,10 @@
    578
   ],
   "layers": {
-   "behaviour": 3049,
-   "composition": 429,
+   "behaviour": 3092,
+   "composition": 440,
    "contract": 21,
-   "journey": 96
+   "journey": 102
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -72165,23 +72165,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3595,
+  "rows": 3655,
   "tiers": {
-   "merge": 2294,
-   "nightly": 96,
-   "push": 1205
+   "merge": 2345,
+   "nightly": 102,
+   "push": 1208
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1661,
+   "keep": 1712,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3239,
+   "keep": 3299,
    "keep-rewrite": 140,
    "merge": 216
   }
