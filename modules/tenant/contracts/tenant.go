@@ -510,10 +510,9 @@ func (a Active) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant
 // exists — this module names no tag of its own. A composition that installs no
 // catalogues composes no provider, and then nothing is checked against anything.
 //
-// It is a struct around the tags rather than the slice itself because a slice is
-// the resolver's own spelling of "take every contribution of the element"
-// (pkit.Needs[[]E]): a named []string would be read as a demand for every
-// contributed string, and this is one value holding a list.
+// It is a struct around the tags to provide one vocabulary value. An unnamed
+// slice need takes contributions; a named contract is one provided value. See
+// docs/adr/0021-named-slices-are-contract-values.md for the resolver rule.
 type Languages struct {
 	Tags []string
 }

@@ -5,6 +5,7 @@ go 1.26.6
 toolchain go1.27.2
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/aserto-dev/go-authorizer v0.24.1
 	github.com/beevik/etree v1.7.0
 	github.com/coreos/go-oidc/v3 v3.21.0
@@ -26,6 +27,7 @@ require (
 	github.com/open-policy-agent/opa v1.21.0
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/wneessen/go-mail v0.8.1
 	github.com/yuin/goldmark v1.8.6
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0

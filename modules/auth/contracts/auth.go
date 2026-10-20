@@ -246,9 +246,10 @@ type Users interface {
 // path, which a bell shows and a page renders.
 //
 // It never carries the secret. The notice raised beside a reset link points at
-// ResetPath and nothing more, because a notification row is an ordinary row —
-// listed by a route, copied into no audit trail but readable by anybody who can
-// read the table — and a token in it is a live credential sitting in one.
+// the set-password page and nothing more, because a notification row is an
+// ordinary row — listed by a route, copied into no audit trail but readable by
+// anybody who can read the table — and a token in it is a live credential
+// sitting in one.
 type Notifier interface {
 	Notify(ctx context.Context, tx db.Tx[db.Tenant], n notificationcontracts.Notice) (*notificationcontracts.Notification, error)
 }
@@ -512,7 +513,23 @@ type Service interface {
 	// An operator permission outside the operator's own tenant is refused: the
 	// kernel would refuse the request anyway, so a role that named one would be
 	// a grant that looks like authority and is not.
+	//
+	// The same write with the answer about whether the row changed is
+	// SetRoleChanged, below.
 	SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*Role, error)
+
+	// SetRoleChanged is SetRole plus the one answer it withholds: whether this
+	// call changed a row. The write already computes it — it re-reads the role
+	// under the tenant's lock and does nothing when the row holds the list it was
+	// handed, so a retried click is once in the audit — and hands it over here.
+	//
+	// A caller that reports what it changed needs it. Writing the same list is
+	// not the same as writing it: whoever does the second one changed nothing, and
+	// a line telling a person otherwise is a claim about a row this transaction
+	// never touched. RepairSeededRoles is that caller and apps/platformkit prints
+	// its report.
+	SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string,
+		declared []tenancy.Grant) (*Role, bool, error)
 
 	// Purge deletes this tenant's expired sessions, spent tokens, spent recovery
 	// codes and API keys that have been expired or revoked for APITokenRetention,

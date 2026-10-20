@@ -44,6 +44,12 @@ type Fixture struct {
 	Keys func() []string
 	// Published is the events the implementation has published, in order.
 	Published func() []string
+	// Remove takes one file row away past every rule Delete keeps. The suite's own
+	// doors refuse to do it: Delete refuses a file a record still shows. Two doors
+	// in production reach that state without asking — the erasure door and the
+	// retention sweep, both named in the module's README — and a case that needs a
+	// use whose file is gone can only be written by standing in for them.
+	Remove func(id uuid.UUID)
 }
 
 // open is the Fixture's transaction as an opener, which is what Upload takes:
@@ -426,37 +432,38 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
-		// A file the ledger still shows is not deletable, and the refusal is the
-		// module's rather than a control's: a library that dims a button is a
-		// convenience, and this is the answer a client that never saw the page
-		// gets. Ending the last use is what makes the removal possible — the same
-		// rewrite that stamps the grace period the release sweep measures.
-		//
-		// What used to be true here — that a file could be removed under a body
-		// still showing it — stopped being true the moment the library started
-		// offering the delete. The removals that outrank a record's convenience are
-		// a subject's erasure and the two sweeps, none of which come through here.
-		"a file something still shows is not deletable until the last use ends": func(t *testing.T, f Fixture) {
-			shown := stored(t, f, hello)
+		// Ending the use of a file that was removed first is not the refusal
+		// above, and a record has to survive the difference: Delete consults the
+		// ledger no more than it does today, so the row that names a gone file is
+		// ordinary rather than corrupt, and the delete of the record that shows it
+		// must go through. Refusing here would strand that record and leave the
+		// ledger saying a file nobody has is still being shown.
+		"a use ended of a file that is already gone ends": func(t *testing.T, f Fixture) {
+			gone, kept := stored(t, f, "shown then removed"), stored(t, f, "still shown")
 			use := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
-			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{shown.ID}); err != nil {
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{gone.ID, kept.ID}); err != nil {
 				t.Fatalf("SetUses: %v", err)
 			}
-			before := len(f.Published())
-			if _, err := f.Service.Delete(f.Ctx, f.Tx, shown.ID); !errors.Is(err, contracts.ErrInUse) {
-				t.Fatalf("Delete of a file a record shows = %v, want ErrInUse", err)
+			// Not Delete: that door refuses a file a record still shows, which is the
+			// refusal in the case below. This is the state the erasure door and the
+			// retention sweep leave behind, and the row they leave is what the write
+			// here is for.
+			f.Remove(gone.ID)
+			if _, err := f.Service.Delete(f.Ctx, f.Tx, gone.ID); !errors.Is(err, crud.ErrNotFound) {
+				t.Fatalf("the removed file answers %v, want ErrNotFound", err)
 			}
-			if got := f.Published()[before:]; len(got) != 0 {
-				t.Errorf("the refused delete published %v, want nothing", got)
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID}); err != nil {
+				t.Fatalf("the edit that dropped a removed image = %v, want it accepted", err)
 			}
-			if _, back := read(t, f, shown.ID, false); back != hello {
-				t.Errorf("the refused delete left the file reading %q, want %q", back, hello)
+			if rows, err := f.Service.Uses(f.Ctx, f.Tx, kept.ID); err != nil || len(rows) != 1 || rows[0].Use != use {
+				t.Errorf("the file still shown reads by %+v (%v), want the one field showing it", rows, err)
 			}
-			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, nil); err != nil {
-				t.Fatalf("the edit that stopped showing it: %v", err)
-			}
-			if _, err := f.Service.Delete(f.Ctx, f.Tx, shown.ID); err != nil {
-				t.Fatalf("Delete once the last use ended = %v, want it to go through", err)
+			// The same rewrite again is the test that the dangling row went with
+			// the first one: were it still there, this call would end it a second
+			// time and name it as newly unused.
+			out, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID})
+			if err != nil || len(out) != 0 {
+				t.Errorf("rewriting the same body again ended %v (%v), want nothing", out, err)
 			}
 		},
 
@@ -589,6 +596,151 @@ func cases() map[string]func(*testing.T, Fixture) {
 				if _, _, err := lib.Search(f.Ctx, f.Tx, bad); !errors.Is(err, crud.ErrInvalid) {
 					t.Errorf("Search(%+v) = %v, want ErrInvalid naming what it accepts", bad, err)
 				}
+			}
+		},
+
+		// A file the ledger still shows is not deletable, and the refusal is the
+		// module's rather than a control's: a library that dims a button is a
+		// courtesy, and this is the answer a client that never saw the page gets.
+		// Ending the last use is what makes the removal possible — the same rewrite
+		// that stamps the grace period the release sweep measures. The removals that
+		// outrank a record's convenience are a subject's erasure and the two sweeps,
+		// none of which come through here.
+		"a file another record shows is not removed": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			use := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{row.ID}); err != nil {
+				t.Fatalf("SetUses: %v", err)
+			}
+			before := len(f.Published())
+			keys := len(f.Keys())
+			_, err := f.Service.Delete(f.Ctx, f.Tx, row.ID)
+			if !errors.Is(err, contracts.ErrInUse) {
+				t.Fatalf("Delete of a shown file = %v, want ErrInUse", err)
+			}
+			refused := new(contracts.InUse)
+			if !errors.As(err, &refused) || refused.File != row.ID || refused.Records != 1 {
+				t.Errorf("the refusal is %+v, want this file and one record", refused)
+			}
+			// Nothing was written, published or unlinked: a refusal is a refusal, and
+			// the bytes stay where the record showing them can still read them.
+			if got := f.Published()[before:]; len(got) != 0 {
+				t.Errorf("the refusal published %v, want nothing", got)
+			}
+			if len(f.Keys()) != keys {
+				t.Errorf("the refusal removed a blob, want every key still there")
+			}
+			if _, back := read(t, f, row.ID, false); back != hello {
+				t.Errorf("the refused file reads %q, want %q", back, hello)
+			}
+			// The record stops showing it, and now the file is nobody's to protect.
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, nil); err != nil {
+				t.Fatalf("ending the use: %v", err)
+			}
+			f.one(t, "deleting it then", contracts.EventDeleted, func() {
+				if _, err := f.Service.Delete(f.Ctx, f.Tx, row.ID); err != nil {
+					t.Fatalf("Delete once nobody shows it: %v", err)
+				}
+			})
+		},
+
+		// Records, not rows: one page that shows one picture in its body and its
+		// summary is one page to go and edit, and contracts.DistinctRecords is the
+		// count both implementations give. Counting rows would answer 4 about a
+		// refusal a person can only act on twice.
+		"a file two records show names two records": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			one, two := uuid.New(), uuid.New()
+			uses := []contracts.Use{
+				{Module: "content", Entity: "page", Record: one, Field: "body", Locale: "en"},
+				{Module: "content", Entity: "page", Record: one, Field: "summary", Locale: "en"},
+				{Module: "content", Entity: "page", Record: one, Field: "body", Locale: "fr"},
+				{Module: "site", Entity: "logo", Record: two, Field: "body", Locale: "en"},
+			}
+			for _, use := range uses {
+				if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{row.ID}); err != nil {
+					t.Fatalf("SetUses %s/%s: %v", use.Module, use.Field, err)
+				}
+			}
+			if rows, err := f.Service.Uses(f.Ctx, f.Tx, row.ID); err != nil || len(rows) != 4 {
+				t.Fatalf("the ledger holds %+v (%v), want the four rows this wrote", rows, err)
+			}
+			_, err := f.Service.Delete(f.Ctx, f.Tx, row.ID)
+			refused := new(contracts.InUse)
+			if !errors.As(err, &refused) || refused.Records != 2 {
+				t.Errorf("four rows over two records = %v, want a refusal naming two records", err)
+			}
+		},
+
+		// The audience a record asserts travels into the rewrite that files its
+		// uses, so a published page that gains a picture gains public bytes in the
+		// write that added it. SetShown stays the only door that changes the
+		// audience of a row it did not write.
+		"an added use of a record with a public audience is public at once": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			uses := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			f.one(t, "filing a published use", contracts.EventVisibility, func() {
+				if _, err := f.Service.(contracts.ShownUses).SetUsesShown(f.Ctx, f.Tx, uses, []uuid.UUID{row.ID}, true); err != nil {
+					t.Fatalf("SetUsesShown: %v", err)
+				}
+			})
+			out, _, err := f.Service.Open(f.Ctx, f.Tx, row.ID, true)
+			if err != nil {
+				t.Errorf("an anonymous read of the file a published record shows: %v", err)
+			} else if out.Visibility != contracts.VisibilityPublic {
+				t.Errorf("visibility is %q, want public", out.Visibility)
+			}
+		},
+
+		// The same rewrite with no audience asserts nothing: a private file stays
+		// private, and a file somebody raised by hand keeps what they asked for — the
+		// recompute of added files runs only under a public audience, so a draft never
+		// takes a hand-raised visibility back.
+		"an added use of a record with no audience flips nothing": func(t *testing.T, f Fixture) {
+			private := stored(t, f, "a draft's picture")
+			hand, err := f.Service.Upload(f.Ctx, f.open, upload("logo.png", "image/png", contracts.VisibilityPublic, png))
+			if err != nil {
+				t.Fatalf("a public upload: %v", err)
+			}
+			uses := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			before := len(f.Published())
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, uses, []uuid.UUID{private.ID, hand.ID}); err != nil {
+				t.Fatalf("SetUses: %v", err)
+			}
+			if got := f.Published()[before:]; len(got) != 0 {
+				t.Errorf("a private rewrite published %v, want nothing", got)
+			}
+			for _, id := range []uuid.UUID{private.ID, hand.ID} {
+				row, _, err := f.Service.Open(f.Ctx, f.Tx, id, false)
+				if err != nil {
+					t.Fatalf("read %s: %v", id, err)
+				}
+				want := contracts.VisibilityPrivate
+				if id == hand.ID {
+					want = contracts.VisibilityPublic
+				}
+				if row.Visibility != want {
+					t.Errorf("%s is %q, want %q", id, row.Visibility, want)
+				}
+			}
+		},
+
+		// The retract this module already had, named as a case so the audience path
+		// above cannot quietly drop it: the last public use ending is what turns a
+		// file private again, in the write that ended it.
+		"the last public use ended makes a file private again": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			uses := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			if _, err := f.Service.(contracts.ShownUses).SetUsesShown(f.Ctx, f.Tx, uses, []uuid.UUID{row.ID}, true); err != nil {
+				t.Fatalf("SetUsesShown: %v", err)
+			}
+			f.one(t, "rewriting the body without it", contracts.EventVisibility, func() {
+				if _, err := f.Service.SetUses(f.Ctx, f.Tx, uses, nil); err != nil {
+					t.Fatalf("ending the use: %v", err)
+				}
+			})
+			if _, _, err := f.Service.Open(f.Ctx, f.Tx, row.ID, true); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("an anonymous read after the last public use ended = %v, want not found", err)
 			}
 		},
 

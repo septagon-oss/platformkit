@@ -25,6 +25,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/seed"
@@ -165,8 +166,14 @@ func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System
 		}
 		// The tenant row decides demo, exactly as it does for a command run: the
 		// hook reads the record that was just inserted, not a caller's wish.
-		_, err := service.ApplyProvisioned(ctx, tx, seed.Selection{Demo: t.Demo})
-		return err
+		ctx, err := events.ProvisionOperation(ctx, tx, "seed.provision", db.Now)
+		if err != nil {
+			return err
+		}
+		if _, err := service.ApplyProvisioned(ctx, tx, seed.Selection{Demo: t.Demo}); err != nil {
+			return err
+		}
+		return events.Succeed(ctx, tx, db.Now())
 	})
 }
 

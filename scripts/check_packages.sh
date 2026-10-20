@@ -42,10 +42,10 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request modules/task/domain design ui/forms
+parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
-    kit/tenancy/providers/topaz kit/flags/providers/openfeature
+    kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/inference kit/inference/providers/openai
     kit/flags/providers/ofrep kit/locale/providers/xtext pkit)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
 printf '%s\n' "$metadata" | awk -F '|' '
@@ -71,7 +71,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
             # net/http.Header, so propagating a trace context reaches net/http while
             # this package still opens no request and no connection.
             if (dep == "database/sql" && mode != "sql" && mode != "web" && mode != "trace") bad = 1
-            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web" && mode != "trace") bad = 1
+            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web" && mode != "trace" && mode != "model") bad = 1
             if (bad) {
                 print "OUT OF BOUNDS: " name " transitively depends on " dep > "/dev/stderr"
                 failed = 1
@@ -90,7 +90,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # job lock, limit bucket, stored path) is formed by the same grammar. A
         # package that reaches it reaches only values; nothing reaches back.
         appname = p "kit/appname"
-        delivery = p "kit/events/transport " p "kit/events/internal/delivery " appname
+        operation = p "kit/operation"
+        delivery = p "kit/events/transport " p "kit/events/internal/delivery " appname " " operation
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
         # kit/trace is in the outbox bound and the kernel one because the trace
         # context of a request is stored with the event the request caused, and
@@ -101,7 +102,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # gone. It is a value package — the standard library and kit/trace — and
         # it parses no request, which is why net/http stays out of this closure and
         # why the HTTP middleware is the only writer of these fields.
-        outbox = identity " " delivery " " p "kit/db " p "kit/trace " p "kit/request"
+        # Receipt completion uses the retry owner and the existing aggregate lock.
+        # Portable operation values remain independent of request and storage.
+        outbox = identity " " delivery " " p "kit/db " p "kit/trace " p "kit/request " p "kit/idempotency " p "kit/crud " p "kit/entity " p "kit/fault"
         # The recorded closure of the page composition layer (see the comment above parts).
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
@@ -126,7 +129,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # caller makes with a key is kept on the request path the page layer shares,
         # so the record package is in the closure of everything that reaches the web
         # kernel. What stays out is the other direction: it links no HTTP.
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
@@ -155,7 +158,8 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # Which call, from where, on which trace: a value the request leaves
         # behind, so the standard library and kit/trace and nothing else. Reading
         # net/http here would put a server in the closure of every worker.
-        check("kit/request", p "kit/trace")
+        check("kit/operation", "")
+        check("kit/request", p "kit/trace " operation)
         # kit/cache is the value every replica reads: the standard library, uuid and
         # singleflight. A store it talks to is a provider, not this core.
         check("kit/cache", uuid " golang.org/x/sync/singleflight")
@@ -201,7 +205,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # beside web; what stays refused is a *second* package that could install a
         # provider, and pkit installs none.
         check("pkit", kernel " " p "kit/app " p "kit/health " p "kit/limit " p "migrations " p "design " p "pkit", web " " measurement, "web")
-        check("kit/events/transport", uuid " " appname)
+        check("kit/events/transport", uuid " " appname " " operation)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox " " p "kit/telemetry", sql " " otel, "trace")
         check("kit/events/providers/nats", p "kit/config " delivery,
@@ -212,6 +216,20 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("kit/flags/providers/ofrep", p "kit/flags " p "kit/flags/providers/openfeature",
             uuid " github.com/open-feature/go-sdk github.com/open-feature/go-sdk-contrib/providers/ofrep", "provider")
         check("kit/locale/providers/xtext", p "kit/locale", "golang.org/x/text")
+        # kit/inference is the port and nothing else: the ask, the answer, the byte
+        # bounds, and the span of a call that reached the wire. The counter it rations
+        # calls with is a shape this package declares and a composition fills — the
+        # WriteLimiter move — because the store that answers it is a row owned by
+        # kit/limit, whose closure carries database/sql and net/http both. "model" is this
+        # own mode, of this package: it admits net/http, which kit/telemetry reaches through
+        # the OpenTelemetry API and the adapter reaches to post, and refuses the
+        # database runner the port must never link. The refusal line below is the
+        # half mode model states by absence, said once in the words it needs.
+        check("kit/inference", uuid " " p "kit/telemetry " p "kit/fault " p "kit/tenancy " p "kit/internal/syscap ", otel, "model")
+        # The adapter posts one JSON body to one endpoint with net/http and reads one
+        # back. The provider mode is what refuses it a database, a web framework and
+        # a second HTTP client library.
+        check("kit/inference/providers/openai", p "kit/inference " p "kit/telemetry " p "kit/tenancy " p "kit/fault " p "kit/internal/syscap ", uuid " " otel, "provider")
         exit failed
     }
 '
@@ -231,6 +249,17 @@ if [ -n "$sdk" ]; then
 	echo "MEASUREMENT BOUNDARY: an OpenTelemetry SDK or exporter is imported outside kit/app, which is the" >&2
 	echo "one package that installs the process's TracerProvider and MeterProvider:" >&2
 	printf '%s\n' "$sdk" | sed 's/^/  /' >&2
+	exit 1
+fi
+
+# What "model" refuses by absence, said directly: the port that asks a model for an
+# answer must not link the runner that writes the counter it spends. The composition
+# hands the count in through inference.Counter; a database/sql in this closure would
+# mean the port had started choosing where its allowance lives.
+if go list -buildvcs=false -deps ./kit/inference | grep -x 'database/sql'; then
+	echo "OUT OF BOUNDS: kit/inference links database/sql. The allowance is asked of a Counter the" >&2
+	echo "composition fills (kit/limit satisfies it); importing the store here would put a runner," >&2
+	echo "and every tenant's rows behind it, inside a port that only counts calls." >&2
 	exit 1
 fi
 

@@ -27,7 +27,11 @@ bounded lazy composition on the same port.
 The generation, the envelope, the budget, the batching and the refusal of an entry
 with no lifetime belong to this package and not to an adapter, so a second store is
 four methods and cannot get the invalidation wrong. `cachetest` is the one conformance
-suite both adapters run.
+suite both adapters run, and its `Store` factory is handed the case rather than a name:
+two calls made with one case are two handles onto one store, and every case is handed a
+store it owns alone — so a backend with one connection has to hand back a handle that
+closes only that handle and addresses a keyspace of the case's own, which is why the
+suite's close case is last.
 
 Sessions, permission grants and entitlements are never cached here, in this process or
 in any store: `modules/auth`'s own kernel says a permission cache is a window in which
@@ -42,10 +46,9 @@ row-level security. [docs/cache.md](../../docs/cache.md) holds the table.
   no `maxmemory` at all) is the requirement; `compose.yaml` states it and
   [docs/cache.md](../../docs/cache.md) says why. A `volatile-*` policy is safe — the
   counter has no TTL for it to take.
-- **`Group[V]` has no in-tree consumer.** It ships, it runs the same conformance suite as
-  everything else here, and the client-composition caches it was written for are in the
-  applications that install these modules, not in this repository. `kit/httpx`'s host
-  resolution is the only cache composed here.
+- **Composed values are recomputable.** `modules/picture` uses `Pool[V]` over
+  Group's retention engine for a total bound across tenant keys. Both retain
+  immutable values only; source access is checked before asking for bytes.
 - **One namespace granularity.** A `Move` closes a whole `Scope`, so an invalidation
   costs every other entry under it one reload. A finer generation, one per entry, is the
   same mechanism at one key per entry and waits on a deployment that measures the

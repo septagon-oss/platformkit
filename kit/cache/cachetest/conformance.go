@@ -34,12 +34,24 @@ var (
 	tenantB = uuid.MustParse("22222222-2222-4222-8222-222222222222")
 )
 
-// Store returns one handle onto the adapter's store.
+// Store returns one handle onto the store belonging to one case.
 //
-// Calling it twice inside one case must return two handles onto **one** store:
-// that is what "two replicas" means here. An adapter whose factory builds a fresh
-// store per call cannot pass the sharing and the invalidation cases, which is the
-// whole point of the suite. The suite closes what it is given.
+// The *testing.T it is handed is the case. Two calls made with the same t must
+// return two handles onto **one** store — that is what "two replicas" means here,
+// and an adapter whose factory builds a fresh store per call cannot pass the
+// sharing and the invalidation cases, which is the whole point of the suite. A
+// call made with a different t must return a store that case owns alone: the suite
+// closes what it is given when the case that asked for it ends, so a store two
+// cases reach is closed for the later one. A factory that keys its stores by
+// t.Name() therefore has to forget the entry in the cleanup of the case that made
+// it: the name is the same across a repetition of that case (-count, which is what
+// `make flakes` does) and only the *testing.T tells one run's case from the next.
+//
+// A backend with one connection cannot hand a store of its own to every case, so
+// the handle it returns has to release only that handle and address a keyspace of
+// the case's own: a Close that reaches the one connection ends every case that
+// follows it. This suite places its close case last, on purpose, so that such a
+// handle is the only one that has to be.
 type Store func(t *testing.T) cache.Cache
 
 // Failing returns one handle onto a store that cannot be reached — no process
@@ -346,8 +358,60 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 		}
 	})
 
-	// C13. Close is the Runtime's one release: safe to call twice, and everything
+	// C13. Every case is handed a store of its own, and a release belongs to the
+	// case that called for it. The suite closes a case's store when that case ends,
+	// so a factory that reaches one store from two cases hands the later case a
+	// closed one, and the suite's verdict then depends on the order it ran in. The
+	// close happens inside this case and the cases it asks about are minted here, so
+	// the claim holds whatever else runs next.
+	t.Run("every case is handed a store of its own", func(t *testing.T) {
+		c := fresh(t, store)
+		ctx, key := context.Background(), cache.Shared("host").Entry("example.com")
+		if _, _, _, err := c.Get(ctx, key); errors.Is(err, cache.ErrClosed) {
+			t.Fatalf("the store this case was handed answers ErrClosed before anything here closed one: a release reached a store belonging to another case, or to an earlier run of this one")
+		}
+		if err := fill(t, c, key, []byte("this case"), time.Minute); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+		// A nested run is how this case asks what a case that is not it is handed:
+		// the *testing.T below is one no other case, and no later repetition of this
+		// name, will ever be given. One before the release, one after it.
+		var closed, shares bool
+		reads := func(t *testing.T) bool {
+			_, found, _, err := fresh(t, store).Get(ctx, key)
+			switch {
+			case errors.Is(err, cache.ErrClosed):
+				closed = true
+			case err != nil:
+				t.Fatalf("Get of an absent key = %q, found=%v, err=%v; want nothing, false, no error", "", found, err)
+			}
+			return found
+		}
+		t.Run("the case before the release", func(t *testing.T) { shares = reads(t) })
+		if closed {
+			t.Fatal("a case was handed a store some earlier case closed: the suite gives every case a store that case owns alone")
+		}
+		if shares {
+			t.Fatal("two cases reach one store: a case can pass on what an earlier one left behind, and the release this suite runs at the end of each case closes that store for the next")
+		}
+		if err := c.Close(); err != nil {
+			t.Fatalf("Close of this case's own store: %v", err)
+		}
+		t.Run("the case after the release", func(t *testing.T) { shares = reads(t) })
+		if closed {
+			t.Fatal("this case's Close reached the store the case after it was handed: a case may release its own store and no one else's")
+		}
+		if shares {
+			t.Error("the store the case after this one was handed still holds what this case wrote: the suite's cases would read each other's entries")
+		}
+	})
+
+	// C14. Close is the Runtime's one release: safe to call twice, and everything
 	// after it is refused rather than attempted against a closed handle.
+	//
+	// This case closes the store it was handed, so it is placed last and on purpose.
+	// An adapter whose backend has one connection cannot run it anywhere else; no
+	// other case may depend on where it sits.
 	t.Run("a close releases the store and is idempotent", func(t *testing.T) {
 		c := store(t)
 		t.Cleanup(func() { _ = c.Close() })

@@ -152,7 +152,7 @@ func TestAnOwnerCancelledMidHandlerReleasesItsTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancelOwner()
-	waitFor(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
+	waitUntil(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
 	if n := committed(t, admin); n != 0 {
 		t.Errorf("rows visible after the owner ended = %d, want 0", n)
 	}
@@ -206,7 +206,7 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 		if err := p.Err(); err != nil {
 			t.Errorf("the owner's end was remembered as a database failure: %v", err)
 		}
-		waitFor(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
+		waitUntil(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
 	})
 	t.Run("owner ended while waiting for a connection", func(t *testing.T) {
 		_, appURL := dbtest.URLs(t)
@@ -234,7 +234,7 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 			_, err := p.Tx(context.WithoutCancel(owner))
 			opened <- err
 		}()
-		waitFor(t, "the open to wait for the pool", func() bool { return app.Stats().WaitCount > before })
+		waitUntil(t, "the open to wait for the pool", func() bool { return app.Stats().WaitCount > before })
 		cancelOf(t, owner)()
 		if err := <-opened; !errors.Is(err, context.Canceled) {
 			t.Errorf("an open whose owner ended while it waited = %v, want context.Canceled", err)
@@ -254,7 +254,7 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 			t.Fatal(err)
 		}
 		_ = p.Close(true)
-		waitFor(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
+		waitUntil(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
 	})
 }
 
@@ -337,7 +337,7 @@ func TestACancelRacingTheCommitFinalisesOnceAndNeverReopens(t *testing.T) {
 			t.Fatalf("iteration %d: Tx after the owner ended opened a transaction", i)
 		}
 	}
-	waitFor(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
+	waitUntil(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
 }
 
 type valueKey struct{}
@@ -448,8 +448,8 @@ func cancelOf(t *testing.T, owner context.Context) context.CancelFunc {
 	return cancel.(context.CancelFunc)
 }
 
-// waitFor polls cond until it holds, failing after ten seconds.
-func waitFor(t *testing.T, what string, cond func() bool) {
+// waitUntil polls cond until it holds, failing after ten seconds.
+func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for !cond() {

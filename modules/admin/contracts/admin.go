@@ -1,6 +1,7 @@
 // Package contracts holds the ports modules/admin declares and consumes: the
-// sign-in page's two halves, the language the shell answers in before the
-// browser negotiates one, and the composition the gallery shows.
+// sign-in page's two halves, where a generated screen fetches a picture, the
+// language the shell answers in before the browser negotiates one, and the
+// composition the gallery shows.
 package contracts
 
 import (
@@ -54,6 +55,27 @@ const (
 	// for the mailbox link before it can sign in.
 	KindPassword RegistrationKind = "password"
 )
+
+// Pictures is the door the generated screens fetch a picture field's bytes from:
+// the address template, with the literal `{id}` standing for the file id a field
+// holds. The shell draws a `present:image` cell as a picture and not as the id its
+// column holds, and the door belongs to the module that stores the bytes, so a
+// shell that named the address would be naming a route it does not mount.
+//
+// It is Optional because a composition with no file store composes no such door:
+// the cell then draws the plain value it drew before picture fields existed, which
+// is an answer rather than a mistake — the same one an absent `pictures` block
+// gives the workspace catalogue.
+//
+// The same address is published to a shell that is not a browser as that
+// document's `pictures.source`, so a phone and a browser row fetch the same bytes
+// from the same door; the composition that has met both writes it once.
+type Pictures struct {
+	// Source is the address template, `{id}` standing for the file id.
+	Source string
+	// ComposedSource is the composed-picture address with a {reference} placeholder.
+	ComposedSource string
+}
 
 // Locale selects a language for the sign-in page before the browser negotiates
 // one. Return "" to leave the negotiation alone; never persist a preference

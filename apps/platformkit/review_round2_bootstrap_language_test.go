@@ -32,7 +32,7 @@ import (
 )
 
 func TestABootstrapThatRefusesALanguageWritesNoInstallation(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
 
 	err := bootstrap([]string{
@@ -89,7 +89,7 @@ func TestABootstrapThatRefusesALanguageWritesNoInstallation(t *testing.T) {
 // again on the way read).
 
 func TestBootstrapSaysItsLanguagesOnce(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
 	err := bootstrap([]string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,

@@ -40,6 +40,113 @@ Entity fields are flat scalars/lists; nested answer maps need an adapter. Compon
 Props describe presentation, while entity and answer contracts own data validity.
 A2UI/MCP adapters need separate protocol wiring; source export does not supply it.
 
+## Four consumers constrain shared contracts
+
+This baseline separates **observed source** from **required behavior** and
+**unsupported or unverified claims**. The four scenarios below come from traced
+downstream consumers at their resolved dependency revisions. Their exact pins,
+private source citations and test provenance stay in the task evidence. Source
+inspection establishes the paths described here; it does not establish that those
+applications run on this foundation revision. The public tests linked here prove
+foundation mechanisms, not execution of the four products. Older consumer wiring
+is historical evidence; new composition uses the typed declarations below.
+
+A resource grant decides who may reach a door. The domain's eligibility,
+ownership and revision checks decide whether this actor may do this act now, so
+in every scenario below neither one stands in for the other.
+
+**Reused** — pkit's resolver ([resolve.go](pkit/resolve.go)): `cycleThrough`
+walks the dependency edges and `cycleReasons` reads the `from`/`contributors`
+maps; the composition and Describe fixtures; the resource, content, operation and
+migration owners each row below names. **Added** — the declared contract and
+supplier on each edge of a cycle refusal, because a module path alone does not
+say which declaration to remove, and this baseline. **Made reusable** — no new
+unit: the edge explanation is the refusal's sentence, which Validate, Plan/Build,
+Explain and Describe return alike because all four resolve through one plan.
+
+| Scenario | Observed contract, transaction owner and visible result | Constraint exposed by the consumer |
+|---|---|---|
+| Publishing | A curriculum service imports immutable source digests, reviews a revision, then publishes its active pointer and event in the tenant transaction. Staff actions reach that service through a declared operation; lesson pages render Markdown, while completions retain their content digest. This is distinct from editing a Content page. | Releasing an unreviewed revision is refused; editing released source in place must not rewrite existing completion evidence. The traced service checks publication state but does not internally recheck the manage grant or take an expected revision, and some refusals return a loaded revision. Authority and empty refusal results remain required, unproved behavior. |
+| Reservations | Product forms and API commands resolve current room configuration and ownership, then call Booking Request/Transition in the request transaction. Confirmation locks the reservation and resource intervals, checks expected revision, time and Eligibility, and records history/event together. A losing confirmation rolls the request back. | Availability is a projection, not a capacity hold. A current read grant cannot confer membership eligibility or ownership. Exact committed retries recover a reservation; they do not perform another confirmation under new eligibility. |
+| Commerce | A basket command checks its buyer and obtains prices from the product. Checkout invokes stock/purchase contributions under the same local transaction, then emits its event. Payment consumes that event; its collector calls the processor outside the database transaction and records settlement later. | A checked-out basket can still have a pending payment. A lost processor response is an unknown outcome, not evidence that no money moved. A cash-mode sale test cannot establish processor completion. |
+| Project work | Work commands take explicit actor, command ID and expected revision. Project and command locks protect current access checks, item changes, exact response receipts, history and outbox writes. Product forms recover those receipts under current authority. DescriptionFormat is stored as plain/Markdown, but the traced display passes only Description to plain text rendering. | Resource permission cannot replace project membership, requester visibility or field-level edit authority. Replaying a receipt cannot bypass revoked access. The foundation's [SLA Task rule](modules/task/domain/README.md) is a different capability and cannot substitute for Work. |
+
+### Retain the owners; extend only the demonstrated gaps
+
+| Area | Observed limitation and counterexample | Required direction |
+|---|---|---|
+| Resource | [`rest.Operation[I,O]`](kit/rest/operation.go) accepts projections, but [`rest.Spec`/`Command`](kit/rest/rest.go) require [`crud.Entity`'s storage identity](kit/entity/entity.go). An existing catalogue reservation screen adds Base/TableName scaffolding to an already identified contract; duplicate identity/timestamp fields can change its JSON. An availability answer has no stored row at all. | Extend the existing resource/presentation owner with non-storage input/output metadata; retain operation validation and commands. Remove the reservation adapter only after proving IDs, timestamps, wire fields and absent generic write routes remain intact. A status PATCH must never replace Confirm's revision, command identity and eligibility checks. |
+| Content | Markdown is a meaning even when its editor is a textarea. Work already stores a format, while its traced display drops it. Current resource media metadata follows the richtext widget. The saved string `*draft*` is literal in plain text and emphasis in Markdown. | Extend semantic format propagation through the existing entity/rest, content/richtext and file owners, independently of editor selection. Preserve saved meaning and publication digests. A successful generic CRUD upload does not prove custom Work commands validate private attachments or roll file-use writes back. |
+| Operation | Existing operation/catalog schemas describe command fields and presentation without a complete retry/effect/completion contract. AddItem repeated twice increments twice; Checkout recovers the existing transition. Equal-amount refunds can be distinct intents. | Extend existing descriptions and [`httpx` receipts](kit/httpx/operation_receipt.go), retaining domain receipts and the catalogue's refund intent/reservation owner. Do not create another journal. Describe local commit, outbox delivery and external completion separately; a timeout must not turn an uncertain refund into available funds. |
+| Payment subject | The traced payment contract's `SubjectKind`/`Subject` supports cart and subscription; the actual payers use cart. No traced reservation or Work operation needs another payable kind. | Retain that closed set. “PaymentSubject” is a description, not a new type or generic entity reference. A named consumer must justify another subject before the shared contract grows. |
+
+A port accepting `db.Tx[db.Tenant]` can commit the writes performed through that
+local transaction. It cannot commit a remote charge, policy decision or another
+server's write atomically with SQL. A remote substitute needs proof at its actual
+consistency boundary. Provider denial and outage both refuse mutation, but are
+different outcomes; an outage cannot silently become optional-provider absence.
+
+### Responsibilities and recovery across eight dimensions
+
+Here, **correctable** means the caller can change input, authority, configuration
+or revision through its legitimate owner. **Immutable** means retry cannot change
+the recorded identity, retained history or prohibited scope of that request.
+These are recovery explanations, not new error codes or a promise that every
+command is safe to repeat. An unknown remote outcome needs observation and
+reconciliation under its original identity before another effect is attempted.
+
+| Dimension | Responsibility, invariant and state owner | Invalid combination and recovery | Executable boundary and remaining proof |
+|---|---|---|---|
+| Product variation | **Required:** products choose content, roles, policy inputs, prices, locale and branding; each capability owns its generic state/invariants. Every declaration has a reader. | Product-specific branching in a shared module is outside its scope. Missing required policy configuration is correctable at composition; supported optional absence must be explicit. | [Composition fixtures](pkit/compose_test.go) exercise declared selections. Actual four-product boots and ordinary-pin adoption remain unverified. |
+| Composition | **Observed:** pkit resolves typed needs, selections and contributions before kit/app opens infrastructure. No domain transaction exists during resolution. | Missing provider, conflicting selection and dependency cycles are correctable declaration errors; reordering Use cannot remove a directed cycle. Empty optional needs and contribution lists are valid. | Existing missing/conflicting/cycle cases in [compose_test.go](pkit/compose_test.go), refusal parity in [describe_test.go](pkit/describe_test.go), and no-effect refusal in [build_test.go](pkit/build_test.go). These do not prove consumer adoption. |
+| Identity / ownership | **Required:** Postgres RLS and an explicit tenant transaction combine with current actor/grant/scope/revision checks inside domain commands. Refusal writes/emits nothing and returns no stale row. Work Access, Booking Eligibility and buyer ownership remain distinct owners. | Foreign-tenant/owner access is immutable for that scope; stale revision is correctable by an authorized fresh read/new intent. Changing actor/input under a retained ID is immutable for that ID. Refuse removing a final required member, never a write merely finding none. | Public [Content conformance](modules/content/contracts/contenttest/conformance.go) is a mechanism example. Composed revocation, ownership and the publishing authority gap need separate consumer proof. |
+| Workflows | **Observed source:** publication, reservation, checkout/payment and Work each own transitions, snapshots and receipts. **Required:** local state/history/outbox commit together; generic writes cannot bypass commands. | Unreviewed publication, overlap, exhausted stock and stale edits are correctable through their owners; released evidence, a started reservation slot and changed retained intent are immutable in their original scope. A SQL rollback cannot reverse a remote effect. | [Operation transaction cases](kit/rest/operation_test.go) establish the shared door. Domain transition, concurrent exclusion and composed rollback/recovery proofs remain with each service. No generic workflow engine is implied. |
+| Presentation | **Observed:** entity/rest/httpx and ui/resource/screens/page own metadata, HTTP and generated screens; product pages own their presentation. Content/richtext/file own rendering and file references. They own no extra domain state. | Generic mutation of a command-only projection is unsupported. Contradictory format declarations are correctable before deployment; silent reinterpretation of stored plain text and cross-scope attachment use are immutable policy violations. | [Command](kit/rest/operations_test.go), [screen operation](kit/rest/screens_operations_test.go), [form/export](ui/screens/design_test.go) and [file storage](modules/file/contracts/filetest/storage.go) cases are foundation proofs. Actual JSON/form/native parity and custom-command attachment rollback remain owed. |
+| Upgrades | **Required:** the existing migration ledger and module owners preserve applied checksums, tenant ownership, immutable source/history, formats, file references and pending identities from named supported starts. | Changed applied SQL is immutable for that version. Transient failure may be correctable through the runner's transaction/retry boundary; deleting data or falsifying a checksum is not recovery. Unsupported starting versions are not certified. | [Migration ownership](docs/adr/0011-migration-ownership.md) and the [populated rehearsal](scripts/rehearse_migrations.sh) define the foundation boundary. Four populated consumer upgrades/restarts remain unverified. |
+| Operations | **Required:** runtime/service owners distinguish local commit, delivery and external completion, retaining actor/input/intent identity across uncertainty. Clock inputs, UTC timestamps and int64 minor-unit amounts with Currency remain explicit contracts. | Bound-input changes are immutable. Outage is correctable infrastructure failure but can leave an unknown remote outcome; observe/reconcile it rather than inventing success, failure or a fresh ID. Legitimate new intents get distinct IDs. | [Transport receipt cases](kit/httpx/operation_receipt_test.go) do not establish domain receipt equivalence or remote exactly-once execution. Controlled provider failures, refunds, restart and deployed recovery remain owed. |
+| AI-assisted development | **Required:** inspection names exact source/dependency, declared operation and actual proof result. Existing Describe/Explain and product evidence owners record facts; generated text grants no authority. | Stale source or missing/skipped proof is correctable by re-resolution and execution. Private paths in public documentation or a fluent readiness claim without evidence are outside this artifact's scope. | [Stable description and fixture agreement](pkit/describe_test.go) prove composition projection, not runtime business behavior. Exact operation/proof linkage and a finite coverage report remain owed; no runtime AI module is introduced. |
+
+The source observations vary by consumer as follows. **S** means observed in the
+traced source, **U** means the named runtime proof is unverified. Every cell has
+its own obligation; a shared fixture's success does not fill any consumer's U.
+
+| Dimension | Publishing | Reservations | Commerce | Project work |
+|---|---|---|---|---|
+| Product variation | S editor roles/curriculum; U boot | S membership/room policy; U boot | S payment and cash selections; U paid boot | S project configuration/Access; U boot |
+| Composition | S commerce/file needs; U current-pin adoption | S Eligibility adapter; U current-pin adoption | S cart contribution/provider; U current-pin adoption | S one Access provider; U current-pin adoption |
+| Identity / ownership | S route grant/revision scope; U service-time authority | S ownership/eligibility locks; U revocation | S buyer/server price; U revocation | S actor/project/command locks; U revocation |
+| Workflows | S reviewed release/digest evidence; U execution | S confirm/cancel/exclusion; U execution | S checkout versus settlement; U remote completion | S stages/receipts/history; U execution |
+| Presentation | S Markdown/lesson-specific rendering; U attachment/browser proof | S forms and newer catalogue projection; U adopted wire parity | S basket API/view; U native/generated parity | S stored format/plain display gap; U format/media adoption |
+| Upgrades | S revision/digest storage; U populated restart | S legacy snapshot test; U populated restart | S pending identity storage; U populated restart | S installed-ledger test; U mixed-format restart |
+| Operations | S publication/download paths; U lost response | S exact retry versus eligibility; U restart | S collector/refund intent sources; U ambiguous outcome recovery | S exact receipt/commit-failure cases; U runtime recovery |
+| AI-assisted development | S source/requirement inputs; U runtime proof linkage | S source/requirement inputs; U runtime proof linkage | S source/requirement inputs; U runtime proof linkage | S source/requirement inputs; U runtime proof linkage |
+
+### Missing proof owners and limits
+
+These work items identify intended acceptance boundaries, not delivered features
+or evidence of completion. A newer catalogue capability is not adopted merely
+because its source exists; products must resolve a version that contains it.
+
+| Owner | Required proof or change |
+|---|---|
+| T-0561 catalogue / T-0562 products | Ordinary versioned dependencies and typed composition in the actual selected applications, without replace/go.work. |
+| T-0580 upgrades | Named supported source revisions, populated fixtures, transactional retry and checksum refusal; T-0591/0592 adopt those fixtures. |
+| T-0581 resource / T-0582 reservations / T-0583 native operations | Compatible non-storage metadata through existing owners; real reservation adoption preserving JSON/timestamps, eligibility, revisions and absent CRUD routes; actual native renderer/runtime command behavior. |
+| T-0584 content / T-0585 Work / T-0586 native content | Semantic format independent of widget, shared attachment validation/use accounting on custom commands, bounded Work Description/DescriptionFormat adoption, and native editor/audience behavior. |
+| T-0587 refunds / T-0588 provider consistency | Existing distinct refund intents through duplicate delivery, dispatch, restart and unknown outcomes; the selected policy seam's deny/outage, tenant/actor/action, cancellation and revocation behavior. This does not certify remote substitution for transaction-bearing ports. |
+| T-0589 operation semantics / T-0590 evidence | Retry/effect/completion descriptions through existing operation/OpenAPI/catalog/receipt owners; exact versioned source/operation/proof links with stale or missing provenance visible. Description must execute no command. |
+| T-0591 reservations and commerce | Actual composed ownership, eligibility, competing reservations, stock rollback, pending/refund recovery and populated upgrade/restart. |
+| T-0592 publishing and project work | Actual publication and mixed-format Work upgrades, retained immutable evidence, attachment audience, revoked authority and restart. Explicitly assign repair of the observed publishing grant/revision/error-result gap if outside the proof task's remit; leave that proof unverified until repaired. |
+| T-0593 coverage | Four consumers by eight dimensions, actual runtime selections and named missing/unsupported cells; no readiness score inferred from this baseline. |
+
+Products retain curriculum/review staffing, room/member policy values, prices,
+refund/fulfillment policy, project roles/stages/fields, audience/retention,
+language/timezone/currency and production provider choices. This baseline adds
+no migration, retention policy, payment subject, registry or universal model.
+It does not establish all-version compatibility, browser/native parity,
+translation coverage, live processor behavior, backup/restore readiness,
+operational capacity or production readiness.
+
 ## Provider boundaries
 
 Reuse the existing owned contracts: [event delivery](kit/events/README.md), File `Storage`, Notification
@@ -103,10 +210,23 @@ and claims no deployment, and a product reaches a tier with its own evidence.
 
 ## Start at the composition
 
-[apps/platformkit/modules.go](apps/platformkit/modules.go) is an ordered list
-of module constructors. Each constructor accepts a typed `Deps` struct and
-returns a manifest. There is no runtime discovery step. The compiler checks
-dependency types; composition tests check required values and selected modules.
+[pkit.Module](pkit/declare.go) declares what it Provides, Needs, optionally uses
+and Contributes. An application names its modules with `pkit.NewApp(name).Use(...)`;
+the resolver checks selections and orders their builders before infrastructure
+opens. Builders supply typed dependencies to implementations and return kernel
+manifests. There is one declared composition path, with no runtime discovery.
+
+Missing-provider errors name the consumer and the contract, and the module to
+add when the contract's package names one; conflicting providers require Choose.
+A cycle error names the first cycle in Use/dependency order and explains its
+selected contracts, for example:
+`cart → collectibles → cart is a cycle: cart takes cartcontracts.Extension from collectibles; collectibles needs cartcontracts.Service from cart`.
+Needs says “needs”, a selected scalar Optional says “uses”, and a contribution
+collection says “takes”. Reasons follow declaration order, without duplicates.
+An absent optional provider or empty collection adds no edge. Validate, Explain,
+Describe and Build use the same refusal; a refused Describe exposes problems
+without a partial module plan. [The executable cases](pkit/compose_test.go)
+and [Describe parity](pkit/describe_test.go) exercise that contract.
 
 [apps/platformkit/app.go](apps/platformkit/app.go) is the same application read
 as one sentence — the modules it uses, the ports the kernel asks the application
@@ -176,7 +296,13 @@ errors are sanitized before the existing outbox retry mechanism retains them.
 A module has three parts. `contracts/` defines its entities, public service,
 events, permissions and conformance suite. `internal/` contains its
 implementation. `module.go` declares the constructor and manifest.
-[modules/task](modules/task/) is the reference example. The manifest's
+[modules/task](modules/task/) is the reference example. The cases a conformance
+suite runs are generated by [kit/porttest](kit/porttest/), the test-support
+package beside `kit/db/dbtest`: a module describes its port once in
+`contracts/<name>test/conformance.go` — its operations, what each refuses,
+which cases the port does not owe and why — and the harness runs that one
+description against the module's fake and against the real service, so the two
+can never answer different questions. The manifest's
 subscriptions, jobs and routes are typed by the kernel packages that run them;
 [ADR 0013](docs/adr/0013-manifests-name-kernel-types.md) records why
 `kit/module` is not a declaration-only leaf and what would move first if a
@@ -537,7 +663,12 @@ vocabulary of its own.
 **Where it lives.** `kit/events` — `Publish` (`kit/events/events.go:61`),
 `PublishFor` (`:80`) for a system transaction that has to name its tenant,
 `Consume` (`:208`), and the claim and dead-letter paths (`:284`, `:293`). The
-wire format is its own file, `kit/events/transport/cloudevents.go`.
+wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
+(`kit/events/transport/transport.go:192`) is the other door onto the same stream:
+one tenant's one event, watched from now on, claiming nothing, retrying nothing
+and holding no history — what a live connection is built on (`kit/stream`), and
+what an app opens for its own events by declaring `Streams`
+(`kit/module/module.go:96`).
 
 **Builds on.** CloudEvents 1.0 in structured content mode, hand-built: the
 envelope (`kit/events/transport/cloudevents.go:41`) is what crosses a broker, so
@@ -546,7 +677,7 @@ without importing this package (`:3-7`). `SpecVersion` is `"1.0"` and nothing
 else is accepted (`:27`). The broker is NATS JetStream,
 `github.com/nats-io/nats.go` v1.54.0 (Apache-2.0), from
 `kit/events/providers/nats` (`Connect`, `kit/events/providers/nats/options.go:14`)
-against the `nats:2-alpine` container (`compose.yaml:30`).
+against the `nats:2-alpine` container (`compose.yaml:52`).
 
 **How the tenant crosses it.** Three ways, all load-bearing: `Publish` takes a
 `db.Tx[db.Tenant]`, so no call publishes without a tenant transaction
@@ -578,14 +709,14 @@ effect still needs its provider's idempotency contract.
 
 **Where it lives.** `modules/notification`: `Notification`
 (`modules/notification/contracts/notification.go:29`), the `Notice` a refusal
-raises (`:70`), `RecipientLookup` (`:84`) and `HostLookup` (`:101`) as what it
-needs from other modules, `Mailer` (`:127`) as what it does not, and `Service`
-(`:134`). It ships no `rest.Spec`, and the manifest says why: a Spec's list route
+raises (`:72`), `RecipientLookup` (`:116`) and `HostLookup` (`:133`) as what it
+needs from other modules, `Mailer` (`:179`) as what it does not, and `Service`
+(`:186`). It ships no `rest.Spec`, and the manifest says why: a Spec's list route
 is the whole tenant, and these rows are one person's (`modules/notification/module.go:5`).
 
-**Builds on.** `net/smtp`-shaped SMTP (`NewSMTP`,
-`modules/notification/internal/smtp.go:78`) and one Go template. No mail library,
-and no message catalogue of its own.
+**Builds on.** `github.com/wneessen/go-mail` over SMTP (`gomail.New`,
+`modules/notification/providers/gomail/gomail.go:70`) or the module's own mailbox
+(`modules/notification/mailbox.go:30`), one Go template, no message catalogue.
 
 **How the tenant crosses it.** `notifications.tenant_id` under `ENABLE` and
 `FORCE` with the tenant-match policy
@@ -593,20 +724,20 @@ and no message catalogue of its own.
 the delivery ledger in `000027_notification_deliveries`. An address and a host
 arrive only through the two ports the application implements over the user and
 tenant modules, so this module never names either
-(`modules/notification/module.go:31-44`).
+(`modules/notification/provider.go:29-30`).
 
-**How it is traced and audited.** Its three events
-(`modules/notification/contracts/events.go:22-24`) reach the trail through
+**How it is traced and audited.** Its ten events
+(`modules/notification/contracts/events.go:20-52`) reach the trail through
 `SubscribeAll`; no span of its own.
 
 **How an app extends it.** Implement `Mailer`. The deployment names which sender
-it has (`FromDeployment`, `modules/notification/provider.go:39-42`): SMTP when the
-process names a host, port and from-address, the mailbox when not (`:52-59`), and
-the mailbox is no stub — "it keeps every message and logs each one" (`:23-26`) —
+it has (`FromDeployment`, `modules/notification/provider.go:40-43`): SMTP when the
+process names a host, port and from-address, the mailbox when not (`:60-62`), and
+the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
-(`apps/platformkit/main.go:82`). A refusal a person must see
-raises a `Notice` (`apps/platformkit/product.go:292`). A nil lookup writes every
-row and sends no mail: the notice is the record, the mail is a copy.
+(`apps/platformkit/main.go:84`). A refusal a person must see raises a `Notice`
+(`apps/platformkit/product.go:292`). A nil lookup writes every row and sends no
+mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
 
@@ -619,7 +750,7 @@ seam between a tenant and a name; `Deps` and `S3Config`
 **Builds on.** `github.com/minio/minio-go/v7` v7.3.0 (Apache-2.0) over the S3
 API, which the module names as several stores — AWS S3, Garage, SeaweedFS, Ceph
 RGW (`modules/file/module.go:43`); locally it is tested against the SeaweedFS
-image pinned by digest (`compose.yaml:100`). The client library is the dependency;
+image pinned by digest (`compose.yaml:122`). The client library is the dependency;
 the store is a separate program.
 
 **How the tenant crosses it.** In the object name: `Scope.ObjectName` produces
@@ -656,7 +787,7 @@ permission grants or entitlements (`kit/cache/cache.go:22-27`).
 
 **Builds on.** `github.com/redis/go-redis/v9` v9.22.0 (BSD-2-Clause) against
 `valkey/valkey:8-alpine` run with `--maxmemory-policy noeviction`
-(`compose.yaml:82-83`). The kernel imports neither a Valkey server nor a
+(`compose.yaml:104-105`). The kernel imports neither a Valkey server nor a
 Valkey-specific client, and `docs/cache.md` holds the rules.
 
 **How the tenant crosses it.** The key *is* the tenant: `CacheKey` spells
@@ -679,7 +810,7 @@ else (`apps/platformkit/product.go:235`, in `caches()` at `:234`). A selected
 adapter with no constructor is refused before anything opens
 (`kit/app/app.go:185-192`). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
-generation 0, and what `Move` closed reopens (`compose.yaml:77-81`) — a deployment
+generation 0, and what `Move` closed reopens (`compose.yaml:99-103`) — a deployment
 fault, not a caller's.
 
 ### Metrics and traces: OpenTelemetry
@@ -695,7 +826,7 @@ with the header names written once (`:27-31`). `kit/app` installs the one
 
 **Builds on.** `go.opentelemetry.io/otel` v1.46.0 (Apache-2.0) and its OTLP/gRPC
 exporters; W3C Trace Context, which `kit/trace` implements rather than wraps. The
-collector is a separate program (`compose.yaml:64`).
+collector is a separate program (`compose.yaml:86`).
 
 **How the tenant crosses it.** Every span and number is stamped from the context:
 `SpanAttrs` puts `pkit.tenant` — the slug a person recognises — and

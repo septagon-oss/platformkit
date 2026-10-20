@@ -376,7 +376,11 @@ var _ changecontracts.Notifier = proposalNotifier{}
 func (n proposalNotifier) Told(ctx context.Context, tx db.Tx[db.Tenant], p changecontracts.Notice) error {
 	title, body := verdictSaid(p.Kind, p.State)
 	_, err := n.notices.Notify(ctx, tx, notificationcontracts.Notice{
-		Recipient: p.Recipient, Title: title, Body: body, Link: p.Link, Email: true,
+		// The mail bit is the ceiling this product raises: a proposer is told in the
+		// application whatever the person's settings decide about mail, because in-app
+		// is the floor of every notice rather than something a caller can ask off.
+		Recipient: p.Recipient, Title: title, Body: body, Link: p.Link,
+		Wants: notificationcontracts.WantsEmail,
 	})
 	return err
 }
@@ -407,6 +411,17 @@ func verdictSaid(kind, state string) (title, body string) {
 // the other pinned addresses are — a notice and a refusal both name it, and only the
 // running server says whether the composition really put it there.
 const pinnedProposals = "/app/change/proposals"
+
+// noticeShell is the chrome the notification module's in-app list is drawn in:
+// this product's chrome and frame again, tagged for the module whose page it is
+// and returning to the same home. Where the unread bell sits, and how many are
+// in it, stays the shell's own decision — the module mounts its list at its own
+// address and names no link to it.
+func noticeShell(messages page.Messages) page.Shell {
+	s := reviewShell(messages)
+	s.Tag = "notification"
+	return s
+}
 
 // reviewShell is the chrome the two review pages are drawn in: the composition's own
 // brand, stylesheet, way back and merged catalogue, which are the same four facts the

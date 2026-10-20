@@ -308,6 +308,19 @@ func (s *secured) Flush() {
 	}
 }
 
+// FlushError is Flush with the writer underneath answered in the form that can
+// fail: the surface's caching and content-security policy is applied to the response
+// that is about to go, and then the flush is asked of the writer below.
+//
+// It exists for the same reason (*buffer).FlushError does: a wrapper whose Flush
+// returns nothing is a wrapper that makes a connection which cannot flush look like
+// one that can, and http.ResponseController asks this method before it ever reaches
+// the void one.
+func (s *secured) FlushError() error {
+	s.policy(http.StatusOK)
+	return flushError(s.ResponseWriter)
+}
+
 // nonce is 128 bits, base64, per request. crypto/rand.Read cannot fail on any
 // platform this runs on — it panics rather than returning an error — so there
 // is nothing here to handle.
