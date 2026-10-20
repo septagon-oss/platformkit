@@ -164,7 +164,8 @@ type Service interface {
 	Export(context.Context, db.Tx[db.Tenant], uuid.UUID) (Export, error)
 }
 
-// Export contains current domain rows and results, with private fields excluded
+// Export contains current options, their ballots, participants and results;
+// removed options and their ballots are omitted. Private fields stay excluded
 // by their JSON tags. It has the same authority and snapshot lock as Results.
 type Export struct {
 	Question     Question      `json:"question"`

@@ -119,5 +119,61 @@ func (s *Service) Export(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	if err != nil {
 		return contracts.Export{}, err
 	}
+	active := make(map[uuid.UUID]bool, len(results.Options))
+	for _, result := range results.Options {
+		active[result.Option.ID] = true
+	}
+	snap.Options = slices.DeleteFunc(snap.Options, func(o contracts.Option) bool { return !active[o.ID] })
+	snap.Votes = slices.DeleteFunc(snap.Votes, func(v contracts.Vote) bool { return !active[v.OptionID] })
 	return contracts.Export{Question: snap.Question, Options: snap.Options, Participants: snap.Participants, Votes: snap.Votes, Results: results}, nil
+}
+
+// cardQueue lists the actor's unvoted options across open participant questions.
+// One SQL snapshot filters membership and deadlines before counting and paging.
+func (s *Service) cardQueue(ctx context.Context, tx db.Tx[db.Tenant], offset, limit int) ([]*contracts.Card, int64, error) {
+	if err := scope(ctx, tx); err != nil {
+		return nil, 0, err
+	}
+	actor, err := s.access.Current(ctx, tx, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !actor.Read || !actor.Vote || actor.PersonID == uuid.Nil {
+		return nil, 0, contracts.ErrDenied
+	}
+	if limit == 0 {
+		limit = 50
+	}
+	var rows []struct {
+		contracts.Option `gorm:"embedded"`
+		VoteRevision     int64
+		Total            int64
+	}
+	err = tx.DB().Raw(`WITH visible AS (
+		SELECT o.*, coalesce(v.revision, 0) AS vote_revision FROM decide_options o
+		JOIN decide_questions q ON q.tenant_id = o.tenant_id AND q.id = o.question_id
+		JOIN decide_participants p ON p.tenant_id = q.tenant_id AND p.question_id = q.id
+		AND p.person_id = ? AND p.deleted_at IS NULL
+		LEFT JOIN decide_votes v ON v.tenant_id = o.tenant_id AND v.option_id = o.id
+		AND v.person_id = p.person_id AND v.deleted_at IS NULL
+		WHERE o.deleted_at IS NULL AND o.removed_at IS NULL AND v.value IS NULL
+		AND q.deleted_at IS NULL AND q.status = ? AND (q.closes_at IS NULL OR q.closes_at > ?)
+	), page AS (SELECT * FROM visible ORDER BY position, id LIMIT ? OFFSET ?)
+	SELECT page.*, tally.total FROM (SELECT count(*) AS total FROM visible) tally
+	LEFT JOIN page ON true ORDER BY page.position, page.id`,
+		actor.PersonID, contracts.StatusOpen, s.now(), limit, offset).Scan(&rows).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	out := []*contracts.Card{}
+	var total int64
+	for _, row := range rows {
+		total = row.Total
+		if row.ID != uuid.Nil {
+			utcBase(&row.Option.Base)
+			row.Option.FirstMatchedAt = utc(row.Option.FirstMatchedAt)
+			out = append(out, &contracts.Card{Option: row.Option, VoteRevision: row.VoteRevision, Unvoted: true})
+		}
+	}
+	return out, total, nil
 }

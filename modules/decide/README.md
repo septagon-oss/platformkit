@@ -341,8 +341,11 @@ accepted behavior is described here; verification limits remain below:
    The read projection embeds Option and adds read-only, nonstored `unvoted`
    and `voteRevision` scalar fields, so the existing entity schema stays flat.
    Its scalar deck queue is `unvoted:true`; declared fixed ordering is position
-   then ID. Every advertised filter/order either reaches the service adapter or
-   is refused, never ignored. General option lists are a separate scoped read.
+   then ID across the actor's open participant questions. Optional `questionId`
+   narrows that queue; no question filter is required. Membership, active options,
+   actor ballots and deadlines are filtered before counting and pagination.
+   Every advertised filter/order either reaches the service adapter or is
+   refused, never ignored. General option lists are a separate scoped read.
 2. Extend existing command responses and `httpx.Command` execution to retain
    typed result/undoToken metadata in both generated and JSON adapters. Extend
    the existing deck/catalogue with `undoable:true` only when every advertised
@@ -395,7 +398,7 @@ participant removal or historical-vote append ledger. Current ballots and rankin
 freeze after close; query observation metadata and invite revocation may change. Tenant deletion follows the existing tenancy owner's teardown
 policy. Decide offers an authenticated read export of the four entities/current
 ballots plus results, under the same question share lock and permission as Results;
-it excludes secrets, credentials and internal latch fields. Export is JSON with
+it omits removed options and their ballots, secrets, credentials and internal latch fields. Export is JSON with
 stable UUID/time/value representations and no new third-party format library.
 Products own retention duration, subject-erasure policy, external archival and
 any future legal hold; they cannot bypass current scope checks with an export.

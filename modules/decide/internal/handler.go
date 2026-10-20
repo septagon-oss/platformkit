@@ -258,6 +258,9 @@ func (s *Service) cards(ctx context.Context, tx db.Tx[db.Tenant], q crud.Query) 
 			default:
 				return nil, 0, classified(contracts.ErrInvalid)
 			}
+			if question == uuid.Nil {
+				return nil, 0, classified(contracts.ErrInvalid)
+			}
 		case "unvoted":
 			if value != true {
 				return nil, 0, classified(contracts.ErrInvalid)
@@ -267,7 +270,8 @@ func (s *Service) cards(ctx context.Context, tx db.Tx[db.Tenant], q crud.Query) 
 		}
 	}
 	if question == uuid.Nil {
-		return nil, 0, classified(contracts.ErrInvalid)
+		cards, total, err := s.cardQueue(ctx, tx, q.Offset, q.Limit)
+		return cards, total, classified(err)
 	}
 	deck, err := s.Deck(ctx, tx, question)
 	if err != nil {
