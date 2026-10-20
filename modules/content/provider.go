@@ -3,9 +3,11 @@ package content
 import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
+	"github.com/septagon-oss/platformkit/modules/content/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -38,6 +40,7 @@ var Module = pkit.NewModule("content", wire,
 	pkit.Needs[rest.FileShown](),
 	pkit.Needs[httpx.Versions](),
 	pkit.Provides[contentcontracts.Service](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -49,5 +52,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Versions:     pkit.Get[httpx.Versions](w),
 	})
 	pkit.Put(w, svc)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

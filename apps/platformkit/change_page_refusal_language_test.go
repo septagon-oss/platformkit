@@ -121,7 +121,7 @@ func TestEveryRefusalTheReviewPageAnswersSpeaksTheRequestedLanguage(t *testing.T
 
 	t.Run("an apply of a subject that moved underneath it", func(t *testing.T) {
 		pid := proposed(t, "normal")
-		task := subject(t, cfg, admin, pid)
+		task := proposalSubject(t, cfg, admin, pid)
 		decided(t, first, pid, "approved", "1")
 		// The task itself, through the one door that stays open while the switch is
 		// on: a title is nobody's protected field, and the write moves the revision
@@ -200,9 +200,11 @@ func pageForm(pairs ...string) string {
 	return form.Encode()
 }
 
-// subject is the task one proposal was made against, read from the row's own subject
-// id, which is the line the page prints as its subject.
-func subject(t *testing.T, cfg config.Config, admin *http.Client, pid string) string {
+// proposalSubject is the task one proposal was made against, read from the row's own
+// subject id, which is the line the page prints as its subject. It carries the module's own
+// name in its own spelling because `subject` is the person module this application composes:
+// a helper that shadows the thing another file imports is a name that reads two ways.
+func proposalSubject(t *testing.T, cfg config.Config, admin *http.Client, pid string) string {
 	t.Helper()
 	code, body := do(t, cfg, admin, http.MethodGet, acmeHost, proposalsPath+"/"+pid, "")
 	if code != http.StatusOK {
