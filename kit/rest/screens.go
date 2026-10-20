@@ -70,7 +70,7 @@ func (s Spec[T]) resource() httpx.Resource {
 			if err != nil {
 				return 0, err
 			}
-			total, err := crud.Count[T](tx)
+			total, err := s.count(ctx, tx)
 			return total, Fault(err)
 		},
 		// The two narrowed counts a declared highlight and trendField ask, in the
@@ -78,6 +78,9 @@ func (s Spec[T]) resource() httpx.Resource {
 		// scope, the same lifecycle predicate, so a sub-count can only ever be a
 		// part of the whole one.
 		CountFiltered: func(ctx context.Context, w crud.Where) (int64, error) {
+			if s.Source != nil {
+				return 0, Fault(crud.ErrInvalid)
+			}
 			tx, err := transaction(ctx)
 			if err != nil {
 				return 0, err
@@ -86,6 +89,9 @@ func (s Spec[T]) resource() httpx.Resource {
 			return total, Fault(err)
 		},
 		CountDays: func(ctx context.Context, field string, from, to time.Time) ([]crud.DayCount, error) {
+			if s.Source != nil {
+				return nil, Fault(crud.ErrInvalid)
+			}
 			tx, err := transaction(ctx)
 			if err != nil {
 				return nil, err
@@ -98,7 +104,7 @@ func (s Spec[T]) resource() httpx.Resource {
 			if err != nil {
 				return nil, 0, err
 			}
-			items, total, err := crud.List[T](tx, q)
+			items, total, err := s.list(ctx, tx, q)
 			if err != nil {
 				return nil, 0, Fault(err)
 			}
@@ -113,7 +119,7 @@ func (s Spec[T]) resource() httpx.Resource {
 			return rows, total, nil
 		},
 		Get: func(ctx context.Context, id uuid.UUID) (map[string]any, error) {
-			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return crud.Get[T](tx, id) })
+			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.get(ctx, tx, id) })
 		},
 		Create: func(ctx context.Context, values map[string]any) (map[string]any, error) {
 			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {

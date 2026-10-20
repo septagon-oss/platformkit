@@ -211,6 +211,9 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 		// AndNotAGuess is the failure, not a hypothetical.
 		if c.Collection {
 			collection := func(ctx context.Context, body []byte) (page.View, error) {
+				if c.HasResult {
+					return commandOutput(res, c, ctx, uuid.Nil, body, o, at, at)
+				}
 				if err := perform(c, ctx, uuid.Nil, body); err != nil {
 					return page.View{}, err
 				}
@@ -232,6 +235,9 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 			continue
 		}
 		item := func(ctx context.Context, rowID uuid.UUID, body []byte) (page.View, error) {
+			if c.HasResult {
+				return commandOutput(res, c, ctx, rowID, body, o, at, at+"/"+rowID.String())
+			}
 			if err := perform(c, ctx, rowID, body); err != nil {
 				return page.View{}, err
 			}

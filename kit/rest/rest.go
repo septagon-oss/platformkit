@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"reflect"
 	"slices"
@@ -67,6 +68,9 @@ type UsesInput struct {
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
 type Spec[T crud.Entity] struct {
+	// Source replaces storage reads with a service's scope and projection.
+	// Nil keeps ordinary CRUD. See ReadSource for required callbacks and limits.
+	Source *ReadSource[T]
 	// RichTextFiles resolves richtext image references in the request transaction.
 	RichTextFiles richtext.Files
 	// FileUses records which file a richtext field of this resource references,
@@ -876,6 +880,12 @@ func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // fact the module already holds, and one the author could simply forget to
 // write. The door asks the module by verb instead — Spec.Gate says how.
 type CommandOptions struct {
+	// Bindings copies observed row fields into named command arguments. It is
+	// presentation metadata; execution validates submitted values without reload.
+	Bindings *RowBindings
+	// Undo names the authoritative token command for result-bearing commands.
+	// Empty means no undo capability is advertised.
+	Undo string
 	// Auth is who may run this command. The zero value is the Spec's own write
 	// permission, which is right for a command that moves a row an
 	// administrator owns and wrong for one somebody runs on their own thing:
@@ -947,6 +957,23 @@ type CommandOptions struct {
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
+	registerCommand(surfaces, spec, verb, summary, description, events, run, opts, nil, false, func(out T) httpx.CommandReply { return httpx.CommandReply{Result: out} })
+}
+
+// CommandResult mounts a command whose authoritative output is independent of
+// its resource row. JSON and generated adapters retain Result and UndoToken;
+// errors return no reply. Undo is available only when opts names its command.
+func CommandResult[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
+	run func(context.Context, db.Tx[db.Tenant], uuid.UUID, I) (Response[O], error), opts CommandOptions,
+) {
+	registerCommand(surfaces, spec, verb, summary, description, events, run, opts, entity.FieldsOf(reflect.TypeFor[O]()), true, func(out Response[O]) httpx.CommandReply {
+		return httpx.CommandReply{Result: out.Result, UndoToken: out.UndoToken}
+	})
+}
+
+func registerCommand[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
+	run func(context.Context, db.Tx[db.Tenant], uuid.UUID, I) (O, error), opts CommandOptions, output []entity.Field, result bool, reply func(O) httpx.CommandReply,
+) {
 	// A command's hints are checked here rather than in Spec.check because this is
 	// the one site with the verb, the options, the entity's schema and the
 	// argument's fields all in hand at once — and before any route is mounted, so
@@ -996,6 +1023,46 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	if err != nil {
 		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + err.Error())
 	}
+	bindings := map[string]string(nil)
+	if opts.Bindings != nil {
+		bindings = maps.Clone(opts.Bindings.Fields)
+	}
+	if bad := httpx.BindingFault(fields, spec.Schema().Fields, bindings); bad != "" {
+		panic("rest: command " + verb + ": " + bad)
+	}
+	if len(bindings) > 0 {
+		decode := prepare
+		prepare = func(values map[string]any) (I, error) {
+			for _, name := range slices.Sorted(maps.Keys(bindings)) {
+				if value, ok := values[name]; !ok || value == nil {
+					var zero I
+					return zero, fmt.Errorf("%w: bound argument %q is required", crud.ErrInvalid, name)
+				}
+			}
+			return decode(values)
+		}
+	}
+	if opts.Undo != "" && !result {
+		panic("rest: undo requires a result-bearing command")
+	}
+	execute := func(ctx context.Context, id uuid.UUID, values map[string]any) (httpx.CommandReply, error) {
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return httpx.CommandReply{}, problem.New(http.StatusServiceUnavailable, "this command is only performed inside a request")
+		}
+		in, err := prepare(values)
+		if err != nil {
+			return httpx.CommandReply{}, err
+		}
+		if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
+			return httpx.CommandReply{}, err
+		}
+		out, err := run(ctx, tx, id, in)
+		if err != nil {
+			return httpx.CommandReply{}, err
+		}
+		return reply(out), nil
+	}
 	// Endpoint is the command's own absolute address, which is the one path a
 	// shell can no longer derive for itself: once a command may live on the
 	// control-plane surface, {path}/{id}/{verb} stops being the rule. The
@@ -1005,23 +1072,9 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		Collection: opts.Collection, Auth: auth,
 		Endpoint: router.Prefix() + path,
 		Fields:   fields, EmptyInputFault: emptyFault, Present: opts.Present,
+		Bindings: bindings, Undo: opts.Undo, HasResult: result, Output: output, Execute: execute,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
-			tx, ok := httpx.TxFrom(ctx)
-			if !ok {
-				return problem.New(http.StatusServiceUnavailable,
-					"this command is only performed inside a request")
-			}
-			// The same decode the PATCH route uses: one set of rules for "3" as an
-			// int and for null as an empty pointer, and a field the command does not
-			// take is refused rather than quietly dropped.
-			in, err := prepare(values)
-			if err != nil {
-				return err
-			}
-			if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
-				return err
-			}
-			_, err = run(ctx, tx, id, in)
+			_, err := execute(ctx, id, values)
 			return err
 		},
 	})
@@ -1029,30 +1082,34 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	// type is what tells huma whether there is a path parameter to bind. That
 	// is the irreducible half of the difference; everything above it and the
 	// answer below are shared.
-	answer := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *I) (T, error) {
+	answer := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *I) (O, error) {
 		var in I
 		if body != nil {
 			in = *body
 		}
 		if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
-			var zero T
+			var zero O
 			return zero, err
 		}
 		return run(ctx, tx, id, in)
 	}
-	if slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
-		mountDefaultCommand(router, op, auth, opts.Collection, prepare, answer)
+	responseOptions := OperationOptions{}
+	if result {
+		responseOptions.CacheControl = "private, no-store"
+	}
+	if len(bindings) > 0 || slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
+		mountDefaultCommand(router, op, auth, opts.Collection, prepare, answer, responseOptions)
 		return
 	}
 	if opts.Collection {
-		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (T, error) {
+		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (O, error) {
 			return answer(ctx, tx, uuid.Nil, in.Body)
-		}, OperationOptions{})
+		}, responseOptions)
 		return
 	}
-	Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (T, error) {
+	Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (O, error) {
 		return answer(ctx, tx, in.ID, in.Body)
-	}, OperationOptions{})
+	}, responseOptions)
 }
 
 // MapArgs is a command's map-valued arguments, keyed by the JSON name the body uses
@@ -1252,6 +1309,14 @@ func (s Spec[T]) writeAuth() httpx.Auth {
 // events. It panics, at the mount site, for the same reason httpx.Permission
 // does: this is a wiring mistake, not a request-time condition.
 func (s Spec[T]) check() {
+	if s.Source != nil {
+		if s.Source.Get == nil || s.Source.List == nil {
+			panic("rest: Source requires Get and List")
+		}
+		if s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate) || s.offers(httpx.CRUDDelete) || s.Present.Highlight != nil || s.Present.TrendField != "" {
+			panic("rest: Source requires read-only operations without stored highlights or trends")
+		}
+	}
 	var bad string
 	switch {
 	case !strings.HasPrefix(s.Path, "/"):

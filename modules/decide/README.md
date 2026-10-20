@@ -1,11 +1,15 @@
-# Decide module specification
+# Decide
 
-**Intended contract; SQL, HTTP registration, migrations and client behavior are
-not implemented by this specification.** Decide owns a tenant's questions,
-options, participants, changeable ballots and ranked results. The executable
-[ballot decisions](contracts/decision.go) and [conformance cases](contracts/decidetest/conformance.go)
-are the rules the future SQL service must call and pass. The fake establishes
-those decisions only; it cannot establish RLS, commit behavior or concurrency.
+Decide owns a tenant's questions, options, participants, changeable ballots and
+ranked results. Its [SQL service](internal/service.go) and the conformance fake
+call the same [ballot decisions](contracts/decision.go). The shared
+[conformance cases](contracts/decidetest/conformance.go) run against both; the
+SQL suite additionally exercises RLS, concurrent ballots, outbox rollback,
+signed credentials, deadlines and notification delivery claims.
+
+This is an implementation checkpoint awaiting a source budget decision. The
+remaining integration and verification limits below are explicit; a passing
+module suite does not establish every accepted contract boundary.
 
 ## Reuse and boundaries
 
@@ -45,9 +49,11 @@ Its contracts use kernel values and the existing UUID value type; they name no
 HTTP framework, storage driver, SDK or HTML. Collaborators are Decide-owned
 ports implemented at composition, or existing kernel file/tenancy ports.
 
-The future `decide.Module` provides `contracts.Service` and needs
+The declared `decide.Module` provides `contracts.Service` and needs
 `contracts.Access`, `contracts.Clock`, `contracts.InviteKey`,
-`contracts.Notifier`, `jobs.TenantLister`, `rest.FileUses` and `rest.FileShown`.
+`contracts.Notifier`, `jobs.TenantLister`, `rest.FileUses`, `rest.FileShown`
+and `richtext.Files`. The last port validates that an option names an accessible
+workspace image; file-use bookkeeping alone does not establish its media type.
 There is no optional authorization or notification fallback, no contribution
 collection and no branch on another module's selection. Its one wire function
 constructs the service, Specs, subscription and job from these typed values.
@@ -323,10 +329,10 @@ to the same vote service. Down is a persisted vote, never `DeckDirection.Skip`.
 Card title, note/link summary, `present:image` cover and position ordering come
 from the existing entity/presentation metadata. Rewind delegates to undo-vote.
 
-Three prerequisite extensions are required in the foundation owners, specified
-here but not silently claimed as available:
+Three extensions are implemented in the existing foundation owners. Their
+accepted behavior is described here; verification limits remain below:
 
-1. `rest.Spec` needs a typed service-backed read adapter for list/get/count,
+1. `rest.Spec.Source` supplies a typed service-backed read adapter for list/get/count,
    shared by HTTP and `httpx.Resource` generated screens. Both option scope and
    question visibility must run through that adapter before pagination, count,
    file projection or summary. The actor's queue is a read projection with
@@ -361,17 +367,20 @@ here but not silently claimed as available:
    pin this case and demonstrate that binding does not silently refresh a stale
    card or bypass normal command input validation.
 
-Until these extensions are implemented and checked, ordinary contract tests do
-not establish a served participant deck or functional rewind. Web/mobile rendering,
+The served-deck SQL test exercises the queue, catalogue, fixed directions,
+authoritative vote response, signed rewind, tombstone revision and stale card
+refusal. Source callbacks serve both JSON and generated resource closures;
+`CommandOptions.Bindings`, `CommandResult`/`Response`, `httpx.Command.Execute`
+and the catalogue carry observed inputs and authoritative outputs. Web/mobile rendering,
 buttons, keyboard behavior, reduced motion, match animations and later Decide
 screens belong to their client tasks. Generated no-motion forms continue to come
 from rest.Spec; this module adds no pages in this phase.
 
 ## Storage, retention, time and validation
 
-Implementation adds append-only `<version>_decide.up.sql` migrations, transactional,
-module-owned and embedded as the existing MigrationSource. No down files.
-The version is allocated against the migration catalogue at implementation time.
+[000073_decide.up.sql](migrations/000073_decide.up.sql) adds the four tables,
+transactionally, through the module-owned embedded MigrationSource. It follows
+the existing kernel version 72. There is no down file or applied-file rewrite.
 Use `decide_questions`, `decide_options`, `decide_participants`, `decide_votes`.
 All have `ENABLE ROW LEVEL SECURITY`, `FORCE ROW LEVEL SECURITY` and
 `platformkit_tenant_match` in both USING/WITH CHECK. Foreign keys and uniqueness
@@ -439,8 +448,9 @@ and specialist validation. None is an unanswered module invariant.
 
 Open/add-participant/issue/revoke/undo and internal deadline close are explicit
 splits needed to make the decided requirements operable. No brief event or vote
-value was dropped. No app or client renderer is delivered here. No registration,
-budget or dependency pin is changed. The task identifier is not an import path:
+value was dropped. No application composes this module yet, so it remains uncomposed rather than
+being specific to one client. No client renderer or dependency pin is changed;
+source budget files remain at their approved specification allocation. The task identifier is not an import path:
 the intended module lives at `modules/decide`; literal phase commands aimed at
 `modules/T-0393-a-group-decides-together-the-decide-module` name no package.
 
@@ -456,3 +466,43 @@ No new dependency is proposed. Registry response from
 ```json
 {"Version":"v1.6.0","Time":"2024-01-23T18:54:04Z","Origin":{"VCS":"git","URL":"https://github.com/google/uuid","Ref":"refs/tags/v1.6.0","Hash":"0f11ee6918f41a04c201eceeadf612a377bc7fbc"}}
 ```
+
+## Composition
+
+Compose `decide.Module` through `pkit.NewApp(name).Use(...)`, with typed providers
+for every port listed above. `decide.WithSweepEvery(interval)` selects the same
+wire function with a different scheduler interval; zero means one minute and a
+negative interval refuses composition. `decide.MatchNotifications` adapts the
+existing Notification service and a product-supplied protected local link to the
+required match port. Product composition supplies the locked Access adapter; a
+cached request principal or an ordinary user lookup cannot satisfy its contract.
+
+**Reused** — `entity.Base`, `crud.GetForUpdate`, the request tenant transaction,
+forced RLS, `events.Publish` and the existing delivery claim, `jobs.PerTenant`,
+`pkit.NewModule`, `rest.Spec`, file image/use ports, Notification.Notify,
+`dbtest.Schema`, `porttest.Clock`, the conformance suite and shared generated UI
+components carry identity, authority boundaries, persistence and presentation.
+**Added** — Decide's four-table aggregate, canonical credentials and scoped
+service projections carry group ballots because Task, Content and the inspected
+catalogue/shelf owners do not own a changeable person/option decision.
+**Made reusable** — service-backed Spec reads, comparable row argument bindings,
+authoritative command replies, declared rewind metadata and the SQL conformance
+fixture are available to the next scoped resource.
+
+## Remaining checkpoint obligations
+
+The kernel's HTTP receipt layer can recover a cached response before calling a
+service again. This checkpoint has not yet proved retained current Read/Vote
+Access locks on that path, or reconciled private undo/invite credential recovery
+with the kernel's `CredentialExtension` policy. Do not treat keyed HTTP recovery
+or generated-form retry as verified authority or credential behavior. This must
+be resolved before the module is composed in an application.
+
+SQL deadline/ballot and concurrent-ballot tests do not establish every requested
+vote/close, join/revoke or vote/remove ordering. Current-authority retention is
+required of the composing adapter; the fixture adapter uses row share locks but
+has not yet been raced against revocation. Browser/mobile journeys, generated
+command outcome design-floor measurements and a real user/notification product
+composition are still unverified. These are delivery obligations rather than
+alternative domain policies. The source budget decision is required before the
+complete repository gate can pass; no owner approval is inferred.

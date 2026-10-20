@@ -22,6 +22,7 @@ var (
 	ErrUndo         = errors.New("decide: invalid undo")       // Immutable: this credential cannot act here.
 	ErrIntegrity    = errors.New("decide: inconsistent state") // Immutable: corrupt input is never partially accepted.
 	ErrExhausted    = errors.New("decide: revision exhausted") // Immutable: create a new identity.
+	ErrLastOption   = errors.New("decide: last active option") // Correctable: add another option first.
 )
 
 // BallotChange is a deterministic decision. NewID and at are supplied by the

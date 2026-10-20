@@ -25,6 +25,7 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
@@ -40,6 +41,8 @@ import (
 // rendered dimmed or disabled: the door is not there, because the route behind it is
 // not reachable by them either.
 type Command struct {
+	// Bindings fills hidden arguments from the displayed row, never a fresh read.
+	Bindings    map[string]string
 	Verb        string
 	Label       string
 	Description string
@@ -74,7 +77,7 @@ func (c Command) Action(item string) string {
 // act on a whole list are not offered beside a single row, and a command that acts
 // on a row has no meaning above a table of many.
 func commandForms(o Options, words Words, commands []Command, item string, collection bool) []g.Node {
-	return commandFormsIn(o, words, commands, item, collection, nil)
+	return commandFormsIn(o, words, commands, item, collection, nil, nil)
 }
 
 // commandFormsIn is the same with one row's standing in each language the tenant
@@ -86,7 +89,7 @@ func commandForms(o Options, words Words, commands []Command, item string, colle
 // design export, a monolingual tenant, the list screen — offers the command as it
 // always has, once.
 func commandFormsIn(o Options, words Words, commands []Command, item string, collection bool,
-	locales []entity.LocaleState) []g.Node {
+	locales []entity.LocaleState, row map[string]any) []g.Node {
 	out := make([]g.Node, 0, len(commands))
 	for _, c := range commands {
 		if c.Collection != collection {
@@ -95,11 +98,11 @@ func commandFormsIn(o Options, words Words, commands []Command, item string, col
 		perLocale := carriesRevisions(c)
 		if perLocale && len(locales) > 0 {
 			for _, l := range locales {
-				out = append(out, commandFormFor(o, words, c, item, l))
+				out = append(out, commandFormFor(o, words, c, item, l, row))
 			}
 			continue
 		}
-		out = append(out, commandFormFor(o, words, c, item, entity.LocaleState{}))
+		out = append(out, commandFormFor(o, words, c, item, entity.LocaleState{}, row))
 	}
 	return out
 }
@@ -128,7 +131,7 @@ func carriesRevisions(c Command) bool {
 // the person reads. The language is a control like any other until the screen knows
 // which one this form is for; then it is carried and the sentence beside the button
 // names it.
-func commandFormFor(o Options, words Words, c Command, item string, locale entity.LocaleState) g.Node {
+func commandFormFor(o Options, words Words, c Command, item string, locale entity.LocaleState, row map[string]any) g.Node {
 	// The form's accessible name is the sentence the module wrote for the API, and
 	// the button is the short verb phrase: a page with three command forms on it has
 	// to tell a reader what each one is for, and three buttons reading "Assign",
@@ -172,6 +175,12 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	}
 	arguments := words.forCommand(c.Verb)
 	for _, f := range c.Fields {
+		if source := c.Bindings[f.Name]; source != "" {
+			hidden := f
+			hidden.Widget = "hidden"
+			controls = append(controls, controlWords(arguments, hidden, display.Text(row[source]), "", false))
+			continue
+		}
 		if len(f.Keys) > 0 {
 			for _, k := range f.Keys {
 				controls = append(controls, mapKeyControl(f, k, locale))

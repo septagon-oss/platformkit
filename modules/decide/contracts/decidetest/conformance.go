@@ -29,6 +29,9 @@ type Fixture struct {
 	JoinProof   func(context.Context, uuid.UUID, contracts.InviteClaims) (bool, error)
 	UndoProof   func(context.Context, contracts.UndoClaims) (contracts.VoteReply, error)
 	OtherTenant func(func(context.Context, db.Tx[db.Tenant]))
+	// Corrupt checks malformed snapshots at storage admission when constraints
+	// prevent them from existing. Nil exercises the read refusal in the fake.
+	Corrupt func(context.Context, contracts.Snapshot) (contracts.Results, error)
 }
 
 // Harness owns one isolated fixture's lifetime and calls the case inside it.
@@ -401,6 +404,13 @@ func integrity(t *testing.T, f Fixture) {
 		s := base
 		s.Options, s.Participants = slices.Clone(base.Options), slices.Clone(base.Participants)
 		corrupt(&s)
+		if f.Corrupt != nil {
+			out, err := f.Corrupt(as(f.Ctx, Alice), s)
+			if !errors.Is(err, contracts.ErrIntegrity) || !reflect.DeepEqual(out, contracts.Results{}) {
+				t.Fatalf("corrupt storage admission: %+v %v", out, err)
+			}
+			continue
+		}
 		f.Put(f.Ctx, s)
 		out, err := f.Service.Results(as(f.Ctx, Alice), f.Tx, Q)
 		if !errors.Is(err, contracts.ErrIntegrity) || !reflect.DeepEqual(out, contracts.Results{}) {
