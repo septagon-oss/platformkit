@@ -161,9 +161,14 @@ func (o Options) plural(key string, count int64, one, other string, args ...any)
 	return (locale.Locale{}).Plural(key, count, one, other, args...)
 }
 
-// noun is this resource's word for a count, in the request's language.
+// noun is this resource's word for a count, in the request's language. The two
+// words come from the same reading the rest of the screen's words come from — the
+// entity's declared hints, read through the request's catalogue — and the count
+// picks between them by that language's cardinal rule rather than by a comparison
+// here, so a language with two plural forms gets both of them.
 func (o Options) noun(r Resource, count int64) string {
-	return o.Noun(r.Schema.Module, r.Schema.Entity, r.Name, count)
+	reading := r.reading(o)
+	return o.Noun(r.Schema.Module, r.Schema.Entity, entity.Name{One: reading.Singular, Other: reading.Plural}, count)
 }
 
 // Noun selects the declared resource name through the request's catalogue.
@@ -207,7 +212,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	// every other word on this screen. It is also the accessible name of the
 	// screen's scrolling table region, in the same words: the region is the list, so
 	// giving the two different names would be two names for one thing.
-	title := o.noun(r, 2)
+	title := display.Humanize(o.noun(r, 2))
 	var actions []g.Node
 	// The New button is drawn for a caller who may write *and* a resource that
 	// offers a create: the two questions are different, and the second is

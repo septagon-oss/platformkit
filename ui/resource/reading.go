@@ -13,13 +13,13 @@ import (
 // Older resources retain their inferred names and columns.
 func (r Resource) reading(o Options) entity.EntryHints {
 	p := o.Words(r.Schema).Entry(r.Present)
-	p.Singular = cmp.Or(p.Singular, strings.ToLower(display.Humanize(r.Schema.Entity)))
-	// The plural word belongs to the language the reader asked in, so it is asked of
-	// that language's catalogue under the resource's own key rather than built here by
-	// appending a letter: a resource with no plural word — declared, keyed or
-	// catalogued — is answered with its singular, which is the rule this package
-	// follows everywhere a count meets a noun.
-	p.Plural = cmp.Or(p.Plural, o.plural("resource."+r.Schema.Module+"."+r.Schema.Entity, 2, p.Singular, p.Singular))
+	// A word is the resource's own, in the language of the reader: the entity's
+	// declared hints first, then the words the resource declaration carries, then the
+	// store's own name for the entity. Nothing appends a letter here — a plural with
+	// no source is answered by the singular, which is the rule this package follows
+	// wherever a count meets a noun.
+	p.Singular = cmp.Or(p.Singular, r.Name.One, strings.ToLower(display.Humanize(r.Schema.Entity)))
+	p.Plural = cmp.Or(p.Plural, r.Name.Other, p.Singular)
 	return p
 }
 
