@@ -25,7 +25,7 @@ func TestBuildRefusesAnUnknownDeckCommandBeforeMigrating(t *testing.T) {
 	cfg := onOneDatabase(t)
 	review := pkit.NewModule("review", func(*pkit.Wiring) (module.Module, error) {
 		return module.Module{Name: "review", Routes: func(r httpx.Surfaces) {
-			rest.Spec[*ReviewItem]{Module: "review", Entity: "item", Path: "/items", ReadAuth: httpx.SignedIn(), WriteAuth: httpx.SignedIn(), Operations: []httpx.CRUD{rest.List, rest.Read}, Present: entity.EntryHints{
+			rest.Spec[*ReviewItem]{Name: rest.Name{One: "Review item", Other: "Review items"}, Module: "review", Entity: "item", Path: "/items", ReadAuth: httpx.SignedIn(), WriteAuth: httpx.SignedIn(), Operations: []httpx.CRUD{rest.List, rest.Read}, Present: entity.EntryHints{
 				Sortable: []string{"title"}, Deck: &entity.DeckHints{Order: "title", Directions: map[string]entity.DeckDirection{"right": {Command: "vanish", Label: "File", Tone: "neutral", Icon: "folder"}}},
 			}}.Mount(r)
 		}}, nil

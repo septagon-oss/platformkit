@@ -29,6 +29,14 @@ func TestPersonalDataCommandsStillReachASoftDeletedPerson(t *testing.T) {
 		Granting: &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) {
 			return true, nil
 		}},
+		// Which languages this tenant's people may be written in is the tenant
+		// module's answer in the reference composition. What these cases exercise is
+		// erasure of a hidden person, so the answer here is the one language this
+		// file could otherwise be read in; the language door has its own cases in
+		// modules/user.
+		LocalePolicy: &usercontracts.LocalePolicyFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (tenancy.Languages, error) {
+			return tenancy.Languages{Default: "en"}, nil
+		}},
 	})
 	person := personaldata.Subject{ID: uuid.New(), Email: "retired@example.com", DisplayName: "Retired Person"}
 	actor := personaldata.Subject{ID: uuid.New(), Email: "officer@example.com", DisplayName: "Officer"}

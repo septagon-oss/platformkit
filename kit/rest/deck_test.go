@@ -59,7 +59,7 @@ func TestInvalidDeckRefusesSpecAndSingletonMount(t *testing.T) {
 				t.Fatal(got)
 			}
 		}()
-		rest.Singleton[*Task]{Module: "tasks", Entity: "task", Path: "/task", Read: "task:read", Present: deckSpec().Present, Load: func(context.Context, db.Tx[db.Tenant]) (*Task, error) { return nil, nil }}.Mount(httpx.Surfaces{})
+		rest.Singleton[*Task]{Name: rest.Name{One: "Task", Other: "Tasks"}, Module: "tasks", Entity: "task", Path: "/task", Read: "task:read", Present: deckSpec().Present, Load: func(context.Context, db.Tx[db.Tenant]) (*Task, error) { return nil, nil }}.Mount(httpx.Surfaces{})
 		t.Fatal("singleton deck mounted")
 	})
 }
