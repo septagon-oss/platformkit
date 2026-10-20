@@ -27,9 +27,11 @@ import (
 // document around it is page.Serve's.
 type pages struct {
 	Shell
-	at        addresses
-	shell     page.Shell
-	nav       page.Navigation
+	at    addresses
+	shell page.Shell
+	nav   page.Navigation
+	// primary holds the application's primary action, or nothing.
+	primary   page.Navigation
 	resources []httpx.Resource
 	declared  []tenancy.Grant
 }
@@ -528,10 +530,11 @@ func workspaceScope(t tenancy.Tenant, o resource.Options) string {
 	return o.Text("admin.workspace.tenant_workspace", "Tenant workspace")
 }
 
-// dashboard is the workspace home: every destination the caller may open,
-// grouped as the sidebar groups them, with the count its own list reports.
-// A destination whose count fails stays on the page without a figure, and the
-// operator's health line appears only when a check was observed.
+// dashboard is the workspace home: the application's primary action first, when
+// it declared one and this caller may follow it, then every destination the
+// caller may open, grouped as the sidebar groups them, with the count its own
+// list reports. A destination whose count fails stays on the page without a
+// figure, and the operator's health line appears only when a check was observed.
 func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Options) page.View {
 	visible := p.nav.Visible(ctx, t, p.Authorize)
 	sections := workspaceSections(p.at, visible, p.resources, o)
@@ -539,13 +542,17 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 	if t.Operator {
 		title, description = o.Text("admin.workspace.overview", "Platform overview"), o.Text("admin.workspace.operator_description", "Manage tenants and access. Open a tenant workspace to work with its data.")
 	}
-	// The scope is the header's badge, so the intro is the title and one
-	// sentence; FormSentence carries the reading measure a full-width
-	// SectionHeader description does not.
-	body := []g.Node{
-		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1}),
-		components.FormSentence(components.FormSentenceProps{Text: description}),
+	// The intro is the title and one sentence; FormSentence carries the reading
+	// measure a full-width SectionHeader description does not.
+	body := []g.Node{components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1})}
+	for _, entry := range p.primary.Visible(ctx, t, p.Authorize) {
+		item := components.SidebarItem{Label: entry.Label, Href: entry.Screen}
+		body = append(body, components.Stack(components.StackProps{Gap: "3"},
+			components.FormSentence(components.FormSentenceProps{Text: workspacePurpose(p.at, item, p.resources, o)}),
+			components.Flex(components.FlexProps{Direction: "row"},
+				components.Button(components.ButtonProps{Label: entry.Label, Href: entry.Screen, Variant: "primary"}))))
 	}
+	body = append(body, components.FormSentence(components.FormSentenceProps{Text: description}))
 	if t.Operator {
 		results := checks(ctx)
 		if len(results) > 0 {

@@ -73,6 +73,9 @@ export async function probe(page: Page, width: number): Promise<Probe> {
   return page.evaluate((w) => {
     const px = (v: string) => Math.round(parseFloat(v) || 0);
     const vis = (e: Element) => {
+      // The browser's own answer first: a closed <details> body is laid out on demand but never
+      // painted, so its box alone would count text nobody can see.
+      if (!e.checkVisibility()) return false;
       const r = e.getBoundingClientRect();
       const s = getComputedStyle(e);
       return r.width > 40 && r.height > 6 && s.visibility !== 'hidden' && s.display !== 'none';

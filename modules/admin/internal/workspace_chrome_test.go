@@ -45,12 +45,13 @@ func frameAs(t *testing.T, people People, host, tenant string) string {
 }
 
 // callerLine is the chrome paragraph that names the person: not the workspace,
-// which the header also says, and not the build stamp.
+// which the header also says, and not the scope or the build stamp the footer's
+// disclosure holds.
 func callerLine(t *testing.T, markup string) string {
 	t.Helper()
 	for _, line := range chromeParagraphs(t, markup) {
 		text := strings.SplitN(line, "\x00", 2)[1]
-		if text != "End to end" && text != "app.acme.test" && !strings.HasPrefix(text, brand) {
+		if text != "End to end" && text != "app.acme.test" && text != "Tenant workspace" && text != "Platform operator" && !strings.HasPrefix(text, brand) {
 			return text
 		}
 	}
