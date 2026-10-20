@@ -2866,6 +2866,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/erasure_handles_converging_provisioning_identifiers_test.go",
+   "id": "apps/platformkit/erasure_handles_converging_provisioning_identifiers_test.go#TestErasureHandlesDistinctProvisioningIdentifiersThatContainTheSameAddress",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestErasureHandlesDistinctProvisioningIdentifiersThatContainTheSameAddress",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/erasure_keeps_bounded_task_text_anonymous_test.go",
    "id": "apps/platformkit/erasure_keeps_bounded_task_text_anonymous_test.go#TestCompletedErasureLeavesNoNameInABoundedTaskTitle",
    "kind": "go",
@@ -24667,6 +24686,44 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/personaldata/blank_test.go",
+   "id": "kit/personaldata/blank_test.go#TestABlankedColumnIsAskedAboutTheWayAScrubbedOneIs",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestABlankedColumnIsAskedAboutTheWayAScrubbedOneIs",
+   "needs_db": false,
+   "pkg": "kit/personaldata",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/personaldata/blank_test.go",
+   "id": "kit/personaldata/blank_test.go#TestABlankWithNothingToFindWritesNoStatement",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestABlankWithNothingToFindWritesNoStatement",
+   "needs_db": false,
+   "pkg": "kit/personaldata",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "push",
    "unique_lines": null,
    "unique_reach": [],
@@ -68674,7 +68731,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1823,
+  "files": 1825,
   "forge_runs": [
    408,
    413,
@@ -68708,8 +68765,8 @@
    578
   ],
   "layers": {
-   "behaviour": 2939,
-   "composition": 423,
+   "behaviour": 2941,
+   "composition": 424,
    "contract": 21,
    "journey": 93
   },
@@ -68727,23 +68784,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3476,
+  "rows": 3479,
   "tiers": {
-   "merge": 2196,
+   "merge": 2197,
    "nightly": 93,
-   "push": 1187
+   "push": 1189
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1596,
+   "keep": 1598,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3120,
+   "keep": 3123,
    "keep-rewrite": 140,
    "merge": 216
   }
