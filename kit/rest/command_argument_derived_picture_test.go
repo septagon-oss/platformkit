@@ -32,7 +32,7 @@ func TestACommandArgumentCannotCarryADerivedPicture(t *testing.T) {
 			Reason     string `json:"reason"`
 		}
 		pictures := rest.Spec[*computedPictureRow]{Module: "computed", Entity: "computed", Path: "/pictures",
-			Read: "computed:read", Write: "computed:write", Immutable: []string{"picture", "nullable"}}
+			Name: rest.Name{One: "Computed", Other: "Computed"}, Read: "computed:read", Write: "computed:write", Immutable: []string{"picture", "nullable"}}
 		api, _ := patchDocumentAPI()
 		surfaces := api.Surfaces(pictures.Module)
 		pictures.Mount(surfaces)

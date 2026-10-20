@@ -148,6 +148,7 @@ func memos(t *testing.T) memosWorld {
 	kept := &keptVersions{}
 	s := rest.Spec[*Memo]{
 		Module: "memos", Entity: "memo", Path: "/memo",
+		Name: rest.Name{One: "Memo", Other: "Memos"},
 		Read: "memo:read", Write: "memo:write",
 		History: true, Versions: kept, Immutable: []string{"status"},
 	}
@@ -354,6 +355,7 @@ func TestAVersionedSpecCannotBeMountedWithoutTheStoreOrTheWriteCountIsRefused(t 
 	noStore := refusal(t, func() {
 		mountAs(t, rest.Spec[*Memo]{
 			Module: "memos", Entity: "memo", Path: "/memo",
+			Name: rest.Name{One: "Memo", Other: "Memos"},
 			Read: "memo:read", Write: "memo:write", History: true,
 		}, caller{})
 	})
@@ -364,6 +366,7 @@ func TestAVersionedSpecCannotBeMountedWithoutTheStoreOrTheWriteCountIsRefused(t 
 	noWriteCount := refusal(t, func() {
 		mountAs(t, rest.Spec[*Note]{
 			Module: "notes", Entity: "note", Path: "/note",
+			Name: rest.Name{One: "Note", Other: "Notes"},
 			Read: "note:read", Write: "note:write", History: true, Versions: &keptVersions{},
 		}, caller{})
 	})

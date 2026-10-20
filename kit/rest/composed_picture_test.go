@@ -22,7 +22,7 @@ type computedPictureRow struct {
 func (computedPictureRow) TableName() string { return "rest_tasks" }
 func TestDerivedPictureSchemaAndMountContract(t *testing.T) {
 	api, router := patchDocumentAPI()
-	spec := rest.Spec[*computedPictureRow]{Module: "computed", Entity: "computed", Path: "/pictures", Read: "computed:read", Write: "computed:write", Immutable: []string{"picture", "nullable"}}
+	spec := rest.Spec[*computedPictureRow]{Module: "computed", Entity: "computed", Path: "/pictures", Name: rest.Name{One: "Computed", Other: "Computed"}, Read: "computed:read", Write: "computed:write", Immutable: []string{"picture", "nullable"}}
 	spec.Mount(api.Surfaces("computed"))
 	fields := spec.Schema().Fields
 	for _, name := range []string{"picture", "nullable"} {
@@ -64,7 +64,7 @@ func TestDerivedPictureSchemaAndMountContract(t *testing.T) {
 }
 
 func TestGenericWritesRefusePictureReferencesWithoutPartialWrites(t *testing.T) {
-	s := rest.Spec[*computedPictureRow]{Module: "computed", Entity: "computed", Path: "/pictures", Read: "computed:read", Write: "computed:write", Immutable: []string{"picture", "nullable"}}
+	s := rest.Spec[*computedPictureRow]{Module: "computed", Entity: "computed", Path: "/pictures", Name: rest.Name{One: "Computed", Other: "Computed"}, Read: "computed:read", Write: "computed:write", Immutable: []string{"picture", "nullable"}}
 	_, router, admin := mountAs(t, s, caller{})
 	token, _ := entity.ComposedPicture("source")
 	for _, body := range []string{`{"title":"refused","picture":"` + string(token) + `"}`, `{"title":"refused","Picture":null}`, `{"title":"refused","nullable":null}`} {
