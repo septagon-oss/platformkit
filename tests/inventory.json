@@ -70274,6 +70274,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/ci_sampler_output_lifetime_test.py",
+   "id": "scripts/ci_sampler_output_lifetime_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "ci_sampler_output_lifetime_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/comment_group_boundaries_test.py",
    "id": "scripts/comment_group_boundaries_test.py",
    "kind": "shell_pin",
@@ -73201,7 +73221,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1952,
+  "files": 1953,
   "forge_runs": [
    408,
    413,
@@ -73236,7 +73256,7 @@
   ],
   "layers": {
    "behaviour": 3155,
-   "composition": 435,
+   "composition": 436,
    "contract": 21,
    "journey": 97
   },
@@ -73254,23 +73274,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3708,
+  "rows": 3709,
   "tiers": {
    "merge": 2341,
    "nightly": 97,
-   "push": 1270
+   "push": 1271
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1725,
+   "keep": 1726,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3352,
+   "keep": 3353,
    "keep-rewrite": 140,
    "merge": 216
   }

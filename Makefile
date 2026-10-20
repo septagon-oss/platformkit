@@ -743,6 +743,17 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# answered the ceiling question only when it had no numbers to give would leave this red and that
 	# host's log silent. Two fixture trees, one copied recipe, nothing started.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_guard_readable_cgroup_test.py
+	# scripts/ci_sampler_output_lifetime_test.py asks the sampler wrapped around a suite the one question
+	# the suite's own verdict cannot answer: when the watched suite finishes, does the sampler let go of
+	# its output? The guard sleeps between samples, and a sleep holds the write end of the suite's output
+	# pipe open, so a sampler still asleep when its suite died keeps a reader waiting for the sleep rather
+	# than for the suite — and the reader that waits for end-of-output never reaches the status the suite
+	# exited with. The case runs the guard's `watch` over a suite that prints one line and exits, once at
+	# the passing status and once at a refusal, at a sampling interval of thirty seconds, and requires the
+	# output to close within ten, carrying that line and that status, and the sample taken before the
+	# suite started to be in it: a first sample only ever taken behind the suite leaves the baseline the
+	# guard compares against unwritten. Two shells and no interval actually waited, nothing listening.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_sampler_output_lifetime_test.py
 	bash scripts/make_check_count_default_test.sh
 	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
 	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —
