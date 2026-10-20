@@ -1032,7 +1032,7 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres, NATS, Valkey, the object store and the mail catcher, and wait for all five to be healthy
+up: ## Start Postgres, NATS, Valkey, the secret store, the object store and the mail catcher, and wait for all six to be healthy
 	docker compose up -d --wait
 
 # The collector is a profile rather than a second service in `up` because the
