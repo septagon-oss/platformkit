@@ -112,8 +112,10 @@ func mountCommandEffect(t *testing.T, store idempotency.Store, tag string, fault
 			return nil, err
 		}
 		if c.fault != nil && c.ran.Load() == 1 {
-			if f := c.fault(tx); f != nil {
-				tx.DB().Statement.ConnPool = f
+			if shared, ok := httpx.RequestTx(ctx); ok {
+				if f := c.fault(shared); f != nil {
+					shared.DB().Statement.ConnPool = f
+				}
 			}
 		}
 		return &keyedOut{ID: tag}, nil
