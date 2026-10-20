@@ -10,6 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	scim "github.com/septagon-oss/platformkit/modules/scim"
@@ -32,6 +33,10 @@ var scimProvisioning = pkit.NewModule("scim", wireScim,
 	pkit.Needs[usercontracts.Service](),
 	pkit.Needs[authcontracts.Auth](),
 	pkit.Provides[scimcontracts.Service](),
+	// The person's copy and the person's erasure reach this door's rows too: the
+	// identifier a provisioning client sent may be the person's own address, and
+	// modules/subject is the one caller that can ask every owner at once.
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wireScim(w *pkit.Wiring) (module.Module, error) {
@@ -47,6 +52,7 @@ func wireScim(w *pkit.Wiring) (module.Module, error) {
 		},
 	})
 	pkit.Put[scimcontracts.Service](w, svc)
+	pkit.Put[personaldata.Part](w, scim.PersonalData())
 	return manifest, nil
 }
 

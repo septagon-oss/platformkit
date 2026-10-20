@@ -3204,6 +3204,140 @@
       "summary": "Every tenant's delivery of site.settings_updated.",
       "title": "site.settings_updated"
     },
+    "subject.erased": {
+      "address": "platformkit.*.subject.erased",
+      "description": "Published at platformkit.{tenantId}.subject.erased; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "subject.erased": {
+          "contentType": "application/json",
+          "name": "subject.erased",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "modules": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "requester": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "subject",
+              "modules",
+              "requester",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "subject — subject.erased",
+          "title": "subject.erased"
+        }
+      },
+      "summary": "Every tenant's delivery of subject.erased.",
+      "title": "subject.erased"
+    },
+    "subject.export_ready": {
+      "address": "platformkit.*.subject.export_ready",
+      "description": "Published at platformkit.{tenantId}.subject.export_ready; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "subject.export_ready": {
+          "contentType": "application/json",
+          "name": "subject.export_ready",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "bundle": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "request": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "request",
+              "subject",
+              "bundle",
+              "digest",
+              "expiresAt",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "subject — subject.export_ready",
+          "title": "subject.export_ready"
+        }
+      },
+      "summary": "Every tenant's delivery of subject.export_ready.",
+      "title": "subject.export_ready"
+    },
+    "subject.export_requested": {
+      "address": "platformkit.*.subject.export_requested",
+      "description": "Published at platformkit.{tenantId}.subject.export_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "subject.export_requested": {
+          "contentType": "application/json",
+          "name": "subject.export_requested",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "request": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "requester": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "request",
+              "subject",
+              "requester",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "subject — subject.export_requested",
+          "title": "subject.export_requested"
+        }
+      },
+      "summary": "Every tenant's delivery of subject.export_requested.",
+      "title": "subject.export_requested"
+    },
     "task.assigned": {
       "address": "platformkit.*.task.assigned",
       "description": "Published at platformkit.{tenantId}.task.assigned; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -6424,6 +6558,57 @@
       "tags": [
         {
           "name": "site"
+        }
+      ]
+    },
+    "subject.erased": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/subject.erased"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/subject.erased/messages/subject.erased"
+        }
+      ],
+      "summary": "The subject module publishes subject.erased.",
+      "tags": [
+        {
+          "name": "subject"
+        }
+      ]
+    },
+    "subject.export_ready": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/subject.export_ready"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/subject.export_ready/messages/subject.export_ready"
+        }
+      ],
+      "summary": "The subject module publishes subject.export_ready.",
+      "tags": [
+        {
+          "name": "subject"
+        }
+      ]
+    },
+    "subject.export_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/subject.export_requested"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/subject.export_requested/messages/subject.export_requested"
+        }
+      ],
+      "summary": "The subject module publishes subject.export_requested.",
+      "tags": [
+        {
+          "name": "subject"
         }
       ]
     },

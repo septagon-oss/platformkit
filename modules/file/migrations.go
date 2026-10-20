@@ -36,6 +36,10 @@ var schema embed.FS
 // dimensions and use-ledger files were written as 43 and 44 and moved to 44 and
 // 45 when the foundation's own 000043_tenant_app reached main while this branch
 // was open — the same collision, one version further along, that sent 34 to 40.
+// The sealed-flag file was written as 000064 and moved to 000071 for the same
+// reason a third time: main took 000064 for this source's own upload_visibility
+// while this branch was open, and 000070 (modules/audit's) is the highest number
+// any owner holds at the merge that brought it.
 var Migrations = db.MigrationSource{
 	Owner:  "file",
 	Files:  db.Sub(schema, "migrations"),
