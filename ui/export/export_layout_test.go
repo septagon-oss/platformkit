@@ -237,7 +237,13 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// The digest covers the composed examples, stylesheet and attribution together.
 	// Breadcrumb wrapping changes 24 gallery HTML values and the digest; CSS,
 	// schemas, tokens, themes, icons and notices retain their existing bytes.
-	if legacy.SHA256 != "24b68056c824890ff426c7b579af25cf624c5144b184e3d66bb9b17196417ca0" {
+	// A flush disclosure (DisclosureProps.Flush) adds one leaf: the disclosure
+	// example's schema gains a boolean `flush` property. Measured by exporting this
+	// tree and the same tree without the field and walking both documents by
+	// example ID: 102,037 leaves become 102,038, none removed, and the only changed
+	// leaf is /sha256. CSS (the flush classes were already in the sheet), every
+	// example's HTML, tokens, themes, notices, icons and font policy are identical.
+	if legacy.SHA256 != "87d4cadee1cfab7d3a78b2118743e9e39ab4339771efef536b65f569b75ad5c6" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
