@@ -37,7 +37,11 @@ func TestASetTheCatalogueAlreadyNamedKeepsItsOwnName(t *testing.T) {
 		{"settings", "Settings", "No settings yet.", "Settingss"},
 		{"content", "Content", "No content yet.", "Contents"},
 		{"news", "News", "No news yet.", "Newss"},
-		{"note", "Notes", "No notes yet.", ""},
+		// A word the catalogue holds no plural for is kept whole. The screen writes
+		// the ending the resource author and the catalogue wrote, and never one it
+		// inferred from a letter — which is the same refusal that keeps "Settingss"
+		// out of the three rows above, applied to a count noun.
+		{"note", "Note", "No note yet.", "Notes"},
 	} {
 		out := render(t, resource.List(named(c.entity), opts, nil, 0, 1, "", false).Body)
 		for _, want := range []string{">" + c.want + "<", c.empty} {
@@ -62,7 +66,7 @@ func TestTheRecordTrailNamesTheSetNotTheWordPlusAnS(t *testing.T) {
 	for _, c := range []struct{ entity, want, mustNot string }{
 		{"content", "Content", "Contents"},
 		{"settings", "Settings", "Settingss"},
-		{"note", "Notes", ""},
+		{"note", "Note", "Notes"},
 	} {
 		detail := render(t, resource.Detail(named(c.entity), opts, row, true).Body)
 		if !strings.Contains(detail, `href="/app/workspace/`+c.entity+`">`+c.want+"<") {
