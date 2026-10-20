@@ -342,8 +342,8 @@ func enforce(candidate string, backgrounds ...string) string {
 // and an edge emitted at exactly the floor hands the door a refusal of the
 // kernel's own colour for a change the client made to the surface under it. The
 // number is measured against the one override this repository pins at the edge of
-// the gate (a light theme whose surface-primary is a bright cyan, held by
-// ui/components since round 9): 0.5 is the smallest margin that keeps it inside
+// the gate (a light theme whose surface-primary is a bright cyan, held by a
+// case in ui/components): 0.5 is the smallest margin that keeps it inside
 // the door. It is a measurement of one real override, not a promise that any
 // override fits — a client that files a surface the kernel's edge cannot clear at
 // 3:1 is refused, and says so.
