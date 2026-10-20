@@ -41,7 +41,7 @@ func TestWorkspaceNavigationKeepsTenantAndOperatorScopesDistinct(t *testing.T) {
 	for _, operator := range []bool{false, true} {
 		r := page.Request{Tenant: tenancy.Tenant{ID: uuid.New(), Name: "Northwind", Operator: operator}, Path: "/app/user/users"}
 		visible := nav.Visible(t.Context(), r.Tenant, allow(true))
-		props := sidebar(a, visible, r, false, resources...)
+		props := sidebar(a, visible, r, false, false, resources...)
 		for _, node := range []g.Node{components.Sidebar(props), components.SidebarDisclosure(props)} {
 			body := render(t, node)
 			if strings.Contains(body, a.tenants.at) != operator {

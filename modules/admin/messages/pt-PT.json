@@ -1728,5 +1728,14 @@
     "plural": {
       "": "Dispositivo não identificado"
     }
+  },
+  "admin.workspace.count_number": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "%d",
+    "plural": {
+      "": "%d"
+    }
   }
 }

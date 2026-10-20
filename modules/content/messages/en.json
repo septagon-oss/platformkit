@@ -249,7 +249,7 @@
       "": "Serves it to anybody, and records when. Publishing what is already published changes nothing; the publication time does not move."
     }
   },
-  "field.content.content.lang":   {
+  "field.content.content.lang": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -258,7 +258,7 @@
       "": "Lang"
     }
   },
-  "field.content.content.lang.help":   {
+  "field.content.content.lang.help": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -267,7 +267,7 @@
       "": "The language this acts on: a tag this tenant is served in, other than its own"
     }
   },
-  "field.content.content.fields":   {
+  "field.content.content.fields": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -276,7 +276,7 @@
       "": "Fields"
     }
   },
-  "field.content.content.fields.help":   {
+  "field.content.content.fields.help": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -285,7 +285,7 @@
       "": "The field names; empty for every translatable field of the record"
     }
   },
-  "command.content.content.translate":   {
+  "command.content.content.translate": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -294,7 +294,7 @@
       "": "Translate a content"
     }
   },
-  "command.content.content.translate.description":   {
+  "command.content.content.translate.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -303,7 +303,7 @@
       "": "Writes this language's text of the named fields, stamped as typed by a person. The record's own fields are untouched."
     }
   },
-  "command.content.content.review-translation":   {
+  "command.content.content.review-translation": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -312,7 +312,7 @@
       "": "Mark a content's translation reviewed"
     }
   },
-  "command.content.content.review-translation.description":   {
+  "command.content.content.review-translation.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -321,7 +321,7 @@
       "": "Names the fields a person has checked against the source. A field whose source has moved since it was translated is refused."
     }
   },
-  "command.content.content.suggest-translation":   {
+  "command.content.content.suggest-translation": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -330,7 +330,7 @@
       "": "Ask the machine for a draft of a content"
     }
   },
-  "command.content.content.suggest-translation.description":   {
+  "command.content.content.suggest-translation.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -339,7 +339,7 @@
       "": "Saves the machine's text as a draft nobody has reviewed; it is never served publicly until a person marks it reviewed. Refuses, writing nothing, when the installation names no machine translator."
     }
   },
-  "command.content.content.untranslate":   {
+  "command.content.content.untranslate": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -348,7 +348,7 @@
       "": "Remove a content's translation"
     }
   },
-  "command.content.content.untranslate.description":   {
+  "command.content.content.untranslate.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -742,6 +742,24 @@
     "translation": "The user who created this",
     "plural": {
       "": "The user who created this"
+    }
+  },
+  "field.content.content.revision": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Revision",
+    "plural": {
+      "": "Revision"
+    }
+  },
+  "field.content.content.revision.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "This row's own write count, from 1",
+    "plural": {
+      "": "This row's own write count, from 1"
     }
   }
 }

@@ -1202,5 +1202,14 @@
     "plural": {
       "": "Continue with a passkey"
     }
+  },
+  "admin.workspace.count_number": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "%d",
+    "plural": {
+      "": "%d"
+    }
   }
 }

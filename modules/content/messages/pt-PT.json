@@ -384,7 +384,7 @@
       "": "Serve o conteúdo a toda a gente e regista quando. Publicar o que já está publicado não altera nada; o momento de publicação não se move."
     }
   },
-  "field.content.content.lang":   {
+  "field.content.content.lang": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -393,7 +393,7 @@
       "": "Idioma"
     }
   },
-  "field.content.content.lang.help":   {
+  "field.content.content.lang.help": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -402,7 +402,7 @@
       "": "O idioma sobre que isto actua: uma etiqueta em que este tenant é servido, que não a sua"
     }
   },
-  "field.content.content.fields":   {
+  "field.content.content.fields": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -411,7 +411,7 @@
       "": "Campos"
     }
   },
-  "field.content.content.fields.help":   {
+  "field.content.content.fields.help": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -420,7 +420,7 @@
       "": "Os nomes dos campos; vazio para todos os campos traduzíveis do registo"
     }
   },
-  "command.content.content.translate":   {
+  "command.content.content.translate": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -429,7 +429,7 @@
       "": "Traduzir um conteúdo"
     }
   },
-  "command.content.content.translate.description":   {
+  "command.content.content.translate.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -438,7 +438,7 @@
       "": "Escreve o texto deste idioma para os campos indicados, marcado como escrito por uma pessoa. Os campos do próprio registo não são alterados."
     }
   },
-  "command.content.content.review-translation":   {
+  "command.content.content.review-translation": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -447,7 +447,7 @@
       "": "Marcar a tradução de um conteúdo como revista"
     }
   },
-  "command.content.content.review-translation.description":   {
+  "command.content.content.review-translation.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -456,7 +456,7 @@
       "": "Indica os campos que uma pessoa verificou contra a origem. Um campo cuja origem mudou desde que foi traduzido é recusado."
     }
   },
-  "command.content.content.suggest-translation":   {
+  "command.content.content.suggest-translation": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -465,7 +465,7 @@
       "": "Pedir à máquina um rascunho de um conteúdo"
     }
   },
-  "command.content.content.suggest-translation.description":   {
+  "command.content.content.suggest-translation.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -474,7 +474,7 @@
       "": "Guarda o texto da máquina como um rascunho que ninguém reviu; nunca é servido publicamente antes de uma pessoa o marcar como revisto. Recusa, sem escrever nada, quando a instalação não nomeia nenhum tradutor automático."
     }
   },
-  "command.content.content.untranslate":   {
+  "command.content.content.untranslate": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -483,7 +483,7 @@
       "": "Remover a tradução de um conteúdo"
     }
   },
-  "command.content.content.untranslate.description":   {
+  "command.content.content.untranslate.description": {
     "references": [
       "kit/rest/translations_write.go"
     ],
@@ -613,18 +613,18 @@
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "T\u00edtulo",
+    "translation": "Título",
     "plural": {
-      "": "T\u00edtulo"
+      "": "Título"
     }
   },
   "hints.content/content.field.title.help": {
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "O que uma lista e um cabe\u00e7alho mostram",
+    "translation": "O que uma lista e um cabeçalho mostram",
     "plural": {
-      "": "O que uma lista e um cabe\u00e7alho mostram"
+      "": "O que uma lista e um cabeçalho mostram"
     }
   },
   "hints.content/content.field.body.label": {
@@ -640,18 +640,18 @@
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "O conte\u00fado em si, em Markdown",
+    "translation": "O conteúdo em si, em Markdown",
     "plural": {
-      "": "O conte\u00fado em si, em Markdown"
+      "": "O conteúdo em si, em Markdown"
     }
   },
   "hints.content/content.field.kind.help": {
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "P\u00e1gina ou publica\u00e7\u00e3o",
+    "translation": "Página ou publicação",
     "plural": {
-      "": "P\u00e1gina ou publica\u00e7\u00e3o"
+      "": "Página ou publicação"
     }
   },
   "hints.content/content.field.status.label": {
@@ -703,18 +703,18 @@
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "P\u00e1gina",
+    "translation": "Página",
     "plural": {
-      "": "P\u00e1gina"
+      "": "Página"
     }
   },
   "hints.content/content.enum.kind.post": {
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "Publica\u00e7\u00e3o",
+    "translation": "Publicação",
     "plural": {
-      "": "Publica\u00e7\u00e3o"
+      "": "Publicação"
     }
   },
   "hints.content/content.field.publishedAt.help": {
@@ -739,9 +739,9 @@
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "O utilizador que criou este conte\u00fado",
+    "translation": "O utilizador que criou este conteúdo",
     "plural": {
-      "": "O utilizador que criou este conte\u00fado"
+      "": "O utilizador que criou este conteúdo"
     }
   },
   "hints.content/content.command.restore.confirmation.body": {
@@ -805,6 +805,24 @@
     "translation": "Crie uma página e guarde um rascunho antes de publicar.",
     "plural": {
       "": "Crie uma página e guarde um rascunho antes de publicar."
+    }
+  },
+  "field.content.content.revision": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Revisão",
+    "plural": {
+      "": "Revisão"
+    }
+  },
+  "field.content.content.revision.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "O número de escritas desta linha, a partir de 1",
+    "plural": {
+      "": "O número de escritas desta linha, a partir de 1"
     }
   }
 }
