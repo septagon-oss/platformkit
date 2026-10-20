@@ -500,27 +500,12 @@ func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, ma
 	if r.SignedIn && a.sessions.at != "" {
 		sections = append(sections, components.SidebarSection{ID: "account", Label: o.Text("admin.workspace.account", "Your account"), Items: []components.SidebarItem{{Label: o.Text("admin.workspace.sessions", "Sessions"), Href: a.sessions.at, Icon: "user"}}})
 	}
-	// A module's navigation label is copy as much as a page title is, so each label
-	// workspaceSections grouped is asked of the reader's catalogue under the address
-	// that destination serves. The frame's own destinations — Dashboard, Health,
-	// Sessions — keep the admin.workspace.* keys above, which name them by what this
-	// shell serves rather than by the module behind an address.
-	for i, section := range sections {
-		for j, item := range section.Items {
-			for _, entry := range visible {
-				if entry.Screen != item.Href {
-					continue
-				}
-				key, own := a.writtenHere(entry.Screen)
-				label := entry.Label
-				if own {
-					label = chrome(r, key, entry.Label)
-				}
-				sections[i].Items[j].Label = navLabel(r, entry, label)
-				break
-			}
-		}
-	}
+	// A module's own navigation label was asked of the reader's catalogue where
+	// workspaceSections grouped it — see entryWord — so every label arriving here is
+	// already in the language this request resolved to. The frame's own destinations,
+	// Dashboard, Health and Sessions, are titled by the admin.workspace.* keys above,
+	// which name them by what this shell serves rather than by the module behind an
+	// address.
 	return components.SidebarProps{
 		Current: r.Path, NavigationLabel: o.Text("admin.workspace.navigation", "Admin navigation"), Sections: sections,
 		DisclosureLabel: chrome(r, "nav.menu", "Menu"),

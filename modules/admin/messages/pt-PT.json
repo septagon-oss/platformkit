@@ -1737,5 +1737,42 @@
     "plural": {
       "": "%d"
     }
+  },
+  "admin.roles.new_help": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Crie uma função com apenas o acesso de que precisa.",
+    "plural": {
+      "": "Crie uma função com apenas o acesso de que precisa."
+    }
+  },
+  "admin.roles.full_access": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Acesso total a esta organização",
+    "plural": {
+      "": "Acesso total a esta organização"
+    }
+  },
+  "admin.roles.none": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Sem permissões atribuídas",
+    "plural": {
+      "": "Sem permissões atribuídas"
+    }
+  },
+  "admin.roles.permissions": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%d permissão.",
+    "plural": {
+      "one": "%d permissão.",
+      "other": "%d permissões."
+    }
   }
 }

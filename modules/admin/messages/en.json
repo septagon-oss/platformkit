@@ -1737,5 +1737,42 @@
     "plural": {
       "": "A device that would not say what it is"
     }
+  },
+  "admin.roles.new_help": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Create a role with only the access it needs",
+    "plural": {
+      "": "Create a role with only the access it needs"
+    }
+  },
+  "admin.roles.full_access": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Full access to this tenant",
+    "plural": {
+      "": "Full access to this tenant"
+    }
+  },
+  "admin.roles.none": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "No permissions assigned",
+    "plural": {
+      "": "No permissions assigned"
+    }
+  },
+  "admin.roles.permissions": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%d permission.",
+    "plural": {
+      "one": "%d permission.",
+      "other": "%d permissions."
+    }
   }
 }

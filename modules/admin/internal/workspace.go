@@ -44,7 +44,7 @@ func workspaceSections(a addresses, visible []module.NavEntry, resources []httpx
 			sections = append(sections, components.SidebarSection{ID: key, Label: label})
 			i = len(sections) - 1
 		}
-		sections[i].Items = append(sections[i].Items, components.SidebarItem{Label: entry.Label, Href: entry.Screen, Icon: glyph})
+		sections[i].Items = append(sections[i].Items, components.SidebarItem{Label: entryWord(a, o, entry), Href: entry.Screen, Icon: glyph})
 	}
 	// Cross-tenant work comes first for operators; Visible has already kept it
 	// out of customer navigation. Preserve module order within other groups.
@@ -69,4 +69,19 @@ func workspacePurpose(a addresses, item components.SidebarItem, resources []http
 		}
 	}
 	return o.Text("admin.workspace.open", "Open %s in this workspace.", strings.ToLower(item.Label))
+}
+
+// entryWord is one destination's own word for itself, in the language of the
+// person looking at the workspace. A navigation label is copy as much as a page
+// title is, so it is asked of the reader's catalogue under the address that
+// destination serves; the two pages this shell wrote in another module's namespace
+// answer under the key the page titles itself with, so the link and the page it
+// opens say the same thing. A module that catalogues nothing keeps the label it
+// declared.
+func entryWord(a addresses, o resource.Options, entry module.NavEntry) string {
+	fallback := entry.Label
+	if key, own := a.writtenHere(entry.Screen); own {
+		fallback = o.Text("admin."+key, "%s", entry.Label)
+	}
+	return o.Text("nav."+strings.ReplaceAll(strings.TrimPrefix(entry.Screen, httpx.AppRoot+"/"), "/", "."), "%s", fallback)
 }
