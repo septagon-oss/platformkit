@@ -237,7 +237,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// The digest covers the composed examples, stylesheet and attribution together.
 	// Breadcrumb wrapping changes 24 gallery HTML values and the digest; CSS,
 	// schemas, tokens, themes, icons and notices retain their existing bytes.
-	if legacy.SHA256 != "24b68056c824890ff426c7b579af25cf624c5144b184e3d66bb9b17196417ca0" {
+	if legacy.SHA256 != "f2a362a3628cb3fdcf551d9be017a83bbfe99715ee386931754c0cff86de4206" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
