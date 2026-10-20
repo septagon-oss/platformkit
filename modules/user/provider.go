@@ -7,10 +7,12 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
+	"github.com/septagon-oss/platformkit/modules/user/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -39,6 +41,7 @@ var Module = pkit.NewModule("user", wire,
 	pkit.Provides[authcontracts.Provisioner](),
 	pkit.Provides[notificationcontracts.RecipientLookup](),
 	pkit.Provides[tenantcontracts.Inviter](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -51,6 +54,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put[authcontracts.Provisioner](w, provisioner{users: svc})
 	pkit.Put[notificationcontracts.RecipientLookup](w, recipients{users: svc})
 	pkit.Put[tenantcontracts.Inviter](w, firstAdmin{users: svc})
+	// The one place in this composition that reads a concrete type back out of an
+	// interface: New builds the *internal.Service and hands it out as the contract, and
+	// the erasure needs the service's own floor, not a second copy of the rule.
+	pkit.Put[personaldata.Part](w, internal.PersonalData(svc.(*internal.Service)))
 	return manifest, nil
 }
 

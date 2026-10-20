@@ -26,6 +26,14 @@ type journey struct {
 	run  func(t *testing.T, as *http.Client, me string) (int, string)
 }
 
+// The two doors, at the addresses the composition mounts them. App JSON lives under
+// /api/v1/<module>, which the kernel owns and a module may not write — so these are the
+// names the routes have once the surface is composed, not the paths the module wrote.
+const (
+	exportsPath  = "/api/v1/subject/exports"
+	erasuresPath = "/api/v1/subject/erasures"
+)
+
 // TestEveryPersonaCanDoItsJourneysAndIsRefusedTheOthers is decision 0011 item 6 at the
 // shipped composition: each persona the application seeds signs in and attempts every
 // journey, and the table says which it may do. A refusal must be a refusal — 403 with
@@ -88,16 +96,39 @@ func TestEveryPersonaCanDoItsJourneysAndIsRefusedTheOthers(t *testing.T) {
 		{"operate tenants", func(t *testing.T, as *http.Client, _ string) (int, string) {
 			return do(t, cfg, as, http.MethodGet, acmeHost, tenantPath, "")
 		}},
+		// The person's own door, asked by a persona with no grant at all: the member row
+		// below is the whole of Article 15 as this application can prove it — a signed-in
+		// person files their own export request, and holds no permission that made it
+		// possible. ADR 0020 §7's first row.
+		{"copy of my own data", func(t *testing.T, as *http.Client, _ string) (int, string) {
+			return do(t, cfg, as, http.MethodPost, acmeHost, exportsPath, `{"reason":"persona journey"}`)
+		}},
+		// The officer's door: anybody's copy, produced about a person who is not here. The
+		// grant is what is under test, so the answer a grant-holder gets is a 404 about the
+		// person and the answer everyone else gets is 403 about the grant.
+		{"erase somebody", func(t *testing.T, as *http.Client, _ string) (int, string) {
+			return do(t, cfg, as, http.MethodPost, acmeHost, erasuresPath,
+				`{"subject":"`+uuid.NewString()+`","confirm":"nobody@acme.localhost"}`)
+		}},
 	}
 
 	// The table. "" is allowed; anything else is the refusal expected, by its code where
 	// the answer carries one.
 	const allowed = ""
 	table := map[string][]string{
-		authcontracts.RoleAdmin:  {allowed, allowed, allowed, allowed, "POLICY_DENIED", allowed, allowed},
-		"coordinator":            {allowed, allowed, allowed, allowed, "POLICY_DENIED", "AUTH_DENIED", "refused"},
-		"observer":               {allowed, "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused"},
-		authcontracts.RoleMember: {"AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused"},
+		authcontracts.RoleAdmin: {allowed, allowed, allowed, allowed, "POLICY_DENIED", allowed, allowed,
+			allowed, "refused"},
+		"coordinator": {allowed, allowed, allowed, allowed, "POLICY_DENIED", "AUTH_DENIED", "refused",
+			allowed, "AUTH_DENIED"},
+		"observer": {allowed, "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused",
+			allowed, "AUTH_DENIED"},
+		authcontracts.RoleMember: {"AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused",
+			allowed, "AUTH_DENIED"},
+		// The officer holds the two subject grants and nothing else: the desk is closed to
+		// them, their own copy is open like anybody's, and the erasure they were granted is
+		// the one journey here that answers something other than a refusal.
+		"subject_officer": {"AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED",
+			"AUTH_DENIED", "refused", allowed, "refused"},
 	}
 
 	acme := acmeTenant(t, cfg)

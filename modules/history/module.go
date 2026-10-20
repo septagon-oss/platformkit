@@ -10,6 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/history/contracts"
@@ -44,6 +45,16 @@ func New(deps Deps) (contracts.Service, httpx.Versions, module.Module, error) {
 	return svc, versions, module.Module{
 		Name:       "history",
 		Migrations: Migrations.Files,
+		// A version names its writer by id and repeats whatever the record's body
+		// repeated, so the body is filed as text an erasure has to re-read and the
+		// writer as a person the row is about: a version is a record's, not the
+		// writer's own row. record_id names the record and no person.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:      "history_versions",
+			About:     []string{"actor"},
+			Text:      []string{"fields"},
+			NotPerson: []string{"record_id"},
+		}),
 		// No permissions and no Nav: this module owns no screen and mounts no route
 		// of its own. Its versions are read at the record's own address, under the
 		// record's own read permission, and a permission with nothing behind it is
