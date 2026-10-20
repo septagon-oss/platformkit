@@ -305,7 +305,7 @@ func TestASignedInReadRouteAdmitsAMemberHoldingNothingAndRefusesAnAnonymousCalle
 	if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK {
 		t.Fatalf("a member holding nothing read the collection at %d %s, want 200", code, body)
 	}
-	if code, body := callAnonymous(t, router, http.MethodGet, "/api/v1/tasks/task"); code != http.StatusForbidden ||
+	if code, body := callAnonymous(t, router, http.MethodGet, "/api/v1/tasks/task"); code != http.StatusUnauthorized ||
 		!strings.Contains(body, httpx.CodeAnonymous) {
 		t.Errorf("an anonymous caller read the collection at %d %s, want %s", code, body, httpx.CodeAnonymous)
 	}

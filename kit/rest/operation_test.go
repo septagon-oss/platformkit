@@ -49,7 +49,7 @@ func TestOperationPreservesProjectionsAndAccess(t *testing.T) {
 		want int
 	}{
 		{"public", false, 202}, {"public", true, 202},
-		{"mine", false, 403}, {"mine", true, 202}, {"staff", true, 403},
+		{"mine", false, 401}, {"mine", true, 202}, {"staff", true, 403},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/tasks/projections/"+tc.name+"/report?page=2", nil)
 		if tc.auth {

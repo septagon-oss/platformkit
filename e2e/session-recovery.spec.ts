@@ -102,7 +102,7 @@ for (const width of [1280, 390]) {
         new URL(response.url()).pathname === endpoint && response.request().method() === 'POST');
       await field.press('Enter');
       const response = await refused;
-      expect(response.status()).toBe(403);
+      expect(response.status()).toBe(401);
       expect((await response.json()).detail).toMatch(/^AUTH_ANONYMOUS:/);
       // This is the red baseline boundary: a real auth refusal has happened,
       // before any assertions about the new recovery markup or principal data.
