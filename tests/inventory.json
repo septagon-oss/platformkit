@@ -65898,6 +65898,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/empty-list-reading-floor.spec.ts",
+   "id": "e2e/empty-list-reading-floor.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "task empty guidance matches its catalogue and keeps the generated list body size",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/frame-floor.spec.ts",
    "id": "e2e/frame-floor.spec.ts",
    "kind": "playwright",
@@ -71135,7 +71155,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1892,
+  "files": 1893,
   "forge_runs": [
    408,
    413,
@@ -71172,7 +71192,7 @@
    "behaviour": 3058,
    "composition": 429,
    "contract": 21,
-   "journey": 96
+   "journey": 97
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -71188,23 +71208,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3604,
+  "rows": 3605,
   "tiers": {
    "merge": 2302,
-   "nightly": 96,
+   "nightly": 97,
    "push": 1206
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1665,
+   "keep": 1666,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3248,
+   "keep": 3249,
    "keep-rewrite": 140,
    "merge": 216
   }
