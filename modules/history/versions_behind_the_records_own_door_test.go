@@ -137,7 +137,7 @@ func (w *world) mount(authorize httpx.Authorizer) http.Handler {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	s := rest.Spec[*Memo]{
-		Module: "memos", Entity: "memo", Path: "/memo",
+		Module: "memos", Entity: "memo", Path: "/memo", Name: rest.Name{One: "Memo", Other: "Memos"},
 		Read: memoRead, Write: memoWrite,
 		History: true, Versions: w.store, Immutable: []string{"status"},
 	}

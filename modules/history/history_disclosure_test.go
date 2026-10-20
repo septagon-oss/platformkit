@@ -17,7 +17,8 @@ import (
 func TestAVersionedDetailOffersAHistoryDisclosure(t *testing.T) {
 	w := newWorld(t)
 	api, router := mountedHistorySpec(t, w, rest.Spec[*Memo]{
-		Module: "memos", Entity: "memo", Path: "/memo", Read: memoRead, Write: memoWrite,
+		Module: "memos", Entity: "memo", Path: "/memo", Name: rest.Name{One: "Memo", Other: "Memos"},
+		Read: memoRead, Write: memoWrite,
 		History: true, Versions: w.store, Immutable: []string{"status"},
 	})
 	id := create(t, router, acmeHost, "First draft")

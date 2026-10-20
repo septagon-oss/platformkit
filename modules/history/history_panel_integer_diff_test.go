@@ -21,7 +21,8 @@ func TestTheHistoryPanelPreservesEveryUnitOfAnIntegerChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	api, router := mountedHistorySpec(t, w, rest.Spec[*CountedMemo]{
-		Module: "memos", Entity: "memo", Path: "/memo", Read: memoRead, Write: memoWrite,
+		Module: "memos", Entity: "memo", Path: "/memo", Name: rest.Name{One: "Memo", Other: "Memos"},
+		Read: memoRead, Write: memoWrite,
 		History: true, Versions: w.store,
 	})
 	code, body := call(t, router, acmeHost, http.MethodPost, "/api/v1/memos/memo",

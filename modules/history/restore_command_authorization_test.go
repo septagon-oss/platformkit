@@ -19,7 +19,8 @@ func TestARestoreClosureRechecksTheRecordsWritePermission(t *testing.T) {
 		t.Fatalf("edit = %d %s", code, body)
 	}
 	api, reader := mountedHistorySpec(t, w, rest.Spec[*Memo]{
-		Module: "memos", Entity: "memo", Path: "/memo", Read: memoRead, Write: memoWrite,
+		Module: "memos", Entity: "memo", Path: "/memo", Name: rest.Name{One: "Memo", Other: "Memos"},
+		Read: memoRead, Write: memoWrite,
 		History: true, Versions: w.store, Immutable: []string{"status"},
 	}, grants{memoRead: true})
 	var command httpx.Command

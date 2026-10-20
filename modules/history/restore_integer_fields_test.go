@@ -49,7 +49,8 @@ func TestRestoringAnIntegerPreservesEveryMinorUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, router := mountedHistorySpec(t, w, rest.Spec[*CountedMemo]{
-		Module: "memos", Entity: "memo", Path: "/memo", Read: memoRead, Write: memoWrite,
+		Module: "memos", Entity: "memo", Path: "/memo", Name: rest.Name{One: "Memo", Other: "Memos"},
+		Read: memoRead, Write: memoWrite,
 		History: true, Versions: w.store, Immutable: []string{"status"},
 	})
 	const original int64 = 9007199254740993
