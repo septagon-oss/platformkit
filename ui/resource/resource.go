@@ -188,6 +188,15 @@ func (o Options) Noun(module, entityName string, name entity.Name, count int64) 
 	return o.plural("resource."+module+"."+entityName, count, name.One, name.Other)
 }
 
+// heading is the words a collection is called: its plural noun, read through the
+// request's catalogue like every other word on these screens, then humanised the
+// way a heading is because the catalogue's word may arrive as the schema wrote it.
+// The list's title, the accessible name of its scrolling region and the collection
+// crumb on a record and on its edit form all read this one line: they name one
+// thing, and a record whose trail calls its set by different words than its list
+// page leaves a reader to work out whether they are in the same place.
+func (o Options) heading(r Resource) string { return display.Humanize(o.noun(r, 2)) }
+
 // count is the list's subtitle. The English fallback is already pluralized
 // so a shell without a catalog reads exactly as before; a catalog receives
 // the number and the noun and applies its own plural rules.
@@ -213,7 +222,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	// every other word on this screen. It is also the accessible name of the
 	// screen's scrolling table region, in the same words: the region is the list, so
 	// giving the two different names would be two names for one thing.
-	title := display.Humanize(o.noun(r, 2))
+	title := o.heading(r)
 	var actions []g.Node
 	// The New button is drawn for a caller who may write *and* a resource that
 	// offers a create: the two questions are different, and the second is
@@ -285,7 +294,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		}
 	}
 	body := []g.Node{
-		breadcrumb(o, o.noun(r, 2), at, named),
+		breadcrumb(o, o.heading(r), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		localeStrip(locales),
 		details(r, o.Words(r.Schema), row, rendered),
@@ -328,7 +337,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 		status = statusUnprocessableEntity
 	}
 	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
-		breadcrumb(o, o.noun(r, 2), at, title),
+		breadcrumb(o, o.heading(r), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
