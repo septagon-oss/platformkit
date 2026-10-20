@@ -5,14 +5,14 @@ import (
 	"fmt"
 )
 
-// CompositionError is a composition that does not resolve, as values. Validate,
-// Plan, Build, Run, Explain and Describe return it when the resolver, the app's
-// name, a module's build or the manifest gates refuse; a caller reaches it with
-// errors.As. Problems is one entry per refusal, in the order they were found, and
-// Suppressed names the modules whose build did not run because a module they wait
-// on refused. Error is the text those methods have always returned, one line per
-// problem, "pkit: <app>: <cause>: <sentence>", and Unwrap returns those lines, so
-// errors.Is still reaches the error a module's build returned.
+// CompositionError is a composition that does not resolve, as values a caller
+// reaches with errors.As. Validate, Explain and Describe return it for every
+// refusal; Plan, Build and Run do too, except for Plan's own checks (an empty
+// name, the settings, the ports and roles) and the engine's, which stay plain.
+// Problems is one entry per refusal, in the order found; Suppressed names the
+// modules whose build did not run because a module they wait on refused. Error is
+// the text those methods always returned, one "pkit: <app>: <cause>: <sentence>"
+// line per problem; Unwrap returns those lines, so errors.Is reaches a build's error.
 type CompositionError struct {
 	App        string
 	Problems   []DescribedProblem
