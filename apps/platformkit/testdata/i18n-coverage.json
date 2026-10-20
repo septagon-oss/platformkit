@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-20T07:46:08Z",
+  "measured_utc": "2026-10-20T08:00:13Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -15,7 +15,7 @@
       "readable": 7
     },
     "GET /app": {
-      "wrapped": 91,
+      "wrapped": 95,
       "readable": 105
     },
     "GET /app/access-request/sent": {
@@ -47,7 +47,7 @@
       "readable": 17
     },
     "GET /app/auth/roles": {
-      "wrapped": 68,
+      "wrapped": 89,
       "readable": 115
     },
     "GET /app/auth/sessions": {
