@@ -116,6 +116,8 @@ type Options struct {
 	// and every picture cell then draws the plain value it drew before this field
 	// existed.
 	PictureSource string
+	// ComposedSource substitutes {reference} with a validated composed-picture token.
+	ComposedSource string
 	// Locale is the request's selected language when the shell composes
 	// page.Shell.Messages; the adapter sets it per request. The fixed labels
 	// — New, Edit, Delete, the count, the pager and the empty state — are
@@ -722,7 +724,7 @@ func direction(sort string) string {
 // clickable; when it names none, every field that is not a list is, which is what
 // every resource drawn before the declaration existed gets.
 func (r Resource) sortable(f entity.Field) bool {
-	if f.Type == entity.TypeList {
+	if f.Type == entity.TypeList || f.Type == entity.TypePicture {
 		return false
 	}
 	if len(r.Present.Sortable) == 0 {

@@ -39,7 +39,7 @@ func TestContentBodyIsRichTextInTheServedCatalog(t *testing.T) {
 		if err := json.Unmarshal([]byte(body), &catalog); err != nil {
 			t.Fatal(err)
 		}
-		if catalog.Version != 2 {
+		if catalog.Version != 3 {
 			t.Errorf("catalog version = %d", catalog.Version)
 		}
 		found := false
