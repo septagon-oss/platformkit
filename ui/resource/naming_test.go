@@ -145,10 +145,13 @@ func TestThePortugueseEmptyStateAddsNoSecondS(t *testing.T) {
 	if strings.Contains(empty, "notess") {
 		t.Errorf("the sentence doubles the noun's own s:\n%s", empty)
 	}
-	// The count keeps its Portuguese adjective, which is the word that carries the
-	// number's agreement — not the interpolated noun.
+	// The count is the number and the noun, and stops there. The noun arrives from a
+	// module's own catalogue, so this layer knows neither its language nor its gender,
+	// and a word fixed after it agrees with neither: written here it is masculine
+	// plural whatever the count, so a reader of one row of a feminine set is shown
+	// "1 tarefa registados". The entry says "%d %s", which cannot disagree.
 	list := render(t, resource.List(note(), withLocale, []map[string]any{{"id": "1", "title": "Comprar"}}, 3, 1, "", false).Body)
-	if !strings.Contains(list, "3 notes registados") {
+	if !strings.Contains(list, ">3 notes<") {
 		t.Errorf("the localized count moved:\n%s", list)
 	}
 }
