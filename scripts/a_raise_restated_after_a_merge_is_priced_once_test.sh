@@ -39,6 +39,7 @@ merge_and_restate() {
 # the raise after each of two merges of main.
 history() {
 	mkdir "$root/$1" && cd "$root/$1" && git init -q -b main
+	# name the committer here rather than per invocation: a merge commits with the repository's own identity, and a CI container names none
 	git config --local user.name ratchet-test
 	git config --local user.email ratchet-test@example.invalid
 	budget 3 && printf 'package a\n// one\n// two\n' > a.go && commit 'main at its ceiling'
