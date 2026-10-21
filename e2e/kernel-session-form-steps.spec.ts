@@ -6,7 +6,7 @@ test('an API session stays in its own context and saves through the generated fo
   const session = await openSession(browser, person, { width: 1440, reducedMotion: 'reduce' });
   const outsider = await browser.newContext({ baseURL: process.env.PLATFORMKIT_E2E_URL });
   try {
-    expect((await outsider.request.get('/api/v1/auth/me')).status()).toBe(403);
+    expect((await outsider.request.get('/api/v1/auth/me')).status()).toBe(401);
     expect((await session.context.request.get('/api/v1/auth/me')).status()).toBe(200);
     await useTheme(session.page, 'dark');
     await session.page.goto('/app/task/tasks/new');

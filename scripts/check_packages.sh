@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design ui/forms
+parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/inference kit/inference/providers/openai
@@ -182,6 +182,11 @@ printf '%s\n' "$metadata" | awk -F '|' '
             uuid " github.com/redis/go-redis/v9 github.com/cespare/xxhash/v2 go.uber.org/atomic golang.org/x/sync golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("modules/task/domain", "")
         check("design", "")
+        # Client identity arrives as YAML, so the decode is a package of its own:
+        # design stays standard-library-only and kit/config stays runtime
+        # configuration. Nothing in the kernel imports this package, which is why
+        # admitting the format dependency here adds no dependency to kit/app.
+        check("kit/designconfig", p "design", "gopkg.in/yaml.v3")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
         check("ui/document", p "kit/locale " presentation " " markup)
         check("ui/resource", uuid " " p "kit/entity " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)

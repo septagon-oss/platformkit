@@ -155,7 +155,7 @@ func TestTheWidthDoorRefusesAWidthItDoesNotServe(t *testing.T) {
 		// address is: the width changes the object, not the authorisation.
 		{public + id + "?w=480", false, http.StatusNotFound},
 		// The signed-in door is still a door only a session opens.
-		{files + "/" + id + "/content?w=480", false, http.StatusForbidden},
+		{files + "/" + id + "/content?w=480", false, http.StatusUnauthorized},
 	} {
 		code, body, _ := send(t, router, http.MethodGet, tc.at, tc.sign)
 		if code != tc.want {
