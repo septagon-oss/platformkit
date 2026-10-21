@@ -19,6 +19,8 @@ lines() { local n; for n in $(seq "$2"); do echo "// $n" >> "$1"; done; }
 fail() { echo "FAIL: $1"; sed 's/^/    /' "$root/out"; exit 1; }
 
 mkdir -p "$root/repo" && cd "$root/repo" && git init -q -b main
+git config --local user.name ratchet-test
+git config --local user.email ratchet-test@example.invalid
 budget 3 && printf 'package a\n// one\n// two\n' > a.go && commit 'main at its ceiling'
 git update-ref refs/remotes/origin/main HEAD
 git checkout -q -b branch

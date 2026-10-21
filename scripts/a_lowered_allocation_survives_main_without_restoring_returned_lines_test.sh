@@ -29,6 +29,8 @@ expect() {
 }
 
 mkdir "$root/repo" && cd "$root/repo" && git init -q -b main
+git config --local user.name ratchet-test
+git config --local user.email ratchet-test@example.invalid
 budget 3 && printf 'package a\n// one\n// two\n' > a.go && commit 'base'
 base="$(git rev-parse HEAD)"
 git update-ref refs/remotes/origin/main HEAD

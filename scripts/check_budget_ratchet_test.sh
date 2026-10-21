@@ -20,6 +20,8 @@ commit() { git add -A && git -c user.name=t -c user.email=t@example.invalid comm
 fresh() { # a repository whose first commit is the base; prints the base sha
 	local dir="$root/$1"
 	mkdir -p "$dir" && cd "$dir" && git init -q -b main
+	git config --local user.name ratchet-test
+	git config --local user.email ratchet-test@example.invalid
 	budget 100 docs
 	echo 'package a' > a.go
 	commit 'base'
