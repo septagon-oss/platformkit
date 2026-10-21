@@ -67,9 +67,10 @@ the tenant's set binds the refusal exactly as it binds the page beside it; only 
 whose host names no tenant is negotiated from the header the caller brought. That copy is
 reached only if the shell that registers the renderer carries `Shell.Messages` itself,
 because a failure page composed without the catalog is the branch two lines below and the
-`fault.*` copy becomes sentences nobody reads. `Serve` routes a handler's own 4xx through the same
-renderer, so a module's refusal is worded the way a guard's is in the shell that mounted
-it. Every guard
+`fault.*` copy becomes sentences nobody reads. `Serve` routes a handler's own refusal, 4xx
+or 5xx, through the same renderer, so a module's refusal is worded the way a guard's is in
+the shell that mounted it: a read that broke keeps its 500 and its log line, and shows what
+could not be loaded rather than the protocol's name for the verdict. Every guard
 that can refuse a request a person may be looking at answers through that renderer
 (`API.refuse`), which is the condition that makes the table worth filling: a code no
 page is ever shown for is a key no copy can be written under. A refusal with no code is
@@ -175,14 +176,13 @@ shell had no way to say who may hand out a missing grant or where an ask posts.
 Also `document.FaultProps`/`FaultPage` (a refusal page with a tone and a way out,
 beside the five-argument `Fault` that still stands), `page.Subject` with
 `Route.Subject` (nothing per page said what the page was about, so a refused record
-read could only name its address), `page.RefusalWords` (the same table, reached from
-a form's notice rather than from a page) and the transport notice, because a request
-that got no response is not a request whose outcome is unknown.
+read could only name its address), and `page.RefusalWords` (the same table, reached
+from a form's notice rather than from a page).
 **Made reusable** — `MountAccess`, the two page routes behind one kernel command,
 and `refusalParts`, the list the catalogue-coverage test reads: a part that ships
 without Portuguese is now a red test rather than an English line on a Portuguese
-page. `faultSubjectKeys` and `faultSubjectWayKeys` join that reading — no `faultKey`
-call can produce those keys, so the gate that asks `faultKey` about every status is
-silent about them and these are the only way the catalogue is asked; and
-`Route.Subject` is the pattern any hand-written page follows to get the record-sized
-words without a lookup by string.
+page. `faultSubjectKeys`, `faultSubjectWayKeys` and `faultFormKeys` join that
+reading from inside the package — no `faultKey` call can produce those keys, so the
+gate that asks `faultKey` about every status is silent about them and these are the
+only way the catalogue is asked; and `Route.Subject` is the pattern any hand-written
+page follows to get the record-sized words without a lookup by string.
