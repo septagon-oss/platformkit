@@ -68,10 +68,16 @@ type choice struct {
 
 // issue is one problem with the composition and the method that caused it.
 // Build answers every issue at once, which is why resolving collects them
-// instead of returning the first.
+// instead of returning the first. module names the module whose build the
+// problem is about and is "" for the resolver's, the app name's and the
+// manifest gates' problems; contract and requiredness are set only for a read
+// a build could not answer.
 type issue struct {
-	method string
-	err    error
+	method       string
+	err          error
+	module       string
+	contract     string
+	requiredness string
 }
 
 // resolve answers the declared app for one deployment. Every sentence it

@@ -1,7 +1,6 @@
 package pkit
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -129,17 +128,39 @@ type Wiring struct {
 	errs   []error
 }
 
+// wiringFailure is what Get and All raise when a read cannot be answered: the
+// build that made it stops at the call, and buildOne turns it into that module's
+// problem. It is unexported so that only this package raises it and only
+// buildOne recovers it.
+type wiringFailure struct {
+	w   *Wiring
+	why issue
+}
+
+// refuse stops the module's build at a read the plan cannot answer, naming the
+// contract and whether it was required or never declared.
+func (w *Wiring) refuse(key reflect.Type, requiredness, format string, args ...any) {
+	panic(wiringFailure{w: w, why: issue{
+		method: "Build", err: fmt.Errorf(format, args...),
+		module: w.at.name, contract: contract(key), requiredness: requiredness,
+	}})
+}
+
 // Get is the one T a module declared with Needs or Optional; the zero value
-// when an optional T is not composed.
+// when an optional T is not composed. A read the module did not declare stops
+// its build here and refuses the module by name (see CompositionError); Get is
+// valid only on the build's own goroutine, during the build.
 func Get[T any](w *Wiring) T {
 	var zero T
 	d, ok := w.declared(Needs[T](), Optional[T]())
 	if !ok || d.many {
-		w.errs = append(w.errs, fmt.Errorf("%s reads %s, which it did not declare with Needs or Optional", w.at.name, contract(d.key)))
-		return zero
+		w.refuse(d.key, "undeclared", "%s reads %s, which it did not declare with Needs or Optional", w.at.name, contract(d.key))
 	}
 	from := w.plan.from[edge{w.at, d.key}]
 	if from == nil {
+		if d.kind == needs {
+			w.refuse(d.key, "required", "%s needs %s, and no module in the plan supplies it", w.at.name, contract(d.key))
+		}
 		return zero
 	}
 	put := w.values[from][d.key]
@@ -153,11 +174,13 @@ func Get[T any](w *Wiring) T {
 }
 
 // All is every E contributed to a module that declared Needs[[]E] or Optional[[]E].
+// A read the module did not declare stops its build here and refuses the module
+// by name (see CompositionError); All is valid only on the build's own goroutine,
+// during the build.
 func All[E any](w *Wiring) []E {
 	d, ok := w.declared(Needs[[]E](), Optional[[]E]())
 	if !ok {
-		w.errs = append(w.errs, fmt.Errorf("%s reads every %s, which it did not declare with Needs[[]%[2]s]", w.at.name, contract(d.key)))
-		return nil
+		w.refuse(d.key, "undeclared", "%s reads every %s, which it did not declare with Needs[[]%[2]s]", w.at.name, contract(d.key))
 	}
 	var all []E
 	for _, m := range w.plan.contributors[d.key] {
@@ -315,21 +338,14 @@ func (m *Module) declares(key any, kinds ...kind) bool {
 // while the composition still owes a sentence — the build of one module reads
 // what another put, so building a composition that does not resolve is how a
 // mistake turns into a crash instead of an answer.
+//
+// This is the one place problems are collected, and the error is a
+// CompositionError that carries them as fields: a second collector would be a
+// second answer to the question the resolver already answers. The build phase's
+// own refusals (a module's build, a put that is not the one it declared, the
+// kernel's manifest gates) join the same list under the method name the joined
+// sentence already carries: Build.
 func (a *App) compose(d Deployment) (*plan, []module.Module, map[*Module]map[any][]any, error) {
-	p, built, puts, _, err := a.inspect(d)
-	return p, built, puts, err
-}
-
-// inspect is compose with its problems still in hand: the same phases, the same
-// order, the same joined error, and the []issue behind that error returned
-// beside it rather than folded into it and dropped. Describe needs to say each
-// problem as a field as well as a sentence, and a second collector of problems
-// would be a second answer to the question the resolver already answers — so
-// this is the one place they are collected, and compose is the wrapper that
-// throws the list away. The build phase's own refusals (a module's build, a put
-// that is not the one it declared, the kernel's manifest gates) join the same
-// list under the method name the joined sentence already carries: Build.
-func (a *App) inspect(d Deployment) (*plan, []module.Module, map[*Module]map[any][]any, []issue, error) {
 	p, issues := a.resolve(d)
 	// The composition's name is a problem of its own, collected with the plan's:
 	// a name no subject token can hold publishes at an app-scoped address while
@@ -339,53 +355,52 @@ func (a *App) inspect(d Deployment) (*plan, []module.Module, map[*Module]map[any
 		issues = append(issues, issue{method: "NewApp", err: err})
 	}
 	if len(issues) > 0 {
-		return p, nil, nil, issues, joinIssues(a.name, issues)
+		return p, nil, nil, joinIssues(a.name, issues, nil)
 	}
 	w := &Wiring{plan: p, values: map[*Module]map[any][]any{}, skin: a.recordedSkin()}
-	// A module whose build refused put none of what it declared, so every module
-	// downstream of it would build over a hole: pkit.Get answers the zero value of a
-	// contract nobody put, and a module that guards its own Deps answers that with a
-	// panic — the sentence a deployment would then hear would name its own mistake as
-	// a wiring fault, or name nothing. resolve's rule for a plan that does not resolve
-	// is the rule here: a follow-on problem caused by a module that could not be built
-	// is suppressed, so one mistake stays one sentence. Build order is topological, so
-	// marking the module that failed and skipping what waits on it reaches the whole
-	// downstream of it in this one pass.
-	broken := map[*Module]bool{}
+	// A module with a problem is refused, and a refused module put nothing the
+	// plan may read: its values are dropped and its manifest is not kept, so
+	// whatever runs after it sees only what built cleanly. Every module that waits
+	// on a refused module, directly or through another suppressed one, is not
+	// built and is recorded as suppressed rather than given a sentence of its
+	// own — resolve's rule for a plan that does not resolve is the rule here, so
+	// one mistake stays one sentence. Build order is topological, so the mark
+	// carries down the order in this one pass.
+	refusedBy := map[*Module]*Module{}
+	var suppressed []DescribedSuppression
 	for _, m := range p.order {
-		if waitedOnBroken(p, m, broken) {
-			// Nothing was put here either, so whatever waits on this module is waiting
-			// on a hole as well: the mark carries down the order.
-			broken[m] = true
+		if by := refusedDependency(p, m, refusedBy); by != nil {
+			refusedBy[m] = by
+			suppressed = append(suppressed, DescribedSuppression{Module: m.name, By: by.name})
 			continue
 		}
 		w.at, w.errs = m, nil
-		manifest, err := m.build(w)
-		if err != nil {
-			w.errs = append(w.errs, fmt.Errorf("%s: %w", m.name, err))
-			broken[m] = true
-		}
-		for _, dl := range m.decls {
-			switch put := len(w.values[m][dl.key]); {
-			case dl.kind == provides && put != 1:
-				w.errs = append(w.errs, fmt.Errorf("%s declares it provides %s and did not put it once", m.name, contract(dl.key)))
-				broken[m] = true
-			case dl.kind == contributes && put == 0:
-				w.errs = append(w.errs, fmt.Errorf("%s declares it contributes one %s and did not put one: put one in Build, or do not declare it", m.name, contract(dl.key)))
-				broken[m] = true
-			case dl.kind == contributes && put > 1:
-				w.errs = append(w.errs, fmt.Errorf("%s declares it contributes one %s and put %d: a module contributes the one %s it is", m.name, contract(dl.key), put, contract(dl.key)))
-				broken[m] = true
+		manifest, failed, err := buildOne(m, w)
+		var problems []issue
+		if failed != nil {
+			// The build was cut short at a read pkit could not answer, so what it
+			// did not put is a consequence of that one mistake, not a second one.
+			problems = append(problems, *failed)
+		} else {
+			if err != nil {
+				w.errs = append(w.errs, fmt.Errorf("%s: %w", m.name, err))
 			}
+			w.errs = append(w.errs, putCountProblems(m, w.values[m])...)
 		}
 		for _, e := range w.errs {
-			issues = append(issues, issue{method: "Build", err: e})
+			problems = append(problems, issue{method: "Build", err: e, module: m.name})
+		}
+		if len(problems) > 0 {
+			issues = append(issues, problems...)
+			refusedBy[m] = m
+			delete(w.values, m)
+			continue
 		}
 		p.manifest[m] = manifest
 		w.built = append(w.built, manifest)
 	}
 	if len(issues) > 0 {
-		return p, nil, nil, issues, joinIssues(a.name, issues)
+		return p, nil, nil, joinIssues(a.name, issues, suppressed)
 	}
 	// The kernel's own manifest gates, run over what the dry build produced
 	// rather than over a list somebody re-wrote: a module that subscribes to
@@ -396,36 +411,60 @@ func (a *App) inspect(d Deployment) (*plan, []module.Module, map[*Module]map[any
 	expanded := module.Expand(append([]module.Module{}, w.built...))
 	if err := module.Validate(expanded); err != nil {
 		issues = append(issues, issue{method: "Build", err: err})
-		return p, nil, nil, issues, joinIssues(a.name, issues)
+		return p, nil, nil, joinIssues(a.name, issues, nil)
 	}
-	return p, w.built, w.values, issues, nil
+	return p, w.built, w.values, nil
 }
 
-// waitedOnBroken answers whether one of this module's own build dependencies
-// refused to build: the resolver ordered it after a module that put nothing, so its
-// build would read a contract nobody supplied. The plan's dependency list is the
-// suppliers named in the module's own declarations, which is the same set pkit.Get
-// would hand it.
-func waitedOnBroken(p *plan, m *Module, broken map[*Module]bool) bool {
-	for _, dep := range p.deps[m] {
-		if broken[dep] {
-			return true
+// buildOne runs one module's build. A read Get or All could not answer stops the
+// build at the call and comes back here as that module's problem; any other
+// panic — the module's own, or a failed read through another composition's
+// Wiring — is raised again unchanged.
+func buildOne(m *Module, w *Wiring) (manifest module.Module, failed *issue, err error) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		f, ok := r.(wiringFailure)
+		if !ok || f.w != w {
+			panic(r)
+		}
+		failed = &f.why
+	}()
+	manifest, err = m.build(w)
+	return manifest, nil, err
+}
+
+// putCountProblems is what a module that built declared and did not put as
+// declared: the one T it provides, or the one T it contributes.
+func putCountProblems(m *Module, put map[any][]any) []error {
+	var errs []error
+	for _, dl := range m.decls {
+		switch n := len(put[dl.key]); {
+		case dl.kind == provides && n != 1:
+			errs = append(errs, fmt.Errorf("%s declares it provides %s and did not put it once", m.name, contract(dl.key)))
+		case dl.kind == contributes && n == 0:
+			errs = append(errs, fmt.Errorf("%s declares it contributes one %s and did not put one: put one in Build, or do not declare it", m.name, contract(dl.key)))
+		case dl.kind == contributes && n > 1:
+			errs = append(errs, fmt.Errorf("%s declares it contributes one %s and put %d: a module contributes the one %s it is", m.name, contract(dl.key), n, contract(dl.key)))
 		}
 	}
-	return false
+	return errs
 }
 
-// joinIssues answers the list of problems the way it has always been answered:
-// one line each, prefixed with the app and the method that caused it, joined so
-// a caller reads every problem in one error. The sentence a DescribedProblem
-// carries and the sentence here come from the same fmt.Errorf call, which is the
-// reason a machine view needs no message format of its own.
-func joinIssues(app string, issues []issue) error {
-	errs := make([]error, 0, len(issues))
-	for _, in := range issues {
-		errs = append(errs, fmt.Errorf("pkit: %s: %s: %w", app, in.method, in.err))
+// refusedDependency is the refused module this module's build would read a
+// hole from: the first of its own build dependencies, in Use order, that
+// refused or was itself suppressed, followed to the module that refused. Nil
+// when every dependency built. The plan's dependency list is the suppliers named
+// in the module's own declarations, which is the same set pkit.Get would hand it.
+func refusedDependency(p *plan, m *Module, refusedBy map[*Module]*Module) *Module {
+	for _, dep := range p.deps[m] {
+		if by := refusedBy[dep]; by != nil {
+			return by
+		}
 	}
-	return errors.Join(errs...)
+	return nil
 }
 
 // Validate answers every problem with the composition — duplicates, missing,
@@ -466,7 +505,7 @@ func (a *App) Validate(d Deployment) error {
 // module wrote them, so the reading below walks the declarations and takes each
 // answer from the projection in the order the projection appended it.
 func (a *App) Explain(d Deployment) (string, error) {
-	p, _, puts, _, err := a.inspect(d)
+	p, _, puts, err := a.compose(d)
 	if err != nil {
 		return "", err
 	}
