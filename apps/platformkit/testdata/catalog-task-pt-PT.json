@@ -172,7 +172,8 @@
     "previewField": "description",
     "summaryFields": [
       "priority",
-      "dueAt"
+      "dueAt",
+      "slaBreached"
     ],
     "statusField": "status",
     "emptyDescription": "Crie uma tarefa para definir o próximo passo do trabalho.",

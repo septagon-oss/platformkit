@@ -2,10 +2,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { FLOOR, expectFloor, probe, report } from './design_floor';
 import { signInForContent } from './steps/content';
 
-// The operator's home and the tenant list, measured by the floor's own instrument in both
-// languages the bootstrapped tenant speaks. The tenant list met the whole floor before its
-// copy changed, so it is held to the whole floor; the home is held to the measure, the one
-// rule its new heading block brought.
+// The operator's home, the tenant list and the task queue, measured by the floor's own
+// instrument in both languages the bootstrapped tenant speaks. The tenant list and the task
+// queue are held to the whole floor; the home is held to the measure, the one rule its new
+// heading block brought.
 
 const admin = {
   email: process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test',
@@ -37,5 +37,20 @@ test('the tenant list holds the design floor at phone and desktop widths', async
   for (const width of [390, 1440]) {
     await open(page, '/app/tenant/tenants', 'en', width);
     await expectFloor(page, 'tenants', width);
+  }
+});
+
+test('the task queue holds the design floor at phone and desktop widths', async ({ page }) => {
+  // Created an hour past its response deadline, so the create itself records the breach and the
+  // queue has a row whose Response overdue column reads Yes.
+  const title = `Lift stopped between floors ${Date.now()}`;
+  const slaDeadline = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const created = await page.request.post('/api/v1/task/tasks', { data: { title, priority: 'critical', slaDeadline } });
+  expect(created.status()).toBe(201);
+  expect((await created.json()).slaBreached).toBe(true);
+  for (const width of [390, 1440]) {
+    await open(page, '/app/task/tasks', 'en', width);
+    await expectFloor(page, 'tasks', width);
+    await expect(page.getByRole('row').filter({ hasText: title })).toContainText('Yes');
   }
 });

@@ -226,7 +226,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales)...)
+	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
 	return document.View{Title: named, Body: body}
 }
@@ -460,9 +460,15 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	shown := r.listFields()
 	columns := make([]components.TableColumn, 0, len(shown))
 	words := o.Words(r.Schema)
+	// A row whose author named its summary is, on a phone, its name and its status with that
+	// summary stacked under the name rather than widening the table past the screen. A list
+	// with no summary shows every field it lists, which stacked would be the whole record on
+	// every row, so its table keeps scrolling inside its own region.
+	summarised := len(r.Present.SummaryFields) > 0
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
 			Key: f.Name, Label: words.FieldLabel(f), Sortable: r.sortable(f), Primary: i == 0,
+			Stacked: summarised && i > 0 && f.Name != r.Present.StatusField,
 		})
 	}
 	out := make([]components.DataRow, 0, len(rows))

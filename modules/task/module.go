@@ -90,7 +90,7 @@ var Spec = rest.Spec[*contracts.Task]{
 	// boot gate can check it against Events below. See internal.BreachOnArrival.
 	HookEvents: []string{contracts.EventSLABreached},
 	// Present is how a task reads to the person holding one: the words, the icon,
-	// which field names a row and which two say what it costs to wait. Every word
+	// which field names a row and which say what waiting costs. Every word
 	// here is English written by the author of the entity, and the copy key it is
 	// served under is derived from this resource's own address — see
 	// ui/resource/hints.go — which is why no `en.json` exists to keep it in step.
@@ -101,12 +101,12 @@ var Spec = rest.Spec[*contracts.Task]{
 		Plural:           "tasks",
 		Icon:             "task",
 		Group:            &entity.ResourceGroup{Key: "work", Label: "Work"},
-		// The row says its title, and its status; the two business fields a person
-		// weighs it against are what it costs to wait and when.
+		// The row says its title, and its status; between them, what it costs to
+		// wait, when it is due, and whether its response is already overdue.
 		PrimaryField:  "title",
 		PreviewField:  "description",
 		StatusField:   "status",
-		SummaryFields: []string{"priority", "dueAt"},
+		SummaryFields: []string{"priority", "dueAt", "slaBreached"},
 		// The three sorts a desk actually runs: what it is called, what it is due,
 		// what moved last. `updatedAt` is legal here although no row shows it —
 		// `sortable` refuses a name pointing at a `hidden` field, and `detail` is

@@ -227,7 +227,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// leaves is claimed here. The digest below is this merged tree's own measurement,
 	// printed by the refusal above the re-measure and copied from it; it covers the
 	// composed examples, stylesheet and attributions together.
-	if legacy.SHA256 != "436f7e040a2fc6103cb4216a4b8c26b8cbcc3fac13cf7666b7fa771fd87b1415" {
+	//
+	// The phone sort controls of a stacked table now sit in a header row of their own
+	// and its class list joins the stylesheet; the digest below is this tree's
+	// measurement with that change, and no leaf-by-leaf count is claimed.
+	if legacy.SHA256 != "b66ce0a70985956b10295f35627d227475483f2826836476cb10b40c2a979ee2" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
