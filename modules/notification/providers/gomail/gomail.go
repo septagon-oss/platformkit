@@ -26,6 +26,7 @@ import (
 
 	mail "github.com/wneessen/go-mail"
 
+	"github.com/septagon-oss/platformkit/kit/secrets"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
@@ -41,10 +42,15 @@ import (
 // a tenant has one — that is Message.Sender, and the two answer different
 // questions (see contracts.Sender).
 type Config struct {
-	Host         string
-	Port         int
-	Username     string
-	Password     string
+	Host     string
+	Port     int
+	Username string
+	// Secrets and SecretName are the relay's credential, named rather than held:
+	// the port answers the bytes when this carrier dials, so a rotation reaches the
+	// next send without a restart and nothing here keeps a password in a struct
+	// that a log line or a heap dump could read.
+	Secrets      secrets.Secrets
+	SecretName   string
 	EnvelopeFrom string
 	// TLS asks whether the connection must be encrypted. The default, false, is
 	// opportunistic: STARTTLS when the server offers it and plaintext when a
@@ -98,6 +104,14 @@ func (s *Sender) Send(ctx context.Context, m contracts.Message) error {
 	if err != nil {
 		return err
 	}
+	credential := ""
+	if s.cfg.Username != "" {
+		resolved, err := s.password(ctx)
+		if err != nil {
+			return err
+		}
+		credential = resolved
+	}
 	opts := []mail.Option{mail.WithPort(s.port())}
 	if s.cfg.Username != "" {
 		// Username and password alone are not authentication: go-mail defaults to
@@ -108,7 +122,7 @@ func (s *Sender) Send(ctx context.Context, m contracts.Message) error {
 		// sender this package replaced used through smtp.PlainAuth: net/smtp refuses
 		// to offer it over plaintext to a relay that is not the local machine, which
 		// is the same judgement Config.TLS asks the operator to make explicit.
-		opts = append(opts, mail.WithUsername(s.cfg.Username), mail.WithPassword(s.cfg.Password),
+		opts = append(opts, mail.WithUsername(s.cfg.Username), mail.WithPassword(credential),
 			mail.WithSMTPAuth(mail.SMTPAuthPlain))
 	}
 	if s.cfg.TLS {
@@ -127,6 +141,28 @@ func (s *Sender) Send(ctx context.Context, m contracts.Message) error {
 		return s.failed(fmt.Sprintf("relay %s", s.cfg.Host), err)
 	}
 	return nil
+}
+
+// password resolves the relay's credential off the port, at the moment the dial
+// happens and not at composition: a plan is never refused for a secret this process
+// has no reason to need yet, and a send whose secret is missing returns the port's
+// error unchanged — the transaction rolls back with no ledger row and the outbox
+// retries on the kernel's ladder, so nothing is acknowledged while the credential is
+// away. A trailing CR or LF is trimmed here rather than in the port: the mounted
+// secret keeps the newline its producer wrote, and this package is the one that
+// knows a SMTP password never ends in one.
+func (s *Sender) password(ctx context.Context) (string, error) {
+	if s.cfg.Secrets == nil || s.cfg.SecretName == "" {
+		return "", contracts.Permanent("this mailer names no secret store to read its password from")
+	}
+	secret, err := s.cfg.Secrets.Get(ctx, secrets.Shared(s.cfg.SecretName))
+	if err != nil {
+		// The port's error, unchanged: a miss and an outage reach the worker
+		// differently on purpose, and a wrapper that flattened both into "the mail
+		// failed" would make a dead vault look like a bad password.
+		return "", fmt.Errorf("notification: reading the mail password: %w", err)
+	}
+	return strings.TrimRight(string(secret.Bytes), "\r\n"), nil
 }
 
 // message is the parts of the library this carrier touches in one place: the

@@ -55,9 +55,10 @@ pkit: tenant.Module defines the permission tenant:manage and tenant:locale_manag
 pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.renamed, tenant.host_removed, tenant.reactivated, tenant.deleted, tenant.lifecycle_recorded, tenant.oidc_set, tenant.oidc_cleared, tenant.saml_set and tenant.saml_cleared.
 pkit: emailregistration.Module is built after user.Module.
 pkit: emailregistration.Module needs usercontracts.Service from user.Module.
-pkit: notification.Module is built after user.Module, tenant.Module and workspace.Module.
+pkit: notification.Module is built after product.Module, user.Module, tenant.Module and workspace.Module.
 pkit: notification.Module needs notificationcontracts.RecipientLookup from user.Module.
 pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Module.
+pkit: notification.Module needs secrets.Secrets from product.Module.
 pkit: notification.Module could use push.Adapters; platformkit composes no provider, so it will not.
 pkit: notification.Module uses *notification.Page from workspace.Module.
 pkit: notification.Module reads config.Mail.
@@ -191,6 +192,7 @@ pkit: admin.Module uses admincontracts.AccountLanguageVersion from access.Module
 pkit: admin.Module uses tenantcontracts.Languages from product.Module.
 pkit: admin.Module runs after everything and saw every other module's manifest.
 pkit: admin.Module defines the permission gallery:read.
+pkit: product.Module provides secrets.Keys; no module in platformkit needs it.
 pkit: tenant.Module provides httpx.TenantLoader; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Service; no module in platformkit needs it.
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.

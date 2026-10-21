@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/push"
+	"github.com/septagon-oss/platformkit/kit/secrets"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
@@ -51,8 +52,12 @@ func TestAPushNoticeReachesTheCarrierAndAGoneDeviceIsRemoved(t *testing.T) {
 		pkit.Put[contracts.HostLookup](w, hosts{})
 		adapters = push.Adapters{push.PlatformExpo: goneService{}}
 		pkit.Put[push.Adapters](w, adapters)
+		// The same answer the delivery case gives: notification needs the secret
+		// port whether or not the channel under test ever reads a secret.
+		pkit.Put[secrets.Secrets](w, secrets.Map(nil, nil))
 		return module.Module{Name: "gone_inputs"}, nil
-	}, pkit.Provides[contracts.RecipientLookup](), pkit.Provides[contracts.HostLookup](), pkit.Provides[push.Adapters]())
+	}, pkit.Provides[contracts.RecipientLookup](), pkit.Provides[contracts.HostLookup](),
+		pkit.Provides[push.Adapters](), pkit.Provides[secrets.Secrets]())
 	reader := pkit.NewModule("gone_reader", func(w *pkit.Wiring) (module.Module, error) {
 		svc = pkit.Get[contracts.Service](w)
 		for _, m := range pkit.Composition(w) {

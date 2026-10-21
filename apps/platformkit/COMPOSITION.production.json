@@ -12,6 +12,8 @@
         "usercontracts.LocalePolicy",
         "tenantcontracts.LocaleManager",
         "filecontracts.Storage",
+        "secrets.Secrets",
+        "secrets.Keys",
         "auditcontracts.Plan",
         "tenancy.Policy",
         "sitecontracts.WriteGate",
@@ -208,6 +210,10 @@
         {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
+        },
+        {
+          "contract": "secrets.Secrets",
+          "from": "product"
         }
       ],
       "uses": [
@@ -229,6 +235,7 @@
         }
       ],
       "after": [
+        "product",
         "user",
         "tenant",
         "workspace"
