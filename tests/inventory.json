@@ -69901,6 +69901,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/auth-ended-session-task-delete.spec.ts",
+   "id": "e2e/auth-ended-session-task-delete.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "auth and task refuse deletion with an ended session cookie and preserve the row",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/auth-key-refusal-preserves-session.spec.ts",
    "id": "e2e/auth-key-refusal-preserves-session.spec.ts",
    "kind": "playwright",
@@ -75578,7 +75598,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2032,
+  "files": 2033,
   "forge_runs": [
    408,
    413,
@@ -75615,7 +75635,7 @@
    "behaviour": 3248,
    "composition": 454,
    "contract": 21,
-   "journey": 108
+   "journey": 109
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -75631,23 +75651,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3831,
+  "rows": 3832,
   "tiers": {
    "merge": 2408,
-   "nightly": 108,
+   "nightly": 109,
    "push": 1315
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1805,
+   "keep": 1806,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3475,
+   "keep": 3476,
    "keep-rewrite": 140,
    "merge": 216
   }
