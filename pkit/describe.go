@@ -11,6 +11,7 @@ package pkit
 // of your own composition, not a sandbox around somebody else's.
 
 import (
+	"errors"
 	"reflect"
 )
 
@@ -53,9 +54,10 @@ const schemaV1 = "platformkit.composition.v1"
 //
 // The one rule about a refusal: when the composition does not resolve, the
 // document carries schema, app, environment, resolved:false and problems, and
-// no module, contract, provider, implementation or role. A caller that ignores
-// the error still cannot read a composition out of it, and there is no second,
-// softer graph behind the first one.
+// no module, contract, provider, implementation or role. Each problem names the
+// module it is about, and suppressed names the modules not built because of one.
+// A caller that ignores the error still cannot read a composition out of it, and
+// there is no second, softer graph behind the first one.
 type Description struct {
 	Schema      string             `json:"schema"`
 	App         string             `json:"app"`
@@ -65,6 +67,9 @@ type Description struct {
 	Choices     []DescribedChoice  `json:"choices,omitempty"`
 	Roles       []DescribedRole    `json:"roles,omitempty"`
 	Problems    []DescribedProblem `json:"problems"`
+	// Suppressed is present only on a refusal: the modules whose build did not
+	// run because a module they wait on refused, in build order.
+	Suppressed []DescribedSuppression `json:"suppressed,omitempty"`
 	// Cloud is the deployment's answer about its seams: which object store, cache,
 	// transport, mail sender, policy engine, telemetry exporter, identity door and
 	// flag source the resolved configuration runs. It is absent on a refusal with
@@ -186,6 +191,15 @@ type DescribedRole struct {
 type DescribedProblem struct {
 	Cause    string `json:"cause"`
 	Sentence string `json:"sentence"`
+	// Module is the module whose build refused; "" when the resolver, the app's
+	// name or the manifest gates refused.
+	Module string `json:"module,omitempty"`
+	// Contract and Requiredness are set when the refusal is a read the plan could
+	// not answer: the contract as Explain prints it, and "required" (declared with
+	// Needs) or "undeclared" (declared with neither Needs nor Optional). An
+	// Optional read never fails, so "optional" is never written.
+	Contract     string `json:"contract,omitempty"`
+	Requiredness string `json:"requiredness,omitempty"`
 }
 
 // Describe reads the composition the resolver settled, as values, for one
@@ -221,15 +235,22 @@ type DescribedProblem struct {
 // rule has nothing to do with this method, which neither consumes the App's one
 // build nor is refused by one having happened.
 func (a *App) Describe(d Deployment) (*Description, error) {
-	p, _, _, issues, err := a.inspect(d)
+	p, _, _, err := a.compose(d)
 	if err != nil {
-		return &Description{
+		// The problems are the error's own fields, not a second reading of them:
+		// compose answers every refusal as a CompositionError.
+		doc := &Description{
 			Schema:      schemaV1,
 			App:         a.name,
 			Environment: d.Environment,
 			Modules:     []DescribedModule{},
-			Problems:    describedProblems(issues),
-		}, err
+			Problems:    []DescribedProblem{},
+		}
+		var ce *CompositionError
+		if errors.As(err, &ce) {
+			doc.Problems, doc.Suppressed = ce.Problems, ce.Suppressed
+		}
+		return doc, err
 	}
 	return a.described(p, d.Environment), nil
 }
@@ -329,7 +350,10 @@ func describedRoles(rs []Role) []DescribedRole {
 func describedProblems(issues []issue) []DescribedProblem {
 	out := make([]DescribedProblem, 0, len(issues))
 	for _, in := range issues {
-		out = append(out, DescribedProblem{Cause: in.method, Sentence: in.err.Error()})
+		out = append(out, DescribedProblem{
+			Cause: in.method, Sentence: in.err.Error(),
+			Module: in.module, Contract: in.contract, Requiredness: in.requiredness,
+		})
 	}
 	return out
 }

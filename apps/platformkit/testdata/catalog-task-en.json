@@ -172,7 +172,8 @@
     "previewField": "description",
     "summaryFields": [
       "priority",
-      "dueAt"
+      "dueAt",
+      "slaBreached"
     ],
     "statusField": "status",
     "emptyDescription": "Create a task to give the work a clear next step.",
