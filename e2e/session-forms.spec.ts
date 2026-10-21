@@ -64,7 +64,7 @@ for (const failure of ['http', 'network']) test(`logout ${failure} failure retai
   await page.unroute('**/api/v1/auth/logout');
   await page.locator('[data-sign-out]').click();
   await expect(page).toHaveURL(/\/app\/admin\/login$/);
-  expect((await page.request.get('/api/v1/auth/me')).status()).toBe(403);
+  expect((await page.request.get('/api/v1/auth/me')).status()).toBe(401);
 });
 
 for (const kind of ['register', 'forgot']) test(`${kind} sends its declared fields once and announces the email acknowledgment`, async ({ page }) => {

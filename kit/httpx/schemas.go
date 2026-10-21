@@ -485,7 +485,7 @@ func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
 			return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 		}
 		if !recognised(ctx) {
-			return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
+			return problem.New(http.StatusUnauthorized, CodeAnonymous+": this requires a signed-in caller")
 		}
 		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential && auth.kind != kindBearerKey {
 			return problem.New(http.StatusForbidden, CodeUndeclared+": this operation declares no authorization")
@@ -511,8 +511,8 @@ func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
 
 // may asks the same Authorizer the middleware asks, in the tenant the request
 // resolved to, about the caller the request was recognised as. The refusals are
-// the middleware's: 403 for a caller who may not, 503 for a decision that could
-// not be made, because sending somebody away from work they are entitled to do
+// the middleware's: 401 for a caller nobody recognised, 403 for a caller who may
+// not, 503 for a decision that could not be made, because sending somebody away from work they are entitled to do
 // is worse than telling them to try again.
 func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 	t, hasTenant := tenancy.FromContext(ctx)
@@ -520,7 +520,7 @@ func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 		return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 	}
 	if !recognised(ctx) {
-		return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
+		return problem.New(http.StatusUnauthorized, CodeAnonymous+": this requires a signed-in caller")
 	}
 	// The operator check comes before the Authorizer, exactly as it does in the
 	// request middleware: a customer's administrator holds the wildcard in

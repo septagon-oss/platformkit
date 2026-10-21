@@ -175,9 +175,14 @@ export function planSourceTokens(snapshot, scalarSpellings) {
   }
   const modes = list(tokens.modes, 'modes'), names = new Set()
   for (const mode of modes) {
-    shape(mode, ['mode'], ['colors', 'fonts'])
+    shape(mode, ['mode'], ['colors', 'fonts', 'dimensions'])
     if (!['light', 'dark'].includes(mode.mode) || names.has(mode.mode)) reject('duplicate or unsupported mode')
     if (list(mode.fonts, 'fonts').length) reject('unsupported ordered font fallback semantics')
+    // A radius the palette carries is a shape this adapter has no native address
+    // for: the source record names a scale or a colour, never a CSS custom
+    // property of type dimension. Refuse the request rather than build a library
+    // with the client's shape quietly removed from it.
+    if (list(mode.dimensions, 'dimensions').length) reject('unsupported selected dimensions; no partial library is produced')
     names.add(mode.mode)
   }
   const colors = sourceColors(snapshot, tokens, modes)
