@@ -12607,6 +12607,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/an_ended_owner_never_reopens_its_transaction_test.go",
+   "id": "kit/db/an_ended_owner_never_reopens_its_transaction_test.go#TestAnOwnerEndedAfterAWriteRollsItBackAndNeverReopens",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnOwnerEndedAfterAWriteRollsItBackAndNeverReopens",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 5,
    "evidence": "reaches nothing its sibling alter_actions_test.go does not reach",
    "file": "kit/db/autocommit_function_body_test.go",
@@ -75704,7 +75723,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2031,
+  "files": 2032,
   "forge_runs": [
    408,
    413,
@@ -75738,7 +75757,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3262,
+   "behaviour": 3263,
    "composition": 454,
    "contract": 21,
    "journey": 101
@@ -75757,9 +75776,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3838,
+  "rows": 3839,
   "tiers": {
-   "merge": 2423,
+   "merge": 2424,
    "nightly": 101,
    "push": 1314
   },
@@ -75767,13 +75786,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1804,
+   "keep": 1805,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3482,
+   "keep": 3483,
    "keep-rewrite": 140,
    "merge": 216
   }
