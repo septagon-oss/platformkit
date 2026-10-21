@@ -56974,6 +56974,25 @@
   {
    "area": "pkit",
    "evidence": "not-round-named",
+   "file": "pkit/empty_name_refusal_type_test.go",
+   "id": "pkit/empty_name_refusal_type_test.go#TestEmptyNameRefusalsKeepTheirDocumentedErrorTypes",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEmptyNameRefusalsKeepTheirDocumentedErrorTypes",
+   "needs_db": true,
+   "pkg": "pkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "pkit",
+   "evidence": "not-round-named",
    "file": "pkit/every_accepted_composition_builds_what_use_named_test.go",
    "id": "pkit/every_accepted_composition_builds_what_use_named_test.go#TestEveryCompositionThatValidateAcceptsIsTheCompositionExplainDescribes",
    "kind": "go",
@@ -75590,7 +75609,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2032,
+  "files": 2033,
   "forge_runs": [
    408,
    413,
@@ -75624,7 +75643,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3256,
+   "behaviour": 3257,
    "composition": 454,
    "contract": 21,
    "journey": 101
@@ -75643,9 +75662,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3832,
+  "rows": 3833,
   "tiers": {
-   "merge": 2417,
+   "merge": 2418,
    "nightly": 101,
    "push": 1314
   },
@@ -75653,13 +75672,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1805,
+   "keep": 1806,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3476,
+   "keep": 3477,
    "keep-rewrite": 140,
    "merge": 216
   }
