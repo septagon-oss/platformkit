@@ -63,6 +63,7 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 	sortable := func(c TableColumn) bool { return p.Sortable && c.Sortable }
 
 	head := []g.Node{h.Class(clTableHead.Compile())}
+	lead := slices.IndexFunc(p.Columns, func(c TableColumn) bool { return !c.Stacked })
 	var headCells []g.Node
 	if p.Selectable {
 		label := fallbackText(slots.SelectAllLabel, "Select all rows")
@@ -73,21 +74,14 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 					g.Attr("data-pk-select", "all"), g.Attr("aria-label", label))),
 		))
 	}
-	lead := slices.IndexFunc(p.Columns, func(c TableColumn) bool { return !c.Stacked })
-	for i, c := range p.Columns {
-		// The leading header carries the stacked columns' sorts below sm, as the
-		// leading cell carries their values, so hiding a column hides no order.
-		var folded g.Node
-		if i == lead {
-			folded = stackedSorters(p, slots)
-		}
+	for _, c := range p.Columns {
 		if sortable(c) {
 			sorter, sortState := sortControl(p, c, slots)
 			headCells = append(headCells, h.Th(
 				h.Class(stacked(clTableThSort, c).Compile()), g.Attr("scope", "col"),
 				g.Attr("aria-sort", sortState),
 				g.If(width(c.Width) != "", g.Attr("style", "width:"+width(c.Width))),
-				sorter, folded,
+				sorter,
 			))
 			continue
 		}
@@ -95,9 +89,9 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 		if w := width(c.Width); w != "" {
 			cell = append(cell, g.Attr("style", "width:"+w))
 		}
-		headCells = append(headCells, h.Th(append(cell, g.Text(c.Label), folded)...))
+		headCells = append(headCells, h.Th(append(cell, g.Text(c.Label))...))
 	}
-	head = append(head, h.Tr(headCells...))
+	head = append(head, h.Tr(headCells...), stackedSorters(p, slots, len(headCells)))
 
 	tdClass := clTableTd
 	if p.Compact {
@@ -263,10 +257,11 @@ func sortControl(p TableProps, c TableColumn, slots TableSlots) (g.Node, string)
 	return h.Button(append(control, h.Type("button"))...), sortState
 }
 
-// stackedSorters lists the sort controls of the sortable stacked columns, for
-// the leading header to carry below the sm breakpoint where those columns'
-// own headers are not drawn; nothing when no stacked column sorts.
-func stackedSorters(p TableProps, slots TableSlots) g.Node {
+// stackedSorters is the header row that lists the sort controls of the sortable
+// stacked columns, for a phone below the sm breakpoint where those columns' own
+// headers are not drawn; nothing when no stacked column sorts. A plain cell in
+// a row of its own, so no column header's name carries another column's label.
+func stackedSorters(p TableProps, slots TableSlots, span int) g.Node {
 	var controls []g.Node
 	for _, c := range p.Columns {
 		if c.Stacked && p.Sortable && c.Sortable {
@@ -277,7 +272,9 @@ func stackedSorters(p TableProps, slots TableSlots) g.Node {
 	if len(controls) == 0 {
 		return nil
 	}
-	return h.Div(append([]g.Node{h.Class(clTableStackSort.Compile())}, controls...)...)
+	return h.Tr(h.Class(clTableStackSortRow.Compile()),
+		h.Td(g.Attr("colspan", fmt.Sprint(span)),
+			h.Div(append([]g.Node{h.Class(clTableStackSort.Compile())}, controls...)...)))
 }
 
 // cellContent is what a column's cell shows for a row: the trusted slot's node

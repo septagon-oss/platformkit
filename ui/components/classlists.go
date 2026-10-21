@@ -645,7 +645,10 @@ var (
 			Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
 	clTableStackItem  = style.New().Display(style.DisplayFlex).FlexWrap().Items(style.ItemsBaseline).GapX(style.S2)
 	clTableStackValue = style.New().FontWeight(style.FontNormal).TextColor(style.FgPrimary)
-	// clTableStackSort holds the stacked columns' sort controls in the leading header, one
+	// clTableStackSortRow is the header row holding those controls; from sm up it is not drawn.
+	clTableStackSortRow = style.New().
+				Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
+	// clTableStackSort holds the stacked columns' sort controls in that row, one
 	// full-width control a line, below sm only: from sm up each sorts from its own header.
 	clTableStackSort = style.New().Display(style.DisplayFlex).FlexWrap().
 				Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
@@ -974,7 +977,7 @@ func ShellClassLists() []style.ClassList {
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowLink, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
-		clTableStacked, clTableStack, clTableStackItem, clTableStackValue, clTableStackSort,
+		clTableStacked, clTableStack, clTableStackItem, clTableStackValue, clTableStackSort, clTableStackSortRow,
 		// Generated lists compose DataList, including its empty and loading states.
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
