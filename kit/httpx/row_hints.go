@@ -12,6 +12,17 @@ import (
 func CheckRowHints(resources []Resource) string {
 	for _, r := range resources {
 		owner := r.Module + "/" + r.Entity
+		for _, c := range r.Commands {
+			if bad := BindingFault(c.Fields, r.Schema.Fields, c.Bindings); bad != "" {
+				return owner + " " + bad
+			}
+			if c.Undo != "" {
+				u, found := namedCommand(r.Commands, c.Undo)
+				if !c.HasResult || c.Execute == nil || !found || u.Run == nil || u.Present.System || u.Undo != "" || len(u.Fields) != 1 || u.Fields[0].Name != "token" || u.Fields[0].Type != entity.TypeString {
+					return owner + " command " + c.Verb + " requires an authoritative token undo command"
+				}
+			}
+		}
 		if bad := entity.DeckFault(r.Present, r.Schema.Fields); bad != "" {
 			return owner + " " + bad
 		}
@@ -35,6 +46,9 @@ func CheckRowHints(resources []Resource) string {
 		}
 		for _, key := range []string{"right", "left", "up", "down"} {
 			d, ok := r.Present.Deck.Directions[key]
+			if ok && r.Present.Deck.Undoable && d.Skip {
+				return owner + " undoable deck cannot declare a local skip"
+			}
 			if !ok || d.Skip {
 				continue
 			}
@@ -42,6 +56,9 @@ func CheckRowHints(resources []Resource) string {
 			c, found := namedCommand(r.Commands, d.Command)
 			if !found {
 				return fmt.Sprintf("%s %q is not a command of %s", path, d.Command, r.Entity)
+			}
+			if r.Present.Deck.Undoable && c.Undo == "" {
+				return path + " has no authoritative undo command"
 			}
 			if bad := rowCommandFault(c); bad != "" {
 				return fmt.Sprintf("%s %q %s", path, c.Verb, bad)
@@ -52,7 +69,7 @@ func CheckRowHints(resources []Resource) string {
 						return fmt.Sprintf("%s %q: %s", path, c.Verb, err)
 					}
 				}
-				if f.Default == "" {
+				if f.Default == "" && c.Bindings[f.Name] == "" {
 					return fmt.Sprintf("%s %q argument %q has no explicit default", path, c.Verb, f.Name)
 				}
 			}
@@ -76,7 +93,7 @@ func rowCommandFault(c Command) string {
 		return "is a system command; no person is offered it"
 	case c.Collection:
 		return "runs on the collection; a row names one row"
-	case c.EmptyInputFault != "":
+	case c.EmptyInputFault != "" && len(c.Bindings) == 0:
 		return c.EmptyInputFault
 	}
 	return ""

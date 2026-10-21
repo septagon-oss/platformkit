@@ -620,11 +620,15 @@ test('real secondary Text binds its authored role and follows palette edits thro
     const observation = await observe(snapshot, mode), built = buildFoundation(snapshot), page = built.graph.addPage('Derived source')
     built.graph.updateNode(page.id, { variableModes: { [built.collection.id]: built.collection.modes.find(item => item.name === mode).modeId } })
     assert.match(observation.roots[0].style.color, /^color\(srgb /)
+    // The two tokens and the one percentage are the role layer's own declaration: design/roles.go
+    // mixes 66% of text-primary into text-muted for fg-secondary, so body copy keeps a certified
+    // ratio on every ground instead of walking toward the one surface under it. The browser reads
+    // the sheet that layer emits, so a move there shows here as a changed expression.
     assert.deepEqual(observation.roots[0].paintSources.color, {
-      tokens: ['--pk-color-surface-primary', '--pk-color-text-primary'], directCandidate: null,
+      tokens: ['--pk-color-text-primary', '--pk-color-text-muted'], directCandidate: null,
       expressionCandidate: {
         customProperty: '--pk-role-fg-secondary',
-        value: 'color-mix(in srgb, var(--pk-color-text-primary) 78%, var(--pk-color-surface-primary))', customProperties: {},
+        value: 'color-mix(in srgb, var(--pk-color-text-primary) 66%, var(--pk-color-text-muted))', customProperties: {},
       },
     })
     let graph = built.graph
@@ -638,7 +642,7 @@ test('real secondary Text binds its authored role and follows palette edits thro
       const role = graph.variables.get(text.boundVariables['fills/0/color'])
       assert.equal(role?.name, '--pk-role-fg-secondary')
       const ink = [...graph.variables.values()].find(variable => variable.name === '--pk-color-text-primary')
-      const surface = [...graph.variables.values()].find(variable => variable.name === '--pk-color-surface-primary')
+      const muted = [...graph.variables.values()].find(variable => variable.name === '--pk-color-text-muted')
       const collection = graph.variableCollections.get(ink.collectionId), selected = collection.modes.find(item => item.name === mode)
       const other = collection.modes.find(item => item.name !== mode)
       const beforeOther = graph.resolveVariable(role.id, other.modeId), nodes = structuredClone([...graph.nodes])
@@ -646,9 +650,9 @@ test('real secondary Text binds its authored role and follows palette edits thro
       for (const channel of ['r', 'g', 'b', 'a']) close(graph.resolveVariable(role.id, selected.modeId)[channel], expected[channel], channel)
       const actions = createEditor({ graph })
       actions.updateVariableValue(ink.id, selected.modeId, { r: 1, g: 0, b: 0, a: .5 })
-      const paper = graph.resolveVariable(surface.id, selected.modeId), alpha = .78 * .5 + .22 * paper.a
-      const mixed = { r: (.39 + .22 * paper.r * paper.a) / alpha,
-        g: .22 * paper.g * paper.a / alpha, b: .22 * paper.b * paper.a / alpha, a: alpha }
+      const paper = graph.resolveVariable(muted.id, selected.modeId), alpha = .66 * .5 + .34 * paper.a
+      const mixed = { r: (.33 + .34 * paper.r * paper.a) / alpha,
+        g: .34 * paper.g * paper.a / alpha, b: .34 * paper.b * paper.a / alpha, a: alpha }
       for (const channel of ['r', 'g', 'b', 'a']) assert.ok(Math.abs(graph.resolveVariable(role.id, selected.modeId)[channel] - mixed[channel]) < 1e-6)
       assert.deepEqual(graph.resolveVariable(role.id, other.modeId), beforeOther)
       actions.undoAction()

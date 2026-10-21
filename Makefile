@@ -902,12 +902,15 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# from the committed go.mod, so three branches of it live unless a synthetic tree reaches them: the
 	# directory argument that names such a tree, the rule that a commented-out dependency is not a pin
 	# (`\t// golang.org/x/net v0.60.0` answers `is absent, so nothing here resolves above the range`),
-	# and a release *superseding* a fix — the committed pins sit exactly at v0.60.0 and go1.27.2, so
-	# "strictly above" is never asked of them. This case writes five go.mod files into a temporary
-	# directory and asks the guard about each through its subprocess, and asserts exit codes rather than
-	# sentences, so a floor comparison that passes for the wrong reason — an absent pin read as a
-	# satisfied range — cannot answer 0. It reaches no network and builds nothing.
+	# and a release *superseding* every fix — the committed pins sit exactly at v0.60.0 and at go1.27.3,
+	# the newest toolchain floor, so "above all of them" is never asked. This case writes six go.mod files
+	# into a temporary directory and asks the guard about each through its subprocess, and asserts exit
+	# codes rather than sentences, so a floor comparison that passes for the wrong reason — an absent pin
+	# read as a satisfied range — cannot answer 0. It reaches no network and builds nothing.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_advisory_inputs_test.py
+	# The x509 floor alone: go.mod at go1.27.2, go1.27.3 and go1.27.4 with x/net already fixed, so the
+	# first is refused by GO-2026-6809's line and no other, and the two later releases pass.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_x509_floor_test.py
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say

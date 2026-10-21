@@ -65,7 +65,7 @@ var (
 	other  = uuid.MustParse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 )
 
-// deniedPermission is the guard this fixture refuses with, so the 403 below is a
+// deniedPermission is the guard this fixture refuses with, so the 401 below is a
 // security refusal the operator must be able to filter by tenant.
 const deniedPermission = "probe:read"
 
@@ -103,7 +103,7 @@ func twoTenantRouter(t *testing.T) http.Handler {
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
 		OperationID: "round3_secret", Method: http.MethodGet, Path: "/secret",
 	}, httpx.Permission(deniedPermission), func(context.Context, *struct{}) (*struct{}, error) {
-		t.Errorf("the guard let a caller through to round3_secret, so the 403 below is not a refusal")
+		t.Errorf("the guard let a caller through to round3_secret, so the 401 below is not a refusal")
 		return &struct{}{}, nil
 	})
 	if err := api.ValidateDeclarations(); err != nil {
@@ -121,11 +121,11 @@ func TestEachTenantsNumberNamesOnlyItsOwnTenant(t *testing.T) {
 	router := twoTenantRouter(t)
 
 	lat := func(tenant uuid.UUID) uint64 { return histCount(t, "round3_ping", tenant) }
-	forbidden := func(tenant uuid.UUID) int64 { return refusalSum(t, "forbidden", &tenant) }
+	refused := func(tenant uuid.UUID) int64 { return refusalSum(t, "unauthenticated", &tenant) }
 	notFound := func() int64 { return refusalClassTotal(t, "not_found") }
 
 	beforeLat := map[uuid.UUID]uint64{acmeID: lat(acmeID), other: lat(other)}
-	beforeForbidden := map[uuid.UUID]int64{acmeID: forbidden(acmeID), other: forbidden(other)}
+	beforeRefused := map[uuid.UUID]int64{acmeID: refused(acmeID), other: refused(other)}
 	beforeNotFound := notFound()
 
 	for step, r := range []struct {
@@ -134,8 +134,8 @@ func TestEachTenantsNumberNamesOnlyItsOwnTenant(t *testing.T) {
 		want int // the status the router must answer for this step to be the case it claims
 	}{
 		{host, "/api/v1/probe/ping", http.StatusNoContent},
-		{host, "/api/v1/probe/secret", http.StatusForbidden},
-		{secondHost, "/api/v1/probe/secret", http.StatusForbidden},
+		{host, "/api/v1/probe/secret", http.StatusUnauthorized},
+		{secondHost, "/api/v1/probe/secret", http.StatusUnauthorized},
 		{secondHost, "/api/v1/probe/ping", http.StatusNoContent},
 		{host, "/api/v1/probe/nomount", http.StatusNotFound},
 		{secondHost, "/api/v1/probe/nomount", http.StatusNotFound},
@@ -162,12 +162,12 @@ func TestEachTenantsNumberNamesOnlyItsOwnTenant(t *testing.T) {
 			t.Errorf("tenant %q: %s moved by %d for one served request, want exactly 1", tenant, "round3_ping", got)
 		}
 	}
-	// Each guard refusal moved its own tenant's count of class forbidden by one and
+	// Each guard refusal moved its own tenant's count of class unauthenticated by one and
 	// the other tenant's not at all. This is the half a shared answerNote would get
 	// wrong, and it is the security number: whose callers were refused.
 	for tenant, id := range twoTenants {
-		if got := forbidden(id) - beforeForbidden[id]; got != 1 {
-			t.Errorf("tenant %q: refusals of class forbidden moved by %d for one refused request, want exactly 1 "+
+		if got := refused(id) - beforeRefused[id]; got != 1 {
+			t.Errorf("tenant %q: refusals of class unauthenticated moved by %d for one refused request, want exactly 1 "+
 				"(the refusal of one tenant's caller counted against another is a number an operator would act on "+
 				"for the wrong customer)", tenant, got)
 		}

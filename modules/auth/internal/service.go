@@ -51,6 +51,11 @@ type Delivery struct {
 	// ResetPath and VerifyEmailPath, the workspace screens.
 	SetPasswordPage  string
 	ConfirmEmailPage string
+
+	// AccountRequests is the cap on the mails a stranger can make this module
+	// send: how many account requests one address may make in a window. The zero
+	// value is the module's own figure; module.go has already checked it.
+	AccountRequests contracts.AccountRequestBudget
 }
 
 // Service is signing in and what a role may do.
@@ -100,7 +105,7 @@ func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery)
 	// pool: this module is constructed before kit/app opens one, and every
 	// caller below is inside a request that carries it.
 	return &Service{users: users, notify: notify, mail: mail,
-		limiter: contracts.NewLimiter(limit.Postgres(httpx.ConnFrom))}
+		limiter: contracts.NewBudgetedLimiter(limit.Postgres(httpx.ConnFrom), mail.AccountRequests)}
 }
 
 // Precheck is the limiter's verdict, read from the shared counters. See

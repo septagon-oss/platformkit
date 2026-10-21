@@ -33,6 +33,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/billing"
 	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
+	"github.com/septagon-oss/platformkit/modules/decide"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/history"
 	"github.com/septagon-oss/platformkit/modules/notification"
@@ -45,17 +46,13 @@ import (
 	"github.com/septagon-oss/platformkit/modules/webhook"
 )
 
-// everything is the kernel's schema and every reference module's, in the order
-// apps/platformkit composes them: the claim below is about every table this
-// repository creates, whichever owner now carries the file.
-// translation sits before content because that is where apps/platformkit/app.go
-// names the module: the translation table is created before the records whose
-// fields it translates, and the walk below migrates in the order the application
-// composes, so a table the application creates is a table the walk has seen.
+// everything migrates every table this repository owns. Reference modules keep
+// the application's dependency order (translation before content); standalone
+// capabilities follow so their tables receive the same tenant-policy checks.
 var everything = []db.MigrationSource{migrations.Source, user.Migrations, notification.Migrations, auth.Migrations,
 	scim.Migrations, task.Migrations, billing.Migrations, translation.Migrations, content.Migrations,
 	site.Migrations, file.Migrations, history.Migrations, audit.Migrations, webhook.Migrations,
-	change.Migrations, subject.Migrations}
+	change.Migrations, subject.Migrations, decide.Migrations}
 
 // exemption is the marker a table that belongs to no tenant carries, in its
 // own COMMENT, so that "this one is deliberate" is written where the table is

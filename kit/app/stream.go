@@ -77,7 +77,7 @@ func mountStream(api *httpx.API, hub func() (*stream.Hub, error), log *slog.Logg
 		}
 		principal, ok := tenancy.PrincipalFrom(ctx)
 		if !ok {
-			return nil, problem.New(http.StatusForbidden, "AUTH_ANONYMOUS: this connection carries no principal")
+			return nil, problem.New(http.StatusUnauthorized, "AUTH_ANONYMOUS: this connection carries no principal")
 		}
 		r, ok := httpx.RequestFrom(ctx)
 		if !ok {

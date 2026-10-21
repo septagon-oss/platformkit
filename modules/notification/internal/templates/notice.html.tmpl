@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>{{.Title}}</title></head>
+<body>
+<p><strong>{{.Title}}</strong></p>
+{{if .Body}}<p style="white-space: pre-wrap">{{.Body}}</p>
+{{end}}{{if .Link}}<p>Open it: {{if .BaseURL}}<a href="{{.BaseURL}}{{.Link}}">{{.BaseURL}}{{.Link}}</a>{{else}}{{.Link}}{{end}}</p>
+{{end}}<p>--<br>
+You are receiving this because you have an account on {{.Host}}.</p>
+</body>
+</html>

@@ -112,8 +112,8 @@ func TestABearerKeyOpensWhatItsHolderGrantedItAndNothingElse(t *testing.T) {
 	if revoke.Code != http.StatusOK {
 		t.Fatalf("revoking = %d %s, want 200", revoke.Code, revoke.Body.String())
 	}
-	if stopped := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(issued.Token)); stopped.Code != http.StatusForbidden {
-		t.Errorf("a revoked key at the roles route = %d %s, want 403", stopped.Code, stopped.Body.String())
+	if stopped := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(issued.Token)); stopped.Code != http.StatusUnauthorized {
+		t.Errorf("a revoked key at the roles route = %d %s, want 401", stopped.Code, stopped.Body.String())
 	}
 	if still := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", withSession(ada)); still.Code != http.StatusOK {
 		t.Errorf("revoking a key cost the person their own session: %d", still.Code)
@@ -140,8 +140,8 @@ func TestARequestCarryingBothCredentialsIsNobody(t *testing.T) {
 		t.Fatalf("read the issue response: %v", err)
 	}
 	both := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", withSession(ada), bearer(issued.Token))
-	if both.Code != http.StatusForbidden {
-		t.Fatalf("a request carrying a cookie and a key = %d %s, want 403 as the anonymous request it is",
+	if both.Code != http.StatusUnauthorized {
+		t.Fatalf("a request carrying a cookie and a key = %d %s, want 401 as the anonymous request it is",
 			both.Code, both.Body.String())
 	}
 	// The same cookie on its own is still the person, so the refusal cost the

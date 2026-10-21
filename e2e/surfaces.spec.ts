@@ -30,7 +30,7 @@ test('the old address of a generated screen leads to the screen that replaced it
 
 test('a workspace address sends a browser that is not signed in to the door, not to a fault', async ({ page }) => {
   const response = await page.goto('/app');
-  // 200 of a page, not a 403 of a problem document: an anonymous browser is
+  // 200 of a page, not a 401 of a problem document: an anonymous browser is
   // refused the workspace by being taken somewhere it can act.
   expect(response?.status()).toBe(200);
   expect(new URL(page.url()).pathname).toBe('/app/admin/login');
