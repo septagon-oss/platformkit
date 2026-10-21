@@ -5890,6 +5890,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/resource_count_language_test.go",
+   "id": "apps/platformkit/resource_count_language_test.go#TestResourceCountsEndWithTheTranslatedNoun",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestResourceCountsEndWithTheTranslatedNoun",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/resource_names_test.go",
    "id": "apps/platformkit/resource_names_test.go#TestKernelResourceNamesUseCataloguePluralRules",
    "kind": "go",
@@ -77349,7 +77368,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2117,
+  "files": 2118,
   "forge_runs": [
    408,
    413,
@@ -77384,7 +77403,7 @@
   ],
   "layers": {
    "behaviour": 3314,
-   "composition": 485,
+   "composition": 486,
    "contract": 21,
    "journey": 104
   },
@@ -77402,9 +77421,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3924,
+  "rows": 3925,
   "tiers": {
-   "merge": 2496,
+   "merge": 2497,
    "nightly": 104,
    "push": 1324
   },
@@ -77412,13 +77431,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1890,
+   "keep": 1891,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3568,
+   "keep": 3569,
    "keep-rewrite": 140,
    "merge": 216
   }
