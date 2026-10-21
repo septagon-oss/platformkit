@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-20T19:56:38Z",
+  "measured_utc": "2026-10-21T10:48:05Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -75,7 +75,7 @@
       "readable": 96
     },
     "GET /app/change/proposals": {
-      "wrapped": 0,
+      "wrapped": 5,
       "readable": 5
     },
     "GET /app/content/contents": {
@@ -95,11 +95,11 @@
       "readable": 179
     },
     "GET /app/file/files": {
-      "wrapped": 0,
+      "wrapped": 28,
       "readable": 30
     },
     "GET /app/notification/notifications": {
-      "wrapped": 0,
+      "wrapped": 5,
       "readable": 5
     },
     "GET /app/site/settings": {

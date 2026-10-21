@@ -309,9 +309,13 @@ func objectStore(files config.Files) (filecontracts.Storage, error) {
 //
 // Where the unread bell sits, and how many are in it, stays the shell's decision:
 // the module mounts its list at its own address and names no link to it.
-func workspace() *pkit.Module {
+//
+// The catalogue arrives as an argument because the shell is worded from the one this
+// composition is worded in: a second one, built at the call site, would format this
+// page's copy outside the value the application is worded from.
+func workspace(messages pkit.Catalogue) *pkit.Module {
 	return pkit.NewModule("workspace", func(w *pkit.Wiring) (module.Module, error) {
-		pkit.Put[*notification.Page](w, &notification.Page{Shell: noticeShell(catalogues())})
+		pkit.Put[*notification.Page](w, &notification.Page{Shell: noticeShell(messages)})
 		return module.Module{Name: "workspace"}, nil
 	},
 		pkit.Provides[*notification.Page](),
@@ -331,7 +335,7 @@ func workspace() *pkit.Module {
 // the kernel's refusal door calls, and `granter` is who a refusal may say may
 // hand out what it refused — the label of which is the composed manifest's word,
 // so the application reads it off the resolved plan rather than a module.
-func access(ask *accessReach, ports *latePorts) *pkit.Module {
+func access(ask *accessReach, ports *latePorts, messages pkit.Catalogue) *pkit.Module {
 	return pkit.NewModule("access", func(w *pkit.Wiring) (module.Module, error) {
 		users, notices := pkit.Get[usercontracts.Service](w), pkit.Get[notificationcontracts.Service](w)
 		sites := pkit.Get[sitecontracts.Service](w)
@@ -394,7 +398,7 @@ func access(ask *accessReach, ports *latePorts) *pkit.Module {
 		// resolver builds, so nothing here can name a queue over a different service
 		// than the one the routes are mounted on.
 		pkit.Put[*change.ReviewChrome](w, &change.ReviewChrome{
-			Shell:     reviewShell(catalogues()),
+			Shell:     reviewShell(messages),
 			Authorize: pkit.Get[authcontracts.Auth](w),
 		})
 		return module.Module{Name: "access"}, nil

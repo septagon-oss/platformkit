@@ -290,7 +290,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, ports *latePorts, withou
 			notification.Module,
 			// The chrome the module above draws its own list in, named beside it: the
 			// screen is notification's and the shell is this product's.
-			workspace(),
+			workspace(served),
 			auth.Module,
 			auth.EmailRegistration,
 			// The door a tenant's identity provider provisions through, which needs
@@ -298,7 +298,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, ports *latePorts, withou
 			scimProvisioning,
 			// The media library's chrome, immediately before the module that mounts
 			// the page: the authorizer its controls ask is the auth service above it.
-			media(),
+			media(served),
 			file.Module,
 			history.Module,
 			task.Module,
@@ -319,7 +319,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, ports *latePorts, withou
 			// for are everything above it has already declared.
 			webhook.Module,
 			seeding(provision),
-			access(ask, ports),
+			access(ask, ports, served),
 			change.Module,
 			subject.Module,
 			admin.Module,

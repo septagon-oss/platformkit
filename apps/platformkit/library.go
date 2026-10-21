@@ -27,10 +27,14 @@ import (
 // the caption are filled by modules/file from the one service its resolver builds, so
 // no composition can put a library in front of a different service than the doors the
 // same module mounts.
-func media() *pkit.Module {
+//
+// The shell is worded from the catalogue this composition is worded in, which arrives
+// as an argument: a second catalogue, built at the call site, would format this page's
+// copy outside the value the application is worded from.
+func media(messages pkit.Catalogue) *pkit.Module {
 	return pkit.NewModule("media", func(w *pkit.Wiring) (module.Module, error) {
 		pkit.Put[*file.LibraryChrome](w, &file.LibraryChrome{
-			Shell:     libraryShell(catalogues()),
+			Shell:     libraryShell(messages),
 			Authorize: pkit.Get[authcontracts.Auth](w),
 		})
 		return module.Module{Name: "media"}, nil
