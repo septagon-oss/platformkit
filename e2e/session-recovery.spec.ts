@@ -102,7 +102,7 @@ for (const width of [1280, 390]) {
         new URL(response.url()).pathname === endpoint && response.request().method() === 'POST');
       await field.press('Enter');
       const response = await refused;
-      expect(response.status()).toBe(403);
+      expect(response.status()).toBe(401);
       expect((await response.json()).detail).toMatch(/^AUTH_ANONYMOUS:/);
       // This is the red baseline boundary: a real auth refusal has happened,
       // before any assertions about the new recovery markup or principal data.
@@ -238,12 +238,12 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
     expect((await received).status()).toBe(status);
   };
   expect((await page.request.post('/api/v1/auth/logout')).status()).toBe(200);
-  await submit(403);
+  await submit(401);
   const notice = page.locator('#pk-auth-anonymous');
   await expect(notice).toBeVisible();
   const retainedNotice = await notice.elementHandle();
   if (!retainedNotice) throw new Error('The recovery notice is missing');
-  await submit(403);
+  await submit(401);
   await expect(page.locator('[data-request-notice]:visible')).toHaveCount(1);
   expect(await oldForm.evaluate(node => node.isConnected)).toBe(true);
   expect(await matchingTasks(request, title)).toEqual([]);
@@ -268,7 +268,7 @@ for (const width of [1280, 390]) test(`a recovery notice survives validation rep
 
   await field.fill(title);
   expect((await page.request.post('/api/v1/auth/logout')).status()).toBe(200);
-  await submit(403);
+  await submit(401);
   await expect(notice).toBeVisible();
   await expect(field).toHaveValue(title);
   await expect(page.locator('[data-request-notice]:visible')).toHaveCount(1);

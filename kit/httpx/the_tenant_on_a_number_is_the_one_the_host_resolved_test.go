@@ -97,7 +97,7 @@ func round11Router(t *testing.T) http.Handler {
 	httpx.Register(api.Surfaces("round11").App, huma.Operation{
 		OperationID: "round11_secret", Method: http.MethodGet, Path: "/secret",
 	}, httpx.Permission(round11Permission), func(context.Context, *struct{}) (*struct{}, error) {
-		t.Errorf("the guard let a caller through to round11_secret, so the 403 below is not a refusal")
+		t.Errorf("the guard let a caller through to round11_secret, so the 401 below is not a refusal")
 		return &struct{}{}, nil
 	})
 	if err := api.ValidateDeclarations(); err != nil {
@@ -289,15 +289,15 @@ func TestEverySpanOfARequestNamesTheRequestTheCallerWasAnsweredFor(t *testing.T)
 func TestARefusalTheResolverCouldNotAttributeNamesNoTenantAfterATenantWasServed(t *testing.T) {
 	router := round11Router(t)
 
-	forbidden := func() int64 { return refusalSum(t, "forbidden", &round11ID) }
-	beforeDenied := forbidden()
+	refused := func() int64 { return refusalSum(t, "unauthenticated", &round11ID) }
+	beforeDenied := refused()
 
 	rec := round11Sent(t, router, host, "/api/v1/round11/secret", nil)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("the guarded route answered %d, want the 403 the denial gets: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("the guarded route answered %d, want the 401 an anonymous caller gets: %s", rec.Code, rec.Body.String())
 	}
-	if grew := forbidden() - beforeDenied; grew != 1 {
-		t.Fatalf("the refusal of acme11's own request moved acme11's forbidden count by %d, want 1", grew)
+	if grew := refused() - beforeDenied; grew != 1 {
+		t.Fatalf("the refusal of acme11's own request moved acme11's unauthenticated count by %d, want 1", grew)
 	}
 
 	beforeSeries := round11Refusals(t)
@@ -312,7 +312,7 @@ func TestARefusalTheResolverCouldNotAttributeNamesNoTenantAfterATenantWasServed(
 	}
 
 	// The tenant that was served one request earlier was not charged for this one.
-	if grew := forbidden() - beforeDenied - 1; grew != 0 {
+	if grew := refused() - beforeDenied - 1; grew != 0 {
 		t.Errorf("acme11 was charged %d further refusals after its own request, from a host that resolved nothing", grew)
 	}
 

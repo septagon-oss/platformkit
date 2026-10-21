@@ -141,8 +141,8 @@ func AnyCredential() Auth { return Auth{kind: kindAnyCredential} }
 // that key, so a key too narrow for anything else may still run it. Because a key
 // is the only credential such an operation accepts, a request that brings none
 // the installation recognises — absent, revoked, expired — is answered 401 with a
-// Bearer challenge rather than the 403 every other declaration gives: there is
-// exactly one scheme to name. See authorize.
+// Bearer challenge, where every other declaration's 401 names no scheme: a
+// session is a cookie, and only a key has one to name. See authorize.
 func BearerKey() Auth { return Auth{kind: kindBearerKey} }
 
 // MarshalJSON writes the declaration into the OpenAPI document as

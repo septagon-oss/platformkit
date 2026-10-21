@@ -146,23 +146,23 @@ func TestAHandlerFailureIsCountedAtAll(t *testing.T) {
 
 // TestAGuardRefusalOfAnAnonymousCallerNamesItsTenant is the half that works, pinned
 // so a fix for the two above cannot arrive by moving the count somewhere that loses
-// this: a 403 written by the authorization guard inside the huma chain is counted,
+// this: a 401 written by the authorization guard inside the huma chain is counted,
 // and it names the tenant that request resolved.
 func TestAGuardRefusalOfAnAnonymousCallerNamesItsTenant(t *testing.T) {
 	router := reviewFixture(t)
-	before := reviewRefusalTotal(t, "forbidden")
+	before := reviewRefusalTotal(t, "unauthenticated")
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+host+"/api/v1/probe/query?limit=5", nil))
-	if rec.Code != http.StatusForbidden && rec.Code != http.StatusUnauthorized {
+	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("an anonymous caller at a signed-in route was answered %d, want a refusal: %s",
 			rec.Code, rec.Body.String())
 	}
-	if got := reviewRefusalTotal(t, "forbidden") - before; got < 1 {
+	if got := reviewRefusalTotal(t, "unauthenticated") - before; got < 1 {
 		t.Fatalf("the guard's refusal was not counted: the counter moved by %d for a %d answer",
 			got, rec.Code)
 	}
-	if !reviewRefusalNamesTenant(t, "forbidden", reviewTenant) {
+	if !reviewRefusalNamesTenant(t, "unauthenticated", reviewTenant) {
 		t.Errorf("the guard's refusal was counted with no pkit.tenant.id for %s; the tenant on every "+
 			"number is the brief's headline and this is the one refusal path that holds the tenant", reviewTenant)
 	}

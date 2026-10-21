@@ -323,8 +323,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	}
 
 	// Anonymous, before anything: the task routes are guarded.
-	if code, _ := do(t, cfg, nil, http.MethodGet, acmeHost, tasksPath, ""); code != http.StatusForbidden {
-		t.Errorf("an anonymous list = %d, want 403", code)
+	if code, _ := do(t, cfg, nil, http.MethodGet, acmeHost, tasksPath, ""); code != http.StatusUnauthorized {
+		t.Errorf("an anonymous list = %d, want 401", code)
 	}
 
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
@@ -524,8 +524,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// Acme's session, at Globex's host, is nobody. Not because anything
 	// compared two tenant ids: the session row is invisible to Globex's
 	// transaction, so the lookup finds nothing.
-	if code, _ = do(t, cfg, admin, http.MethodGet, globexHost, "/api/v1/auth/me", ""); code != http.StatusForbidden {
-		t.Errorf("acme's session at globex = %d, want 403", code)
+	if code, _ = do(t, cfg, admin, http.MethodGet, globexHost, "/api/v1/auth/me", ""); code != http.StatusUnauthorized {
+		t.Errorf("acme's session at globex = %d, want 401", code)
 	}
 
 	// Globex gets its own administrator the way an operator would, and sees an
@@ -686,8 +686,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, "/api/v1/auth/logout", ""); code != http.StatusOK {
 		t.Fatalf("logout = %d %s, want 200", code, body)
 	}
-	if code, _ = do(t, cfg, admin, http.MethodGet, acmeHost, "/api/v1/auth/me", ""); code != http.StatusForbidden {
-		t.Errorf("me after logout = %d, want 403", code)
+	if code, _ = do(t, cfg, admin, http.MethodGet, acmeHost, "/api/v1/auth/me", ""); code != http.StatusUnauthorized {
+		t.Errorf("me after logout = %d, want 401", code)
 	}
 }
 

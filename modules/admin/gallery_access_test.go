@@ -64,7 +64,7 @@ func TestStorybookBuildsAreAuthorizedAndBoundToTheirComposition(t *testing.T) {
 			anonymous.Host = at.host
 			out = httptest.NewRecorder()
 			router.ServeHTTP(out, anonymous)
-			if out.Code != http.StatusForbidden || out.Body.String() == at.own {
+			if out.Code != http.StatusUnauthorized || out.Body.String() == at.own {
 				t.Fatalf("anonymous %s: %d", file, out.Code)
 			}
 		}

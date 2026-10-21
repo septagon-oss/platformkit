@@ -106,8 +106,9 @@ func TestSavingTheReadsAnswerStoresTheAbsenceOfAColour(t *testing.T) {
 	// a host, and a checkout that predates this migration still creates the column with
 	// its old default, so unqualified, information_schema answers about whichever other
 	// suite's site_settings it reached first. migrations/tenant_app_backfill_test.go
-	// writes the rule, and the case that passes alone and fails under a full suite is the
-	// shape of forgetting it.
+	// writes the rule, default_colour_upgrade_test.go rebuilds that pre-move database
+	// inside this very package, and the case that passes alone and fails under a full
+	// suite is the shape of forgetting it.
 	var heldDefault string
 	if err := admin.QueryRowContext(t.Context(), `SELECT column_default FROM information_schema.columns
 		WHERE table_schema = current_schema()
@@ -227,5 +228,46 @@ func TestARolledBackSaveLeavesNothing(t *testing.T) {
 	}
 	if rows != 0 || events != 0 {
 		t.Errorf("after the rollback there are %d rows and %d events; want none of either", rows, events)
+	}
+}
+
+// TestTheColumnDefaultIsTheColourTheContractNames holds the two defaults against
+// each other rather than against a literal: site_settings.primary_color and
+// contracts.DefaultPrimaryColor must be the same answer about a site whose tenant
+// never chose a colour, or the row, the settings form and the page disagree about
+// every tenant that never opened the form. No #rrggbb can be that answer — the
+// accent is body copy on a light canvas in one mode and on a dark canvas in the
+// other, and no colour reads on both — so the answer both places give is that
+// there is no colour, and a save that says none stores none.
+func TestTheColumnDefaultIsTheColourTheContractNames(t *testing.T) {
+	admin, conn := dbtest.Schema(t, site.Migrations)
+	var def string
+	if err := admin.QueryRowContext(t.Context(), `SELECT pg_get_expr(d.adbin, d.adrelid)
+		FROM pg_attrdef d
+		WHERE d.adrelid = 'site_settings'::regclass AND d.adnum = (
+			SELECT attnum FROM pg_attribute
+			WHERE attrelid = 'site_settings'::regclass AND attname = 'primary_color')`).Scan(&def); err != nil {
+		t.Fatalf("read the column default: %v", err)
+	}
+	stored := strings.Trim(strings.TrimSuffix(def, "::bpchar"), "'")
+	if stored != contracts.DefaultPrimaryColor {
+		t.Errorf("the column defaults to %s where the contract names %q: a tenant that never opened the settings screen would hold one colour and be shown another", def, contracts.DefaultPrimaryColor)
+	}
+	svc := internal.NewService(sitetest.InstallationPalette)
+	got := "not saved"
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if _, err := svc.Save(ctx, tx, &contracts.SiteSettings{Title: "Acme"}); err != nil {
+			return err
+		}
+		// The row, not the save's answer: what a caller is shown is the resolved
+		// colour (contracts.Palette), and what this half asks is what was kept.
+		// btrim because char(7) is blank-padded over the short value.
+		return tx.DB().Raw(`SELECT btrim(primary_color) FROM site_settings`).Row().Scan(&got)
+	})
+	if err != nil {
+		t.Fatalf("save a site that named no colour: %v", err)
+	}
+	if got != contracts.DefaultPrimaryColor {
+		t.Errorf("a save that named no colour stored %q, want the none the contract names", got)
 	}
 }
