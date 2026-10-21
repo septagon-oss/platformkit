@@ -250,7 +250,7 @@ export async function signOut(page: Page): Promise<void> {
     throw new Error('sign out was refused: the person kept the page and was told, and the session was not ended');
   }
   expect((await page.request.get('/api/v1/auth/me')).status(),
-    'the shell moved the person to the door but the session outlived the sign-out').toBe(403);
+    'the shell moved the person to the door but the session outlived the sign-out').toBe(401);
 }
 
 // useTheme states the theme before the document's own script runs, because the theme is

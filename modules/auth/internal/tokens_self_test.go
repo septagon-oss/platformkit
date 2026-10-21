@@ -66,8 +66,8 @@ func TestAKeyMayRevokeItselfWithoutAnyManagementGrant(t *testing.T) {
 	if res.Code != http.StatusNoContent || res.Body.Len() != 0 {
 		t.Fatalf("a key revoking itself = %d %q, want 204 with no body", res.Code, res.Body.String())
 	}
-	if after := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(key)); after.Code != http.StatusForbidden {
-		t.Errorf("the retired key at the roles route = %d, want 403", after.Code)
+	if after := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(key)); after.Code != http.StatusUnauthorized {
+		t.Errorf("the retired key at the roles route = %d, want 401", after.Code)
 	}
 	if still := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", withSession(ada)); still.Code != http.StatusOK {
 		t.Errorf("a key retiring itself cost its holder their session: %d", still.Code)
@@ -91,8 +91,8 @@ func TestAKeyRetiresItselfAndLeavesItsHoldersOtherKeyStanding(t *testing.T) {
 	if res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(laptop)); res.Code != http.StatusOK {
 		t.Errorf("the holder's other key at the roles route = %d, want 200", res.Code)
 	}
-	if res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(phone)); res.Code != http.StatusForbidden {
-		t.Errorf("the retired key at the roles route = %d, want 403", res.Code)
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(phone)); res.Code != http.StatusUnauthorized {
+		t.Errorf("the retired key at the roles route = %d, want 401", res.Code)
 	}
 }
 

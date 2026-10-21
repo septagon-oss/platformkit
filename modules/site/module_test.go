@@ -259,8 +259,8 @@ func TestThePublicRouteCarriesWhatAThemeNeedsAndNothingElse(t *testing.T) {
 		}
 	}
 	// And the settings themselves are not public.
-	if code, _ = send(t, router, http.MethodGet, settings, "", false); code != http.StatusForbidden {
-		t.Errorf("an anonymous read of the settings = %d, want 403", code)
+	if code, _ = send(t, router, http.MethodGet, settings, "", false); code != http.StatusUnauthorized {
+		t.Errorf("an anonymous read of the settings = %d, want 401", code)
 	}
 }
 

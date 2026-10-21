@@ -23,10 +23,11 @@ const ExpectedPrincipalHeader = "X-Expected-Principal"
 
 // authorize enforces the operation's declaration.
 //
-// Every refusal is a 403: which of the four conditions failed says nothing an
-// attacker can act on, but it says a great deal to whoever is debugging a
-// deployment, so the code is in the response and the request that carried it is
-// in the log. The one 401 is BearerKey's unrecognised caller, see challenge.
+// A caller nobody recognised is answered 401 (see anonymous and challenge),
+// because signing in is what would change the answer. Every other refusal is a
+// 403: which of the conditions failed says nothing an attacker can act on, but
+// it says a great deal to whoever is debugging a deployment, so the code is in
+// the response and the request that carried it is in the log.
 func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	auth, ok := declarationOf(ctx.Operation())
 	if !ok {
@@ -64,7 +65,7 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 			a.challenge(ctx)
 			return
 		}
-		a.deny(ctx, CodeAnonymous, "this operation requires a signed-in caller")
+		a.anonymous(ctx)
 		return
 	}
 	if expected := ctx.Header(ExpectedPrincipalHeader); unsafeMethod(ctx.Method()) && expected != "" && expected != p.UserID.String() {
@@ -388,6 +389,19 @@ func (a *API) challenge(ctx huma.Context) {
 	}
 	ctx.SetHeader("WWW-Authenticate", challenge)
 	a.refuse(ctx, http.StatusUnauthorized, CodeAnonymous+": this operation requires a bearer key")
+}
+
+// anonymous refuses a protected operation to a request that brought no
+// credential the installation recognises: 401, where a 403 would tell a caller
+// who is known that signing in changes nothing. It names no WWW-Authenticate
+// scheme, because a session is a cookie and no challenge scheme describes one;
+// the BearerKey door, whose one credential has a scheme, answers through
+// challenge instead. Options.Denied is not told: it has nobody to attribute
+// the refusal to.
+func (a *API) anonymous(ctx huma.Context) {
+	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: authorization denied",
+		"code", CodeAnonymous, "method", ctx.Method(), "path", ctx.URL().Path)
+	a.refuse(ctx, http.StatusUnauthorized, CodeAnonymous+": this operation requires a signed-in caller")
 }
 
 func (a *API) deny(ctx huma.Context, code, detail string) {
