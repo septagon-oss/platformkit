@@ -70,8 +70,8 @@ func TestASetPasswordLinkOpensOneSessionInItsOwnTenant(t *testing.T) {
 		t.Errorf("acme's link spent at globex = %d %s, want a refusal", code, body)
 	}
 	for _, host := range []string{globexHost, acmeHost} {
-		if code, body = do(t, cfg, stranger, http.MethodGet, host, "/api/v1/auth/me", ""); code != http.StatusForbidden {
-			t.Errorf("after spending acme's link at globex, /me at %s = %d %s, want 403", host, code, body)
+		if code, body = do(t, cfg, stranger, http.MethodGet, host, "/api/v1/auth/me", ""); code != http.StatusUnauthorized {
+			t.Errorf("after spending acme's link at globex, /me at %s = %d %s, want 401", host, code, body)
 		}
 	}
 

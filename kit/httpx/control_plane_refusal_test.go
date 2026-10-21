@@ -242,7 +242,7 @@ func TestTheWorkspaceRefusesAnAnonymousCallerUnderEveryDeclarationButTheOneThatA
 	}
 	for _, at := range []string{"/api/v1/tenant/things", "/api/v1/tenant/door"} {
 		got := anonymous(at)
-		if got.Code != http.StatusForbidden {
+		if got.Code != http.StatusUnauthorized {
 			t.Errorf("the workspace route %s with no session = %d, want the refusal the surface gives by default: %s",
 				at, got.Code, strings.TrimSpace(got.Body.String()))
 		}

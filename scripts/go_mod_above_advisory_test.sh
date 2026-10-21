@@ -20,6 +20,14 @@
 # `scripts/openpencil_lock_above_advisory_test.sh` records for npm's feed over a byte-identical lock,
 # and this file is the Go half of that record.
 #
+# The feed moved again under forge run 74317 (job 75764, head 07bcf718), over a go.mod main's tip
+# shared line for line:
+#
+#   crypto/x509@go1.27.2       GO-2026-6809                               fixed in go1.27.3
+#
+# reached through the passkey assertion's certificate check, so the toolchain line rose to go1.27.3 and
+# the third entry below was added beside it.
+#
 # What a tree can answer about a feed it does not hold is which side of a published range its own
 # pinned versions land on, which is all of it asked here and none of it asked of the network. The list
 # below is transcribed from the run's own log, with the identifier and the fixed release the tool
@@ -69,6 +77,12 @@ ADVISORIES = (
         "fixed": (1, 27, 2),
         "ids": ("GO-2026-6599", "GO-2026-6600", "GO-2026-6605", "GO-2026-6607", "GO-2026-6608",
                 "GO-2026-6609", "GO-2026-6613"),
+    },
+    {
+        "package": "toolchain",
+        "source": "toolchain",
+        "fixed": (1, 27, 3),
+        "ids": ("GO-2026-6809",),
     },
 )
 
@@ -165,6 +179,8 @@ MUTATIONS = (
      lambda t: re.sub(r"golang\.org/x/net v[\d.]+", "golang.org/x/net v0.59.0", t)),
     ("the toolchain back inside the range",
      lambda t: re.sub(r"(?m)^toolchain go[\d.]+$", "toolchain go1.27.1", t)),
+    ("the toolchain back inside the crypto/x509 range alone",
+     lambda t: re.sub(r"(?m)^toolchain go[\d.]+$", "toolchain go1.27.2", t)),
     ("no toolchain line at all",
      lambda t: re.sub(r"(?m)^toolchain go[\d.]+$", "", t)),
     ("x/net not pinned anywhere",
@@ -201,4 +217,4 @@ if failures:
     sys.exit(1)
 PY
 
-echo "go.mod above advisory: the toolchain and golang.org/x/net this repository fixes sit outside every range the run names, and a pin back inside one is refused"
+echo "go.mod above advisory: the toolchain and golang.org/x/net this repository fixes sit outside every range the runs name, and a pin back inside one is refused"
