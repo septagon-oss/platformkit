@@ -48172,6 +48172,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/decide/internal/spec_names_declared_test.go",
+   "id": "modules/decide/internal/spec_names_declared_test.go#TestEveryDecideSpecDeclaresItsNames",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryDecideSpecDeclaresItsNames",
+   "needs_db": true,
+   "pkg": "modules/decide/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/decide/internal/token_test.go",
    "id": "modules/decide/internal/token_test.go#TestCredentialsRequireCanonicalClaimsAndTheirOwnPurpose",
    "kind": "go",
@@ -81375,7 +81394,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2224,
+  "files": 2225,
   "forge_runs": [
    408,
    413,
@@ -81409,7 +81428,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3500,
+   "behaviour": 3501,
    "composition": 489,
    "contract": 21,
    "journey": 112
@@ -81428,9 +81447,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4122,
+  "rows": 4123,
   "tiers": {
-   "merge": 2557,
+   "merge": 2558,
    "nightly": 112,
    "push": 1453
   },
@@ -81438,13 +81457,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1979,
+   "keep": 1980,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3736,
+   "keep": 3737,
    "keep-rewrite": 170,
    "merge": 216
   }
