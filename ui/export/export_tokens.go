@@ -9,12 +9,18 @@ import (
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-// TokenMode holds selected theme colours and ordered fallback families under
-// their CSS identities. Other theme token kinds are outside this projection.
+// TokenMode holds selected theme colours, ordered fallback families and the
+// theme's own shape lengths under their CSS identities. A client sets its radii
+// through design.Client, so a projection that stopped at colour and font would
+// ship the client's palette and drop the client's shape. The other projection,
+// Export's design-export document — the themes[].tokens list a native
+// application reads — has carried the same lengths since before this branch gave
+// this one its Dimensions field.
 type TokenMode struct {
-	Mode   string                   `json:"mode"`
-	Colors []design.Token           `json:"colors,omitempty"`
-	Fonts  []design.FontFamilyToken `json:"fonts,omitempty"`
+	Mode       string                   `json:"mode"`
+	Colors     []design.Token           `json:"colors,omitempty"`
+	Fonts      []design.FontFamilyToken `json:"fonts,omitempty"`
+	Dimensions []design.Token           `json:"dimensions,omitempty"`
 }
 
 // TokenExport composes existing declaration owners as read-only source data.
@@ -33,6 +39,28 @@ type TokenExport struct {
 	Faces       []design.FontFace       `json:"faces,omitempty"`
 }
 
+// checkLegible runs the contrast gate over the layer a reader is actually shown:
+// the role declarations ui/style emits on top of this pair's tokens. design's own
+// Theme.Check measures the tokens and belongs to whoever loads a client's design
+// (design.Client.Resolve); this half is the one a pair can pass the tokens while
+// still painting an unreadable sentence — a component never sets
+// --pk-color-text-primary, it sets color: var(--pk-role-fg-secondary). Client.
+// Resolve runs both halves today, so this is not the only place a pair is
+// measured; it is the seam where a pair becomes an exported document — a
+// Storybook, a native token sheet, a design export — and it refuses whatever
+// produced the pair. The sheet an installation serves is built by ui.Compose
+// which measures nothing: what reaches it is the pair a door above already
+// refused or handed over.
+func checkLegible(context string, themes ...design.Theme) error {
+	roles, pairs := style.RoleColors(), style.GatedRolePairs()
+	for _, theme := range themes {
+		if err := theme.CheckRoles(roles, pairs); err != nil {
+			return fmt.Errorf("%s: %w", context, err)
+		}
+	}
+	return nil
+}
+
 // ExportTokens projects only explicitly selected light/dark modes, in selector
 // order, plus the existing shared colour, scale, shadow and timing owners. It
 // captures no components, CSS, icons or font bytes and performs no I/O. Failure
@@ -48,6 +76,15 @@ func ExportTokens(theme design.Pair, modes ...string) (TokenExport, error) {
 	if len(selected) == 0 {
 		return TokenExport{}, fmt.Errorf("token export: select at least one mode")
 	}
+	var chosen []design.Theme
+	for i, mode := range []string{"light", "dark"} {
+		if selected[mode] {
+			chosen = append(chosen, theme.Both()[i])
+		}
+	}
+	if err := checkLegible("token export", chosen...); err != nil {
+		return TokenExport{}, err
+	}
 	out := TokenExport{Colors: style.RoleColors()}
 	for i, mode := range []string{"light", "dark"} {
 		if !selected[mode] {
@@ -60,8 +97,16 @@ func ExportTokens(theme design.Pair, modes ...string) (TokenExport, error) {
 		}
 		value := TokenMode{Mode: mode, Fonts: fonts}
 		for _, token := range owner.Tokens() {
-			if token.Type == "color" {
+			switch token.Type {
+			case "color":
 				value.Colors = append(value.Colors, token)
+			case "dimension":
+				// The theme is trusted Go input, but the document is not: a radius
+				// in a unit DTCG cannot carry would reach a consumer as a string.
+				if _, _, err := design.ParseRadius(token.Value); err != nil {
+					return TokenExport{}, fmt.Errorf("token export mode %s: %w", mode, err)
+				}
+				value.Dimensions = append(value.Dimensions, token)
 			}
 		}
 		out.Modes = append(out.Modes, value)
@@ -118,6 +163,21 @@ func (s TokenExport) Validate() error {
 		kinds := make(map[string]string, len(base))
 		for _, token := range base {
 			kinds[token.Name] = token.Type
+		}
+		// Shape travels with the palette, so it keeps the same identity rule: a
+		// radius is a dimension this format can express, and both modes expose the
+		// same shape identities as each other (kinds is compared below).
+		for _, dimension := range mode.Dimensions {
+			if dimension.Type != "dimension" || !slices.Contains(design.RadiusTokenNames(), dimension.Name) {
+				return fmt.Errorf("token export mode %s: shape token %q is not a radius dimension", mode.Mode, dimension.Name)
+			}
+			if _, _, err := design.ParseRadius(dimension.Value); err != nil {
+				return fmt.Errorf("token export mode %s: %w", mode.Mode, err)
+			}
+			if kinds[dimension.Name] != "" {
+				return fmt.Errorf("token export mode %s: duplicate token %q", mode.Mode, dimension.Name)
+			}
+			kinds[dimension.Name] = dimension.Type
 		}
 		if firstKinds == nil {
 			firstKinds = kinds

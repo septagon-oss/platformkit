@@ -19,6 +19,14 @@ export default defineConfig({
     baseURL: process.env.PLATFORMKIT_E2E_URL ?? 'http://localhost:8099',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // A renderer's shared buffers live in /dev/shm, which a container gets at
+    // Docker's own 64 MB default unless the caller says otherwise: measured as
+    // `job container /dev/shm 0 MB used of 64 MB` in the gate's own log, on a job
+    // with no readable memory ceiling. A page whose frame buffers outgrow that
+    // pool takes the renderer with it, and the case then reports only that its
+    // page closed — no assertion, no verdict. The buffers go to disk instead;
+    // nothing measured, asserted or waited-on here changes.
+    launchOptions: { args: ['--disable-dev-shm-usage'] },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

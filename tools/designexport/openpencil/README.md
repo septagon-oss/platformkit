@@ -44,8 +44,8 @@ blends, `px` scale values and explicitly unitless leading, line-height or font w
 It validates every requested feature, token dependency and selected icon before
 allocating native IDs. Scale-only selections may omit icons and theme modes.
 
-Ordered fallback fonts, contextual units, keywords, shadows, motion and selected
-asset/face records refuse the whole request. Assets still use the separate
+Ordered fallback fonts, contextual units, keywords, shadows, motion, a mode's
+selected shape dimensions and selected asset/face records refuse the whole request. Assets still use the separate
 [font-delivery bridge](#deliver-source-backed-font-assets). The full default
 `designexport --tokens both` selection therefore does **not** produce a complete
 native library. A producer must select its subset explicitly; this adapter neither
