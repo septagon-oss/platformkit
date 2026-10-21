@@ -44747,6 +44747,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/decide/internal/catalogue_deck_vote_test.go",
+   "id": "modules/decide/internal/catalogue_deck_vote_test.go#TestADeckClientEmptiesTheCatalogueQueueThroughItsBoundCommands",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestADeckClientEmptiesTheCatalogueQueueThroughItsBoundCommands",
+   "needs_db": true,
+   "pkg": "modules/decide/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/decide/internal/creator_duty_test.go",
    "id": "modules/decide/internal/creator_duty_test.go#TestOnlyTheCreatorClosesAndOnlyTheVoterRewindsTheirOwnBallot",
    "kind": "go",
@@ -44904,6 +44923,44 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestMatchDeliveryBatchAndClaimRetryTogether",
+   "needs_db": true,
+   "pkg": "modules/decide/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/decide/internal/personaldata_test.go",
+   "id": "modules/decide/internal/personaldata_test.go#TestPersonalExportKeepsOnlyTheSubjectsBallotsInItsTenant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestPersonalExportKeepsOnlyTheSubjectsBallotsInItsTenant",
+   "needs_db": true,
+   "pkg": "modules/decide/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/decide/internal/personaldata_test.go",
+   "id": "modules/decide/internal/personaldata_test.go#TestPersonalErasureScrubsSharedTextWithRevisionsAndRollsBack",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestPersonalErasureScrubsSharedTextWithRevisionsAndRollsBack",
    "needs_db": true,
    "pkg": "modules/decide/internal",
    "round_named": false,
@@ -45113,6 +45170,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestMatchesUseTheExistingNotificationPortForEveryRecipient",
+   "needs_db": false,
+   "pkg": "modules/decide",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/decide/module_test.go",
+   "id": "modules/decide/module_test.go#TestCompositionContributesPersonalData",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestCompositionContributesPersonalData",
    "needs_db": false,
    "pkg": "modules/decide",
    "round_named": false,
@@ -76155,7 +76231,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2049,
+  "files": 2051,
   "forge_runs": [
    408,
    413,
@@ -76189,7 +76265,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3275,
+   "behaviour": 3279,
    "composition": 455,
    "contract": 21,
    "journey": 109
@@ -76208,23 +76284,23 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3860,
+  "rows": 3864,
   "tiers": {
-   "merge": 2431,
+   "merge": 2434,
    "nightly": 109,
-   "push": 1320
+   "push": 1321
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1822,
+   "keep": 1824,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3504,
+   "keep": 3508,
    "keep-rewrite": 140,
    "merge": 216
   }

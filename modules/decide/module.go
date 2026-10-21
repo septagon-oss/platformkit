@@ -8,6 +8,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/modules/decide/contracts"
@@ -39,7 +40,8 @@ func WithSweepEvery(every time.Duration) *pkit.Module {
 		return wire(w, every)
 	}, pkit.Needs[contracts.Access](), pkit.Needs[contracts.Clock](), pkit.Needs[contracts.InviteKey](),
 		pkit.Needs[contracts.Notifier](), pkit.Needs[jobs.TenantLister](), pkit.Needs[rest.FileUses](),
-		pkit.Needs[rest.FileShown](), pkit.Needs[richtext.Files](), pkit.Provides[contracts.Service]())
+		pkit.Needs[rest.FileShown](), pkit.Needs[richtext.Files](), pkit.Provides[contracts.Service](),
+		pkit.Contributes[personaldata.Part]())
 }
 
 func wire(w *pkit.Wiring, every time.Duration) (module.Module, error) {
@@ -57,7 +59,14 @@ func wire(w *pkit.Wiring, every time.Duration) (module.Module, error) {
 		return module.Module{}, err
 	}
 	pkit.Put[contracts.Service](w, svc)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return module.Module{Name: "decide", Migrations: Migrations.Files, Declared: contracts.Events,
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "decide_questions", Person: "creator_id", Text: []string{"title", "description"}},
+			personaldata.Table{Name: "decide_options", NotPerson: []string{"question_id", "image_id"}, Text: []string{"title", "note", "link"}},
+			personaldata.Table{Name: "decide_participants", Person: "person_id", NotPerson: []string{"question_id"}},
+			personaldata.Table{Name: "decide_votes", Person: "person_id", NotPerson: []string{"question_id", "option_id"}},
+		),
 		Permissions: []module.Permission{{Key: contracts.PermissionRead, Label: "Read group decisions"},
 			{Key: contracts.PermissionManage, Label: "Create and manage group decisions"}, {Key: contracts.PermissionVote, Label: "Join and vote on group decisions"}},
 		Routes: svc.Routes, Jobs: []jobs.Job{svc.Deadlines(d.Tenants, d.SweepEvery)},

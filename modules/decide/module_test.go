@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -82,5 +83,20 @@ func TestMatchesUseTheExistingNotificationPortForEveryRecipient(t *testing.T) {
 		if err != nil || total != 1 || rows[0].Link != "/app/decisions/result" {
 			t.Fatalf("notice: %+v %d %v", rows, total, err)
 		}
+	}
+}
+
+func TestCompositionContributesPersonalData(t *testing.T) {
+	reader := pkit.NewModule("personal_fixture", func(w *pkit.Wiring) (module.Module, error) {
+		parts := pkit.All[personaldata.Part](w)
+		if len(parts) != 1 || parts[0].Module != "decide" || parts[0].Data == nil {
+			t.Fatalf("personal-data contributors: %+v", parts)
+		}
+		return module.Module{Name: "personal_fixture"}, nil
+	}, pkit.Needs[[]personaldata.Part]())
+	key := contracts.InviteKey("isolated-composition-test-key-32-bytes")
+	if err := pkit.NewApp("decision-fixture").Use(providers(key), decide.Module, reader).
+		Validate(pkit.Deployment{Environment: pkit.Development}); err != nil {
+		t.Fatal(err)
 	}
 }

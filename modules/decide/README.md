@@ -54,9 +54,10 @@ The declared `decide.Module` provides `contracts.Service` and needs
 `contracts.Notifier`, `jobs.TenantLister`, `rest.FileUses`, `rest.FileShown`
 and `richtext.Files`. The last port validates that an option names an accessible
 workspace image; file-use bookkeeping alone does not establish its media type.
-There is no optional authorization or notification fallback, no contribution
-collection and no branch on another module's selection. Its one wire function
-constructs the service, Specs, subscription and job from these typed values.
+There is no optional authorization or notification fallback or branch on another
+module's selection. It contributes `personaldata.Part` for the composing subject
+workflow. Its one wire function constructs the service, Specs, subscription and
+job from these typed values.
 `SweepEvery` is a constructor option read by the job, not an ignored manifest
 field. Applications compose this one module via NewApp.Use; no registry is edited
 in specify. Required adapters are supplied by the composition using existing
@@ -402,8 +403,8 @@ it omits removed options and their ballots, secrets, credentials and internal la
 stable UUID/time/value representations and no new third-party format library.
 Products own retention duration, subject-erasure policy, external archival and
 any future legal hold; they cannot bypass current scope checks with an export.
-A product requiring subject erasure needs a follow-up module contract; this
-version provides no subject-erasure command or permission to delete its tables.
+The personal-data contribution below scrubs identifiers through the composing
+subject workflow; it grants no public permission to delete Decide's tables.
 No anonymity or secret ballot is promised: participants can see who voted what.
 
 All domain time comes from required `Deps.Clock`, sampled after authoritative
@@ -449,6 +450,15 @@ Products choose question/option content, workspace roles, onboarding, secret
 loading, locale/branding, protected page URLs, notification channels, retention
 and specialist validation. None is an unanswered module invariant.
 
+Decide contributes to the kernel's personal-data export and erasure contract.
+That export contains the subject's authored questions and options, memberships
+and ballots, including retained rows, without invitation state or other voters'
+ballots. Erasure scrubs identifying words in question and option text throughout
+the current tenant, including other creators' content, while retaining IDs,
+membership, ballots and outcomes. Changed text advances its row's revision.
+The composing orchestrator owns authorization, identity revocation and the
+enclosing transaction; this contribution creates no additional public route.
+
 Open/add-participant/issue/revoke/undo and internal deadline close are explicit
 splits needed to make the decided requirements operable. No brief event or vote
 value was dropped. No application composes this module yet, so it remains uncomposed rather than
@@ -483,8 +493,9 @@ cached request principal or an ordinary user lookup cannot satisfy its contract.
 **Reused** — `entity.Base`, `crud.GetForUpdate`, the request tenant transaction,
 forced RLS, `events.Publish` and the existing delivery claim, `jobs.PerTenant`,
 `pkit.NewModule`, `rest.Spec`, file image/use ports, Notification.Notify,
-`dbtest.Schema`, `porttest.Clock`, the conformance suite and shared generated UI
-components carry identity, authority boundaries, persistence and presentation.
+`dbtest.Schema`, `porttest.Clock`, `personaldata.Part`, `personaldata.ScrubCounted`,
+the conformance suite and shared generated UI components carry identity,
+authority boundaries, persistence and presentation.
 **Added** — Decide's four-table aggregate, canonical credentials and scoped
 service projections carry group ballots because Task, Content and the inspected
 catalogue/shelf owners do not own a changeable person/option decision.
