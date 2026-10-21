@@ -4622,6 +4622,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/port_taken_while_booting_test.go",
+   "id": "apps/platformkit/port_taken_while_booting_test.go#TestAPortTakenWhileBootingIsNotTheCasesPort",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestAPortTakenWhileBootingIsNotTheCasesPort",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/portuguese_completeness_test.go",
    "id": "apps/platformkit/portuguese_completeness_test.go#TestEveryDeclaredHintStringIsAnsweredInPortuguese",
    "kind": "go",
@@ -79293,7 +79312,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2124,
+  "files": 2125,
   "forge_runs": [
    408,
    413,
@@ -79328,7 +79347,7 @@
   ],
   "layers": {
    "behaviour": 3427,
-   "composition": 456,
+   "composition": 457,
    "contract": 21,
    "journey": 109
   },
@@ -79346,9 +79365,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4013,
+  "rows": 4014,
   "tiers": {
-   "merge": 2462,
+   "merge": 2463,
    "nightly": 109,
    "push": 1442
   },
@@ -79356,13 +79375,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1879,
+   "keep": 1880,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3627,
+   "keep": 3628,
    "keep-rewrite": 170,
    "merge": 216
   }
