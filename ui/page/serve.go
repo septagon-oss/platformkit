@@ -59,6 +59,8 @@ type Granter struct{ Permission, Label string }
 // Route is what one page is: its operation id, method, path, summary, and the
 // statuses it may answer with beyond the kernel's defaults.
 type Route struct {
+	// MintsCredential prevents storing this page's credential-bearing response.
+	MintsCredential           bool
 	ID, Method, Path, Summary string
 	Errors                    []int
 	// StreamsBody marks the page that reads the request itself — a person
@@ -113,6 +115,12 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 	if rt.StreamsBody {
 		key, streamed := httpx.StreamedBody()
 		op.Extensions = map[string]any{key: streamed}
+	}
+	if rt.MintsCredential {
+		if op.Extensions == nil {
+			op.Extensions = map[string]any{}
+		}
+		op.Extensions[httpx.CredentialExtension] = true
 	}
 	if s.Chrome.SignIn != "" {
 		httpx.SignIn(&op, s.Chrome.SignIn)

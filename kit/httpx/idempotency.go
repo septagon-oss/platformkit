@@ -335,6 +335,22 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 // those ceilings: see sayRecorded, which restates it against the moment the replay is
 // being answered at.
 func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
+	if auth, ok := declarationOf(ctx.Operation()); ok && auth.replay != nil {
+		tx, present := TxFrom(ctx.Context())
+		if !present {
+			a.operationUnavailable(ctx, db.ErrNoTenant)
+			return
+		}
+		allowed, err := (*auth.replay)(ctx.Context(), tx)
+		if err != nil {
+			a.operationUnavailable(ctx, err)
+			return
+		}
+		if !allowed {
+			a.deny(ctx, CodeDenied, "current authority does not permit recovering this answer")
+			return
+		}
+	}
 	r, w := humachi.Unwrap(ctx)
 	if stored.ContentType != "" {
 		w.Header().Set("Content-Type", stored.ContentType)
