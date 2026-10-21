@@ -52122,6 +52122,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/task/queue_sort_navigation_test.go",
+   "id": "modules/task/queue_sort_navigation_test.go#TestTaskQueueSortControlsCarryTheNextDueOrder",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTaskQueueSortControlsCarryTheNextDueOrder",
+   "needs_db": true,
+   "pkg": "modules/task",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/task/queue_stored_breach_test.go",
    "id": "modules/task/queue_stored_breach_test.go#TestTaskQueueReadsTheStoredBreachInsteadOfTheDeadline",
    "kind": "go",
@@ -75457,7 +75476,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2027,
+  "files": 2028,
   "forge_runs": [
    408,
    413,
@@ -75491,7 +75510,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3249,
+   "behaviour": 3250,
    "composition": 454,
    "contract": 21,
    "journey": 101
@@ -75510,9 +75529,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3825,
+  "rows": 3826,
   "tiers": {
-   "merge": 2410,
+   "merge": 2411,
    "nightly": 101,
    "push": 1314
   },
@@ -75520,13 +75539,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1800,
+   "keep": 1801,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3469,
+   "keep": 3470,
    "keep-rewrite": 140,
    "merge": 216
   }
