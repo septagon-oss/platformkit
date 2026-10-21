@@ -250,11 +250,11 @@ func TestThePublicDoorServesOnlyPublicFiles(t *testing.T) {
 		t.Errorf("a file that does not exist at the public door = %d, want the same 404", code)
 	}
 	// The private doors are still guarded.
-	if code, _, _ = send(t, router, http.MethodGet, files+"/"+private+"/content", false); code != http.StatusForbidden {
-		t.Errorf("an anonymous download = %d, want 403", code)
+	if code, _, _ = send(t, router, http.MethodGet, files+"/"+private+"/content", false); code != http.StatusUnauthorized {
+		t.Errorf("an anonymous download = %d, want 401", code)
 	}
-	if code, _, _ = send(t, router, http.MethodGet, files, false); code != http.StatusForbidden {
-		t.Errorf("an anonymous list = %d, want 403", code)
+	if code, _, _ = send(t, router, http.MethodGet, files, false); code != http.StatusUnauthorized {
+		t.Errorf("an anonymous list = %d, want 401", code)
 	}
 }
 

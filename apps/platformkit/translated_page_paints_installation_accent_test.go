@@ -13,8 +13,8 @@ import (
 // asks for Portuguese of a page the tenant translated. The accent a page is drawn
 // in is a fact about the tenant's settings and not about the language asked for,
 // so a tenant that named no accent is painted in the installation's own pair on
-// the Portuguese document exactly as on the English one, and a tenant that chose
-// a colour is painted in that one colour on both.
+// the Portuguese document exactly as on the English one. What a tenant chose is
+// stored, not painted: each mode draws the colour its own canvas clears.
 func TestATranslatedPageIsPaintedInTheInstallationsAccent(t *testing.T) {
 	cfg, admin, _ := publishedTranslationPage(t, map[string]string{"title": "A nossa história", "body": "O parágrafo português."})
 	pair := design.Default()
@@ -50,10 +50,18 @@ func TestATranslatedPageIsPaintedInTheInstallationsAccent(t *testing.T) {
 	if status != http.StatusOK || !strings.Contains(html, `<html lang="pt-PT"`) {
 		t.Fatalf("GET the Portuguese page after choosing a colour = %d, want 200 in pt-PT", status)
 	}
-	if !strings.Contains(html, ":root{--pk-color-accent-default:#b45309}") {
-		t.Error("the Portuguese page of a tenant that chose #b45309 is not painted in it")
+	// The colour a tenant chose is measured where it is painted. #b45309 reads
+	// 4.37:1 on the light canvas and 3.66:1 on the dark one, so the write door
+	// admits it — its floor is 3.0 against both canvases, because a row is edited
+	// once and read in either — and the paint asks the 4.5 of the theme it is
+	// drawing, taking the nearest colour along the same hue when the stored one
+	// falls short (design.Pair.LegibleAccent). Pinning #b45309 over both modes would
+	// be painting a colour the stylesheet's own gate refuses, on the page that links
+	// that stylesheet.
+	if !strings.Contains(html, ":root{--pk-color-accent-default:#9c531c}") {
+		t.Error("the Portuguese page of a tenant that chose #b45309 is not painted in the colour the gate issues for it on the light canvas")
 	}
-	if strings.Contains(html, `[data-theme="dark"]{--pk-color-accent-default`) {
-		t.Error("a tenant's own accent was rewritten per mode on the Portuguese page")
+	if !strings.Contains(html, `[data-theme="dark"]{--pk-color-accent-default:#ca7e43}`) {
+		t.Error("the dark mode of a page painted in a tenant's chosen colour carries no colour measured for the dark canvas")
 	}
 }

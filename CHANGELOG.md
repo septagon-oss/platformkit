@@ -645,6 +645,349 @@ utility classes; a sheet assembled inline sits outside that count, and the count
 itself belongs to the sweep's own checkout rather than to this one.
 The cure is the client's own share — `css.VarRef` for the colour, its own hook or its
 own class for the selector (T-0139, T-0126).
+**The sidebar panel now gives way to the line drawn across it.** Review round 21 found
+the fifth ground a shipped rule paints a component's edge on, and the first one no gate
+named. `clSidebarSectionHeader` draws `BorderColor(style.BorderPrimary)` and declares no
+fill of its own; `clSidebarColumnAdmin` fills the column it sits inside with
+`Bg(style.SurfaceInverse)`, which is the `sidebar-bg` token — a colour a seed decides and
+a client may file. Over the corpus that round read, 35 of 800 readings fell under 3:1,
+worst 2.65:1, and a `design.yaml` the door accepted measured 2.05:1 there. The pair is
+gated at `MinContrastGraphic` in both vocabularies — `bodyContrast` names
+`border-default` on `sidebar-bg`, and the new `PanelEdgeRolePairs` names
+`border-primary` on `surface-inverse` — so `Client.Resolve` refuses a file that erases
+the rule and `FromSeed` refuses a seed that does. It is a fifth list rather than a fifth
+ground of `edgeRolePairs` because the two kinds of ground give way in opposite
+directions: the page grounds are light in a light theme, so the line is repaired dark
+against them, while the panel is dark in a light theme because it carries the theme's own
+light copy, so the panel is the half with room — `generatedTheme` now darkens it under
+the line (`settleDarker`, the walk toward black alone). Over 400 generated seeds that
+leaves no reading under 3:1 (narrowest 3.10:1), refuses no seed, and costs the separation
+nothing: the closest pair of the corpus is 0.0006 where it was 0.0005, and colliding
+pairs went from 2840 to 2578. 254 of the 400 light sidebars moved, 29 of them to pure
+black, which is where the arithmetic puts them: an edge the surfaces force to luminance
+.10 can only reach 3.0 on black, so the 3.5 the generator aims at is out of reach and the
+walk reports the far pole. `edgeRolePairs` still names the page's own surfaces alone, and
+review 16's coverage case — which measures every rule that declares no fill against every
+ground in that list — stays green, which is the check that the split is a real one:
+`clInputError`, `clInputTone` and `clTabsUnderlineActive` draw a status tone or the brand
+colour with no fill, are painted on the page and never inside a sidebar, and no danger red
+that reads on a light card can reach 3:1 on a panel dark enough to be a sidebar.
+
+**A tenant's brand colour is now measured before it is painted.** Review round 19 found
+the third door a colour comes through. `design.yaml` is refused by `Client.Resolve` and
+a generated palette is repaired by `FromSeed`, both of which are doors a file passes;
+`site_settings.primary_color` is a `char(7)` a tenant edits, and `modules/web` wrote it
+straight into `:root{--pk-color-accent-default:…}` on every page of that tenant's site.
+Unlayered, that declaration outranks the `@layer tokens` block `ui.Compose` emits —
+which is the point of a per-tenant palette — and so paints `fg-link`, `fg-brand`,
+`surface-brand` and the label on it from a value no gate had ever read. Six hex digits
+was the whole of the defence: `#c0ffee`, which this package's own test pinned reaching
+the head, measured 1.10:1 as a link on a light card, and `#0f5d4e` — the accent the
+kernel itself ships in `light`, which a tenant is invited to copy into a dark site —
+measures 2.36:1 as the accent and 2.16:1 as a link on the card beside it. `Pair.LegibleAccent` is the measurement: the colour as it stands when
+the finished theme clears `Theme.Check` and `Theme.CheckRoles` with it, or the nearest
+colour along its own hue when it does not, the same walk `FromSeed` repairs a generated
+accent with, run against the pair the caller holds. An illegible answer is a refusal and
+the page keeps the accent its own stylesheet carries. The site asks once per mode, because
+the one value paints two schemes it cannot both read: a `system` site now declares the
+light answer at `:root`, the dark answer at `[data-theme="dark"]` and in the same
+preference rule `ui/style/theme.go` uses, and a visitor who switches modes sees a colour
+that reads in the one they are in. `#2563eb` is the colour that measurement is asked about: the shipped default, what
+the column and every installation that never opened the settings screen paints, reads
+4.4981:1 on the light canvas — under the 4.5:1 floor by two thousandths — and 3.2618:1
+as `fg-brand` on a dark card, and the paint answers with `#4164b0` and `#618ef1`, which
+read. The default was moved to *no colour* partway through this delivery and is
+withdrawn: the device contract publishes `primaryColor` with
+`pattern ^#[0-9a-fA-F]{6}$`, `apps/platformkit/wire_compatibility_test.go` rule B3
+refuses a change to a published shape whichever way it moves, so an empty string is not
+a value the field may hold, and the round trip a client takes — read the site's colour,
+save it back — was answered 422. A site whose row holds none is still painted the accent
+of the palette its own sheet links, mode by mode, which is where the arithmetic no
+single `#rrggbb` survives (body copy has to read on grounds 4.5 x 4.5 = 20.25:1 apart,
+and `design.Default()` puts them 18.28:1 apart) is answered: by the door that paints,
+not by a constant. Letting a tenant *choose* "none of my own" over the API is the
+product's share, and it is a B3 break to the device contract — it ships the way
+/api/v1/admin did, with a new address and an alias row, not inside a fix round.
+`SiteSettings.Validate` fills an empty colour with the default and refuses whatever else
+is not six hex digits: legibility is decided where the colour is painted, because a row
+saved before this gate existed is painted by whichever code answers the page, not by the
+one that wrote it.
+
+**The site's quotation bar is now gated the way the field's edge is.** `bodyContrast`
+named the boundary of a text field and no other, while `modules/web/internal/style.go`
+paints a second one: `[data-prose] blockquote` carries a 4 px left rule in
+`--pk-color-border-strong`, on the page canvas of every article the site serves. That
+token is named by neither half of the gate — no pair in `bodyContrast`, and no role in
+`design.RoleLayer()` references it, so `CheckRoles` could not see it, and
+`Client.Validate`, which accepts any colour a theme exports, stopped at "is it a
+colour". A `design.yaml` filing `border-strong: "#f2efe7"` — the light canvas's own
+value — was issued a palette whose quotation bars measure 1.00:1 on the page they are
+drawn on, while the table's line in the same sheet, drawn in `border-default`, was
+refused. `bodyContrast` now gates `border-strong` on `surface-canvas` at
+`MinContrastGraphic`, the floor SC 1.4.11 asks of a boundary, and on that one ground
+alone: the rule this package has always used is that an unpainted pair has no business
+in the list a client is refused by. No client's screen moves — the generator already
+repairs the token to the body floor, so across 4000 generated seeds in both themes the
+closest reading is 4.995:1, and the shipped pair reads 5.01:1 in `light` and 5.62:1 in
+`dark`. What changed is the refusal, and it names the token to the client that erased
+it. `design/README.md` carried "every rule above the tokens is written in terms of a
+role", true of the utility and class-list layers and false of the three hand-written
+sheets; the sentence now names them, and names that every token they paint is one the
+token gate reads. One shared loader's fixture (`kit/designconfig/testdata/clients/pets`)
+wore a real client's slug and sector and now wears `lantern`/`crafts`.
+
+**A component's edge is now gated on every ground the kernel paints it on, including
+the one the layer mixes.** The entry below named two grounds for a line this
+repository paints on four. `clAlertVariant["neutral"]` and `clMediaRefused` draw
+`BorderColor(style.BorderPrimary)` on `surface-tertiary`, and `clButtonVariant`
+`["secondary"]` and `clModalCancel` keep that same line while
+`hoverBg(style.SurfaceHover)` moves the control's own fill out from under it — a
+ground no token names, since `--pk-role-surface-hover` is `HoverTintPercent` (4 %) of
+`text-primary` mixed into `surface-primary`, two tokens a client may both override.
+Nothing refused a palette whose hovered button's boundary disappeared: the shipped
+dark pair read 3.10:1 there, and a `design.yaml` naming `border-default: #6f6c69`
+was accepted by the door at 3.01:1 on the card while painting the same boundary at
+2.71:1 on the fill under it (and 2.56:1 on the muted panel). `edgeRolePairs` now
+gates `border-primary` on `surface-primary`, `surface-secondary`, `surface-tertiary`
+and `surface-hover`, `bodyContrast` names the three literal grounds among them, and
+the generator repairs the emitted edge against the hover mix as well — which needed
+the ground to be mixed before the edge is chosen, so `TextPrimary` is now set ahead
+of `BorderDefault` in both branches. The shipped pair moved with it rather than sit
+on the new floor by a hair: `border-default` is `#85827d` → `#7a7773` in `light` and
+`#60756f` → `#6b807a` in `dark`, at the margin the generator emits (worst reading
+3.51:1 `light`, 3.53:1 `dark`, on the four gated grounds; `surface-active`, still
+ungated and still painted by no rule, now reads 3.75:1 and 3.23:1). Across 400
+generated seeds (800 themes) the closest gated reading is 3.50:1, no seed is
+refused, and the client pinned at the edge of the gate since round 9 (`light
+surface-primary: #0df7f7`) is still accepted, at 3.27:1 on its own hovered fill.
+`surface-active` stays ungated on the same argument this package has always used: a
+pair nothing paints has no business in the list a client is refused by.
+
+**A text field's edge is now measured, and the sentence that exempted it is
+corrected.** `design/contrast.go` stated its own scope as "Borders and tints carry
+no information and are not listed" while `ui/components/classlists.go` paints one
+border as the only visual information identifying a component: `clInput` fills the
+field with `style.SurfacePrimary`, the same role `clCardFrame` paints the card with,
+so the fill says nothing about where the field is and `clInputNormal`'s
+`BorderColor(style.BorderPrimary)` is the line that does. WCAG 2.2 SC 1.4.11 asks
+3:1 of exactly that — its worked example is a text input's border — and the focus
+ring, which carries less, was already gated on three grounds while this was gated on
+none: measured on the shipped pair, the edge read 1.69:1 on the card and 1.50:1 on
+the page canvas in `light`, 1.44:1 and 1.56:1 in `dark`, and 1.42:1 at the worst of
+40 generated palettes. `bodyContrast` now names `border-default` on
+`surface-primary` and `surface-canvas` at `MinContrastGraphic`, and `edgeRolePairs`
+spells the same two pairs in the layer a browser paints
+(`--pk-role-border-primary` on `--pk-role-surface-primary` and
+`--pk-role-surface-secondary`), so `Client.Resolve` refuses a client whose own
+override drops its field edge under the floor and `ui/export` refuses it too. The
+generator emits the edge at 3.5:1 rather than at the 3:1 that gates it, because the
+ground a client files is not the ground the generator drew: a client that names its
+own `surface-primary` moves the card the field stands on, and an edge emitted at
+exactly the floor is refused for the kernel's colour when the client changed its
+surface. Measured after the change: the shipped pair reads 3.43:1 on the card,
+3.33:1 on the canvas and 3.02:1 on the muted panel in both themes, and across 400
+generated seeds (800 themes) the closest reading is 3.90:1 — the muted panel is
+repaired against but not gated, because no shipped rule draws a field's line on one
+today, which is a fact about the components and not a floor left unmet (the entry
+above gates that panel and the hovered fill, and the numbers below are the ones the
+entry above supersedes). Six colours
+move and nothing else does: `border-default` and `border-strong` in each shipped
+theme (`light` `#cbc5b8` → `#85827d` and `#8f988f` → `#636763`, `dark` `#2c3b37` →
+`#60756f` and `#5c6d67` → `#81928c`) and, in a generated pair, the same two tokens
+at the same floors; the two role declarations mixed from them move with them. A
+native screen is handed `--pk-color-border-default` as a colour, so this reaches
+`platformkit-mobile` through the token document, whose pinned digests are
+re-recorded here with their measurement — 12 of the pair's 196 measured lines
+differ (a theme prints 28 tokens and 70 resolved values: the 22 colour tokens, their
+passthroughs and 48 `--pk-role-*` variables), and no class, rule or example HTML
+does. Decorative dividers stay exempt: a line between two rows the
+reader has already found, and a tint whose copy the body pairs measure themselves.
+What is still ungated, and named rather than quietly dropped: `sidebar-bg` under a
+ringed control, and `surface-active`.
+
+**A focus ring is now measured on each of the surfaces the kernel draws it on.**
+Review round 10 found the graphic's floor read against one ground of three:
+`clFocusRing` pairs `Ring(style.Ring2).RingColor(style.RingFocus)` with
+`RingOffset(style.RingOffset2)`, which puts the 2 px ring *outside* the control and
+onto whatever surface the focused control sits inside — `clCardFrame`'s
+`surface-primary`, or the muted surface a panel raises itself onto — while
+`bodyContrast` measured `focus` against `surface-canvas` alone. `tokens: {dark:
+{focus: "#905546"}}` therefore resolved with no error at exactly 3.000:1 on the
+page and 2.692:1 on the card and 2.305:1 on the muted panel, under the 3.0:1
+SC 1.4.11 floor the same file states; swept through `Client.Resolve`, 286 311 of
+465 088 candidate overrides were accepted and 51 385 of their readings sat under
+the floor. `bodyContrast` now names `focus` on `surface-canvas`, `surface-primary`
+and `surface-muted`, which is what makes `MinContrastGraphic` mean what its own
+comment says: one gate, applied to a generated theme and an override alike. No
+shipped or generated colour moves — `design.Default()` reads 4.09/4.62/3.71 in
+`light` and 7.38/6.78/5.96 in `dark`, and over 4000 generated seeds (8000 themes)
+no ring reading falls under the floor, the worst at 3.395:1 — so the two new lines
+refuse nothing the generator emits and nothing this repository ships. The role
+layer needs no fourth list for the ring: `ring-focus` is a bare reference to the
+`focus` token and the three surface roles bare references to the three surface
+tokens, so the two measurements agree to the last digit, which
+`design/ring_ground_test.go` pins. The fourth ground a ringed control sits on,
+`sidebar-bg` (`clSidebarBrandLink` and the sidebar's own disclosure buttons merge
+`clFocusRing`), is measured and held by the shipped palette at 3.57:1 and 7.62:1,
+but is not gated: naming it would refuse 1762 of those 8000 generated readings
+(worst 2.408:1), so it asks for the ring to be repaired toward the sidebar the way
+a tint is repaired toward the copy it carries — a colour decision, named for the
+follow-up brief with the number.
+
+**One downstream copy still wears the value this branch rejected.** This branch's
+gate moved `light` `text-muted` to `#586461` because `#5f6b65` measured 4.382:1 on
+`surface-muted`, under the 4.5:1 text floor. `platformkit-mobile` regenerates its
+palette from this repository's design export and still pins the old value
+(`testdata/design-tokens.json` → `src/ui/tokens.ts`, provenance-pinned to upstream
+commit `5fc585926ce9a7d31af131f26a08ae9e967a591d`), so the phone paints the colour
+this branch refused. Nothing in either tree fails: the refresh is a deliberate act
+in that repository, provenance-pinned the way `catalog.json` is, and cannot be
+priced from here. It is recorded rather than left silent.
+
+**The label a filled tone button paints is now a measured pair too.** Review round
+8 found the door, not the palette: `clButtonTone` replaces a button's whole
+appearance with the tone it is given — `Bg(style.SurfaceDanger)` under
+`TextColor(style.FgOnBrand)` at `text-sm`, which is what `ui/resource` puts on the
+delete form of every generated list — and no list the gate reads paired
+`fg-on-brand` with a status fill. `bodyRolePairs` names no `fg-on-brand` at all,
+and the status list added above gates the *soft* tints, so the pair fell between
+them; `accent-on` is one of the 22 tokens a client may override, so
+`tokens: {light: {accent-on: "#aacc44"}}` resolved with the success button's label
+at 3.497:1 while every pair the gate does measure held. `StatusRolePairs()` now
+names `fg-on-brand` on all four status fills, and `BodyRolePairs()` names it on
+`surface-brand` — the same label on the accent the token gate already measures as
+`accent-on`/`accent-default`, spelled the way a stylesheet paints it — so one
+sweep of the painted rules covers a button and a tint together. No colour moved:
+`design.Default()` holds every one of these pairs, and 20 000 generated seeds reach
+the floor with the worst at 5.958:1, so the certification `FromSeed` now runs over
+them never fires on generated output. `Client.Resolve` refuses the override above,
+and `tokens: {light: {accent-on: "#66ccff"}}` at 3.56:1, naming both roles. The
+component sweep no longer skips a ground whose name does not end in `Soft`, the
+narrowing whose own comment this round disproved; the single ground it composes
+aside is `surface-overlay`, the sidebar's own tint over the sidebar.
+
+**A gated role pair is now the same pair read from a component or from a
+stylesheet.** Review round 7's failing case derived the pair a failed media panel
+paints out of `ui/components`' own declarations — `Bg(style.SurfaceWarningSoft)`
+under `TextColor(style.FgMuted)` — and asked whether `design.GatedRolePairs()`
+names it. It could not: the list spelled every role as the emitted CSS property
+(`--pk-role-fg-muted`) while the pair read off a Go constant spells it as the layer
+declares it (`fg-muted`), so the gate's own vocabulary decided the answer. The two
+spellings are now one rule owned by `design`: the pair lists in `roles.go` are
+written in the declared vocabulary, `RoleLayer` still hands out the emitted one, and
+`CheckRoles` resolves either against the layer it is handed — refusing a name that
+is neither, a token name included, and quoting the emitted property in the refusal
+so `Client.Resolve` and `ui/export` still name the same line. `ui/style`'s mirrors
+re-spell design's lists for the seam that ships a sheet, and
+`TestRolePairMirrorsSpellTheEmittedNames` pins the two to one declaration; no
+emitted CSS, token document or digest pin moved. (`ui/components`'s
+`TestPaintedSoftPanelPairIsGated` now passes; the pair itself was already gated and
+certified by the entry above.)
+
+**A status tint now carries the copy painted on it, not only the tone named after
+it.** Review round 7 found the kernel painting a body-size foreground on a ground
+no list measured: `clMediaFailed` gives a failed media panel
+`--pk-role-surface-warning-soft` and `mediaAbsent` fills that panel with
+`clEmptyDesc`, 14 px copy in `--pk-role-fg-muted`. `design.Default()` holds that
+pair at 5.47:1, which is why no page in this repository shows it. Of the 400 seeds
+round 7's case generates, one theme paints it under 4.5:1 (4.475:1 at
+`legal`/`Client211`); over the 1200 seeds round 7 probed, 6 themes fell under, and
+the same muted line on a danger- or info-tinted panel — one merge apart — fell
+under on 702 and 679 of them, to 3.57:1, while every gate in the repository stayed
+quiet. The gated layer gains a third list, `design.StatusRolePairs()`: each status
+tone on its own tint and `fg-muted` on all four. The generator repairs a tint
+against that muted tone, walking it toward white in a light theme and black in a
+dark one, and `design.FromSeed` now refuses its own output over `GatedRolePairs()`
+and not only over the 22 tokens — a generator that certified only tokens is what
+let the pair through. `Client.Resolve` therefore refuses `tokens: {light:
+{status-warningbg: "#d0ccbc"}}`, which holds every token pair and paints the
+muted line at 3.75:1. A generated client's warning, danger and info tints move a
+few units toward the page, and the DTCG digest pin is re-recorded for it; the
+shipped palette, the stylesheet and every token pair are unchanged.
+
+**The gate a client's file is validated by is now the gate a stylesheet is built with.**
+Review round 5 swept the override space this branch opened and found 98 of the 23115
+overrides `design.Client.Resolve` accepts have a gated role pair below the floor: a dark
+theme whose `surface-primary` is the warm neutral `#2e2920` holds every one of the 22
+token pairs and measures `--pk-role-fg-brand` on `--pk-role-surface-brand-soft` at 3.91:1
+— the label of a brand badge, under the 4.5:1 the badge's own copy requires. The cause was
+ownership, not arithmetic: the `--pk-role-*` declarations lived in `ui/style`, which
+`design` may not import, so `Client.Resolve` — the door a `design.yaml` actually passes
+through — could run only the token half of the gate while `ui/export` ran both. The
+declarations move down to `design/roles.go` as what they are, names, references and
+percentages, and `ui/style` renders them (`RoleVars`, `RoleColors`, `BodyRolePairs` and
+`TintedRolePairs` are the same API as before, delegating) while `design.Client.Resolve`
+gates the finished pair with `RoleLayer()` and `GatedRolePairs()`. The rendered layer is
+byte-identical: the digest pins over the shipped stylesheet, the token export and a
+generated client's DTCG document did not move. `Theme.CheckRoles` now refuses a caller
+that hands over no pair to measure, and `RoleLayer` detaches each declaration it hands
+out, because a mix is a pointer and one shared table would let a caller editing what it
+was handed move the layer every later caller in the process measures.
+**The contrast gate learned to measure the layer a browser paints.** Review round 1 measured the
+delivery's own claim and found it standing on the wrong layer: `design.Theme.Check` reads the 22
+`--pk-color-*` tokens, while a component sets `color: var(--pk-role-fg-secondary)`, and
+`ui/style` mutes some roles toward the surface they were authored against. On the shipped palette,
+`--pk-role-fg-tertiary` measured 3.49:1 on `--pk-role-surface-tertiary` and 4.35:1 on
+`--pk-role-surface-primary` — the same role, two surfaces, and every one of the 40 generated palettes
+reviewed failed the same way at 3.01–4.46:1, while passing `Theme.Check`. Three role values are
+re-authored: `--pk-role-fg-secondary` and `--pk-role-fg-tertiary` mix `text-primary` with
+`text-muted` (two colours the gate certifies on every surface) instead of with `surface-primary`, and
+`--pk-role-fg-placeholder` — the label of an empty field, which is read and is not exempt — is
+`text-muted` outright rather than `text-muted` walked 30% toward the surface under it, which measured
+as low as 1.62:1 on a raised card. Measured as a byte diff of `ui.Compose(design.Default())` against
+the previous commit, exactly these three declarations changed and nothing else; the two digest pins
+that cover them were re-recorded. `design.Theme.CheckRoles` / `design.Pair.CheckRoles` now measure a
+caller's role declarations against the pairs it names, `style.BodyRolePairs()` lists the 18 body-size
+text pairs `ui/components` composes (a disabled control is absent: SC 1.4.3 exempts inactive
+components), `bodyContrast` gained `text-primary` on `surface-muted` — the pair a neutral badge
+paints and nothing gated — and `ui/export` refuses a pair whose role layer is under the floor at the
+seam where a pair becomes a stylesheet or a document. What stays open, and is now named rather than
+assumed: `--pk-role-fg-brand`/`--pk-role-fg-link` are the accent, and the accent on `surface-muted`
+measures as low as 3.82:1 in dark on generated palettes — neither gate reads that pair today, and
+closing it means either holding the generated accent to a fourth surface or refusing more clients.
+
+**The client register is the only door from a design.yaml to an identity.** Review round 1 found the
+collision rule enforced on one of two routes: `designconfig.LoadClientDesigns` compared every pair it
+loaded, while a composition that read one directory at a time and called `design.Client.Resolve` per
+client met no such rule and could wear two identical palettes. `LoadClientDesign` now returns a
+`LoadedClient` that keeps its declaration unreadable, and `designconfig.Register` (`Add`, `Pair`,
+`Pairs`) is the only route from it to a `design.Pair`, so the set's rule is not a step a caller can
+omit. The same change closes a quieter one: the set loader used to `fs.Stat` a directory and then skip
+it when the stat and the read disagreed, so a client whose file the filesystem refused to hand over
+was missing from a returned set that reported no error — the quiet substitution of `design.Default()`
+for a client the package doc refuses to accept. A directory with no `design.yaml` is still not a
+client (`fs.ErrNotExist` is skipped by name); any other read failure fails the whole load.
+
+**A client's identity is generated from a seed, and the gate measures it.** Seven of the eleven
+homepage.css sheets the client repository holds (19 client directories, counted here on 2026-09-28)
+express their whole visual identity in three to five raw hex values, and no code this repository can
+build computed a contrast ratio — the one implementation in the workspace is in pk-design, which no
+`go.mod` here requires — so nothing could refuse a bad four. `design.Seed{Sector, Name,
+Brand}` now generates both themes deterministically, and refuses its own output below WCAG 2.2's 4.5:1
+for the fifteen body-role pairs — the focus ring is held to SC 1.4.11's 3:1, because the standard asks
+that of a graphical object and asking more would refuse a ring nobody mistakes for text. Running the
+gate over the palette this repository ships found one: light `text-muted` measured 4.38:1 on the muted
+surface and moved to 4.85:1. `clients/<slug>/design.yaml` carries a seed plus at most named overrides
+of the 22 colour tokens, validated by the same gate over the finished pair; two clients whose palettes
+a reader would take for one another are refused at load rather than rendered side by side. What stays
+open: those sheets still write hex and `apps/platformkit` still composes `design.Default()`; this
+delivery moves no client onto the loader, and the loader and the reference palette are what a client
+can be moved onto.
+
+**The gate now refuses what it cannot measure, and a client's shape reaches the document.** Measuring
+the delivery found three holes in it: an override carrying alpha is premultiplied, so a translucent
+foreground read as a darker opaque one and `transparent` — which parses — measured 21:1; a second
+font-stack regexp beside the client validator admitted stacks the package's own `ParseFontFamilies`
+refused, so they failed later, in the export; and the radius grammar lived in that regexp rather than
+beside `design.Shape`, and admitted `%`, which means a different shape per container and has no DTCG
+representation. A colour with alpha is now refused before anything is measured, a font stack is checked
+by the one parser the renderer uses, a radius by `Shape.Validate` in `px|rem`, and `design.Shape`
+decodes the spelling a person writes (`card-radius`). Shape then rides the rest of the way:
+`TokenMode` carries the three `--pk-radius-*` dimensions and `TokenExport.DTCG` emits them, pinned by
+digest, so the corners a client names reach `platformkit-mobile` instead of stopping at a Go value.
+Two refusals that had no failing case now have one: two clients on one seed are refused as one palette
+worn twice, and a third client whose own override breaks its own body role refuses the whole set rather
+than booting a roster with a client missing.
 
 **The reference application's personas are declared, and each is proven to do its own
 journeys and be refused the others'.** `apps/platformkit` seeds `coordinator`

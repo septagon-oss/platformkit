@@ -15,6 +15,8 @@ package httpx_test
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -22,6 +24,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -121,6 +124,10 @@ func TestAResourcesInProcessDoorAsksWhatItsRouteAsks(t *testing.T) {
 		runs, err := ask(entity, nil)
 		if err == nil || !strings.Contains(err.Error(), httpx.CodeAnonymous) {
 			t.Errorf("an unrecognised request through %q's List = %v, want a refusal naming %s", entity, err, httpx.CodeAnonymous)
+		}
+		var refusal *problem.Problem
+		if !errors.As(err, &refusal) || refusal.Status != http.StatusUnauthorized {
+			t.Errorf("an unrecognised request through %q's List = %v, want 401: nobody has signed in yet, which the route answers too", entity, err)
 		}
 		if runs != 0 {
 			t.Errorf("that refusal ran the read closure %d times, want never", runs)

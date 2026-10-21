@@ -261,8 +261,8 @@ func TestAKeyDiesAtItsExpiryAndNeverOutlivesTheCeiling(t *testing.T) {
 		t.Fatalf("age the key: %v", err)
 	}
 	expired := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(token))
-	if expired.Code != http.StatusForbidden {
-		t.Errorf("a key past its expires_at = %d %s, want 403 — an expiry nobody runs is a credential that never dies",
+	if expired.Code != http.StatusUnauthorized {
+		t.Errorf("a key past its expires_at = %d %s, want 401 — an expiry nobody runs is a credential that never dies",
 			expired.Code, expired.Body.String())
 	}
 	// The person's own session outlives the key, as it does for a revocation.

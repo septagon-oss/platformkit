@@ -39,7 +39,7 @@ func TestLoginRetryAfterRevocationNeverAnswersWithAnUnusableSession(t *testing.T
 	if logout.Code != http.StatusOK {
 		t.Fatalf("logout = %d %s", logout.Code, logout.Body.String())
 	}
-	if me := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(session)); me.Code != http.StatusForbidden {
+	if me := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(session)); me.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked session still authenticated: %d", me.Code)
 	}
 	retry := call(t, router, http.MethodPost, "/api/v1/auth/login", body, key)

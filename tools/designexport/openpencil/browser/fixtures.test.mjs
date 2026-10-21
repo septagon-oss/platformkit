@@ -66,6 +66,9 @@ func main() {
   if err != nil { panic(err) }
   for i := range tokens.Modes {
     tokens.Modes[i].Fonts = nil
+    // The adapter addresses a colour and a scale, never a CSS radius, so this
+    // fixture selects the kinds its assertions read and no others.
+    tokens.Modes[i].Dimensions = nil
     tokens.Modes[i].Colors = slices.DeleteFunc(tokens.Modes[i].Colors, func(token design.Token) bool {
       return !slices.Contains([]string{"--pk-color-text-primary", "--pk-color-surface-canvas"}, token.Name)
     })

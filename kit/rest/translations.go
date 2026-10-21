@@ -471,7 +471,7 @@ func (s Spec[T]) pageRows(ctx context.Context, in listInput, schema crud.Schema,
 	if err != nil {
 		return nil, "", Fault(err)
 	}
-	items, total, err := crud.List[T](tx, q)
+	items, total, err := s.list(ctx, tx, q)
 	if err != nil {
 		return nil, "", err
 	}
@@ -493,7 +493,7 @@ func (s Spec[T]) plainRows(ctx context.Context, in listInput, schema crud.Schema
 	if err != nil {
 		return nil, Fault(err)
 	}
-	items, total, err := crud.List[T](tx, q)
+	items, total, err := s.list(ctx, tx, q)
 	if err != nil {
 		return nil, Fault(err)
 	}
@@ -507,7 +507,7 @@ func (s Spec[T]) itemRow(ctx context.Context, id uuid.UUID, lang string) (*Trans
 	if err != nil {
 		return nil, "", err
 	}
-	e, err := crud.Get[T](tx, id)
+	e, err := s.get(ctx, tx, id)
 	if err != nil {
 		return nil, "", Fault(err)
 	}
@@ -531,7 +531,7 @@ func (s Spec[T]) oneRow(ctx context.Context, id uuid.UUID) (T, error) {
 	if err != nil {
 		return e, err
 	}
-	e, err = crud.Get[T](tx, id)
+	e, err = s.get(ctx, tx, id)
 	if err != nil {
 		return e, Fault(err)
 	}
