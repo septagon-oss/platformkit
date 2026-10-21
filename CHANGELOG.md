@@ -5,7 +5,9 @@
 **A task queue row says when the response is overdue.** `modules/task` declares
 `slaBreached` a summary field, so every app composing it shows *Response overdue* on
 the queue row, "Yes" or "No" exactly as the record does, read from the stored fact.
-The served catalogue's `summaryFields` for `task/task` gains `slaBreached`.
+The served catalogue's `summaryFields` for `task/task` gains `slaBreached`. Below 640px a
+generated list that declares summary fields stacks them under the row's name
+(`components.TableColumn.Stacked`), so a phone row reads them without scrolling sideways.
 
 **Composed pictures have a private image door.** `modules/picture` validates inert
 SVG templates and complete values, authorizes each read in the request tenant

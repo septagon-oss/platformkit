@@ -52065,11 +52065,49 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/task/queue_phone_layout_test.go",
+   "id": "modules/task/queue_phone_layout_test.go#TestTaskQueueKeepsTheOverdueResponseReadableAtPhoneWidth",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTaskQueueKeepsTheOverdueResponseReadableAtPhoneWidth",
+   "needs_db": true,
+   "pkg": "modules/task",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/task/queue_row_test.go",
    "id": "modules/task/queue_row_test.go#TestAQueueRowSaysWhenTheResponseIsOverdue",
    "kind": "go",
    "layer": "behaviour",
    "name": "TestAQueueRowSaysWhenTheResponseIsOverdue",
+   "needs_db": true,
+   "pkg": "modules/task",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/task/queue_stored_breach_test.go",
+   "id": "modules/task/queue_stored_breach_test.go#TestTaskQueueReadsTheStoredBreachInsteadOfTheDeadline",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTaskQueueReadsTheStoredBreachInsteadOfTheDeadline",
    "needs_db": true,
    "pkg": "modules/task",
    "round_named": false,
@@ -75400,7 +75438,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2024,
+  "files": 2026,
   "forge_runs": [
    408,
    413,
@@ -75434,7 +75472,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3246,
+   "behaviour": 3248,
    "composition": 454,
    "contract": 21,
    "journey": 101
@@ -75453,9 +75491,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3822,
+  "rows": 3824,
   "tiers": {
-   "merge": 2407,
+   "merge": 2409,
    "nightly": 101,
    "push": 1314
   },
@@ -75463,13 +75501,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1797,
+   "keep": 1799,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3466,
+   "keep": 3468,
    "keep-rewrite": 140,
    "merge": 216
   }

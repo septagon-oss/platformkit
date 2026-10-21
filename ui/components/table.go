@@ -4,6 +4,7 @@ package components
 // is a length this file recognizes or it is not emitted at all.
 
 import (
+	"slices"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -11,6 +12,8 @@ import (
 
 	"fmt"
 	"regexp"
+
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // tableWidth is the grammar of TableColumn.Width: a whole number and one of
@@ -116,14 +119,14 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 				sorter = h.A(append(control, h.Href(sortURL))...)
 			}
 			headCells = append(headCells, h.Th(
-				h.Class(clTableThSort.Compile()), g.Attr("scope", "col"),
+				h.Class(stacked(clTableThSort, c).Compile()), g.Attr("scope", "col"),
 				g.Attr("aria-sort", sortState),
 				g.If(width(c.Width) != "", g.Attr("style", "width:"+width(c.Width))),
 				sorter,
 			))
 			continue
 		}
-		cell := []g.Node{h.Class(clTableTh.Compile()), g.Attr("scope", "col")}
+		cell := []g.Node{h.Class(stacked(clTableTh, c).Compile()), g.Attr("scope", "col")}
 		if w := width(c.Width); w != "" {
 			cell = append(cell, g.Attr("style", "width:"+w))
 		}
@@ -135,6 +138,7 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 	if p.Compact {
 		tdClass = clTableTdC
 	}
+	lead := slices.IndexFunc(p.Columns, func(c TableColumn) bool { return !c.Stacked })
 	var bodyRows []g.Node
 	for i, r := range p.Rows {
 		rowClass := clTableRow
@@ -169,12 +173,8 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 			}
 			cells = append(cells, h.Td(h.Class(tdClass.Compile()), h.Label(h.Class(clTableSelection.Compile()), h.Input(input...))))
 		}
-		for _, c := range p.Columns {
-			v := ""
-			if raw, ok := r.Cells[c.Key]; ok && raw != nil {
-				v = fmt.Sprint(raw)
-			}
-			cell := tdClass
+		for i, c := range p.Columns {
+			cell := stacked(tdClass, c)
 			if c.Primary {
 				cell = cell.Merge(clTableTdStrong)
 			}
@@ -188,11 +188,9 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 			case "right":
 				td = append(td, g.Attr("style", "text-align:right"))
 			}
-			content := g.Node(g.Text(v))
-			if slots.Cell != nil {
-				if rich := slots.Cell(r, c); rich != nil {
-					content = rich
-				}
+			content := cellContent(r, c, slots)
+			if i == lead {
+				content = g.Group{content, stack(r, p.Columns, slots)}
 			}
 			bodyCell := h.Td(append(td, content)...)
 			if c.RowHeader {
@@ -251,4 +249,45 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 		),
 	)
 	return h.Div(wrap...)
+}
+
+// cellContent is what a column's cell shows for a row: the trusted slot's node
+// when it answers one, the cell's own text otherwise.
+func cellContent(r TableRow, c TableColumn, slots TableSlots) g.Node {
+	if slots.Cell != nil {
+		if rich := slots.Cell(r, c); rich != nil {
+			return rich
+		}
+	}
+	if raw, ok := r.Cells[c.Key]; ok && raw != nil {
+		return g.Text(fmt.Sprint(raw))
+	}
+	return g.Text("")
+}
+
+// stack lists a row's stacked columns, label then value, for the row's first
+// unstacked cell to carry below the sm breakpoint; nothing when no column is
+// stacked. The value is the node the column's own cell shows, so the two
+// cannot say different things.
+func stack(r TableRow, columns []TableColumn, slots TableSlots) g.Node {
+	var items []g.Node
+	for _, c := range columns {
+		if c.Stacked {
+			items = append(items, h.Div(h.Class(clTableStackItem.Compile()),
+				h.Dt(h.Class(clTableThBase.Compile()), g.Text(c.Label)),
+				h.Dd(h.Class(clTableStackValue.Compile()), cellContent(r, c, slots))))
+		}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return h.Dl(append([]g.Node{h.Class(clTableStack.Compile())}, items...)...)
+}
+
+// stacked adds the stacked column's breakpoint to a header or cell class.
+func stacked(cl style.ClassList, c TableColumn) style.ClassList {
+	if c.Stacked {
+		return cl.Merge(clTableStacked)
+	}
+	return cl
 }
