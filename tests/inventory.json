@@ -56993,6 +56993,25 @@
   {
    "area": "pkit",
    "evidence": "not-round-named",
+   "file": "pkit/engine_refusal_retry_test.go",
+   "id": "pkit/engine_refusal_retry_test.go#TestEnginePoolRefusalLeavesTheApplicationBuildable",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEnginePoolRefusalLeavesTheApplicationBuildable",
+   "needs_db": true,
+   "pkg": "pkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "pkit",
+   "evidence": "not-round-named",
    "file": "pkit/engine_refusal_type_test.go",
    "id": "pkit/engine_refusal_type_test.go#TestEnginePoolRefusalsKeepTheirDocumentedErrorType",
    "kind": "go",
@@ -75707,7 +75726,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2037,
+  "files": 2038,
   "forge_runs": [
    408,
    413,
@@ -75741,7 +75760,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3259,
+   "behaviour": 3260,
    "composition": 454,
    "contract": 21,
    "journey": 104
@@ -75760,9 +75779,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3838,
+  "rows": 3839,
   "tiers": {
-   "merge": 2419,
+   "merge": 2420,
    "nightly": 104,
    "push": 1315
   },
@@ -75770,13 +75789,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1810,
+   "keep": 1811,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3482,
+   "keep": 3483,
    "keep-rewrite": 140,
    "merge": 216
   }
