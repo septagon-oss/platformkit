@@ -360,5 +360,23 @@
     "plural": {
       "": "Nenhum campo alterado."
     }
+  },
+  "screens.command_saved": {
+    "references": [
+      "ui/screens/command_output.go"
+    ],
+    "translation": "A alteração foi guardada.",
+    "plural": {
+      "": "A alteração foi guardada."
+    }
+  },
+  "screens.continue": {
+    "references": [
+      "ui/screens/command_output.go"
+    ],
+    "translation": "Continuar",
+    "plural": {
+      "": "Continuar"
+    }
   }
 }

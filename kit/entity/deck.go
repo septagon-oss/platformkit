@@ -11,6 +11,8 @@ import (
 // Nil Queue reads all rows; Order must name a declared sortable scalar field.
 // Directions must contain an eligible row command or a down-only local skip.
 type DeckHints struct {
+	// Undoable requires every direction to declare an authoritative undo command.
+	Undoable   bool
 	Queue      []string
 	Order      string
 	Directions map[string]DeckDirection

@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"slices"
 
@@ -156,11 +157,15 @@ type Entry struct {
 // reachable by — so a document written before this key existed is read the same
 // way it always was.
 type Command struct {
-	Verb        string `json:"verb"`
-	Summary     string `json:"summary,omitempty"`
-	Description string `json:"description,omitempty"`
-	Collection  bool   `json:"collection,omitempty"`
-	Path        string `json:"path,omitempty"`
+	Bindings    map[string]string `json:"bindings,omitempty"`
+	Undo        string            `json:"undo,omitempty"`
+	HasResult   bool              `json:"hasResult,omitzero"`
+	Output      []entity.Field    `json:"output,omitempty"`
+	Verb        string            `json:"verb"`
+	Summary     string            `json:"summary,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Collection  bool              `json:"collection,omitempty"`
+	Path        string            `json:"path,omitempty"`
 	// Method is the verb the Path above answers, printed on the same rule as
 	// Path itself: absent means POST, which is what every command kit/rest
 	// mounts answers with and what a build that predates this key already sends.
@@ -178,6 +183,15 @@ type Command struct {
 	// runs. It sits last so the six keys a shell has always read keep their
 	// positions, and it is absent for every command nobody described.
 	Presentation *CommandPresentation `json:"presentation,omitempty"`
+}
+
+func authorizedUndo(commands []httpx.Command, verb string) string {
+	for _, command := range commands {
+		if command.Verb == verb && !command.Present.System {
+			return verb
+		}
+	}
+	return ""
 }
 
 // Describe is the catalog for this caller in the language its author wrote it
@@ -309,6 +323,7 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 	}
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
+			Bindings: maps.Clone(c.Bindings), Undo: authorizedUndo(r.Commands, c.Undo), HasResult: c.HasResult, Output: c.Output,
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
 			Collection: c.Collection, Path: derived(r, c), Method: verb(c), Fields: c.Fields,
 			Self:         c.Self,

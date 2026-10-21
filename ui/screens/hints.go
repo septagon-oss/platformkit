@@ -129,14 +129,16 @@ func commandDeviations(p entity.CommandHints) *CommandPresentation {
 // DeckPresentation is a list reading with caller-authorized gesture commands.
 // Directions remains an object when the caller may run none of the commands.
 type DeckPresentation struct {
+	Undoable   bool                                 `json:"undoable,omitzero"`
 	Queue      []string                             `json:"queue,omitempty"`
 	Order      string                               `json:"order"`
 	Directions map[string]DeckDirectionPresentation `json:"directions"`
 }
 
 // DeckDirectionPresentation carries either command copy or a down-only skip.
-// Undo capability is omitted until commands can return authoritative undo tokens.
+// Undo names the authorized command which accepts the returned private token.
 type DeckDirectionPresentation struct {
+	Undo    string `json:"undo,omitempty"`
 	Command string `json:"command,omitempty"`
 	Label   string `json:"label,omitempty"`
 	Tone    string `json:"tone,omitempty"`
@@ -149,9 +151,11 @@ func deckPresentation(d *entity.DeckHints, commands []httpx.Command) *DeckPresen
 		return nil
 	}
 	d = d.Clone()
-	out := &DeckPresentation{Queue: d.Queue, Order: d.Order, Directions: map[string]DeckDirectionPresentation{}}
+	out := &DeckPresentation{Queue: d.Queue, Order: d.Order, Directions: map[string]DeckDirectionPresentation{}, Undoable: d.Undoable}
 	allowed := map[string]bool{}
+	byName := map[string]httpx.Command{}
 	for _, c := range commands {
+		byName[c.Verb] = c
 		if !c.Present.System {
 			allowed[c.Verb] = true
 		}
@@ -163,7 +167,18 @@ func deckPresentation(d *entity.DeckHints, commands []httpx.Command) *DeckPresen
 		}
 		if allowed[v.Command] {
 			out.Directions[key] = DeckDirectionPresentation{Command: v.Command, Label: v.Label, Tone: v.Tone, Icon: v.Icon}
+			c := byName[v.Command]
+			if c.Undo != "" && allowed[c.Undo] && c.HasResult {
+				direction := out.Directions[key]
+				direction.Undo = c.Undo
+				out.Directions[key] = direction
+			} else {
+				out.Undoable = false
+			}
 		}
+	}
+	if len(out.Directions) == 0 {
+		out.Undoable = false
 	}
 	return out
 }

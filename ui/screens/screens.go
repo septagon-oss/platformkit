@@ -213,6 +213,9 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 		// AndNotAGuess is the failure, not a hypothetical.
 		if c.Collection {
 			collection := func(ctx context.Context, body []byte) (page.View, error) {
+				if c.HasResult {
+					return commandOutput(res, c, ctx, uuid.Nil, body, o, at, at)
+				}
 				if err := perform(c, ctx, uuid.Nil, body); err != nil {
 					return page.View{}, err
 				}
@@ -220,13 +223,13 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 			}
 			if len(c.Fields) == 0 {
 				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
+					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 					func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 						return collection(ctx, nil)
 					})
 			} else {
 				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
+					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 					func(ctx context.Context, _ page.Request, in *formInput) (page.View, error) {
 						return collection(ctx, in.RawBody)
 					})
@@ -234,6 +237,9 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 			continue
 		}
 		item := func(ctx context.Context, rowID uuid.UUID, body []byte) (page.View, error) {
+			if c.HasResult {
+				return commandOutput(res, c, ctx, rowID, body, o, at, at+"/"+rowID.String())
+			}
 			if err := perform(c, ctx, rowID, body); err != nil {
 				return page.View{}, err
 			}
@@ -241,14 +247,14 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 		}
 		if len(c.Fields) == 0 {
 			page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-				Path: rel + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
+				Path: rel + "/{id}/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 				func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
 					return item(ctx, in.ID, nil)
 				})
 			continue
 		}
 		page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-			Path: rel + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
+			Path: rel + "/{id}/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 			func(ctx context.Context, _ page.Request, in *itemFormInput) (page.View, error) {
 				return item(ctx, in.ID, in.RawBody)
 			})
