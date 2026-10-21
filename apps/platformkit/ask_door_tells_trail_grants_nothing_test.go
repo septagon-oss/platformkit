@@ -55,8 +55,8 @@ func TestTheJSONAskDoorTellsTheSameTrailAndGrantsNothing(t *testing.T) {
 	// 1. Anonymous: refused at the guard, for the reason the guard gives, and the
 	// ask wrote nothing. The refusal is the answer, not a half-write with it.
 	code, body := do(t, cfg, nil, http.MethodPost, acmeHost, jsonAskPath, asked)
-	if code != http.StatusForbidden || !strings.Contains(body, "AUTH_ANONYMOUS") {
-		t.Errorf("POST %s anonymously = %d %s, want 403 naming AUTH_ANONYMOUS", jsonAskPath, code, body)
+	if code != http.StatusUnauthorized || !strings.Contains(body, "AUTH_ANONYMOUS") {
+		t.Errorf("POST %s anonymously = %d %s, want 401 naming AUTH_ANONYMOUS", jsonAskPath, code, body)
 	}
 	if code, body = do(t, cfg, admin, http.MethodGet, acmeHost, noticePath, ""); code != http.StatusOK ||
 		strings.Contains(body, "Access requested") {

@@ -13,6 +13,11 @@ import { expect, test } from '@playwright/test';
 // key press: usually 0, which kept the defect "failing", and sometimes 2 or 3 pixels into the
 // animation, which turned CI red as "expected to fail, but passed" (PR 55, run 145). So the
 // read is polled until the region has moved.
+//
+// The subject is the sessions table: its six columns are compared down the page, so it stays a
+// table at every width and scrolls in its own region, and the sign-in below gives it a row. The
+// generated lists that declare a summary stack it under the row's name on a phone and fit, so
+// they no longer overflow here (ui/components/table.go, TableColumn.Stacked).
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
@@ -27,7 +32,7 @@ test.beforeEach(async ({ page }) => {
 
 test('a focused scroll region can be scrolled with the keyboard', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/app/task/tasks');
+  await page.goto('/app/auth/sessions');
 
   const region = page.locator('[data-component="table"]');
   await expect(region, 'the precondition: the region is in the tab order').toHaveAttribute('tabindex', '0');

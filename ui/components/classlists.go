@@ -173,9 +173,9 @@ var (
 
 	clButtonFull     = style.New().Width(style.SFull)
 	clButtonIconOnly = style.New().MinWidth(style.S11).MinHeight(style.S11)
-	// Loading indicators use the same foreground contract as their button.
-	// This keeps filled actions on-brand while preserving contrast for neutral
-	// secondary, outline, ghost, and link variants.
+	// Loading indicators use the same foreground contract as their button, so a
+	// spinner is its label's colour on its label's ground, which clButtonTone's own
+	// gated pair measures. Neutral variants keep theirs on the page surface.
 	clButtonLoadingVariant = map[string]style.ClassList{
 		"primary":   buttonLoadingIndicator(style.FgOnBrand),
 		"secondary": buttonLoadingIndicator(style.FgPrimary),
@@ -636,6 +636,23 @@ var (
 	clTableTdStrong  = style.New().FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
 	clTableSelection = style.New().Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
 				MinWidth(style.S11).MinHeight(style.S11).Cursor(style.CursorPointer)
+	// A stacked column is a column from sm up and nothing below it, where clTableStack lists it
+	// under the row's leading cell: the header's own small caps for the label, the cell's own
+	// size and weight for the value, so the phone row adds no type size the table lacks.
+	clTableStacked = style.New().Display(style.DisplayHidden).
+			Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayTableCell) })
+	clTableStack = style.New().Display(style.DisplayGrid).Gap(style.S1).MarginTop(style.S2).
+			Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
+	clTableStackItem  = style.New().Display(style.DisplayFlex).FlexWrap().Items(style.ItemsBaseline).GapX(style.S2)
+	clTableStackValue = style.New().FontWeight(style.FontNormal).TextColor(style.FgPrimary)
+	// clTableStackSortRow is the header row holding those controls; from sm up it is not drawn.
+	clTableStackSortRow = style.New().
+				Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
+	// clTableStackSort holds the stacked columns' sort controls in that row, one
+	// full-width control a line, below sm only: from sm up each sorts from its own header.
+	clTableStackSort = style.New().Display(style.DisplayFlex).FlexWrap().
+				Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
+
 	clDataList    = style.New().SpaceY(style.S4).MinWidth(style.S0).TextColor(style.FgPrimary)
 	clDataCount   = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
 	clDataHeading = style.New().Display(style.DisplayFlex).FlexWrap().Gap(style.S3).Items(style.ItemsCenter).
@@ -960,6 +977,7 @@ func ShellClassLists() []style.ClassList {
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowLink, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
+		clTableStacked, clTableStack, clTableStackItem, clTableStackValue, clTableStackSort, clTableStackSortRow,
 		// Generated lists compose DataList, including its empty and loading states.
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
