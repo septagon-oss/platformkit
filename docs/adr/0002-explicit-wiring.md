@@ -1,6 +1,15 @@
 # 2. Explicit wiring, no dependency-injection container
 
-Status: accepted, 2026-09-02
+Status: superseded by decision 0074 (2026-10-01), recorded 2026-10-10 — see [ADR 0022](0022-pkit-orchestrates-composition.md).
+
+## Superseded
+
+A plan validated before anything opens, whose errors name the module and the
+type, is the reviewable graph this record wanted. A 39-entry string registry
+with 12 module hooks is what "a literal list" became in the main client. This
+record's own overclaim: an omitted field of a keyed `Deps` literal compiles, so
+required values always needed validation. [ADR 0022](0022-pkit-orchestrates-composition.md)
+states the rule that replaces this one; the sections below are history.
 
 ## Context
 
