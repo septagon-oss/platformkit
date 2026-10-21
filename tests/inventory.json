@@ -2944,6 +2944,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/custom_page_catalogue_test.go",
+   "id": "apps/platformkit/custom_page_catalogue_test.go#TestCustomPagesUseTheCatalogueTheirApplicationServes",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestCustomPagesUseTheCatalogueTheirApplicationServes",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/dashboard_resource_names_test.go",
    "id": "apps/platformkit/dashboard_resource_names_test.go#TestTheDashboardCountsEveryKernelResourceInEachLanguage",
    "kind": "go",
@@ -38887,6 +38906,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/admin/internal/greeting_language_test.go",
+   "id": "modules/admin/internal/greeting_language_test.go#TestAnUnnamedCallerIsGreetedInTheRequestsLanguage",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnUnnamedCallerIsGreetedInTheRequestsLanguage",
+   "needs_db": true,
+   "pkg": "modules/admin/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/admin/internal/mount_test.go",
    "id": "modules/admin/internal/mount_test.go#TestEveryHandWrittenPageDeclaresTheAuthorizationItsDataNeeds",
    "kind": "go",
@@ -46427,6 +46465,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/change/internal/queue_count_language_test.go",
+   "id": "modules/change/internal/queue_count_language_test.go#TestTheQueueCountUsesTheReadersPlural",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheQueueCountUsesTheReadersPlural",
+   "needs_db": true,
+   "pkg": "modules/change/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/change/internal/service_test.go",
    "id": "modules/change/internal/service_test.go#TestLifecycle",
    "kind": "go",
@@ -51022,6 +51079,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestTheEmailFieldOfANoticeAsksForTheChannelItStoodFor",
+   "needs_db": true,
+   "pkg": "modules/notification/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/notification/internal/inbox_count_language_test.go",
+   "id": "modules/notification/internal/inbox_count_language_test.go#TestTheInboxCountUsesTheReadersPlural",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheInboxCountUsesTheReadersPlural",
    "needs_db": true,
    "pkg": "modules/notification/internal",
    "round_named": false,
@@ -70113,6 +70189,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/command_note_language_test.go",
+   "id": "ui/resource/command_note_language_test.go#TestCommandControlsExplainTheirInputInTheRequestsLanguage",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestCommandControlsExplainTheirInputInTheRequestsLanguage",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/commands_test.go",
    "id": "ui/resource/commands_test.go#TestEveryCommandTheCallerMayUseHasExactlyOneControl",
    "kind": "go",
@@ -80135,7 +80230,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2183,
+  "files": 2188,
   "forge_runs": [
    408,
    413,
@@ -80169,8 +80264,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3438,
-   "composition": 487,
+   "behaviour": 3442,
+   "composition": 488,
    "contract": 21,
    "journey": 112
   },
@@ -80188,23 +80283,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4058,
+  "rows": 4063,
   "tiers": {
-   "merge": 2503,
+   "merge": 2507,
    "nightly": 112,
-   "push": 1443
+   "push": 1444
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1938,
+   "keep": 1943,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3672,
+   "keep": 3677,
    "keep-rewrite": 170,
    "merge": 216
   }
