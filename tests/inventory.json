@@ -39315,6 +39315,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/account_request_expired_saturation_test.go",
+   "id": "modules/auth/internal/account_request_expired_saturation_test.go#TestConcurrentRequestsShareOneQuotaAfterASaturatedWindowExpires",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestConcurrentRequestsShareOneQuotaAfterASaturatedWindowExpires",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/account_request_isolation_test.go",
    "id": "modules/auth/internal/account_request_isolation_test.go#TestConfiguredAccountRequestsShareOneQuotaUnderConcurrency",
    "kind": "go",
@@ -75840,7 +75859,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2037,
+  "files": 2038,
   "forge_runs": [
    408,
    413,
@@ -75874,7 +75893,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3265,
+   "behaviour": 3266,
    "composition": 455,
    "contract": 21,
    "journey": 104
@@ -75893,9 +75912,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3845,
+  "rows": 3846,
   "tiers": {
-   "merge": 2423,
+   "merge": 2424,
    "nightly": 104,
    "push": 1318
   },
@@ -75903,13 +75922,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1810,
+   "keep": 1811,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3489,
+   "keep": 3490,
    "keep-rewrite": 140,
    "merge": 216
   }
