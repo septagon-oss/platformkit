@@ -17,7 +17,6 @@ class JourneyEnvironment(unittest.TestCase):
 set -eu
 port=43101
 second_port=43102
-mail_host=mailpit.journey.test
 mail_port=43103
 mail_url=http://localhost:43104
 mailpit_url=http://localhost:43105
@@ -27,7 +26,7 @@ second_password=second_fixture_password
 output_args=(--output /unused)
 npx() {
     printf '%s\n' "$PLATFORMKIT_E2E_URL" "$PLATFORMKIT_E2E_SECOND_URL" \
-        "$PLATFORMKIT_E2E_MAIL_URL" "$PLATFORMKIT_E2E_MAIL_HOST" "$PLATFORMKIT_MAIL_PORT" \
+        "$PLATFORMKIT_E2E_MAIL_URL" "$PLATFORMKIT_MAIL_PORT" \
         "$PLATFORMKIT_E2E_MAILPIT_URL" "$@"
 }
 '''
@@ -43,7 +42,7 @@ npx() {
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [
             "http://localhost:43101", "http://tenantb.localhost:43102",
-            "http://localhost:43104", "mailpit.journey.test", "43103", "http://localhost:43105",
+            "http://localhost:43104", "43103", "http://localhost:43105",
             "playwright", "test", "--output", "/unused",
         ])
 

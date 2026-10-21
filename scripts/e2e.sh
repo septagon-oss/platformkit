@@ -90,6 +90,10 @@ fi
 # other address - a CI job whose services answer by container name, not on localhost -
 # sets the three names itself, and wins over the derivation.
 mail_host="${PLATFORMKIT_E2E_MAIL_HOST:-localhost}"
+# Exported where it is resolved, not spelled again below: the application this run boots
+# takes this host as the server it mails out of, and the journey that injects a message to
+# prove the catcher kept it dials the same server in. One answer, two consumers.
+export PLATFORMKIT_E2E_MAIL_HOST="$mail_host"
 mail_port="${PLATFORMKIT_E2E_MAIL_PORT:-${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025}}"
 # PLATFORMKIT_MAIL_UI_PORT is the name this repository's own stack carried before
 # compose.yaml renamed the catcher's ports to PLATFORMKIT_MAILPIT_SMTP_PORT and
@@ -99,8 +103,8 @@ mailpit_url="${PLATFORMKIT_E2E_MAILPIT_URL:-http://${mail_host}:${PLATFORMKIT_MA
 # The same catcher, spelled for the specs that read an inbox: e2e/steps/inbox.ts opens
 # the URL in PLATFORMKIT_E2E_MAIL_URL rather than deriving one, and
 # e2e/inbox-pagination.spec.ts dials the SMTP host and port it injects a message
-# through. All three are exported below, after this run has resolved the catcher it
-# actually reached, so a spec never carries an address of its own.
+# through. The browser run receives all three, at the addresses this run resolved, so a
+# spec never carries an address of its own.
 #
 # The inbox URL is the API address above and not a second derivation over it, because
 # the probe above asks that one and a journey that reads a different one is reading
@@ -111,7 +115,11 @@ mailpit_url="${PLATFORMKIT_E2E_MAILPIT_URL:-http://${mail_host}:${PLATFORMKIT_MA
 # and the journeys that read Mailpit by its API address, which the recipe does name,
 # passed beside them. PLATFORMKIT_E2E_MAIL_URL still wins, for a catcher whose API and
 # inbox really are two addresses.
-mail_url="${PLATFORMKIT_E2E_MAIL_URL:-$mailpit_url}"
+#
+# The loopback address stands behind the resolved one as the answer for a run that named
+# the catcher's port and nothing else: it is spelled with the older port name above, so a
+# caller that carries only that name still reaches an inbox rather than an empty URL.
+mail_url="${PLATFORMKIT_E2E_MAIL_URL:-${mailpit_url:-http://127.0.0.1:${PLATFORMKIT_MAIL_UI_PORT:-8025}}}"
 
 # Asked for before the binary is built, not after the browser starts clicking. With
 # no catcher the application boots happily and logs the messages it will not send
@@ -554,7 +562,6 @@ fi
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
 	PLATFORMKIT_E2E_PORT="$port" \
 	PLATFORMKIT_E2E_MAIL_URL="$mail_url" \
-	PLATFORMKIT_E2E_MAIL_HOST="$mail_host" \
 	PLATFORMKIT_MAIL_PORT="$mail_port" \
 	PLATFORMKIT_E2E_SECOND_URL="http://tenantb.localhost:$second_port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
