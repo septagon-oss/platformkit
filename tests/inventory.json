@@ -38887,25 +38887,6 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
-   "file": "modules/audit/contracts/audittest/every_case_opens_a_fixture_test.go",
-   "id": "modules/audit/contracts/audittest/every_case_opens_a_fixture_test.go#TestEveryServiceCaseRunsAgainstAFixture",
-   "kind": "go",
-   "layer": "behaviour",
-   "name": "TestEveryServiceCaseRunsAgainstAFixture",
-   "needs_db": false,
-   "pkg": "modules/audit/contracts/audittest",
-   "round_named": false,
-   "rule": "",
-   "rule_present": false,
-   "tier": "push",
-   "unique_lines": null,
-   "unique_reach": [],
-   "unique_reach_kind": "symbols",
-   "verdict": "keep"
-  },
-  {
-   "area": "modules",
-   "evidence": "not-round-named",
    "file": "modules/audit/contracts/audittest/fake_test.go",
    "id": "modules/audit/contracts/audittest/fake_test.go#TestTheFakeIsAService",
    "kind": "go",
@@ -77511,6 +77492,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/ratchet_fixtures_name_their_committer_test.sh",
+   "id": "scripts/ratchet_fixtures_name_their_committer_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "ratchet_fixtures_name_their_committer_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/rehearsal_contention_test.sh",
    "id": "scripts/rehearsal_contention_test.sh",
    "kind": "shell_pin",
@@ -79612,8 +79613,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3442,
-   "composition": 456,
+   "behaviour": 3441,
+   "composition": 457,
    "contract": 21,
    "journey": 109
   },
