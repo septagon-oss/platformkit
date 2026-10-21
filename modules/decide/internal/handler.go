@@ -169,7 +169,7 @@ func readOperation[O any](surfaces httpx.Surfaces, op huma.Operation, auth httpx
 }
 
 func (s *Service) specs() (rest.Spec[*contracts.Question], rest.Spec[*contracts.Card]) {
-	questions := rest.Spec[*contracts.Question]{Module: "decide", Entity: "question", Path: "/questions", Read: contracts.PermissionRead, Write: contracts.PermissionManage,
+	questions := rest.Spec[*contracts.Question]{Name: rest.Name{One: "Question", Other: "Questions"}, Module: "decide", Entity: "question", Path: "/questions", Read: contracts.PermissionRead, Write: contracts.PermissionManage,
 		Operations: []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead}, Present: entity.EntryHints{PrimaryField: "title", Sortable: []string{"createdAt"}},
 		Source: &rest.ReadSource[*contracts.Question]{Get: func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Question, error) {
 			out, err := s.Question(ctx, tx, id)
@@ -199,7 +199,7 @@ func (s *Service) specs() (rest.Spec[*contracts.Question], rest.Spec[*contracts.
 			}
 			return out, page.Total, nil
 		}}}
-	cards := rest.Spec[*contracts.Card]{Module: "decide", Entity: "card", Path: "/cards", Read: contracts.PermissionVote, Write: contracts.PermissionVote,
+	cards := rest.Spec[*contracts.Card]{Name: rest.Name{One: "Card", Other: "Cards"}, Module: "decide", Entity: "card", Path: "/cards", Read: contracts.PermissionVote, Write: contracts.PermissionVote,
 		Operations: []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead}, RichTextFiles: s.images,
 		Present: entity.EntryHints{PrimaryField: "title", SummaryFields: []string{"note", "link"}, CoverField: "imageId", Sortable: []string{"position"},
 			Deck: &entity.DeckHints{Queue: []string{"unvoted:true"}, Order: "position", Undoable: true, Directions: map[string]entity.DeckDirection{

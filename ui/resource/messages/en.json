@@ -368,5 +368,23 @@
     "plural": {
       "": "No field changed."
     }
+  },
+  "screens.command_saved": {
+    "references": [
+      "ui/screens/command_output.go"
+    ],
+    "translation": "Your change has been saved.",
+    "plural": {
+      "": "Your change has been saved."
+    }
+  },
+  "screens.continue": {
+    "references": [
+      "ui/screens/command_output.go"
+    ],
+    "translation": "Continue",
+    "plural": {
+      "": "Continue"
+    }
   }
 }
