@@ -22,8 +22,8 @@ package httpx_test
 // never-mounted address, headers and body, at both shapes, and the gate was moved inside
 // the headers middleware to make that true. That fixture resolves the installation host to
 // an *operator* tenant, so nothing it asks ever reaches notHere. The second half — the road
-// round 8's table row "a door only the operator may open, asked at another tenant" walks —
-// has never been compared to anything.
+// the published table's row "a door only the operator may open, asked at another tenant"
+// describes — has never been compared to anything.
 //
 // This case compares it, at the installation host, over a real HTTP/1.1 server, at both
 // document types and both ends of the renderer's opt-out. The page a browser is shown is
@@ -290,10 +290,11 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 	}
 }
 
-// TestThePublicWriteLimitSaysWhenToComeBackAtBothEndsOfTheRenderer closes the fourth
-// review's Unverified: Retry-After was asserted for the refusal a renderer answered, and
-// round 8 changed what happens when the renderer declines. The limit is worth nothing to a
-// person at a form if the answer that reaches them stops saying when to try again.
+// TestThePublicWriteLimitSaysWhenToComeBackAtBothEndsOfTheRenderer asks the question the
+// renderer's opt-out leaves open: Retry-After was asserted for the refusal a renderer
+// answered, and a refusal the renderer declines is written by the fallback instead. The
+// limit is worth nothing to a person at a form if the answer that reaches them stops saying
+// when to try again.
 func TestThePublicWriteLimitSaysWhenToComeBackAtBothEndsOfTheRenderer(t *testing.T) {
 	for _, shape := range []struct {
 		name   string
