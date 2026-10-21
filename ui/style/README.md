@@ -12,9 +12,27 @@ class names and [emission_resolve.go](emission_resolve.go) for their declaration
 Two sheets sit beneath the utilities: `ThemeVars(light, dark)` renders a
 `design.Pair`'s tokens as custom properties with the attribute-over-preference
 cascade, and `RoleVars()` defines the `--pk-role-*` properties the utilities
-are written in terms of. An element rule no class can express reads the same
-scales back with `Value()` — `S8.Value()` is `"2rem"` — so an article and the
-page around it share one scale (see [modules/web](../../modules/web/README.md)).
+are written in terms of — declarations owned by
+[`design/roles.go`](../../design/roles.go) and rendered here, so the list that
+gates a client's `design.yaml` is the list this block is built from. A utility
+never references a theme token directly, so
+a role is the layer a browser paints and the layer a reader reads: the muted
+text roles mix `text-primary` toward `text-muted`, two colours the contrast gate
+certifies on every surface, rather than toward the surface one of them was
+authored against — `BodyRolePairs()` names the pairs the components compose and
+`design.Theme.CheckRoles` measures them, which [`ui/export`](../export/README.md)
+runs before it emits anything and `design.Client.Resolve` runs on a client's own
+file. `TintedRolePairs()` names the pairs whose
+background this layer derives rather than takes from a theme — the brand tint is
+`design.SoftTintPercent` of the accent mixed into the card surface, and the
+accent's own colour is painted on it — and the export gates those too, because a
+background mixed toward a foreground always reads worse than the surface it came
+from, and `EdgeRolePairs()` names the boundary a component draws itself with —
+`border-primary` on the card and the page canvas, at the graphic's 3:1, because a
+text field is filled with the surface it stands on and the line is what says where
+the field is. An element rule no class can express reads the
+same scales back with `Value()` — `S8.Value()` is `"2rem"` — so an article and
+the page around it share one scale (see [modules/web](../../modules/web/README.md)).
 `Measurements`, `ScaleValues`, `ShadowValues`, `EasingValues` and
 `TransitionValues` project the scales for design export.
 

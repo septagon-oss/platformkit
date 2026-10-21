@@ -229,8 +229,8 @@ func TestPermissionIsCheckedAgainstTheAuthorizer(t *testing.T) {
 		OperationID: "read-widget", Method: http.MethodGet, Path: "/widgets",
 	}, httpx.Permission("widget:read"), ok)
 
-	if got := get(t, router, at(api, "/widgets")).Code; got != http.StatusForbidden {
-		t.Errorf("anonymous caller got %d, want 403", got)
+	if got := get(t, router, at(api, "/widgets")).Code; got != http.StatusUnauthorized {
+		t.Errorf("anonymous caller got %d, want 401", got)
 	}
 
 	// An identity hook that could not answer is an outage, not an anonymous
@@ -281,8 +281,8 @@ func TestSignedInRequiresAPrincipalOfThisTenant(t *testing.T) {
 		OperationID: "me", Method: http.MethodGet, Path: "/me",
 	}, httpx.SignedIn(), ok)
 
-	if got := get(t, router, at(api, "/me")).Code; got != http.StatusForbidden {
-		t.Errorf("anonymous caller got %d, want 403", got)
+	if got := get(t, router, at(api, "/me")).Code; got != http.StatusUnauthorized {
+		t.Errorf("anonymous caller got %d, want 401", got)
 	}
 	f.signedIn()
 	if got := get(t, router, at(api, "/me")).Code; got != http.StatusOK {
@@ -336,7 +336,7 @@ func TestExpectedPrincipalChangeRefusesWritesBeforeAuthorization(t *testing.T) {
 	}
 	f.principal = nil
 	res := expectedPrincipalRequest(router, http.MethodPost, at(api, "/notes"), original.UserID.String())
-	if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "AUTH_ANONYMOUS:") {
+	if res.Code != http.StatusUnauthorized || !strings.Contains(res.Body.String(), "AUTH_ANONYMOUS:") {
 		t.Errorf("anonymous refusal lost precedence: %d %s", res.Code, res.Body)
 	}
 	if count := notes(t, f); count != 0 || calls != 0 || f.asked.Load() != 0 {

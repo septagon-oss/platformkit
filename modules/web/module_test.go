@@ -127,8 +127,13 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status %d: %s", status, body)
 	}
+	// The accent asserted below is what the paint issues for #b45309 in the dark:
+	// that colour reads 3.66:1 on the dark canvas, under the 4.5 the paint holds an
+	// accent at, so the page wears the nearest colour that clears the gate while the
+	// row keeps #b45309 — the stored value is asserted where it is stored, in
+	// modules/site, and what a visitor is shown is asserted here.
 	for _, want := range []string{
-		`data-theme="dark"`, `--pk-color-accent-default:#b45309`, "Acme Journal", "Notes from the workshop",
+		`data-theme="dark"`, `--pk-color-accent-default:#ca7e43`, "Acme Journal", "Notes from the workshop",
 		`href="/about"`, "Welcome home", "<strong>home</strong>", "<code>code</code>", `<title>Welcome home · Acme</title>`,
 	} {
 		if !strings.Contains(body, want) {
