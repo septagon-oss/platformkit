@@ -73,56 +73,21 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 					g.Attr("data-pk-select", "all"), g.Attr("aria-label", label))),
 		))
 	}
-	for _, c := range p.Columns {
+	lead := slices.IndexFunc(p.Columns, func(c TableColumn) bool { return !c.Stacked })
+	for i, c := range p.Columns {
+		// The leading header carries the stacked columns' sorts below sm, as the
+		// leading cell carries their values, so hiding a column hides no order.
+		var folded g.Node
+		if i == lead {
+			folded = stackedSorters(p, slots)
+		}
 		if sortable(c) {
-			sortState := "none"
-			if slots.SortState != nil {
-				switch state := slots.SortState(c); state {
-				case "ascending", "descending":
-					sortState = state
-				}
-			}
-			glyph := "↕"
-			switch sortState {
-			case "ascending":
-				glyph = "↑"
-			case "descending":
-				glyph = "↓"
-			}
-			control := []g.Node{
-				h.Class(clTableSortBtn.Compile()),
-				g.Attr("data-pk-sort", c.Key),
-				g.Text(c.Label),
-				h.Span(g.Attr("aria-hidden", "true"), g.Attr("data-pk-sort-icon", ""), g.Text(glyph)),
-			}
-			sortURL := ""
-			if slots.SortURL != nil {
-				sortURL = slots.SortURL(c)
-			}
-			if sortURL != "" {
-				enhancement := p.HTMXProps
-				enhancement.Get = sortURL
-				enhancement.Trigger = ""
-				control = append(control, htmxAttrs(enhancement)...)
-			}
-			if slots.SortButtonAttrs != nil {
-				control = append(control, slots.SortButtonAttrs(c)...)
-			}
-			// A server-sorted column is a link, because that is what it is: a
-			// different URL showing the same table in another order, which a
-			// person can open in a tab, bookmark, or reach with no JavaScript
-			// running at all. The hx-get above is an enhancement on top of the
-			// href, not the thing that makes the header work. Where there is no
-			// URL the sort is the page script's, and a button is right.
-			var sorter g.Node = h.Button(append(control, h.Type("button"))...)
-			if sortURL != "" {
-				sorter = h.A(append(control, h.Href(sortURL))...)
-			}
+			sorter, sortState := sortControl(p, c, slots)
 			headCells = append(headCells, h.Th(
 				h.Class(stacked(clTableThSort, c).Compile()), g.Attr("scope", "col"),
 				g.Attr("aria-sort", sortState),
 				g.If(width(c.Width) != "", g.Attr("style", "width:"+width(c.Width))),
-				sorter,
+				sorter, folded,
 			))
 			continue
 		}
@@ -130,7 +95,7 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 		if w := width(c.Width); w != "" {
 			cell = append(cell, g.Attr("style", "width:"+w))
 		}
-		headCells = append(headCells, h.Th(append(cell, g.Text(c.Label))...))
+		headCells = append(headCells, h.Th(append(cell, g.Text(c.Label), folded)...))
 	}
 	head = append(head, h.Tr(headCells...))
 
@@ -138,7 +103,6 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 	if p.Compact {
 		tdClass = clTableTdC
 	}
-	lead := slices.IndexFunc(p.Columns, func(c TableColumn) bool { return !c.Stacked })
 	var bodyRows []g.Node
 	for i, r := range p.Rows {
 		rowClass := clTableRow
@@ -249,6 +213,71 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 		),
 	)
 	return h.Div(wrap...)
+}
+
+// sortControl is a sortable column's header control and the aria-sort state its
+// th declares: "none" unless SortState answers ascending or descending.
+func sortControl(p TableProps, c TableColumn, slots TableSlots) (g.Node, string) {
+	sortState := "none"
+	if slots.SortState != nil {
+		switch state := slots.SortState(c); state {
+		case "ascending", "descending":
+			sortState = state
+		}
+	}
+	glyph := "↕"
+	switch sortState {
+	case "ascending":
+		glyph = "↑"
+	case "descending":
+		glyph = "↓"
+	}
+	control := []g.Node{
+		h.Class(clTableSortBtn.Compile()),
+		g.Attr("data-pk-sort", c.Key),
+		g.Text(c.Label),
+		h.Span(g.Attr("aria-hidden", "true"), g.Attr("data-pk-sort-icon", ""), g.Text(glyph)),
+	}
+	sortURL := ""
+	if slots.SortURL != nil {
+		sortURL = slots.SortURL(c)
+	}
+	if sortURL != "" {
+		enhancement := p.HTMXProps
+		enhancement.Get = sortURL
+		enhancement.Trigger = ""
+		control = append(control, htmxAttrs(enhancement)...)
+	}
+	if slots.SortButtonAttrs != nil {
+		control = append(control, slots.SortButtonAttrs(c)...)
+	}
+	// A server-sorted column is a link, because that is what it is: a
+	// different URL showing the same table in another order, which a
+	// person can open in a tab, bookmark, or reach with no JavaScript
+	// running at all. The hx-get above is an enhancement on top of the
+	// href, not the thing that makes the header work. Where there is no
+	// URL the sort is the page script's, and a button is right.
+	if sortURL != "" {
+		return h.A(append(control, h.Href(sortURL))...), sortState
+	}
+	return h.Button(append(control, h.Type("button"))...), sortState
+}
+
+// stackedSorters lists the sort controls of the sortable stacked columns, for
+// the leading header to carry below the sm breakpoint where those columns'
+// own headers are not drawn; nothing when no stacked column sorts.
+func stackedSorters(p TableProps, slots TableSlots) g.Node {
+	var controls []g.Node
+	for _, c := range p.Columns {
+		if c.Stacked && p.Sortable && c.Sortable {
+			sorter, _ := sortControl(p, c, slots)
+			controls = append(controls, sorter)
+		}
+	}
+	if len(controls) == 0 {
+		return nil
+	}
+	return h.Div(append([]g.Node{h.Class(clTableStackSort.Compile())}, controls...)...)
 }
 
 // cellContent is what a column's cell shows for a row: the trusted slot's node
