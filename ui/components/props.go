@@ -405,6 +405,12 @@ type TableColumn struct {
 	Primary   bool   `json:"primary,omitempty"` // emphasized identity cell
 	Width     string `json:"width,omitempty"`
 	Align     string `json:"align,omitempty"` // left, center, right
+	// Stacked folds the column into its row below the sm breakpoint: its header
+	// and cells are not drawn there; the row's first unstacked cell lists its
+	// label and value, and that column's header its sort control, so a phone
+	// reads and sorts every field without scrolling the table sideways. At sm
+	// and up it is an ordinary column.
+	Stacked bool `json:"stacked,omitzero"`
 }
 
 // TableRow represents a table data row.

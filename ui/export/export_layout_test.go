@@ -227,12 +227,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// printed by the refusal above the re-measure and copied from it; it covers the
 	// composed examples, stylesheet and attributions together.
 	//
-	// Two schema halves ride with it: a declared reading width reaches the exported
-	// schema of every component that states one, and an optional select gains a
-	// selectable empty value. Both are what the reader's language needs to word a
-	// form, and both land in the schema leaves of the export, so the digest covers
-	// them along with the attribution list the merged NOTICE carries.
-	if legacy.SHA256 != "c73b1a1cfef1cc120019c9514594cf7baef6fafff18158ec80c22bce7a6ead22" {
+	// The merged tree carries main's phone sort controls beside this branch's
+	// declared reading width and the optional select's selectable empty value. The
+	// digest below is this tree's measurement, printed by the refusal above the
+	// re-measure and copied from it; no leaf-by-leaf count is claimed across a merge.
+	if legacy.SHA256 != "87ec0ed74bb276cfccd4d98a6c18c86e339869758565638f490ddc31ca30cf81" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
