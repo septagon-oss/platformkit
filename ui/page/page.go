@@ -44,6 +44,12 @@ type View = document.View
 type Request struct {
 	// Path is the request's own path; a sidebar marks it current.
 	Path string
+	// Host is the authority the request arrived at, as *http.Request.Host carries it: no scheme,
+	// no path. A frame shows it when the tenant has no name of its own, because the address a
+	// person typed is the only name such an installation has. Read it through a rule that refuses
+	// anything that is not a host — this value comes from a request header, and a header is what
+	// anybody sends.
+	Host string
 	// Tenant is the one the host resolved to; the zero value when none did.
 	Tenant tenancy.Tenant
 	// Principal is who is calling, and SignedIn says whether anybody is.

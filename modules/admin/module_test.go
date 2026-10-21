@@ -593,7 +593,7 @@ func TestTheDashboardCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 	// The same page for a caller who may: the card is there, with the count its
 	// own list route would report.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if card := dashboardCard(body, "/app/note/notes"); !strings.Contains(card, "Notes 0 ") {
+	if card := dashboardCard(body, "/app/note/notes"); !strings.Contains(card, "Notes No notes yet. ") {
 		t.Errorf("the dashboard hides a card the caller may read: %s", body)
 	}
 }
@@ -683,12 +683,12 @@ func TestAnAnonymousBrowserIsSentToTheSignInForm(t *testing.T) {
 		t.Errorf("the sign-in form = %d", code)
 	}
 	// A program asking for JSON keeps the problem document.
-	if code, location := visit(t, router, "/api/v1/note/notes", "application/json"); code != http.StatusForbidden || location != "" {
-		t.Errorf("an anonymous API call = %d to %q, want 403", code, location)
+	if code, location := visit(t, router, "/api/v1/note/notes", "application/json"); code != http.StatusUnauthorized || location != "" {
+		t.Errorf("an anonymous API call = %d to %q, want 401", code, location)
 	}
 	// And so does a program asking for a page's URL without asking for a page.
-	if code, location := visit(t, router, "/app", "application/json"); code != http.StatusForbidden || location != "" {
-		t.Errorf("an anonymous JSON call to a page = %d to %q, want 403", code, location)
+	if code, location := visit(t, router, "/app", "application/json"); code != http.StatusUnauthorized || location != "" {
+		t.Errorf("an anonymous JSON call to a page = %d to %q, want 401", code, location)
 	}
 }
 
@@ -1099,7 +1099,7 @@ func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
 	// And the page that has counts keeps drawing them: this page's first answer
 	// is still the tenant's contents, not a panel about the caller's role.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if !strings.Contains(dashboardCard(body, "/app/note/notes"), "Notes 0 ") {
+	if !strings.Contains(dashboardCard(body, "/app/note/notes"), "Notes No notes yet. ") {
 		t.Error("the dashboard lost its counts for a caller who may read them")
 	}
 	if strings.Contains(body, "Ask your administrator to give you access") {

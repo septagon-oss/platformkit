@@ -101,7 +101,7 @@ func TestEmailSignupKeepsThePasswordAndRequiresExplicitVerification(t *testing.T
 	if res.Code != http.StatusOK || len(res.Result().Cookies()) != 0 {
 		t.Fatalf("verification status=%d cookies=%d", res.Code, len(res.Result().Cookies()))
 	}
-	if res := call(t, router, "GET", "/api/v1/auth/me", ""); res.Code != http.StatusForbidden {
+	if res := call(t, router, "GET", "/api/v1/auth/me", ""); res.Code != http.StatusUnauthorized {
 		t.Fatalf("verification established a session: %d", res.Code)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

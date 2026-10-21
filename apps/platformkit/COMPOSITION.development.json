@@ -10,6 +10,8 @@
         "usercontracts.Administration",
         "usercontracts.Granting",
         "filecontracts.Storage",
+        "secrets.Secrets",
+        "secrets.Keys",
         "auditcontracts.Plan",
         "tenancy.Policy",
         "sitecontracts.WriteGate",
@@ -76,6 +78,14 @@
           "from": "product"
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
         "product"
       ]
@@ -89,6 +99,14 @@
         {
           "contract": "rest.TranslationSource",
           "from": "product"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
@@ -183,6 +201,10 @@
         {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
+        },
+        {
+          "contract": "secrets.Secrets",
+          "from": "product"
         }
       ],
       "uses": [
@@ -195,7 +217,16 @@
           "from": "workspace"
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
+        "product",
         "user",
         "tenant",
         "workspace"
@@ -227,6 +258,14 @@
         {
           "contract": "rest.Gate",
           "from": "product"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
@@ -266,6 +305,14 @@
           "from": "product"
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
         "product",
         "tenant"
@@ -291,6 +338,14 @@
         {
           "contract": "webhookcontracts.Alerts",
           "from": ""
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
@@ -360,6 +415,14 @@
           "from": ""
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
         "product",
         "user",
@@ -385,6 +448,14 @@
         {
           "contract": "authcontracts.Auth",
           "from": "auth"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
@@ -480,6 +551,14 @@
           "from": "media"
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
         "product",
         "tenant",
@@ -517,6 +596,14 @@
           ]
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
         "product",
         "access"
@@ -536,6 +623,14 @@
         {
           "contract": "jobs.TenantLister",
           "from": "tenant"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
@@ -568,6 +663,14 @@
         {
           "contract": "httpx.Versions",
           "from": "history"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
@@ -615,6 +718,64 @@
       ]
     },
     {
+      "name": "subject",
+      "provides": [
+        "subjectcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
+          "contract": "filecontracts.Service",
+          "from": "file"
+        },
+        {
+          "contract": "notificationcontracts.Service",
+          "from": "notification"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "takes": [
+        {
+          "contract": "personaldata.Part",
+          "from": [
+            "user",
+            "notification",
+            "auth",
+            "scim",
+            "file",
+            "history",
+            "task",
+            "translation",
+            "content",
+            "audit",
+            "webhook",
+            "change"
+          ]
+        }
+      ],
+      "after": [
+        "user",
+        "tenant",
+        "notification",
+        "auth",
+        "scim",
+        "file",
+        "history",
+        "task",
+        "translation",
+        "content",
+        "audit",
+        "webhook",
+        "change"
+      ]
+    },
+    {
       "name": "admin",
       "needs": [
         {
@@ -627,6 +788,10 @@
         }
       ],
       "uses": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
         {
           "contract": "admincontracts.Signin",
           "from": "product"
@@ -646,6 +811,7 @@
       ],
       "after": [
         "product",
+        "user",
         "tenant",
         "auth"
       ],
@@ -664,6 +830,13 @@
       "name": "observer",
       "grants": [
         "task:read"
+      ]
+    },
+    {
+      "name": "subject_officer",
+      "grants": [
+        "subject:export",
+        "subject:erase"
       ]
     }
   ],

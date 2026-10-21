@@ -1,6 +1,7 @@
 package resource_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,6 +60,57 @@ func TestAGeneratedScreenFillsOneActionAndBoundsItsBodySizes(t *testing.T) {
 			t.Errorf("the generated %s's paragraphs use %d text sizes %v; the design floor allows two", name, len(sizes), sizes)
 		}
 	}
+}
+
+// TestAnEmptyGeneratedListDrawsNoParagraphSizeAListWithRowsDoesNot holds the list
+// with no rows to the sizes the same list draws with rows. The frame's chrome
+// takes one of the floor's two body sizes, so a body measured without the frame
+// can stay under two and still add the composed page's third; a subset of the
+// sizes a list with rows uses cannot.
+func TestAnEmptyGeneratedListDrawsNoParagraphSizeAListWithRowsDoesNot(t *testing.T) {
+	r := withCommands(floorCommands...)
+	rows := paragraphSizes(t, listPage(t, r))
+	empty := render(t, resource.List(r, opts, nil, 0, 1, "", false).Body)
+	said := false
+	for size, texts := range paragraphSizes(t, empty) {
+		said = said || slices.Contains(texts, "No notes yet.")
+		if _, ok := rows[size]; !ok {
+			t.Errorf("the empty generated list sets %q in %s, which the list with rows never uses %v", texts, size, rows)
+		}
+	}
+	if !said {
+		t.Errorf("no paragraph of the list with no rows says it is empty:\n%s", around(empty, "<table"))
+	}
+}
+
+// paragraphSizes groups a page's paragraphs by the text-size class they carry,
+// with "inherited" for a paragraph that names none, and keeps each one's text.
+func paragraphSizes(t *testing.T, page string) map[string][]string {
+	t.Helper()
+	doc, err := html.Parse(strings.NewReader(page))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sizes := map[string][]string{}
+	for n := range doc.Descendants() {
+		if n.Type != html.ElementNode || n.Data != "p" {
+			continue
+		}
+		size := "inherited"
+		for _, class := range classes(n) {
+			if textSizes[class] {
+				size = class
+			}
+		}
+		var text strings.Builder
+		for d := range n.Descendants() {
+			if d.Type == html.TextNode {
+				text.WriteString(d.Data)
+			}
+		}
+		sizes[size] = append(sizes[size], strings.TrimSpace(text.String()))
+	}
+	return sizes
 }
 
 func classes(n *html.Node) []string {

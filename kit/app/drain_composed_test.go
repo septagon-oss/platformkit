@@ -20,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 )
 
 // drainRelease is the shape a second release of a module takes when it fills a
@@ -39,7 +40,9 @@ INSERT INTO drain_rows (id, nickname) SELECT g, 'row ' || g FROM generate_series
 UPDATE drain_rows SET marked = marked + 1 WHERE id IN (SELECT id FROM batch)`)},
 		"000003_note.up.sql": {Data: []byte("ALTER TABLE drain_rows ADD COLUMN note text")},
 	}
-	return module.Module{Name: "drainmod", Migrations: files}, files
+	return module.Module{Name: "drainmod", Migrations: files,
+		// The row's key is a bigint and nothing else on it is a uuid.
+		PersonalData: personaldata.None("no uuid column at all: drain_rows is keyed by a bigint")}, files
 }
 
 // TestTheWorkerDrainsWhatTheMigrationLeftBehind walks the convergence the README
@@ -54,7 +57,8 @@ func TestTheWorkerDrainsWhatTheMigrationLeftBehind(t *testing.T) {
 
 	// An installation one release behind: the module's table is applied, so the
 	// owner has history and the data file is a drain over a table with readers.
-	history := module.Module{Name: mod.Name, Migrations: fstest.MapFS{"000001_rows.up.sql": files["000001_rows.up.sql"]}}
+	history := module.Module{Name: mod.Name, Migrations: fstest.MapFS{"000001_rows.up.sql": files["000001_rows.up.sql"]},
+		PersonalData: mod.PersonalData}
 	if err := db.Migrate(t.Context(), cfg.Database.MigrateURL, MigrationSources([]module.Module{history})...); err != nil {
 		t.Fatalf("the previous release: %v", err)
 	}

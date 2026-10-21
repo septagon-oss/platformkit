@@ -182,7 +182,7 @@ func TestDeliveryAuthorizesBeforeWarmBytesAndHTTPValidators(t *testing.T) {
 		}
 	}
 	before := source.calls.Load()
-	if w := request("GET", "a.test", path, nil, false); w.Code != 403 {
+	if w := request("GET", "a.test", path, nil, false); w.Code != 401 {
 		t.Fatalf("anonymous %d", w.Code)
 	}
 	if source.calls.Load() != before {
