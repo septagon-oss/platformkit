@@ -1,10 +1,10 @@
 // Package module defines what a module is.
 //
-// A module is a plain Go package that exports a Module value. main constructs
-// each one with its typed dependencies, in dependency order, and passes the
-// list to app.New. There is no registry to enrol in, no group to join and no
-// reflection to resolve: the wiring graph is the argument list, and the
-// compiler checks it. See docs/adr/0002.
+// A module is a plain Go package that exports a Module value, built by its one
+// constructor, New(Deps). An application composes modules with pkit,
+// pkit.NewApp(name).Use(...): each declares what it provides and needs, and pkit
+// resolves and checks the whole plan before anything opens. There is no init(),
+// no registry addressed by string and no discovery. See docs/adr/0022.
 //
 // The manifest below is what the kernel needs to know about a module that it
 // cannot learn from a function call: the permissions it defines, the events it

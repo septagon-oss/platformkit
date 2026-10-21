@@ -9,8 +9,10 @@ proposing an abstraction, [trace an existing consumer](CONTRIBUTING.md#trace-an-
 [Architecture](ARCHITECTURE.md) owns the implementation map; start UI work at its
 [entity and presentation contracts](ARCHITECTURE.md#entity-and-presentation-contracts).
 
-Module contracts live in `contracts/`, implementations in `internal/`, and
-application composition in [apps/platformkit/modules.go](apps/platformkit/modules.go).
+Module contracts live in `contracts/` and implementations in `internal/`. Each
+module's `provider.go` declares it to pkit and calls its one `New(Deps)`, and the
+reference application composes modules in [apps/platformkit/app.go](apps/platformkit/app.go)
+with `pkit.NewApp(...).Use(...)` ([ADR 0022](docs/adr/0022-pkit-orchestrates-composition.md)).
 Use the existing `design/` and `ui/` owners. Keep one logical change in this
 repository; keep secrets, local configuration and generated artifacts out of commits.
 
