@@ -68528,6 +68528,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/generated_screen_floor_test.go",
+   "id": "ui/resource/generated_screen_floor_test.go#TestAnEmptyGeneratedListDrawsNoParagraphSizeAListWithRowsDoesNot",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnEmptyGeneratedListDrawsNoParagraphSizeAListWithRowsDoesNot",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/help_language_test.go",
    "id": "ui/resource/help_language_test.go#TestAFormDrawsItsLabelAndItsHelpLineInOneLanguage",
    "kind": "go",
@@ -72365,6 +72384,66 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
+   "file": "e2e/empty-list-column-floor.spec.ts",
+   "id": "e2e/empty-list-column-floor.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "task empty lists retain their readable column headings in both languages",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
+   "file": "e2e/empty-list-reading-floor.spec.ts",
+   "id": "e2e/empty-list-reading-floor.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "task empty guidance matches its catalogue and keeps the generated list body size",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
+   "file": "e2e/empty-list-visible-headings.spec.ts",
+   "id": "e2e/empty-list-visible-headings.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "task empty list column headings remain visible in both languages and widths",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "nightly",
    "unique_lines": null,
    "unique_reach": [],
@@ -77911,7 +77990,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2077,
+  "files": 2080,
   "forge_runs": [
    408,
    413,
@@ -77945,10 +78024,10 @@
    578
   ],
   "layers": {
-   "behaviour": 3366,
+   "behaviour": 3367,
    "composition": 454,
    "contract": 21,
-   "journey": 101
+   "journey": 104
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -77964,23 +78043,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 3942,
+  "rows": 3946,
   "tiers": {
    "merge": 2410,
-   "nightly": 101,
-   "push": 1431
+   "nightly": 104,
+   "push": 1432
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1832,
+   "keep": 1835,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3556,
+   "keep": 3560,
    "keep-rewrite": 170,
    "merge": 216
   }
