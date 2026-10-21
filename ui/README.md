@@ -131,6 +131,23 @@ Generated resource commands use outline buttons so the toolbar's Edit or New
 action remains the screen's filled action; each command retains its named native
 POST form and submit button.
 
+Each argument has a deterministic DOM ID scoped to its command action (including
+the record path), locale and field name. In `resource.commandFormFor`, the format
+is `pk-command-<hex(action)>-<hex(locale)>-field-<hex(field)>`; map entries append
+`-key-<hex(key)>`. Each segment encodes the original UTF-8 bytes separately, so
+punctuation, empty locales and feedback suffixes cannot alias another control.
+Ordering and translated display words do not affect identity. The same command
+instance rendered again retains its IDs; the generated screen offers it once.
+
+**Reused** — `forms.ControlProps.ID`, the existing hex field-identity convention,
+and component-owned label, help and error references. **Added** — command scope
+for ordinary arguments, hidden locale controls and map entries. **Made reusable**
+— every generated command inherits this scope without changing submitted names,
+revision values or public control signatures. Lone controls retain their
+name-derived fallback IDs. The [identity cases](resource/command_identity_test.go)
+check complete documents and stable IDs; forms' existing instance tests check
+scoped error references, since command forms do not currently render errors.
+
 - **Reused** — the existing `components.Button` outline variant, `design.ResolveColors`,
   shipped palettes and resource rendering fixtures.
 - **Added** — the outline choice for generated command submits and assertions for
