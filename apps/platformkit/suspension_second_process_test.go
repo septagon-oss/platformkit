@@ -56,8 +56,8 @@ func TestASuspensionThroughTheRouteStopsTheOtherProcessServingTheHost(t *testing
 
 	// Both processes resolve the host and believe it.
 	for _, c := range []config.Config{cfg, other} {
-		if code, body = do(t, c, nil, http.MethodGet, globexHost, tasksPath, ""); code != http.StatusForbidden {
-			t.Fatalf("an anonymous list at globex on %s = %d %s, want 403: the host is served", c.Server.Addr, code, body)
+		if code, body = do(t, c, nil, http.MethodGet, globexHost, tasksPath, ""); code != http.StatusUnauthorized {
+			t.Fatalf("an anonymous list at globex on %s = %d %s, want 401: the host is served", c.Server.Addr, code, body)
 		}
 	}
 

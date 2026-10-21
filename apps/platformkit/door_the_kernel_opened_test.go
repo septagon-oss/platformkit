@@ -15,7 +15,7 @@ package main
 //
 // 1. the door admits a caller who is nobody. `AnyCredential` is not `Public`,
 // and the kind exists precisely because the principal check still has to
-// run first. Measured: anonymous is 403 `AUTH_ANONYMOUS` today, and a
+// run first. Measured: anonymous is 401 `AUTH_ANONYMOUS` today, and a
 // session is 200 — so the case cannot be satisfied by refusing everybody,
 // which is the shape a refusal-for-everybody cure would have had.
 // 2. the door belongs to a tenant. A key is minted inside one tenant and its
