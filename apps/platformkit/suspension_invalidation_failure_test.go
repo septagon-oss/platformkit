@@ -56,8 +56,8 @@ func TestASuspensionCannotReportCompleteSuccessWhenInvalidationFails(t *testing.
 	}
 	id := field(t, body, "id")
 	for _, c := range []config.Config{cfg, other} {
-		if code, body = do(t, c, nil, http.MethodGet, globexHost, tasksPath, ""); code != http.StatusForbidden {
-			t.Fatalf("warm the served host on %s = %d %s, want 403", c.Server.Addr, code, body)
+		if code, body = do(t, c, nil, http.MethodGet, globexHost, tasksPath, ""); code != http.StatusUnauthorized {
+			t.Fatalf("warm the served host on %s = %d %s, want 401", c.Server.Addr, code, body)
 		}
 	}
 

@@ -27,7 +27,7 @@ func TestALiveRefreshCannotReadTheRegionWithoutItsSession(t *testing.T) {
 		}
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-		if rec.Code != http.StatusForbidden {
+		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("anonymous fetch with headers %v answered %d: %s",
 				headers, rec.Code, firstLine(rec.Body.String()))
 		}

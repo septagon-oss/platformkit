@@ -24,7 +24,7 @@ func TestADenialWithSomebodyToAttributeItToIsHandedToTheComposition(t *testing.T
 	}, httpx.Permission("billing:read"), ok)
 
 	// Anonymous: refused, and nothing is handed over.
-	if res := request(t, router, http.MethodGet, at(api, "/billing"), host); res.Code != http.StatusForbidden {
+	if res := request(t, router, http.MethodGet, at(api, "/billing"), host); res.Code != http.StatusUnauthorized {
 		t.Fatalf("an anonymous read answered %d", res.Code)
 	}
 	if len(f.denials) != 0 {

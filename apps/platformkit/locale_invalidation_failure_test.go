@@ -71,8 +71,8 @@ func TestALocaleSetCannotReportCompleteSuccessWhenInvalidationFails(t *testing.T
 	id := field(t, body, "id")
 	// Warm the resolution the way a served host warms it, so the close the route
 	// owes is one that is actually sitting in the store.
-	if code, body = do(t, cfg, nil, http.MethodGet, globexHost, tasksPath, ""); code != http.StatusForbidden {
-		t.Fatalf("warm the served host = %d %s, want 403", code, body)
+	if code, body = do(t, cfg, nil, http.MethodGet, globexHost, tasksPath, ""); code != http.StatusUnauthorized {
+		t.Fatalf("warm the served host = %d %s, want 401", code, body)
 	}
 
 	locale := `{"default":"pt-PT","supported":["en","pt-PT"]}`
