@@ -181,8 +181,8 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 		// A refusal of a region read is the same case and used not to be drawn that
 		// way: the refresh that found the row gone, the caller refused or the service
 		// down got a whole document dropped into the element that was showing the rows,
-		// which is a page inside a page and no sentence either. The refusal is the
-		// region's new contents, in the element that asked for it.
+		// which is a page inside a page and no sentence either. The answer is a fragment
+		// now; htmx-config.js decides whether a refusal's fragment is swapped into it.
 		var out *httpx.Page
 		if regionRequested(ctx) && (len(v.Live) > 0 || status >= http.StatusBadRequest) {
 			out, err = RenderFragment(g.Group(v.Body), status)
