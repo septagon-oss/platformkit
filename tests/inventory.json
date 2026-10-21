@@ -39353,6 +39353,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/account_request_saturated_concurrency_test.go",
+   "id": "modules/auth/internal/account_request_saturated_concurrency_test.go#TestConcurrentRequestsKeepASaturatedAccountWindow",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestConcurrentRequestsKeepASaturatedAccountWindow",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/account_request_saturated_window_test.go",
    "id": "modules/auth/internal/account_request_saturated_window_test.go#TestASaturatedAccountCounterRestartsOnlyAfterItsConfiguredWindow",
    "kind": "go",
@@ -75742,7 +75761,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2033,
+  "files": 2034,
   "forge_runs": [
    408,
    413,
@@ -75776,7 +75795,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3263,
+   "behaviour": 3264,
    "composition": 455,
    "contract": 21,
    "journey": 101
@@ -75795,9 +75814,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3840,
+  "rows": 3841,
   "tiers": {
-   "merge": 2422,
+   "merge": 2423,
    "nightly": 101,
    "push": 1317
   },
@@ -75805,13 +75824,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1806,
+   "keep": 1807,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3484,
+   "keep": 3485,
    "keep-rewrite": 140,
    "merge": 216
   }
