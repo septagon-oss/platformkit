@@ -108,13 +108,16 @@ fi
 budget_files='loc-budget.json packages-budget.json'
 	# Nothing above needs history: a ceiling, a removed bucket and a changed measurement are all read
 	# from two files at the base, which is why a one-commit CI checkout answers them after fetching that
-	# one commit by name. Excusing a raise is the one read that walks, so the shallow window CI fetches
-	# (`fetch-depth: <n>`, see .gitea/workflows/ci.yml) has to reach the fork point before this point is
-	# passed. It can stop above it — the base then arrives as an island of one commit, fetched by SHA —
-	# and the walk still answers, over the gap: it names commits that never touched a budget file and
-	# misses ones that did. A shallow checkout where git cannot say where the base and HEAD diverge
-	# fails here, by name, rather than reading a range it never fetched.
-	if [ "$(git rev-parse --is-shallow-repository)" = true ] && ! git merge-base "$base" HEAD >/dev/null 2>&1; then
+	# one commit by name. Excusing a raise is the one read that walks, so a shallow window (`fetch-depth:
+	# <n>`, see .gitea/workflows/ci.yml) has to reach the fork point before this point is passed — but only
+	# where a raise stands. A checkout with nothing to excuse asks the walk for nothing: its verdict is in
+	# the two files already, and a one-commit checkout of a branch that lowered a ceiling or moved no
+	# number at all is an ordinary CI run, its base an island of one commit fetched by SHA. Where a raise
+	# does stand, a window that stops above the fork point fails here, by name, rather than excusing growth
+	# from a range it never fetched: the walk answers over such a gap, and the answer it gives names commits
+	# that never touched a budget file and misses ones that did, which is not a footing for a ceiling.
+	if [ -n "$raised" ] && [ "$(git rev-parse --is-shallow-repository)" = true ] \
+		&& ! git merge-base "$base" HEAD >/dev/null 2>&1; then
 		echo 'budget ratchet: a raise is excused only by the commits that carry it, and this shallow checkout cannot find where the base and HEAD diverge' >&2
 		exit 2
 	fi
