@@ -1,0 +1,8 @@
+# A context keyword is a CSS word, not a family: the package's own parser refuses
+# it, so a client may not write one either.
+slug: contextual
+seed:
+  sector: health
+  name: Contextual
+typography:
+  display: inherit

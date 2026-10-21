@@ -14,7 +14,7 @@ import (
 func (r Resource) reading(o Options) entity.EntryHints {
 	p := o.Words(r.Schema).Entry(r.Present)
 	p.Singular = cmp.Or(p.Singular, strings.ToLower(display.Humanize(r.Schema.Entity)))
-	p.Plural = cmp.Or(p.Plural, p.Singular+"s")
+	p.Plural = cmp.Or(p.Plural, display.Plural(p.Singular))
 	return p
 }
 

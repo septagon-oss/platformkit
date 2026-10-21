@@ -11,7 +11,9 @@ logged, which is what a development machine wants.
 
 Compose it with `notification.Deps{Recipients, Senders, Providers, Mailer, Hosts,
 Secure}`: the mailer is `providers/gomail` — `gomail.New(gomail.Config{…})` over
-`config.example.yaml`'s `mail` section (password through `PLATFORMKIT_MAIL_PASSWORD`),
+`config.example.yaml`'s `mail` section, with the password read through `kit/secrets`
+under the name `mail.password` — `PLATFORMKIT_MAIL_PASSWORD` on a laptop, a mounted
+file or an OpenBao mount in a deployment that has one —
 the dependency the register names — or `NewMailbox()`, the in-memory one, and
 `Senders` and `Providers` may each be nil — every nil is a named refusal inside the
 decision rather than a surprise at send time, and a deployment with no `Senders` speaks
@@ -240,9 +242,11 @@ What this module does not do, stated here rather than only in the branch that le
   from a screen and an administrator cannot set a tenant's sender from anywhere but Go. The
   same is true of the grant: nothing in this repository implements `contracts.GrantChecker`,
   whose implementation is a few lines over the auth module's `Permissions`.
-- **No templates per event per locale, and no HTML alternative.** `internal/templates` holds
-  one text template, `contracts.Message.HTML` and `Lang` are read by the carrier and written
-  by nobody, and `internal/mail.go` sets `Lang: "en"`; locale is the product's copy table.
+- **No templates per event per locale.** `internal/templates` holds one notice in two parts:
+  the plain text and its HTML alternative, which carries the same words and the link as an
+  anchor on the tenant's host. `internal/mail.go` sets `Lang: "en"`; locale is the product's
+  copy table. The other channels' carriers are handed the text alone: `contracts.Delivery.HTML`
+  is written by nobody, because no provider in this repository shows HTML.
 - **Mail and push are the carriers that reach a device.** The module can host a carrier
   for any channel — `internal.Carrier` asks it and closes the ledger row around the answer —
   and `contracts.Provider` is the shape. `Deps.Push` is how a `kit/push` adapter becomes two

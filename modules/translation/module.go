@@ -21,6 +21,7 @@ package translation
 import (
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/translation/contracts"
 	"github.com/septagon-oss/platformkit/modules/translation/internal"
@@ -56,10 +57,22 @@ type Deps struct {
 func New(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.Sources, deps.Translator)
 	return svc, module.Module{
-		Name:          "translation",
-		Migrations:    Migrations.Files,
-		Adopts:        Migrations.Adopts,
-		RulesFrom:     Migrations.RulesFrom,
+		Name:       "translation",
+		Migrations: Migrations.Files,
+		Adopts:     Migrations.Adopts,
+		RulesFrom:  Migrations.RulesFrom,
+		// The text an erasure reaches, and the two uuids it does not. A translation
+		// is a field of somebody else's record, so `record_id` names a row of another
+		// module and no person; `translator_id` names the person who wrote the text,
+		// and `value`/`source_text` are the columns an identifier was copied into —
+		// `source_text` is a copy of another module's field, address and all. The
+		// answer this module gives for those two columns is internal/personaldata.go.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:      "translations",
+			About:     []string{"translator_id"},
+			Text:      []string{"value", "source_text"},
+			NotPerson: []string{"record_id"},
+		}),
 		Permissions:   nil,
 		Declared:      contracts.Events,
 		Subscriptions: nil,

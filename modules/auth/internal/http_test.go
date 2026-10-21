@@ -310,8 +310,8 @@ func TestSigningInAndOut(t *testing.T) {
 	if got := (&http.Response{Header: res.Header()}).Cookies(); len(got) == 0 || got[0].MaxAge >= 0 {
 		t.Errorf("logout did not clear the cookie: %v", got)
 	}
-	if res = call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(session)); res.Code != http.StatusForbidden {
-		t.Errorf("me after logout = %d %s, want 403", res.Code, res.Body.String())
+	if res = call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(session)); res.Code != http.StatusUnauthorized {
+		t.Errorf("me after logout = %d %s, want 401", res.Code, res.Body.String())
 	}
 }
 
@@ -591,7 +591,7 @@ func TestChangingAPasswordEndsTheOtherSessionsAndNotThisOne(t *testing.T) {
 	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(here)); res.Code != http.StatusOK {
 		t.Errorf("the session that asked for the change was ended: %d", res.Code)
 	}
-	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(elsewhere)); res.Code != http.StatusForbidden {
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(elsewhere)); res.Code != http.StatusUnauthorized {
 		t.Errorf("the other session survived the change: %d", res.Code)
 	}
 }
@@ -635,7 +635,7 @@ func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
 		t.Fatalf("the reset = %d %s, want 200", reset.Code, reset.Body.String())
 	}
 	// Every session, including one opened before any of this.
-	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(live)); res.Code != http.StatusForbidden {
+	if res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(live)); res.Code != http.StatusUnauthorized {
 		t.Errorf("a session survived a reset: %d", res.Code)
 	}
 	// And the token is spent.

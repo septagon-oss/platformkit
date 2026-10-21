@@ -1,0 +1,306 @@
+package design
+
+import (
+	"fmt"
+	"math"
+)
+
+// The two contrast floors this package gates, both from WCAG 2.2. MinContrast is
+// SC 1.4.3, the ratio text below 18pt must reach the surface it sits on.
+// MinContrastGraphic is SC 1.4.11, the ratio a graphical object must reach: the
+// paint whose job is to be seen rather than read — a focus ring, and the line a
+// component draws itself with. A field's border is the standard's own worked
+// example, and it is not decoration; edgeRolePairs in roles.go names the pair and
+// bodyContrast below measures the token behind it. The standard asks less of a
+// ring or an edge than of a sentence, and a gate that asked the same of both would
+// refuse a ring nobody could mistake for text. FromSeed refuses its own output at
+// these floors and so refuses a client's named token at them: one gate, applied to
+// a generated theme and an override alike.
+const (
+	MinContrast        = 4.5
+	MinContrastGraphic = 3.0
+)
+
+// Luminance returns the WCAG 2.2 relative luminance of an sRGB colour: each
+// channel linearised, then weighted 0.2126/0.7152/0.0722. The result is in
+// [0,1] for an opaque input; a transparent channel contributes as the standard
+// defines it, so a colour composited over a known backdrop is the caller's job.
+func Luminance(c SRGBA) float64 {
+	var sum float64
+	for i, weight := range [...]float64{0.2126, 0.7152, 0.0722} {
+		sum += weight * linearChannel(c[i])
+	}
+	return sum
+}
+
+// Contrast returns the WCAG 2.2 contrast ratio of two colours: 1 when they are
+// identical, 21 between black and white. It is symmetric, and it reads the
+// channels it is given, so an alpha-blended colour must be composited first.
+func Contrast(a, b SRGBA) float64 {
+	la, lb := Luminance(a), Luminance(b)
+	if lb > la {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+// linearChannel applies WCAG 2.2's own piecewise linearisation. The break is the
+// standard's literal 0.03928, not the sRGB transfer function's 0.04045 (which is
+// what the pk-design ancestor this is ported from uses): over the 256 values one
+// 8-bit channel can take, no value falls between them — 10/255 = 0.039216 is
+// below both and 11/255 = 0.043137 is above both — so the two agree on every
+// colour a theme can hold, and TestWCAGThresholdDoesNotDependOnTheBranchConstant
+// pins that rather than leaving the next reader to wonder which is a bug.
+func linearChannel(channel float64) float64 {
+	if channel <= 0.03928 {
+		return channel / 12.92
+	}
+	return math.Pow((channel+0.055)/1.055, 2.4)
+}
+
+// contrastPair is one foreground and one background token, named as the themes
+// name them, that the gate reads together, with the floor that applies to it.
+type contrastPair struct {
+	foreground, background string
+	min                    float64
+}
+
+// bodyContrast lists the pairs a reader actually reads, and the one line a reader
+// sees: text on the three surfaces, the accent used as text and the text set on
+// it, the focus ring on the three body surfaces it is drawn onto (sidebar-bg is a
+// fourth, ungated — see CHANGELOG), each status on its own badge, the sidebar's
+// two text tones on its own background, and the two boundaries a sheet paints by
+// name — border-default on each literal ground it is painted on and border-strong
+// on the one ground that draws it, both at the graphic's floor —
+// because the edge is the visual information that identifies the component:
+// ui/components fills a field with the same surface role as the card it stands on,
+// so the line is what says where it is.
+//
+// What stays out of this list is the decoration, not the boundary: a divider
+// between two rows the reader has already found, and a tint, which carries copy
+// that the body pairs measure themselves. A component's boundary is not in that
+// exempt set, and the sentence this comment used to carry ("Borders and tints
+// carry no information and are not listed") was wrong for the one border that
+// says where an input is.
+var bodyContrast = []contrastPair{
+	{"text-primary", "surface-canvas", MinContrast},
+	{"text-primary", "surface-primary", MinContrast},
+	// The muted surface is the third surface a card raises itself onto, and the
+	// kernel's components paint ordinary text there (a neutral badge, a read-only
+	// field). A foreground certified against the two lighter surfaces says nothing
+	// about it: text on a grey is the pair that fails first.
+	{"text-primary", "surface-muted", MinContrast},
+	{"text-muted", "surface-canvas", MinContrast},
+	{"text-muted", "surface-primary", MinContrast},
+	{"text-muted", "surface-muted", MinContrast},
+	{"accent-default", "surface-canvas", MinContrast},
+	{"accent-default", "surface-primary", MinContrast},
+	// The accent is not only a button fill. ui/components paints it as body-size
+	// text with no background of its own — the brand text utility, the outline and
+	// link button variants, a brand detail value — so it lands on whichever
+	// surface a card raised itself onto. Of the three, surface-muted is the one
+	// that binds: it is the lightest surface in a dark theme, where foregrounds
+	// are light, and the darkest in a light theme, where they are dark. Certifying
+	// the accent against the two lighter surfaces only said it reads there.
+	{"accent-default", "surface-muted", MinContrast},
+	{"accent-hover", "surface-muted", MinContrast},
+	{"accent-on", "accent-default", MinContrast},
+	{"accent-on", "accent-hover", MinContrast},
+	// A focus ring is drawn outside the control it rings: clFocusRing
+	// (ui/components/classlists.go) pairs RingOffset(style.RingOffset2) with the
+	// 2px ring, so the ring lands on whatever surface the focused control sits
+	// inside — clCardFrame's surface-primary, or the muted surface a panel raises
+	// itself onto — and not on the page behind it. The canvas is one of three
+	// grounds and, in a dark theme, the darkest and therefore the one that binds
+	// least: a ring measured only there clears 3.0:1 while vanishing on the card.
+	// Every other ring role points at a token this list already certifies on all
+	// three surfaces — ring-brand is accent-default, ring-danger is status-danger,
+	// both at MinContrast — so focus is the only ring colour with a ground left
+	// unnamed, and naming the other two is what makes the graphic's floor mean
+	// what this file says a floor means.
+	{"focus", "surface-canvas", MinContrastGraphic},
+	{"focus", "surface-primary", MinContrastGraphic},
+	{"focus", "surface-muted", MinContrastGraphic},
+	{"status-ok", "status-okbg", MinContrast},
+	{"status-warning", "status-warningbg", MinContrast},
+	{"status-danger", "status-dangerbg", MinContrast},
+	{"status-info", "status-infobg", MinContrast},
+	// A status tone is not only a badge. clDetailValueTone paints the four of them
+	// at text-sm inside clCardFrame (surface-primary) and clTextColor/clFieldErr
+	// paint them on the page canvas, with no badge behind them, so each is a body
+	// foreground on every surface a card can be raised onto — not only on the
+	// badge the token named after it certifies.
+	{"status-ok", "surface-canvas", MinContrast},
+	{"status-ok", "surface-primary", MinContrast},
+	{"status-ok", "surface-muted", MinContrast},
+	{"status-warning", "surface-canvas", MinContrast},
+	{"status-warning", "surface-primary", MinContrast},
+	{"status-warning", "surface-muted", MinContrast},
+	{"status-danger", "surface-canvas", MinContrast},
+	{"status-danger", "surface-primary", MinContrast},
+	{"status-danger", "surface-muted", MinContrast},
+	{"status-info", "surface-canvas", MinContrast},
+	{"status-info", "surface-primary", MinContrast},
+	{"status-info", "surface-muted", MinContrast},
+	{"sidebar-text", "sidebar-bg", MinContrast},
+	{"sidebar-muted", "sidebar-bg", MinContrast},
+	// A component's edge, on every literal ground it is drawn on: clInput
+	// (ui/components/classlists.go) fills the field with surface-primary, the same
+	// role as the card of clCardFrame, and clInputNormal draws the line in
+	// border-default, so on a card and on the page canvas behind it that hairline is
+	// the only thing that identifies the component and its extent; and
+	// clAlertVariant["neutral"] and clMediaRefused draw the same line on surface-muted.
+	// The graphic's floor, not the text's: 3:1, the ratio SC 1.4.11 asks of it and
+	// the same one this list already holds the focus ring to. edgeRolePairs spells
+	// these grounds, and one more — surface-hover, the mix a hovered control moves
+	// its own fill onto, which is no token and so belongs only to the role half — in
+	// the layer a browser paints.
+	{"border-default", "surface-primary", MinContrastGraphic},
+	{"border-default", "surface-canvas", MinContrastGraphic},
+	{"border-default", "surface-muted", MinContrastGraphic},
+	// The same line on the fourth literal ground a shipped rule paints it on: the sidebar
+	// panel, which clSidebarSectionHeader draws its section rule across (the role
+	// layer spells this pair border-primary on surface-inverse, and
+	// PanelEdgeRolePairs holds it at the same floor — the two halves name it because a
+	// client files the token and a stylesheet paints the role, and both have to refuse
+	// the same file).
+	{"border-default", "sidebar-bg", MinContrastGraphic},
+	// A boundary is gated because a rule paints it, not because its token sounds
+	// important: border-strong is drawn by exactly one shipped rule, the 4 px
+	// quotation bar modules/web/internal/style.go gives every [data-prose]
+	// blockquote on the page canvas, so that one ground is the pair — and without
+	// it the token that paints a line a reader is shown was the one token a client
+	// could set to the colour of the ground behind it and still be issued the
+	// palette. The generator already repairs this token to MinContrast on all
+	// three surfaces and the shipped pair reaches it, so this pair is margin: what
+	// it buys is the refusal, which names the token to the client that erased it.
+	{"border-strong", "surface-canvas", MinContrastGraphic},
+}
+
+// Check reports the first body role of this theme that does not reach
+// MinContrast against the surface it sits on, naming both tokens and the ratio
+// measured. A theme that names no colour is not a theme: every token the gate
+// reads has to parse.
+func (t Theme) Check() error {
+	values, err := t.colorValues()
+	if err != nil {
+		return err
+	}
+	// Before any ratio: a colour that carries alpha has no contrast at all until
+	// something is composited behind it, and ResolveColors premultiplies, so an
+	// 80 %-opaque foreground would read as a darker opaque one and pass a gate it
+	// should never have been measured by. The ancestor refuses the same way.
+	for _, field := range colorFields {
+		if color := values["--pk-color-"+field.name]; color[3] != 1 {
+			return fmt.Errorf("%s: %s carries alpha %.2f: a colour with alpha has no contrast until it is composited, so name an opaque colour", t.Name, field.name, color[3])
+		}
+	}
+	for _, pair := range bodyContrast {
+		foreground, background := values["--pk-color-"+pair.foreground], values["--pk-color-"+pair.background]
+		if got := Contrast(foreground, background); got < pair.min {
+			return fmt.Errorf("%s: %s on %s measures %.2f:1, below %.1f:1",
+				t.Name, pair.foreground, pair.background, got, pair.min)
+		}
+	}
+	return nil
+}
+
+// RolePair is one foreground and one background role a stylesheet paints text
+// with, and the floor that pair must reach. Roles are the layer a browser reads
+// (the --pk-role-* declarations, some of them derived from tokens rather than
+// equal to one); tokens are the layer a theme sets. Measuring only the token
+// layer certifies colours nobody paints, which is how a palette that passes a
+// gate can still paint text nobody can read.
+//
+// Foreground and Background name a role in either of the two vocabularies the
+// layer is written in — "fg-muted" as roles.go declares it and ui/style's Color
+// constants carry it, or "--pk-role-fg-muted" as a stylesheet emits it — and
+// CheckRoles resolves whichever spelling a caller holds against the layer it was
+// handed, refusing a name that is neither. A pair read out of a component's own
+// declaration and a pair read out of an emitted sheet are then the same pair.
+//
+// The declarations these pairs name are owned by this package (roles.go) and
+// rendered by ui/style and ui/export, so the ratio is measured in one place and
+// a caller hands over nothing it assembled itself. CheckRoles still takes both
+// arguments rather than reading the defaults: a caller that emits its own layer
+// gates that layer, and a role name this package does not declare stays visible
+// as an argument instead of being invented mid-measurement.
+type RolePair struct {
+	Foreground, Background string
+	// Min is the floor, usually MinContrast or MinContrastGraphic.
+	Min float64
+}
+
+// CheckRoles resolves the caller's role declarations on top of this theme's
+// tokens and reports the first pair of pairs that does not reach its own floor,
+// naming both roles and the ratio measured. An opaque colour requirement comes
+// first, for the reason Theme.Check gives: a role carrying alpha has no ratio
+// until something is composited behind it.
+func (t Theme) CheckRoles(roles []ColorToken, pairs []RolePair) error {
+	// Guard the whole call, not one pair: a caller that hands over an empty list
+	// measured nothing and would be told the layer is legible. Checked before any
+	// colour is resolved, so the failure names the missing argument.
+	if len(pairs) == 0 {
+		return fmt.Errorf("%s: role layer: no pair was handed over to measure", t.Name)
+	}
+	values, err := ResolveColors(t.Tokens(), roles)
+	if err != nil {
+		return fmt.Errorf("%s: role layer: %w", t.Name, err)
+	}
+	for _, pair := range pairs {
+		if pair.Min <= 0 || pair.Min > 21 {
+			return fmt.Errorf("%s: role pair %s on %s names floor %v: a pair must name the ratio it requires", t.Name, pair.Foreground, pair.Background, pair.Min)
+		}
+		// Each role is read under the name the layer actually carries: a pair may
+		// spell a role as roles.go declares it or as the stylesheet emits it, and
+		// the refusal quotes the emitted name, which is the property a reader finds
+		// in the sheet and the one ui/export quotes when it refuses the same pair.
+		var missing []string
+		var resolved [2]string
+		for i, name := range [...]string{pair.Foreground, pair.Background} {
+			color, ok := values[name]
+			if !ok {
+				name = RoleCSSName(name)
+				color, ok = values[name]
+			}
+			if !ok {
+				missing = append(missing, name)
+				continue
+			}
+			resolved[i] = name
+			if color[3] != 1 {
+				return fmt.Errorf("%s: %s carries alpha %.2f: a colour with alpha has no contrast until it is composited, so gate a pair on an opaque role", t.Name, name, color[3])
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Errorf("%s: role pair %s on %s names %v, which the resolved role layer does not define", t.Name, pair.Foreground, pair.Background, missing)
+		}
+		if got := Contrast(values[resolved[0]], values[resolved[1]]); got < pair.Min {
+			return fmt.Errorf("%s: %s on %s measures %.2f:1, below the %.1f:1 the body text this role paints requires",
+				t.Name, resolved[0], resolved[1], got, pair.Min)
+		}
+	}
+	return nil
+}
+
+// CheckRoles reports the first theme of this pair whose role layer fails.
+func (p Pair) CheckRoles(roles []ColorToken, pairs []RolePair) error {
+	for _, theme := range p.Both() {
+		if err := theme.CheckRoles(roles, pairs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Check reports the first theme of this pair that fails its own body roles.
+// ui.Compose takes a Pair, so this is the unit the gate is applied at: a light
+// theme that reads and a dark theme that does not is not shippable.
+func (p Pair) Check() error {
+	for _, theme := range p.Both() {
+		if err := theme.Check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}

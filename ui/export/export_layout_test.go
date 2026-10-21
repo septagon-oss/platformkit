@@ -198,6 +198,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
 	// digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
+	//
 	// A confirmation body drawn into a command form is a sentence of the form's own
 	// copy, so it takes the form's text scale and bounded measure (clFormSentence),
 	// and the confirm dialog's message — the same sentence, read inside a frame
@@ -208,34 +209,25 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// is /sha256 and the other is pk-ui.component.confirmdialog/default's html, which
 	// gains max-w-sm on the message paragraph and paints the same box. No leaf is
 	// removed; CSS, schema, notices, themes, icons and font policy are identical.
-	// The digest below is that measurement of this tree, printed by the refusal above
-	// the re-measure and copied from it.
 	//
-	// The rich text field's chrome joins @layer components, and the editing surface
-	// takes the published page's prose rules with it. Measured by exporting this
-	// tree and the same tree with those two merges removed and walking both
-	// documents leaf by leaf: 99,906 leaves each, none added, none removed, and
-	// exactly two changed — /css, which carries the new rules, and /sha256, which is
-	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
-	// schema or font policy moves. The digest below is that measurement of this tree.
+	// This branch measures the edge a component draws on the ground it is painted
+	// on, which the shipped pair missed: both themes' border-default and
+	// border-strong move to clear SC 1.4.11's 3:1 on every ground a rule is drawn
+	// on, including the muted panel and the hovered fill, and the derived role
+	// values move with them. A leaf-by-leaf diff of this tree's export against the
+	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
+	// no example, schema, icon, class or notice.
 	//
-	// Two attributions joined NOTICE since that digest, and the export's notices field
-	// carries that file verbatim: main's vendored SSE extension, and the Web Push
-	// library this branch links, since NOTICE lists what the binary links. Measured by
-	// exporting this tree with main's attribution list in place of the merged one and
-	// with the merged one: 99,947 leaves each, none added and none removed, and the two
-	// documents differ in `notices` and in the whole document's digest only — no
-	// example, CSS, token, theme, icon, schema or font policy moves. With main's list
-	// the tree exports main's recorded digest
-	// bf53d791f4544e0cd2fb3e305021f916d78464e1e7c5537d951f8021291496d3 byte for byte, so
-	// one more dependency moves one leaf; with the merged list it exports the digest
-	// below, which the refusal printed while this line still held main's number.
-	// Admin experience: comparing exports by stable capture ID adds Standalone
-	// and Disclosure, removes no capture and changes only the HTML of the three
-	// sidebar captures plus CSS and this digest. Schema, font policy, notices,
-	// themes and icons are byte-identical to the previous export.
-	// The digest covers the composed examples, stylesheet and attribution together.
-	if legacy.SHA256 != "94e2131f705cdc27ebc406db89ce9ee198f48161b22cc585c5887b9046e831e0" {
+	//
+	// main's frame work lands on that export beside this branch's colour work: the
+	// header names the person and the workspace, a set keeps its own name, and an
+	// instant states the reader's own zone. No leaf-by-leaf walk of the two documents
+	// was run for this merge, because the document before it can only be produced by
+	// switching this worktree off the merge it is merged into, so no count of moved
+	// leaves is claimed here. The digest below is this merged tree's own measurement,
+	// printed by the refusal above the re-measure and copied from it; it covers the
+	// composed examples, stylesheet and attributions together.
+	if legacy.SHA256 != "436f7e040a2fc6103cb4216a4b8c26b8cbcc3fac13cf7666b7fa771fd87b1415" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

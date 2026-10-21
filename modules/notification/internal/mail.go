@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	htmltemplate "html/template"
 	"log/slog"
 	"strings"
 	"text/template"
@@ -18,18 +19,23 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
-// templates are the module's own, embedded, and there is one: a generic notice.
-// A per-event template is a screen's worth of decisions and belongs to whoever
-// raises the notice, so it arrives as a title and a body rather than as a name
-// this package would have to know.
+// templates are the module's own, embedded, and there is one notice in two
+// parts. A per-event template is a screen's worth of decisions and belongs to
+// whoever raises the notice, so it arrives as a title and a body rather than as
+// a name this package would have to know.
 //
-// text/template and not html/template: this is a plain-text message, and HTML
-// escaping in it would turn an apostrophe into &#39; in somebody's inbox.
+// The plain-text part is text/template, because HTML escaping in it would turn
+// an apostrophe into &#39; in somebody's inbox. Its HTML alternative is
+// html/template, which escapes every field the notice's author wrote, so no
+// module raising a notice writes or injects markup.
 //
 //go:embed templates/*.tmpl
 var templates embed.FS
 
-var notice = template.Must(template.ParseFS(templates, "templates/*.tmpl"))
+var (
+	notice     = template.Must(template.ParseFS(templates, "templates/notice.tmpl"))
+	noticeHTML = htmltemplate.Must(htmltemplate.ParseFS(templates, "templates/notice.html.tmpl"))
+)
 
 // SendMail is the subscription that sends the message.
 //
@@ -97,6 +103,10 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			if err != nil {
 				return err
 			}
+			html, err := renderHTML(row, base)
+			if err != nil {
+				return err
+			}
 			if mailer == nil || contracts.IsNoTransport(mailer) {
 				// No transport in this installation, said on the delivery ledger
 				// rather than in a log line somebody has to notice: the notice stays
@@ -134,7 +144,7 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 						"this tenant's sender is "+sender.Status+", not verified: the mail was queued while it was, and nothing sends as an identity that stopped being believed")
 				}
 			}
-			msg := contracts.Message{To: to, Subject: row.Title, Body: body, Lang: "en"}
+			msg := contracts.Message{To: to, Subject: row.Title, Body: body, HTML: html, Lang: "en"}
 			if sender != nil {
 				msg.Sender, msg.ReplyTo = sender, sender.ReplyTo
 			}
@@ -208,16 +218,33 @@ func baseURL(ctx context.Context, tx db.Tx[db.Tenant], hosts contracts.HostLooku
 	return scheme + "://" + host, nil
 }
 
-// render is the notice template, filled in from the row.
+// render is the notice's plain-text part, filled in from the row.
 func render(row *contracts.Notification, base string) (string, error) {
 	var out strings.Builder
-	err := notice.ExecuteTemplate(&out, "notice.tmpl", struct {
-		*contracts.Notification
-		Host    string
-		BaseURL string
-	}{row, strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://"), base})
-	if err != nil {
+	if err := notice.ExecuteTemplate(&out, "notice.tmpl", fields(row, base)); err != nil {
 		return "", fmt.Errorf("notification: render the notice: %w", err)
 	}
 	return out.String(), nil
+}
+
+// renderHTML is the same notice as the HTML alternative: the same words, and the
+// link as an anchor on the tenant's host. With no host to build on the link is
+// written as the bare path, as the plain part writes it, and is not an anchor: a
+// mail client has nothing to resolve a path against.
+func renderHTML(row *contracts.Notification, base string) (string, error) {
+	var out strings.Builder
+	if err := noticeHTML.ExecuteTemplate(&out, "notice.html.tmpl", fields(row, base)); err != nil {
+		return "", fmt.Errorf("notification: render the notice's HTML: %w", err)
+	}
+	return out.String(), nil
+}
+
+// fields is what both parts of a notice are filled in from: the row, the host a
+// person knows the application by, and the base its link is built on.
+func fields(row *contracts.Notification, base string) any {
+	return struct {
+		*contracts.Notification
+		Host    string
+		BaseURL string
+	}{row, strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://"), base}
 }

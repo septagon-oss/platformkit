@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -225,7 +226,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales)...)
+	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
 	return document.View{Title: named, Body: body}
 }
@@ -479,6 +480,11 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	// an address in a person's disc. What reads this is the row's link, which is the one thing
 	// on the screen that is not a field: it is the row, and so it takes the row's name.
 	named := make(map[string]string, len(rows))
+	// instants holds what each time cell actually *is*, beside the text it is shown as: the cell's
+	// own words come from display.Display and say "2026-07-01 14:12" in no zone at all, which a
+	// browser cannot translate into the reader's own time. The instant is kept here, keyed the way
+	// `named` is keyed, because a components.TableRow carries cells as text and nothing else.
+	instants := make(map[string]map[string]components.TimeText, len(rows))
 	tones := make(map[string]string, len(rows))
 	for _, row := range rows {
 		if f, ok := fieldFor(shown, r.Present.StatusField); ok {
@@ -486,7 +492,18 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		}
 		cells := map[string]any{}
 		for _, f := range shown {
-			cells[f.Name] = words.Value(f, row[f.Name])
+			text := words.Value(f, row[f.Name])
+			cells[f.Name] = text
+			if f.Type != entity.TypeTime {
+				continue
+			}
+			if when, ok := display.Instant(row[f.Name]); ok {
+				id := display.Text(row["id"])
+				if instants[id] == nil {
+					instants[id] = make(map[string]components.TimeText, 1)
+				}
+				instants[id][f.Name] = components.TimeText{AtUTC: when, Text: text}
+			}
 		}
 		// The leading cell is the row's only link, so its text is that link's accessible name. A
 		// blank there means this row has nothing in the column the entity leads with, and an empty
@@ -509,7 +526,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 			if r.Present.Plural != "" {
 				description = o.Text("screens.empty_collection", "No %s yet.", r.reading(o).Plural)
 			} else {
-				description = o.Text("screens.empty", "No %ss yet.", r.Schema.Entity)
+				description = o.Text("screens.empty", "No %s yet.", display.Plural(r.Schema.Entity))
 			}
 		}
 		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: description}
@@ -554,6 +571,14 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 				}
 			}
 			if !c.Primary {
+				// A time cell is an element with an instant in it, not a string: the reader's own
+				// engine says it in the reader's own zone. A time that is not an instant keeps the
+				// plain text the cell already holds — no element, no invented date.
+				if byField, ok := instants[row.ID]; ok {
+					if when, ok := byField[c.Key]; ok {
+						return timeElement(when)
+					}
+				}
 				if c.Key == r.Present.StatusField {
 					return components.Badge(components.BadgeProps{Label: display.Text(row.Cells[c.Key]), Tone: tones[row.ID], Dot: true})
 				}
@@ -623,6 +648,11 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 		item  components.DetailItem
 	}
 	var reads []read
+	// instantsByLabel pairs a term with the instant behind it, so the value door below can hand
+	// that one item a <time>. It is keyed by the term because DetailItem is a label and a string:
+	// the term a person reads is the only identity an item has, and it is the same words the <dt>
+	// carries. Two fields labelled alike would be two <dt>s nobody could tell apart anyway.
+	instantsByLabel := map[string]components.TimeText{}
 	for _, f := range readable(r.Schema.Fields) {
 		if f.Widget == "richtext" {
 			if html, ok := rendered[f.Name]; ok {
@@ -632,11 +662,30 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 			}
 			continue
 		}
+		label := words.FieldLabel(f)
+		value := words.Value(f, row[f.Name])
+		if f.Type == entity.TypeTime {
+			if when, ok := display.Instant(row[f.Name]); ok {
+				instantsByLabel[label] = components.TimeText{AtUTC: when, Text: value}
+			}
+		}
 		reads = append(reads, read{field: f,
-			item: components.DetailItem{Label: words.FieldLabel(f), Value: words.Value(f, row[f.Name])}})
+			item: components.DetailItem{Label: label, Value: value}})
 	}
+	// Every block of the record opens its terms through the one list, and that list keeps the
+	// same value door a list cell uses, so the record and the list state an instant identically
+	// whichever section the field landed in. A time whose value is no instant never reaches the
+	// map above: it keeps its text.
 	list := func(items []components.DetailItem) g.Node {
-		return components.DetailList(components.DetailListProps{Items: items})
+		return components.DetailListWithSlots(components.DetailListProps{Items: items}, components.DetailListSlots{
+			Value: func(item components.DetailItem) g.Node {
+				when, ok := instantsByLabel[item.Label]
+				if !ok {
+					return nil
+				}
+				return timeElement(when)
+			},
+		})
 	}
 	if len(r.Present.Sections) == 0 {
 		all := make([]components.DetailItem, 0, len(reads))
@@ -694,6 +743,27 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 			{Label: o.Home, Href: o.Workspace}, {Label: collection, Href: at}, {Label: here},
 		}})
 }
+
+// timeElement is one instant as a screen states it: the element every generated
+// screen uses, with the instant a machine can read and the exact moment — in the
+// zone the server actually wrote it in — a person can. The words inside the
+// element are UTC wall time until the reader's own browser says them again in the
+// reader's own zone (see ui/assets/js/components.js); the title is what is true
+// before that happens, and it stays true afterwards because datetime never moves.
+//
+// stamp is an instant spelled out with the zone it is stated in. A wall time with
+// no zone on it is a guess the reader has to make for themselves.
+func timeElement(when components.TimeText) g.Node {
+	return components.Time(components.TimeProps{Instant: when, Title: stamp(when.AtUTC)})
+}
+
+// stamp is the exact moment with its zone designator: what a person hovering the
+// cell is told before the browser has said the same moment in their own zone. It is
+// the ISO-8601 instant — `Z`, not the word `UTC` — because a `title` is one of the
+// attributes ui/legible reads as what a person reads, and a spelled zone is a word
+// no catalogue owns; the same moment in the shape `datetime` carries is data in
+// every language.
+func stamp(at time.Time) string { return at.UTC().Format(time.RFC3339) }
 
 func pages(total int64) int { return int((total + PerPage - 1) / PerPage) }
 

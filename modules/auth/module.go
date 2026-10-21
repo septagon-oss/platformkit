@@ -19,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
@@ -33,6 +34,22 @@ import (
 func OIDCFromConfig(c config.OIDC) OIDC {
 	return OIDC{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
 		RedirectPath: c.RedirectPath}
+}
+
+// accountRequestsFromConfig converts the application's own account-request block
+// into this module's budget, the way OIDCFromConfig does: an omitted key is the
+// zero field, which is the module's default, and a present value is the value.
+// Presence is the loader's to judge — config.Load has refused a present zero —
+// so a Config built in Go that skips Load reads an explicit zero as the default.
+func accountRequestsFromConfig(c config.AccountRequests) contracts.AccountRequestBudget {
+	var b contracts.AccountRequestBudget
+	if c.Quota != nil {
+		b.Quota = *c.Quota
+	}
+	if c.Window != nil {
+		b.Window = *c.Window
+	}
+	return b
 }
 
 // EnvironmentSecrets is the Secrets this installation ships with: a reference is
@@ -154,6 +171,13 @@ type Deps struct {
 	// no key signs people in exactly as it did before the table existed.
 	FactorKey string
 
+	// AccountRequests is how many account requests — a sign-up, a verification
+	// resend, a forgotten-password link — one address may make in a window. The
+	// zero value is the module's own ten per fifteen minutes, which is what every
+	// composition had before the field existed; New refuses a budget the counter
+	// cannot keep. See contracts.AccountRequestBudget.
+	AccountRequests contracts.AccountRequestBudget
+
 	// Secrets resolves the reference a tenant's row holds into the client secret
 	// it names. The reference is what is in the database, the outbox and the
 	// audit trail; the secret is in the environment and in no row. A composition
@@ -265,17 +289,37 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	if err := deps.LinkPages.check(); err != nil {
 		panic(err)
 	}
+	if err := deps.AccountRequests.Check(); err != nil {
+		panic(fmt.Errorf("auth: Deps.AccountRequests: %w", err))
+	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
 		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
+		AccountRequests: deps.AccountRequests,
 	})
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
-		Name:        "auth",
-		Migrations:  Migrations.Files,
-		Adopts:      Migrations.Adopts,
-		RulesFrom:   Migrations.RulesFrom,
+		Name:       "auth",
+		Migrations: Migrations.Files,
+		Adopts:     Migrations.Adopts,
+		RulesFrom:  Migrations.RulesFrom,
+		// Everything that proves a person acted. `first_factor_proofs.user_id` is a
+		// primary key with no foreign key, which is why it is declared rather than
+		// inferred from a referential edge that was never written.
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "sessions", Person: "user_id", Text: []string{"user_agent", "ip"}},
+			personaldata.Table{Name: "password_tokens", Person: "user_id"},
+			personaldata.Table{Name: "verification_tokens", Person: "user_id", Text: []string{"email"}},
+			personaldata.Table{Name: "totp_factors", Person: "user_id"},
+			personaldata.Table{Name: "recovery_codes", Person: "user_id"},
+			personaldata.Table{Name: "api_tokens", Person: "user_id", About: []string{"created_by"}, Text: []string{"name"}},
+			personaldata.Table{Name: "first_factor_proofs", Person: "user_id"},
+			// A passkey is a person's own credential: the challenge row is about the
+			// account being signed into, and the credential row is the person's key.
+			personaldata.Table{Name: "passkey_challenges", Person: "user_id"},
+			personaldata.Table{Name: "passkey_credentials", Person: "user_id"},
+		),
 		Permissions: permissions,
 		Declared:    contracts.Events,
 		// The one entry, and the shell serves it: a role is keyed by its name

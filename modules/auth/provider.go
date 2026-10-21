@@ -11,8 +11,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -56,6 +58,7 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[httpx.Authorizer](),
 	pkit.Provides[pkit.Authenticator](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -109,6 +112,9 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// today: without a key the only secret this module could write is a
 		// plaintext one.
 		FactorKey: settings.FactorKey,
+		// The account-request budget the file names; none named is the module's
+		// own ten per fifteen minutes.
+		AccountRequests: accountRequestsFromConfig(settings.AccountRequests),
 		// The pages the two mailed links open, when the composition names its own
 		// with MailedLinksOpen; none composed is the admin shell's screens.
 		LinkPages:  pkit.Get[LinkPages](w),
@@ -139,6 +145,12 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	case authcontracts.PasswordRegistration:
 		deps.Registration = mode.Users
 	}
+	// A file-borne budget the counter cannot keep is the plan's refusal, not
+	// New's panic: the loader checked presence, and only the counter knows its
+	// horizon.
+	if err := deps.AccountRequests.Check(); err != nil {
+		return module.Module{}, fmt.Errorf("auth: auth.account_requests: %w", err)
+	}
 	svc, manifest := New(deps)
 	// The fill, and the whole of the late-bound edge. May the caller of a roles
 	// write hand out a role that administers the tenant is the authorizer's
@@ -149,6 +161,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put(w, svc)
 	pkit.Put[httpx.Authorizer](w, svc)
 	pkit.Put[pkit.Authenticator](w, svc.Authenticate)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }
 

@@ -42,5 +42,17 @@ var Migrations = db.MigrationSource{
 	// The same rule is why they are 35 and not the 24 this owner's own sequence
 	// had reached: one file per version holds across the whole composition, so a
 	// new migration in any module takes a version no other owner has taken.
+	//
+	// The erasure's own pair carries 73 and 74 for that rule's other half. It was
+	// written at 55 and 56, while this owner's head was 53; main then applied 69 and
+	// 70 for its operation columns, and kit/db refuses a pending file that precedes
+	// the version its owner has already applied — so an installation that took a
+	// build of main since would not boot on this tree. The two files therefore sit
+	// past every number named before them: 71 was the highest in this tree
+	// (modules/file's sealed flag) and 72 the highest on main (the kernel's
+	// command-effect marker). The bytes are unchanged — a rename is the whole
+	// change, and a file body still cites the number it was written under because
+	// rewriting a body would be the second change an applied migration cannot
+	// survive.
 	RulesFrom: 24,
 }

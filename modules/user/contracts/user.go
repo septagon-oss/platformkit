@@ -328,6 +328,16 @@ type Service interface {
 	// Get is one user of this tenant.
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
 
+	// Retained is one user of this tenant including the row the directory hides: the
+	// soft-deleted one. It is not a second way to find a person to act on — every door
+	// keeps asking Get, and a hidden row signs nobody in — it is the answer to "what do
+	// you still hold about me", which a `deleted_at IS NULL` cannot answer: hiding a
+	// person's row and going on holding their address, their name and their handle is
+	// what soft deletion is, and an erasure that could not reach that row would report a
+	// person erased while the row stayed. Its own row of a tenant that no longer has it is
+	// ErrNotFound, the same answer Get gives.
+	Retained(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
+
 	// SetHandle claims or changes a handle. It is a command and not a PATCH for
 	// the reason roles and status are: the handle is how somebody else finds this
 	// person, so "who held `ada` before, and when did it move" has to have an

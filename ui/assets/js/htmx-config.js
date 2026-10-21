@@ -11,10 +11,11 @@
 // a failure a person reports is one grep away from the log line behind it.
 (function () {
   if (!window.htmx) return;
-  // Pure classification of the existing problem contract. Status alone cannot
-  // distinguish a missing session from a permission or account-change refusal.
+  // Pure classification of the existing problem contract: a missing session is
+  // a 401 and a permission or account-change refusal a 403, and the code is
+  // what names which one this is.
   function failureKind(status, contentType, body) {
-    if (status === 403 && /^application\/problem\+json(?:\s*;|$)/i.test(contentType || "")) {
+    if ((status === 401 || status === 403) && /^application\/problem\+json(?:\s*;|$)/i.test(contentType || "")) {
       try {
         const detail = JSON.parse(body)?.detail;
         if (typeof detail === "string") {

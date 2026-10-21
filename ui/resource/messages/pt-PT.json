@@ -41,8 +41,8 @@
   },
   "screens.empty": {
     "references": ["ui/resource/resource.go"],
-    "translation": "Ainda sem %ss.",
-    "plural": { "": "Ainda sem %ss." }
+    "translation": "Ainda sem %s.",
+    "plural": { "": "Ainda sem %s." }
   },
   "screens.pagination": {
     "references": ["ui/resource/resource.go"],
@@ -98,5 +98,15 @@
     "references": ["ui/resource/history.go"],
     "translation": "Nenhum campo alterado.",
     "plural": { "": "Nenhum campo alterado." }
+  },
+  "screens.command_saved": {
+    "references": ["ui/screens/command_output.go"],
+    "translation": "A alteração foi guardada.",
+    "plural": { "": "A alteração foi guardada." }
+  },
+  "screens.continue": {
+    "references": ["ui/screens/command_output.go"],
+    "translation": "Continuar",
+    "plural": { "": "Continuar" }
   }
 }

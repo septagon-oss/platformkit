@@ -14,6 +14,7 @@ package app
 import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -27,7 +28,7 @@ func TestTheMigrationBudgetFromTheConfigurationReachesTheFile(t *testing.T) {
 	cfg.Database.StatementTimeout = &statement
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)
 
-	mod := module.Module{Name: "budgetmod", Migrations: fstest.MapFS{
+	mod := module.Module{Name: "budgetmod", PersonalData: personaldata.None("two text columns, and neither is a person"), Migrations: fstest.MapFS{
 		"000001_read.up.sql": {Data: []byte(`CREATE TABLE budgets (setting text PRIMARY KEY, value text);
 INSERT INTO budgets VALUES ('lock_timeout', current_setting('lock_timeout'));
 INSERT INTO budgets VALUES ('statement_timeout', current_setting('statement_timeout'))`)},

@@ -181,6 +181,17 @@ auth:
   # enrolled factor, which is a decision to make having withdrawn them.
   factor_key: ""
 
+  # How many account requests — a sign-up, a verification resend, a forgotten-password
+  # link — one address may make inside a window. It is a traffic figure, not a
+  # strength: a development instance that signs people up all day names a large
+  # quota, and production keeps the module's own. Omitted keeps 10 per 15m; an
+  # explicit 0 is refused, never read as unlimited; the quota is at most 2147483646,
+  # the most the counter can refuse past, and the window a Go duration of at most 24h.
+  # This key is read from the file alone: no environment variable names it.
+  # account_requests:
+  #   quota: 10
+  #   window: 15m
+
 # The one outgoing mail server. An empty host — which is the default — means
 # there is none: every notification is still recorded and the ones marked for
 # email are logged rather than sent, which is what a machine with no relay wants
@@ -197,8 +208,21 @@ auth:
 #   port: 1025
 #   from: "PlatformKit <platformkit@localhost>"
 #
-# The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
+# Nothing here holds the password. `kit/secrets` reads it as `mail.password` from
+# whichever store the block below names — on a laptop, PLATFORMKIT_MAIL_PASSWORD, the
+# variable this block's own `password:` line used to name. `username:` stays because a
+# username is not a secret, so a relay that needs both is configured in two places.
 #
+# Where kit/secrets reads from. Empty adapter is the process's own environment, which
+# is why a deployment that says nothing about secrets still has one. The token is the
+# one secret that cannot arrive through the port, because the port needs it to read the
+# port: secrets.url and secrets.token belong to secrets.adapter openbao, secrets.dir to
+# file, and no secret belongs in this file.
+#
+#   secrets:
+#     adapter: file
+#     dir: /run/secrets/platformkit
+
 # An empty host is not a sink and implies no stand-in for one. What a message
 # with no server behind it becomes is the notification module's choice, made once
 # per environment: a development deployment gets its in-process mailbox, so a
@@ -213,7 +237,6 @@ mail:
   # Submission with STARTTLS, which is what a modern relay listens on.
   port: 587
   username: ""
-  password: ""
   from: ""
 
 # How long the audit trail is kept. It is the one thing modules/audit cannot

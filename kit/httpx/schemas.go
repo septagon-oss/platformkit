@@ -17,6 +17,7 @@ package httpx
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -168,6 +169,16 @@ type Resource struct {
 // the resource's write permission), and Fields is the shape of its argument,
 // derived from the request body the way an entity's is derived from T.
 type Command struct {
+	// MintsCredential carries the response replay policy to generated routes.
+	MintsCredential bool
+	// Bindings declares observed row values used by forms and deck clients.
+	Bindings map[string]string
+	// Undo names the token command. HasResult declares authoritative reply data.
+	Undo      string
+	HasResult bool
+	// Execute retains output in the request transaction. Errors return zero.
+	// Run delegates to it for callers which need only success or failure.
+	Execute              func(context.Context, uuid.UUID, map[string]any) (CommandReply, error)
 	Verb                 string
 	Summary, Description string
 	Collection           bool
@@ -183,6 +194,8 @@ type Command struct {
 	// Empty means audited zero input or valid explicit defaults for every field.
 	EmptyInputFault string
 	Fields          []entity.Field
+	// Output is the scalar authoritative result schema, independent of the row.
+	Output []entity.Field
 	// Present is how this command's author described it: the word on the button,
 	// whether it is the one to offer, what a person reads before it runs. Carried
 	// to the shells by the same hop that carries Fields, and validated by
@@ -201,6 +214,12 @@ type Command struct {
 	// The id is uuid.Nil for a Collection command. A command that takes no
 	// arguments receives an empty values map and runs anyway.
 	Run func(ctx context.Context, id uuid.UUID, values map[string]any) error
+}
+
+// CommandReply is a generated command's authoritative result and private token.
+type CommandReply struct {
+	Result    any    `json:"result"`
+	UndoToken string `json:"undoToken,omitempty"`
 }
 
 // CommandsFor is the commands this caller may call. One they may not is left
@@ -461,7 +480,7 @@ func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
 			return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 		}
 		if !recognised(ctx) {
-			return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
+			return problem.New(http.StatusUnauthorized, CodeAnonymous+": this requires a signed-in caller")
 		}
 		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential && auth.kind != kindBearerKey {
 			return problem.New(http.StatusForbidden, CodeUndeclared+": this operation declares no authorization")
@@ -487,8 +506,8 @@ func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
 
 // may asks the same Authorizer the middleware asks, in the tenant the request
 // resolved to, about the caller the request was recognised as. The refusals are
-// the middleware's: 403 for a caller who may not, 503 for a decision that could
-// not be made, because sending somebody away from work they are entitled to do
+// the middleware's: 401 for a caller nobody recognised, 403 for a caller who may
+// not, 503 for a decision that could not be made, because sending somebody away from work they are entitled to do
 // is worse than telling them to try again.
 func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 	t, hasTenant := tenancy.FromContext(ctx)
@@ -496,7 +515,7 @@ func (a *API) may(ctx context.Context, g tenancy.Grant) error {
 		return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 	}
 	if !recognised(ctx) {
-		return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
+		return problem.New(http.StatusUnauthorized, CodeAnonymous+": this requires a signed-in caller")
 	}
 	// The operator check comes before the Authorizer, exactly as it does in the
 	// request middleware: a customer's administrator holds the wildcard in
@@ -561,6 +580,16 @@ func (a *API) Resources() []Resource {
 		if commands != nil {
 			guarded := make([]Command, len(commands))
 			for j, c := range commands {
+				c.Bindings = maps.Clone(c.Bindings)
+				if c.Execute != nil {
+					inner, declared := c.Execute, c.Auth
+					c.Execute = func(ctx context.Context, id uuid.UUID, values map[string]any) (CommandReply, error) {
+						if err := a.mayDeclare(ctx, declared); err != nil {
+							return CommandReply{}, err
+						}
+						return inner(ctx, id, values)
+					}
+				}
 				if c.Run != nil {
 					inner, declared := c.Run, c.Auth
 					c.Run = func(ctx context.Context, id uuid.UUID, values map[string]any) error {

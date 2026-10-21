@@ -338,7 +338,7 @@ func TestTheAskRefusesACallerWhoIsNobody(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if w.Code != http.StatusForbidden {
+	if w.Code != http.StatusUnauthorized {
 		t.Errorf("an anonymous ask = %d %s, want the refusal the guard gives", w.Code, w.Body)
 	}
 	if len(r.told) != 0 || len(*records) != 0 {

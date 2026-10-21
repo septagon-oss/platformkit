@@ -78,7 +78,7 @@ type Site struct {
 // Mount composes the stylesheet once and serves the two routes through the
 // composition layer. There are no controllers: the site runs no script.
 func Mount(surfaces httpx.Surfaces, s Site) {
-	sheet := ui.Compose(s.Theme, ui.Extra{Lists: lists(), Sheets: []*css.Sheet{prose()}})
+	sheet := ui.Compose(s.palette(), ui.Extra{Lists: lists(), Sheets: []*css.Sheet{prose()}})
 	// The root claim. One module answers a tenant's host at "/", and Home says
 	// whether this one took it: a product with a storefront of its own is
 	// composed instead of this module, and a second claimant would be a boot
@@ -329,42 +329,93 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title, 
 	}
 	// The tenant's accent is the one style this repository writes outside
 	// ui.Compose: the colour is a row, not a Go sheet, so no layer Compose emits
-	// can carry it. Unlayered is what lets a tenant palette outrank every layer,
-	// which is the point of a per-tenant colour, and the guard is the pattern —
-	// an inline declaration reaches the gate that refuses a consumer sheet a raw
-	// colour and the --pk- namespace. See refuseClientSheet.
-	if accent := s.accent(settings.PrimaryColor); accent != "" {
-		v.Head = []g.Node{h.StyleEl(g.Raw(accent))}
+	// can carry it, and refuseClientSheet — the gate that refuses a consumer
+	// sheet a raw colour and the --pk- namespace — never sees it, because it is
+	// not a sheet. Unlayered is what lets a tenant palette outrank every layer,
+	// which is the point of a per-tenant colour, and outranking the layer the
+	// gate reads is why the colour is measured here rather than trusted: four
+	// roles and a badge's tint are painted from accent-default, and the value is
+	// a column a tenant edits.
+	if rules := s.accent(settings); rules != "" {
+		v.Head = []g.Node{h.StyleEl(g.Raw(rules))}
 	}
 	return v
 }
 
-// accent is the declaration block the tenant's colour deserves, or "" when the
-// document should carry none and let the linked sheet speak.
+// accent is the declarations that pin the tenant's colour, in the three selectors
+// ui/style's ThemeVars uses, narrowed to the modes this page can be in. The colour
+// is one value and the pair paints it in two modes: a colour legible as a link on a
+// light card is not the colour legible on a dark canvas.
 //
-// Three cases, in this order. A value that is not six hex digits is dropped — the
-// grammar is the second line of defence behind the site module's, because this text
-// reaches a style element. A value that is one of this site's two accents is the
-// installation's own, and is written back as the installation writes it: per mode,
-// in the three spellings ui/style.ThemeVars uses, because one char(7) column cannot
-// tell "nobody chose" from "typed, and it happens to be the palette's", and a single
-// value pinned over both modes would be the light accent on a dark page. Anything
-// else is a colour this tenant chose and stays mode-independent — that is what the
-// site module's rule means when it asks a colour to read against both canvases.
-func (s Site) accent(stored string) string {
-	if !colour.MatchString(stored) {
+// Three cases, in this order. A value that is neither six hex digits nor the empty
+// colour a tenant that chose none stores is dropped — the grammar is this module's
+// own second line of defence behind the site module's, because this text reaches a
+// style element. A value equal to one of this site's two accents is the
+// installation's own, and goes back as the installation writes it: one char(7)
+// column cannot tell "nobody chose" from "typed, and it happens to be the palette's",
+// and a single value pinned over both modes would be the light accent on a dark page.
+// Anything else is a colour this tenant chose, and is measured per mode at the paint
+// rather than refused at the door, because a row saved before any gate existed is
+// served today and its reader sees the measured colour either way. Where no colour
+// reads — a palette that fails its own gate — nothing is declared and the page keeps
+// the accent of the stylesheet it links.
+func (s Site) accent(settings *sitecontracts.SiteSettings) string {
+	pair := s.palette()
+	stored := settings.PrimaryColor
+	if stored != "" && !colour.MatchString(stored) {
 		return ""
 	}
-	light, dark := s.Theme.Light.AccentDefault, s.Theme.Dark.AccentDefault
-	if !strings.EqualFold(stored, light) && !strings.EqualFold(stored, dark) {
-		return ":root{--pk-color-accent-default:" + stored + "}"
+	base, other := "light", "dark"
+	if settings.Theme == "dark" {
+		base, other = "dark", "light"
 	}
-	if strings.EqualFold(light, dark) {
-		return ":root{--pk-color-accent-default:" + light + "}"
+	installation := stored == "" || strings.EqualFold(stored, pair.Light.AccentDefault) ||
+		strings.EqualFold(stored, pair.Dark.AccentDefault)
+	measured, err := s.accentFor(pair, base, stored, installation)
+	if err != nil {
+		return ""
 	}
-	return ":root{--pk-color-accent-default:" + light +
-		"}[data-theme=\"dark\"]{--pk-color-accent-default:" + dark +
-		"}@media (prefers-color-scheme: dark){:root:not([data-theme]){--pk-color-accent-default:" + dark + "}}"
+	rules := ":root{--pk-color-accent-default:" + measured + "}"
+	// The mode the page is not pinned to, spelled with the selector that reaches
+	// it: the visitor's stored choice (beforePaint in ui/page moves data-theme)
+	// and, for a site that named no mode, the browser's own preference, which is
+	// the sheet's :root:not([data-theme]) case and outranks the plain :root.
+	alternate, err := s.accentFor(pair, other, stored, installation)
+	if err != nil || alternate == measured {
+		return rules
+	}
+	rules += `[data-theme="` + other + `"]{--pk-color-accent-default:` + alternate + "}"
+	if settings.Theme != "light" && settings.Theme != "dark" && other == "dark" {
+		rules += "@media (prefers-color-scheme: dark){:root:not([data-theme]){--pk-color-accent-default:" + alternate + "}}"
+	}
+	return rules
+}
+
+// accentFor is the colour to paint in one mode. The installation's own accent is the
+// colour that mode's sheet is composed from, so it is answered from the pair, which
+// certified it for that mode's canvas. A colour the tenant chose goes through
+// design.Pair.LegibleAccent: the colour as it stands when the finished theme clears
+// its gate, or the nearest colour along its own hue when it does not.
+func (s Site) accentFor(pair design.Pair, mode, stored string, installation bool) (string, error) {
+	if installation {
+		if mode == "dark" {
+			return pair.Dark.AccentDefault, nil
+		}
+		return pair.Light.AccentDefault, nil
+	}
+	return pair.LegibleAccent(mode, stored)
+}
+
+// palette is the pair this site paints and the pair its tenant's colour is
+// measured against — one pair, so the measurement is of the sheet the page
+// links rather than of a palette nobody renders. An installation that composed
+// no palette paints design.Default(), which is what that function says an
+// application that says nothing about colour gets.
+func (s Site) palette() design.Pair {
+	if s.Theme == (design.Pair{}) {
+		return design.Default()
+	}
+	return s.Theme
 }
 
 func frame(_ context.Context, _ page.Request, body []g.Node) g.Node {

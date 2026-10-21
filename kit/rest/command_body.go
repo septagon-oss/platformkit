@@ -66,8 +66,9 @@ func (defaultCommandBody[I]) Schema(registry huma.Registry) *huma.Schema {
 	return schema
 }
 
-func mountDefaultCommand[I any, T crud.Entity](router *httpx.Router, op huma.Operation, auth httpx.Auth, collection bool,
+func mountDefaultCommand[I, T any](router *httpx.Router, op huma.Operation, auth httpx.Auth, collection bool,
 	prepare func(map[string]any) (I, error), answer func(context.Context, db.Tx[db.Tenant], uuid.UUID, *I) (T, error),
+	opts OperationOptions,
 ) {
 	invoke := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *defaultCommandBody[I]) (T, error) {
 		var values map[string]any
@@ -89,10 +90,10 @@ func mountDefaultCommand[I any, T crud.Entity](router *httpx.Router, op huma.Ope
 	if collection {
 		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[defaultCommandBody[I]]) (T, error) {
 			return invoke(ctx, tx, uuid.Nil, in.Body)
-		}, OperationOptions{})
+		}, opts)
 	} else {
 		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[defaultCommandBody[I]]) (T, error) {
 			return invoke(ctx, tx, in.ID, in.Body)
-		}, OperationOptions{})
+		}, opts)
 	}
 }
