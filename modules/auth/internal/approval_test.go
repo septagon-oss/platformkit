@@ -75,7 +75,7 @@ func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/api/v1/user/users/" + pending.ID.String() + "/approve-registration"
-	if res := call(t, router, "POST", path, `{}`); res.Code != 403 {
+	if res := call(t, router, "POST", path, `{}`); res.Code != 401 {
 		t.Fatalf("anonymous approval = %d", res.Code)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

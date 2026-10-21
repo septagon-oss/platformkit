@@ -1,0 +1,6 @@
+# Two clients, one identity: the same seed under two slugs generates the same
+# pair, so the process would wear two clients as one and nobody would notice.
+slug: a
+seed:
+  sector: retail
+  name: Twin

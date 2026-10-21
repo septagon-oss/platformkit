@@ -21,7 +21,7 @@ async function openStory(page: Page, title: string, name = 'Default') {
 test('real Storybook serves its private index, updates Go controls, and runs confirmation', async ({ page, request }) => {
   const base = '/app/admin/_gallery/storybook/';
   const anonymous = await request.get(base + 'index.json');
-  expect(anonymous.status()).toBe(403);
+  expect(anonymous.status()).toBe(401);
   await signIn(page);
   const response = await page.request.get(base + 'index.json');
   expect(response.status()).toBe(200);
