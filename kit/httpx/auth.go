@@ -1,12 +1,14 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -61,6 +63,24 @@ type Auth struct {
 	kind       authKind
 	permission string
 	feature    string
+	replay     *ReplayCheck
+}
+
+// ReplayCheck authorizes recovery in the current tenant transaction. False
+// refuses with 403; errors refuse with 503. Implementations retain authority
+// locks until commit and must not mutate domain state. Successful recovery
+// returns the stored answer without running the handler.
+type ReplayCheck func(context.Context, db.Tx[db.Tenant]) (bool, error)
+
+// RecheckingReplay adds current-authority checks to cached answer recovery.
+// A nil check panics. Without a check, the ordinary request grants still apply.
+// The callback lives with the route and runs only when an answer is recovered.
+func (a Auth) RecheckingReplay(check ReplayCheck) Auth {
+	if check == nil {
+		panic("httpx: a replay authority check is required")
+	}
+	a.replay = new(check)
+	return a
 }
 
 // Permission requires the caller to hold token, checked against Options.Authorize
@@ -154,7 +174,8 @@ func (a Auth) MarshalJSON() ([]byte, error) {
 		Kind       authKind `json:"kind"`
 		Permission string   `json:"permission,omitempty"`
 		Feature    string   `json:"feature,omitempty"`
-	}{a.kind, a.permission, a.feature})
+		Replay     bool     `json:"recheckReplay,omitzero"`
+	}{a.kind, a.permission, a.feature, a.replay != nil})
 }
 
 // Needing returns this declaration for an operation that is part of a plan
@@ -268,6 +289,11 @@ func declare(op *huma.Operation, auth Auth) {
 // than a JSON object — because the place it is read most is an error message
 // somebody has to act on.
 func (a Auth) String() string {
+	if a.replay != nil {
+		plain := a
+		plain.replay = nil
+		return plain.String() + " with current authority on replay"
+	}
 	switch a.kind {
 	case kindPermission:
 		return "permission " + a.permission

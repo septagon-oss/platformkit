@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/appname"
+	"math"
 	"strconv"
 	"time"
 
@@ -122,6 +123,17 @@ const (
 	// day is far longer than any window a caller here uses and short enough
 	// that the table is bounded by one day of distinct keys.
 	keep = 24 * time.Hour
+
+	// MaxWindow is the longest window a counter here keeps whole: Purge deletes
+	// a row once its window opened keep ago, so a caller's window longer than
+	// this is ended by the sweep rather than by the clock.
+	MaxWindow = keep
+
+	// MaxQuota is the largest limit a counter here can refuse past. The count
+	// is a Postgres integer that Reserve stops at its maximum rather than
+	// overflowing, so every event after a limit this size still counts above
+	// it; a larger limit is one the counter can never refuse.
+	MaxQuota = math.MaxInt32 - 1
 )
 
 // systemToken is the capability the counters need. They belong to no tenant —
@@ -222,12 +234,15 @@ func (p postgres) Reserve(ctx context.Context, key string, limit int, window tim
 	// then earlier than the event by the wait, and a countdown taken from it is that
 	// wait added back on — every caller of the key told to sit out a window longer than
 	// the row holds. `clock_timestamp()` is the instant the event landed.
+	//
+	// A refused event is counted too, so the count stops at the column's maximum
+	// (MaxQuota + 1) rather than overflowing into an error a caller fails open on.
 	const q = `INSERT INTO ` + table + ` (key, window_start, count) VALUES (?, now(), 1)
 		ON CONFLICT (key) DO UPDATE SET
-			count = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.count + 1 ELSE 1 END,
+			count = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN LEAST(` + table + `.count, ?) + 1 ELSE 1 END,
 			window_start = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.window_start ELSE now() END
 		RETURNING count, extract(epoch FROM (window_start + ?::interval - clock_timestamp()))`
-	n, left, err := p.scan(ctx, q, p.scoped(ctx, key), interval(window), interval(window), interval(window))
+	n, left, err := p.scan(ctx, q, p.scoped(ctx, key), interval(window), MaxQuota, interval(window), interval(window))
 	if err != nil {
 		if errors.Is(err, ErrBusy) {
 			// The attempt reached no row, so no window was read and there is nothing
