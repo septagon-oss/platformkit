@@ -42,7 +42,16 @@ func TestServiceConforms(t *testing.T) {
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(filetest.Fixture{Ctx: ctx, Tx: tx, Service: svc, Storage: store,
 				Keys:      func() []string { return keysUnder(t, dir) },
-				Published: func() []string { return published(t, tx) }})
+				Published: func() []string { return published(t, tx) },
+				// The state no command of this module leaves behind: a file row
+				// removed while a use still names it, which is what the erasure door
+				// and the retention sweep do, and what the suite's own Delete now
+				// refuses to do.
+				Remove: func(id uuid.UUID) {
+					if err := tx.DB().Exec("DELETE FROM files WHERE id = ?", id).Error; err != nil {
+						t.Fatalf("remove %s: %v", id, err)
+					}
+				}})
 			return errRollback
 		})
 		if !errors.Is(err, errRollback) {
@@ -554,16 +563,16 @@ func TestATenantCannotFillTheDisk(t *testing.T) {
 	}
 }
 
-// TestTheQuotaHoldsUnderTwentyUploadsAtOnce is the race the review measured:
-// twenty uploads started together, each reading the tenant's total before any
-// of them had inserted a row, each deciding there was room, and 2.9 times the
-// quota on disk. The numbers are the review's — twenty uploads of four thousand
-// bytes against a quota of eight thousand one hundred and ninety-two, so at
-// most two may be stored and eighteen must be refused.
+// TestTheQuotaHoldsUnderTwentyUploadsAtOnce is the race of uploads started
+// together: each reads the tenant's total before any of them has inserted a
+// row, each decides there is room, and the disk ends holding 2.9 times the
+// quota. The shape driven here is twenty uploads of four thousand bytes
+// against a quota of eight thousand one hundred and ninety-two, so at most two
+// may be stored and eighteen must be refused.
 //
 // It is the mutation test for the one line in internal.charge that takes
-// pg_advisory_xact_lock: without it this fails, and it fails by exactly the
-// amount the review reported.
+// pg_advisory_xact_lock: without it this fails, and it fails by an over-run of
+// exactly the concurrency the case drives.
 func TestTheQuotaHoldsUnderTwentyUploadsAtOnce(t *testing.T) {
 	const (
 		uploads = 20

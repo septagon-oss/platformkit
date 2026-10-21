@@ -18,17 +18,8 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
-
-// writtenHere is the language of the copy written in this file. Every word on the
-// pages below is a Go string rather than a catalogue key, so each says which
-// language it is in rather than wearing the request's: document.View.Language
-// exists for exactly that, and a page that declared a language its sentences are
-// not written in would send a screen reader off with the wrong voice and tell a
-// translation tool the work is done. A page whose copy comes from a catalogue says
-// nothing here and takes the language that was negotiated — see signIn, which
-// reads its labels out of admin.login.* and declares nothing.
-const writtenHere = "en"
 
 // pages are the screens no schema describes: the way in, the way around, and
 // the two that are about the installation rather than about its data. Each is
@@ -58,12 +49,12 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 
 	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
 		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return p.dashboard(ctx, r.Tenant), nil
+			return p.dashboard(ctx, r.Tenant, resource.Options{Locale: r.Locale}), nil
 		})
 
 	page.Serve(app, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: p.at.health.rel, Summary: "Health"},
-		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return healthPage(checks(ctx)), nil
+		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return healthPage(checks(ctx), resource.Options{Locale: r.Locale}), nil
 		})
 
 	p.mountGallery(app)
@@ -92,7 +83,6 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
 // JSON. It is a bare page: somebody who has no session yet has no navigation.
-//
 // The destination under the form is where the person goes once the sign-in
 // answers. Three callers, three answers, in that order:
 //
@@ -105,6 +95,21 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 //     like their role — see TestTheDashboardNamesTheScreensThisCallersRoleOpens
 //     for why the landing stays there, and what answers the walkthrough's zero
 //     scores once they arrive.
+//
+// The button beside the form is a second way through the same door, drawn as a
+// secondary action because the page asks for one thing at a time: "Sign in" stays
+// the only filled button above the fold, and a person who would rather not type a
+// password at all has the control in front of them. It carries the four ceremony
+// addresses the auth module publishes, derived from the login address the
+// composition already handed this page — p.SignIn is that route, so its legs are
+// the same paths with the ceremony appended, and this page invents no route and
+// names no module. Which pair the control runs is the module's answer, not the
+// page's guess: with no password offered it is the usernameless ceremony, and
+// after /login refused to finish without a second factor it is the challenge
+// ceremony for the address in the form. What the browser does with either pair is
+// ui/assets/js/passkeys.js: hand the options to the platform, hand the answer
+// back. A tenant that never opened the usernameless door answers the begin leg
+// with the reason, and that sentence is what the page shows.
 func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, register string) page.View {
 	home := p.at.dashboard.at
 	locale := r.Locale
@@ -148,8 +153,8 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 			Label: text("register", "Create an account")}))
 	}
 	title := text("title", "Sign in")
-	return page.View{Title: title, Bare: true, Body: []g.Node{
-		components.Card(components.CardProps{Title: title, Description: text("description", "Use the address this tenant knows you by.")}),
+	body := []g.Node{
+		components.SectionHeader(components.SectionHeaderProps{Eyebrow: fallback(r.Tenant.Name, brand), Title: title, Description: text("description", "Use the address this tenant knows you by."), Level: 1, Size: 2}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				// home travels next to next because the two can be different
@@ -182,6 +187,28 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		// one. It is always offered, whatever the composition wires: forgetting a
 		// password is not an opt-in.
 		components.Flex(components.FlexProps{Direction: "row", Gap: "2"}, ways...),
+		components.Divider(components.DividerProps{Text: text("or", "or")}),
+		components.Button(components.ButtonProps{
+			Label: text("passkey", "Continue with a passkey"), FullWidth: true, Variant: "outline",
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{
+				"data-passkey-signin": "",
+				"data-begin":          action + "/passkey/begin",
+				"data-verify":         action + "/passkey/verify",
+				"data-factor-begin":   strings.TrimSuffix(action, "/login") + "/challenge/passkey/begin",
+				"data-factor-verify":  strings.TrimSuffix(action, "/login") + "/challenge/passkey/verify",
+				"data-next":           next,
+			}},
+		}),
+	}
+	return accessPage(title, body...)
+}
+
+// accessPage keeps the introduction, form and recovery links in one surface.
+func accessPage(title string, body ...g.Node) page.View {
+	return page.View{Title: title, Bare: true, Body: []g.Node{
+		components.CardWithSlots(components.CardProps{}, components.CardSlots{Content: []g.Node{
+			components.Stack(components.StackProps{Gap: "6"}, body...),
+		}}),
 	}}
 }
 
@@ -243,15 +270,15 @@ func registerPage(ctx context.Context, locale *page.Locale, kind RegistrationKin
 	slots = append(slots, components.FormActions(components.FormActionsProps{},
 		components.Button(components.ButtonProps{Label: text("submit", "Create the account"),
 			Type: "submit", FullWidth: true})))
-	return page.View{Title: title, Bare: true, Body: []g.Node{
-		components.Card(components.CardProps{Title: title, Description: text("description",
+	return accessPage(title,
+		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1, Size: 2, Description: text("description",
 			"Tell us who you are. If the address is not here yet, an account is made for it.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-auth-form": kind.form()}},
 			Action:         action, Label: title,
 		}, slots...),
 		backToSignIn(text, back),
-	}}
+	)
 }
 
 // verifyEmailPage is the other half of a sign-up: the link the mailbox carries
@@ -270,8 +297,8 @@ func verifyEmailPage(ctx context.Context, locale *page.Locale, action, back stri
 		return locale.Text("admin.verify."+key, fallback)
 	}
 	title := text("title", "Confirm your email address")
-	return page.View{Title: title, Bare: true, Body: []g.Node{
-		components.Card(components.CardProps{Title: title, Description: text("description",
+	return accessPage(title,
+		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1, Size: 2, Description: text("description",
 			"This link confirms the address and turns on the account. It works once and expires in twenty-four hours.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
@@ -287,7 +314,7 @@ func verifyEmailPage(ctx context.Context, locale *page.Locale, action, back stri
 				components.Button(components.ButtonProps{Label: text("submit", "Confirm the address"), Type: "submit", FullWidth: true})),
 		),
 		backToSignIn(text, back),
-	}}
+	)
 }
 
 // mountPasswordDoors mounts the two pages a person who cannot sign in needs: the
@@ -373,8 +400,8 @@ func forgotPassword(ctx context.Context, locale *page.Locale, action, back strin
 		return locale.Text("admin.forgot."+key, fallback)
 	}
 	title := text("title", "Forgot your password?")
-	return page.View{Title: title, Bare: true, Body: []g.Node{
-		components.Card(components.CardProps{Title: title, Description: text("description",
+	return accessPage(title,
+		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1, Size: 2, Description: text("description",
 			"Enter the address this tenant knows you by. If it can receive an account email, a link that sets a new password is sent to it. The link works once and stops working in an hour.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-auth-form": "forgot"}},
@@ -385,7 +412,7 @@ func forgotPassword(ctx context.Context, locale *page.Locale, action, back strin
 					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
 				Tone: "danger", Message: "", Bordered: true,
 			}),
-			// No lang here, and that is the file's own rule (see writtenHere): this
+			// No lang here, and the acknowledgment follows the negotiated language: this
 			// sentence comes from the catalogue, so in a pt-PT request it is
 			// Portuguese and it takes the document's negotiated language the way the
 			// card's description and every label on the page do. Declaring "en" over
@@ -405,7 +432,7 @@ func forgotPassword(ctx context.Context, locale *page.Locale, action, back strin
 				components.Button(components.ButtonProps{Label: text("submit", "Send me a link"), Type: "submit", FullWidth: true})),
 		),
 		backToSignIn(text, back),
-	}}
+	)
 }
 
 // firstScreen is the first page this caller's role opens, and "" when nobody is
@@ -454,13 +481,13 @@ func setPassword(ctx context.Context, locale *page.Locale, action, back, home st
 		return locale.Text("admin.reset."+key, fallback)
 	}
 	title := text("title", "Choose a password")
-	return page.View{Title: title, Bare: true, Body: []g.Node{
+	return accessPage(title,
 		// The twelve-character rule is in this sentence rather than in a help line
 		// under the field: help text renders at the sheet's smallest step, and a
 		// page whose <p> copy comes in three sizes is a design-gate refusal — body
 		// size is constant down the page. The field still carries minLength, so the
 		// browser refuses a short password where it is typed.
-		components.Card(components.CardProps{Title: title, Description: text("description",
+		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1, Size: 2, Description: text("description",
 			"This link sets a password once. Saving it ends every session already open for this account. A password is at least twelve characters.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
@@ -479,7 +506,7 @@ func setPassword(ctx context.Context, locale *page.Locale, action, back, home st
 				components.Button(components.ButtonProps{Label: text("submit", "Save the password"), Type: "submit", FullWidth: true})),
 		),
 		backToSignIn(text, back),
-	}}
+	)
 }
 
 // backToSignIn is the way out of a bare page. A person who followed a link they
@@ -491,117 +518,117 @@ func backToSignIn(text func(key, fallback string) string, back string) g.Node {
 			Label: text("signIn", "Back to sign in")}))
 }
 
-// dashboard is what there is and how much of it: one card per resource the
-// caller may read, with the count its own list route would report, and the
-// health of the instance.
-//
-// The guarded count makes one authorization decision and loads no entity rows.
-// A refused or unavailable count produces no card, including its resource name.
-//
-// A caller who may read no counts gets what their role opens rather than an
-// empty grid — see contents. This page is where a signed-in person arrives, so it
-// is the page that has to have something to offer them.
-func (p pages) dashboard(ctx context.Context, t tenancy.Tenant) page.View {
-	cards := make([]g.Node, 0, len(p.resources))
-	for _, r := range p.resources {
-		if r.Count == nil {
-			continue
-		}
-		total, err := r.Count(ctx)
-		if err != nil {
-			continue
-		}
-		count := strconv.FormatInt(total, 10)
-		cards = append(cards, components.Card(components.CardProps{
-			Title: count + " " + rest.Humanize(r.Entity) + "s", Description: "In " + r.Module,
-			Clickable: true, Href: r.Screen,
-		}))
+// workspaceScope names whose workspace the request's host serves: the
+// installation's operator or one tenant. It follows the host, never the
+// caller's grants.
+func workspaceScope(t tenancy.Tenant, o resource.Options) string {
+	if t.Operator {
+		return o.Text("admin.workspace.operator", "Platform operator")
 	}
-	var failed []string
-	for _, c := range checks(ctx) {
-		if c.err != nil {
-			failed = append(failed, c.name)
-		}
-	}
-	tone, message := "success", "Every check passes."
-	if len(failed) > 0 {
-		tone, message = "danger", "Not ready: "+strings.Join(failed, ", ")
-	}
-	// Language says what this page's words are written in, which is not the
-	// request's language: every word on this page — the title, the subtitle, the
-	// health alert, the counts under the cards — is a Go string in this file, and no
-	// catalogue is consulted for any of them. A page declares the language of the
-	// copy it shows (see document.View.Language, and the refusal page in ui/document
-	// which says the same about its own words), so a browser, a screen reader and a
-	// translation tool are told the truth: this one is English, whichever language
-	// the tenant is served in. The day any of this copy goes into a catalogue, this
-	// line goes with it.
-	return page.View{Title: "Dashboard", Language: writtenHere, Body: []g.Node{
-		components.Toolbar(components.ToolbarProps{
-			Title: "Dashboard", Subtitle: "What this tenant has, and whether the instance is well."}),
-		components.Alert(components.AlertProps{Tone: tone, Message: message, Bordered: true}),
-		p.contents(ctx, t, cards),
-	}}
+	return o.Text("admin.workspace.tenant_workspace", "Tenant workspace")
 }
 
-// contents is the body under the two headings: the counts, or — for the caller
-// the tenant holds no counts for — the screens their role actually opens.
-//
-// The grid alone is the page twelve of the eighteen apps in the walkthrough of
-// record scored nothing on: a person signed in, was welcomed by a heading, an
-// alert and a grid with no card in it, and had nothing on that page to do. Their
-// role does open something, usually — a screen a module writes by hand, like the
-// role list, carries no count to draw — so the page names those screens. They come
-// from page.Navigation.Visible, the same read the sidebar renders and the one that
-// asks the Authorizer the routes enforce with, so a page cannot name a door that
-// answers 403. Where the role opens nothing at all the page says so, and says who
-// can change it, which is a fact a person can act on; an empty grid is not.
-func (p pages) contents(ctx context.Context, t tenancy.Tenant, cards []g.Node) g.Node {
-	if len(cards) > 0 {
-		return components.Grid(components.GridProps{Columns: "3", Gap: "4"}, cards...)
-	}
+// dashboard is the workspace home: every destination the caller may open,
+// grouped as the sidebar groups them, with the count its own list reports.
+// A destination whose count fails stays on the page without a figure, and the
+// operator's health line appears only when a check was observed.
+func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Options) page.View {
 	visible := p.nav.Visible(ctx, t, p.Authorize)
-	if len(visible) == 0 {
-		return components.EmptyState(components.EmptyStateProps{
-			Title:       "No screens open yet",
-			Description: "Your role in this tenant opens no page. An administrator can grant it the permissions you need.",
-			Bordered:    true,
-		})
+	sections := workspaceSections(p.at, visible, p.resources, o)
+	title, description := fallback(t.Name, o.Text("admin.workspace.your_workspace", "Your workspace")), o.Text("admin.workspace.tenant_description", "Manage your team and the work happening here.")
+	if t.Operator {
+		title, description = o.Text("admin.workspace.overview", "Platform overview"), o.Text("admin.workspace.operator_description", "Manage tenants and access. Open a tenant workspace to work with its data.")
 	}
-	ops := make([]g.Node, 0, len(visible))
-	for _, e := range visible {
-		ops = append(ops, components.Link(components.LinkProps{Href: e.Screen, Label: e.Label}))
+	// The scope is the header's badge, so the intro is the title and one
+	// sentence; FormSentence carries the reading measure a full-width
+	// SectionHeader description does not.
+	body := []g.Node{
+		components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1}),
+		components.FormSentence(components.FormSentenceProps{Text: description}),
 	}
-	return components.EmptyStateWithSlots(components.EmptyStateProps{
-		Title:       "What your role opens",
-		Description: "This tenant holds nothing this role can count. These screens are yours.",
-		Bordered:    true,
-	}, components.EmptyStateSlots{Actions: ops})
+	if t.Operator {
+		results := checks(ctx)
+		if len(results) > 0 {
+			message, tone := o.Text("admin.workspace.healthy", "System checks passed"), "success"
+			for _, c := range results {
+				if c.err != nil {
+					message, tone = o.Text("admin.workspace.unhealthy", "System needs attention"), "danger"
+					break
+				}
+			}
+			body = append(body, components.Flex(components.FlexProps{Gap: "3", Align: "center", Wrap: true},
+				components.Badge(components.BadgeProps{Label: message, Tone: tone, Dot: true}),
+				components.Link(components.LinkProps{Href: p.at.health.at, Label: o.Text("admin.workspace.review_health", "Review health"), Variant: "text"})))
+		}
+	}
+	if len(sections) == 0 {
+		body = append(body, components.EmptyState(components.EmptyStateProps{
+			Title:       o.Text("admin.workspace.no_access", "Your workspace is ready for access"),
+			Description: o.Text("admin.workspace.ask_access", "Ask your administrator to give you access to the tools you need."), Bordered: true,
+		}))
+	}
+	var areas []g.Node
+	for _, section := range sections {
+		var links []g.Node
+		for _, item := range section.Items {
+			var count g.Node
+			for _, r := range p.resources {
+				if r.Screen != item.Href || r.Count == nil {
+					continue
+				}
+				if total, err := r.Count(ctx); err == nil {
+					label := strconv.FormatInt(total, 10)
+					if total == 0 {
+						label = o.Text("screens.empty_collection", "No %s yet.", strings.ToLower(item.Label))
+					}
+					count = components.Badge(components.BadgeProps{Label: label, Tone: "neutral"})
+				}
+				break
+			}
+			heading := []g.Node{components.Icon(components.IconProps{Name: item.Icon}),
+				components.Text(components.TextProps{Content: item.Label, Weight: "semibold"})}
+			if count != nil {
+				heading = append(heading, count)
+			}
+			links = append(links, components.CardWithSlots(components.CardProps{Href: item.Href, Hoverable: true, Padding: "sm"}, components.CardSlots{
+				Content: []g.Node{components.Stack(components.StackProps{Gap: "3"},
+					components.Flex(components.FlexProps{Gap: "3", Align: "center", Wrap: true}, heading...),
+					components.Text(components.TextProps{Content: workspacePurpose(p.at, item, p.resources, o), Color: "muted", Size: "sm"}),
+				)},
+			}))
+		}
+		areas = append(areas, components.Section(components.SectionProps{MaxWidth: "full", Gap: "3"}, components.SectionSlots{
+			Header: []g.Node{components.Heading(components.HeadingProps{Text: section.Label, Level: 2, Size: 3})},
+			Body:   []g.Node{components.Grid(components.GridProps{Columns: "1", Gap: "3"}, links...)},
+		}))
+	}
+	body = append(body, components.Grid(components.GridProps{Columns: "1", MD: "2", LG: "3", Gap: "6"}, areas...))
+	return page.View{Title: o.Text("admin.workspace.dashboard", "Dashboard"), Body: body}
 }
 
 // healthPage is the readiness probe with names on it. /ready answers 200 or 503
 // and names what failed; this shows the same checks one at a time, which is
 // what somebody looking at a broken deployment needs.
-func healthPage(results []result) page.View {
+func healthPage(results []result, o resource.Options) page.View {
 	rows := make([]components.TableRow, 0, len(results))
 	for _, c := range results {
-		state, tone := "ok", "success"
+		state, tone := o.Text("admin.workspace.ok", "ok"), "success"
 		if c.err != nil {
-			state, tone = "failing", "danger"
+			state, tone = o.Text("admin.workspace.failing", "failing"), "danger"
 		}
 		rows = append(rows, components.TableRow{ID: c.name, Cells: map[string]any{
 			"check": c.name, "state": state, "tone": tone,
 		}})
 	}
-	return page.View{Title: "Health", Language: writtenHere, Body: []g.Node{
+	return page.View{Title: o.Text("admin.workspace.health", "Health"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Health", Subtitle: "The checks behind /ready, one at a time."}),
+			Title: o.Text("admin.workspace.health", "Health"), Subtitle: o.Text("admin.workspace.health_description", "Service availability at the time this page was loaded.")}),
 		components.TableWithSlots(components.TableProps{
 			Columns: []components.TableColumn{
-				{Key: "check", Label: "Check", Primary: true},
-				{Key: "state", Label: "State"},
+				{Key: "check", Label: o.Text("admin.workspace.check", "Check"), Primary: true},
+				{Key: "state", Label: o.Text("admin.workspace.state", "State")},
 			},
-			Rows: rows,
+			Rows: rows, EmptyText: o.Text("admin.workspace.health_unknown", "Health information is unavailable. Try again or contact your operator."),
 		}, components.TableSlots{
 			Cell: func(row components.TableRow, c components.TableColumn) g.Node {
 				if c.Key != "state" {
@@ -665,7 +692,7 @@ func (p pages) tenants(ctx context.Context) (page.View, error) {
 	}
 	return page.View{Title: "Tenants", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Tenants", Subtitle: "Every tenant of this installation. A link opens that tenant's own shell."}),
+			Title: "Tenants", Subtitle: "Choose a workspace to manage. Each has its own people and data."}),
 		components.TableWithSlots(components.TableProps{
 			Columns: []components.TableColumn{
 				{Key: "name", Label: "Tenant", Primary: true},
@@ -674,7 +701,7 @@ func (p pages) tenants(ctx context.Context) (page.View, error) {
 				{Key: "hosts", Label: "Served at"},
 			},
 			Rows:      rows,
-			EmptyText: "No tenants. Run `platformkit bootstrap`.",
+			EmptyText: "No tenant workspaces are available.",
 		}, components.TableSlots{
 			Cell: func(row components.TableRow, c components.TableColumn) g.Node {
 				switch c.Key {

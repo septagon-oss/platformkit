@@ -133,12 +133,12 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 # Makefile exports, so this fixture counts packages with the gate's own compiler.
 selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
-for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request \
+for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts pkit; do
+    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey kit/inference kit/inference/providers/openai modules/auth/contracts pkit; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -190,14 +190,20 @@ boundary_rejects kit/wire "$foundation/kit/db"
 boundary_rejects kit/trace "$foundation/kit/db"
 boundary_rejects kit/trace "$foundation/kit/events/transport"
 # kit/request is the call an event was caused by: its id, its peer address, its
-# trace context. Its allowance is kit/trace and nothing else, so the two edges
-# that would make it something else are refused here — a database behind a value
+# trace context and intent. Its allowance is trace and operation values, so the
+# edges that would make it something else are refused here — a database behind a value
 # type, and net/http, which would put a server in the closure of every worker
 # that publishes an event and is how the package would end up parsing a request
 # it was told not to parse.
 boundary_rejects kit/request "$foundation/kit/db"
 boundary_rejects kit/request net/http
 boundary_rejects kit/request "$foundation/kit/httpx"
+# Intent values stay portable when requests and transports carry them.
+fixture_import kit/request "$foundation/kit/operation"
+fixture_import kit/events/transport "$foundation/kit/operation"
+"${packages[@]}" >/dev/null
+boundary_rejects kit/operation "$foundation/kit/db"
+boundary_rejects kit/operation net/http
 # The runner selects a transport by name and builds none.
 boundary_rejects kit/app "$foundation/kit/events/providers/nats"
 fixture_import kit/tenancy/providers/topaz "$foundation/kit/tenancy"
@@ -510,8 +516,8 @@ if [ "$(floor_from_fixture 60000)" -le "$floor_long" ]; then
 	exit 1
 fi
 
-# 3b. The branch the floor exists for. Six rounds of rehearsals measured a passing
-# release and never once ran the lines that report a watcher that sampled nothing, and
+# 3b. The branch the floor exists for. A rehearsal can measure a passing release and
+# never once run the lines that report a watcher that sampled nothing, and
 # a branch that has never run is a promise the documents make three times over. So the
 # branch is run, not read: the four lines are taken out of the step (a case that
 # restated them would pass whatever the step did), given the window and the sample count
@@ -681,7 +687,7 @@ echo 'rehearsal step: each of the four report branches reaches the exit code its
 # 4. Whether \watch fills the file at all. Everything the step says about lock waits is
 # the product of this file's line count, so the sampling is measured and not read: this
 # runs the step's own psql line, taken out of the step, for two seconds, and asks the
-# sample file how many times it filled. Case 2 of scripts/review_rehearsal_test.sh asks
+# sample file how many times it filled. Case 2 of scripts/rehearsal_contention_test.sh asks
 # the same question over that same line for three seconds. It used to run a
 # `psql -c <query> -c '\watch 0.1'` invocation, which psql answers once and then refuses
 # to repeat, and no case written that way could have sampled anything whatever it was
@@ -707,16 +713,16 @@ else
 	echo "rehearsal step: the watch floor is the window the watcher lived for, and its own psql line filled the sample file $watch_samples times in 2s"
 fi
 
-# 5. The line the report is headed with, which two rounds of review wrote cases for and
-# nothing ran. `scripts/review5_rehearsal_provenance_test.sh` runs the step's own
+# 5. The line the report is headed with, which has had cases written for it and was never
+# run by anything. `scripts/rehearsal_provenance_test.sh` runs the step's own
 # candidate line over a tree holding one uncommitted file, and
-# `scripts/review6_provenance_bigtree_test.sh` runs it over one holding five thousand:
+# `scripts/provenance_bigtree_test.sh` runs it over one holding five thousand:
 # the two answers part company there, because a `git status --porcelain | grep -q .` lets
 # `grep` close the pipe while `git` is still writing, and under `pipefail` the step takes
 # the 141 as "clean" and names a bare revision for a tree it built a binary out of. A
 # case nothing runs protects nothing, which is the same argument case 3b makes about the
 # branches above, so both are run here rather than left for whoever remembers.
-for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_bigtree_test.sh; do
+for provenance_case in rehearsal_provenance_test.sh provenance_bigtree_test.sh; do
 	if ! provenance_out=$(bash "$scripts/$provenance_case" 2>&1); then
 		printf 'FAIL: %s refuses the line the rehearsal report is headed with:\n%s\n' "$provenance_case" "$provenance_out" >&2
 		exit 1
@@ -764,7 +770,7 @@ race_commands() { # <TEST_COUNT> <goals…>: the same for the race goal, whose l
 # a part the fresh gate is made of, so pasting the failing line back in with `--packages` narrowed,
 # `-count=1` gone or the stated bound dropped is refused rather than rewarded — and it reads this pin,
 # not the Makefile, so it cannot be satisfied by the edit it watches.
-fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m"
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m -p=4"
 for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
 	case " $fresh " in
 	*" $fresh_part"*) ;;
@@ -775,9 +781,9 @@ for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
 		;;
 	esac
 done
-focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
-if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' --" ]]; then
-	echo 'FAIL: local tests must use the default Go cache over every package' >&2
+focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -timeout=30m -p=4 -run Selected"
+if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' -- -timeout=30m -p=4" ]]; then
+	echo 'FAIL: local tests must use the default Go cache over every package, under the stated clock' >&2
 	exit 1
 fi
 for goals in test check 'test check' 'check test'; do
@@ -805,29 +811,59 @@ echo 'test feedback: local selectors preserve fresh full checks in either goal o
 # than a count. The expected line below therefore carries `-timeout=30m` after the count leaves, and two
 # spaces where the count was, because make substitutes nothing for an empty $(TEST_COUNT) and leaves the
 # separator on both sides. The `test` goal's own line above is pinned the same way, with its gotestsum
-# options empty.
+# options empty and its own copy of the stated bound: -timeout=30m sits before $(TEST_FLAGS) there, so a
+# caller that passes a clock of its own still wins, and a local goal that loses the line answers to go
+# test's ten-minute default — which `apps/platformkit` measured at 9m51s on a box doing nothing else, so
+# the default answers a working suite by whether the host happened to be busy. Both shapes of the race
+# goal carry a clock of their own below, beside the count where
+# the Makefile writes it: a race suite that states no bound answers to go test's ten-minute default,
+# and CI runs 57644, 57686, 57718 and 57727 killed a working apps/platformkit that way. Losing that
+# clock is losing the run, so the two race patterns ask for it.
 if [[ "$(test_commands -count=1 check)" != "$fresh" ]]; then
 	printf 'FAIL: make check with TEST_COUNT=-count=1 lost the fresh suite line:\n%s\n' "$(test_commands -count=1 check)" >&2
 	exit 1
 fi
-if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m" ]]; then
+if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m -p=4" ]]; then
 	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all, and lose nothing else:\n%s\n' "$(test_commands '' check)" >&2
 	exit 1
 fi
-case "$(race_commands -count=1 check-race)" in
-	'go test -race -count=1 ./'*) ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
+# The race goal's own line, pinned the same way and for the same two reasons: the count, because a race
+# verdict served out of a build cache across commits is a worse answer than no detector, and the bound,
+# because go test's ten-minute default is a per-package clock nobody here chose and `apps/platformkit` is
+# in this goal's package list. The bound the line states is `check`'s own, and the measurements behind it
+# are written above the line in the Makefile. The bound is matched as a stated minutes value rather than
+# as one number, so the number stays arguable and the parts - the detector, the count, a stated clock -
+# are refused one at a time below, off the expansion rather than off a copy of the line.
+race_pinned="$(race_commands -count=1 check-race)"
+for race_part in "-race" "-count=1" "-timeout"; do
+	case " $race_pinned " in
+	*" $race_part"*) ;;
+	*)
+		echo "FAIL: make check-race no longer carries $race_part; that part is the race gate:" >&2
+		echo "$race_pinned" >&2
+		exit 1
+		;;
+	esac
+done
+case "$race_pinned" in
+	'go test -race -count=1 -timeout='*m' -p=4 ./'*) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$race_pinned" >&2; exit 1 ;;
 esac
 empty_race="$(race_commands '' check-race)"
 case "$empty_race" in
-	'go test -race '*'./apps/platformkit') ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
+	# Two spaces where the count was, and the bound still there: an empty TEST_COUNT is a caller taking
+	# its own count out, not this repository taking its clock out. The bound is matched as a stated
+	# minutes value, as in the line above, because the number itself is pinned elsewhere — by
+	# scripts/race_binary_timeout_test.py against the arguments the test binary is handed, and by
+	# scripts/race_bound_not_below_check_bound_test.sh against `check`'s own clock.
+	'go test -race  -timeout='*m' '*./apps/platformkit) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race, its stated bound or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
 esac
 if [[ "$empty_race" == *-count* ]]; then
 	printf 'FAIL: make check-race with TEST_COUNT empty still carries a count:\n%s\n' "$empty_race" >&2
 	exit 1
 fi
-echo 'test feedback: the count is one variable, the CI default stays fresh and an empty value costs only the count'
+echo 'test feedback: the count is one variable, the CI default stays fresh and bounded, and an empty value costs only the count'
 
 # An unrelated PATH formatter must not change formatting or hide tool errors.
 formatting="$temporary/formatting"

@@ -2,7 +2,7 @@ package main
 
 // The tenant's own languages, at the reference application.
 //
-// `Done when` for T-0111 asks for a tenant whose default is pt-PT rendering the
+// The brief asked for a tenant whose default is pt-PT rendering the
 // admin shell in Portuguese in a test. The case worth writing is the one with no
 // `Accept-Language` in it at all: a page that translated when the browser asked in
 // Portuguese proved only the negotiation that already existed. The claim this
@@ -112,7 +112,7 @@ func TestATenantServedInPortugueseIsAnsweredInPortuguese(t *testing.T) {
 	// the empty state. The row actions (Editar, Eliminar) need a row, and creating
 	// one through the API to translate a screen would be this file testing
 	// ui/resource's CRUD rather than the language of a screen.
-	for _, want := range []string{`lang="pt-PT"`, ">Nova", "Ainda sem"} {
+	for _, want := range []string{`lang="pt-PT"`, ">Nova", "Crie uma tarefa para definir o próximo passo do trabalho."} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the task screen carries no %q, so the tenant's language stopped at the sign-in page: %s",
 				want, short(body))

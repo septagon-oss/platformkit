@@ -229,6 +229,16 @@ type Users interface {
 	// module's decision, and it refuses an account this tenant closed or has not
 	// yet approved.
 	ConfirmAddress(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) (*usercontracts.User, error)
+	// Holders is the people in this tenant holding at least one of roles: the
+	// same answer the user module's own floor counts with, and this module needs
+	// it for the same reason — changing what a role grants changes who can
+	// administer the tenant, and a role held by nobody administers nothing.
+	//
+	// It is the same question Deps.Administration answers from the other side,
+	// joined by the composition and never by a read across a module's rows: which
+	// names grant is this module's table, which people hold them is the user
+	// module's. An empty or nil roles answers an empty list and no error.
+	Holders(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error)
 }
 
 // Notifier is what this module needs of the notification module to tell
@@ -236,9 +246,10 @@ type Users interface {
 // path, which a bell shows and a page renders.
 //
 // It never carries the secret. The notice raised beside a reset link points at
-// ResetPath and nothing more, because a notification row is an ordinary row —
-// listed by a route, copied into no audit trail but readable by anybody who can
-// read the table — and a token in it is a live credential sitting in one.
+// the set-password page and nothing more, because a notification row is an
+// ordinary row — listed by a route, copied into no audit trail but readable by
+// anybody who can read the table — and a token in it is a live credential
+// sitting in one.
 type Notifier interface {
 	Notify(ctx context.Context, tx db.Tx[db.Tenant], n notificationcontracts.Notice) (*notificationcontracts.Notification, error)
 }
@@ -257,6 +268,37 @@ type Notifier interface {
 type (
 	Mailer = notificationcontracts.Mailer
 	Hosts  = notificationcontracts.HostLookup
+	// MailLedger is the notification module's own record of a mail this module
+	// sent without a notice behind it, named here the way Mailer and Hosts are so
+	// that Deps reads as one list of capabilities.
+	//
+	// It is not a port this module can do without: a composition that wires none
+	// sends its mail exactly as it did before the record existed and leaves no
+	// trace of the attempt, which is the bug rather than a mode to preserve.
+	MailLedger = notificationcontracts.MailLedger
+)
+
+// The mails this module sends itself, named the way every event name is named.
+// They are this module's names for its own mails and belong here, not in the
+// shared ledger: a CHECK or a constant in modules/notification listing them would
+// make the next module that mails a schema change.
+//
+// The `*_no_link` kind is the message this module sends when a request for a link
+// could not be answered with one — nobody has the address, the account cannot be
+// sent a link, the link this call found is still outstanding. It is a separate kind
+// rather than the link's own kind because a record of a mail that is not a link must
+// not read as a record of a link: an operator counting reset links would count
+// messages that carry no credential. And it is mailed and recorded rather than
+// skipped, because the public delivery door answers a caller only from the record its
+// own call caused (contracts.MailReport), so a call that handed nothing to the
+// transport could only be answered from somebody else's row — which is why only the
+// flow that pays for a message per call has its refusals read back to the person
+// standing at it, and the forgotten-password route, pinned to one link and nothing
+// else between a known and an unknown request, does not.
+const (
+	MailSetPassword        = "auth.set_password"
+	MailVerification       = "auth.verification"
+	MailVerificationNoLink = "auth.verification_no_link"
 )
 
 // Service is signing in, signing out, recognising a session, and resolving what
@@ -296,18 +338,22 @@ type Service interface {
 	// delay, which is a slowdown and not a gate.
 	Precheck(ctx context.Context, email, ip string) Verdict
 
-	// MayAsk counts one forgotten-password request from an address and reports
-	// whether it is within ResetRequests for the window. It is the public
+	// MayAsk counts one forgotten-password request from an address and reports the
+	// cap that decided it: whether the attempt is within ResetRequests for the
+	// window, and the quota and window the same statement read. It is the public
 	// route's own limit, and it counts the address asking rather than the
-	// address asked about.
-	MayAsk(ctx context.Context, ip string) bool
+	// address asked about. The decision comes back with its numbers because the
+	// route answers with them — a refusal that named no counter and no wait left
+	// the caller guessing — and a caller that cannot reach its counter reports the
+	// zero Decision, which allows the attempt and states nothing.
+	MayAsk(ctx context.Context, ip string) Decision
 
 	// MayRedeem counts one reset-token redemption from an address and reports
 	// whether it is within ResetRedemptions for the window. Asking for a link
 	// was capped and spending one was not, so the token was guessable at the
 	// speed of the network — which 256 bits makes hopeless and a cap makes
 	// pointless.
-	MayRedeem(ctx context.Context, ip string) bool
+	MayRedeem(ctx context.Context, ip string) Decision
 
 	// Login verifies a password and opens a session. It answers ErrCredentials
 	// for a wrong password, an unknown address, a user who is not active and a
@@ -467,7 +513,23 @@ type Service interface {
 	// An operator permission outside the operator's own tenant is refused: the
 	// kernel would refuse the request anyway, so a role that named one would be
 	// a grant that looks like authority and is not.
+	//
+	// The same write with the answer about whether the row changed is
+	// SetRoleChanged, below.
 	SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*Role, error)
+
+	// SetRoleChanged is SetRole plus the one answer it withholds: whether this
+	// call changed a row. The write already computes it — it re-reads the role
+	// under the tenant's lock and does nothing when the row holds the list it was
+	// handed, so a retried click is once in the audit — and hands it over here.
+	//
+	// A caller that reports what it changed needs it. Writing the same list is
+	// not the same as writing it: whoever does the second one changed nothing, and
+	// a line telling a person otherwise is a claim about a row this transaction
+	// never touched. RepairSeededRoles is that caller and apps/platformkit prints
+	// its report.
+	SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string,
+		declared []tenancy.Grant) (*Role, bool, error)
 
 	// Purge deletes this tenant's expired sessions, spent tokens, spent recovery
 	// codes and API keys that have been expired or revoked for APITokenRetention,

@@ -1,8 +1,8 @@
 package httpx_test
 
 // The pointer to another surface's write door is a direction, and a direction is
-// only worth giving to somebody who can walk it. The second review found the host
-// asked and the caller not asked; these are the four corners of the one decision,
+// only worth giving to somebody who can walk it. The refusal once asked the host
+// and not the caller; these are the four corners of the one decision,
 // including the two that already worked, so that the fix which stopped naming the
 // door to a stranger cannot quietly stop naming it to the caller the refusal exists
 // for either.

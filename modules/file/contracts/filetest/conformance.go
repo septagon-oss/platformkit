@@ -14,8 +14,10 @@ import (
 	"image/color"
 	pngimage "image/png"
 	"io"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -42,6 +44,12 @@ type Fixture struct {
 	Keys func() []string
 	// Published is the events the implementation has published, in order.
 	Published func() []string
+	// Remove takes one file row away past every rule Delete keeps. The suite's own
+	// doors refuse to do it: Delete refuses a file a record still shows. Two doors
+	// in production reach that state without asking — the erasure door and the
+	// retention sweep, both named in the module's README — and a case that needs a
+	// use whose file is gone can only be written by standing in for them.
+	Remove func(id uuid.UUID)
 }
 
 // open is the Fixture's transaction as an opener, which is what Upload takes:
@@ -168,6 +176,19 @@ func read(t *testing.T, f Fixture, id uuid.UUID, anonymous bool) (*contracts.Fil
 		t.Fatalf("read the bytes: %v", err)
 	}
 	return row, string(out)
+}
+
+// library is the fixture's implementation seen as the library's reads and
+// commands. The suite asks them of the same object it asks Upload of, because
+// the grid, the meter and the caption belong to the file service and a second
+// implementation of them would be a second set of rules to pass.
+func library(t *testing.T, f Fixture) contracts.Library {
+	t.Helper()
+	lib, ok := f.Service.(contracts.Library)
+	if !ok {
+		t.Fatalf("this implementation of contracts.Service answers none of contracts.Library")
+	}
+	return lib
 }
 
 // hello is the body most cases upload.
@@ -423,8 +444,13 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{gone.ID, kept.ID}); err != nil {
 				t.Fatalf("SetUses: %v", err)
 			}
-			if _, err := f.Service.Delete(f.Ctx, f.Tx, gone.ID); err != nil {
-				t.Fatalf("Delete: %v", err)
+			// Not Delete: that door refuses a file a record still shows, which is the
+			// refusal in the case below. This is the state the erasure door and the
+			// retention sweep leave behind, and the row they leave is what the write
+			// here is for.
+			f.Remove(gone.ID)
+			if _, err := f.Service.Delete(f.Ctx, f.Tx, gone.ID); !errors.Is(err, crud.ErrNotFound) {
+				t.Fatalf("the removed file answers %v, want ErrNotFound", err)
 			}
 			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID}); err != nil {
 				t.Fatalf("the edit that dropped a removed image = %v, want it accepted", err)
@@ -438,6 +464,283 @@ func cases() map[string]func(*testing.T, Fixture) {
 			out, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID})
 			if err != nil || len(out) != 0 {
 				t.Errorf("rewriting the same body again ended %v (%v), want nothing", out, err)
+			}
+		},
+
+		// What a picture says about itself is one command's write, guarded by the
+		// row's own clock. An image either carries words or says it is decorative;
+		// a caption written against a row somebody else has already moved is
+		// refused and not merged, because the alternative is that the panel's
+		// number means nothing and two people's sentences overwrite one another.
+		"an alt text is written against the row it was shown": func(t *testing.T, f Fixture) {
+			lib := library(t, f)
+			pic := stored(t, f, hello)
+			for _, claim := range [][2]any{{"", false}, {"a red door", true}} {
+				if _, err := lib.SetAlt(f.Ctx, f.Tx, pic.ID, claim[0].(string), claim[1].(bool), pic.UpdatedAt); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("alt %q decorative=%v = %v, want ErrInvalid", claim[0], claim[1], err)
+				}
+			}
+			// Every refusal above wrote nothing and published nothing: the clock on
+			// the row is the one the case was handed.
+			if still, _ := read(t, f, pic.ID, false); !still.UpdatedAt.Equal(pic.UpdatedAt) {
+				t.Errorf("a refused caption moved updatedAt to %s, want %s", still.UpdatedAt, pic.UpdatedAt)
+			}
+			var written *contracts.File
+			f.one(t, "declaring an image decorative", contracts.EventAltered, func() {
+				out, err := lib.SetAlt(f.Ctx, f.Tx, pic.ID, "  ", true, pic.UpdatedAt)
+				if err != nil {
+					t.Fatalf("a decorative image, which says nothing about itself: %v", err)
+				}
+				written = out
+			})
+			if !written.Decorative || written.Alt != "" {
+				t.Errorf("the write left alt %q decorative %v, want the empty claim", written.Alt, written.Decorative)
+			}
+			stale := written.UpdatedAt
+			f.one(t, "captioning it", contracts.EventAltered, func() {
+				out, err := lib.SetAlt(f.Ctx, f.Tx, pic.ID, "  A red door, seen from the street  ", false, written.UpdatedAt)
+				if err != nil {
+					t.Fatalf("an alt text: %v", err)
+				}
+				written = out
+			})
+			if written.Alt != "A red door, seen from the street" {
+				t.Errorf("the caption is %q, want the words with their padding removed", written.Alt)
+			}
+			before := len(f.Published())
+			if _, err := lib.SetAlt(f.Ctx, f.Tx, pic.ID, "somebody else's sentence", false, stale); !errors.Is(err, crud.ErrConflict) {
+				t.Errorf("a caption against the instant the row has passed = %v, want ErrConflict", err)
+			}
+			if _, err := lib.SetAlt(f.Ctx, f.Tx, pic.ID, "no revision at all", false, time.Time{}); !errors.Is(err, crud.ErrInvalid) {
+				t.Errorf("a write that names no revision = %v, want ErrInvalid: this module has no last-write-wins command", err)
+			}
+			if got := f.Published()[before:]; len(got) != 0 {
+				t.Errorf("the refused captions published %v, want nothing", got)
+			}
+			if still, _ := read(t, f, pic.ID, false); still.Alt != "A red door, seen from the street" {
+				t.Errorf("the refused captions left alt %q, want the accepted one undisturbed", still.Alt)
+			}
+		},
+
+		// The grid's three axes: a name, a media family, and the stamp the ledger
+		// leaves when the last use ends. All three are decided in contracts so the
+		// SQL and the fake cannot answer them differently — the family in
+		// particular, where a filter that trusted the type prefix alone would let a
+		// drawing nobody measured pose as a photograph. An unknown value is refused
+		// naming what it accepts, because a grid that showed everything because a
+		// filter was misspelled would show a person the files they asked not to.
+		"the grid filters by name, by family and by what nothing shows": func(t *testing.T, f Fixture) {
+			lib := library(t, f)
+			frame, err := f.Service.Upload(f.Ctx, f.open, asImage(t, "Foto 2026.png", "image/png", pngFrame(t, 8, 6)))
+			if err != nil {
+				t.Fatalf("an image upload: %v", err)
+			}
+			drawing, err := f.Service.Upload(f.Ctx, f.open, upload("drawing.svg", "image/svg+xml", contracts.VisibilityPrivate, "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"))
+			if err != nil {
+				t.Fatalf("a drawing: %v", err)
+			}
+			notes := stored(t, f, hello)
+			names := func(q contracts.LibraryQuery) []string {
+				t.Helper()
+				rows, total, err := lib.Search(f.Ctx, f.Tx, q)
+				if err != nil {
+					t.Fatalf("Search(%+v): %v", q, err)
+				}
+				if total != int64(len(rows)) {
+					t.Fatalf("Search(%+v) returned %d rows of a total %d", q, len(rows), total)
+				}
+				got := make([]string, 0, len(rows))
+				for _, row := range rows {
+					got = append(got, row.Name)
+				}
+				return got
+			}
+			// Names are compared as a set: three uploads can share one microsecond,
+			// and which of them the tie-break puts first is the pagination's
+			// business, not the filter's.
+			want := func(names ...string) []string { slices.Sort(names); return names }
+			got := func(q contracts.LibraryQuery) []string { out := names(q); slices.Sort(out); return out }
+			switch {
+			case !slices.Equal(got(contracts.LibraryQuery{Family: contracts.FamilyImage}), want(frame.Name)):
+				t.Errorf("type=image gave %v, want the one picture: a drawing nobody measured is not one", got(contracts.LibraryQuery{Family: contracts.FamilyImage}))
+			case len(names(contracts.LibraryQuery{Family: contracts.FamilyVideo})) != 0:
+				t.Errorf("type=video gave %v, want nothing", names(contracts.LibraryQuery{Family: contracts.FamilyVideo}))
+			case !slices.Equal(got(contracts.LibraryQuery{Family: contracts.FamilyDocument}), want(drawing.Name, notes.Name)):
+				t.Errorf("type=document gave %v, want the drawing and the note", got(contracts.LibraryQuery{Family: contracts.FamilyDocument}))
+			case !slices.Equal(got(contracts.LibraryQuery{Name: "FOTO"}), want(frame.Name)):
+				t.Errorf(`q=FOTO gave %v, want the photograph: a name is searched case-insensitively`, got(contracts.LibraryQuery{Name: "FOTO"}))
+			case !slices.Equal(got(contracts.LibraryQuery{}), want(frame.Name, drawing.Name, notes.Name)):
+				t.Errorf("the unfiltered grid gave %v, want all three", got(contracts.LibraryQuery{}))
+			}
+			// The unused filter reads the ledger's stamp, and nothing else: an
+			// upload the ledger has never mentioned is not "unused", because nothing
+			// measured when it stopped being shown.
+			use := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{frame.ID}); err != nil {
+				t.Fatalf("a page that shows the picture: %v", err)
+			}
+			if got := names(contracts.LibraryQuery{Unused: true}); len(got) != 0 {
+				t.Errorf("unused=1 with the picture shown gave %v, want nothing", got)
+			}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, nil); err != nil {
+				t.Fatalf("the edit that dropped it: %v", err)
+			}
+			if got := names(contracts.LibraryQuery{Unused: true}); !slices.Equal(got, []string{frame.Name}) {
+				t.Errorf("unused=1 after the last use ended gave %v, want the picture the ledger stamped", got)
+			}
+			for _, bad := range []contracts.LibraryQuery{
+				{Name: strings.Repeat("q", contracts.MaxQuery+1)},
+				{Family: "pictures"},
+				{Sort: "pixels"},
+			} {
+				if _, _, err := lib.Search(f.Ctx, f.Tx, bad); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("Search(%+v) = %v, want ErrInvalid naming what it accepts", bad, err)
+				}
+			}
+		},
+
+		// A file the ledger still shows is not deletable, and the refusal is the
+		// module's rather than a control's: a library that dims a button is a
+		// courtesy, and this is the answer a client that never saw the page gets.
+		// Ending the last use is what makes the removal possible — the same rewrite
+		// that stamps the grace period the release sweep measures. The removals that
+		// outrank a record's convenience are a subject's erasure and the two sweeps,
+		// none of which come through here.
+		"a file another record shows is not removed": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			use := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{row.ID}); err != nil {
+				t.Fatalf("SetUses: %v", err)
+			}
+			before := len(f.Published())
+			keys := len(f.Keys())
+			_, err := f.Service.Delete(f.Ctx, f.Tx, row.ID)
+			if !errors.Is(err, contracts.ErrInUse) {
+				t.Fatalf("Delete of a shown file = %v, want ErrInUse", err)
+			}
+			refused := new(contracts.InUse)
+			if !errors.As(err, &refused) || refused.File != row.ID || refused.Records != 1 {
+				t.Errorf("the refusal is %+v, want this file and one record", refused)
+			}
+			// Nothing was written, published or unlinked: a refusal is a refusal, and
+			// the bytes stay where the record showing them can still read them.
+			if got := f.Published()[before:]; len(got) != 0 {
+				t.Errorf("the refusal published %v, want nothing", got)
+			}
+			if len(f.Keys()) != keys {
+				t.Errorf("the refusal removed a blob, want every key still there")
+			}
+			if _, back := read(t, f, row.ID, false); back != hello {
+				t.Errorf("the refused file reads %q, want %q", back, hello)
+			}
+			// The record stops showing it, and now the file is nobody's to protect.
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, nil); err != nil {
+				t.Fatalf("ending the use: %v", err)
+			}
+			f.one(t, "deleting it then", contracts.EventDeleted, func() {
+				if _, err := f.Service.Delete(f.Ctx, f.Tx, row.ID); err != nil {
+					t.Fatalf("Delete once nobody shows it: %v", err)
+				}
+			})
+		},
+
+		// Records, not rows: one page that shows one picture in its body and its
+		// summary is one page to go and edit, and contracts.DistinctRecords is the
+		// count both implementations give. Counting rows would answer 4 about a
+		// refusal a person can only act on twice.
+		"a file two records show names two records": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			one, two := uuid.New(), uuid.New()
+			uses := []contracts.Use{
+				{Module: "content", Entity: "page", Record: one, Field: "body", Locale: "en"},
+				{Module: "content", Entity: "page", Record: one, Field: "summary", Locale: "en"},
+				{Module: "content", Entity: "page", Record: one, Field: "body", Locale: "fr"},
+				{Module: "site", Entity: "logo", Record: two, Field: "body", Locale: "en"},
+			}
+			for _, use := range uses {
+				if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{row.ID}); err != nil {
+					t.Fatalf("SetUses %s/%s: %v", use.Module, use.Field, err)
+				}
+			}
+			if rows, err := f.Service.Uses(f.Ctx, f.Tx, row.ID); err != nil || len(rows) != 4 {
+				t.Fatalf("the ledger holds %+v (%v), want the four rows this wrote", rows, err)
+			}
+			_, err := f.Service.Delete(f.Ctx, f.Tx, row.ID)
+			refused := new(contracts.InUse)
+			if !errors.As(err, &refused) || refused.Records != 2 {
+				t.Errorf("four rows over two records = %v, want a refusal naming two records", err)
+			}
+		},
+
+		// The audience a record asserts travels into the rewrite that files its
+		// uses, so a published page that gains a picture gains public bytes in the
+		// write that added it. SetShown stays the only door that changes the
+		// audience of a row it did not write.
+		"an added use of a record with a public audience is public at once": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			uses := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			f.one(t, "filing a published use", contracts.EventVisibility, func() {
+				if _, err := f.Service.(contracts.ShownUses).SetUsesShown(f.Ctx, f.Tx, uses, []uuid.UUID{row.ID}, true); err != nil {
+					t.Fatalf("SetUsesShown: %v", err)
+				}
+			})
+			out, _, err := f.Service.Open(f.Ctx, f.Tx, row.ID, true)
+			if err != nil {
+				t.Errorf("an anonymous read of the file a published record shows: %v", err)
+			} else if out.Visibility != contracts.VisibilityPublic {
+				t.Errorf("visibility is %q, want public", out.Visibility)
+			}
+		},
+
+		// The same rewrite with no audience asserts nothing: a private file stays
+		// private, and a file somebody raised by hand keeps what they asked for — the
+		// recompute of added files runs only under a public audience, so a draft never
+		// takes a hand-raised visibility back.
+		"an added use of a record with no audience flips nothing": func(t *testing.T, f Fixture) {
+			private := stored(t, f, "a draft's picture")
+			hand, err := f.Service.Upload(f.Ctx, f.open, upload("logo.png", "image/png", contracts.VisibilityPublic, png))
+			if err != nil {
+				t.Fatalf("a public upload: %v", err)
+			}
+			uses := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			before := len(f.Published())
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, uses, []uuid.UUID{private.ID, hand.ID}); err != nil {
+				t.Fatalf("SetUses: %v", err)
+			}
+			if got := f.Published()[before:]; len(got) != 0 {
+				t.Errorf("a private rewrite published %v, want nothing", got)
+			}
+			for _, id := range []uuid.UUID{private.ID, hand.ID} {
+				row, _, err := f.Service.Open(f.Ctx, f.Tx, id, false)
+				if err != nil {
+					t.Fatalf("read %s: %v", id, err)
+				}
+				want := contracts.VisibilityPrivate
+				if id == hand.ID {
+					want = contracts.VisibilityPublic
+				}
+				if row.Visibility != want {
+					t.Errorf("%s is %q, want %q", id, row.Visibility, want)
+				}
+			}
+		},
+
+		// The retract this module already had, named as a case so the audience path
+		// above cannot quietly drop it: the last public use ending is what turns a
+		// file private again, in the write that ended it.
+		"the last public use ended makes a file private again": func(t *testing.T, f Fixture) {
+			row := stored(t, f, hello)
+			uses := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			if _, err := f.Service.(contracts.ShownUses).SetUsesShown(f.Ctx, f.Tx, uses, []uuid.UUID{row.ID}, true); err != nil {
+				t.Fatalf("SetUsesShown: %v", err)
+			}
+			f.one(t, "rewriting the body without it", contracts.EventVisibility, func() {
+				if _, err := f.Service.SetUses(f.Ctx, f.Tx, uses, nil); err != nil {
+					t.Fatalf("ending the use: %v", err)
+				}
+			})
+			if _, _, err := f.Service.Open(f.Ctx, f.Tx, row.ID, true); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("an anonymous read after the last public use ended = %v, want not found", err)
 			}
 		},
 

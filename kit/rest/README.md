@@ -47,6 +47,17 @@ writes, validates nor publishes.
 [kit/entity/display](../entity/display/display.go), the one way a value is
 shown, which the generated screens read without linking this package.
 
+## Composition (typed PATCH)
+
+**Reused** — `Spec.Schema`, `crud.FieldNamed`, `foldedName` and Huma's entity
+schemas provide the writable names, types, formats, enums and media annotations.
+**Added** — `httpx.SetPatchSchema` replaces the untyped map with `<Entity>Patch`:
+closed, optional properties, excluding Base, `Immutable` fields and defaults.
+Nullable pointers/lists admit null; the body stays required. Attachment after
+registration preserves decoding, merge refusals, validation and tenant checks.
+**Made reusable** — each API owns its components for Update-enabled Specs;
+conflicting shapes under one name refuse mounting.
+
 `Immutable` names the fields a command owns. Every door that reads a body — the
 JSON create and patch, the two a page calls beneath HTTP, and `Values` beneath a
 create form — asks its keys the decoder's own question: one folding onto a
@@ -60,6 +71,56 @@ row it is gets settled first, the same way a body that names a column settles
 it, so a row the request's tenant may not write answers 404 whatever the body
 omits — on a table whose read policy shows one shared list to every tenant,
 row-level security lets the row be read, and it is the write that refuses.
+
+`Gate` is the door in front of a write, asked after those checks, after the row is
+locked and the body merged, and before anything is written: this row, these fields,
+now, in the caller's own transaction. It exists because the generic PATCH is mounted
+from this file — a rule that stood in a module's own `Save` covered one door per
+module and left the other three open, which is what `modules/site` had to do on its
+singleton. The fields it is asked about are computed from the merged entity's
+canonical JSON and never from the request's key list, which is what makes a body
+that resends the current value not a change and a generated form that redraws the
+whole record writable. A command carries no field list: the kernel cannot know what a
+command writes without running it, and running it is the write, so the question names
+the command's verb and the answer — `modules/change`'s `contracts.Protection` in the
+reference application — says what that verb moves. A gate that refuses writes
+nothing, publishes nothing and runs no hook, and it is not an authorization decision:
+the grants answer whether this caller may write at all, the gate answers whether the
+write needs a second pair of eyes first, whichever caller it is. `Mount` refuses a
+`Gate` on an entity with no `revision` field, because a write refused on the grounds
+that the row may have moved has to be able to say what it moved to; the kernel moves
+that number in the same `UPDATE` as the data, which is why no entity behind a gate
+moves it by hand.
+
+The `revision` number is the server's own, and the schema says so. `entity.ServerOwned`
+is the one question — a field Base contributes, or the row's write counter — and every
+door that takes a value from a caller asks it: `merge` refuses a PATCH that names the
+field, `createRow` discards what arrived for it exactly as `crud.Reset` discards an id,
+the generated form draws no control for it and its reader refuses to post one back, and
+the `Changed` computation never asks about it. The reason is one sentence: a number a
+caller can type is not a number a stale write can be refused with, and the whole of the
+stale-base rule above rests on it. A client that wants to *write conditionally* quotes
+the number instead of setting it — the item read and the patch answer `ETag` for a Spec
+whose entity carries the counter, `If-Match` on `PATCH` and `DELETE` is checked against
+the revision the lock found, and a tag the row has passed is 412 naming the number it is
+on now. A malformed tag (`*`, a weak tag, a bare number) is 422 rather than ignored, and
+an absent tag is allowed, which is what keeps every client written before the door — the
+documents this repository checks in, the mobile flows — working. `If-Match` is asked after
+`RecheckTenant`, so a foreign row answers 404 and never gives away its number; on a
+resource whose entity carries no write count there is no tag to quote, and the request is
+refused rather than silently unwritten.
+
+`Command` also checks `entity.ServerOwned` over its derived argument fields before
+registering any command or operation. An integer JSON field named `revision`, or
+a read-only field contributed by an embedded `Base`, panics with the resource,
+verb and first offending JSON field named. Hidden, system, collection and operator
+commands follow the same rule. Use `IfRevision int64` tagged `json:"ifRevision"`
+for an observed revision, then map it to the domain condition inside the callback.
+The callback still owns authorization, tenant scope and revision checks in its
+transaction. This declaration check runs during route composition in `App.Build`,
+before deployment effects; `Validate`, `Explain` and `Describe` do not run routes.
+It covers the fields the schema derives, without inspecting nested payloads or
+map keys. Accepted commands retain their existing JSON decoding and error mapping.
 
 That compare is `crud.RecheckTenant`, and it lives in
 [kit/crud](../crud/crud.go) because the rule already lived there, inside
@@ -76,6 +137,31 @@ sentence is a door that crashes the request that asks it.
 Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the
 development database: `make up`, then `make test TEST_PACKAGES=./kit/rest`.
+
+## Composition (command argument ownership)
+
+**Reused** — `Command`, `commandFault`, `crud.FieldsOf` and `entity.ServerOwned`
+provide the declaration boundary, field metadata and ownership rule.
+**Added** — the ownership check and corrective diagnostic at command declaration,
+because runtime merge refusal cannot prevent an unusable command from composing.
+**Made reusable** — declaration, JSON and application-build conformance cases
+exercise the same guard for every module's command inputs.
+
+## Composition (T-0360)
+
+**Reused** — the richtext pass that already parsed every field of a save before any of it
+was written, the one transaction that save runs in, and `FileUses` as it stood: a port
+that files one field's uses for one record. **Added** — `Spec.Audience`, a record's answer
+to "is this body served to somebody who has not signed in", asked once per write from the
+row the write already holds and never from the body being saved; `FileUsesOrder` with
+`SaveUses`, the optional half of that port that is told the whole save — every richtext
+field of it, or nothing at all for a record being deleted — before its first field is
+filed; and `recordLocale`, which is one answer at the save door and at the delete. **Made
+reusable** — the save-wide lock order is kit/rest's to offer and the ledger's to decide:
+a resource with two richtext fields gets it by wiring a recorder that answers, which is
+what two records sharing two pictures in each other's field order would otherwise lose to
+Postgres (SQLSTATE 40P01), and a case in this package's own tests holds the order the kit
+owes that recorder.
 
 ## Composition (T-0185)
 
@@ -99,3 +185,23 @@ resource; `Offers` and `OperationWords` are the two accessors any later shell re
 the ratchet written beside the versioned catalogue
 (`apps/platformkit/catalog_version_test.go`) is the pattern for every additive key that
 catalogue gains next.
+
+## Composition (T-0138)
+
+**Reused** — `crud.GetForUpdate` for the lock the gate is asked beneath, `crud.RecheckTenant`
+and `crud.Update` unchanged (the gate hands them the same entity and the same column list),
+`Spec.Immutable`'s mount-time name check as the model for refusing an incoherent door, and
+the error mapping every other write here already uses: a gate that returns `crud.ErrConflict`
+gets 409 and a gate that returns a problem document gets that document, so the door needed no
+new status. **Added** — `Spec.Gate`, `rest.Gate`, `rest.Write`, the four verb constants,
+`RevisionField` and the one `Changed` computation over the merged entity's canonical JSON:
+nothing in `kit/rest` or `kit/crud` had a pre-write hook (only `AfterCreate`/`AfterDelete`,
+which run after the write) and no way to ask "which fields does this write move" — which is
+the question `modules/change` asks and the one a request body cannot answer honestly. **Made
+reusable** — the same `Check` answers the JSON PATCH, the DELETE, a generated form's POST, an
+in-process `Spec.Update` beneath a worker and a lifecycle command, because they share
+`updateRow`/`deleteRow` and this stands in those rather than in a router; the kernel's own
+`revision` bump rides the one `UPDATE`, so an entity that grows the field gets a number a
+diff can quote without writing a trigger, a column of its own or a second writer; and a
+command is asked about by verb, which is what leaves a command nobody annotated still
+answered by the module that owns the row.

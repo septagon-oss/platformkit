@@ -27,6 +27,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // Module is one business capability, described to the kernel.
@@ -90,6 +92,11 @@ type Module struct {
 	// subscribes each one; the name has to be an event some module emits.
 	Subscriptions []events.Subscription
 
+	// Streams are the events this module lets a live connection watch, and who
+	// may. A stream is a notice and never a payload, and an event nothing streams
+	// stays exactly as it was: the durable path never reads this list. See Stream.
+	Streams []Stream
+
 	// SubscribeAll says this module handles every event the application emits,
 	// whichever module emits it: the kernel expands the one subscription above
 	// into one per declared event, after every manifest has been read.
@@ -135,6 +142,20 @@ type Module struct {
 	// of them, because a rule cannot be refused on bytes that are immutable. The
 	// number is the module's fact and the module states it. See db.MigrationSource.
 	RulesFrom int64
+
+	// PersonalData is this module's claim about the person columns in the SQL it
+	// owns: which table holds a person's own id, which other columns name a person,
+	// which text columns an identifier may have been copied into, and which uuid
+	// columns name a row and not a person — or, for a module whose tables carry no
+	// such column at all, the reason that is so.
+	//
+	// The kernel reads it three ways, which is what makes it a declaration and not
+	// a comment: Validate refuses it against this module's own migration files
+	// (kit/personaldata.Check, on the bytes and with no database), it is the list
+	// the per-person erasure re-reads to prove it worked, and it is what the export
+	// manifest says it asked. A module that adds a person column and files nothing
+	// is refused at boot rather than discovered by a person's request. See ADR 0020.
+	PersonalData personaldata.Declaration
 
 	// Routes registers this module's operations, each with its authorization,
 	// on the surface the kernel built for it. The module chooses a router —
@@ -215,6 +236,33 @@ type Permission struct {
 	// customer's administrator, and an ordinary route that declared this one
 	// would be reachable by nobody but the operator.
 	Operator bool
+}
+
+// Grants is every permission the composed modules declare: the catalogue of
+// what a role in this installation may be granted at all, and the only honest
+// answer to that question, because a permission is defined by the module that
+// owns it and a module that is not composed defines nothing.
+//
+// It is exported rather than built where it is needed because it is needed
+// twice and the two answers have to be the same list. kit/app hands it to
+// kit/httpx so that a module validating a permission somebody typed asks the
+// composition instead of guessing; a composition hands it to whatever seeds a
+// new tenant's roles for the same reason. A product that wrote the second list
+// out by hand — and every one of them did — seeds a grant no route will ever
+// accept the day it drops the module that defined it. See modules/auth.SeedRoles.
+//
+// Valid has already refused a manifest whose permission is malformed or defined
+// twice, so this does not check either; it is the list, in composition order,
+// with each permission's Label carried through so the layer that renders a
+// refusal can name the grant in words (see tenancy.Grant).
+func Grants(mods []Module) []tenancy.Grant {
+	var out []tenancy.Grant
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			out = append(out, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
+		}
+	}
+	return out
 }
 
 // RoleDecl is one role a module declares for its own capability: seeded into
@@ -366,6 +414,19 @@ func Validate(mods []Module) error {
 			}
 		}
 
+		// A person's rows can only be in a table this module's own SQL creates, so the
+		// claim is asked of a module that has SQL and of nobody else: one with no
+		// tables of its own holds no person column by construction, and asking it for a
+		// sentence would teach that the field is a formality. Every refusal here reads
+		// the module's migration bytes, so it lands before a database is opened — and
+		// the module that added a uuid column and filed nothing is refused now instead
+		// of being discovered by a person asking for their data. See ADR 0020.
+		if m.Migrations != nil {
+			for _, problem := range m.PersonalData.Check(m.Name, m.Migrations) {
+				add("%s", problem)
+			}
+		}
+
 		// A declared role is a promise about this module's own permissions, so every
 		// check but one is local to it. The refusals are all compose-time, which is
 		// where checkPersonas already put a bad persona grant: boot and bootstrap fail
@@ -489,6 +550,12 @@ func Validate(mods []Module) error {
 				add("module %q: nav entry %q requires permission %q, which no module defines", m.Name, n.Label, n.Permission)
 			}
 		}
+		// A stream is a door onto an event, so it is checked beside the subscription
+		// that is the other door onto the same set: the event has to exist, and the
+		// policy has to name someone who may walk through it.
+		for _, problem := range streamProblems(m, emitted, owner) {
+			add("%s", problem)
+		}
 	}
 
 	bad = append(bad, validMoves(mods)...)
@@ -507,7 +574,7 @@ func Validate(mods []Module) error {
 // for every attributable refused authorization (see kit/httpx Options.Denied). They
 // count as emitted for Validate and are expanded for a SubscribeAll module, so
 // modules/audit keeps them like any other event.
-var KernelEvents = []string{"security.denied", "security.access_requested"}
+var KernelEvents = []string{"security.denied", "security.access_requested", events.EventOperationOutcome}
 
 // KernelName is the manifest name kit/app gives the kernel's own share of the
 // composition. It is named because it is read by a rule: KernelEvents are the
@@ -529,6 +596,13 @@ const KernelName = "platformkit"
 // is not modified: the returned slice is a copy, sorted so every replica
 // registers the same consumers, and in it SubscribeAll is cleared — the flag is
 // a request and this is it answered.
+//
+// What it answers is subscriptions and nothing else, and that is a contract: the
+// permissions of every module it returns are the ones the module it came from
+// defined, so Grants reads one catalogue off either list — which is what makes
+// the catalogue kit/app declares to the request guard and the one a composition
+// hands its seeder answer "does this installation define this permission" the
+// same way. TestExpandRewritesSubscriptionsAndNothingElse holds the line.
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string

@@ -42,5 +42,5 @@ test('login reveals a real failure and hides it while retrying', async ({ page }
     expect(await error.boundingBox()).toBeNull();
   } finally { release(); }
   await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Platform overview' })).toBeVisible();
 });

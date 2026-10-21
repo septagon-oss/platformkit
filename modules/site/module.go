@@ -15,23 +15,31 @@ import (
 	"context"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/site/internal"
 )
 
-// Deps is what this module cannot make for itself, and it is empty: a site
-// belongs to a tenant by carrying its id, which row-level security matches on.
-// It is a struct rather than no parameter so that the day it needs something,
-// every call site gains a named field instead of a new argument.
+// Deps is what this module cannot make for itself. It is a struct rather than no
+// parameter so that the day it needs something, every call site gains a named
+// field instead of a new argument.
 type Deps struct {
 	// Gate stands on the settings route and answers whether this tenant's settings
 	// may be written directly. nil writes them, which is what every composition
 	// that has not decided otherwise wants. See contracts.WriteGate for why the
 	// question is asked here and answered elsewhere.
 	Gate contracts.WriteGate
+
+	// Palette answers the installation's own accent, per mode, for the site that
+	// named none: the read resolves the stored empty colour through it, so nothing
+	// downstream ever sees "no colour" where a colour belongs. nil is an
+	// installation that names no palette of its own — such a composition answers
+	// the empty colour and pins nothing. See contracts.Palette.
+	Palette contracts.Palette
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -39,14 +47,11 @@ type Deps struct {
 // not here fails startup instead of denying everyone forever.
 var permissions = []module.Permission{{Key: contracts.PermissionSiteManage, Label: "manage the site"}}
 
-// NewLockedReader returns the same settings service Module builds, as the one
-// interface a caller about to write needs (see contracts.LockedReader for why that
-// is a second interface and not a method on Service). It costs a second value
-// because a Service has no fields — everything it needs arrives with the
-// transaction — so there is nothing here to keep in step with anything else.
-func NewLockedReader() contracts.LockedReader { return internal.NewService() }
-
-// Module is the manifest, and the service it is built on.
+// New returns the settings service and the manifest that mounts it. The one
+// service answers both of its contracts — `contracts.Service` for whoever reads a
+// site and `contracts.LockedReader` for the caller about to write one — because a
+// second constructor could not reach the palette in Deps and would hand out a
+// service that answers the empty colour where this one answers the installation's.
 //
 // The three routes this module used to write by hand are rest.Singleton now:
 // one row per tenant, a read, a PUT, and a public face. They were the same
@@ -56,11 +61,23 @@ func NewLockedReader() contracts.LockedReader { return internal.NewService() }
 // is the module that shows what it takes: a Load that answers with the defaults
 // rather than a 404, a Save, and a Face saying what a visitor may see.
 func New(deps Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService()
+	svc := internal.NewService(deps.Palette)
 	settings := rest.Singleton[*contracts.SiteSettings]{
 		Module: "site", Entity: "settings", Path: "/settings",
-		Read:   contracts.PermissionSiteManage,
-		Write:  contracts.PermissionSiteManage,
+		Read:  contracts.PermissionSiteManage,
+		Write: contracts.PermissionSiteManage,
+		// Present is how these settings read. `singular` and `plural` are the same
+		// words because this resource has no plural — a tenant has one row — and
+		// they are written rather than left to `Singular + "s"` precisely because
+		// that default is the "1 Settingss" the phone photographs. No
+		// `primaryField`, `statusField`, `summaryFields` or `sortable`: a singleton
+		// has no rows, no list and no New button.
+		Present: entity.EntryHints{
+			Singular: "site settings",
+			Plural:   "site settings",
+			Icon:     "settings",
+			Group:    &entity.ResourceGroup{Key: "site", Label: "Site"},
+		},
 		Event:  contracts.EventSettingsUpdated,
 		Public: true,
 		Load: func(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.SiteSettings, error) {
@@ -92,8 +109,13 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		},
 	}
 	return svc, module.Module{
-		Name:        "site",
-		Migrations:  Migrations.Files,
+		Name:       "site",
+		Migrations: Migrations.Files,
+		// One row of a tenant's own presentation choices: a uuid that names a file.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:      "site_settings",
+			NotPerson: []string{"logo_file_id"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

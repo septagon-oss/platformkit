@@ -38,8 +38,10 @@ and refuses growth beyond these recorded closures:
 - `ui/page` and `ui/screens` are the adapters and are gated at the adapter
   closure, which reaches kit/db and net/http through kit/httpx; neither may
   import `ui/export` or `ui/source`. What needs the kernel stays there: the
-  local-path check on a sign-in link, the nonce on an inline script, the
-  guarded closures of an `httpx.Resource`.
+  local-path check on a sign-in link, the nonce on an inline script, a view's
+  `RunsWASM` declaration (the kernel's `httpx.AllowWASM`, called for the rendered
+  view and for no refusal or redirect), the guarded closures of an
+  `httpx.Resource`.
 - `ui/components` never imports `ui/components/examples`: a renderer needs no
   reflection. `ui` never imports `ui/export`: a shell needs no design tooling.
 
@@ -91,7 +93,7 @@ were drawn here, so the cure is here too.
   sidebar already branches on, `style.MaxWScaled(style.MaxWSM)` (the bound
   `document.Bare` and the reference app's fault page already chose),
   `components.Text`'s own size vocabulary, and the gate's own probe as
-  `e2e/review-r3-refusal-floor.spec.ts` transcribes it. That bound is carried by
+  `e2e/refusal-floor.spec.ts` transcribes it. That bound is carried by
   the two sentences under a control (`clHelp`, `clFieldErr`) and by the wrapper
   inside the footer — never by the field's own flex column (`clFieldWrap`),
   because the design tool projects no composition whose sizing is constrained of
@@ -122,6 +124,25 @@ were drawn here, so the cure is here too.
   diagnostic that names the element behind a refusal, for every spec written from
   now on; and `ui:"display"`, the field tag by which an entity says what its rows
   are called, read by `ui/resource` and refused at mount by `kit/rest`.
+
+## Generated command controls
+
+Generated resource commands use outline buttons so the toolbar's Edit or New
+action remains the screen's filled action; each command retains its named native
+POST form and submit button.
+
+- **Reused** — the existing `components.Button` outline variant, `design.ResolveColors`,
+  shipped palettes and resource rendering fixtures.
+- **Added** — the outline choice for generated command submits and assertions for
+  action prominence, label contrast, paragraph sizes and native submission.
+- **Made reusable** — every application using `ui/screens` inherits the command
+  styling through `ui/resource` without changing its resource declarations.
+
+The assertions live in [resource](resource/generated_screen_floor_test.go),
+[command controls](resource/command_controls_floor_test.go) and
+[style](style/semantic_colors_test.go); run `go test ./ui/resource ./ui/style`.
+The paragraph-size assertion covers the resource body; complete frame sizing and
+product palettes still need browser measurements of the composed screen.
 
 ## Next action
 

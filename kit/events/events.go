@@ -68,7 +68,7 @@ func ValidName(name string) bool { return transport.ValidName(name) }
 func Publish(ctx context.Context, tx db.Tx[db.Tenant], name string, payload any) error {
 	// The tenant comes from the transaction, never from the caller: an event
 	// belongs to the tenant whose data changed, by construction.
-	return write(ctx, tx.DB(), db.TenantOf(tx).ID, name, payload)
+	return write(ctx, tx.DB(), db.TenantOf(tx).ID, name, payload, false)
 }
 
 // PublishFor writes an event from a cross-tenant transaction, naming the tenant
@@ -88,14 +88,14 @@ func PublishFor(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID, na
 	if tenantID == uuid.Nil {
 		return fmt.Errorf("events: %s: an event belongs to a tenant", name)
 	}
-	return write(ctx, tx.DB(), tenantID, name, payload)
+	return write(ctx, tx.DB(), tenantID, name, payload, true)
 }
 
 // write is the one INSERT. The actor is whatever kit/tenancy has on the
 // context and NULL otherwise, passed as an untyped nil so the column is null
 // rather than the nil UUID: "nobody" and "the user 00000000-…" are different
 // answers and only one of them is true.
-func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, payload any) error {
+func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, payload any, system bool) error {
 	if !ValidName(name) {
 		return fmt.Errorf("events: %q is not %q", name, "<module>.<event>")
 	}
@@ -128,9 +128,21 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	} else if err := checkDeclared("", name); err != nil {
 		return err
 	}
+	// An attribution says the cause was not a session. The person on the context
+	// then belongs in `initiator`, not `actor`: a seed run names whom it served,
+	// and nobody signed in as them. With no attribution the actor is the signed-in
+	// person, exactly as it was before this column existed.
+	attr, hasAttr := AttributionFrom(ctx)
+	if hasAttr && !attr.Valid() {
+		return fmt.Errorf("events: %s: attribution %q is not a kind, file and line this kernel can store", name, attr.ActorKind)
+	}
 	var actor any
-	if id, ok := tenancy.ActorFrom(ctx); ok {
+	if id, ok := tenancy.ActorFrom(ctx); ok && (!hasAttr || attr.ActorKind == ActorUser) {
 		actor = id
+	}
+	kind, file, line, initiator := any(nil), any(nil), any(nil), any(nil)
+	if hasAttr {
+		kind, file, line, initiator = attr.ActorKind, nilIfEmpty(attr.SourceFile), nilIfZero(attr.SourceLine), nilUUID(attr.InitiatorID)
 	}
 	// The trace context is stored beside the actor for the same reason the actor
 	// is: the relay publishes later, in a transaction of its own and with no
@@ -152,18 +164,35 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	// what it was not given, and a row that carries no trace is asked about with
 	// `traceparent IS NULL` — the query the migration says is ordinary, and one
 	// the empty string answers with an empty result set.
+	op, err := operationSnapshot(ctx, gdb, tenantID, system)
+	if err != nil {
+		return err
+	}
+	facts := operationColumns(op)
 	parent, state, correlation := carriedContext(ctx)
 	req, _ := request.From(ctx)
-	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage, request_id, client_ip)"+
-			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, NULLIF(?, '')::inet)",
-		uuid.New(), tenantID, name, string(body), actor,
-		nilIfEmpty(parent), nilIfEmpty(state), nilIfEmpty(correlation),
-		nilIfEmpty(req.ID), req.ClientAddr,
-	).Error; err != nil {
+	columns := "id, tenant_id, name, payload, actor, traceparent, tracestate, baggage, request_id, client_ip, actor_kind, source_file, source_line, initiator"
+	values := "?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, NULLIF(?, '')::inet, ?, ?, ?, ?"
+	args := []any{uuid.New(), tenantID, name, string(body), actor, nilIfEmpty(parent), nilIfEmpty(state), nilIfEmpty(correlation), nilIfEmpty(req.ID), req.ClientAddr, kind, file, line, initiator}
+	if op.ID != "" {
+		columns += ", operation_id, operation_ref, operation_tenant_id, operation_person_id, operation_outcome, operation_revision"
+		values += ", ?, ?, ?, ?, ?, ?"
+		args = append(args, facts...)
+	}
+	if err := gdb.Exec("INSERT INTO "+table+" ("+columns+") VALUES ("+values+")", args...).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
+}
+
+// nilIfZero stores a count that did not happen as NULL rather than 0, for the
+// same reason nilIfEmpty stores an absent string as NULL: two words for one fact
+// is one word too many, and the column's CHECK refuses a source line of 0.
+func nilIfZero(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
 }
 
 // nilIfEmpty stores an absent value as NULL rather than the empty string: the
@@ -205,6 +234,9 @@ type Subscription struct {
 	Module  string
 	Name    string
 	Handler Handler
+	// Terminal records owner-confirmed failure together with the dead letter.
+	// Nil preserves causality without completing the originating operation.
+	Terminal func(context.Context, db.Tx[db.Tenant], Event, error) error
 }
 
 // durable is the subscription's name on the transport. Dots separate a subject,
@@ -252,6 +284,15 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 			}
 		}
 		h, durable := s.Handler, s.durable()
+		// older is the durable this very subscription's mark was written under before
+		// the tenant it is delivering into had an app — the same name with the app's
+		// prefix taken off, which is the one rename ledger.go performs and appname
+		// forms. Only a subscription that names an app has one: the app-less name is
+		// already its own. See claim.
+		older := ""
+		if s.App.Named() {
+			older = appname.Durable("", s.Module, s.Name)
+		}
 		sink := Sink{
 			Handle: func(ctx context.Context, ev Event) error {
 				// A handler holds a transaction, so it is bounded. The
@@ -284,21 +325,57 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				}
 				// Only the id is known here. It is all kit/db needs to scope
 				// the transaction, and it is what row-level security reads.
+				if err := transport.ValidateOperation(ev.Operation); err != nil {
+					return err
+				}
+				ctx = request.WithOperation(ctx, ev.Operation)
+				request.DeferOperation(ctx)
 				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
 				// One span per delivery, on the trace of the work that published the
 				// event rather than of the worker that woke up. See trace.go.
 				ctx, span := startDelivery(ctx, ev)
 				err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-					first, err := claim(tx, ev.ID, durable)
+					// The same question again, of the transaction that is about to mark
+					// the work done — and only of a subscription naming no app, because
+					// that is the only subscription whose answer moves. A tenant does not
+					// leave an app (migrations/000043, and 000059 writes an app onto a row
+					// that is still empty), so a scoped delivery that passed holdsTenant
+					// cannot be told otherwise; an app-less one can, because the placement
+					// is exactly the act that turns its answer into somebody else's. See
+					// holdsUnscoped.
+					if !s.App.Named() {
+						holds, err := holdsUnscoped(ctx, tx, ev.TenantID)
+						if err != nil {
+							return err
+						}
+						if !holds {
+							// The reading outside the transaction said this tenant was
+							// nobody's, and the row now says otherwise: the placement landed
+							// between the two, and the app the row names answers for the
+							// delivery from here. Write nothing, and refuse the copy the way
+							// the check above does — a claim under the unscoped durable would
+							// be a mark in the one ledger that app will never read, which is
+							// the window the move exists to close, marked instead of closed.
+							slog.ErrorContext(ctx, "events: delivery's tenant took an app while it was being read",
+								"durable", durable, "event", ev.Name,
+								"id", ev.ID, "tenant", ev.TenantID)
+							return nil
+						}
+					}
+					first, err := claim(tx, ev.ID, durable, older)
 					if err != nil || !first {
 						return err
 					}
+					ctx = context.WithValue(ctx, commandDeliveryKey{}, commandDelivery{event: ev, durable: durable})
 					return h(ctx, tx, ev)
 				})
 				endSpan(span, err)
 				return err
 			},
 			Dead: func(ctx context.Context, ev Event, cause error) error {
+				if s.Terminal != nil {
+					return terminalLetter(ctx, conn, ev, durable, cause, s.App, s.Terminal)
+				}
 				return deadLetter(ctx, conn, ev, durable, cause)
 			},
 		}
@@ -345,6 +422,48 @@ func holdsTenant(ctx context.Context, conn *db.Conn, app appname.Name, tenantID 
 	return holds, err
 }
 
+// holdsUnscoped declares the tenant this delivery is written for, and only then
+// re-reads — inside the delivery's own transaction — the question holdsTenant asked
+// outside it: is this tenant still nobody's?
+//
+// It exists because the outer read is a decision made from a snapshot the write does
+// not hold. A delivery reads the row, the placement names it, and the claim that
+// follows marks work done under a durable the tenant's new app will never subscribe
+// under — the move that renames those rows has already looked, found nothing, and
+// reported its zero.
+//
+// The re-read alone narrowed that window to two statements and no further, because the
+// reading it replaced was stale in the same way: a second nonlocking snapshot can be
+// overtaken by the same placement, and the trigger's key arrives too late to help, since
+// the INSERT that fires it can itself wait — behind a relation lock, or behind another
+// writer's row — with nothing said about its tenant. So the lock comes first and the read
+// second, and the order is the cure: once this statement has run, no move of this tenant
+// can commit while the delivery is open, so the answer below is either "still nobody's,
+// and nobody can become somebody before the claim commits" or "someone's, and the claim
+// is not ours to write". A lock taken after a decision records it; taken before, it makes
+// it authoritative.
+//
+// Holding it to commit costs the app-less deployment the window the claim already held
+// the same key for, and costs a deployment that has moved nothing: the key is asked for
+// by an app-less subscription alone, and a placement moves a tenant out of that branch.
+func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID) (bool, error) {
+	// The declaration, before the reading: see above, and declareTenant for why this is
+	// the half the row trigger cannot reach.
+	if err := declareTenant(tx.DB(), tenantID); err != nil {
+		return false, err
+	}
+	var whose string
+	// max() so a tenant with no row answers '' rather than no rows, as holdsTenant
+	// does: the row-level policy shows a tenant transaction its own row and nothing
+	// else, and an app that names itself is the deployment that keeps a tenant the
+	// control plane has not answered for.
+	row := tx.DB().Raw(`SELECT coalesce(max(tn.app), '') FROM tenants tn WHERE tn.id = ?`, tenantID).Row()
+	if err := row.Scan(&whose); err != nil {
+		return false, fmt.Errorf("events: say which app holds tenant %s: %w", tenantID, err)
+	}
+	return whose == "", nil
+}
+
 // claim writes this subscription's mark against the event and reports whether
 // it was the one that wrote it. A second delivery conflicts on the primary key,
 // inserts nothing, and is told to skip the handler.
@@ -367,11 +486,55 @@ func holdsTenant(ctx context.Context, conn *db.Conn, app appname.Name, tenantID 
 // done (commit) or given the work itself (rollback). Two deliveries of one
 // event are therefore serialized rather than concurrent, and the timeout is
 // what keeps "serialized" from meaning "stuck".
-func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
+//
+// Which name the mark sits under is a third question, and `older` answers it for
+// the one tenant whose durable spelling can change underneath a running consumer.
+// The durable half of this key is fixed when the subscription is made; the tenant's
+// app is written later, by a step this delivery takes no part in (kit/app's
+// placement, in whichever replica's boot runs it). A placement is also the act that
+// makes that tenant's *pending* rows this app's relay's to publish, so a consumer
+// that opened its scoped subscription while the tenant was still app-less can be
+// handed the same event a second time, at the scoped address, with its own mark
+// sitting under the unscoped name — the key this statement looks for is not the row
+// the table holds, and the handler commits work its tenant already committed.
+// Renaming the row is what a move does, and a move cannot be what this refusal rests
+// on: the move is another replica's step, it refuses whenever a delivery is open, and
+// the relay is not obliged to wait for it. So the mark is read under both spellings
+// of the name one subscription goes by, and the rename is what makes the record
+// findable afterwards rather than what makes the second delivery refuse.
+//
+// Reading the older name cannot refuse work nobody did. A claim under an unscoped
+// durable is written only while its tenant names no app — holdsUnscoped re-reads
+// that inside the claim's own transaction and refuses the mark once one is named —
+// and a tenant's app, once written, is never rewritten or moved (migrations/000043,
+// and 000059 checks `app = ”` at the write itself). So an older-spelling mark in this
+// tenant is this subscription's own history, in this tenant, and no other app's.
+// The same holds of the terminal record beside it: a refusal to run a handler an
+// operator already ended is that refusal, seen under the name it was written at.
+//
+// What the read cannot see is a mark that has not committed yet, and it is worth
+// naming rather than dressing: two spellings are two primary keys, so an app-less
+// delivery still open across the placement is not serialized against this one the way
+// two deliveries under one name are. It is the window the move's own tenant key exists
+// to make rare (migrations/000061), it needs an app-less consumer still running in a
+// tenant that has just been placed, and this package's README names what closing it
+// would cost.
+func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable, older string) (bool, error) {
+	// One name for an app-less subscription, two for one that names an app: the
+	// statement asks the same question of both ledgers and cannot ask it of a name
+	// that is the same string twice.
+	names := []any{durable}
+	if older != "" && older != durable {
+		names = append(names, older)
+	}
+	args := append([]any{id, durable, db.TenantOf(tx).ID, id}, names...)
 	// Older releases wrote dead letters without a claim. They are terminal too.
-	res := tx.DB().Exec("INSERT INTO "+handled+" (event_id, durable, tenant_id) SELECT ?, ?, ?"+
-		" WHERE NOT EXISTS (SELECT 1 FROM "+deadLetters+" WHERE event_id = ? AND durable = ?) ON CONFLICT DO NOTHING",
-		id, durable, db.TenantOf(tx).ID, id, durable)
+	q := "INSERT INTO " + handled + " (event_id, durable, tenant_id) SELECT ?, ?, ?" +
+		" WHERE NOT EXISTS (SELECT 1 FROM " + deadLetters + " WHERE event_id = ? AND " + durableSet(len(names)) + ")" +
+		" AND NOT EXISTS (SELECT 1 FROM " + handled + " WHERE event_id = ? AND " + durableSet(len(names)) + ")"
+	args = append(args, id)
+	args = append(args, names...)
+	res := tx.DB().Exec(q+" ON CONFLICT DO NOTHING", args...)
 	if res.Error != nil {
 		return false, fmt.Errorf("events: claim %s for %s: %w", id, durable, res.Error)
 	}
@@ -388,15 +551,90 @@ const handlerTimeout = 25 * time.Second
 // work cannot create a false dead letter. An explicit operator replay must
 // remove the terminal claim as well as review the failure; relaying alone
 // deliberately cannot repeat a consequential action.
+//
+// Under which durable, then, is the row written? Under the one the app that
+// holds this tenant reads, and that is not always the durable the delivery
+// arrived on. A dead letter has one job: to make the next delivery of this event
+// to this subscription skip the handler (claim) and to be the row events.Replay
+// clears when an operator decides to ask again. The delivery that ends here is
+// the last one that will ever run under the name it arrived on — the transport
+// terminates the message as soon as this write commits — so a terminal record
+// written where no subscription looks is a dead letter that stops nothing and
+// that no replay of the subscription that did the work will ever find.
+//
+// The two spellings differ exactly once: after a placement, before this write. A
+// handled claim cannot land in that gap, because holdsUnscoped re-reads
+// tenants.app inside the delivery's own transaction and refuses the mark when the
+// tenant has taken an app. A terminal write cannot refuse: the message is
+// exhausted, and a refusal leaves it pending for a redelivery that will be
+// refused again, forever, with the failure recorded nowhere — the event would be
+// neither terminated nor replayable. It is the write that has to land somewhere,
+// so it lands in the ledger of the app that now holds the tenant, which is the
+// same ownership transition MoveLedger performs for rows that got there first:
+// the unscoped name, prefixed with the app tenants.app names.
+//
+// The read is as authoritative as holdsUnscoped's, for the same reason and in the
+// same order: declare the tenant, then ask. While this transaction holds that
+// shared key its tenant's move refuses rather than queues, so the answer is either
+// "nobody's, and no placement can commit under this record" or "somebody's, and
+// this record is theirs to carry" — and of a placement that landed first, this read
+// is the one that sees it.
 func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, cause error) error {
 	ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 	defer cancel()
 	return db.RunSystem(ctx, conn, deadLetterToken, func(_ context.Context, tx db.Tx[db.System]) error {
+		// The same declaration a delivery makes before it reads, and for the same reason:
+		// this is a claim too, written at an unscoped durable, so the question below is
+		// asked under the key that makes its answer one a move has to respect. A durable
+		// that names an app is renamed by nobody, so it declares nothing and asks nothing:
+		// the same WHEN clause as the trigger, and the same key it would take once the
+		// INSERT reached its row.
+		recorded := durable
+		if unscopedDurable(durable) {
+			if err := declareTenant(tx.DB(), ev.TenantID); err != nil {
+				return err
+			}
+			named, err := terminalDurable(ctx, ev, durable, tx.DB())
+			if err != nil {
+				return err
+			}
+			recorded = named
+		}
 		return tx.DB().Exec(`WITH claimed AS (
    INSERT INTO `+handled+` (event_id, durable, tenant_id) VALUES (?, ?, ?)
    ON CONFLICT DO NOTHING RETURNING event_id
   ) INSERT INTO `+deadLetters+` (event_id, durable, tenant_id, name, error)
    SELECT event_id, ?, ?, ?, ? FROM claimed ON CONFLICT DO NOTHING`,
-			ev.ID, durable, ev.TenantID, durable, ev.TenantID, ev.Name, cause.Error()).Error
+			ev.ID, recorded, ev.TenantID, recorded, ev.TenantID, ev.Name, cause.Error()).Error
 	})
+}
+
+// terminalDurable answers which durable this terminal outcome belongs to, of the
+// tenant it was recorded for and the durable the delivery arrived on.
+//
+// A tenant nobody placed keeps the delivered name: the app-less deployment is the
+// one that reads it (ledger.go's predicate for what a move may not touch), and
+// prefixing a row for an app nobody declared would be the write that takes its
+// claim away from the consumer that has it.
+//
+// A tenant whose app is set but is not a slug names a durable no consumer could
+// ever be created under — the refusal Consume and MoveLedger both make at boot —
+// so it keeps the delivered name too, and says so in the log: a mark under an
+// unnameable durable would be a dead letter no subscription and no replay could
+// ever find, which is the row this function exists to place.
+func terminalDurable(ctx context.Context, ev Event, delivered string, gdb *gorm.DB) (string, error) {
+	whose, err := appOfTenant(gdb, ev.TenantID)
+	if err != nil {
+		return "", err
+	}
+	if !appname.Name(whose).Named() {
+		return delivered, nil
+	}
+	app, err := appname.Parse(whose)
+	if err != nil {
+		slog.ErrorContext(ctx, "events: a terminal failure's tenant names an app no durable can be formed from",
+			"tenant", ev.TenantID, "event", ev.Name, "id", ev.ID, "durable", delivered, "error", err)
+		return delivered, nil
+	}
+	return appname.DurablePrefix(app) + delivered, nil
 }

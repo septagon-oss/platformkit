@@ -7,7 +7,8 @@ import (
 )
 
 // The base events this module emits. The first three are kit/rest's, published
-// by the Spec module.go mounts; the last four are lifecycle commands. Pending
+// by the Spec module.go mounts; the rest are lifecycle commands, the last of
+// them the record of a write this module refused. Pending
 // registration and approval events are declared in registration.go. All are
 // listed in the manifest, and kit/app refuses to start if a route would publish
 // one that is not.
@@ -21,6 +22,13 @@ const (
 	EventRolesSet    = "user.roles_set"
 	EventHandleSet   = "user.handle_set"
 	EventDeactivated = "user.deactivated"
+	EventReactivated = "user.reactivated"
+	// EventAdministrationRefused is a write this module refused because it would
+	// have left the tenant with nobody who can sign in and administer it. It is
+	// the record of an attempt that did not happen, which is the only reason it
+	// exists: the write it describes was rolled back, so nothing else about the
+	// attempt is written down anywhere. See AdministrationRefused and internal.floor.
+	EventAdministrationRefused = "user.administration_refused"
 )
 
 // Invited is the payload of EventInvited: a user account now exists in this
@@ -81,4 +89,38 @@ type HandleSet struct {
 type Deactivated struct {
 	UserID uuid.UUID `json:"userId"`
 	At     time.Time `json:"at"`
+}
+
+// Reactivated is the payload of EventReactivated: this person can sign in again.
+// It is a name of its own rather than the absence of a deactivation because the
+// two doors that close a person are not the doors that open them, and an audit
+// of who could sign in needs to say which of them opened it.
+type Reactivated struct {
+	UserID uuid.UUID `json:"userId"`
+	At     time.Time `json:"at"`
+}
+
+// AdministrationRefused is the payload of EventAdministrationRefused: somebody
+// tried to take the last way a tenant has of administering itself away, and the
+// write was refused.
+//
+// It names the person and the door, not the caller: actor, request id, client
+// address and trace context ride on every outbox row already (kit/events), and
+// modules/audit copies them into the trail, so repeating them here would be a
+// second, drift-prone copy of facts the row already carries. The address is not
+// here either — userId is the key every foreign key, subject and audit row
+// already uses, and a trail reader can read the address from it. auth.login_failed
+// carries an address only because a failed login has no user id to name.
+//
+// Roles are the person's roles that grant a tenant the ability to administer
+// itself — the grant this write would have taken away. Nothing else is carried:
+// the whole refusal is about those names, and the state that would have followed
+// is one the refused write never created, so there is no "after" to report.
+type AdministrationRefused struct {
+	UserID uuid.UUID `json:"userId"`
+	// Attempt is which door refused: "roles" (Service.SetRoles), "status"
+	// (Service.Deactivate) or "delete" (the delete route's hook).
+	Attempt string    `json:"attempt" enums:"roles,status,delete" example:"roles"`
+	Roles   []string  `json:"roles"`
+	At      time.Time `json:"at"`
 }

@@ -7,12 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/change/contracts"
 )
@@ -50,6 +55,28 @@ func NewService(bindings []contracts.SubjectBinding) *Service {
 }
 
 var _ contracts.Service = (*Service)(nil)
+
+// unwritable names the first key of a diff this subject cannot move, and answers true
+// when it can move every one of them.
+//
+// A subject that does not say (a Subject that is not a contracts.Writable) is asked
+// nothing, which is what leaves every binding written before this question standing
+// exactly where it stood: the merged document is then its own owner's business, as it
+// was. Where the subject does say, the keys are asked in sorted order, so two requests
+// carrying the same impossible diff name the same field.
+func unwritable(subject contracts.Subject, diff contracts.Diff) (string, bool) {
+	w, ok := subject.(contracts.Writable)
+	if !ok {
+		return "", true
+	}
+	allowed := w.WritableFields()
+	for _, field := range slices.Sorted(maps.Keys(diff)) {
+		if !slices.Contains(allowed, field) {
+			return field, false
+		}
+	}
+	return "", true
+}
 
 // actor is the person the request came from. No command reads one from a body: an
 // identity a caller could send is an identity a caller could choose, and the whole
@@ -95,6 +122,14 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 	if err != nil {
 		return nil, err
 	}
+	// A diff is only a promise if some apply could keep it. The subject is the one
+	// that knows which of its fields a Save writes, and a name outside that list
+	// merges into nothing: the proposal would be digested, decided and applied, the
+	// row would not move as reviewed, and the state would say it had.
+	if field, ok := unwritable(subject, in.Diff); !ok {
+		return nil, fmt.Errorf("%w: %s/%s has no field %q a proposal can move: it is either not a field of the subject, or one a command owns outright",
+			crud.ErrInvalid, in.SubjectModule, in.SubjectEntity, field)
+	}
 	if _, err := in.Diff.Merge(current); err != nil {
 		return nil, fmt.Errorf("%w: %v", crud.ErrInvalid, err)
 	}
@@ -111,6 +146,13 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 		State:         contracts.StateProposed,
 		Revision:      1,
 	}
+	if op, ok := request.OperationFrom(ctx); ok {
+		ref, err := uuid.Parse(op.Ref)
+		if err != nil {
+			return nil, crud.ErrInvalid
+		}
+		row.OperationRef = &ref
+	}
 	if err := s.insert(ctx, tx, row); err != nil {
 		// The unique index over an open proposal is the answer to the race the
 		// duplicate check above cannot see: two inserts at once. Postgres reports the
@@ -125,6 +167,12 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 			return s.oneOpinion(proposer, existing)
 		}
 		return nil, err
+	}
+	if op, ok := request.OperationFrom(ctx); ok {
+		if err := events.RecordOutcome(ctx, tx, op.Revision, request.PendingApproval, request.OperationTime(ctx, at)); err != nil {
+			return nil, err
+		}
+		request.DeferOperation(ctx)
 	}
 	return row, events.Publish(ctx, tx, contracts.EventProposed, contracts.Proposed{
 		ProposalID: row.ID, SubjectModule: row.SubjectModule, SubjectEntity: row.SubjectEntity,
@@ -204,7 +252,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 	}
 	verdict := in.Verdict
 	if verdict != contracts.VerdictApproved && verdict != contracts.VerdictDeclined {
-		return nil, fmt.Errorf("%w: a verdict is approved or declined, not %q", crud.ErrInvalid, verdict)
+		return nil, fmt.Errorf("%w: %w, not %q", crud.ErrInvalid, contracts.ErrVerdict, verdict)
 	}
 	if reviewer == row.Proposer {
 		// Asked before the row's state, so the author cannot read a decided proposal
@@ -222,7 +270,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 		if row.Verdict == verdict && row.Reviewer != nil && *row.Reviewer == reviewer {
 			return row, nil
 		}
-		return nil, fmt.Errorf("%w: this proposal was already %s", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: it is %s", crud.ErrConflict, contracts.ErrAlreadyDecided, row.State)
 	}
 	at := db.Now()
 	row.State = contracts.StateDeclined
@@ -232,6 +280,14 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 	row.Verdict, row.Comment, row.Reviewer, row.ReviewedAt = verdict, in.Comment, &reviewer, &at
 	row.Revision++
 	if err := crud.Update(ctx, tx, row, "state", "verdict", "comment", "reviewer", "reviewed_at", "revision", "updated_at"); err != nil {
+		return nil, err
+	}
+	if verdict == contracts.VerdictDeclined {
+		if _, err := s.original(ctx, tx, row, request.Failed, at); err != nil {
+			return nil, err
+		}
+	}
+	if err := events.Succeed(ctx, tx, at); err != nil {
 		return nil, err
 	}
 	return row, events.Publish(ctx, tx, contracts.EventReviewed, contracts.Reviewed{
@@ -264,7 +320,7 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 		return row, nil
 	}
 	if row.State != contracts.StateApproved {
-		return nil, fmt.Errorf("%w: only an approved proposal may be applied, and this one is %s", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: this one is %s", crud.ErrConflict, contracts.ErrNotApproved, row.State)
 	}
 	binding, ok := s.binding(row.SubjectModule, row.SubjectEntity)
 	if !ok {
@@ -293,7 +349,11 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", crud.ErrConflict, err)
 	}
-	newRevision, err := subject.Save(ctx, tx, merged)
+	originCtx, err := s.original(ctx, tx, row, request.Succeeded, db.Now())
+	if err != nil {
+		return nil, err
+	}
+	newRevision, err := subject.Save(originCtx, tx, merged)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +364,10 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	if err := crud.Update(ctx, tx, row, "state", "applied_revision", "revision", "updated_at"); err != nil {
 		return nil, err
 	}
-	return row, events.Publish(ctx, tx, contracts.EventApplied, contracts.Applied{
+	if err := events.Succeed(ctx, tx, at); err != nil {
+		return nil, err
+	}
+	return row, events.Publish(originCtx, tx, contracts.EventApplied, contracts.Applied{
 		ProposalID: row.ID, SubjectModule: row.SubjectModule, SubjectEntity: row.SubjectEntity,
 		SubjectID: row.SubjectID, Reviewer: deref(row.Reviewer), Proposer: row.Proposer,
 		BaseRevision: row.BaseRevision, NewRevision: newRevision, DiffDigest: row.DiffDigest, At: at,
@@ -327,19 +390,25 @@ func (s *Service) Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		// row's state, so a second account retrying an author's withdraw is refused the
 		// withdrawn row rather than handed it: the idempotent answer belongs to whoever
 		// the command would have accepted the first time.
-		return nil, fmt.Errorf("%w: only the proposer may withdraw a proposal", crud.ErrConflict)
+		return nil, fmt.Errorf("%w: %w", crud.ErrConflict, contracts.ErrNotProposer)
 	}
 	if row.State == contracts.StateWithdrawn {
 		return row, nil
 	}
 	if !row.Open() {
-		return nil, fmt.Errorf("%w: a %s proposal is over", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: it is %s", crud.ErrConflict, contracts.ErrProposalOver, row.State)
 	}
 	at := db.Now()
 	from := row.State
 	row.State = contracts.StateWithdrawn
 	row.Revision++
 	if err := crud.Update(ctx, tx, row, "state", "revision", "updated_at"); err != nil {
+		return nil, err
+	}
+	if _, err := s.original(ctx, tx, row, request.Failed, at); err != nil {
+		return nil, err
+	}
+	if err := events.Succeed(ctx, tx, at); err != nil {
 		return nil, err
 	}
 	return row, events.Publish(ctx, tx, contracts.EventWithdrawn, contracts.Withdrawn{
@@ -378,7 +447,7 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, e
 	if expectedRevision != row.Revision {
 		// The caller decided about a revision it had read. Anything else is two
 		// deciders who both clicked, and only one of them can be right.
-		return nil, fmt.Errorf("%w: this proposal is at revision %d", crud.ErrConflict, row.Revision)
+		return nil, fmt.Errorf("%w: %w: it is at revision %d", crud.ErrConflict, contracts.ErrStaleProposal, row.Revision)
 	}
 	return row, nil
 }
@@ -411,4 +480,32 @@ func deref(id *uuid.UUID) uuid.UUID {
 		return uuid.Nil
 	}
 	return *id
+}
+
+// original completes the linked intent under the current actor, after domain
+// locks. The applying command keeps a distinct receipt and outcome event.
+func (s *Service) original(ctx context.Context, tx db.Tx[db.Tenant], row *contracts.Proposal, outcome request.Outcome, at time.Time) (context.Context, error) {
+	if row.OperationRef == nil {
+		return ctx, nil
+	}
+	refs := []uuid.UUID{*row.OperationRef}
+	if op, ok := request.OperationFrom(ctx); ok {
+		ref, err := uuid.Parse(op.Ref)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	if err := idempotency.LockReceipts(tx, refs...); err != nil {
+		return nil, err
+	}
+	r, err := idempotency.Origin(tx, *row.OperationRef)
+	if err != nil {
+		return nil, err
+	}
+	original := request.WithOperation(ctx, r.Operation())
+	if err := events.RecordOutcome(original, tx, r.Revision, outcome, request.OperationTime(ctx, at)); err != nil {
+		return nil, err
+	}
+	return original, nil
 }

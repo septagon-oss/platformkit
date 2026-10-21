@@ -13,9 +13,11 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/user/internal"
@@ -55,11 +57,28 @@ type Deps struct {
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.
 var spec = rest.Spec[*contracts.User]{
-	Module:     "user",
-	Entity:     "user",
-	Path:       "/users",
-	Read:       contracts.PermissionUserRead,
-	Write:      contracts.PermissionUserManage,
+	Module: "user",
+	Entity: "user",
+	Path:   "/users",
+	Read:   contracts.PermissionUserRead,
+	Write:  contracts.PermissionUserManage,
+	// Present is how a person reads. `primaryField` is the address and not
+	// displayName: displayName defaults to empty, so a catalogue reader titling
+	// by it would name an invited person "Untitled person", and an email is
+	// required, unique per tenant and never blank. The display name and handle
+	// follow as the summary; timestamps remain on the record.
+	Present: entity.EntryHints{
+		Description:      "Invite and manage the people who can access this workspace.",
+		EmptyDescription: "Add a person, then assign the role they need.",
+		Singular:         "person",
+		Plural:           "people",
+		Icon:             "people",
+		Group:            &entity.ResourceGroup{Key: "people", Label: "People"},
+		PrimaryField:     "email",
+		SummaryFields:    []string{"displayName", "handle"},
+		StatusField:      "status",
+		Sortable:         []string{"email", "displayName", "updatedAt"},
+	},
 	SoftDelete: true,
 	// The two fields a command owns. Lifecycle commands move status, and
 	// roles are changed by SetRoles, which publishes
@@ -148,10 +167,17 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	// request's transaction, so a refusal rolls the delete back.
 	mounted.AfterDelete = svc.RefuseLastAdministrator
 	return svc, module.Module{
-		Name:        "user",
-		Migrations:  Migrations.Files,
-		Adopts:      Migrations.Adopts,
-		RulesFrom:   Migrations.RulesFrom,
+		Name:       "user",
+		Migrations: Migrations.Files,
+		Adopts:     Migrations.Adopts,
+		RulesFrom:  Migrations.RulesFrom,
+		// The person is the row itself: the id stays and the values go, which is
+		// what an erasure that keeps the audit trail has to mean (ADR 0020).
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:   "users",
+			Person: "id",
+			Text:   []string{"email", "display_name", "handle"},
+		}),
 		Permissions: permissions,
 		Declared: []events.Declared{
 			// The three kit/rest publishes carry the entity itself, which is
@@ -164,7 +190,9 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.PasswordSet](contracts.EventPasswordSet),
 			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
 			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
+			events.Declare[contracts.Reactivated](contracts.EventReactivated),
 			events.Declare[contracts.HandleSet](contracts.EventHandleSet),
+			events.Declare[contracts.AdministrationRefused](contracts.EventAdministrationRefused),
 			events.Declare[contracts.RegistrationPending](contracts.EventRegistrationPending),
 			events.Declare[contracts.RegistrationApproved](contracts.EventRegistrationApproved),
 			events.Declare[contracts.RegistrationUnverified](contracts.EventRegistrationUnverified),

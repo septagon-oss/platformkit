@@ -26,6 +26,7 @@ import (
 	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/migrations"
@@ -124,6 +125,8 @@ func hello() module.Module {
 		Migrations: fstest.MapFS{
 			"000001_notes.up.sql": {Data: []byte(`CREATE TABLE notes (id serial PRIMARY KEY, tenant_id uuid NOT NULL)`)},
 		},
+		// The only uuid on the row is the tenant it belongs to.
+		PersonalData: personaldata.None("a note belongs to a tenant and its key is a serial"),
 		Routes: func(s httpx.Surfaces) {
 			httpx.Register(s.App, huma.Operation{
 				OperationID: "hello", Method: http.MethodGet, Path: "/",
@@ -354,7 +357,8 @@ func TestNewRefusesAnInvalidComposition(t *testing.T) {
 func TestMigrationSourcesFollowComposition(t *testing.T) {
 	mods := []module.Module{hello(), {Name: "no-sql"}, {Name: "another", Migrations: fstest.MapFS{
 		"000001_other.up.sql": {Data: []byte("SELECT 1")},
-	}, Adopts: []db.Adoption{{Owner: "elsewhere", Versions: []int64{1}}}}}
+	}, PersonalData: personaldata.None("its one file selects nothing into a table"),
+		Adopts: []db.Adoption{{Owner: "elsewhere", Versions: []int64{1}}}}}
 	sources := MigrationSources(mods)
 	var owners []string
 	for _, source := range sources {
@@ -859,8 +863,8 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 // Options.Log is used as it arrives (a caller that brings a logger has chosen
 // its own level) rather than re-wrapped at config's level.
 //
-// 3/4 is this composition: the kernel's own platformkit.event_replayed,
-// security.denied and security.access_requested, each covered by a payload type
+// 4/5 is this composition: the kernel's own platformkit.event_replayed,
+// platformkit.operation_outcome, security.denied and security.access_requested, each covered by a payload type
 // kit/app declares, and hello's hello.note_written, declared with no type, not. A boot whose coverage silently
 // fell to 0/N — a catalogue rebuilt from the wrong list, a DeclareAll that never
 // ran — is the drift the line exists to make visible, and it is now visible here
@@ -895,8 +899,8 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	if line == "" {
 		t.Fatalf("the boot log named no event_schema_coverage:\n%s", logs.String())
 	}
-	if !strings.Contains(line, "event_schema_coverage=3/4") {
-		t.Errorf("the boot line reads %q, want event_schema_coverage=3/4 for the kernel's three covered declarations and one uncovered one", line)
+	if !strings.Contains(line, "event_schema_coverage=4/5") {
+		t.Errorf("the boot line reads %q, want event_schema_coverage=4/5 for the kernel's four covered declarations and one uncovered one", line)
 	}
 }
 

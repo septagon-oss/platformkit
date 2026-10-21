@@ -18,6 +18,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
+	"github.com/septagon-oss/platformkit/kit/operation"
 )
 
 const (
@@ -52,7 +55,14 @@ type envelope struct {
 	// tenant has no transaction to deliver it in. Read: transport_test's
 	// "a document that cannot name a tenant is refused".
 	TenantID string `json:"tenantid"`
-	Actor    string `json:"actor,omitempty"`
+	// App is PlatformKit's own extension: which app's process published this, or
+	// absent for the deployment of one app. The specification leaves every extension
+	// optional and this program does not require it — a document a previous build
+	// published has no app, and reading one is the rollout, not a forgery. What is
+	// required is that when it is present it agrees with the address the message
+	// travelled on, which is AddressMismatch's comparison.
+	App   string `json:"app,omitempty"`
+	Actor string `json:"actor,omitempty"`
 	// The two distributed tracing extension attributes the CloudEvents
 	// specification names: traceparent and tracestate, spelled exactly as W3C
 	// spells them, so a collector or a bridge that understands one understands
@@ -69,20 +79,44 @@ type envelope struct {
 	// worker's trace names the call a person can quote. Absent when the publisher
 	// had none — see migrations/000041.
 	Baggage string `json:"baggage,omitempty"`
+
+	// The attribution, in the extension's lower-case spelling: what caused this
+	// when the cause was not a session. All four are absent for a person's
+	// request, which the `actor` attribute already names.
+	ActorKind         string            `json:"actorkind,omitempty"`
+	SourceFile        string            `json:"sourcefile,omitempty"`
+	SourceLine        int               `json:"sourceline,omitempty"`
+	Initiator         string            `json:"initiator,omitempty"`
+	OperationID       string            `json:"operationid,omitempty"`
+	OperationRef      string            `json:"operationref,omitempty"`
+	OperationTenant   string            `json:"operationtenantid,omitempty"`
+	OperationPerson   string            `json:"operationpersonid,omitempty"`
+	OperationOutcome  operation.Outcome `json:"operationoutcome,omitempty"`
+	OperationRevision int64             `json:"operationrevision,omitzero"`
 }
 
 // MarshalJSON writes the CloudEvents form of the event.
 func (e Event) MarshalJSON() ([]byte, error) {
+	if err := ValidateOperation(e.Operation); err != nil {
+		return nil, err
+	}
 	doc := envelope{
 		SpecVersion:     SpecVersion,
 		ID:              e.ID.String(),
 		Source:          source(e.Name),
 		Type:            e.Name,
-		Subject:         Subject(e.TenantID, e.Name),
+		Subject:         appname.Subject(e.App, e.TenantID, e.Name),
 		Time:            e.At.UTC().Format(time.RFC3339Nano),
 		DataContentType: dataContentType,
 		Data:            e.Payload,
 		TenantID:        e.TenantID.String(),
+	}
+	// The app is written when the publisher named one and absent when it did not,
+	// which is the same asymmetry as the actor: "no app" and "the app named ''" are
+	// one answer, and an app-less deployment's documents stay the bytes they were
+	// before decision 0074.
+	if e.App.Named() {
+		doc.App = e.App.String()
 	}
 	// The nil UUID means "nobody caused this" — a periodic job, the relay, a
 	// handler reacting to another event. An optional attribute that does not
@@ -94,6 +128,12 @@ func (e Event) MarshalJSON() ([]byte, error) {
 	// normal case, not a trace with an empty parent.
 	doc.TraceParent, doc.TraceState = e.TraceParent, e.TraceState
 	doc.Baggage = e.Baggage
+	doc.ActorKind, doc.SourceFile, doc.SourceLine = e.ActorKind, e.SourceFile, e.SourceLine
+	if e.Initiator != uuid.Nil {
+		doc.Initiator = e.Initiator.String()
+	}
+	doc.OperationID, doc.OperationRef, doc.OperationTenant, doc.OperationPerson = e.Operation.ID, e.Operation.Ref, e.Operation.Tenant, e.Operation.Person
+	doc.OperationOutcome, doc.OperationRevision = e.Operation.Outcome, e.Operation.Revision
 	return json.Marshal(doc)
 }
 
@@ -178,8 +218,20 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 	if err != nil {
 		return err
 	}
-	if want := Subject(tenantID, doc.Type); doc.Subject != want {
-		return fmt.Errorf("events: CloudEvents subject %q is not the address of type %q in tenant %s, which is %q", doc.Subject, doc.Type, tenantID, want)
+	// The app extension is optional, and an invalid one is not: a document that
+	// names something a subject token cannot hold could never be shown to belong to
+	// the app it claims, which is the refusal AddressMismatch makes of a reader
+	// spelled the same way. The grammar lives in appname.Parse and nowhere else.
+	var app appname.Name
+	if doc.App != "" {
+		app, err = appname.Parse(doc.App)
+		if err != nil {
+			return fmt.Errorf("events: CloudEvents app %q: %w", doc.App, err)
+		}
+	}
+	if want := appname.Subject(app, tenantID, doc.Type); doc.Subject != want {
+		return fmt.Errorf("events: CloudEvents subject %q is not the address of type %q in tenant %s%s, which is %q",
+			doc.Subject, doc.Type, tenantID, appClause(app), want)
 	}
 	at, err := time.Parse(time.RFC3339Nano, doc.Time)
 	if err != nil {
@@ -191,10 +243,43 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 			return err
 		}
 	}
-	*e = Event{ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
-		TraceParent: doc.TraceParent, TraceState: doc.TraceState, Baggage: doc.Baggage}
+	initiator := uuid.Nil
+	if doc.Initiator != "" {
+		if initiator, err = parseUUID("initiator", doc.Initiator); err != nil {
+			return err
+		}
+	}
+	op := operation.Identity{ID: doc.OperationID, Ref: doc.OperationRef, Tenant: doc.OperationTenant, Person: doc.OperationPerson, Outcome: doc.OperationOutcome, Revision: doc.OperationRevision}
+	if err := ValidateOperation(op); err != nil {
+		return err
+	}
+	var attributes map[string]json.RawMessage
+	if err := json.Unmarshal(body, &attributes); err != nil {
+		return err
+	}
+	for _, name := range []string{"operationid", "operationref", "operationtenantid", "operationpersonid", "operationoutcome", "operationrevision"} {
+		if _, present := attributes[name]; present && op == (operation.Identity{}) {
+			return errors.New("events: empty operation extensions")
+		}
+	}
+	if _, present := attributes["operationpersonid"]; present && op.Person == "" {
+		return errors.New("events: empty operation person")
+	}
+	if _, present := attributes["operationoutcome"]; present && op.Outcome == "" {
+		return errors.New("events: empty operation outcome")
+	}
+
+	*e = Event{Operation: op, ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
+		App: app, TraceParent: doc.TraceParent, TraceState: doc.TraceState, Baggage: doc.Baggage,
+		ActorKind: doc.ActorKind, SourceFile: doc.SourceFile, SourceLine: doc.SourceLine,
+		Initiator: initiator}
 	return nil
 }
+
+// appClause is the disagreement sentence's half-sentence, present only when a
+// document named an app: the address a reader has to compare with belongs to that
+// app, and a message that says nothing about its app should not be reported as if
+// it had named one.
 
 // legacyEvent is the shape published before the envelope: Event's own fields and
 // tags. It is a copy of them rather than `type legacyEvent Event` because a
@@ -207,6 +292,16 @@ type legacyEvent struct {
 	Payload  json.RawMessage `json:"payload"`
 	At       time.Time       `json:"at"`
 	Actor    uuid.UUID       `json:"actor"`
+}
+
+// appClause names the app whose address a document was measured against, and says
+// nothing when the document named none: the sentence is a diagnostic, and one that
+// invents an app for an app-less document points at the wrong thing to fix.
+func appClause(app appname.Name) string {
+	if !app.Named() {
+		return ""
+	}
+	return " of app " + app.String()
 }
 
 // source is the event's owner as a CloudEvents source path: the module half of
@@ -226,4 +321,34 @@ func parseUUID(member, value string) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("events: CloudEvents %s %q is not a UUID: %w", member, value, err)
 	}
 	return id, nil
+}
+
+// ValidateOperation accepts an absent historical snapshot and refuses partial or
+// malformed metadata. Person and outcome may be absent on an admitted intent.
+func ValidateOperation(op operation.Identity) error {
+	if op == (operation.Identity{}) {
+		return nil
+	}
+	if !operation.ValidToken(op.ID) || op.Revision <= 0 || (op.Outcome != "" && !op.Outcome.Valid()) {
+		return errors.New("events: invalid operation metadata")
+	}
+	for name, value := range map[string]string{"operationref": op.Ref, "operationtenantid": op.Tenant} {
+		id, err := parseUUID(name, value)
+		if err != nil {
+			return err
+		}
+		if id == uuid.Nil {
+			return fmt.Errorf("events: %s is zero", name)
+		}
+	}
+	if op.Person != "" {
+		id, err := parseUUID("operationpersonid", op.Person)
+		if err != nil {
+			return err
+		}
+		if id == uuid.Nil {
+			return errors.New("events: operation person is zero")
+		}
+	}
+	return nil
 }

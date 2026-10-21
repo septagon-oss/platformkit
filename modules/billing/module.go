@@ -19,7 +19,9 @@ import (
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -87,6 +89,20 @@ var spec = rest.Spec[*contracts.Plan]{
 	Write:         contracts.PermissionBillingCatalog,
 	OperatorWrite: true,
 	SoftDelete:    true,
+	// Present is how a price reads. There is no `statusField`: a plan holds no
+	// status enum, and `active` is a bool, which no tone vocabulary colours —
+	// inferring a status from "the first enum" is what decision 0085 refuses.
+	Present: entity.EntryHints{
+		Description:      "Manage the plans and prices available to your customers.",
+		EmptyDescription: "Create a plan with its price and billing interval.",
+		Singular:         "plan",
+		Plural:           "plans",
+		Icon:             "plan",
+		Group:            &entity.ResourceGroup{Key: "billing", Label: "Billing"},
+		PrimaryField:     "name",
+		SummaryFields:    []string{"priceCents", "active"},
+		Sortable:         []string{"name", "priceCents"},
+	},
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -113,8 +129,14 @@ func New(deps Deps) (httpx.Entitler, module.Module) {
 	}
 	svc := internal.NewService()
 	return svc, module.Module{
-		Name:        "billing",
-		Migrations:  Migrations.Files,
+		Name:       "billing",
+		Migrations: Migrations.Files,
+		// The plan list and a tenant's subscription to one: the only uuid below the
+		// row's own names a plan, and a price is not a person.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:      "billing_subscriptions",
+			NotPerson: []string{"plan_id"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

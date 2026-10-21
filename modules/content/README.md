@@ -6,19 +6,29 @@ archived lifecycle and its events, a public read at
 `/api/v1/public/content/contents` (one published row per `{slug}`) that answers only for published rows, and the
 Markdown renderer `contracts.Render` the [web module](../web/README.md) uses.
 `content:read` and `content:manage` guard the routes and the admin entry at
-`/app/content/contents`. There are no versions by design; see
-[module.go](module.go).
+`/app/content/contents`. Every write a page commits keeps a version, recorded in
+the write's own transaction and stored by [modules/history](../history/README.md)
+— which owns the series, the retention rule and the restore — numbered with the
+row's own `revision`; see [module.go](module.go).
 
 ## Interface
 
 **Reused** — `kit/rest`, `kit/entity`, `kit/richtext`, `ui/forms`,
 `ui/components.Prose`, and `modules/file.RichTextFiles` compose the rich text
-field, with the file resolver passed as `content.Deps.Files` per request.
+field, with the file resolver passed as `content.Deps.Files` per request; the
+cover picture reuses that same ledger (`rest.FileUses`, filled inside the
+transaction that writes the row) rather than a second one, and the same
+`present:image` vocabulary any other module declares.
 **Added** — `kit/richtext` owns the validated Markdown subset and tenant-scoped
 image resolution because no earlier kernel package could validate, normalize,
-extract, and render one stored format for both generated screens and public pages.
-**Made reusable** — the `widget:richtext` tag, `richtext.Files` port and fake,
-and `Prose` component let another `rest.Spec` entity use the same field path.
+extract, and render one stored format for both generated screens and public pages;
+`coverImageId` is new because no reference resource that is a *list* had a picture
+to name as its opening photo and its row thumbnail.
+**Made reusable** — the `widget:richtext` tag, `richtext.Files` port and fake, and
+`Prose` component let another `rest.Spec` entity use the same field path, and the
+cover's adoption (`ui:"present:image"` on the column, `coverField`/`thumbnailField`
+on the entry, one nullable column in one migration) is the shape another module's
+picture takes.
 
 When `Deps.Files` is absent, image references are refused on write; text-only
 Markdown still works. `Body` is limited to 262,144 Markdown code points and
@@ -115,3 +125,26 @@ None. No permission in `permissions` sets `Operator: true`, and the module regis
 The code names no role. A composition grants `content:read` to people who may see the content list, and `content:manage` to people who may edit and publish.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module, so the exact file is not documented here.
+
+## Composition
+
+**Reused** — `entity.EntryHints`, `rest.Spec`, `httpx.Resource.CommandsFor`, the
+localized `ui/screens` catalogue, and Content's existing `publish` and `archive`
+commands carry the draft review deck. Existing picture and card hints supply
+its cover, title, status and summary.
+**Added** — the shared deck hint describes the queue and directions because the
+existing primary-command hint cannot express a filtered review queue with
+multiple actions. Content declares `status:draft`, ascending `updatedAt`, right
+Publish, left Archive and down local skip. Tasks have no matching pair of
+argument-free person-facing commands; Content's two existing commands both take
+a draft out of the queue without adding lifecycle operations.
+**Made reusable** — any list resource may declare the same validated, localized,
+permission-filtered review contract and invoke its defaulted row commands
+through the existing REST adapters.
+
+`content:read` callers retain the deck with only down skip when they lack
+`content:manage`. Archive's existing confirmation and publication's authorship
+rule still apply. This delivery declares a catalogue hint; generated web pages
+continue to use their existing presentation, and swipe rendering belongs to the
+client. A fresh review session rebuilds its queue from the list; local skip does
+not write a timestamp, reserve a row or emit an event.

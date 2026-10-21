@@ -128,7 +128,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// Cascade layers: Compose now emits `@layer tokens, base, components,
 	// client;` and wraps each layer's rules in a block, so the exported sheet is
-	// the same declarations at one more level of nesting, and review round 1 of
+	// the same declarations at one more level of nesting, and the first pass of
 	// that change moved the kernel's own component-state rules out of @layer base
 	// into @layer components, ahead of the class lists, because a layer ranks
 	// before specificity and a dismissed modal was losing to the `flex` on its
@@ -198,7 +198,46 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
 	// digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
-	if legacy.SHA256 != "6f102a89a2217b98e60e68a1d89a9c74138b8645a1bfbe08f1e917de89d020b0" {
+	// A confirmation body drawn into a command form is a sentence of the form's own
+	// copy, so it takes the form's text scale and bounded measure (clFormSentence),
+	// and the confirm dialog's message — the same sentence, read inside a frame
+	// already narrowed to 24rem — now wears that one list. Measured by exporting this
+	// tree and the same tree without the change and walking both documents leaf by
+	// leaf: 99,892 leaves become 99,906. The 14 added leaves are the new Gallery
+	// example's own (id, name, group, props, schema and html); of the 2 changed, one
+	// is /sha256 and the other is pk-ui.component.confirmdialog/default's html, which
+	// gains max-w-sm on the message paragraph and paints the same box. No leaf is
+	// removed; CSS, schema, notices, themes, icons and font policy are identical.
+	// The digest below is that measurement of this tree, printed by the refusal above
+	// the re-measure and copied from it.
+	//
+	// The rich text field's chrome joins @layer components, and the editing surface
+	// takes the published page's prose rules with it. Measured by exporting this
+	// tree and the same tree with those two merges removed and walking both
+	// documents leaf by leaf: 99,906 leaves each, none added, none removed, and
+	// exactly two changed — /css, which carries the new rules, and /sha256, which is
+	// the digest of that CSS. No example's HTML, no token, theme, notice, icon,
+	// schema or font policy moves. The digest below is that measurement of this tree.
+	//
+	// Two attributions joined NOTICE since that digest, and the export's notices field
+	// carries that file verbatim: main's vendored SSE extension, and the Web Push
+	// library this branch links, since NOTICE lists what the binary links. Measured by
+	// exporting this tree with main's attribution list in place of the merged one and
+	// with the merged one: 99,947 leaves each, none added and none removed, and the two
+	// documents differ in `notices` and in the whole document's digest only — no
+	// example, CSS, token, theme, icon, schema or font policy moves. With main's list
+	// the tree exports main's recorded digest
+	// bf53d791f4544e0cd2fb3e305021f916d78464e1e7c5537d951f8021291496d3 byte for byte, so
+	// one more dependency moves one leaf; with the merged list it exports the digest
+	// below, which the refusal printed while this line still held main's number.
+	// Admin experience: comparing exports by stable capture ID adds Standalone
+	// and Disclosure, removes no capture and changes only the HTML of the three
+	// sidebar captures plus CSS and this digest. Schema, font policy, notices,
+	// themes and icons are byte-identical to the previous export.
+	// The digest covers the composed examples, stylesheet and attribution together.
+	// Breadcrumb wrapping changes 24 gallery HTML values and the digest; CSS,
+	// schemas, tokens, themes, icons and notices retain their existing bytes.
+	if legacy.SHA256 != "24b68056c824890ff426c7b579af25cf624c5144b184e3d66bb9b17196417ca0" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

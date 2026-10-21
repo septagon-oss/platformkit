@@ -22,6 +22,44 @@ Budget database connections across all processes, including web/worker replicas,
 migrations and maintenance. A larger pool does not establish greater throughput;
 use the [tenant-work benchmark](../jobs/README.md) to measure a concrete workload.
 
+## Test suite capacity
+
+`dbtest.Open` and `OpenFor` cap each owner pool at four open connections and one
+idle connection, without a lifetime limit. The same policy covers schema/role
+cleanup and private-database setup/removal. Four leaves room for tests that hold
+a lock while a writer and an observer use separate sessions. `dbtest.Schema`
+retains the application defaults above; test cleanup closes both handles.
+The events package uses `dbtest.RunInOwnDatabase` to isolate durable advisory
+locks from other packages; schemas do not scope database-wide lock keys.
+
+The Makefile runs `test`, `check` and `check-race` with four package processes.
+Compose and the CI PostgreSQL services allow 256 connections, including three
+reserved for superusers. Count every pool across the active packages, including
+multiple application boots, migration sessions and cleanup; four packages do not
+mean four pools. When growing the suite, sample all client backends in
+`pg_stat_activity` during a fresh `make check`, including unnamed clients and
+all databases. Keep the observed peak at most 224 including the sampler, leaving
+32 physical slots for maintenance, health probes and short overlaps that sampling
+can miss. Finite sampling reports an observed peak, not a mathematical bound.
+
+### Composition
+
+**Reused** — `database/sql` limits, `dbtest` fixture cleanup, `db.DefaultPool`,
+and the existing Makefile and PostgreSQL service definitions.
+**Added** — one private owner-pool opener and its limit proofs, because fixture
+owner handles previously had no connection maximum.
+**Made reusable** — `dbtest.Open` and `OpenFor` expose the shared test-owner
+pool policy to tests and benchmarks.
+
+### Limits
+
+The owner policy covers pools opened by `dbtest`. Raw `sql.Open` handles in
+`kit/db`'s independent fixture and session probes, and in `pkit` tests, retain
+their existing owners and settings. Include their sessions when measuring capacity.
+Package parallelism bounds processes, not fixtures: parallel tests and multiple
+runtimes can keep several pools alive in one process. The 224-client target needs
+a full-suite observation; multiplying one fixture's limits is no strict suite bound.
+
 # Migrations
 
 `Migrate(ctx, url, sources...)` applies each capability's files in owner and version
@@ -98,6 +136,14 @@ before that file's history row, so what they bound is what a file waits *inside 
 transaction* — which is every other statement of the run, and every batch of a drain. When
 the caller's context runs out the operator gets a context deadline, not `ErrContended`:
 nothing was refused, the run did not finish.
+
+One answer to that patience is neither a refusal nor a deadline: being picked out of
+somebody else's deadlock (`40P01`) cancels an ask while the run holds nothing, because the
+ask is the first statement the session has sent and the cycle is already broken by the
+cancelling. The ask is therefore re-issued, four times at most, and a database that picks
+the same session every time is reported with the server's own words and its files
+unapplied. `kit/db/composition_lock_deadlock_test.go` raises `40P01` of the ask from the
+catalog side and pins both answers.
 
 **What each file cost.** Every applied file logs `db: applied migration` at info
 with the runner's own `duration_ms`, and a data file's line carries `batches=` beside
@@ -242,9 +288,9 @@ reads the id back off the message, counting the ids it is counting off every non
 the package rather than off `refusals.go` by name — an id *is* the constant
 `refusal<Name> = "…"`, wherever the runner keeps it, and a gate that opened one file by name
 could only ever hold the ids that stayed there, which is the tenth review's fourth finding.
-`kit/db/review8_refusal_ids_are_the_table_test.go` reads this table against the ids
+`kit/db/refusal_ids_are_the_table_test.go` reads this table against the ids
 `refusals.go` declares and refuses the two lists to differ, and
-`kit/db/review11_a_refusal_id_is_declared_wherever_the_runner_keeps_it_test.go` refuses an id
+`kit/db/refusal_id_is_declared_wherever_the_runner_keeps_it_test.go` refuses an id
 whose home is not that file: the file the two lists are read from stays one file however the
 code is arranged, which is what makes the promise below hold and not merely happen.
 Between them the two halves of that promise hold: an id named here that nothing prints, or a

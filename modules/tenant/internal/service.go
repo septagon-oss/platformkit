@@ -107,6 +107,7 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 		// Never from a request body: NewTenant.Operator is json:"-", so the
 		// only caller that can set it is Bootstrap.
 		Operator:  in.Operator,
+		Demo:      in.Demo,
 		CreatedAt: at, UpdatedAt: at,
 	}
 	if err := tx.DB().Omit("Hosts", "Locales", "DefaultLocale").Create(t).Error; err != nil {
@@ -499,6 +500,9 @@ func (s *Service) loaded(tx db.Tx[db.System], t *contracts.Tenant) (*contracts.T
 // (tenant_id, event_id) and these are two event ids.
 func (s *Service) record(ctx context.Context, tx db.Tx[db.System], t *contracts.Tenant,
 	operator uuid.UUID, verb, name string, payload any) error {
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return err
+	}
 	if err := events.PublishFor(ctx, tx, t.ID, name, payload); err != nil {
 		return err
 	}
@@ -587,6 +591,9 @@ func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 	// The same argument as a suspension's: the host resolution believes a tenant
 	// for half a minute, and the languages of a page are not the languages of the
 	// page a person is looking at once the set behind it changed.
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
+	}
 	err = events.PublishFor(ctx, tx, t.ID, contracts.EventLocaleSet, contracts.LocaleSet{
 		TenantID: t.ID, Default: wanted[0], Supported: wanted[1:], At: t.UpdatedAt,
 	})

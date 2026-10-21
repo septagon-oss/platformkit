@@ -1,0 +1,145 @@
+{
+  "schema": "platformkit.composition.v1",
+  "app": "collect",
+  "environment": "development",
+  "resolved": true,
+  "modules": [
+    {
+      "name": "user",
+      "provides": [
+        "usercontracts.Service"
+      ]
+    },
+    {
+      "name": "shop",
+      "contributes": [
+        {
+          "contract": "homepagecontracts.Landing",
+          "to": [
+            "homepage"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wishlist",
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "paymentcontracts.Provider",
+          "from": ""
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "cartcontracts.Extension",
+          "to": [
+            "cart"
+          ]
+        }
+      ],
+      "after": [
+        "user"
+      ]
+    },
+    {
+      "name": "homepage",
+      "needs": [
+        {
+          "contract": "homepagecontracts.Landing",
+          "from": "shop"
+        }
+      ],
+      "after": [
+        "shop"
+      ]
+    },
+    {
+      "name": "cart",
+      "provides": [
+        "cartcontracts.Service"
+      ],
+      "takes": [
+        {
+          "contract": "cartcontracts.Extension",
+          "from": [
+            "wishlist"
+          ]
+        }
+      ],
+      "after": [
+        "wishlist"
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "name": "member",
+      "grants": [
+        "task.read"
+      ]
+    }
+  ],
+  "problems": [],
+  "cloud": {
+    "profile": "local",
+    "environment": "development",
+    "seams": [
+      {
+        "seam": "storage",
+        "provider": "local-disk",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "cache",
+        "provider": "in-process",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "events",
+        "provider": "by-role",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "mail",
+        "provider": "mailbox",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "policy",
+        "provider": "rego-in-process",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      },
+      {
+        "seam": "telemetry",
+        "provider": "none",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "identity",
+        "provider": "password-only",
+        "source": "default",
+        "served": true
+      },
+      {
+        "seam": "flags",
+        "provider": "configuration",
+        "source": "kernel",
+        "served": false,
+        "note": "not a cloud seam"
+      }
+    ]
+  }
+}

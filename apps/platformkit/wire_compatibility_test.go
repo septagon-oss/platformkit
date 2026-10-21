@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
 	wiregate "github.com/septagon-oss/platformkit/kit/wire"
 )
+
+var wireVerbs = [...]string{"get", "put", "post", "delete", "patch", "head", "options", "trace"}
 
 // wireAuthorizationAllowances records this composition's reviewed access widening.
 func wireAuthorizationAllowances() []wiregate.AuthorizationAllowance {
@@ -19,11 +22,52 @@ func wireAuthorizationAllowances() []wiregate.AuthorizationAllowance {
 // breakingWireChanges preserves the fixture assertions; kit/wire owns the rules.
 func breakingWireChanges(t *testing.T, golden, served []byte) []string {
 	t.Helper()
+	oldDoc, newDoc := wireDocument(t, golden), wireDocument(t, served)
 	var problems []string
 	for _, problem := range wiregate.CompareWithAllowances(golden, served, wireAuthorizationAllowances()) {
+		if problem.Rule == "B3" && typedPatchDocumentation20261006(oldDoc, newDoc, problem.Member) {
+			continue
+		}
 		problems = append(problems, problem.String())
 	}
 	return problems
+}
+
+// typedPatchDocumentation20261006 permits only the 2026-10-06 correction of
+// four open map request documents. Their decoders already refused unknown,
+// read-only and command-owned keys. No previously working request changes.
+// Once the old document has a typed body, this allowance cannot apply again.
+func typedPatchDocumentation20261006(oldDoc, newDoc map[string]any, key string) bool {
+	id, rest, _ := strings.Cut(key, " ")
+	if rest != "request body application/json" && rest != "request body application/json {}" {
+		return false
+	}
+	component := map[string]string{
+		"task-task-update": "TaskPatch", "user-user-update": "UserPatch",
+		"content-content-update": "ContentPatch", "billing-plan-update": "PlanPatch",
+	}[id]
+	if component == "" {
+		return false
+	}
+	oldRoute, oldOK := wireRoute(oldDoc, id)
+	newRoute, newOK := wireRoute(newDoc, id)
+	if !oldOK || !newOK {
+		return false
+	}
+	oldBody := patchRequestSchema(oldRoute)
+	if !reflect.DeepEqual(oldBody, map[string]any{"type": "object", "additionalProperties": map[string]any{}, "description": "The writable fields to change"}) {
+		return false
+	}
+	next := patchRequestSchema(newRoute)
+	if !reflect.DeepEqual(next, map[string]any{"$ref": "#/components/schemas/" + component}) {
+		return false
+	}
+	shape := wireResolveRef(newDoc, next)
+	return shape["type"] == "object" && shape["additionalProperties"] == false && len(wireMap(shape["properties"])) > 0 && len(wireStringList(shape["required"])) == 0
+}
+
+func patchRequestSchema(route map[string]any) map[string]any {
+	return wireMap(wireMap(wireMap(wireMap(route["requestBody"])["content"])["application/json"])["schema"])
 }
 
 func wireDocument(t *testing.T, body []byte) map[string]any {
@@ -83,7 +127,7 @@ func wireSchema(node map[string]any) map[string]any {
 func wireRoute(doc map[string]any, operationID string) (map[string]any, bool) {
 	for _, raw := range wireMap(doc["paths"]) {
 		item, _ := raw.(map[string]any)
-		for _, verb := range [...]string{"get", "put", "post", "delete", "patch", "head", "options", "trace"} {
+		for _, verb := range wireVerbs {
 			route, _ := item[verb].(map[string]any)
 			if route == nil {
 				continue

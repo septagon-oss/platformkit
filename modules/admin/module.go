@@ -41,6 +41,10 @@ type Roles = internal.Roles
 // sessions screen. See internal.Sessions.
 type Sessions = internal.Sessions
 
+// People is what the frame needs of the user module: the caller's own account row,
+// for the one header line that names them. See internal.People.
+type People = internal.People
+
 // Registration is the shell's offer of a way in for a person with no account:
 // which form the page renders, and the door it posts to. See Deps.Registration.
 type Registration = internal.Registration
@@ -72,6 +76,16 @@ type Deps struct {
 	// shell naming another module's door, so the composition names it, and
 	// apps/platformkit's test asks the running server that it answers.
 	SignIn string
+
+	// PictureSource is the address template a generated `present:image` cell
+	// fetches its bytes from, `{id}` standing for the file id the field holds —
+	// the same template the workspace catalogue publishes as `pictures.source`.
+	// Unwired, every picture cell draws the plain value it drew before picture
+	// fields existed: a shell with no file module has no door to name. See
+	// admincontracts.Pictures.
+	PictureSource string
+	// ComposedSource is the composed-picture address with a {reference} placeholder.
+	ComposedSource string
 
 	// Registration is the composition saying that a person with no account may
 	// make one. Nil — the default — means the sign-in page shows the password
@@ -107,6 +121,15 @@ type Deps struct {
 	// product's navigation names it instead — so, unlike Roles, a nil here mounts
 	// nothing and reports nothing: no composition is missing an entry.
 	Sessions Sessions
+
+	// People is the user module, for the one line of chrome that names the person
+	// looking at the page. Nil — the default — draws "Signed in": the frame renders
+	// either way, and an id fragment is never the fallback.
+	//
+	// It is the caller's own row, read in the caller's own tenant transaction, so it
+	// asks no permission and takes no tenant argument. Unlike Roles it mounts no
+	// screen, so nothing is reported unserved when a composition has no user module.
+	People People
 
 	// Theme is the installation's two palettes. The zero value is the palette
 	// this repository ships; a client with its own colours sets this and
@@ -152,6 +175,7 @@ func New(deps Deps) module.Module {
 				Tenants:   deps.Tenants,
 				Roles:     deps.Roles,
 				Sessions:  deps.Sessions,
+				People:    deps.People,
 				Theme:     theme(deps.Theme),
 				Storybook: deps.Storybook,
 				Messages:  deps.Messages,
@@ -159,9 +183,11 @@ func New(deps Deps) module.Module {
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
-				Token:        s.SystemToken(),
-				SignIn:       deps.SignIn,
-				Registration: deps.Registration,
+				Token:          s.SystemToken(),
+				SignIn:         deps.SignIn,
+				PictureSource:  deps.PictureSource,
+				ComposedSource: deps.ComposedSource,
+				Registration:   deps.Registration,
 			})
 		},
 	}

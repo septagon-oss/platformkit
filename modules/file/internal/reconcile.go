@@ -219,15 +219,37 @@ func appOf(storage contracts.Storage) appname.Name {
 // row names. System scope is not a shortcut here: a key belonging to another
 // tenant's row is a key that must not be deleted, and a tenant-scoped query
 // could not see it to protect it.
+//
+// Two tables name an object, because a `files` row is not the only thing the
+// store holds. A width of an image has no `files` row by design — `contracts.Variant`
+// is a width and not a file — so its object is named only by
+// `file_variants.storage_key`, and a sweep that read `files` alone would call every
+// built width an orphan the night after it was encoded while its row went on saying
+// ready: the srcset keeps offering an object that is no longer there, the door
+// answers the width as an outage rather than a picture, and the quota's sum keeps
+// charging the tenant for bytes nothing holds any more. So both names are asked for,
+// in one query per table, and a row of either protects its key whatever its state:
+// the question this answers is "does a row reference these bytes", and a pending
+// width's row references its name for the whole of the window between the `Put` and
+// the state flip, which is the window in which deleting those bytes would cost a
+// reader an image. What reclaims a width whose parent went is `removeWidths`, which
+// removes the rows and puts their names on the erasure work order, and not this sweep.
 func knownKeys(tx db.Tx[db.System], chunk []contracts.Blob) ([]string, error) {
 	keys := make([]string, len(chunk))
 	for i, b := range chunk {
 		keys[i] = b.Key.String()
 	}
 	var known []string
-	err := tx.DB().Model(&contracts.File{}).Where("storage_key IN ?", keys).
-		Pluck("storage_key", &known).Error
-	return known, err
+	if err := tx.DB().Model(&contracts.File{}).Where("storage_key IN ?", keys).
+		Pluck("storage_key", &known).Error; err != nil {
+		return nil, err
+	}
+	var widths []string
+	if err := tx.DB().Model(&contracts.Variant{}).Where("storage_key IN ?", keys).
+		Pluck("storage_key", &widths).Error; err != nil {
+		return nil, err
+	}
+	return append(known, widths...), nil
 }
 
 // chunks splits a listing so a million blobs never become a million-element IN

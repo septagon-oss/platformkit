@@ -115,7 +115,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	want := normalise(roles)
+	want := contracts.CanonicalRoles(roles)
 	was := slices.Clone([]string(u.Roles))
 	if slices.Equal(was, want) {
 		return u, nil
@@ -143,7 +143,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	}
 	after := *u
 	after.Roles = want
-	if err := s.floor(ctx, tx, u, &after); err != nil {
+	if err := s.floor(ctx, tx, attemptRoles, u, &after); err != nil {
 		return nil, err
 	}
 	u.Roles = want
@@ -258,7 +258,7 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	}
 	after := *u
 	after.Status = contracts.StatusInactive
-	if err := s.floor(ctx, tx, u, &after); err != nil {
+	if err := s.floor(ctx, tx, attemptStatus, u, &after); err != nil {
 		return nil, err
 	}
 	u.Status = contracts.StatusInactive
@@ -268,9 +268,58 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	return u, events.Publish(ctx, tx, contracts.EventDeactivated, contracts.Deactivated{UserID: u.ID, At: db.Now()})
 }
 
+// Reactivate stands a deactivated person up again.
+//
+// It asks nothing of the tenant's administration floor, because the floor refuses
+// the write that takes the last administrator away and this one takes nothing: the
+// person it returns to service was administering this tenant not long ago.
+//
+// Only `inactive` is reactivated. `invited`, `pending` and `unverified` are each
+// waiting for an act of their own — the person's own password, an administrator's
+// approval, the person's own confirmation of the address — and a command that could
+// declare that act happened would be a door into an account whose owner has not
+// walked through it yet. An already-active person is the answer they already are,
+// with no write and no event: the same request twice from a connector retrying is
+// not a second fact in the trail.
+func (s *Service) Reactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	u, err := lockedUser(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status == contracts.StatusActive {
+		return u, nil
+	}
+	if u.Status != contracts.StatusInactive {
+		return nil, fmt.Errorf("%w: only a person who was stood down is stood back up; %s waits for the act that fits that state", crud.ErrConflict, u.Status)
+	}
+	u.Status = contracts.StatusActive
+	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {
+		return nil, err
+	}
+	return u, events.Publish(ctx, tx, contracts.EventReactivated, contracts.Reactivated{UserID: u.ID, At: db.Now()})
+}
+
 // Get is one user of this tenant.
 func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	return crud.Get[*contracts.User](tx, id)
+}
+
+// Retained is contracts.Service.Retained: the same row, without the directory's filter.
+//
+// It is one statement rather than crud.Get plus a second query because the point is the
+// filter that is absent, and a reader should see that rather than trust a comment. The
+// tenant bound is row-level security's, the same one every other read of this table gets;
+// nothing here widens what one transaction may see, only what it hides.
+func (s *Service) Retained(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	var u contracts.User
+	err := tx.DB().Where("id = ?", id).Take(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, crud.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("user: retain %s: %w", id, err)
+	}
+	return &u, nil
 }
 
 // ByEmail is the login lookup. The comparison is lower(email), which is the
@@ -279,7 +328,7 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*co
 func (s *Service) ByEmail(_ context.Context, tx db.Tx[db.Tenant], email string) (*contracts.User, error) {
 	var u contracts.User
 	err := tx.DB().Where("lower(email) = ? AND deleted_at IS NULL",
-		strings.ToLower(strings.TrimSpace(email))).Take(&u).Error
+		contracts.CanonicalEmail(email)).Take(&u).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, crud.ErrNotFound
 	}
@@ -312,7 +361,7 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	at := db.Now()
 	u := &contracts.User{
 		Email: email, DisplayName: displayName, Status: status,
-		Roles: normalise(roles), PasswordHash: hash,
+		Roles: contracts.CanonicalRoles(roles), PasswordHash: hash,
 	}
 	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, at, at
 	if err := u.Validate(ctx); err != nil {
@@ -321,22 +370,16 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	if err := tx.DB().Create(u).Error; err != nil {
 		return nil, fmt.Errorf("user: provision %s: %w", u.Email, err)
 	}
+	if err := events.SucceedFor(ctx, tx, db.Now()); err != nil {
+		return nil, err
+	}
 	return u, events.PublishFor(ctx, tx, tenantID, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: at,
 		Served: httpx.ServedFrom(ctx),
 	})
 }
 
-// normalise is the stored form of a role set: trimmed, lower-cased, deduplicated
-// and sorted. Sorted, so that "the same roles in another order" is the same
-// value and SetRoles can tell that nothing changed.
-func normalise(roles []string) contracts.Roles {
-	out := make(contracts.Roles, 0, len(roles))
-	for _, r := range roles {
-		if r = strings.ToLower(strings.TrimSpace(r)); r != "" && !slices.Contains(out, r) {
-			out = append(out, r)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
+// The stored form of a role set — trimmed, lower-cased, deduplicated and sorted,
+// so "the same roles in another order" is the same value and SetRoles can tell
+// that nothing changed — is contracts.CanonicalRoles: the entity's own rule, read
+// by the callers that have to meet the row a list names rather than repeated here.

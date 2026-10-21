@@ -21,7 +21,7 @@ package internal_test
 // The file carries a third case that arrived from elsewhere. Two tabs answering
 // one live step at the challenge route used to be the proof that the replay guard
 // is the UPDATE (`WHERE last_step < ?`) rather than a comparison — see
-// `review_r5_two_tabs_answering_one_code_test.go`. Since `000033` the tab without
+// `two_tabs_answering_one_code_test.go`. Since `000033` the tab without
 // a refused sign-in behind it is turned away at the door and never reaches that
 // statement, so the proof lives where the statement is the only guard left: two
 // transactions, one step, no HTTP in sight.
@@ -58,7 +58,7 @@ func TestTheWindowIsSpentByTheAnswerThatUsesIt(t *testing.T) {
 	})
 	challenge := ""
 	for _, m := range api.Mounted() {
-		if m.Module == "auth" && m.Method == http.MethodPost && strings.Contains(m.Path, "challenge") {
+		if m.Module == "auth" && m.Method == http.MethodPost && strings.HasSuffix(m.Path, "/challenge/verify") {
 			challenge = m.Path
 		}
 	}
@@ -300,7 +300,7 @@ func proofSessions(t *testing.T, conn *db.Conn, person uuid.UUID) int {
 // transactions, one session. Both callers are past every door — the spend is
 // decided by the row, and the row has to refuse one of them.
 //
-// What it pins is the outcome review 5 asked for, and no more than that. The
+// What it pins is the outcome, and no more than that. The
 // losing caller is refused either by the guarded UPDATE, when it reaches a row the
 // winner has already written, or by the comparison in totpMatches a line earlier,
 // when it read the row before that write landed; which of the two happens is the

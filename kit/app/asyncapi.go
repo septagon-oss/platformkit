@@ -60,7 +60,7 @@ func appAddress(app appname.Name, rest string) string {
 // address is that app's subjects, so the document describes the traffic this
 // composition actually publishes rather than the whole namespace.
 func AsyncAPIFor(app appname.Name, mods []module.Module) ([]byte, error) {
-	declared := declaredEvents(withKernel(mods))
+	declared := declaredEvents(withKernelFor(app, mods))
 	sort.Slice(declared, func(i, j int) bool { return declared[i].Name < declared[j].Name })
 
 	channels := map[string]any{}
@@ -90,7 +90,7 @@ func AsyncAPIFor(app appname.Name, mods []module.Module) ([]byte, error) {
 			"summary": "Every tenant's delivery of " + d.Name + ".",
 			"description": "Published at " + appAddress(app, "{tenantId}."+d.Name) +
 				"; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. " +
-				"The body is a CloudEvents " + transport.SpecVersion + " envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+				"The body is a CloudEvents " + transport.SpecVersion + " envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
 			"messages": map[string]any{d.Name: message},
 		}
 		operations[d.Name] = map[string]any{
@@ -110,8 +110,10 @@ func AsyncAPIFor(app appname.Name, mods []module.Module) ([]byte, error) {
 			"title":   asyncapiTitle,
 			"version": asyncapiInterfaceVersion,
 			"description": "The events this application emits, rendered from the module manifests it was composed from. " +
-				"Every event is a CloudEvents " + transport.SpecVersion + " envelope with `tenantid` as a required extension attribute and " +
-				"`traceparent`/`tracestate` as the distributed tracing extension; the subject is " +
+				"Every event is a CloudEvents " + transport.SpecVersion + " envelope with `tenantid` as a required extension attribute, " +
+				"`app` as the publisher's own app (absent for a deployment that hosts one), and " +
+				"`traceparent`/`tracestate` as the distributed tracing extension. " +
+				"Admitted intents carry `operationid`, `operationref`, `operationtenantid`, optional `operationpersonid` and `operationoutcome`, and `operationrevision`; the subject is " +
 				appAddress(app, "<tenantId>.<module>.<event>") + ".",
 		},
 		"defaultContentType": "application/cloudevents+json",
@@ -135,10 +137,23 @@ func AsyncAPIFor(app appname.Name, mods []module.Module) ([]byte, error) {
 // it — app.New adds it to the composition, and a caller that built a module
 // list by hand has not. declaredEvents de-duplicates by name, so adding it
 // twice says the same thing once.
+//
+// The manifest added here is the app-less one, which is the kernel's floor: the
+// events it emits whichever deployment ran it. A composition that names its app
+// carries its own kernel manifest already (app.New appends kernelModule with the
+// app), and the extra names that brings — see the comment there — arrive with it.
 func withKernel(mods []module.Module) []module.Module {
+	return withKernelFor(appname.Name(""), mods)
+}
+
+// withKernelFor is withKernel for a composition that names its app and did not
+// yet carry the kernel's manifest: the hand-built list a caller passes to
+// AsyncAPIFor gets the same manifest app.New would have appended, so the document
+// and the running composition cannot disagree about what the kernel emits.
+func withKernelFor(app appname.Name, mods []module.Module) []module.Module {
 	out := make([]module.Module, 0, len(mods)+1)
 	out = append(out, mods...)
-	return append(out, kernelModule)
+	return append(out, kernelModule(app))
 }
 
 // refEscape turns an event name into a JSON pointer segment. AsyncAPI names

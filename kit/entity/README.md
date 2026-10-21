@@ -52,3 +52,89 @@ mean the control, on a string holding an instant as much as on a `time.Time`. Ru
 `go test ./ui/forms ./kit/rest` to see the vocabulary, the drawing and the refusal
 together. Neither proves a control is right for the field: `entity-picker` draws
 the identifier text box and says there is no picker yet.
+
+## The presentation vocabulary
+
+`Icons`, `Tones`, `Formats` and `Visibilities` are the four closed lists a
+resource's reading is declared in, and `ValidIcon`, `ValidTone`, `ValidFormat` and
+`ValidVisibility` are their checks — the same shape as `Widgets` above, for the
+same reason: the layer that draws an icon or colours a tone is `ui/`, which a
+kernel package below the presentation layer may not import, so the kernel names
+the words and a test inside `ui/` binds each name to a drawing
+(`ui/icon/kernel_binding_test.go`, `ui/components/kernel_tone_test.go`).
+
+The three levels that use them are `EntryHints` (a resource), `FieldHints` (a
+field, declared by `ui:` directives and the `enumLabels`/`enumTones` tags in
+`derive`'s existing grammar) and `CommandHints` (a lifecycle route). All three are
+optional and all three are refused whole: `kit/rest/hints.go` names what does not
+exist and `Spec.Mount`, `Singleton.Mount` and `rest.Command` panic at boot, so a
+hint nobody honours never reaches a document. An entity that declares nothing
+serialises exactly as it did before these types existed — `Field.Presentation` is
+`omitzero`, and `ui/screens` prints a `presentation` key only for a hint somebody
+wrote.
+
+A declared word is translated without being keyed twice. The copy key is
+*derived* from the declaration's own address — `hints.<module>/<entity>.<aspect>`
+(`hints.task/task.field.dueAt.label`, `hints.task/task.command.assign.label`) —
+and the literal in the tag or the `Present:` struct is its own English fallback,
+so no `en.json` exists anywhere and no author writes a key beside a sentence they
+already wrote. The resolver is `ui/resource/hints.go`, shared by the catalogue
+document and the generated screens; the vocabulary names an icon, a tone, a
+visibility or a field name are never resolved, because they are drawn and not
+read. Write a label only where it differs from `Humanize(name)`.
+
+Two declarations can name one column's place on a list: `ui:"hide:list"` and
+`visibility`. `Field.OnList` is the one place they resolve, and it resolves them
+by precedence rather than by refusal — an explicit `visibility` is the narrower
+word about one field's reading, so it wins in both directions, `shown` reclaiming
+a column the older tag took and `detail` giving up one it left. With nothing
+said, `hide:list` stands on its own. A `reference` names its target as
+`module/entity`, and `kit/rest` keys that boot check by the same spelling for a
+field and for a command's argument alike.
+
+**Reused** — `Widgets`/`Presentations` and their `Valid…` predicates, `derive`'s
+tag loop, `kit/entity/display`'s `FieldLabel`/`FieldHelp`, `ui/icon`'s `aliases`
+seam and `ui/components`' `clBadgeTone`. **Added** — the four vocabularies and the
+three hint structs, because no kernel list existed for an icon or a tone and a
+refusal has to be against one, and the entry- and command-level wire objects,
+because `httpx.{Resource,Command}` carried nothing a hint could ride. **Made
+reusable** — the mount gate (`kit/rest/hints.go`), the declared-or-absent
+predicate (`ui/screens/hints.go`) and `CheckReferences`, which answers the
+reference question at boot where the whole resource list exists.
+
+## Review decks
+
+`EntryHints.Deck` declares a review reading for a list resource. `Queue` uses
+existing repeated `filter=field:value` equality filters: the first colon splits
+the field, other colons and commas are literal, different fields are ANDed, and
+the last duplicate field wins. A nil queue reads all rows; a declared empty
+queue is refused. `Order` is an existing sort value (`title` or `-title`), naming
+a visible scalar field also listed in `Sortable`; the list retains its id tie
+breaker. `DeckFault` and the list adapter share `Coerce` for scalar values.
+
+`Directions` maps any of `right`, `left`, `up`, `down` to a command, label, tone
+and icon from the existing vocabulary. The command must be a non-system row
+command on that resource, with no inputs or explicit decodable defaults for
+every input. Optional inputs without defaults do not qualify. The alternative
+`down: {Skip: true}` has no other fields and sends no command: a client moves
+the card to the back of its current queue without changing stored order.
+
+`rest.Spec.Mount` checks the local declaration; `httpx.API.ValidateDeclarations`
+checks command references after all registrations, before boot effects.
+`rest.CheckRowHints` delegates to that same decision. Singleton, commands-only
+and resources without a list cannot declare a deck. Manual `httpx.Command`
+registrants must accurately declare their fields and `EmptyInputFault`.
+
+The catalogue adds `presentation.deck` at version 2 and omits directions the
+caller cannot run. An empty authorized set is `directions: {}`; a local skip
+remains. Direction labels use `hints.<module>/<entity>.deck.<direction>.label`
+and the declared English fallback. The registered queue and directions are
+copied before projection. Existing picture, title, status and summary hints
+still describe the card. No `resolved` or `undoable` key is produced: commands
+do not yet expose an authoritative undo-token capability. An inverse command
+does not imply undo.
+
+A deck is a list-reading suggestion, not a command precondition, reservation or
+security boundary. Tenant transactions, authorization and lifecycle rules
+remain authoritative on the existing command routes. Client card rendering,
+gestures, confirmation, pagination and local session order are separate work.

@@ -24,6 +24,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
 // allow is an Authorizer that answers one way for everybody.
@@ -133,7 +134,7 @@ func TestTheSidebarOffersTheGalleryOnlyToACallerWhoMayOpenIt(t *testing.T) {
 		{"anonymous", allow(true), book, page.Request{Path: "/app/app/admin/login"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := render(t, frame(shellAddresses, nav, tc.authorize, tc.storybook)(context.Background(), tc.r, nil))
+			body := render(t, frame(shellAddresses, nav, tc.authorize, tc.storybook, nil)(context.Background(), tc.r, nil))
 			if got := strings.Contains(body, `href="/app/app/admin/_gallery"`); got != tc.offered {
 				t.Fatalf("gallery link offered = %v, want %v:\n%s", got, tc.offered, body)
 			}
@@ -214,13 +215,13 @@ func TestThePreviewDocumentIsSandboxedAndCarriesItsOwnStylesheet(t *testing.T) {
 // as a badge rather than a colour alone.
 func TestTheHealthPageNamesEachCheckAndItsState(t *testing.T) {
 	t.Parallel()
-	body := render(t, g.Group(healthPage([]result{{name: "database", err: nil}, {name: "cache", err: errors.New("refused")}}).Body))
+	body := render(t, g.Group(healthPage([]result{{name: "database", err: nil}, {name: "cache", err: errors.New("refused")}}, resource.Options{}).Body))
 	for _, want := range []string{">database<", ">cache<", ">ok<", ">failing<", `data-tone="success"`, `data-tone="danger"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("health page lacks %q:\n%s", want, body)
 		}
 	}
-	if !strings.Contains(render(t, g.Group(healthPage(nil).Body)), "Health") {
+	if !strings.Contains(render(t, g.Group(healthPage(nil, resource.Options{}).Body)), "Health") {
 		t.Error("an unreachable database renders no health page at all")
 	}
 }

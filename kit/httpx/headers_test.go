@@ -68,7 +68,7 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	// nothing, and a policy on every response is a header nobody reads.
 	page := get(t, router, at(api, "/page"))
 	csp := page.Header().Get("Content-Security-Policy")
-	// base-uri and form-action are the two the review found missing, and they
+	// base-uri and form-action are the two that were missing, and they
 	// are the two that make the rest hold: without the first an injected <base>
 	// retargets every relative URL so 'self' stops meaning this origin, and
 	// without the second an injected form posts what a person typed somewhere

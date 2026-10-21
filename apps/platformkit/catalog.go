@@ -10,10 +10,14 @@ import (
 	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
+	"github.com/septagon-oss/platformkit/modules/notification"
+	"github.com/septagon-oss/platformkit/modules/scim"
 	"github.com/septagon-oss/platformkit/modules/site"
+	"github.com/septagon-oss/platformkit/modules/subject"
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	"github.com/septagon-oss/platformkit/modules/user"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
@@ -54,8 +58,12 @@ func catalogues() xtext.Catalog {
 		change.Catalogue(),
 		content.Catalogue(),
 		file.Catalogue(),
+		notification.Catalogue(),
+		scim.Catalogue(),
 		site.Catalogue(),
+		subject.Catalogue(),
 		task.Catalogue(),
 		tenant.Catalogue(),
-		user.Catalogue())
+		user.Catalogue(),
+		webhook.Catalogue())
 }

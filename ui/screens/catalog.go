@@ -2,10 +2,19 @@ package screens
 
 import (
 	"context"
+	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
+
+// Text is the seam a declared reading string is resolved through — one resource's
+// words in one request's language. It is ui/resource's own seam, named here so a
+// caller of the document and the renderer of the screens hand over the same thing:
+// a page and the JSON a native shell reads must not answer one person's request in
+// two languages. See ui/resource/hints.go for the key grammar it is asked with.
+type Text = resource.Text
 
 // CatalogVersion is the shape of the document at /api/v1/app/resources — the
 // contract a shipped native shell renders from — and it is the one number in
@@ -17,12 +26,12 @@ import (
 // key: an older shell ignores what it has not read, which is the only reason any
 // of this can move forward without a flag day.
 //
-// What the number cannot do is protect a build that is already installed — the
-// shell in somebody's pocket parses what it was written to parse. So the rule
-// that actually protects it is the one beside this constant: additive, optional,
-// and never a change of meaning. A consumer that must refuse is the *next* build,
-// reading this field, and that is who the field is written for.
-const CatalogVersion = 2
+// What the number cannot do is protect the build already installed: the shell in
+// somebody's pocket parses what it was written to parse. It protects it by what it
+// refuses to do to it — additive, optional, never a change of meaning — and moves
+// for a listed resource losing a verb, whose button that build drew and whose
+// address now answers nothing. A verb hidden by a new entry strands nobody.
+const CatalogVersion = 3
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell
@@ -30,17 +39,59 @@ const CatalogVersion = 2
 // way a browser shell generates them from httpx.Resources, by the same rules.
 type Catalog struct {
 	// Version is CatalogVersion at the moment the document was written.
-	Version   int     `json:"catalogVersion"`
-	Resources []Entry `json:"resources"`
+	Version   int       `json:"catalogVersion"`
+	Resources []Entry   `json:"resources"`
+	Pictures  *Pictures `json:"pictures,omitempty"`
+}
+
+// Pictures is this installation's door to the bytes of a stored picture, said
+// once for the whole document rather than once per field that holds an id.
+//
+// Source is a template and not a base path: the literal `{id}` is replaced with
+// the field's own value — the lower-case hyphenated UUID text — and nothing else
+// in it is substituted. It is published for the same reason `screen`,
+// `write_path` and a command's `path` are: a shell that builds an address out of
+// another component's rules is guessing, and this repository has already paid for
+// one such guess once.
+//
+// Widths is the set of resized variants this door serves, ascending; a request
+// for a width outside it is refused by the door and names the set back. Absent
+// Widths, or a width the picture was never planned at, the answer is the stored
+// frame at its own size. A shell that fetches no variant fetches Source.
+//
+// An absent `pictures` block means this installation composed no module that
+// serves a record's pictures. Every picture field then draws the still state its
+// own renderer chooses — which is an answer, not a mistake, and the reason a
+// resource with a picture column can mount in an installation that has no file
+// module at all. A key is on the wire because somebody declared it, so the
+// composition writes this and a resource-bearing document never invents it.
+type Pictures struct {
+	Source string `json:"source"`
+	// ComposedSource is optional and substitutes one canonical {reference} token.
+	ComposedSource string `json:"composedSource,omitempty"`
+	Widths         []int  `json:"widths,omitempty"`
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
-// an unreadable resource is not in the document at all: what a caller may not
-// look at, they are not told exists. `writable` is the caller's guard narrowed by
+// an unreadable resource is not in the document — save a CommandsOnly one whose
+// command the caller holds, listed with empty operations: what a caller may not
+// look at, they are not offered. `writable` is the caller's guard narrowed by
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
 	entity.Schema
+	// Presentation is this resource as its author said it reads — the words, the
+	// icon, the group, which field names a row and which block each field belongs
+	// to. It is declared here, immediately after the embedded schema and before
+	// Screen, because encoding/json hoists an embedded struct's keys at the
+	// embed's position and writes fields in declaration order: this is where the
+	// entry's `presentation` block comes from, which is also why it goes last on
+	// Command below.
+	//
+	// An entry nobody hinted has no `presentation` key at all, so every shell
+	// already installed reads what it read before this field existed and
+	// CatalogVersion stays where it is.
+	Presentation *EntryPresentation `json:"presentation,omitempty"`
 	// Screen is the workspace address of the generated screen — /app/task/tasks
 	// — stated because the kernel composed it and a shell cannot derive it any
 	// more. It used to derive the screen's path from the API's, by cutting
@@ -70,11 +121,15 @@ type Entry struct {
 	// offers all five prints nothing, exactly as it did before this key existed.
 	//
 	// A shell that has not read this key reads an entry that hides a verb as if it
-	// did not — which is why CatalogVersion moves with the first *shipped* resource
-	// that hides one, and why apps/platformkit's ratchet case refuses to let that
-	// move be a memory. An absent key means all five, so it is the shell's next
-	// build that has to require it, reading this field.
-	Operations []string `json:"operations,omitempty"`
+	// did not — which is why CatalogVersion moves when a resource the document had
+	// already listed hides one, and why apps/platformkit's ratchet case refuses to
+	// let that move be a memory. An absent key means all five, so it is the shell's
+	// next build that has to require it, reading this field.
+	//
+	// An empty list, printed as [], is a CommandsOnly resource: nothing to read
+	// or write, only its commands to call (see DescribeLanguage). omitzero
+	// keeps nil — all five — absent, so no entry printed before reads otherwise.
+	Operations []string `json:"operations,omitzero"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
 	// it is the record and its form, and never a list with a New button on it.
 	Singleton bool `json:"singleton,omitempty"`
@@ -98,24 +153,93 @@ type Command struct {
 	Collection  bool           `json:"collection,omitempty"`
 	Path        string         `json:"path,omitempty"`
 	Fields      []entity.Field `json:"fields,omitempty"`
+	// Presentation is this command as its author described it: the word on the
+	// button, whether it is the action to offer, what a person reads before it
+	// runs. It sits last so the six keys a shell has always read keep their
+	// positions, and it is absent for every command nobody described.
+	Presentation *CommandPresentation `json:"presentation,omitempty"`
 }
 
-// Describe is the catalog for this caller: the readable resources, in the
-// order given, each saying whether this caller may write it. The two questions
-// are the ones the closures on the resource ask — the same Authorizer, the same
-// operator rule — so the document cannot promise a screen the API would refuse.
+// Describe is the catalog for this caller in the language its author wrote it
+// in: the readable resources, in the order given, each saying whether this
+// caller may write it. The two questions are the ones the closures on the
+// resource ask — the same Authorizer, the same operator rule — so the document
+// cannot promise a screen the API would refuse.
+//
+// It is the exported entry point the signature has always carried, and it is
+// `DescribeLanguage` with no language: an installation that composes no copy
+// catalogue, and a caller that has no request to negotiate one from, are served
+// the declaration as written. A route that answers a person's request asks
+// `DescribeLanguage` — the same document, read in the caller's language.
 func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
+	return DescribeLanguage(ctx, resources, nil)
+}
+
+// DescribeLanguage is the same document read in one language: every *word* a
+// person reads — an entry's singular, a field's label, a command's
+// confirmation — is resolved through `text`, with the declared literal as the
+// fallback, which is what decision 0085's catalogue contract means by "resolved
+// server-side for the request's language". The vocabulary names (an icon, a
+// tone, a visibility, a field name) are not words and are never resolved: see
+// ui/resource/hints.go. A nil `text` is Describe.
+//
+// Each resource is copied before it is translated: the schema and the hints ride
+// on the registration, which every request reads, so writing a translated word
+// into them would let one request's Accept-Language decide the next one's screen.
+func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
-		if !r.Readable(ctx) {
-			continue
-		}
 		// r is this loop's copy, so narrowing its commands to the ones this
 		// caller may call leaves Describe1 the pure function it is.
 		r.Commands = r.CommandsFor(ctx)
+		if r.CommandsOnly {
+			if len(r.Commands) > 0 {
+				out.Resources = append(out.Resources, commandsOnly(Localise(r, text)))
+			}
+			continue
+		}
+		if !r.Readable(ctx) {
+			continue
+		}
+		r = Localise(r, text)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
 	}
 	return out
+}
+
+// commandsOnly is the entry of a CommandsOnly resource for a caller who holds
+// one of its commands — a key retiring itself reads nothing about keys. It
+// names no screen and offers no operation, so a shell draws the commands and no
+// list or form; the caller is told the resource exists because a door on it is
+// theirs.
+func commandsOnly(r httpx.Resource) Entry {
+	e := Describe1(r, false)
+	e.Screen = ""
+	return e
+}
+
+// Localise is a resource with every declared word read through the seam, and the
+// same resource untouched when there is no seam to read it through. Describe
+// applies it; a caller that has a resource and no request — a golden file, a
+// shell rendering one entry — asks for it directly.
+//
+// Everything it writes is a copy. A resource is a registration, shared by every
+// request the process serves, and a translated word written into it would be one
+// request's Accept-Language deciding the next one's screen.
+func Localise(r httpx.Resource, text Text) httpx.Resource {
+	if text == nil {
+		return r
+	}
+	words := resource.WordsFor(r.Schema, text)
+	r.Present = words.Entry(r.Present)
+	r.Schema.Fields = words.Fields(r.Schema.Fields)
+	commands := slices.Clone(r.Commands)
+	for i, c := range commands {
+		commands[i].Present = words.Command(c.Verb, c.Present)
+		commands[i].Fields = words.CommandFields(c.Verb, c.Fields)
+	}
+	r.Commands = commands
+	return r
 }
 
 // Describe1 is one entry, from a resource and the answer to "may this caller
@@ -128,8 +252,9 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 func Describe1(r httpx.Resource, writable bool) Entry {
 	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
 		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
-	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable,
-		Singleton: r.Singleton, Operations: r.OperationWords()}
+	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present, r.Commands), Screen: r.Screen,
+		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
+		Operations: r.OperationWords()}
 	if writable {
 		e.WritePath = r.WritePath
 	}
@@ -137,6 +262,7 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
 			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
+			Presentation: commandDeviations(c.Present),
 		})
 	}
 	return e

@@ -1,11 +1,194 @@
 {
-  "permission.content:read": {
+  "hints.content/content.command.archive.confirmation.body": {
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "ler conteúdos",
+    "translation": "Deixa de ser exibida. Pode voltar a publicá-la mais tarde.",
     "plural": {
-      "": "ler conteúdos"
+      "": "Deixa de ser exibida. Pode voltar a publicá-la mais tarde."
+    }
+  },
+  "hints.content/content.command.archive.confirmation.confirmLabel": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar",
+    "plural": {
+      "": "Arquivar"
+    }
+  },
+  "hints.content/content.command.archive.confirmation.title": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar esta página?",
+    "plural": {
+      "": "Arquivar esta página?"
+    }
+  },
+  "hints.content/content.command.archive.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar",
+    "plural": {
+      "": "Arquivar"
+    }
+  },
+  "hints.content/content.command.publish.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publicar",
+    "plural": {
+      "": "Publicar"
+    }
+  },
+  "hints.content/content.command.restore.confirmation.body": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Será gravada uma nova versão com este conteúdo. Nada é eliminado.",
+    "plural": {
+      "": "Será gravada uma nova versão com este conteúdo. Nada é eliminado."
+    }
+  },
+  "hints.content/content.command.restore.confirmation.confirmLabel": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restaurar",
+    "plural": {
+      "": "Restaurar"
+    }
+  },
+  "hints.content/content.command.restore.confirmation.title": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restaurar esta versão?",
+    "plural": {
+      "": "Restaurar esta versão?"
+    }
+  },
+  "hints.content/content.command.restore.label": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Restaurar esta versão",
+    "plural": {
+      "": "Restaurar esta versão"
+    }
+  },
+  "hints.content/content.command.restore.successMessage": {
+    "references": [
+      "kit/rest/history.go"
+    ],
+    "translation": "Foi gravada uma nova versão com o conteúdo que restaurou.",
+    "plural": {
+      "": "Foi gravada uma nova versão com o conteúdo que restaurou."
+    }
+  },
+  "hints.content/content.command.unpublish.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Despublicar",
+    "plural": {
+      "": "Despublicar"
+    }
+  },
+  "hints.content/content.deck.left.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Arquivar"
+  },
+  "hints.content/content.deck.right.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publicar"
+  },
+  "hints.content/content.field.coverImageId.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "ID do ficheiro da imagem de capa",
+    "plural": {
+      "": "ID do ficheiro da imagem de capa"
+    }
+  },
+  "hints.content/content.field.coverImageId.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Capa",
+    "plural": {
+      "": "Capa"
+    }
+  },
+  "hints.content/content.field.kind.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Tipo",
+    "plural": {
+      "": "Tipo"
+    }
+  },
+  "hints.content/content.field.publishedAt.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Publicada",
+    "plural": {
+      "": "Publicada"
+    }
+  },
+  "hints.content/content.field.slug.help": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Usado para montar o endereço web desta página",
+    "plural": {
+      "": "Usado para montar o endereço web desta página"
+    }
+  },
+  "hints.content/content.field.slug.label": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Nome do endereço",
+    "plural": {
+      "": "Nome do endereço"
+    }
+  },
+  "hints.content/content.group.content": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Conteúdo",
+    "plural": {
+      "": "Conteúdo"
+    }
+  },
+  "hints.content/content.plural": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "páginas",
+    "plural": {
+      "": "páginas"
+    }
+  },
+  "hints.content/content.singular": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "página",
+    "plural": {
+      "": "página"
     }
   },
   "permission.content:manage": {
@@ -15,6 +198,33 @@
     "translation": "gerir conteúdos",
     "plural": {
       "": "gerir conteúdos"
+    }
+  },
+  "permission.content:read": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "ler conteúdos",
+    "plural": {
+      "": "ler conteúdos"
+    }
+  },
+  "hints.content/content.description": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Escreva, reveja e publique as páginas que o seu público vê.",
+    "plural": {
+      "": "Escreva, reveja e publique as páginas que o seu público vê."
+    }
+  },
+  "hints.content/content.emptyDescription": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Crie uma página e guarde um rascunho antes de publicar.",
+    "plural": {
+      "": "Crie uma página e guarde um rascunho antes de publicar."
     }
   }
 }

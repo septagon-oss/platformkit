@@ -5,7 +5,7 @@ import { expect, type Page } from '@playwright/test';
 // The floor itself is `~/.local/share/pkit-999/gates/design_gate.py`, which no goal in this
 // repository runs and whose probe takes no cookie — so it can only ever measure an anonymous
 // page, never one inside the frame. The rules and formulas below are that gate's `rules()` and
-// its probe, transcribed the way `e2e/review-r3-refusal-floor.spec.ts` transcribed them: at most
+// its probe, transcribed the way `e2e/refusal-floor.spec.ts` transcribed them: at most
 // two left edges, two body sizes, six font sizes, one primary CTA above the fold, four section
 // gaps, a measure of at most 75 characters at widths of 1280 and up, no contrast under 4.5:1 for
 // text below 24px, and no sideways scroll.
@@ -47,7 +47,7 @@ export type Probe = {
   // The sentences, kept in the failure message so a red says which line is too long.
   widest: { ch: number; text: string }[];
   // What the frame draws outside <main>: the tenant name, the caller and the build stamp.
-  chrome: { size: number; ch: number; text: string }[];
+  chrome: { region: string; size: number; ch: number; text: string }[];
   // Diagnostics, kept so a red names the element rather than the rule: r4 carries the same idea
   // (`overflowing`) for exactly this reason. Nothing here is asserted on.
   worst_element: { tag: string; classes: string; colour: string; background: string } | null;
@@ -144,11 +144,12 @@ export async function probe(page: Page, width: number): Promise<Probe> {
     // The chrome. `main` is the shell's skip target (#content) and the header and footer are its
     // siblings, so the frame's own paragraphs are found from that column rather than by any
     // data-attribute the frame would have to carry for no other reason.
-    const chrome: { size: number; ch: number; text: string }[] = [];
+    const chrome: { region: string; size: number; ch: number; text: string }[] = [];
     for (const e of [...document.querySelectorAll('main')].map((m) => m.parentElement || document.body)
       .flatMap((column) => [...column.querySelectorAll(':scope > header p, :scope > footer p')])) {
       if (!vis(e)) continue;
       chrome.push({
+        region: e.closest('footer') ? 'footer' : 'header',
         size: px(getComputedStyle(e).fontSize),
         ch: ch(e),
         text: (e.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40),
@@ -247,7 +248,8 @@ export function expectChromeOneStep(m: Probe, label: string): void {
 
 /** The footer sentence is bounded, whatever the column it sits in is. */
 export function expectFooterBounded(m: Probe, label: string): void {
-  const stamp = m.chrome.filter((c) => /^PlatformKit/.test(c.text));
+  // A tenant may itself be named PlatformKit; only the footer holds the build stamp.
+  const stamp = m.chrome.filter((c) => c.region === 'footer' && /^PlatformKit/.test(c.text));
   expect(stamp.length, `${label}: no build-stamp sentence in the footer to measure`).toBe(1);
   expect(stamp[0].ch, `${label}: the footer sentence measures ${stamp[0].ch}ch at ${m.width}px — over the floor's ${FLOOR.maxMeasureCh}`).toBeLessThanOrEqual(FLOOR.maxMeasureCh);
 }

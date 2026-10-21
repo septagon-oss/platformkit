@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -19,6 +20,38 @@ type Schema struct {
 	Entity string  `json:"entity"`
 	Path   string  `json:"path"`
 	Fields []Field `json:"fields"`
+}
+
+// RevisionField is the json name of a row's own write counter: the number a
+// stale-base refusal quotes, and the only thing on a row that counts its writes.
+// A Spec that carries it moves it itself, in the same UPDATE as the write that
+// moved anything else (kit/rest), and a caller may read it and may not name it.
+const RevisionField = "revision"
+
+// RevisionCondition is the name a generated edit form posts the row's write count back
+// under: the number the form was drawn from, carried so the write can be refused against
+// a row that has moved since the person read it.
+//
+// It is deliberately not RevisionField. A body's "revision" is a value to store, which
+// every write door refuses — a number a caller can set is no use for refusing a stale
+// write — while this is a condition on the write and writes nothing itself. Two names,
+// because the two questions differ; one owner, because the door that draws the form and
+// the door that reads it may not then disagree about what the form carried.
+const RevisionCondition = "expectedRevision"
+
+// ServerOwned reports whether a field belongs to the server at a write door.
+//
+// There are two kinds. Base's, which ReadOnly already names: the id, the tenant
+// and the two timestamps. And the row's own write counter, which an entity writes
+// beside them and which is nobody's else to set: a number a caller can type is not
+// a number a stale write can be refused with, and the two facts — the document says
+// readOnly, the kernel moves it — are one rule seen from either side.
+//
+// A door that took either from a body stored what was sent and lost the record it
+// was meant to be keeping, so every write door refuses or discards them together,
+// asked through this one question rather than a second list somebody maintains.
+func ServerOwned(f Field) bool {
+	return f.ReadOnly || (f.Name == RevisionField && f.Type == TypeInt)
 }
 
 // FieldType is the closed set of shapes a screen knows how to render and a
@@ -42,6 +75,60 @@ const (
 	// could not name it — a PATCH could not reach it either, but only because
 	// the field did not exist, which is the right answer for the wrong reason.
 	TypeList FieldType = "list"
+	// TypeMap is a value keyed by a name rather than by position: the text of each
+	// translatable field of one record, keyed by that field's own name, is the case
+	// that made it necessary. It is never *derived* — a map column stays out of an
+	// entity's schema, because a column of many values is neither one a screen
+	// draws nor one an equality filter compares — and appears only where the owner
+	// of a command's argument declares it, together with the keys it takes. Which
+	// keys a map takes is a fact about the record the command acts on, and no
+	// reading of `map[string]string` can ever learn that this entity has a title
+	// and a body.
+	TypeMap FieldType = "map"
+)
+
+// MapArg is one map-valued argument of a command, declared by whoever owns the
+// command: the shape Go cannot state and the keys no reflection can discover.
+//
+// It is a declaration and not a type, because the two differ exactly here: the Go
+// type says "text keyed by a string", and the screen needs "one box, per field,
+// for the fields of *this* record". The argument it declares one for has to be a
+// map keyed by a string; kit/rest refuses a declaration that names anything else,
+// so a key list can never describe an argument that would ignore it.
+type MapArg struct {
+	// Elem is what each key's value is: TypeString, TypeText or TypeInt.
+	Elem FieldType `json:"elem"`
+	// Doc is the sentence a shell puts under the group of controls.
+	Doc string `json:"doc,omitempty"`
+	// Keys is what the map takes, in the order a form should ask for it.
+	Keys []MapKey `json:"keys,omitempty"`
+}
+
+// MapKey is one key of a declared map argument, and the whole reason a map can
+// appear on a screen: a form cannot draw a box for a type, and a command whose
+// keys come from the record it acts on — a translation's per-field text — declares
+// them at mount, in the record's own field names.
+type MapKey struct {
+	// Name is the key, spelled as the JSON body spells it.
+	Name string `json:"name"`
+	// Label is the word a shell puts beside this key's control. Empty means the
+	// shell humanises Name, which is right for a key named after a field.
+	Label string `json:"label,omitempty"`
+	// Widget names the control, from the same vocabulary Field.Widget names.
+	Widget string `json:"widget,omitempty"`
+	// From names the one fact about the record this key is filled *for* the
+	// person, rather than typed by them: "revision" is the field's current
+	// revision, which a screen has read and a person could not. Empty means
+	// nobody but a person fills this key in.
+	From string `json:"from,omitempty"`
+}
+
+// The facts a screen can fill a map key with on a person's behalf.
+const (
+	// KeyFromRevision is the field's current revision as the screen read it, 0
+	// for a field with nothing stored. A write that carries it is the optimistic
+	// check; one that carries none of them is a write that overwrites blind.
+	KeyFromRevision = "revision"
 )
 
 // Field is one column, as the API and a screen see it.
@@ -54,6 +141,10 @@ type Field struct {
 	Type   FieldType `json:"type"`
 	// Elem is what a TypeList holds, and empty for everything else.
 	Elem FieldType `json:"elem,omitempty"`
+	// Keys is the closed set of keys a TypeMap argument takes. Reflection derives
+	// a map's shape and cannot derive its keys, so the owner declares them; a
+	// TypeMap field with none is a map no shell can fill in.
+	Keys []MapKey `json:"keys,omitempty"`
 	// Widget overrides the control a screen would pick from Type: `ui:"widget:select"`.
 	// It must be a name Widgets admits; a Spec whose entity carries any other
 	// name refuses to mount, because a name no renderer knows used to draw a
@@ -104,6 +195,30 @@ type Field struct {
 	// control. It is a description and not a label: the entities here write
 	// "Short summary of the task", which reads under an input and not on it.
 	Doc string `json:"doc,omitempty"`
+	// Translatable comes from `i18n:"translatable"` and means one thing: a
+	// tenant may hold this field's value in each language it is served in, and
+	// a reader may ask for one of them. It is a fact about the field and not
+	// about a table — the rows live in modules/translation, keyed by this
+	// entity's own two names — and it is what kit/rest refuses a mount over when
+	// the module that mounted the Spec wired no Translations port, because a
+	// tag nobody can honour is a tag that silently does nothing.
+	//
+	// It reaches the native catalogue for free: ui/screens' Entry embeds this
+	// Schema, so a phone can draw a completeness chip without a second
+	// declaration of which fields are translatable.
+	Translatable bool `json:"translatable,omitempty"`
+
+	// Presentation is how a read names, groups, colours and shows this field,
+	// from the `ui:` directives of §2.3 and the `enumLabels`/`enumTones` tags.
+	// It is a value and not a pointer because the zero FieldHints is exactly "no
+	// body said anything about this field" and omitzero prints no key for it; a
+	// pointer would give the same nothing two shapes, one of which a shell would
+	// have to nil-check for every field of every entity.
+	//
+	// It sits beside Widget, Present and Display rather than replacing any of
+	// them: what to type into, how to read and how much to show are three
+	// questions with three answers.
+	Presentation FieldHints `json:"presentation,omitzero"`
 
 	// Index locates the field in the struct. It is exported for one caller,
 	// kit/rest's PATCH merge, which decodes a body into the field this names;
@@ -138,12 +253,29 @@ var Widgets = []string{
 // import, so what ties the two together is a test there that names a rendered
 // composition for every entry here, plus the mount-time refusal in kit/rest.
 //
-// One entry, on purpose. ADR 0012 requires an adopted consumer's benefit, and a
-// vocabulary invented with no second caller in sight is how you get an alias of a
-// Go type you have to keep explaining. `text` is deliberately absent: the empty
-// string already means "derive it from the type", and an enum value, a timestamp
-// and a boolean each have a reading that needs no name.
-var Presentations = []string{"person"}
+// Three of the four read a file id — `image` is one picture, `images` a list of
+// them, `avatar` one picture of a person — and one reads a name. The picture
+// names earn their place the way `person` did: `image` is adopted by a reference
+// resource's cover field today, and `images` and `avatar` are honoured by the
+// same two compositions in ui/resource and wait on a product's own gallery and
+// profile field for an adopting column. What a name may not be is a type spelled
+// twice: `text` is deliberately absent, because the empty string already means
+// "derive it from the type", and an enum value, a timestamp and a boolean each
+// have a reading that needs no name.
+//
+// A name a mounted Spec claims and no screen renders refuses to mount, and the
+// shape a picture name may sit on is refused too — see ui/resource's own test
+// that names a composition per name here, and kit/rest's picture gate.
+var Presentations = []string{"person", "image", "images", "avatar"}
+
+// PicturesAre reports whether the named presentation reads a file id, which is
+// the one fact about the name that a mount gate can check without importing what
+// draws it: `image`, `images` and `avatar` hold a `files` row's id and nothing
+// else, so they refuse the column shapes that could not hold one and the hints
+// that would read the same column two ways.
+func PicturesAre(present string) bool {
+	return present == "image" || present == "images" || present == "avatar"
+}
 
 // ValidPresentation reports whether a screen renders the named presentation. The
 // empty string is valid: it means "derive from Type and Enum", which is most
@@ -208,6 +340,22 @@ func copyFields(fields []Field) []Field {
 	for i := range out {
 		out[i].Enum = slices.Clone(out[i].Enum)
 		out[i].Index = slices.Clone(out[i].Index)
+		// The two hint maps are the new way to break the promise Fields makes
+		// above — a caller may customise this metadata — so they are cloned with
+		// the slices, or one consumer's label becomes the next caller's schema.
+		out[i].Presentation.EnumLabels = maps.Clone(out[i].Presentation.EnumLabels)
+		out[i].Presentation.EnumTones = maps.Clone(out[i].Presentation.EnumTones)
+		if m := out[i].Presentation.Money; m != nil {
+			money := *m
+			out[i].Presentation.Money = &money
+		}
+		if ref := out[i].Presentation.Reference; ref != nil {
+			reference := *ref
+			out[i].Presentation.Reference = &reference
+		}
+		// Keys is the map argument's own declaration: a caller may customise
+		// this metadata, so the slice of keys travels as a copy of its own.
+		out[i].Keys = slices.Clone(out[i].Keys)
 	}
 	return out
 }
@@ -248,12 +396,18 @@ func derive(t reflect.Type) []Field {
 			Type:     kind,
 			Elem:     elem,
 			Required: has(sf.Tag.Get("validate"), "required"),
-			ReadOnly: declaredBy(t, sf) == baseType,
+			ReadOnly: declaredBy(t, sf) == baseType || (kind == TypePicture && sf.Tag.Get("readOnly") == "true"),
 			Default:  sf.Tag.Get("default"),
 			Doc:      sf.Tag.Get("doc"),
 			Index:    sf.Index,
 		}
 		f.MaxLength, _ = strconv.Atoi(sf.Tag.Get("maxLength"))
+		// The translation tag is one word and takes no value: the field either
+		// may be said in another language or may not. It is a tag of its own and
+		// not another `ui:` directive, because `ui:` names what a control does
+		// and this names what the data is; a field can be `ui:"widget:richtext"`
+		// and translatable, and a title is translatable with no widget at all.
+		f.Translatable = has(sf.Tag.Get("i18n"), "translatable")
 		if enum := sf.Tag.Get("enum"); enum != "" {
 			f.Enum = strings.Split(enum, ",")
 		}
@@ -274,6 +428,61 @@ func derive(t reflect.Type) []Field {
 				// No value is read: `ui:"display:yes"` sets the same flag as `ui:"display"`, and a value
 				// would be a second shape nothing renders.
 				f.Display = true
+			case "label":
+				f.Presentation.Label = value
+			case "help":
+				f.Presentation.Help = value
+			case "section":
+				f.Presentation.Section = value
+			case "visibility":
+				// A bare `visibility:` sets the empty string, which is "not declared"
+				// and so refuses at mount rather than silently meaning "shown".
+				f.Presentation.Visibility = value
+			case "format":
+				f.Presentation.Format = value
+			case "reference":
+				f.Presentation.Reference = &FieldReference{Resource: value}
+			case "currency", "scale":
+				// Two flat directives, one object on the wire. The grammar has no
+				// nested value syntax, and inventing one here for two keys would be
+				// a second parser; the mount gate refuses the half of the pair that
+				// arrives alone (V26).
+				if f.Presentation.Money == nil {
+					f.Presentation.Money = &FieldMoney{}
+				}
+				if key == "currency" {
+					f.Presentation.Money.CurrencyField = value
+				} else {
+					f.Presentation.Money.Scale, _ = strconv.Atoi(value)
+				}
+			}
+		}
+		// Its own tag, for the reason the two maps below have theirs: the values
+		// are a comma-separated list, and `,` is a directive separator inside
+		// `ui:`, so a directive there could name one value and an entity with two
+		// would have to repeat the key. The list is the same shape as the `enum:`
+		// tag's own, because it is a subset of exactly that list.
+		if raw := sf.Tag.Get("doneValues"); raw != "" {
+			f.Presentation.DoneValues = strings.Split(raw, ",")
+		}
+		for _, tag := range []struct {
+			name string
+			into *map[string]string
+		}{
+			{"enumLabels", &f.Presentation.EnumLabels},
+			{"enumTones", &f.Presentation.EnumTones},
+		} {
+			// Their own tags, not `ui:` directives: the entity tag `enum:"open,done"`
+			// is the closed set of values, and a directive named `enum:` one
+			// character from it. A value may therefore not contain a comma — V25
+			// refuses it rather than let this parser drop the rest of the map.
+			if raw := sf.Tag.Get(tag.name); raw != "" {
+				into := make(map[string]string)
+				for _, pair := range strings.Split(raw, ",") {
+					key, value, _ := strings.Cut(pair, "=")
+					into[key] = value
+				}
+				*tag.into = into
 			}
 		}
 		out = append(out, f)
@@ -333,6 +542,8 @@ func scalar(t reflect.Type, tag reflect.StructTag) (FieldType, bool) {
 		t = t.Elem()
 	}
 	switch t {
+	case reflect.TypeFor[Picture]():
+		return TypePicture, true
 	case uuidType:
 		return TypeUUID, true
 	case timeType:

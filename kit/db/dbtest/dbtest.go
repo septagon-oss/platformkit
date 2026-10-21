@@ -14,12 +14,18 @@ package dbtest
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
+	"hash/fnv"
 	"math/rand/v2"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx"
 
@@ -47,34 +53,39 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 	baseAdmin := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
 	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
 	name := schemaName(t.Name())
-	schema := quote(name)
-	role := quote(roleOf(t, baseApp))
 
 	admin := OpenFor(t, baseAdmin)
-	run := func(query string) {
-		t.Helper()
+	for _, query := range namespaceStatements(name, roleOf(t, baseApp)) {
 		if _, err := admin.ExecContext(ctx, query); err != nil {
 			t.Fatalf("dbtest: %s: %v", query, err)
 		}
 	}
-	run("DROP SCHEMA IF EXISTS " + schema + " CASCADE")
-	run("CREATE SCHEMA " + schema)
-	run("GRANT USAGE ON SCHEMA " + schema + " TO " + role)
-	// Default privileges hand each table and sequence created in the schema to
-	// the app role as it appears, the same way deploy/postgres/init.sql does for
-	// the public schema.
-	run("ALTER DEFAULT PRIVILEGES IN SCHEMA " + schema + " GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO " + role)
-	run("ALTER DEFAULT PRIVILEGES IN SCHEMA " + schema + " GRANT USAGE, SELECT ON SEQUENCES TO " + role)
 
 	t.Cleanup(func() {
-		cleaner, err := sql.Open("pgx", baseAdmin)
+		cleaner, err := openOwner(baseAdmin)
 		if err != nil {
 			return
 		}
 		defer cleaner.Close()
-		_, _ = cleaner.ExecContext(context.WithoutCancel(ctx), "DROP SCHEMA "+schema+" CASCADE")
+		_, _ = cleaner.ExecContext(context.WithoutCancel(ctx), "DROP SCHEMA "+quote(name)+" CASCADE")
 	})
 	return withSchema(t, baseAdmin, name), withSchema(t, baseApp, name)
+}
+
+// namespaceStatements are the statements that make one schema this namespace's own: an empty
+// schema of that name, the application role's USAGE on it, and the default privileges that hand
+// every table and sequence created inside it to that role as it appears, the way
+// deploy/postgres/init.sql does for the public schema. A schema and a role are quoted here and
+// nowhere else, so a caller cannot prepare one namespace two ways.
+func namespaceStatements(schema, role string) []string {
+	s, r := quote(schema), quote(role)
+	return []string{
+		"DROP SCHEMA IF EXISTS " + s + " CASCADE",
+		"CREATE SCHEMA " + s,
+		"GRANT USAGE ON SCHEMA " + s + " TO " + r,
+		"ALTER DEFAULT PRIVILEGES IN SCHEMA " + s + " GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO " + r,
+		"ALTER DEFAULT PRIVILEGES IN SCHEMA " + s + " GRANT USAGE, SELECT ON SEQUENCES TO " + r,
+	}
 }
 
 // Schema creates an isolated database schema with the kernel's tables and the
@@ -87,7 +98,7 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	t.Helper()
 	adminURL, appURL := URLs(t)
 	sources := append([]db.MigrationSource{migrations.Source}, extra...)
-	if err := db.Migrate(t.Context(), adminURL, sources...); err != nil {
+	if err := migrate(t, t.Context(), adminURL, sources...); err != nil {
 		t.Fatalf("dbtest: migrate: %v", err)
 	}
 	admin = Open(t, adminURL)
@@ -97,6 +108,63 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	}
 	t.Cleanup(func() { _ = app.Close() })
 	return admin, app
+}
+
+// migrateTries and migratePause are this fixture's patience with a migration that
+// was refused rather than one that failed: see migrate.
+const (
+	migrateTries = 4
+	migratePause = time.Second
+)
+
+// migrate applies the sources to the schema URLs just made, taking the re-run that a
+// contended refusal offers.
+//
+// One database serves every package of the suite, and a migration of one test's own
+// namespace can still be refused a lock inside its budget: measured on CI's `make check`
+// of 2026-10-09, `000003_handled.up.sql` answered SQLSTATE 55P03 at the run's five-second
+// lock budget while the same runner applied the file before it in 1.8s instead of 13ms.
+// The refusal says what it did not do — nothing the run had not already applied was
+// applied, and it may be run again — and an installation answers that by handing the
+// decision to the operator standing in front of the database (apps/platformkit migrate).
+// A fixture has no operator and no replica queued behind it, so it answers the way the
+// refusal asks: run it again, a bounded number of times.
+//
+// The bound is what keeps this from becoming the wait the runner refuses to take. A
+// migration that fails — a file that is wrong, a checksum that moved — is refused on the
+// first answer, unchanged: retrying it would hide the failure behind a delay. And when the
+// tries run out, the error a person reads is the runner's own sentence, budgets and all.
+func migrate(t testing.TB, ctx context.Context, adminURL string, sources ...db.MigrationSource) error {
+	t.Helper()
+	try := 0
+	return pastContention(ctx, migrateTries, migratePause, func(ctx context.Context) error {
+		try++
+		if try > 1 {
+			t.Logf("dbtest: the migration was refused by a lock, running it again: attempt %d of %d", try, migrateTries)
+		}
+		return db.Migrate(ctx, adminURL, sources...)
+	})
+}
+
+// pastContention runs attempt until it answers something other than db.ErrContended,
+// the tries run out, or ctx ends. Anything else the attempt answers — success, or a
+// migration that really failed — is returned at once and untouched.
+func pastContention(ctx context.Context, tries int, pause time.Duration, attempt func(context.Context) error) error {
+	var err error
+	for try := 1; try <= tries; try++ {
+		if err = attempt(ctx); err == nil || !errors.Is(err, db.ErrContended) {
+			return err
+		}
+		if try == tries {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(pause):
+		}
+	}
+	return err
 }
 
 // DeploymentSchema is the namespace an unqualified statement in this session
@@ -139,7 +207,8 @@ func DeploymentSchema(t testing.TB, admin *sql.DB) string {
 	return schema.String
 }
 
-// Open is a database/sql pool on rawURL, closed when the test ends.
+// Open returns an owner pool on rawURL with four open connections and one idle
+// connection, closed when the test ends. An invalid URL fails the test.
 func Open(t *testing.T, rawURL string) *sql.DB {
 	t.Helper()
 	return OpenFor(t, rawURL)
@@ -148,7 +217,7 @@ func Open(t *testing.T, rawURL string) *sql.DB {
 // OpenFor is Open for tests and benchmarks, with the same automatic cleanup.
 func OpenFor(t testing.TB, rawURL string) *sql.DB {
 	t.Helper()
-	pool, err := sql.Open("pgx", rawURL)
+	pool, err := openOwner(rawURL)
 	if err != nil {
 		t.Fatalf("dbtest: open %q: %v", rawURL, err)
 	}
@@ -156,9 +225,37 @@ func OpenFor(t testing.TB, rawURL string) *sql.DB {
 	return pool
 }
 
+// openOwner bounds assertion, setup and cleanup pools alike. Four connections
+// permit a held lock, a concurrent writer and an observer with one slot to spare.
+func openOwner(rawURL string) (*sql.DB, error) {
+	pool, err := sql.Open("pgx", rawURL)
+	if err != nil {
+		return nil, err
+	}
+	pool.SetMaxOpenConns(4)
+	pool.SetMaxIdleConns(1)
+	return pool, nil
+}
+
 // Role creates a login role that owns nothing and holds nothing except what the
-// caller grants it, in the schema URLs made for t, and returns its name and a DSN
-// that lands in that schema.
+// caller grants it, in the installation the given owner connection stands in, and
+// returns its name and a DSN that lands in that installation — the same database and the same
+// namespace the handle reached.
+//
+// The name is the namespace's with this fixture's prefix on it, and a namespace too long for one
+// PostgreSQL identifier keeps its head — as much of it as holds whole characters — and gains a
+// digest of the whole name rather than losing its tail: two installations whose names differ only
+// past the limit — the copies of one prepared installation differ only in how many times their case
+// asked — take two roles, and each grant lands on the installation it was written for. The
+// namespace comes back through the owner connection, so that name is built from whatever the caller
+// called its installation, not only from the names this fixture makes for itself.
+//
+// The grant is aimed at the database the connection stands in, read from the server, rather than at
+// the database the environment names, because a test may hold a copy of an installation its package
+// prepared (Clone) rather than the one the URLs name. A privilege lives in the database it was
+// granted in, and PostgreSQL refuses to drop a role that still holds one anywhere: a fixture that
+// cleaned up through the environment's own database would revoke nothing, lose the role, and say
+// nothing about either.
 //
 // It exists because the tree has two roles and some rights belong to neither: the
 // owner is a superuser that row-level security does not bind, and the application
@@ -174,18 +271,20 @@ func OpenFor(t testing.TB, rawURL string) *sql.DB {
 // PLATFORMKIT_TEST_DATABASE_URL rather than invented: the role is a fixture in a
 // disposable schema, dropped with it, and a second secret in the environment would
 // be a second thing to rotate for no gain.
+//
+// A cleanup this fixture cannot finish is reported rather than swallowed: the role is cluster-wide,
+// so one left behind by a package outlives the database that held it and stands in the way of the
+// next run's grant of the same name.
 func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
 	t.Helper()
 	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
-	schema := DeploymentSchema(t, admin)
+	baseAdmin := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	schema, database := DeploymentSchema(t, admin), sessionDatabase(t, admin)
 	schemaSQL, appPassword := quote(schema), ""
 	if parsed, err := url.Parse(baseApp); err == nil && parsed.User != nil {
 		appPassword, _ = parsed.User.Password()
 	}
-	name = "r_" + strings.TrimPrefix(schema, "t_")
-	if len(name) > 63 {
-		name = name[:63]
-	}
+	name = identifier(rolePrefix + strings.TrimPrefix(schema, "t_"))
 	must := func(query string) {
 		t.Helper()
 		if _, err := admin.ExecContext(t.Context(), query); err != nil {
@@ -200,18 +299,38 @@ func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
 	for _, g := range grants {
 		must("GRANT " + g + " TO " + quote(name))
 	}
-	adminURL := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	grantedIn := aimedAt(t, baseAdmin, database)
 	t.Cleanup(func() {
-		cleaner, err := sql.Open("pgx", adminURL)
+		cleaner, err := openOwner(grantedIn)
 		if err != nil {
 			return
 		}
 		defer cleaner.Close()
 		ctx := context.WithoutCancel(t.Context())
-		_, _ = cleaner.ExecContext(ctx, "DROP OWNED BY "+quote(name))
-		_, _ = cleaner.ExecContext(ctx, "DROP ROLE IF EXISTS "+quote(name))
+		if _, err := cleaner.ExecContext(ctx, "DROP OWNED BY "+quote(name)); err != nil {
+			t.Errorf("dbtest: revoke what the role %s holds in %s: %v", name, database, err)
+		}
+		if _, err := cleaner.ExecContext(ctx, "DROP ROLE IF EXISTS "+quote(name)); err != nil {
+			t.Errorf("dbtest: the role %s is still there: %v", name, err)
+		}
 	})
-	return name, withSchema(t, swapUser(t, baseApp, name), schema)
+	return name, withSchema(t, swapUser(t, aimedAt(t, baseApp, database), name), schema)
+}
+
+// sessionDatabase is the database an open owner connection stands in, read back through it.
+//
+// It comes from the server for the reason DeploymentSchema reads the namespace from it: a fixture
+// that asks the environment instead names the database the process started on, which is not the one
+// a caller handed a handle opened against a copy of a prepared installation. Both are needed
+// together — a privilege belongs to a database and a namespace — and only the server holds the pair
+// this connection actually reached.
+func sessionDatabase(t testing.TB, admin *sql.DB) string {
+	t.Helper()
+	var database string
+	if err := admin.QueryRowContext(t.Context(), "SELECT current_database()").Scan(&database); err != nil {
+		t.Fatalf("dbtest: read the database this connection lands in: %v", err)
+	}
+	return database
 }
 
 // swapUser returns rawURL with its login role replaced, password kept.
@@ -238,14 +357,34 @@ func RoleOf(t *testing.T, rawURL string) string {
 
 func roleOf(t testing.TB, rawURL string) string {
 	t.Helper()
+	name, err := loginRole(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
+// loginRole is roleOf's contract with no testing.TB to report to: the role a connection URL logs in
+// as, which is the role a namespace's grants and default privileges name.
+func loginRole(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		t.Fatalf("dbtest: %q is not a URL: %v", rawURL, err)
+		return "", fmt.Errorf("%q is not a URL: %w", rawURL, err)
 	}
 	if u.User == nil || u.User.Username() == "" {
-		t.Fatalf("dbtest: %q names no role", rawURL)
+		return "", fmt.Errorf("%q names no role", rawURL)
 	}
-	return u.User.Username()
+	return u.User.Username(), nil
+}
+
+// aimedAt is intoDatabase with a testing.TB to report a URL it cannot aim at a database.
+func aimedAt(t testing.TB, rawURL, database string) string {
+	t.Helper()
+	target, err := intoDatabase(rawURL, database)
+	if err != nil {
+		t.Fatalf("dbtest: %v", err)
+	}
+	return target
 }
 
 // withSchema returns rawURL with the test schema as the only search_path. pgx
@@ -262,15 +401,25 @@ func roleOf(t testing.TB, rawURL string) string {
 // connection names exactly this test's own backends, and nobody else's.
 func withSchema(t testing.TB, rawURL, schema string) string {
 	t.Helper()
-	u, err := url.Parse(rawURL)
+	target, err := schemaURL(rawURL, schema)
 	if err != nil {
 		t.Fatalf("dbtest: %q is not a URL: %v", rawURL, err)
+	}
+	return target
+}
+
+// schemaURL is withSchema's contract with no testing.TB to report to: the namespace a pool opened
+// from the URL lands in, and the application_name that says so in pg_stat_activity.
+func schemaURL(rawURL, schema string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
 	}
 	q := u.Query()
 	q.Set("options", "-csearch_path="+schema)
 	q.Set("application_name", schema)
 	u.RawQuery = q.Encode()
-	return u.String()
+	return u.String(), nil
 }
 
 func mustEnv(t testing.TB, name string) string {
@@ -293,8 +442,69 @@ var run = strconv.FormatUint(rand.Uint64(), 36)
 
 // schemaName turns a test name into a Postgres identifier.
 func schemaName(test string) string {
+	name := "t_" + run + "_" + sanitize(test)
+	if len(name) > identifierLimit { // the Postgres identifier limit
+		name = name[:identifierLimit]
+	}
+	return name
+}
+
+// identifierLimit is how many bytes one PostgreSQL identifier may hold: NAMEDATALEN minus one. The
+// server shortens anything longer to this without saying so, which is why a name built out of
+// another name is shortened here, where the reason can be written down.
+const identifierLimit = 63
+
+// rolePrefix is what a login role this fixture creates is named after the namespace it holds rights
+// in: prefix the namespace and you have the role, which is what lets a person reading pg_roles and
+// pg_stat_activity match a session to its installation without asking. Clone leaves this much room
+// in a namespace of its own for the same reason: a namespace that fills the identifier limit would
+// leave the role named after it nothing.
+const rolePrefix = "r_"
+
+// digestWidth is the characters a digest answers in. It is a constant because the two places that
+// reserve room for one inside an identifier do so before they know the name.
+const digestWidth = 8
+
+// digestOf is fnv-1a of a name, as the eight hex digits an identifier can carry beside a cut.
+func digestOf(name string) string {
+	digest := fnv.New32a()
+	_, _ = digest.Write([]byte(name))
+	return fmt.Sprintf("%0*x", digestWidth, digest.Sum32())
+}
+
+// identifier is a name the server will hold as one identifier: within the limit it comes back as it
+// was given, and a longer one keeps its head and ends in a digest of the whole name. The head stops
+// at a whole character, because the limit counts bytes and an identifier may hold characters that
+// take several of them: a cut inside one leaves a partial character the server refuses back, so
+// CREATE ROLE answers `invalid byte sequence for encoding "UTF8"` for a namespace this fixture
+// created itself and read back in full. What the shortened head cannot spell, the digest answers.
+//
+// It is for a name built out of another name, where the cut lands where the caller has no more
+// room: Role derives a login role's name from the namespace it holds rights in, so two namespaces
+// that differ only past the limit — the copies of one prepared installation, which differ only in
+// how many times their case asked — would arrive at the cluster as one role name. The second CREATE
+// ROLE is then refused as already existing, and its grants would have landed on the installation
+// that got there first. Cutting at the limit instead is what did that; PostgreSQL shortens in
+// silence, so nothing else said so. The digest is over the whole name, so one name answers one
+// identifier every time: a caller that has to spell its role out in a GRANT derives it twice.
+func identifier(name string) string {
+	if len(name) <= identifierLimit {
+		return name
+	}
+	tail := "_" + digestOf(name)
+	head := identifierLimit - len(tail)
+	// A byte the cut lands on that continues the character before it means the cut is inside it.
+	for head > 0 && !utf8.RuneStart(name[head]) {
+		head--
+	}
+	return name[:head] + tail
+}
+
+// sanitize is a test name as a Postgres identifier can hold it: lower case, and every character the
+// grammar does not admit becomes one underscore, so what comes back holds one byte per character and
+// a caller may shorten it by bytes. Nothing truncates it here, so a caller with room keeps the name.
+func sanitize(test string) string {
 	var b strings.Builder
-	b.WriteString("t_" + run + "_")
 	for _, r := range strings.ToLower(test) {
 		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 			b.WriteRune(r)
@@ -302,11 +512,7 @@ func schemaName(test string) string {
 			b.WriteByte('_')
 		}
 	}
-	name := b.String()
-	if len(name) > 63 { // the Postgres identifier limit
-		name = name[:63]
-	}
-	return name
+	return b.String()
 }
 
 func quote(id string) string { return `"` + strings.ReplaceAll(id, `"`, `""`) + `"` }
@@ -332,4 +538,52 @@ func SystemToken() tenancy.SystemToken { return systemToken }
 // sees it.
 func System(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx[db.System]) error) error {
 	return db.RunSystem(ctx, conn, systemToken, fn)
+}
+
+// Hold runs stmt on a session of its own, inside one transaction, and keeps
+// whatever lock that statement took until the caller releases it or the test
+// ends — whichever comes first. It answers once the lock is held, because the
+// statement that took it has already returned.
+//
+// This is how a test slows a store on purpose. The alternative, a Go timer in the
+// test's own goroutine, waits for a sleep rather than for a queue, and the
+// behaviour worth testing — a statement that cannot get the lock it asked for
+// because somebody else is holding it — is exactly what a loaded machine does by
+// itself. A caller that wants a row rather than a table takes it by name, with
+// UPDATE … WHERE key = $1; one that wants every statement to wait locks the table
+// instead, since a plain read never queues behind a row lock.
+//
+// The transaction is rolled back rather than committed, so the holder leaves no
+// mark on what the test reads afterwards, and the sleep that holds the lock is
+// cut short when the test ends rather than running out its bound.
+func Hold(t testing.TB, admin *sql.DB, hold time.Duration, stmt string, args ...any) (release func()) {
+	t.Helper()
+	ctx := context.WithoutCancel(t.Context())
+	session, err := admin.Conn(ctx)
+	if err != nil {
+		t.Fatalf("dbtest: open a session to hold %q: %v", stmt, err)
+	}
+	if _, err := session.ExecContext(ctx, "BEGIN"); err != nil {
+		session.Close()
+		t.Fatalf("dbtest: begin the holder: %v", err)
+	}
+	if _, err := session.ExecContext(ctx, stmt, args...); err != nil {
+		session.Close()
+		t.Fatalf("dbtest: hold %q: %v", stmt, err)
+	}
+	released := make(chan struct{})
+	sleeping, stop := context.WithCancel(ctx)
+	go func() {
+		defer close(released)
+		defer session.Close()
+		_, _ = session.ExecContext(sleeping, "SELECT pg_sleep($1)", hold.Seconds())
+		// Roll back whether the sleep ran out or was cut short: a transaction whose
+		// statement was interrupted is aborted, and an aborted transaction is still
+		// holding the lock somebody else is waiting for.
+		_, _ = session.ExecContext(context.WithoutCancel(sleeping), "ROLLBACK")
+	}()
+	var once sync.Once
+	release = func() { once.Do(func() { stop(); <-released }) }
+	t.Cleanup(release)
+	return release
 }

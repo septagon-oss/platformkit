@@ -29,6 +29,13 @@ jobs:
         env:
           POSTGRES_PASSWORD: platformkit
           POSTGRES_DB: platformkit
+          # This cluster is created for the job and deleted with it, so it does not
+          # force its writes to a device: the same three settings compose.yaml names
+          # on its server's command line, whose comment says why. initdb writes them
+          # into the configuration of the data directory this job creates and never
+          # reuses, which is the carrier a service container has and a developer's
+          # persistent volume must not rely on.
+          POSTGRES_INITDB_ARGS: "-c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=256"
         ports:
           - 5432:5432
         options: >-
@@ -40,8 +47,13 @@ jobs:
       # Every action is pinned by commit, with the version it was beside it. A
       # tag on somebody else's repository is a pointer they can move, and an
       # action that moves is arbitrary code in a job holding this repository's
-      # token. release.yml pins the same way and RELEASE.md says so.
+      # token. release.yml pins the same way and RELEASE.md says so. Every commit,
+      # because `make check-loc` reads the merge base with origin/main.
+      # Every commit and tag: the applied-migration check reads a file's bytes at the
+      # oldest release that carries it and at the base commit's first-parent history.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -106,8 +118,20 @@ jobs:
           done
           echo "the mail catcher did not become available" >&2; docker logs mailpit; exit 1
 
+      # The tiers decision 0088 rules, mirrored from .gitea/workflows/ci.yml,
+      # which is the file this repository's runner executes: a pull request runs
+      # the tier that opens no stack, and the push that merges it runs the whole
+      # suite. `make check` is still the sum of the tiers, and its suite line is
+      # byte-pinned in the Makefile, so the two files differ in one condition.
       - name: make check
+        if: github.event_name != 'pull_request'
         run: make check
+
+      - name: Push tier (make check-push)
+        if: github.event_name == 'pull_request'
+        env:
+          PKIT_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: make check-push
 
       # The dependencies, against the Go vulnerability database. It is a step
       # rather than a gate in the Makefile because it needs the network and a
@@ -147,6 +171,13 @@ jobs:
       # would make one job's artifact another job's precondition.
       - name: Corrected editor image builds without publishing
         run: docker build -f tools/designexport/openpencil/Dockerfile -t platformkit-openpencil:check .
+
+      # An installation refuses to boot on a migration file that changed after it ran, so the
+      # change is judged against this event's base, on pull requests and pushes alike.
+      - name: Applied migrations never change
+        env:
+          MIGRATIONS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: make check-applied-migrations
 
       # Last, and deliberately. A ceiling that rose is a decision for an owner
       # to review, not a reason to stop the job before it has said whether the

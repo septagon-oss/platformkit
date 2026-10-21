@@ -79,10 +79,11 @@ func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, co
 		Method:      http.MethodDelete,
 		Path:        "/factors/{id}",
 		Summary:     "Withdraw one of my second factors",
-		Description: "Stops one factor working. The last one on the account is refused: a person cannot, by one click, turn their account back into a password — enrol another first, then retire this one.",
+		Description: "Stops one factor working. The last one on the account is refused with 409: a person cannot, by one click, turn their account back into a password — enrol another first, then retire this one. A passkey this installation retired as suspect does not count as one that remains, so retiring it is never what takes the last way in away.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
-		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventFactorWithdrawn}},
+		Errors: []int{http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity,
+			http.StatusServiceUnavailable},
+		Extensions: map[string]any{httpx.EventsExtension: []string{contracts.EventFactorWithdrawn}},
 	}, httpx.SignedIn(), handleWithdrawFactor(factors))
 
 	httpx.Register(app, huma.Operation{
@@ -103,12 +104,15 @@ func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, co
 		Method:      http.MethodPost,
 		Path:        "/challenge/verify",
 		Summary:     "Answer a second factor",
-		Description: "The second half of a sign-in, and only ever of one. The caller is somebody /login or the provider leg just refused to finish without a code, and that refusal is what makes this answer spendable; a code presented by itself - a recovery code from a leaked file, a TOTP read out to whoever phished it - is refused as one answer and at one cost with a wrong code, and spends nothing. For an address that was just refused, this takes the address and the code, or the address and a recovery code, and opens the session the first half had already earned. A wrong code, a replayed step, a spent recovery code, an address with no factor and an address nobody has are one answer at one cost.",
+		Description: "The second half of a sign-in, and only ever of one — an answer that never reached the caller spends the step again rather than replaying the session it opened. The caller is somebody /login or the provider leg just refused to finish without a code, and that refusal is what makes this answer spendable; a code presented by itself - a recovery code from a leaked file, a TOTP read out to whoever phished it - is refused as one answer and at one cost with a wrong code, and spends nothing. For an address that was just refused, this takes the address and the code, or the address and a recovery code, and opens the session the first half had already earned. A wrong code, a replayed step, a spent recovery code, an address with no factor and an address nobody has are one answer at one cost.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable},
-		Extensions: map[string]any{httpx.EventsExtension: []string{
-			contracts.EventLoggedIn, contracts.EventLoginFailed, contracts.EventRecoveryCodeUsed,
-		}},
+		Extensions: map[string]any{
+			httpx.EventsExtension: []string{
+				contracts.EventLoggedIn, contracts.EventLoginFailed, contracts.EventRecoveryCodeUsed,
+			},
+			mints: credential,
+		},
 	}, httpx.Public(), handleVerifyFactor(factors, cookies))
 }
 
@@ -222,6 +226,15 @@ func handleWithdrawFactor(factors contracts.Factors) func(context.Context, *fact
 			return nil, err
 		}
 		if err := factors.WithdrawFactor(ctx, tx, userID, in.ID); err != nil {
+			if errors.Is(err, contracts.ErrLastFactor) {
+				// 409, and named. Every other answer this handler can produce is a
+				// refusal someone can act on; passed through rest.Fault this one is a
+				// 500, which tells a screen to retry the click that the module has just
+				// refused, and tells the operator reading the log that the installation
+				// is broken when the only thing that happened is rule 8.
+				return nil, problem.New(http.StatusConflict,
+					"that is this account's last factor; enrol another before withdrawing it")
+			}
 			return nil, rest.Fault(err)
 		}
 		return done(), nil

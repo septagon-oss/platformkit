@@ -147,7 +147,7 @@ func (p pages) rolesView(ctx context.Context, r page.Request, at int, detail str
 	if err != nil {
 		return page.View{}, rest.Fault(err)
 	}
-	return rolesPage(p.at.roles.at, roles, p.declared, r.Tenant.Operator, at, detail), nil
+	return rolesPage(p.at.roles.at, roles, p.declared, r.Tenant.Operator, at, detail, r.Locale), nil
 }
 
 // rolesPage is the screen as a function of values: the roles there are, the
@@ -156,7 +156,7 @@ func (p pages) rolesView(ctx context.Context, r page.Request, at int, detail str
 // One form per role, each posting the whole list back. That is the shape of the
 // route underneath — a PUT replaces what a role grants — so a form that posted
 // a change instead would be describing a write the server does not have.
-func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Grant, operator bool, at int, detail string) page.View {
+func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Grant, operator bool, at int, detail string, words *page.Locale) page.View {
 	offered := offeredPermissions(declared, operator)
 	total := len(roles)
 	last := max((total+rolesPerPage-1)/rolesPerPage, 1)
@@ -169,7 +169,7 @@ func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Gra
 	status := 0
 	body := []g.Node{components.Toolbar(components.ToolbarProps{
 		Title:    "Roles",
-		Subtitle: counted(total) + " What each role name grants here, which is what everybody holding one may do.",
+		Subtitle: counted(total) + " Choose a role to review its permissions. Changes apply to everyone with that role.",
 	})}
 	if detail != "" {
 		status = http.StatusUnprocessableEntity
@@ -177,15 +177,25 @@ func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Gra
 			Tone: "danger", Message: detail, Bordered: true}))
 	}
 	for _, role := range shown {
-		body = append(body, roleFieldset(where, role.Name, role.Grants, offered, at))
+		summary := strconv.Itoa(len(role.Grants)) + " permissions"
+		if len(role.Grants) == 1 {
+			summary = "1 permission"
+		}
+		if slices.Contains(role.Grants, authcontracts.Wildcard) {
+			summary = "Full access to this tenant"
+		}
+		if len(role.Grants) == 0 {
+			summary = "No permissions assigned"
+		}
+		body = append(body, components.Disclosure(components.DisclosureProps{Label: role.Name, Description: summary, Open: detail != ""},
+			roleFieldset(where, role.Name, role.Grants, offered, at, words)))
 	}
 	body = append(body,
 		components.Pagination(components.PaginationProps{
 			CurrentPage: at, TotalPages: last, BaseURL: where,
 			NavigationLabel: "Roles pagination",
 		}),
-		components.Divider(components.DividerProps{Text: "New role"}),
-		newRoleFieldset(where, offered, at))
+		components.Disclosure(components.DisclosureProps{Label: "New role", Description: "Create a role with only the access it needs", Open: detail != ""}, newRoleFieldset(where, offered, at)))
 	return page.View{Title: "Roles", Status: status, Body: body}
 }
 
@@ -227,7 +237,7 @@ func offeredPermissions(declared []tenancy.Grant, operator bool) []string {
 
 // roleFieldset is one role: its name, what it grants, and the one button that
 // writes the two together.
-func roleFieldset(where string, name string, granted []string, offered []string, at int) g.Node {
+func roleFieldset(where string, name string, granted []string, offered []string, at int, words *page.Locale) g.Node {
 	form := "pk-role-" + name
 	nodes := []g.Node{
 		components.Heading(components.HeadingProps{Text: name, Level: 2}),
@@ -245,15 +255,29 @@ func roleFieldset(where string, name string, granted []string, offered []string,
 	if lost := notOffered(granted, offered); len(lost) > 0 {
 		nodes = append(nodes, components.Alert(components.AlertProps{
 			Tone: "warning", Compact: true, Bordered: true,
-			Message: fmt.Sprintf("Saving %s also drops %s, which this application no longer offers here.",
+			Message: label(words, "admin.roles.drops",
+				"Saving %s also drops %s, which this application no longer offers here.",
 				name, strings.Join(lost, ", ")),
 		}))
 	}
 	nodes = append(nodes,
 		permissionBoxes(form, granted, offered),
 		components.FormActions(components.FormActionsProps{},
-			components.Button(components.ButtonProps{Label: "Save " + name, Type: "submit"})))
-	return components.Form(components.FormProps{Action: where, Label: "What " + name + " grants"}, nodes...)
+			components.Button(components.ButtonProps{
+				Label: label(words, "admin.roles.save", "Save %s", name), Type: "submit"})))
+	return components.Form(components.FormProps{Action: where,
+		Label: label(words, "admin.roles.grants", "What %s grants", name)}, nodes...)
+}
+
+// label reads one of this screen's labels through the request's catalog. A role's
+// name arrives as an argument and not as part of the entry: it is an identifier a
+// person typed, never copy a translator can reach, which is the same reason the
+// heading beside it is a datum. A page served with no catalog keeps the English.
+func label(words *page.Locale, key, fallback string, args ...any) string {
+	if words == nil {
+		return fmt.Sprintf(fallback, args...)
+	}
+	return words.Text(key, fallback, args...)
 }
 
 // newRoleFieldset is the same form with the name left to be typed. There is no

@@ -41,14 +41,17 @@ function animating(animation) {
 
 test('a capture that runs out of its bound names the source animation it was waiting on', async () => {
   const before = structuredClone(source)
-  await assert.rejects(captureExample(browser, animating('settling-witness 4s linear 1'), pending), error => {
+  // The witness outlasts the bound one wave is given (five seconds), so this case refuses
+  // for the reason the account exists to describe rather than for a bound a slow host can
+  // cross while delivering no frame at all.
+  await assert.rejects(captureExample(browser, animating('settling-witness 6s linear 1'), pending), error => {
     const line = error.message.split('\n')[0]
     assert.match(line, /^page\.evaluate: Error: Capture source animation settling timed out on \S*pending-pt-PT/,
       `the refusal does not name the example it ran out on: ${line}`)
     assert.match(line, /settling-witness on span/, `the refusal names no animation: ${line}`)
     assert.match(line, /playState=running/, `the animation's own state is missing: ${line}`)
     assert.match(line, /startTime=\d/, 'a frame was produced and this animation is genuinely still running')
-    assert.match(line, /endTime=4000/, `the bound is not being read against the effect's own end: ${line}`)
+    assert.match(line, /endTime=6000/, `the bound is not being read against the effect's own end: ${line}`)
     assert.match(line, /document's own timeline is at \d+ms/, `no timeline reading: ${line}`)
     return true
   })

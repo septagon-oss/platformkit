@@ -35,7 +35,11 @@ func note() resource.Resource {
 	}
 }
 
-var opts = resource.Options{Workspace: "/app", Home: "Dashboard"}
+// opts is what a shell decides. The picture door is the one the file module
+// mounts, because a test that named none would render every picture cell as the
+// plain value and prove nothing about any of them.
+var opts = resource.Options{Workspace: "/app", Home: "Dashboard",
+	PictureSource: "/api/v1/file/files/{id}/content"}
 
 func render(t *testing.T, nodes []g.Node) string {
 	t.Helper()

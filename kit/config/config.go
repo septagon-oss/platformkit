@@ -35,8 +35,20 @@ type Config struct {
 	Log      Log      `yaml:"log"`
 	Auth     Auth     `yaml:"auth"`
 	Mail     Mail     `yaml:"mail"`
-	Audit    Audit    `yaml:"audit"`
-	Files    Files    `yaml:"files"`
+	// Secrets names where kit/secrets reads from. Its zero value is the process's
+	// own environment, which is the one store every deployment has, so a
+	// composition is never refused for a secret store it did not name.
+	Secrets Secrets `yaml:"secrets"`
+	Audit   Audit   `yaml:"audit"`
+	Files   Files   `yaml:"files"`
+	// Cloud is the one setting that says which seams this deployment runs on —
+	// which object store, which shared cache, which event transport, where the
+	// spans go. It names the adapters and no address: see Cloud.
+	Cloud Cloud `yaml:"cloud"`
+	// Webhook is the deployment's share of the outbound webhook sender: the key
+	// that wraps each endpoint's signing secret at rest, which addresses this
+	// deployment is willing to dial, and how long a signed attempt is kept.
+	Webhook Webhook `yaml:"webhook"`
 	// Telemetry is where spans and numbers go. Its zero value exports nothing,
 	// which is the default the runtime ships with: see Telemetry.
 	Telemetry Telemetry `yaml:"telemetry"`
@@ -46,6 +58,23 @@ type Config struct {
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// Seed is what the seed command cannot decide for itself: the operator who
+	// ran it. `--as` names the person a write belongs to, which is attribution
+	// and not permission — a target tenant's admin address is somebody else's
+	// answer. The credential below is the permission side: it is checked against
+	// the installation tenant's own people, and the operator must hold
+	// tenant:manage there, before the command enters the tenant it was pointed
+	// at. Both arrive through the environment like every other secret, because
+	// argv is in the process table and in shell history.
+	//
+	// Empty means nobody proved who they are, and the command refuses rather
+	// than seeding as the database account it happens to be pointed at.
+	Seed Seed `yaml:"seed"`
+	// Demo is read by the seed alone. A demonstration needs people a person can
+	// sign in as, and the password they sign in with is a deployment's answer,
+	// not a fact in a file: nothing under seed/ holds a secret, and the loader
+	// refuses a field that looks like one.
+	Demo Demo `yaml:"demo"`
 	// App is what this composition declares about itself to the things that run
 	// before a request does. The slug lives in nats.app, where kit/appname's
 	// grammar guards it and every name is already formed from it; what is here is
@@ -70,6 +99,56 @@ type Config struct {
 	Flags *Flags `yaml:"flags"`
 }
 
+// readTenantApps parses the operator's placement file: `slug=app` lines, with
+// blank lines and `#` comments allowed. Every refusal names the file and the line,
+// because the file is not in the configuration the person reading the message
+// already has open. Values go through the same grammar as nats.app, so a slug a
+// durable cannot be formed from is refused here and not at the boot that reads it.
+func readTenantApps(path string) (map[string]string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("app.tenant_apps_file: %w", err)
+	}
+	out := make(map[string]string)
+	for i, line := range strings.Split(string(body), "\n") {
+		where := fmt.Sprintf("app.tenant_apps_file %s:%d", path, i+1)
+		text := strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		if text == "" {
+			continue
+		}
+		slug, app, found := strings.Cut(text, "=")
+		if !found {
+			return nil, fmt.Errorf("%s is %q; a line is <tenant-slug>=<app-slug>", where, text)
+		}
+		slug, app = strings.TrimSpace(slug), strings.TrimSpace(app)
+		if slug == "" || app == "" {
+			return nil, fmt.Errorf("%s is %q; both a tenant and an app have to be named", where, text)
+		}
+		if _, err := appname.Parse(app); err != nil {
+			return nil, fmt.Errorf("%s names app %q: %w", where, app, err)
+		}
+		if before, again := out[slug]; again && before != app {
+			return nil, fmt.Errorf("%s maps tenant %s to %q, and the file already maps it to %q", where, slug, app, before)
+		}
+		out[slug] = app
+	}
+	return out, nil
+}
+
+// Seed is the seed command's operator credential. See the field on Config.
+type Seed struct {
+	OperatorEmail    string `yaml:"operator_email"`
+	OperatorPassword string `yaml:"operator_password"`
+}
+
+// Demo is what the demo seed cannot decide for itself: the one password every
+// demo person signs in with. Empty means the seed generates a password per
+// person and prints each once, the way bootstrap does with the administrator's.
+// Supply PLATFORMKIT_DEMO_PASSWORD.
+type Demo struct {
+	Password string `yaml:"password"`
+}
+
 // App is the composition's own declaration, read at the migrating boot and put on
 // that session by kit/db (db.MigrateDeclaring) for migrations/000043_tenant_app
 // to place tenants with. It is a declaration and not a request: nothing at run
@@ -85,6 +164,12 @@ type App struct {
 	// nats.app, and a mapping that does not cover every tenant is refused by the
 	// migration rather than completed by a guess.
 	TenantApps map[string]string `yaml:"tenant_apps"`
+	// TenantAppsFile names a file of `slug=app` lines holding the same placement,
+	// for an operator whose mapping is too long to read in a YAML blob. It is read
+	// at load and merged into TenantApps above, the inline map winning a
+	// disagreement; a line that is not a pair, a tenant mapped twice to two apps or
+	// an app that is not a slug refuses the load. Nothing else reads the key.
+	TenantAppsFile string `yaml:"tenant_apps_file"`
 }
 
 // Flags is the flags block: one boolean per key. See Config.Flags for why the
@@ -177,6 +262,25 @@ type Server struct {
 	// second and held the request — and, before the file module was made to
 	// stream outside one, a database transaction — for as long as it liked.
 	ReadTimeout time.Duration `yaml:"read_timeout"`
+
+	// Streams bounds the live connections this process serves. There is one number
+	// because there is one thing a deployment knows and the kernel does not: how many
+	// replicas stand behind the load balancer, and therefore how many browsers one
+	// tenant may have open at once.
+	Streams Streams `yaml:"streams"`
+}
+
+// Streams is the configuration of the live connections this process holds.
+type Streams struct {
+	// MaxPerTenant is how many live connections one tenant may hold in this one
+	// process. A cluster of N replicas admits N times this number, which is the
+	// honest meaning of the word "process" here: a cluster-wide cap is not what this
+	// counts, and kit/stream/README.md says so beside the follow-up that would.
+	//
+	// The per-person ceiling is not configurable: it is the number of tabs one
+	// person plausibly has open, and a deployment that wanted more of them would be
+	// asking for a different feature.
+	MaxPerTenant int `yaml:"max_per_tenant"`
 }
 
 // Database holds the three roles: the app appends as one, migrations run as
@@ -268,6 +372,65 @@ func (n NATS) Validate() error {
 		if n.Username != "" && u.Scheme != "tls" && !Local(u.Host) {
 			return errors.New("nats.username and nats.password require tls:// outside localhost")
 		}
+	}
+	return nil
+}
+
+// Secrets names the store kit/secrets reads: the environment, a mounted directory,
+// or an OpenBao. See kit/secrets/README.md for what each one answers and what it
+// cannot.
+type Secrets struct {
+	// Adapter is env, file or openbao. Empty is env: the process's own environment
+	// is the one secret store every deployment has, and it opens nothing.
+	Adapter string `yaml:"adapter"`
+	// Dir is the mounted directory secrets.adapter file reads — a Kubernetes
+	// Secret volume, a Docker secret, a Vault-agent template's output.
+	Dir string `yaml:"dir"`
+	// URL is the secret service secrets.adapter openbao speaks to, and Token is
+	// its credential. The token is the one secret that cannot arrive through the
+	// port, because the port needs it to read the port: that bootstrap fact is why
+	// it is a plain environment override and not a name in the store.
+	URL   string `yaml:"url"`
+	Token string `yaml:"token"`
+	// KVMount and TransitMount are the two mounts openbao reads: KV v2 for the
+	// bytes and transit for the envelope. They default to secret and transit.
+	KVMount      string `yaml:"kv_mount"`
+	TransitMount string `yaml:"transit_mount"`
+}
+
+// Validate checks the secret store without opening it, in Cache.Validate's shape:
+// one sentence per refusal, and an adapter's fields belong to that adapter alone.
+//
+// An address is refused rather than probed, for the reason the file adapter gives:
+// the store is not dialed at boot, so a name that cannot be a URL is the only
+// mistake this line can catch, and a deployment whose secret service is down finds
+// out from the first command that needed a credential.
+func (s Secrets) Validate() error {
+	switch s.Adapter {
+	case "", "env", "file", "openbao":
+	default:
+		return errors.New("secrets.adapter must be env, file, openbao or empty for the process's own environment")
+	}
+	if s.Adapter != "file" && s.Dir != "" {
+		return errors.New("secrets.dir belongs to secrets.adapter file")
+	}
+	if s.Adapter != "openbao" && (s.URL != "" || s.Token != "" || s.KVMount != "" || s.TransitMount != "") {
+		return errors.New("secrets.url, secrets.token, secrets.kv_mount and secrets.transit_mount belong to secrets.adapter openbao")
+	}
+	if s.Adapter != "openbao" {
+		return nil
+	}
+	bad := errors.New("secrets.url must be an http or https address without credentials, paths or queries")
+	u, err := url.Parse(s.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return bad
+	}
+	if u.User != nil {
+		return errors.New("secrets.url cannot contain credentials; use secrets.token and PLATFORMKIT_SECRETS_TOKEN instead")
+	}
+	if s.Token == "" {
+		return errors.New("secrets.token is required with secrets.adapter openbao: the port cannot read the token that opens the port")
 	}
 	return nil
 }
@@ -375,14 +538,20 @@ func (o OIDC) Enabled() bool { return o.Issuer != "" }
 // and then main wires the in-memory mailbox and says so at boot — a deployment
 // without mail still records every notification and simply sends none.
 //
-// Username and Password are optional, because a relay on a private network
-// authenticates by being unreachable from anywhere else. From is not: a message
-// with no sender is refused by the far end, hours later, in somebody else's log.
+// Username is optional, because a relay on a private network authenticates by
+// being unreachable from anywhere else. From is not: a message with no sender is
+// refused by the far end, hours later, in somebody else's log.
+//
+// There is no password field, and there was one until this line was written. A
+// credential is a secret, and a secret has a door of its own now (kit/secrets), so
+// a second field on this struct would be a second door on the same environment
+// variable with one of them dead: the carrier reads PLATFORMKIT_MAIL_PASSWORD
+// through the port at the moment it dials, which is also when it learns the
+// password changed.
 type Mail struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	Username string `yaml:"username"`
-	Password string `yaml:"password"`
 	From     string `yaml:"from"`
 }
 
@@ -395,6 +564,27 @@ func (m Mail) Enabled() bool { return m.Host != "" }
 // default and not "forever" — a table nothing ever deletes from is an outage
 // with a date on it, and "forever" is spelled with a large number.
 type Audit struct {
+	RetentionDays int `yaml:"retention_days"`
+}
+
+// Webhook is what modules/webhook cannot decide for itself: the key that wraps
+// every endpoint's signing secret, whether this deployment dials addresses on the
+// private grid, and how long a finished attempt keeps the payload it signed.
+type Webhook struct {
+	// SecretKey wraps the signing secret of every registered endpoint at rest.
+	// It is 32 bytes — AES-256-GCM's own width — and the module refuses to be
+	// composed without one, because an installation whose key nobody wrote down
+	// cannot move its endpoints to another machine. Put it in
+	// PLATFORMKIT_WEBHOOK_SECRET_KEY, as every other secret here is put; the
+	// development example carries a laptop key so `make run` boots.
+	SecretKey string `yaml:"secret_key"`
+	// AllowLocalEndpoints permits loopback and private ranges to be dialled. It is
+	// deployment-level: no column, field or route carries it, and it never opens
+	// the instance-metadata address. It exists for a developer's laptop running a
+	// receiver beside the application, and for this module's own tests.
+	AllowLocalEndpoints bool `yaml:"allow_local_endpoints"`
+	// RetentionDays is how long a finished delivery row — which holds the whole
+	// event it signed — is kept. Zero means the module's own default.
 	RetentionDays int `yaml:"retention_days"`
 }
 
@@ -431,6 +621,40 @@ type Files struct {
 	// class and no row in the kernel's key table: one class per line is a
 	// config-file thing, which is what modules/file.Deps.Retention says too.
 	Retention map[string]time.Duration `yaml:"retention"`
+	// Store names the object store the bytes go to: "" or local-disk for the
+	// directory above, s3 for the one below. Which adapter a composition wires
+	// stays that composition's decision; this is the deployment saying which store
+	// it has actually provided the money and the address for.
+	Store string `yaml:"store"`
+	// S3 is where an object store is. It says nothing about whether one is used —
+	// store does that — and is the address of whichever store store names.
+	S3 S3 `yaml:"s3"`
+}
+
+// S3 is where an S3-compatible object store is and how it is reached: AWS S3,
+// Garage, SeaweedFS, Ceph RGW, MinIO on a laptop. The settings are the ones the
+// client this kernel links cannot do without, plus the two shape keys beside them,
+// which exist because a host and a scheme are the same mistake waiting to be made
+// twice.
+//
+// A bucket is addressed by name, so an endpoint is only ever a host, and the
+// credentials are static: the client speaks no credential chain, which is why a
+// profile that names a cloud still requires the pair instead of assuming the pod
+// knows who it is.
+type S3 struct {
+	// Endpoint is host:port, with no scheme, path or credentials in it.
+	Endpoint string `yaml:"endpoint"`
+	Bucket   string `yaml:"bucket"`
+	Region   string `yaml:"region"`
+	// Scheme is http or https, and empty is https: a deployment that talks plain
+	// http to a store writes that down on purpose.
+	Scheme string `yaml:"scheme"`
+	// BucketLookup is how the bucket is addressed — auto, dns or path. Auto is
+	// right for the clouds and a coin flip for a store on a LAN, which is why the
+	// key exists and why the default is the one that asks the store.
+	BucketLookup string `yaml:"bucket_lookup"`
+	AccessKey    string `yaml:"access_key"`
+	SecretKey    string `yaml:"secret_key"`
 }
 
 // The defaults. Twenty-five megabytes is what a mail attachment limit taught
@@ -453,6 +677,19 @@ const DefaultServiceName = "platformkit"
 // application has except an upload on a bad connection, which is the one a
 // deployment overrides it for.
 const DefaultReadTimeout = 30 * time.Second
+
+// DefaultStreamMaxPerTenant is how many live connections one tenant may hold in
+// one process when the deployment names no number. It is a browser per tab per
+// person, times the people of a tenant who happen to be looking at the same
+// screen — and it is per process, so a deployment that runs ten replicas admits ten
+// times this many and should say so to itself before it is surprised.
+const DefaultStreamMaxPerTenant = 500
+
+// MaxStreamMaxPerTenant is the largest number a deployment may write there. It
+// exists to refuse a mistyped one — a zero meant as "unlimited", or a six-figure
+// count that would be a file-descriptor budget pretending to be a policy — rather
+// than to price anyone's plan.
+const MaxStreamMaxPerTenant = 100_000
 
 // keys is every string-valued key a deployment or a composition may set from
 // outside the file: its name, the environment variable that overrides it, where
@@ -488,6 +725,17 @@ var keys = []key{
 	// A secret, so it earns an override for the reason rule 7 gives and earns no
 	// place in config.example.yaml with a value in it.
 	{"cache.password", "PLATFORMKIT_CACHE_PASSWORD", func(c *Config) *string { return &c.Cache.Password }, false},
+	// The secret store's own bootstrap credential, and the one secret in this table
+	// that cannot arrive through kit/secrets: the port needs the token to read the
+	// token. The adapter and the two mount names are not secrets and are settable
+	// here for the same reason any deployment fact is — a fleet sets them per
+	// deployment — while the directory is a path and belongs in the file.
+	{"secrets.adapter", "PLATFORMKIT_SECRETS_ADAPTER", func(c *Config) *string { return &c.Secrets.Adapter }, false},
+	{"secrets.dir", "PLATFORMKIT_SECRETS_DIR", func(c *Config) *string { return &c.Secrets.Dir }, false},
+	{"secrets.url", "PLATFORMKIT_SECRETS_URL", func(c *Config) *string { return &c.Secrets.URL }, false},
+	{"secrets.token", "PLATFORMKIT_SECRETS_TOKEN", func(c *Config) *string { return &c.Secrets.Token }, false},
+	{"secrets.kv_mount", "PLATFORMKIT_SECRETS_KV_MOUNT", func(c *Config) *string { return &c.Secrets.KVMount }, false},
+	{"secrets.transit_mount", "PLATFORMKIT_SECRETS_TRANSIT_MOUNT", func(c *Config) *string { return &c.Secrets.TransitMount }, false},
 	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
 	// The one secret in the surface with an override for a reason rather than
 	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
@@ -497,13 +745,25 @@ var keys = []key{
 	// The factor key, for the same reason as the other three: it seals a
 	// credential, and config.yaml is a file somebody will commit.
 	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
-	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
+	// The fifth: the key that wraps every webhook signing secret. A deployment
+	// that loses it cannot sign again with a secret it never read back, so this one
+	// is written down by whoever can also restore it.
+	{"webhook.secret_key", "PLATFORMKIT_WEBHOOK_SECRET_KEY", func(c *Config) *string { return &c.Webhook.SecretKey }, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
 	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},
+	{"demo.password", "PLATFORMKIT_DEMO_PASSWORD", func(c *Config) *string { return &c.Demo.Password }, false},
+	// The seed command's operator, for the same reason as the other three: a
+	// credential is not a flag. Neither is required by the loader, because the
+	// server reads neither and the command refuses an empty pair itself.
+	{"seed.operator_email", "PLATFORMKIT_SEED_OPERATOR_EMAIL", func(c *Config) *string { return &c.Seed.OperatorEmail }, false},
+	{"seed.operator_password", "PLATFORMKIT_SEED_OPERATOR_PASSWORD", func(c *Config) *string { return &c.Seed.OperatorPassword }, false},
 	// No environment override, and still overridable: the sender is a value a
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.
+	// A host is a deployment's fact about its own network, which is what an
+	// environment variable is for; the sender beside it is a composition's.
+	{"mail.host", "PLATFORMKIT_MAIL_HOST", func(c *Config) *string { return &c.Mail.Host }, false},
 	{"mail.from", "", func(c *Config) *string { return &c.Mail.From }, false},
 	// The collector is an endpoint, and an endpoint is a deployment's fact about
 	// its own network, which is what an environment variable is for.
@@ -512,6 +772,23 @@ var keys = []key{
 	// The fourth secret-shaped key, and not a secret: which customer a shared
 	// installation is serving is not sensitive, but a fleet sets it per deployment.
 	{"telemetry.client", "PLATFORMKIT_TELEMETRY_CLIENT", func(c *Config) *string { return &c.Telemetry.Client }, false},
+	// The object store: one profile name, one adapter name, an address, and the two
+	// static credentials the client speaks. Every one is required: false, because
+	// presence is the cloud profile's question and not the loader's — an empty one
+	// is what a deployment that never chose a store looks like, and refusing that
+	// here would refuse every laptop in this repository's own test suite.
+	{"cloud.profile", "PLATFORMKIT_CLOUD_PROFILE", func(c *Config) *string { return &c.Cloud.Profile }, false},
+	{"files.store", "PLATFORMKIT_FILES_STORE", func(c *Config) *string { return &c.Files.Store }, false},
+	{"files.s3.endpoint", "PLATFORMKIT_FILES_S3_ENDPOINT", func(c *Config) *string { return &c.Files.S3.Endpoint }, false},
+	{"files.s3.bucket", "PLATFORMKIT_FILES_S3_BUCKET", func(c *Config) *string { return &c.Files.S3.Bucket }, false},
+	{"files.s3.region", "PLATFORMKIT_FILES_S3_REGION", func(c *Config) *string { return &c.Files.S3.Region }, false},
+	{"files.s3.scheme", "PLATFORMKIT_FILES_S3_SCHEME", func(c *Config) *string { return &c.Files.S3.Scheme }, false},
+	{"files.s3.bucket_lookup", "PLATFORMKIT_FILES_S3_BUCKET_LOOKUP", func(c *Config) *string { return &c.Files.S3.BucketLookup }, false},
+	// Two more secrets, for the reason every other secret in this table has: a
+	// credential belongs in the environment because config.yaml is a file somebody
+	// will commit.
+	{"files.s3.access_key", "PLATFORMKIT_FILES_S3_ACCESS_KEY", func(c *Config) *string { return &c.Files.S3.AccessKey }, false},
+	{"files.s3.secret_key", "PLATFORMKIT_FILES_S3_SECRET_KEY", func(c *Config) *string { return &c.Files.S3.SecretKey }, false},
 }
 
 // Override is one key a composition sets before the configuration is validated.
@@ -558,12 +835,8 @@ func Load(path string, overrides ...Override) (Config, error) {
 	for _, o := range overrides {
 		i := slices.IndexFunc(keys, func(k key) bool { return k.name == o.key })
 		if i < 0 {
-			names := make([]string, len(keys))
-			for j, k := range keys {
-				names[j] = k.name
-			}
 			return Config{}, fmt.Errorf("config %s: %q is not an overridable key; they are %s",
-				path, o.key, strings.Join(names, ", "))
+				path, o.key, strings.Join(Keys(), ", "))
 		}
 		*keys[i].field(&c) = o.value
 	}
@@ -575,6 +848,18 @@ func Load(path string, overrides ...Override) (Config, error) {
 			*k.field(&c) = v
 		}
 	}
+
+	// The cloud profile is applied here: under all three sources above, and before
+	// anything is checked. It writes only keys that are still empty, so a file, an
+	// override or a variable that already answered a seam outranks it, and it runs
+	// before the validators so no guard below is shown a half-written seam the
+	// profile was about to finish. The name is checked first: a profile the table
+	// does not hold writes nothing, and naming that is better than booting on the
+	// wrong adapters quietly.
+	if err := c.Cloud.validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	c = ApplyCloudProfile(c)
 
 	for _, k := range keys {
 		if k.required && *k.field(&c) == "" {
@@ -599,6 +884,34 @@ func Load(path string, overrides ...Override) (Config, error) {
 				path, h.key, h.value)
 		}
 	}
+	// The operator's placement, read from the file the configuration points at.
+	// The inline map above and this file hold the same fact; the file exists
+	// because a mapping of five thousand tenants does not belong in a YAML blob,
+	// and the two merge with the inline map winning on a disagreement — it is the
+	// one an operator edits beside the setting it describes.
+	//
+	// A line the loader cannot make sense of is a refusal, correctable at the file:
+	// the mapping is the write that puts a tenant under an app, and there is no safe
+	// half of one. What it does *not* refuse is a slug naming no tenant that exists:
+	// the mapping is written by somebody who may be describing the tenant they are
+	// about to create, and the migration that finds a tenant nobody mapped is the
+	// one that refuses (migrations/000059_tenant_app_refusal.up.sql), and only of a
+	// boot that named itself: see the guard on migrations/000060_tenant_app_place.
+	if c.App.TenantAppsFile != "" {
+		fromFile, err := readTenantApps(c.App.TenantAppsFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("config %s: %w", path, err)
+		}
+		if c.App.TenantApps == nil {
+			c.App.TenantApps = map[string]string{}
+		}
+		for slug, app := range fromFile {
+			if _, written := c.App.TenantApps[slug]; !written {
+				c.App.TenantApps[slug] = app
+			}
+		}
+	}
+
 	// All three DSNs are parsed here rather than by the driver, so a typo is a
 	// message naming the key instead of a dial error four steps later.
 	for _, u := range []struct {
@@ -625,6 +938,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if err := c.NATS.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	if err := c.Secrets.Validate(); err != nil {
+		return Config{}, err
 	}
 	if err := c.Cache.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
@@ -663,6 +979,13 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if c.Server.ReadTimeout < 0 {
 		return Config{}, fmt.Errorf("config %s: server.read_timeout is %s; a client either has a deadline or the server has none", path, c.Server.ReadTimeout)
 	}
+	if c.Server.Streams.MaxPerTenant == 0 {
+		c.Server.Streams.MaxPerTenant = DefaultStreamMaxPerTenant
+	}
+	if c.Server.Streams.MaxPerTenant < 1 || c.Server.Streams.MaxPerTenant > MaxStreamMaxPerTenant {
+		return Config{}, fmt.Errorf("config %s: server.streams.max_per_tenant is %d; a tenant's live connections per process are between 1 and %d",
+			path, c.Server.Streams.MaxPerTenant, MaxStreamMaxPerTenant)
+	}
 	if c.Files.Dir == "" {
 		c.Files.Dir = DefaultFilesDir
 	}
@@ -671,6 +994,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if c.Files.MaxBytes < 1 {
 		return Config{}, fmt.Errorf("config %s: files.max_bytes is %d; a limit is a number of bytes", path, c.Files.MaxBytes)
+	}
+	if err := c.Files.validateObjects(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	// A retention table is a promise that bytes get removed, so the two ways to
 	// write one by mistake are refused here rather than discovered by the sweep.
@@ -733,7 +1059,7 @@ const defaultSMTPPort = 587
 // cannot send, which is worse than no mailer.
 func (m *Mail) validate(path string) error {
 	if !m.Enabled() {
-		if m.Username != "" || m.Password != "" || m.From != "" {
+		if m.Username != "" || m.From != "" {
 			return fmt.Errorf("config %s: mail has credentials or a sender and no host", path)
 		}
 		return nil
@@ -755,9 +1081,6 @@ func (m *Mail) validate(path string) error {
 	}
 	if m.Port < 1 || m.Port > 65535 {
 		return fmt.Errorf("config %s: mail.port is %d, which is not a port", path, m.Port)
-	}
-	if m.Password != "" && m.Username == "" {
-		return fmt.Errorf("config %s: mail.password is set and mail.username is empty", path)
 	}
 	return nil
 }

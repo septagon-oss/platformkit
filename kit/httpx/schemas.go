@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -87,14 +88,41 @@ type Resource struct {
 	// means all five. A shell that rendered a door per verb — New, Edit, Delete —
 	// reads this, and a door behind which no route answers is not a door.
 	Operations []CRUD
+	// CommandsOnly says the resource mounts none of the five and exists for its
+	// commands alone: Offers answers false for every verb, and the catalogue
+	// lists it, with `operations: []`, to a caller who may call one of them and
+	// to nobody else. Operations is then ignored.
+	CommandsOnly bool
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
-	Schema    entity.Schema
+	// Present is what this resource's author said about how it reads. It is the
+	// carrier between kit/rest, which validates a declaration at mount, and
+	// ui/screens, which writes it into the catalogue: the two never see each
+	// other, and a hint that reached one and not the other is a decision nobody
+	// honours. Zero means nothing was declared, which is every resource written
+	// before this field existed.
+	Present entity.EntryHints
+	Schema  entity.Schema
 	// RichTextFiles is the request-scoped image port for generated detail views.
 	RichTextFiles richtext.Files `json:"-"`
+	// Locales answers one record's standing in each language this tenant speaks
+	// besides its own, for the generated record screen to show. It is wired by
+	// kit/rest for a Spec that declares a translatable field and its translation
+	// port, and by nobody else: a resource whose entity translates nothing leaves
+	// it nil, and its screens say nothing about languages they know nothing about.
+	//
+	// It is a closure beside the five, the way RichTextFiles is a port beside them,
+	// because the answer needs the request's own tenant transaction and only the
+	// side that mounted the routes has that: a screen that computed completeness
+	// for itself would be a second implementation of a rule the read doors already
+	// own, and the first one to drift.
+	Locales func(ctx context.Context, id uuid.UUID) ([]entity.LocaleState, error) `json:"-"`
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command
+	// History is this resource's version series as a screen reads it, or nil for
+	// a resource whose Spec keeps no versions. See httpx.History.
+	History *History
 	// Singleton says a tenant has exactly one of these and it has no id in its
 	// path: the API is a GET and a PUT on Path itself, with no list, no create
 	// and no delete. A shell that did not know would render a collection whose
@@ -104,12 +132,24 @@ type Resource struct {
 
 	// Count reads the total without a page. Registration guards it with Read
 	// and supplies a List-based fallback for resources with custom loading.
-	Count  func(ctx context.Context) (int64, error)
-	List   func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error)
-	Get    func(ctx context.Context, id uuid.UUID) (map[string]any, error)
-	Create func(ctx context.Context, values map[string]any) (map[string]any, error)
-	Update func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error)
-	Delete func(ctx context.Context, id uuid.UUID) error
+	Count func(ctx context.Context) (int64, error)
+	// CountFiltered reads a total narrowed to one declared predicate set — the
+	// "Due today" a card wears beside its total — behind the same read guard as
+	// Count, so a sub-count cannot be reached by a caller the total refuses.
+	//
+	// The Where is built by server code from a declaration the mount gate
+	// checked: no request parameter reaches this package as one, and a column
+	// name comes out of the entity's own schema and never out of a string.
+	CountFiltered func(ctx context.Context, w crud.Where) (int64, error)
+	// CountDays reads this resource's rows broken into the UTC days of one of its
+	// own timestamp columns, behind the same read guard as Count. It answers only
+	// the days it found; an unnamed day is a zero the document writes.
+	CountDays func(ctx context.Context, field string, from, to time.Time) ([]crud.DayCount, error)
+	List      func(ctx context.Context, q crud.Query) ([]map[string]any, int64, error)
+	Get       func(ctx context.Context, id uuid.UUID) (map[string]any, error)
+	Create    func(ctx context.Context, values map[string]any) (map[string]any, error)
+	Update    func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error)
+	Delete    func(ctx context.Context, id uuid.UUID) error
 
 	// mayDeclare is the whole authorization a declaration asks, installed by
 	// RegisterResource: the same method the six closures below call, so a door,
@@ -139,7 +179,15 @@ type Command struct {
 	// resource's reads do not. The catalog publishes it for those commands and
 	// only those, so a document that could be derived still is.
 	Endpoint string
-	Fields   []entity.Field
+	// EmptyInputFault records why the typed input cannot be invoked without values.
+	// Empty means audited zero input or valid explicit defaults for every field.
+	EmptyInputFault string
+	Fields          []entity.Field
+	// Present is how this command's author described it: the word on the button,
+	// whether it is the one to offer, what a person reads before it runs. Carried
+	// to the shells by the same hop that carries Fields, and validated by
+	// kit/rest before any route for it is mounted.
+	Present entity.CommandHints
 	// Run performs the command with the values a caller submitted, inside the
 	// request's own transaction, and is the closure the command's HTTP route
 	// calls. It has to be here because docs/adr/0007 promises a derived screen
@@ -304,6 +352,25 @@ func (a *API) guard(r Resource) Resource {
 			return list(ctx, q)
 		}
 	}
+	// The two narrowed counts ask the same question the total asks, and are
+	// wrapped here rather than at their caller for the same reason Count is: a
+	// Resource built anywhere else is unguarded until it is registered.
+	if narrowed := r.CountFiltered; narrowed != nil {
+		r.CountFiltered = func(ctx context.Context, w crud.Where) (int64, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return 0, err
+			}
+			return narrowed(ctx, w)
+		}
+	}
+	if daily := r.CountDays; daily != nil {
+		r.CountDays = func(ctx context.Context, field string, from, to time.Time) ([]crud.DayCount, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return daily(ctx, field, from, to)
+		}
+	}
 	if get != nil {
 		r.Get = func(ctx context.Context, id uuid.UUID) (map[string]any, error) {
 			if err := a.mayDeclare(ctx, read); err != nil {
@@ -327,6 +394,19 @@ func (a *API) guard(r Resource) Resource {
 			}
 			return update(ctx, id, values)
 		}
+	}
+	if r.History != nil && r.History.Versions != nil {
+		// The series is a read of the record, so it wears the record's read guard:
+		// a page that could draw the panel of a record it may not read would be a
+		// door around the permission rather than a screen.
+		h, inner := *r.History, r.History.Versions
+		h.Versions = func(ctx context.Context, id uuid.UUID) ([]Version, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return inner(ctx, id)
+		}
+		r.History = &h
 	}
 	if remove != nil {
 		r.Delete = func(ctx context.Context, id uuid.UUID) error {
@@ -373,18 +453,21 @@ func (a *API) declaredGrant(ctx context.Context, auth Auth) error {
 	}
 	g, asks := auth.grant()
 	if !asks {
-		// signed_in, any_credential, or a guard nobody declared. Membership is the
-		// whole answer for the first two — with the ceiling rule below between them —
-		// and no answer at all for the third, which is refused the way the middleware
-		// refuses it: an undeclared guard admits nobody.
+		// signed_in, any_credential, bearer_key, or a guard nobody declared.
+		// Membership is the whole answer for the first two — with the ceiling rule
+		// below between them — a key is for the third, and the last is refused the
+		// way the middleware refuses it: an undeclared guard admits nobody.
 		if _, hasTenant := tenancy.FromContext(ctx); !hasTenant {
 			return problem.New(http.StatusForbidden, CodeNoTenant+": this is tenant work and the host resolved to none")
 		}
 		if !recognised(ctx) {
 			return problem.New(http.StatusForbidden, CodeAnonymous+": this requires a signed-in caller")
 		}
-		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential {
+		if auth.kind != kindSignedIn && auth.kind != kindAnyCredential && auth.kind != kindBearerKey {
 			return problem.New(http.StatusForbidden, CodeUndeclared+": this operation declares no authorization")
+		}
+		if p, _ := tenancy.PrincipalFrom(ctx); auth.kind == kindBearerKey && p.TokenID == uuid.Nil {
+			return problem.New(http.StatusForbidden, CodeDenied+": this acts on the key that authenticated the request, and a session carries none")
 		}
 		// The middleware's ceiling rule, asked of the same two declarations here: a
 		// signed-in closure spends the caller's whole authority, so a credential that
@@ -462,12 +545,36 @@ func (a *API) AddCommand(module, entity string, c Command) {
 // commands recorded for it. modules/admin reads it in Routes, which is why the
 // shell is composed last: a module that mounts after it registers a resource no
 // screen was generated for.
+//
+// A command that carries work travels with its own guard, applied here, where the
+// commands join the resource: `Run` is the closure a derived page performs, and a
+// caller who reached it by holding the row's address rather than by passing the
+// route would otherwise be performing a write whose permission they were never
+// asked about. The five CRUD closures get the same wrapping in guard; this is
+// that, for the sixth door, in the one place both a page and the catalog read.
 func (a *API) Resources() []Resource {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	out := append([]Resource(nil), a.resources...)
 	for i := range out {
-		out[i].Commands = a.commands[out[i].Module+"/"+out[i].Entity]
+		commands := a.commands[out[i].Module+"/"+out[i].Entity]
+		if commands != nil {
+			guarded := make([]Command, len(commands))
+			for j, c := range commands {
+				if c.Run != nil {
+					inner, declared := c.Run, c.Auth
+					c.Run = func(ctx context.Context, id uuid.UUID, values map[string]any) error {
+						if err := a.mayDeclare(ctx, declared); err != nil {
+							return err
+						}
+						return inner(ctx, id, values)
+					}
+				}
+				guarded[j] = c
+			}
+			commands = guarded
+		}
+		out[i].Commands = commands
 	}
 	return out
 }

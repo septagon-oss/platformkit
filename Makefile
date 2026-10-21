@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards check-pillars fmt-check check fmt image up trace down
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc generate check-generated check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -71,6 +71,24 @@ PLATFORMKIT_VALKEY_PORT ?= 6379
 PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_VALKEY_PORT)' 2>/dev/null && echo redis://localhost:$(PLATFORMKIT_VALKEY_PORT))
 export PLATFORMKIT_TEST_VALKEY_URL
 
+# The secret service kit/secrets' OpenBao adapter speaks, and the token its dev mode
+# answers to. Like PLATFORMKIT_TEST_VALKEY_URL it is exported only when the service is
+# there: kit/secrets boots and runs every case without a server, so a checkout with no
+# OpenBao running takes the named skip rather than a failure, and whoever exports this
+# variable at a store that is not answering gets failures instead — an address you set
+# yourself is a promise.
+#
+# The question asked of the port is OpenBao's own `sys/seal-status`, and not whether
+# anything answers: this stack's ports come from whoever starts it, two services can
+# be handed the same one, and a suite dialled at whatever else happens to be published
+# there reads a mail catcher's 404 as a broken adapter. The space after the colon is
+# what a pretty-printing client writes and nothing writes the other way, so the
+# pattern admits both.
+PLATFORMKIT_OPENBAO_PORT ?= 8200
+PLATFORMKIT_TEST_OPENBAO_URL ?= $(shell timeout 3 curl -fs http://localhost:$(PLATFORMKIT_OPENBAO_PORT)/v1/sys/seal-status 2>/dev/null | grep -q '"initialized": *true' && echo http://localhost:$(PLATFORMKIT_OPENBAO_PORT))
+export PLATFORMKIT_TEST_OPENBAO_URL
+export PLATFORMKIT_TEST_OPENBAO_TOKEN ?= dev-only-unseal-token
+
 # Local feedback uses Go's package/dependency cache. The full check below runs
 # fresh at TEST_COUNT's default of -count=1, independently of these local
 # selectors or an earlier test goal: only a caller that sets TEST_COUNT itself
@@ -112,8 +130,19 @@ help: ## List the targets
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -buildvcs=false -o /dev/null ./...
 
+# The same stated per-package bound `check` and `check-race` carry, for the same reason against the
+# same measurement: go test's ten-minute default is a clock nobody in this repository chose, and
+# `apps/platformkit` needs most of it even uncached and unraced. Measured on this program's shared
+# Postgres: 9m51s for the package on a host doing nothing else — nine seconds of headroom on a
+# default the suite does not beat so much as tie — and `panic: test timed out after 10m0s` on one
+# doing something, with the cases that were merely running when the clock rang reported as failures.
+# A goal whose verdict is a race against a clock it never names answers to the load on the box, and
+# every caller of this one is a person or a gate waiting for an answer rather than a coin toss. `check`'s bound is the
+# number, not a new one; it sits before $(TEST_FLAGS) so a caller that passes its own -timeout wins,
+# and scripts/check_architecture_test.sh pins this line byte for byte beside `check`'s own.
+# Four package processes share the test server; dbtest bounds each owner pool.
 test: ## Test selected packages, reusing successful results when inputs match
-	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- $(TEST_FLAGS)
+	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m -p=4 $(TEST_FLAGS)
 
 vet: ## Run go vet
 	go vet ./...
@@ -127,6 +156,19 @@ run: config.yaml ## Run the reference app; a missing config.yaml is created from
 # config.yaml is never overwritten, whatever the example's timestamp says.
 config.yaml:
 	cp config.example.yaml config.yaml
+
+# The reference application's own seed, applied through the write path each
+# resource already has: a page through content's, a person through the user
+# module's invitation. Two names are enough to say which run this is — the tenant
+# by its slug and the person by their address, whose roles answer for every write.
+# Whether the demo records are in scope is the tenant's own row's answer, not
+# DEMO's: seed refuses for a tenant whose row says false. DRY=1 prints the plan and
+# writes nothing; the plan it prints is the one a real run would have decided.
+SEED_TENANT ?=
+SEED_AS ?=
+seed: config.yaml ## Seed one tenant from this tree's seed files; SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]
+	@test -n '$(SEED_TENANT)' -a -n '$(SEED_AS)' || { echo 'usage: make seed SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]' >&2; exit 2; }
+	cd apps/platformkit && go run . seed --config ../../config.yaml --tenant '$(SEED_TENANT)' --as '$(SEED_AS)' $(if $(DEMO),--demo,) $(if $(DRY),--dry-run,)
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
@@ -180,8 +222,27 @@ restore-drill: ## Put a backup back and prove the bytes and the application's re
 load-test: ## Compare bounded tenant work and database pool capacity
 	go test ./kit/jobs -run '^$$' -bench '^BenchmarkPerTenantCapacity$$' -benchtime=2s -count=3 -timeout=3m
 
-check-loc: ## Fail when a bucket exceeds its line ceiling
-	go run ./tools/locbudget --check
+# A bucket may grow since the merge base with origin/main by what this branch's own build(budget)
+# commits declare, and no more; a ceiling main's own growth made stale is not this branch's to
+# restate (CONTRIBUTING.md, "Keep budgets honest"). Fetch origin/main first: a stale one is an
+# older merge base.
+check-loc: ## Fail when a bucket grew beyond what this branch's build(budget) commits declare
+	bash scripts/check_budget_ratchet.sh --merge-base origin/main
+
+# Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
+# A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is
+# never written here (CONTRIBUTING.md, "Generated and golden files").
+generate: ## Rewrite every generated file and section from its inputs, offline
+	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
+
+# The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
+# holds generated sections. The diff is against the index, so a regenerated file the author has
+# staged passes and unrelated work is not judged. A writer whose output carries neither marker sits
+# outside this diff: marking what a writer writes is part of writing it, and the whole-tree form,
+# `make generate && git diff --exit-code`, is what catches a marker that was never added.
+check-generated: generate ## Fail when a generated file or section differs from what `make generate` writes
+	git diff --exit-code -- $$(git ls-files | git check-attr --stdin linguist-generated | awk -F': ' '$$3 == "true" { print $$1 }') tests/INVENTORY.md
 
 check-packages: ## Fail when the app links too many first-party packages
 	./scripts/check_packages.sh
@@ -202,8 +263,47 @@ check-ui: ## Fail when a layer's markup reaches past the tokens or emits a class
 check-fixtures: ## Compile the Go program every design test embeds
 	cd tools/designexport/openpencil && node --import ./register.mjs --test fixtures-compile.test.mjs
 
+# The rich text editor's vendor bundle: Tiptap and its Markdown extension, built
+# to one minified ES module by the node project under tools/richtext-bundle. The
+# ceiling is 150 KiB of gzip — the bytes every page that carries a rich text
+# field adds to the download — counted in bytes against a round number, the way
+# the other ceilings here are counted, and asserted whether or not this machine
+# has a node toolchain. The rebuild comparison needs one, so it is the second
+# arm of the same step rather than a step of its own.
+RICHTEXT_BUNDLE_CEILING ?= 153600
+
+check-richtext-bundle: ## Fail when the vendored editor bundle is over its gzip ceiling or differs from a fresh build
+	bash scripts/richtext_bundle_check.sh $(RICHTEXT_BUNDLE_CEILING)
+
+# Rebuild the bundle and its licence file from what package-lock.json pins.
+# Run it after changing the extension list or a pinned version, and commit the
+# two files together with the manifest and the lock.
+richtext-bundle: ## Rebuild ui/assets/richtext/editor.js from its lockfile
+	bash scripts/richtext_bundle_build.sh
+
+# The number decision 0075's i18n row reads: the share of the words a person reads on
+# a served page that a catalogue reached. It renders every document the reference
+# composition serves without a row or a query in front of it, in the pseudo-locale,
+# prints the ratio, the list of what went around a catalogue and the documents it could
+# not reach with the reason for each, and refuses a fall below
+# testdata/i18n-coverage.json — which is both the floor and the set of pages measured. -v is what prints: `check`'s suite runs
+# through gotestsum, whose format drops the output of a passing test, so a number that
+# is only a log line on a green run is a number nobody reads. The gate therefore runs
+# twice — once here, printed, and once inside the suite, silent — which is what keeps
+# `check`'s fresh test boundary the whole suite with nothing taken off it, the boundary
+# scripts/check_architecture_test.sh pins.
+check-i18n: ## Print the share of words a person reads that a translator can reach, and fail below the floor
+	go test ./apps/platformkit -run '^TestThePseudoLocaleGate$$' -count=1 -v
+
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
+
+# An applied migration is checksummed by every installation that ran it, so an edit to one is a boot
+# failure there. CI passes the commit it compares with, judged from its merge base with HEAD; empty
+# means the merge base with origin/main. Uncommitted and staged edits are judged too, as raw bytes.
+MIGRATIONS_BASE ?=
+check-applied-migrations: ## Fail when a migration file the base carries was edited, renamed or removed
+	./scripts/check_applied_migrations.sh $(MIGRATIONS_BASE)
 
 # The pillar section of ARCHITECTURE.md is prose a contributor is meant to trust, and
 # it carries line citations into other people's files, so it drifts the way code does:
@@ -249,6 +349,73 @@ check-rehearse: ## Apply this tree's pending migrations to a copy of the previou
 check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
 	python3 scripts/check_public_api.py $(REHEARSE_BASE) HEAD --baseline $(APIDIFF_BASELINE)
 
+# The tiers decision 0088 rules, as goals beside `check` rather than as a narrowing of it.
+#
+# `check` stays what a pull request must pass and stays the sum of the tiers, byte for byte where
+# three scripts pin it; what changes is who runs it. A push runs `check-push`: the contracts and the
+# behaviour of the packages the diff reaches, and nothing that opens a database — the selector
+# refuses a selection that does, so the promise is structural rather than careful. A merge (a push
+# to main, which is where a pull request lands) runs `check`, which is the whole suite plus the
+# rehearsal, and the nightly runs the journeys and publishes the two reports the inventory's empty
+# `duration` and flake columns are waiting for.
+#
+# The figures, on this host at this revision: `make check` finishes 5 574 tests in 294 s of suite
+# plus the build, and the forge's median `check` job on main is 2 468 s (tests/inventory.json
+# summary.check_job_seconds_median, 13 samples). `make check-push` for a diff that touches one
+# package runs that package's cases and the same static lines: measured below in the commit that
+# wires it.
+check-test-inventory: ## Re-check tests/inventory.json against the tests the tree holds
+	./scripts/check_test_inventory.sh
+
+# The provider legs of kit/inference's one conformance suite. `make check` runs that
+# suite over both far ends this repository holds — the script, and the OpenAI-shaped
+# adapter over a loopback stub — which is the whole of the portability claim a
+# checkout with no network can make. What it cannot claim is that a second vendor
+# speaks the same wire, so that claim is made per run and per named endpoint, and the
+# suite refuses a leg it cannot reach rather than skipping it.
+#
+# PROVIDERS=ollama,hosted reads PLATFORMKIT_TEST_INFERENCE_OLLAMA_URL, _MODEL and
+# _KEY, and the same three for `hosted`. A key is never printed: the leg names the
+# variable it read and not the value, as the adapter's error sentences name a status
+# code and a host for the same reason. Each real endpoint Honours the port's own
+# semantics and declines the far-end deviations — a hosted vendor will not answer a
+# truncated reply to order — and prints the cases it declined.
+PLATFORMKIT_TEST_INFERENCE_PROVIDERS ?= $(PROVIDERS)
+export PLATFORMKIT_TEST_INFERENCE_PROVIDERS
+inference-conformance: ## Run the inference port's suite against operator-named providers (PROVIDERS=ollama,hosted)
+	@test -n '$(PLATFORMKIT_TEST_INFERENCE_PROVIDERS)' || { echo 'usage: make inference-conformance PROVIDERS=<name>,<name>, each configured by PLATFORMKIT_TEST_INFERENCE_<NAME>_URL, _MODEL and _KEY' >&2; exit 2; }
+	go test -v -count=1 -timeout=10m -run 'TestTheConfiguredProvidersConform' ./kit/inference
+
+check-push: build check-generated vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
+	./scripts/check_push_tier.sh
+
+check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
+
+check-nightly: ## The nightly tier: the journeys, and the reports the inventory's duration and flake columns read
+	$(MAKE) e2e
+	$(MAKE) mobile-e2e
+	$(MAKE) flakes
+
+# One selection, one runner: the list comes out of tests/inventory.json, which is the same table a
+# person ratified, so a package cannot be in the push tier by one rule and out of it by another.
+FLAKE_RUNS ?= 5
+flakes: ## Run the whole push tier FLAKE_RUNS times and print the per-test flake rate and the slowest tests
+	./scripts/check_flake_report.sh $(FLAKE_RUNS)
+
+# The instrument 0088's acceptance line needs a "before" for: "coverage not lower" is
+# uncheckable in a tree that never measures it — `-coverprofile` appears nowhere in this
+# repository, and the inventory's `unique_lines` column exists only for the 36 files the
+# specify round measured one at a time. This goal runs the suite once with the mode the
+# delta needs (`set`, not `count`: the prune asks whether a line is reached, not how often)
+# and leaves the answer in reports/ as a named path — the figure a prune commit refuses to
+# fall below, read with `go tool cover -func`. It is a goal and not a `check:` line because
+# instrumenting every package costs real time, and a gate that is slow for a number nobody
+# reads tomorrow gets switched off.
+cover: ## Record this tree's statement coverage in reports/coverage.out and coverage.txt
+	mkdir -p reports
+	go test -count=1 -timeout=30m -covermode=set -coverprofile=reports/coverage.out $(TEST_PACKAGES) | tee reports/coverage.txt
+	go tool cover -func=reports/coverage.out | tail -1
+
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \
 	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
@@ -281,9 +448,30 @@ fmt-check: ## Fail when any file is not gofmt'd
 # that works from a lock that is merely written down.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
-	./modules/change/... ./apps/platformkit
+	./modules/change/... ./kit/locale/... ./apps/platformkit
+# The same stated per-package bound `check` carries, for the same reason and against the same
+# measurement: go test's ten-minute default is not a decision this repository made, and
+# apps/platformkit has grown up to it. The package's own wall clock under -race on CI's runner, read
+# out of four logs where the step passed: 438.9s (run 57363), 448.5s (57557), 462.1s (57497),
+# 484.3s (57383), 489.8s (57488). Read out of four more where it did not: `panic: test timed out
+# after 10m0s`, at 57644 (parked in TestASetPasswordLinkOpensOneSessionInItsOwnTenant, 5s in), 57686
+# (TestTheCompositionMountsTheCatalogItsContractIsGeneratedFrom, 1s in), 57718
+# (TestTheCatalogNamesWhereTheWritesOfAResourceAre, 2s in) and 57727
+# (TestAnApprovedProposalDoesNotAnswerASecondVerdictOverHTTP, 3s in). Four different tests, none of
+# them hung, each of them simply the one that was open when the tenth minute arrived on a box doing
+# other work. A bound that the suite passes on a quiet runner and the same suite misses on a busy
+# one is not a bound; it is a coin toss reported as a defect — which is why `check` already says 30m
+# beside its count rather than trusting the default. Thirty minutes is also the smaller of the two
+# numbers this file can name: -race roughly doubles the suite, so the race run of the package that
+# needs 30m without it cannot promise less with it, and the job that runs both steps gives itself 75
+# minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
+# as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
+# directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
+# hold byte copies of the line that result, in CI's expansion and with the count emptied,
+# scripts/race_binary_timeout_test.py asks the test binary what it was given, and
+# scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) -timeout=30m -p=4 $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
@@ -297,11 +485,21 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 	bash scripts/e2e_health_owner_test.sh
 	bash scripts/e2e_health_requires_own_listener_test.sh
 
+# The journey steps this module publishes are a surface a pinned consumer compiles against, and
+# nothing else here asks them a question: `make check` builds Go, and gate 10 transpiles the two
+# files without asking whether they should exist. So the published names, the specifiers a module
+# zip can carry, the addresses the reference application serves and the hosts a harness step may
+# fall back to are decided here, beside check-apidiff, which makes the same promise about Go. It
+# reads text and builds no fixture tree, so nothing it asks needs node, a browser or a database —
+# the placement argument check-run-owner makes above.
+check-step-library: ## Refuse a published journey step that vanished, or one that cannot load from the pin
+	bash scripts/e2e_step_library_test.sh
+
 # Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the three
 # promises it makes — the port it refuses, the listener it is willing to serve through, and the port
 # it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
 # here. See scripts/free_port.sh for why the answer is no longer the literal 8099 and why a 200 on
-# /health is not enough to answer it, and scripts/free_port_test.sh for the sixteen cases.
+# /health is not enough to answer it, and scripts/free_port_test.sh for the cases behind each of them.
 #
 # scripts/e2e_guards_run_before_the_gate_test.sh asks a question about check-e2e-guards rather than
 # about gate 10: whether the two port refusals below are run at all, by the goal and by CI, in the
@@ -318,20 +516,10 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
 # history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
 #
-# scripts/mobile_journey_fetch_test.sh runs the journey job's own download step, as the workflow
-# file states it, against a server on localhost that behaves like this forge: a 200 and a sign-in
-# page to an anonymous request, the build to one carrying the job's token. It refuses each way the
-# journey was wrong or is one edit away from being wrong — the job not on the label that has a
-# device, a second job taking that label, a fetch step not given the job's token, a job-level
-# PK_MOBILE_APK competing with the step's file:// export — and then asks the harness's own curl and
-# sha256sum to open what the step exported. It is here rather than only in the mobile job because
-# every one of those is a fact about a workflow file, which `check` already reads for its two other
-# such facts above, and because the mobile job is the worst place to learn them: the journey has no
-# device when they are wrong, and 40 minutes to find that out. It needs python3, curl and sha256sum
-# — and PyYAML, which the job image does not ship: measured 2026-10-05 by running this file inside
-# the digest ci.yml names (gitea/runner-images:ubuntu-24.04@sha256:e77e2b1e…), where it died at
-# `ModuleNotFoundError: No module named 'yaml'` and answered `ok` once that package came in on the
-# line that installs the socket probe. ci.yml carries it for that reason. Both files, 0.2s.
+# The mobile fetch case runs the workflow step against a local forge and checks the digest
+# and file:// handoff. The precedence case keeps the repository secret ahead of the job token:
+# putting the job token first prevents the fetch from using the repository credential.
+# Both need PyYAML, which CI installs before this gate.
 #
 # scripts/ci_go_cache_test.sh asks the same kind of question about the Go build cache T-0277 gave the
 # two kernel Go jobs: which key each one restores under, and what may never be true about it. Both of
@@ -369,7 +557,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff ## Everything a pull request must pass
+check: build check-generated vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -406,13 +594,205 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# rather than a fix: those cases refuse a re-pin that drops the count, the package pattern or any
 	# stated bound, so what a re-pin may change is everything around the parts that make the run fresh.
 	# The alternative is a fresh gate that narrows because nobody looked at it.
-	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m
+	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m -p=4
 	bash scripts/check_architecture_test.sh
+	# scripts/provenance_case_paths_test.sh asks whether the provenance cases the architecture gate runs
+	# are still the files it invokes. The gate keeps that list in one `for provenance_case in …; do`
+	# line, and a rename that reaches only one side of it goes wrong twice over: a name with no file
+	# behind it fails the gate at `FAIL: … refuses the line the rehearsal report is headed with`, which
+	# blames the rehearsal step for a missing file, and a list emptied out reaches no case at all while
+	# the gate prints its `rehearsal step:` line and moves on. Reading the list out of the gate's own
+	# text, rather than repeating it, is what keeps the two halves from parting — so this file refuses a
+	# loop it cannot find, a loop that names nothing, a named case with no file behind it, and a case
+	# named for the round that wrote it rather than for what it protects. It starts no service, reads one
+	# file and two paths, and answers in under a second.
+	bash scripts/provenance_case_paths_test.sh
+	# scripts/test_comments_explain_what_they_protect_test.sh reads every whole-line comment of every
+	# test file — with each comment group's line breaks collapsed — and refuses one that cites the round,
+	# finding number or attempt number that filed the case instead of the behaviour it protects. The
+	# collapse is the point: a phrase split across two `//` lines is invisible to `rg` and to the
+	# per-package comment pins, and one file's own opener was written that way. It excludes the files the
+	# naming census already counts as debt, derived from each file's name rather than listed, so a rename
+	# brings its prose under the rule in the same commit. It starts nothing and reads tracked text; the
+	# planted cases it proves itself on are written into a directory of its own, outside the tree.
+	bash scripts/test_comments_explain_what_they_protect_test.sh
+	# scripts/comment_group_boundaries_test.py asks whether the guard above can still see the shape it
+	# exists for. It runs that guard's own scanner definitions, read out of the file above rather than
+	# copied, on inputs no test file in the tree happens to contain: a citation wrapped over the last two
+	# lines of a file, behind a blank line and a tab, at each of the two comment markers and each of the
+	# two line endings, where a group reader that stops at end of file or numbers a group from its last
+	# line loses the phrase; a blank line and a line of code between two comment groups, which must stay
+	# two groups so two unrelated sentences never collapse into one citation; and the domain prose —
+	# "Review the proposal", "rounded 5 values" — that has to stay allowed. Three mutants of those
+	# definitions die on it: a run that carries on across code, a group reported at its last line, and a
+	# matcher that refuses the word "review". It starts nothing, reads two files and answers in 5 ms.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/comment_group_boundaries_test.py
+	# scripts/plural_comment_citations_test.py holds the plural half of that matcher, which no other layer
+	# names out loud: narrow the matcher to the singular and this file is the one that says which half went
+	# missing, on six subcases over both comment markers and three casings of the word, where the guard's
+	# own planted case fails for a reason that reads like a broken arithmetic boundary. It holds the other
+	# side too — four sentences of ordinary numeric prose, "5.2 to 5, with half rounded up" and "A round
+	# trip reads 8 rows" among them, that the matcher must keep accepting — so a matcher widened past the
+	# digits fails here as well. It reads the matcher through the case above, which execs the guard's own
+	# definitions, so no copied pattern can drift from the real one. It starts nothing, reads two files and
+	# answers in milliseconds.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/plural_comment_citations_test.py
 	bash scripts/check_budget_ratchet_test.sh
+	# scripts/a_branch_that_carries_mains_numbers_keeps_what_it_priced_test.sh runs the ratchet over a
+	# merge of two branches that each moved the same budget file, the shape a real merge of main takes when
+	# the merge itself carries main's numbers. The suite above builds each case from one base commit and
+	# never merges, so git's history simplification — which follows one parent of a merge whose budget files
+	# match that parent, and so can hide the branch's own build(budget) commits — is unobservable there.
+	# One throwaway repository, six commits across its two branches, no network, no database, one second.
+	bash scripts/a_branch_that_carries_mains_numbers_keeps_what_it_priced_test.sh
+	# scripts/budget_commits_count_once_test.sh asks the ratchet the question neither case above can: does
+	# one commit that prices both budget files declare its allowance once? Naming a commit is what the walk
+	# above does per filename it edited, so a commit that moves loc-budget.json and packages-budget.json
+	# together can enter the declared growth twice — and neither neighbour sees it: the merge case changes one
+	# budget file per commit and the suite above builds each case from its own base. Doubled, two priced
+	# lines admit four new ones, and a 600-line raise reads as 1,200 and is refused for an owner trailer
+	# nobody owed. Two throwaway repositories, three commits each, no network, no database, one second.
+	bash scripts/budget_commits_count_once_test.sh
+	# scripts/a_raise_restated_after_a_merge_is_priced_once_test.sh asks the ratchet what a branch declares
+	# when it merges main twice and, after each merge, writes main's loc-budget.json numbers back up to the
+	# ceiling it had priced: one declaration, restated. Measured against the commit before it, each
+	# restatement is a fresh raise, so a 400-line raise buys 1,200 lines and is then refused for three
+	# `Owner-approved:` trailers on a raise that never passed 1,000 lines — and the lax half of the same
+	# history passes 800 lines against 300 priced. Neither neighbour sees the shape: the merge case above
+	# merges once and never re-prices, the count-once case never merges, and the suite at the top of this
+	# list builds every case from one base commit. Two throwaway repositories, eleven commits in each, one
+	# `go build` of the counter and no network, database, browser or listener: two seconds.
+	bash scripts/a_raise_restated_after_a_merge_is_priced_once_test.sh
+	# scripts/a_lowering_cannot_price_growth_from_a_merge_resolution_test.sh asks whether bringing a ceiling
+	# down can mint growth credit. The branch merges main with a higher ceiling written only in the
+	# resolution, then lowers that ceiling in a build(budget) commit of its own: a merge declares nothing,
+	# so the lowering has to leave the branch with nothing priced. Neither neighbour above reaches the
+	# shape — the merge case never re-prices and the restated case never lowers. One throwaway repository,
+	# nine commits, no network, no database, one second.
+	bash scripts/a_lowering_cannot_price_growth_from_a_merge_resolution_test.sh
+	# scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh holds the other half of the
+	# same rule: a branch that priced two lines, merged main with a higher ceiling in the resolution and
+	# then lowered it still holds two lines, not eight. Kept apart from the case above on purpose — an
+	# allowance read as "never more than the branch's own raise" passes here while a branch with no raise
+	# at all is granted credit from nothing, and the reverse mistake passes there. Two throwaway
+	# repositories' worth of one history, eleven commits, one `go build` of the counter, no network,
+	# database, browser or listener.
+	bash scripts/a_lowering_cannot_expand_a_previously_priced_allocation_test.sh
+	# scripts/a_lowered_allocation_survives_main_without_restoring_returned_lines_test.sh asks what an
+	# allocation the branch spent most of survives: fifteen hundred lines priced, fourteen hundred and fifty
+	# of them consumed, fifty returned, then a merge of main carrying main's numbers. The remainder has to
+	# stay priced across that merge, because the merge base moves to main's side and the branch's own raise
+	# is still the only thing that priced it; and the one line of the returned fifty the branch then adds has
+	# to be refused against the fourteen hundred and fifty still standing. Neither neighbour above reaches
+	# both halves: the merge cases never consume what they price, and the approval case never merges. One
+	# throwaway repository, eight commits, four verdicts over it, no network, no database.
+	bash scripts/a_lowered_allocation_survives_main_without_restoring_returned_lines_test.sh
+	# scripts/a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh asks the question the two
+	# lowering cases above leave open between them: a branch priced two lines, took one of them back, merged
+	# main with a higher ceiling written only in the resolution, then lowered that ceiling in a commit of its
+	# own. One line still stands priced — the second lowering tidies a number the branch never raised, and
+	# what an earlier lowering returned stays returned until a raise reprices it. Read the newest declaration
+	# alone and capped by the largest raise on the branch, both lowerings pass while the returned line is
+	# granted back. One throwaway repository, nine commits, three verdicts over it, no network, database,
+	# browser or listener.
+	bash scripts/a_lowering_after_a_merge_cannot_restore_returned_allocation_test.sh
+	# scripts/a_returned_allocation_can_be_partly_repriced_test.sh asks what an allowance is worth once
+	# part of it has been handed back: the branch priced six lines, spent three, returned three, and a later
+	# build(budget) raise buys one of those three. "Newest declaration wins" grants that branch the whole
+	# original six, because a merge of main left a higher number for the lowering to write over; "largest
+	# raise ever written" refuses the one line, because it holds a returned allocation open forever. The
+	# running total both readings were written to replace is what this case can tell apart, and the merge and
+	# the lowering that follow the reprice have to leave the other two lines unpriced. Each of its four
+	# verdicts also asks that the ratchet leave the repository it was asked about at the HEAD it found and
+	# with a clean status: the merge-base form clones and checks out that tree, and a checker that wrote to
+	# it would make every verdict after it worthless. One throwaway repository, fourteen commits across its
+	# two branches, four verdicts over it, one `go build` of the counter, no network, database, browser or
+	# listener; 2.8 s measured.
+	bash scripts/a_returned_allocation_can_be_partly_repriced_test.sh
+	# scripts/a_lowering_needs_no_new_owner_approval_test.sh asks who owes the `Owner-approved:` trailer of
+	# a bucket standing over 1,000 lines: the commit that raised it, never the one that brings part of it
+	# back. CONTRIBUTING.md permits lowering a ceiling and asks for the trailer on a raise, so returning
+	# 500 unused lines of an approved 2,000 is the tidying that document prescribes — and the ratchet
+	# refuses it in both of its forms, CI's explicit base and `make check-loc`'s merge base, the moment it
+	# reads the lowering as a raise. Two budget commits over one base, no network, no database.
+	bash scripts/a_lowering_needs_no_new_owner_approval_test.sh
+	bash scripts/check_applied_migrations_test.sh
+	bash scripts/applied_migration_merge_base_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
+	bash scripts/mobile_journey_fetch_token_precedence_test.sh
+	bash scripts/mobile_journey_token_environment_test.sh
 	bash scripts/ci_go_cache_test.sh
+	# scripts/ci_browser_host_share_test.sh asks the three browser suites of the workflow the question
+	# their refusals cannot answer from inside a runner: does a step that starts a Chromium ask the host
+	# for a core before its first page, and does the suite's own verdict survive the sampler wrapped
+	# around it? The guard it runs is scripts/ci_browser_host_share.sh, adopted here because `go tool
+	# gotestsum --packages='./...'` sees no shell script and a step that quietly stopped guarding its
+	# browsers would leave nothing else red — which is also why the case asks the dry-run recipe of this
+	# goal for its own line, and refuses a copied Makefile that lost it. Gate 10 joined those two at the
+	# step that lost `shared families: en / dark` to `frame.evaluate: Target crashed` at job 70995, the
+	# second death of that one case in four runs read beside it. Cases over the guard's three
+	# subcommands, its three steps and the three shapes a host can leave memory accounting in, six of
+	# them planted refusals over copied files; 3.4 s, no node, no browser, no database and no listener.
+	bash scripts/ci_browser_host_share_test.sh
+	# scripts/ci_browser_guard_readable_cgroup_test.py asks that same guard the one thing this machine
+	# cannot ask it: the guard reads fixed paths under /sys, so a host that exposes none reports the
+	# ceiling as unreadable and every case above passes on the refusal alone. This case copies the guard
+	# and its case into a tree of its own with those paths redirected to readable cgroup v1 and v2
+	# fixtures, and requires the case to pass where the counters are there to be read — a guard that
+	# answered the ceiling question only when it had no numbers to give would leave this red and that
+	# host's log silent. Two fixture trees, one copied recipe, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_guard_readable_cgroup_test.py
+	# scripts/ci_sampler_output_lifetime_test.py asks the sampler wrapped around a suite the one question
+	# the suite's own verdict cannot answer: when the watched suite finishes, does the sampler let go of
+	# its output? The guard sleeps between samples, and a sleep holds the write end of the suite's output
+	# pipe open, so a sampler still asleep when its suite died keeps a reader waiting for the sleep rather
+	# than for the suite — and the reader that waits for end-of-output never reaches the status the suite
+	# exited with. The case runs the guard's `watch` over a suite that prints one line and exits, once at
+	# the passing status and once at a refusal, at a sampling interval of thirty seconds, and requires the
+	# output to close within ten, carrying that line and that status, and the sample taken before the
+	# suite started to be in it: a first sample only ever taken behind the suite leaves the baseline the
+	# guard compares against unwritten. Two shells and no interval actually waited, nothing listening.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_sampler_output_lifetime_test.py
+	# scripts/ci_sampler_pin_is_a_check_recipe_line_test.sh asks whether the line above is still in the
+	# recipe at all. tests/inventory.json files a scripts/ pin at tier push from its path alone and
+	# `go tool gotestsum --packages='./...'` sees no Python, so a recipe that dropped that line would
+	# leave an inventory row pointing at a case nothing runs — the same gap this goal's own wiring cases
+	# refuse for the lines they name. The case reads this goal's dry-run recipe for that exact command and
+	# refuses a recipe it was handed without it, so the file and the line that runs it cannot part. One dry
+	# run of this goal and one mutation of the recipe in memory; nothing is compiled, started or tested.
+	bash scripts/ci_sampler_pin_is_a_check_recipe_line_test.sh
 	bash scripts/make_check_count_default_test.sh
+	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
+	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —
+	# and refuses a stated default that vanished or a caller's bound that no longer arrives last. Go honours
+	# the last `-timeout` it is handed, so the order of the two on that line is the whole promise: put the
+	# default after the caller's flags and a shorter ask is answered with the longer bound, which is a suite
+	# ignoring the clock its caller named. Two dry runs in a directory holding only go.mod's module, go and
+	# toolchain lines; nothing is compiled, started or tested.
+	bash scripts/make_test_timeout_override_test.sh
+	# scripts/race_boundary_guard_test.py asks whether the case above could still refuse. It copies the
+	# committed Makefile and that guard into a directory of its own, takes one part out of the race goal
+	# at a time — the detector, the fresh count, the stated bound — and asks four things: that the pair as
+	# committed answers, and that each of the three stripped of one part refuses at the race line and
+	# nowhere else. No file in the tree is touched: the mutation lives in the copy, and the Makefile and
+	# the workflows stay as committed. What it buys is the difference between a guard that is read and a
+	# guard that can be broken, for the four dry runs it names and no database.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_boundary_guard_test.py
+	# scripts/race_guard_check_recipe_test.py asks that the line above stays a line the goal runs. It
+	# expands this goal and asks for exactly one executable mention of that guard — not a comment, not a
+	# recipe line ending in `|| true` — beside the inventory row that still files it as a `scripts/` pin
+	# at the push tier. A line commented out keeps the file, the comment above it and the log's silence,
+	# and loses the refusal, which is the difference this case draws.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_guard_check_recipe_test.py
+	# The race guards above hold the recipe's bytes, break the guard that reads them, and ask that the
+	# breaking stays wired; this one runs the recipe and asks the binary. It dry-runs `make check-race`
+	# for one package, hands the command it prints back to go with `-n`, and asserts on the arguments the
+	# test binary receives after flag parsing: the stated clock there, go's ten-minute default when the
+	# same recipe loses it. A bound that stops at the recipe would satisfy every guard above and still
+	# leave the suite answering to a clock nobody chose, which is the failure this repository already
+	# paid for once. Half a second, nothing compiled, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_binary_timeout_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
@@ -426,6 +806,38 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
 	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
 	bash scripts/ci_go_cache_guard_comments_test.sh
+	# The one step of the check job that asks a mirror for anything. Its `apt-get update` ended the job
+	# red on 2026-10-09 with exit 100 and no assertion — `File has unexpected size … Mirror sync in
+	# progress?`, a CDN node whose index had rolled forward under the Release it was serving — and every
+	# guard that asks for psql, ss or PyYAML was red behind a fact about Canonical's mirrors. This file
+	# runs the retry it replaced: which failures are worth another ask, how long they wait, that a fact
+	# about the index is refused at once, that every step of the workflows which asks apt for a package
+	# goes through that bound, and that the step which buys three tools asks all three whether they
+	# arrived. It breaks no mirror of its own: the stub apt-get answers from memory, and the one case that
+	# pays the real waits pays the first of them.
+	bash scripts/ci_apt_index_test.sh
+	# scripts/ci_package_install_refusal_test.py runs the half of that step the guard above cannot see: the
+	# index answered, the ask went out, and the package did not arrive. apt-get install exits 100, and the
+	# `-e` act_runner runs every step body under is what stops it there. A body that lost it, or gained a
+	# `|| true`, would carry on and look green doing it: ci.yml's three questions are answered by whatever
+	# is on PATH, so `command -v ss` and `python3 -c 'import yaml'` would pass off a stub and report an
+	# install that installed nothing, and mobile.yml's next line dials `psql -h postgres`. This case runs
+	# both jobs' committed step bodies with PATH the stub directory alone, refuses the install, and asks
+	# two things of each: that the step exits 100 after exactly two apt calls, and that the file its psql,
+	# ss and python3 stubs each append to the moment they run was never created. It reuses the apt double
+	# scripts/ci_apt_index_test.sh defines rather than carrying a second one, installs nothing, starts no
+	# container, pays no real wait (the retry bound is handed `0 0`) and writes only inside a
+	# TemporaryDirectory it removes.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_package_install_refusal_test.py
+	# scripts/package_install_refusal_guard_test.py asks whether the case above would still refuse if the
+	# refusal it exists to catch came back as success. It runs that case twice over the committed workflow
+	# bodies — once as written, once with `|| true` appended to every `apt-get install` line in the step
+	# body the runner passes through subprocess — and requires the second run to fail both workflow
+	# subcases with no error and no skip. Nothing on disk changes: the mutation lives in the argument list
+	# of the one call, and the workflows stay as committed. It is here because a pin nobody can break is
+	# a pin nobody can trust: the two apt doubles and the three stub tools are shared with the case it
+	# mutates, so this file carries no fixture of its own and costs the two runs it names.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/package_install_refusal_guard_test.py
 	# scripts/ci_container_leak_test.sh asks what the program's CI does with the containers it starts by
 	# hand: whether every `docker run -d` names itself after the run id and clears that name first,
 	# whether every one carries `--label pkit.ci.run=<run id>`, whether the first step of a job that
@@ -473,6 +885,25 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# the job that reads this lock, at that level and in that directory. It reads no feed and installs
 	# nothing: the feed moved under the runner, so the lock is the only half of this a tree can answer.
 	bash scripts/openpencil_lock_above_advisory_test.sh
+	# The Go half of that line. `govulncheck` is this repository's only Go security gate, it runs in the
+	# check job *after* `make check` and it needs the network, so nothing in the local aggregate can see the
+	# advisory feed move: forge run 55758 refused `check / govulncheck` on `golang.org/x/net@v0.59.0` and on
+	# the go1.27.1 standard library over a tree whose `make check` had come back green a few minutes earlier,
+	# and forge run 54902 reports the same step `success` on the same two versions two days before it. This
+	# case asks the one question a tree can answer about a feed it does not hold — which side of a published
+	# range the `toolchain` line and the x/net pin land on — and mutates both back inside them, so the
+	# acceptance is a comparison and not a print. It reads no feed and reaches no network.
+	bash scripts/go_mod_above_advisory_test.sh
+	# That guard's own inputs, asked of a tree it did not write. Every mutation the shell makes starts
+	# from the committed go.mod, so three branches of it live unless a synthetic tree reaches them: the
+	# directory argument that names such a tree, the rule that a commented-out dependency is not a pin
+	# (`\t// golang.org/x/net v0.60.0` answers `is absent, so nothing here resolves above the range`),
+	# and a release *superseding* a fix — the committed pins sit exactly at v0.60.0 and go1.27.2, so
+	# "strictly above" is never asked of them. This case writes five go.mod files into a temporary
+	# directory and asks the guard about each through its subprocess, and asserts exit codes rather than
+	# sentences, so a floor comparison that passes for the wrong reason — an absent pin read as a
+	# satisfied range — cannot answer 0. It reaches no network and builds nothing.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_advisory_inputs_test.py
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
@@ -482,6 +913,30 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# Playwright. This case asks the script itself, in under a second, with no stack.
 	bash scripts/e2e_mail_address_test.sh
 	bash scripts/free_port_test.sh
+	# scripts/mobile_listener_attribution_test.py asks the journey's receipt step the question the
+	# planted-silence cases cannot: whether the socket table of the machine running this answers with
+	# the exact pid of the listener the step itself started. It runs the committed step body with one
+	# reader on PATH at a time, ss, then lsof where the host carries it, refuses a reader that answers
+	# with some other pid sharing the true one's prefix, and asks two steps to name their own listeners
+	# at once. No node, no container and no real wait: it starts one loopback server per case and kills
+	# its process group whether the case passed or refused.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_attribution_test.py
+	# Whether the job would run that step at all. scripts/free_port_test.sh reads the receipt step's own
+	# policy keys — no `if:`, and no `continue-on-error:` other than the literal `false` — and this case is
+	# the check on that reading: it plants each weakening in a copy of the workflow and runs the whole
+	# guard over the copy, which must lose the verdict while keeping the commands that just passed, so a
+	# refusal belongs to the declaration and not to a step whose body went missing with it. The accepted
+	# forms — no condition, and the explicit `continue-on-error: false` — are run beside them, so a guard
+	# that hardened into a refusal of any line under a step's name fails here. Four runs of the guard, so
+	# a few seconds more than its own line, and still no stack, no container and no device.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/mobile_listener_step_policy_test.py
+	# Whether both cases above are still lines of this recipe. tests/inventory.json files every
+	# scripts/ pin at tier push from its path alone, so the table promises a run no wiring keeps: an
+	# edit that moved either line into another goal, or dropped it, leaves the push headline counting
+	# a case no pull request runs. This case asks `make -n check` for both lines and plants each
+	# deletion, so a refusal names the line that went missing; its own make run is a dry one, which
+	# compiles nothing, starts no container and needs no stack.
+	bash scripts/mobile_listener_pins_are_check_recipe_lines_test.sh
 	# Which failures of the API gate's one network step are worth another try. The target
 	# itself is the last prerequisite; this case is the bound on its retry, so it runs with
 	# the rest of the script cases and needs no stack, no proxy and no tree but this one.
@@ -491,6 +946,87 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# subprocess calls answered from memory, so they need no network and no second tree.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
+	# The other half of that ordering, which nobody had asked. Gate 10 runs `make e2e` inside
+	# scripts/ci_browser_host_share.sh's sampler, and the sampler's whole contract is that it
+	# hands the suite's status back; a step line that swallowed it — `|| true`, a pipe into
+	# something that succeeds, continue-on-error — would leave the job green over a browser
+	# suite that died, and the case above reads only the step's name. This one runs the step's
+	# own run block the way a runner runs it, from a copy of the tree's shape, with `make`
+	# answering 3 and the host wait bounded at zero, so no node, browser or database starts, and
+	# shows the same reading telling a swallowed status from the real step in three planted ways.
+	bash scripts/e2e_gate_answers_with_its_suite_status_test.sh
+	# scripts/test_inventory.py feeds two gates — `check-test-inventory` above and the push tier's
+	# selection in scripts/check_push_tier.sh — and until review 1 neither could fail, because the
+	# tool returned its refusal and the script discarded it. The six cases below are what keeps that
+	# shape now: scripts/test_inventory_test.sh pins the eight refusals and the exit status of each,
+	# against a fixture tree in a temporary directory; scripts/a_refused_inventory_check_exits_nonzero_
+	# test.sh asks the status of a removed row and of a push selection that opens a stack;
+	# scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh asks that a change to a
+	# package selects the package that imports it — a selector that keyed `go list`'s absolute
+	# directories against the diff's relative ones matched nothing, so no push ever ran a consumer;
+	# scripts/push_tier_reaches_test_imports_test.sh asks the same of a consumer that exists only
+	# in a `*_test.go` file, internal and external package alike — `.Deps` alone names no such edge,
+	# so a package with no test of its own could change, break the test that imports it, and leave the
+	# selector answering an empty list a push job read as "nothing to run";
+	# scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh asks it of a change that is
+	# not a Go file at all — a golden under `testdata/` and a catalogue under `go:embed` are read by
+	# the package's own test binary, and a selector that resolved only the directory `git diff` named
+	# ran no case for either, so the pull request went green and the push to main was the first red;
+	# and scripts/the_inventory_lists_a_javascript_test_test.sh asks the table for the shape of test no
+	# Go walk sees — a `node --test` case the editor job runs — whose round-named sibling otherwise
+	# counts against no ceiling and whose absence from the table is the drift 0088 exists to refuse.
+	# None of the six opens a stack; together they cost a few seconds.
+	bash scripts/test_inventory_test.sh
+	bash scripts/a_refused_inventory_check_exits_nonzero_test.sh
+	bash scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh
+	bash scripts/push_tier_reaches_test_imports_test.sh
+	bash scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh
+	bash scripts/the_inventory_lists_a_javascript_test_test.sh
+	# A generated file or section edited by hand, or a marker the writer cannot pair, is refused by
+	# check-generated; this case proves it in a copy of the tree, never in this checkout.
+	bash scripts/a_hand_edited_generated_file_fails_the_regeneration_check_test.sh
+	# Whether either goal still asks at all. `check` and `check-push` name `check-generated`,
+	# which runs both writers and then diffs with --exit-code, and both CI workflows run `make
+	# check`; the case above calls the goal itself, so it cannot notice a goal that lost the
+	# prerequisite or a diff that lost its exit status, and `go tool gotestsum` sees neither
+	# goal. This one dry-runs both goals for the two writers and then the diff, in order, and
+	# refuses each of those four losses — every edit made to a copy of this Makefile in a
+	# temporary directory, never to this checkout's.
+	bash scripts/the_check_goals_regenerate_before_they_diff_test.sh
+	# scripts/e2e_guards_run_before_the_gate_test.sh above asks one goal whether it still runs the two
+	# subjects it exists for. These two ask that question of `check` itself, whose two source gates are
+	# prerequisites, and a prerequisite that leaves the list leaves nothing else red:
+	# `go tool gotestsum --packages='./...'` sees no Python file and no `.spec.ts`, so a `check-pillars`
+	# that dropped out would let ARCHITECTURE.md's citations land on blank lines, and a
+	# `check-step-library` that dropped out would let a published journey step vanish while gate 10 went
+	# on transpiling a file nobody owns. scripts/journey_and_pillar_check_wiring_test.sh dry-runs this
+	# goal and refuses a recipe that has lost either command — a nested `make -n`, the shape
+	# scripts/check_architecture_test.sh already runs from inside this same recipe, measured at 5 ms for
+	# the whole dry run here. scripts/journey_and_pillar_check_refusal_test.sh asks whether that pin
+	# would notice: it deletes one prerequisite at a time from a temporary copy of this Makefile and
+	# refuses each acceptance. Both read text and start nothing, which is the argument
+	# check-step-library makes for itself above, and here it holds twice over — unlike its two subjects
+	# these need no node and no browser either, so nothing argues for a job later than this one. Review 5
+	# found the first wired to nothing: correct at `0012ae0`, run by nobody, and a gate nobody runs is
+	# prose. Wiring it is these two lines.
+	bash scripts/journey_and_pillar_check_wiring_test.sh
+	bash scripts/journey_and_pillar_check_refusal_test.sh
+	# The third and fourth lines here are that argument run once more over itself. Review 6 wrote
+	# scripts/journey_check_recipe_test.sh — the one assertion that both source-gate guards still execute
+	# as children of a parallel make, which is the question `make -n` cannot answer — and the sixth
+	# round adopted its bytes at `f676a6e` unwired, on scope rather than cost: the file measured 0.52 s
+	# standalone and the same inside a recipe at -j2, with make printing `-j2 forced in submake:
+	# resetting jobserver mode`, which is the nested recipe taking its own token pool. Review 6 named
+	# that deferral as the thing left to adopt, and a gate nobody runs is prose, so it is wired here.
+	# scripts/journey_check_recipe_wiring_test.sh is the case this line needs and `f676a6e` deliberately
+	# did not write: `go tool gotestsum --packages='./...'` sees no shell script, so a recipe line that
+	# leaves this list leaves nothing else red. It asks the dry-run recipe for this command, copies this
+	# Makefile to a temporary tree, deletes the one line, and requires the same assertion to fail there —
+	# three dry runs of a goal one of these two prerequisites already dry-runs, 0.2 s for the file.
+	# What pins the last line is nothing: the case has no peer to pin it, and it says so rather than
+	# pretending otherwise. Both files start nothing — no node, no browser, no database, no listener.
+	bash scripts/journey_check_recipe_test.sh
+	bash scripts/journey_check_recipe_wiring_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
@@ -516,7 +1052,7 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres, NATS, Valkey, the object store and the mail catcher, and wait for all five to be healthy
+up: ## Start Postgres, NATS, Valkey, the secret store, the object store and the mail catcher, and wait for all six to be healthy
 	docker compose up -d --wait
 
 # The collector is a profile rather than a second service in `up` because the
@@ -551,8 +1087,13 @@ trace: ## Start the local OTLP collector that prints every span it receives
 	  || { echo "collector is not up at 127.0.0.1:$(PLATFORMKIT_OTLP_PORT); its own log:"; docker compose --profile telemetry logs --tail 20 collector; exit 1; }
 	@echo "collector up on 127.0.0.1:$(PLATFORMKIT_OTLP_PORT): point telemetry.otlp_endpoint at that host:port and read spans with 'docker compose logs -f collector'"
 
-# The profile is named here as well, because `down` is the file's teardown: a
-# goal that stopped two containers and left a third holding port 4317 would half
-# finish the one job it has. It stays destructive of volumes, as before.
-down: ## Stop Postgres, NATS, Valkey, the object store, the mail catcher and the collector, and drop their volumes
-	docker compose --profile telemetry down -v
+# Every profile is named here as well, because `down` is the file's teardown: a goal
+# that stopped four containers and left a fifth holding a port would half finish the
+# one job it has. That is measured here and not taken from a comment: a `down` naming
+# one profile and not the other does not stop the other's container, prints
+# `Network … Resource is still in use`, and exits 0 — so a stack that had ever started
+# the candidate store would leak one container every time it tore itself down, which is
+# the cost this repository is trying to shrink rather than add. It stays destructive of
+# volumes, as before.
+down: ## Stop Postgres, NATS, Valkey, the object stores, the mail catcher and the collector, and drop their volumes
+	docker compose --profile telemetry --profile floci down -v

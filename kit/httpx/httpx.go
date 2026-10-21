@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -54,6 +55,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -131,6 +133,21 @@ type Options struct {
 	// names the server in the OpenAPI document; the tenant of a request always
 	// comes from that request's own Host header, never from this.
 	PublicHost string
+
+	// JSONMediaTypes are the media types this composition reads and writes as
+	// JSON, beside application/json. A protocol that defines its own type —
+	// SCIM says application/scim+json — arrives with a Content-Type the API has
+	// never heard of, and huma answers a body it cannot parse with 415 before
+	// any route runs: the door exists and refuses every client that speaks it.
+	// Registering the type here is the one place that can be said, because it is
+	// the composition that knows which protocols it serves, not a module that
+	// would have to reach the API to say so.
+	//
+	// Each entry has to be a media type of the form type/subtype or
+	// type/subtype+suffix; anything else refuses the build. What is registered is
+	// JSON — the same encoder and decoder application/json uses — so the type
+	// changes the wire's name and never its grammar.
+	JSONMediaTypes []string
 
 	// Docs serves /openapi.json, /openapi.yaml and /docs. They are public and
 	// unauthenticated by construction, and they publish every route and every
@@ -245,6 +262,25 @@ type Options struct {
 	// module makes for its lockout.
 	WriteLimiter WriteLimiter
 
+	// Idempotency is the memory behind a caller's `Idempotency-Key`: the write it
+	// made, and the answer it was given. Nil remembers nothing, and every write
+	// then runs as it did before the header existed — the same shape as a
+	// composition with no WriteLimiter, and for the same reason: a deployment that
+	// mounts no keyed route, and a test that mounts one route, are not testing a
+	// memory.
+	//
+	// It is the store rather than a middleware because the promise is about the
+	// next request and often the next process: a retry arrives at whichever replica
+	// the load balancer chose, after a deploy that emptied every map in the fleet.
+	// kit/idempotency is that store; what this package does is decide which requests
+	// are keyed and what each disposition answers with.
+	Idempotency idempotency.Store
+	// Operations enables durable admission for every unsafe route. Nil retains
+	// the lightweight standalone router; kit/app always supplies the SQL owner.
+	Operations idempotency.Operations
+	// Clock supplies UTC operation instants; nil resolves to db.Now.
+	Clock func() time.Time
+
 	// Access is the sequel to a refusal: who to tell when a person asks for the
 	// grant they were refused, and how. Nil draws no ask control on the refusal
 	// page and mounts no ask route — the reach is another module's rows, so a
@@ -269,14 +305,32 @@ type Options struct {
 	Cache cache.Cache
 }
 
-// WriteLimiter is the counting this kernel asks for and nothing more: it is the
-// shape one method wide, declared by the consumer rather than imported from the
-// provider, so that a page renderer that reaches for the router does not
-// inherit a dependency on how the counting is stored. kit/limit's Limiter
-// satisfies it — a Postgres counter or an in-memory one, at the composition's
-// choice — and a test satisfies it with a counter.
+// WriteLimiter is the counting this kernel asks for and nothing more: declared by
+// the consumer rather than imported from the provider, so that a page renderer that
+// reaches for the router does not inherit a dependency on how the counting is
+// stored. kit/limit's Limiter satisfies it — a Postgres counter or an in-memory one,
+// at the composition's choice — and a test satisfies it with a counter. It is one
+// method wide, and the signature is written out rather than named after kit/limit's
+// own type because this package does not import kit/limit and must not: scripts/
+// check_packages.sh keeps the counter behind the composition, so a screen that wants
+// a limit does not link the table that stores one.
+//
+// One method, and one reading, because this package now says a limit's numbers on
+// the wire. `RateLimit-Policy` is the name, quota and window the guard was built
+// with, and costs no statement. `RateLimit`'s `r` and `t` are the quota left and the
+// window left, and those are facts of the attempt this guard just made: read
+// separately, from a second statement, they describe a row another request has since
+// moved, which is a number the caller has no reason to believe. So the decision and
+// the two numbers come back from the one statement that recorded the event, and this
+// port has one method rather than a decision and a read.
 type WriteLimiter interface {
-	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
+	// Reserve records one event under key and reports, from that one statement,
+	// whether the event is within limit (the limit-th is allowed and the one after it
+	// is not), how much of limit is left in the window it landed in, and how long that
+	// window has left. The last two are reported on an allowed event as well as a
+	// refused one: the caller who is still inside the quota is the one a stated number
+	// can keep from ever arriving at the refusal.
+	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 }
 
 // The two body ceilings, and the reason there are two.
@@ -354,6 +408,14 @@ type API struct {
 	refusals []string
 	homes    map[Surface]string
 	known    map[string]bool
+	// addresses are the protocol addresses modules declared with Router.At, and
+	// frozen says the mount gate has read the table. Both are written only while
+	// Routes runs and read under the same mutex beside them. The freeze is what
+	// makes the answer validateSurfaces checked every route against the answer
+	// the middleware gives the request: nothing declares an address after the
+	// gate has read the table, so the two cannot hold different opinions.
+	addresses []addressClaim
+	frozen    bool
 	// opsHost is Options.Installation normalised once, so the gate that runs on
 	// every request compares two already-normalised strings.
 	opsHost string
@@ -372,6 +434,9 @@ var errorShape sync.Once
 // rather than hidden because static assets and the server itself need it; every
 // route that is an API operation goes through Register.
 func New(cfg Options) (*API, *chi.Mux) {
+	if cfg.Clock == nil {
+		cfg.Clock = db.Now
+	}
 	switch {
 	case cfg.Tenants == nil:
 		panic("httpx.New: Options.Tenants is required; every request resolves a tenant from its host")
@@ -392,6 +457,18 @@ func New(cfg Options) (*API, *chi.Mux) {
 	errorShape.Do(func() { huma.NewError = problem.HumaError })
 
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
+	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
+	// The extra JSON media types go into the same map the defaults went into,
+	// bound to the same format: parsing and rendering stay JSON's, and the type
+	// name is what a protocol client negotiated for.
+	var badMediaTypes []string
+	for _, mt := range cfg.JSONMediaTypes {
+		if !validJSONMediaType(mt) {
+			badMediaTypes = append(badMediaTypes, mt)
+			continue
+		}
+		config.Formats[mt] = huma.DefaultJSONFormat
+	}
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}
 	}
@@ -410,6 +487,12 @@ func New(cfg Options) (*API, *chi.Mux) {
 		token:  syscap.NewSystemToken("tenant resolution"),
 		lazy:   syscap.NewSystemToken("request transaction"),
 		system: syscap.NewSystemToken("a module's control-plane routes"),
+	}
+	// A media type the composition cannot name is a refusal, not a guess: an
+	// entry of the wrong shape registers nothing, and a protocol whose clients
+	// send the type the composition meant would meet a 415 nobody can explain.
+	for _, mt := range badMediaTypes {
+		a.noteRefusal(fmt.Sprintf("httpx: Options.JSONMediaTypes holds %q; a media type is type/subtype or type/subtype+suffix, in lower case", mt))
 	}
 	if cfg.Access != nil {
 		// One door, read per request off the context: the catalogue and the
@@ -496,7 +579,19 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
+	// writeLimits sits between the permission guard and the body reader: a caller
+	// who may not perform the write never spends the allowance, and a refused one
+	// has cost the process nothing but the count, because no byte of the request
+	// had been read and the guards' transaction rolls back untouched.
+	// Idempotency last of all, after bodies, because it is the one guard that reads
+	// a body and needs the one the caller got, in that order: bodies is where the
+	// ceiling on a request body is applied and where reading one becomes safe, and
+	// authenticate and authorize are where the caller is named and checked, which a
+	// replay has to satisfy all over again before it is answered. It is below
+	// transaction because the answer it remembers is finalised even further below,
+	// in respond — a guard above the transaction would remember a 200 that the
+	// buffer then replaced with a 500.
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.writeLimits, a.bodies, a.idempotency)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
@@ -579,6 +674,18 @@ func (a *API) methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 // transactions, and the control-plane one commits on its own.
 func (a *API) SystemToken() tenancy.SystemToken { return a.system }
 
+// Cache is the installation's one shared store — the same adapter host
+// resolution is believed in, and the same one every process that shares this
+// deployment reads.
+//
+// It is reachable because a composition that owns a route has to be able to
+// spread a bounded read across the processes, and building a second store would
+// mean the invalidations this package makes never reached it. The caller re-asks
+// its own authorization before consulting the store: a value is never handed out
+// on the strength of the key that found it, because nothing that forms a key has
+// decided anything about the caller.
+func (a *API) Cache() cache.Cache { return a.opts.Cache }
+
 // Probes mounts handlers beside the API, on the router that carries neither the
 // request middleware nor a transaction. kit/health is the only caller, and the
 // two paths it names are /health and /ready.
@@ -617,6 +724,13 @@ type recordingAdapter struct {
 func (r *recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if r.builtin && op != nil {
 		declare(op, Public())
+	}
+	// The document says what the middleware does, on the same operation both of them
+	// read: a POST or PATCH that can be replayed declares the header that makes it
+	// replayable, and a client reading the document learns the option from the place
+	// it is already reading the request's other parameters.
+	if declaresKey(op) {
+		declareKey(op)
 	}
 	r.api.record(op)
 	r.Adapter.Handle(op, handler)
@@ -659,10 +773,10 @@ func (a *API) ValidateDeclarations() error {
 			op.Extensions = map[string]any{}
 		}
 		if _, ok := op.Extensions[SurfaceExtension]; !ok {
-			op.Extensions[SurfaceExtension] = string(classify(op.Path))
+			op.Extensions[SurfaceExtension] = string(a.surfaceOf(op.Path))
 		}
 	}
-	var bad, unanswerable []string
+	var bad, unanswerable, uncountable []string
 	for _, op := range a.Recorded() {
 		auth, ok := declarationOf(op)
 		if !ok {
@@ -672,6 +786,14 @@ func (a *API) ValidateDeclarations() error {
 		if auth.Feature() != "" && a.opts.Entitle == nil {
 			unanswerable = append(unanswerable, describe(op)+" needs the "+auth.Feature()+" feature")
 		}
+		if why := checkWriteLimits(describe(op), op); why != "" {
+			uncountable = append(uncountable, why)
+		}
+	}
+	if len(uncountable) > 0 {
+		sort.Strings(uncountable)
+		return fmt.Errorf("httpx: %d operation(s) declare a counted write this kernel cannot count:\n  %s",
+			len(uncountable), strings.Join(uncountable, "\n  "))
 	}
 	if len(unanswerable) > 0 {
 		sort.Strings(unanswerable)
@@ -685,6 +807,9 @@ func (a *API) ValidateDeclarations() error {
 		if refusals := a.validateSurfaces(); len(refusals) > 0 {
 			return fmt.Errorf("httpx: %d route(s) contradict the router they are mounted on:\n  %s",
 				len(refusals), strings.Join(refusals, "\n  "))
+		}
+		if why := CheckRowHints(a.Resources()); why != "" {
+			return fmt.Errorf("httpx: %s", why)
 		}
 		return nil
 	}
@@ -772,4 +897,24 @@ func describe(op *huma.Operation) string {
 		return op.Method + " " + op.Path
 	}
 	return op.Method + " " + op.Path + " (" + op.OperationID + ")"
+}
+
+// schemaNamer is huma's own namer with one concession, and the concession is
+// the language overlay's: a translated page's body *is* the page's body — the
+// same items, the same paging, the same total — and the overlay adds a header
+// and answers a query parameter, not a member. Left alone, huma names the
+// anonymous struct behind a translated page after its parent, so the same
+// document shape would be published twice under "PageContentBody" and
+// "TranslatedPageContentBody": a client generator would emit two types for one
+// wire object, and this repository's own OpenAPI gate (rule B3) reads a renamed
+// schema where no member moved. Only unnamed struct hints are rewritten: they
+// are generated from the parent's name and are the overlay's whole footprint,
+// while named types — a TranslateBody that genuinely is a new shape — keep
+// whatever name the type itself states.
+func schemaNamer(t reflect.Type, hint string) string {
+	name := huma.DefaultSchemaNamer(t, hint)
+	if t.Name() == "" {
+		name = strings.TrimPrefix(name, "Translated")
+	}
+	return name
 }

@@ -21,7 +21,7 @@ import (
 )
 
 // TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister is the collision the pets client
-// could not boot through (T-0126): a module that writes its own working page for a resource, at the
+// could not boot through: a module that writes its own working page for a resource, at the
 // address the kernel composes for that resource's screens, and the shell composed after it
 // generating a register at the same addresses. The surface gate refuses two routes at one method and
 // path, so the application did not start. The module's page is what its people are sent to; the

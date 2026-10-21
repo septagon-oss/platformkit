@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './steps/kernel';
 
 // Gate 10. One spec, and it is the round trip a person makes on their first
 // day: sign in, create a task through the generated form, find it in the
@@ -7,24 +8,17 @@ import { expect, test } from '@playwright/test';
 // The task supplies representative text, select and nullable date fields. The
 // journey checks the generated controls and persisted edits, not its lifecycle.
 
-const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
-const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
-
 const title = `Chiller supply temperature out of band ${Date.now()}`;
 const renamed = `${title} (resolved)`;
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/app/admin/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  await signIn(page);
 });
 
 test('the admin shell renders and a generated CRUD screen works', async ({ page }) => {
   // The dashboard is the shell: navigation the caller may follow, and a card
   // per resource with the count its own list route would report.
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Platform overview' })).toBeVisible();
   await page.getByRole('link', { name: 'Tasks' }).first().click();
   await expect(page).toHaveURL(/\/app\/task\/tasks$/);
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
@@ -36,7 +30,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await page.getByLabel('Title').fill(title);
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Inspect the supply hose');
-  await page.getByLabel('Due At').fill('2026-12-01T14:30');
+  await page.getByLabel('Due', { exact: true }).fill('2026-12-01T14:30');
   await page.getByRole('button', { name: 'Save' }).click();
 
   // The write redirects to the row it created.
@@ -51,16 +45,16 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   // Edit.
   await page.goto(`${row}/edit`);
   await expect(page.getByLabel('Description')).toHaveValue('Inspect the supply hose');
-  await expect(page.getByLabel('Due At')).not.toHaveValue('');
+  await expect(page.getByLabel('Due', { exact: true })).not.toHaveValue('');
   await page.getByLabel('Title').fill(renamed);
   await page.getByLabel('Description').fill('');
-  await page.getByLabel('Due At').fill('');
+  await page.getByLabel('Due', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL(row);
   await expect(page.getByRole('heading', { name: renamed })).toBeVisible();
   await page.goto(`${row}/edit`);
   await expect(page.getByLabel('Description')).toHaveValue('');
-  await expect(page.getByLabel('Due At')).toHaveValue('');
+  await expect(page.getByLabel('Due', { exact: true })).toHaveValue('');
   await page.goto(row);
 
   // Delete, through the confirm dialog the shell puts on every page.
@@ -80,11 +74,18 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   await expect(page.getByLabel('Title')).toBeFocused();
 });
 
+// The case asks a generated list with no rows to keep its empty-state message inside
+// a narrow page. It used to ask that of the content list, and a reference tenant now
+// opens on starter pages — seed/starter/contents.yaml is written by the tenant-creation
+// hook — so /app/content/contents has rows and the empty state a person meets first is
+// elsewhere. The plans list is the one generated list no journey of this suite writes
+// to and nothing provisions: a plan is priced by an operator, not by a tenant's
+// arrival.
 test('an empty generated list keeps its message within the visible page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
-  const response = await page.goto('/app/content/contents');
+  const response = await page.goto('/app/billing/plans');
   expect(response?.status()).toBe(200);
-  const message = page.getByText('No contents yet.', { exact: true });
+  const message = page.getByText('Create a plan with its price and billing interval.', { exact: true });
   await expect(message).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const text = await message.evaluate(element => {

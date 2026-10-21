@@ -19,7 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/cache/cachetest"
 )
 
-// TestTheInProcessStoreConforms is C1 to C13 over one mutex and one map.
+// TestTheInProcessStoreConforms is C1 to C14 over one mutex and one map.
 func TestTheInProcessStoreConforms(t *testing.T) {
 	cachetest.Conformance(t, memory(t), broken(t))
 }
@@ -234,17 +234,26 @@ func (unreachable) Raise(context.Context, string) (int64, error) {
 
 func (unreachable) Close() error { return nil }
 
-// stores is one store per test name, so the two handles one case builds read one
-// map and the next case starts clean. The Close the suite runs is the handle's and
-// not the store's: it releases nothing this map has to keep.
-var stores sync.Map // test name -> cache.Backend
+// stores is one store per case *invocation*, so the two handles one case builds
+// read one map and the next case starts clean. The key is the case and not its
+// name: a suite run twice in one process (-count, which is what `make flakes`
+// does) asks for this case's store twice under one name, and the suite closed the
+// first one when that first run ended. The pointer makes a repetition a different
+// key on its own; the Delete in the cleanup only releases a store its case ended.
+var stores sync.Map // *testing.T -> cache.Backend
 
 func shared(t *testing.T) cache.Backend {
 	t.Helper()
-	if b, ok := stores.Load(t.Name()); ok {
+	if b, ok := stores.Load(t); ok {
 		return b.(cache.Backend)
 	}
 	b := cache.MemoryBackend()
-	actual, _ := stores.LoadOrStore(t.Name(), b)
+	// LoadOrStore decides who mints, and only the minter registers the release: a
+	// handle's Close closes the store behind it (memory.Close is terminal), so the
+	// store leaves this map when the case that made it ends.
+	actual, loaded := stores.LoadOrStore(t, b)
+	if !loaded {
+		t.Cleanup(func() { stores.Delete(t) })
+	}
 	return actual.(cache.Backend)
 }

@@ -10,6 +10,7 @@
 package display
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -19,20 +20,29 @@ import (
 )
 
 // Text is a value as a form control and a link read it: the raw one. Everything
-// arrives as encoding/json made it, so a number is a float64 and a list is a
-// []any.
+// arrives as encoding/json made it: a number is float64 or json.Number when
+// decoded with UseNumber, and a list is []any.
 //
 // It is not Display. A select's value attribute has to be the enum's own
 // spelling and a checkbox's has to be "true"; what a person reads is Display's
 // business, and confusing the two is how a form posts back "Yes".
 func Text(v any) string {
 	switch typed := v.(type) {
+	case entity.Picture:
+		return string(typed)
+	case *entity.Picture:
+		if typed == nil {
+			return ""
+		}
+		return string(*typed)
 	case string:
 		return typed
 	case bool:
 		return strconv.FormatBool(typed)
 	case float64:
 		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case json.Number:
+		return typed.String()
 	case []any:
 		parts := make([]string, 0, len(typed))
 		for _, item := range typed {
@@ -50,7 +60,20 @@ func Text(v any) string {
 // them. An instant is in the form a person reads, a boolean is Yes or No, and
 // nothing at all is a dash, because a blank cell reads as a bug rather than as
 // an empty field.
-func Display(f entity.Field, v any) string {
+func Display(f entity.Field, v any) string { return DisplayWord(f, v, nil) }
+
+// DisplayWord is Display with one thing decided elsewhere: how an enum value is
+// read. A screen that serves the request's language passes its own words (a
+// declared `enumLabels:"month=Monthly"` translated for that request) and every
+// other reading — booleans, instants, the dash for nothing — stays this
+// function's, so a cell, a description list and a select's option cannot drift
+// apart over which half of the value each one localises.
+//
+// A nil word function is EnumWord: the declared label, or Humanize(value).
+func DisplayWord(f entity.Field, v any, word func(entity.Field, string) string) string {
+	if word == nil {
+		word = EnumWord
+	}
 	switch {
 	case f.Type == entity.TypeBool:
 		if b, ok := v.(bool); ok && b {
@@ -58,12 +81,14 @@ func Display(f entity.Field, v any) string {
 		}
 		return "No"
 	case f.Type == entity.TypeTime:
-		if out := moment(v); out != "" {
+		// Moment answers the raw text for a value that is no instant, which is what
+		// Display has always shown for one; only an absent value is a dash.
+		if _, out, _ := Moment(v); out != "" {
 			return out
 		}
 	case len(f.Enum) > 0:
 		if out := Text(v); out != "" {
-			return Humanize(out)
+			return word(f, out)
 		}
 	default:
 		if out := Text(v); out != "" {
@@ -73,15 +98,68 @@ func Display(f entity.Field, v any) string {
 	return "—"
 }
 
-// moment is how a screen writes an instant. The wire form is RFC 3339 with
-// microseconds, which is right for a machine and unreadable in a table cell.
-func moment(v any) string {
+// Instant is a time field's value as the moment it is: what a screen puts in a
+// `<time datetime>` attribute, and what the reader's own engine turns into their
+// own wall time. The wire form is RFC 3339 with microseconds, which a table cell
+// cannot be asked to read; the instant is the part that was missing, not the
+// words. A value that is not an instant answers ok false — the raw string stays
+// plain text, because an invented date would be a fiction a person cannot tell
+// from the real one.
+func Instant(v any) (at time.Time, ok bool) {
 	raw := Text(v)
-	at, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return raw
+	if raw == "" {
+		return at, false
 	}
-	return at.UTC().Format("2006-01-02 15:04")
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return at, false
+	}
+	return parsed, true
+}
+
+// Moment is an instant as a screen writes it, and as it did before the reader's
+// own clock was asked: UTC, "2026-07-01 14:12". It stays the answer every
+// reading shares — the cell, the description list and everything kit/rest
+// delegates — so that the zone a person reads is chosen by the browser that
+// knows it (see ui/assets/js/components.js) rather than baked into a string one
+// server wrote. ok is false for a value that is no instant, and the raw text is
+// what comes back: a person is shown what is stored, not a dash pretending the
+// value was absent.
+func Moment(v any) (at time.Time, text string, ok bool) {
+	at, ok = Instant(v)
+	if !ok {
+		return at, Text(v), false
+	}
+	return at, at.UTC().Format("2006-01-02 15:04"), true
+}
+
+// massNouns are the English words that are already a set: an entity named
+// "Content" is not pluralised into "Contents" any more than one named "Settings"
+// becomes "Settingss". The list is closed on purpose — it is the shape of the
+// defect the screens showed, not an English dictionary — and it is the same
+// eight words the phone client refuses, so the two screens answer one question
+// the same way. A noun a client needs added is a translation of that client's
+// own vocabulary, not a change to this shared rule.
+var massNouns = map[string]struct{}{
+	"content": {}, "settings": {}, "news": {}, "media": {},
+	"data": {}, "staff": {}, "feedback": {}, "information": {},
+}
+
+// Plural is how a screen writes the name of a set: "Task" becomes "Tasks" and
+// "Content" stays "Content", because the catalogue already wrote it as a set. A
+// word that ends in "s" is kept as it is written, case and all, since the rule
+// that adds an "s" to it is the rule that produced "Settingss". An empty name
+// answers empty: there is no noun to inflect, and "s" would be a word nobody
+// asked about. Only the comparison is trimmed — what comes back is what went in.
+func Plural(one string) string {
+	if strings.TrimSpace(one) == "" {
+		return one
+	}
+	key := strings.ToLower(strings.TrimSpace(one))
+	if _, mass := massNouns[key]; mass || strings.HasSuffix(key, "s") {
+		return one
+	}
+	return one + "s"
 }
 
 // Humanize turns a JSON name or an enum value into something a person reads:
@@ -106,13 +184,40 @@ func Humanize(name string) string {
 	return b.String()
 }
 
+// EnumWord is one enum value as the author of its field named it, and
+// Humanize(value) when nobody named it. It is the enum half of FieldLabel: a
+// field that declares `enumLabels:"month=Monthly"` says so in one place, and a
+// cell, a description term and a select's option all read that one place.
+//
+// It returns the declared words untranslated, exactly as FieldLabel does: this
+// package knows the schema and no language, and the request's words are put on
+// the declared value at the two boundaries that serve it — ui/screens for the
+// catalogue document and ui/resource for the generated screens.
+func EnumWord(f entity.Field, value string) string {
+	if word := f.Presentation.EnumLabels[value]; word != "" {
+		return word
+	}
+	return Humanize(value)
+}
+
 // FieldLabel is what a control, a column header and a description term call a
 // field. It is Humanize today, in one place, so that the entity gaining a way
 // to name its own fields is one line here rather than three at three call
 // sites. Field.Doc is not that name: the entities in this repository write a
 // sentence there — "Short summary of the task" — which is a description and
 // belongs under the control, not on it. See Field.Doc.
-func FieldLabel(f entity.Field) string { return Humanize(f.Name) }
+func FieldLabel(f entity.Field) string {
+	if f.Presentation.Label != "" {
+		return f.Presentation.Label
+	}
+	return Humanize(f.Name)
+}
 
-// FieldHelp is the note under a control: the field's own Doc, when it has one.
-func FieldHelp(f entity.Field) string { return f.Doc }
+// FieldHelp is the note under a control: the line the author wrote for this
+// field when they wrote one, and the field's own Doc otherwise.
+func FieldHelp(f entity.Field) string {
+	if f.Presentation.Help != "" {
+		return f.Presentation.Help
+	}
+	return f.Doc
+}

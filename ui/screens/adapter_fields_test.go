@@ -71,6 +71,10 @@ func TestTheAdapterCarriesEveryFieldTheRenderersRead(t *testing.T) {
 // file cannot show doors nobody authorized.
 var callerScoped = map[string]string{
 	"Commands": "TestACommandIsADoorOnTheScreenThatShowsTheRow in kit/rest/screens_commands_test.go",
+	// A version series is read per request, behind the record's read guard, so it
+	// has the same shape as Commands: two registered resources cannot be compared
+	// without the caller whose series one of them holds.
+	"History": "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
 }
 
 // shapesFor is one field in both its shapes, beside the screen that has to notice
@@ -107,11 +111,31 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 		return a, b, func(r httpx.Resource) string {
 			return renderView(screens.List(r, opts, rows, 1, 1, "", true))
 		}, true
+	case "API":
+		// The resource's own address is where a rich text field's editor saves and
+		// what an unsaved draft is kept under, so it has to reach the markup: change
+		// the path and the edit form's draft key moves with it.
+		a, b := base(), base()
+		withBody := append(noteFields(), entity.Field{Name: "body", Type: entity.TypeString, Widget: "richtext"})
+		a.Schema.Fields, b.Schema.Fields = withBody, withBody
+		b.Path = "/elsewhere/note/notes"
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.Form(r, opts, "/app/note/notes/11111111-1111-1111-1111-111111111111/edit", "Edit", row, nil, "", false))
+		}, true
 	case "Singleton":
 		a, b := base(), base()
 		b.Singleton = true
 		return a, b, func(r httpx.Resource) string {
 			return renderView(screens.Detail(r, opts, row, true))
+		}, true
+	case "Present":
+		// Which columns a header may be clicked on is the entry's own answer once
+		// it declares one: a shelf that names one sortable field offers one arrow
+		// and not one per column.
+		a, b := base(), base()
+		b.Present = entity.EntryHints{Sortable: []string{"title"}}
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.List(r, opts, rows, 1, 1, "", true))
 		}, true
 	case "Operations":
 		// Which verbs the resource mounted decides which doors exist, and the

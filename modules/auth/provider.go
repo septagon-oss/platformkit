@@ -11,8 +11,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -42,6 +44,7 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.Notifier](),
 	pkit.Needs[authcontracts.Mailer](),
 	pkit.Needs[authcontracts.Hosts](),
+	pkit.Needs[authcontracts.MailLedger](),
 	pkit.Needs[authcontracts.OIDCProviders](),
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Needs[usercontracts.Granting](),
@@ -50,9 +53,11 @@ var Module = pkit.NewModule("auth", wire,
 	// no SAML leg at all rather than three doors that answer 404 for everybody.
 	pkit.Optional[authcontracts.SAMLProviders](),
 	pkit.Optional[authcontracts.RegistrationMode](),
+	pkit.Optional[LinkPages](),
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[httpx.Authorizer](),
 	pkit.Provides[pkit.Authenticator](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -69,8 +74,12 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// takes, handed to the one module that has to put a secret in a message
 		// without it becoming a row first: a set-password link belongs in the
 		// mail and in nothing else.
-		Mailer:  pkit.Get[authcontracts.Mailer](w),
-		Hosts:   pkit.Get[authcontracts.Hosts](w),
+		Mailer: pkit.Get[authcontracts.Mailer](w),
+		Hosts:  pkit.Get[authcontracts.Hosts](w),
+		// The same service Notify is resolved from, under the ledger's own key:
+		// the record of the two mails this module sends itself, so that a send
+		// leaves a row before the mail can be read back at the delivery door.
+		Mails:   pkit.Get[authcontracts.MailLedger](w),
 		Tenants: pkit.Get[jobs.TenantLister](w),
 		// The installation's own provider is the fallback; the tenant's row wins
 		// where it names one, which is what lets two tenants on this one process
@@ -92,10 +101,19 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// composes no Provisioner, and auth then answers every tenant as
 		// `existing`: a refusal, and not a half-made person.
 		Provisioner: pkit.Get[authcontracts.Provisioner](w),
+		// The words the passkey doors answer a refusal in. This is the whole
+		// catalogue the application named with Languages, this module's own words
+		// included: a browser ceremony is read on the sign-in page, whose copy is
+		// translated, and a module that read only its own messages file could not
+		// answer in a language a UI catalogue carries.
+		Messages: w.Skin().Copy,
 		// Empty FactorKey leaves the second-factor routes unmounted, as it does
 		// today: without a key the only secret this module could write is a
 		// plaintext one.
-		FactorKey:  settings.FactorKey,
+		FactorKey: settings.FactorKey,
+		// The pages the two mailed links open, when the composition names its own
+		// with MailedLinksOpen; none composed is the admin shell's screens.
+		LinkPages:  pkit.Get[LinkPages](w),
 		PublicHost: server.PublicHost,
 	}
 	// Which public signup door this installation mounted is a composed module of
@@ -120,6 +138,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put(w, svc)
 	pkit.Put[httpx.Authorizer](w, svc)
 	pkit.Put[pkit.Authenticator](w, svc.Authenticate)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }
 
@@ -147,6 +166,20 @@ func fillGranting(g usercontracts.Granting, svc authcontracts.Auth) {
 		}
 		return svc.Allowed(ctx, t, tenancy.Grant{Permission: authcontracts.PermissionRoleManage})
 	}
+}
+
+// MailedLinksOpen is how a composition names the pages its mailed links open:
+// `Use(auth.Module, auth.MailedLinksOpen(auth.LinkPages{SetPassword: "/account/password"}))`.
+// A page New would refuse fails the build here, before auth is built and before
+// anything opens.
+func MailedLinksOpen(pages LinkPages) *pkit.Module {
+	return pkit.NewModule("authlinks", func(w *pkit.Wiring) (module.Module, error) {
+		if err := pages.check(); err != nil {
+			return module.Module{}, err
+		}
+		pkit.Put(w, pages)
+		return module.Module{Name: "authlinks"}, nil
+	}, pkit.Provides[LinkPages]())
 }
 
 // The three public signup doors. Each is a module of its own, so the app's

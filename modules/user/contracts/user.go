@@ -93,7 +93,7 @@ type User struct {
 	// heading and the browser tab all say a person's name rather than their uuid, and a person who has
 	// set no name is still called by their address (ui/resource falls to the next candidate it declares,
 	// never to the id, while one exists). One mark per entity is kit/rest's mount gate.
-	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" ui:"display" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
+	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" ui:"display;label:Name" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
 
 	// Handle is what a person is *called* in this tenant: the thing they type,
 	// say out loud, and see in a URL. It is not the key — users.id is, and every
@@ -117,17 +117,17 @@ type User struct {
 	// look no worse — which is exactly why the declaration is governed, and why a
 	// name outside the vocabulary refuses to mount instead of quietly meaning
 	// nothing.
-	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
+	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person;label:Username;help:Lower-case name this person answers to in this tenant" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
-	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" doc:"Lifecycle state" default:"invited" required:"false"`
+	Status string `json:"status" gorm:"type:text;not null;default:'invited'" enum:"invited,pending,unverified,active,inactive" ui:"widget:select" enumTones:"invited=neutral,pending=warning,unverified=warning,active=success,inactive=neutral" doc:"Lifecycle state" default:"invited" required:"false"`
 
 	// Roles are the names of the roles this person holds. What a name grants is
 	// the auth module's business, which is why this is a list of strings and
 	// not a list of permissions: a role can be re-granted without touching a
 	// single user row.
-	Roles Roles `json:"roles" gorm:"type:text[];not null;default:'{}'" required:"false" doc:"Roles this person holds in this tenant"`
+	Roles Roles `json:"roles" gorm:"type:text[];not null;default:'{}'" ui:"visibility:detail" required:"false" doc:"Roles this person holds in this tenant"`
 
 	// PasswordHash is argon2id in the PHC encoding, or empty for somebody who
 	// has never set one — an invited user, or one who only signs in through an
@@ -158,12 +158,40 @@ func (User) TableName() string { return "users" }
 // CanSignIn reports whether this user could authenticate with a password.
 func (u *User) CanSignIn() bool { return u.Status == StatusActive && u.PasswordHash != "" }
 
+// CanonicalEmail is an address as this module stores it: trimmed, and folded to
+// lower case. Two strings that differ only in case or padding name one mailbox,
+// so the fold belongs in one published function the entity itself runs before it
+// checks an address — anything else that has to meet the row a string names
+// (a read path, a seed record) asks this, rather than spelling the rule again
+// and drifting from it.
+func CanonicalEmail(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+
+// CanonicalRoles is a role list as this module stores it: each name trimmed and
+// folded to lower case, blanks and repeats dropped, then sorted, because the
+// set a person holds is one answer whatever order and padding named it. SetRoles,
+// the registration input and any caller that has to meet the row a list names (a
+// seed record, an import) ask this one function rather than spelling the fold
+// again and drifting from it — a comparison against a list the module would never
+// store is a comparison that never ends, on every run, with a write nobody asked
+// for. Names outside roleName still refuse: this folds a spelling, it does not
+// invent a role.
+func CanonicalRoles(roles []string) Roles {
+	out := make(Roles, 0, len(roles))
+	for _, role := range roles {
+		if role = strings.ToLower(strings.TrimSpace(role)); role != "" && !slices.Contains(out, role) {
+			out = append(out, role)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: an address that
 // differs only in case or in whitespace is the same mailbox, and two callers
 // must not disagree about that.
 func (u *User) Validate(context.Context) error {
-	u.Email = strings.ToLower(strings.TrimSpace(u.Email))
+	u.Email = CanonicalEmail(u.Email)
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
 	at := strings.IndexByte(u.Email, '@')
 	switch {
@@ -286,8 +314,29 @@ type Service interface {
 	// there is no list of sessions to walk here.
 	Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
 
+	// Reactivate lets a person who was stood down sign in again. It is its own
+	// command rather than a boolean beside Deactivate because the two decisions are
+	// not opposites: standing somebody down has to check that the tenant is left
+	// with somebody who can still administer it, and standing them back up takes
+	// nothing away, so it has no floor to check. An inactive person becomes active
+	// and publishes user.reactivated; an active person changes nothing and publishes
+	// nothing. A person who was never stood down is not reopened by this command —
+	// invited, pending and unverified each wait for the act that fits their state,
+	// and a door that could step over that state would be a way in that skipped it.
+	Reactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
+
 	// Get is one user of this tenant.
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
+
+	// Retained is one user of this tenant including the row the directory hides: the
+	// soft-deleted one. It is not a second way to find a person to act on — every door
+	// keeps asking Get, and a hidden row signs nobody in — it is the answer to "what do
+	// you still hold about me", which a `deleted_at IS NULL` cannot answer: hiding a
+	// person's row and going on holding their address, their name and their handle is
+	// what soft deletion is, and an erasure that could not reach that row would report a
+	// person erased while the row stayed. Its own row of a tenant that no longer has it is
+	// ErrNotFound, the same answer Get gives.
+	Retained(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*User, error)
 
 	// SetHandle claims or changes a handle. It is a command and not a PATCH for
 	// the reason roles and status are: the handle is how somebody else finds this

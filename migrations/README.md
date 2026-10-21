@@ -117,8 +117,8 @@ cut from. It reads `current_schema()` and not `current_setting('search_path')`
 because a setting is a list, and the name a caller cuts an owner out of has to
 be one namespace. The claim to make about the second one is narrow: it is what a
 test written *here* calls, and `moduleOwner` and the tests beside it are built on
-it. `review_round1_module_schema_gaps_test.go` and
-`review_round2_module_schema_grants_test.go` read `current_setting('search_path')`
+it. `module_schema_gaps_test.go` and
+`module_schema_grants_test.go` read `current_setting('search_path')`
 and re-assert the shape themselves, because a file a review contributed is
 committed as received and the second of them arrived after the helper did — two
 copies that exist, disclosed, rather than a clause that says none do.
@@ -135,6 +135,13 @@ module's under `modules/<name>/migrations/` — is forward-only, immutable once
 applied, and owned by one capability. [ADR 0011](../docs/adr/0011-migration-ownership.md)
 owns that contract; this file is the part an author reads: what a file may say
 about itself, and what the runner refuses.
+
+Immutable means every byte, comments included: the ledger checksums the whole
+file, so a comment that follows a renamed test is a boot failure on every
+installation that ran the old bytes. `make check-applied-migrations` refuses an
+edit, rename or removal of a file the base carries — line endings included, as
+the binary embeds them — and accepts only a file put back to the bytes the
+base's releases applied. A stale comment stays; the change goes in a new migration.
 
 A file runs in one transaction with its history row. Three kinds of file are not
 like that, and a file has to say which it is, because a reader cannot tell from
@@ -257,8 +264,8 @@ the installation it refused is the installation that never saw the file. What an
 reads afterwards is the message and the catalogue — `pg_class` answers what a refused run
 left, and `schema_migrations` is not there to be read until some run applied something.
 Two cases hold the boundary from opposite sides:
-`migrations/review_floors_test.go` points `db.Migrate` at a database that is not there and
-asks which rule answered, and `kit/db/review_guarantees_test.go` counts the relations a
+`migrations/rule_floor_files_force_test.go` points `db.Migrate` at a database that is not there and
+asks which rule answered, and `kit/db/contention_err_contended_under_budget_deployment_named_test.go` counts the relations a
 refused composition left behind — the runner's own two among them — and requires that
 count to be zero.
 
@@ -460,7 +467,7 @@ the guard switched off for versions nobody has written yet, the opposite of what
 field is for. Such a floor earns no exemption, and every file of that source is judged
 at the point where the ledger says which of them are pending (a file below an *honest*
 floor is applied bytes, and those the rule table must not judge).
-`kit/db/review3_guard_floor_test.go` holds both directions of that, and a contract half
+`kit/db/source_cannot_declare_floor_past_head_test.go` holds both directions of that, and a contract half
 behind the same unusable floor still waits for its expand.
 
 ### The retry, and the rehearsal

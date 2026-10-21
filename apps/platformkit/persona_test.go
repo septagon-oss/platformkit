@@ -26,6 +26,14 @@ type journey struct {
 	run  func(t *testing.T, as *http.Client, me string) (int, string)
 }
 
+// The two doors, at the addresses the composition mounts them. App JSON lives under
+// /api/v1/<module>, which the kernel owns and a module may not write — so these are the
+// names the routes have once the surface is composed, not the paths the module wrote.
+const (
+	exportsPath  = "/api/v1/subject/exports"
+	erasuresPath = "/api/v1/subject/erasures"
+)
+
 // TestEveryPersonaCanDoItsJourneysAndIsRefusedTheOthers is decision 0011 item 6 at the
 // shipped composition: each persona the application seeds signs in and attempts every
 // journey, and the table says which it may do. A refusal must be a refusal — 403 with
@@ -88,20 +96,43 @@ func TestEveryPersonaCanDoItsJourneysAndIsRefusedTheOthers(t *testing.T) {
 		{"operate tenants", func(t *testing.T, as *http.Client, _ string) (int, string) {
 			return do(t, cfg, as, http.MethodGet, acmeHost, tenantPath, "")
 		}},
+		// The person's own door, asked by a persona with no grant at all: the member row
+		// below is the whole of Article 15 as this application can prove it — a signed-in
+		// person files their own export request, and holds no permission that made it
+		// possible. ADR 0020 §7's first row.
+		{"copy of my own data", func(t *testing.T, as *http.Client, _ string) (int, string) {
+			return do(t, cfg, as, http.MethodPost, acmeHost, exportsPath, `{"reason":"persona journey"}`)
+		}},
+		// The officer's door: anybody's copy, produced about a person who is not here. The
+		// grant is what is under test, so the answer a grant-holder gets is a 404 about the
+		// person and the answer everyone else gets is 403 about the grant.
+		{"erase somebody", func(t *testing.T, as *http.Client, _ string) (int, string) {
+			return do(t, cfg, as, http.MethodPost, acmeHost, erasuresPath,
+				`{"subject":"`+uuid.NewString()+`","confirm":"nobody@acme.localhost"}`)
+		}},
 	}
 
 	// The table. "" is allowed; anything else is the refusal expected, by its code where
 	// the answer carries one.
 	const allowed = ""
 	table := map[string][]string{
-		authcontracts.RoleAdmin:  {allowed, allowed, allowed, allowed, "POLICY_DENIED", allowed, allowed},
-		"coordinator":            {allowed, allowed, allowed, allowed, "POLICY_DENIED", "AUTH_DENIED", "refused"},
-		"observer":               {allowed, "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused"},
-		authcontracts.RoleMember: {"AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused"},
+		authcontracts.RoleAdmin: {allowed, allowed, allowed, allowed, "POLICY_DENIED", allowed, allowed,
+			allowed, "refused"},
+		"coordinator": {allowed, allowed, allowed, allowed, "POLICY_DENIED", "AUTH_DENIED", "refused",
+			allowed, "AUTH_DENIED"},
+		"observer": {allowed, "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused",
+			allowed, "AUTH_DENIED"},
+		authcontracts.RoleMember: {"AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "refused",
+			allowed, "AUTH_DENIED"},
+		// The officer holds the two subject grants and nothing else: the desk is closed to
+		// them, their own copy is open like anybody's, and the erasure they were granted is
+		// the one journey here that answers something other than a refusal.
+		"subject_officer": {"AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED", "AUTH_DENIED",
+			"AUTH_DENIED", "refused", allowed, "refused"},
 	}
 
 	acme := acmeTenant(t, cfg)
-	for _, p := range personas {
+	for _, p := range initialRoles {
 		if _, ok := table[p.Name]; !ok {
 			t.Errorf("persona %q is seeded and has no row in this table; every persona's journeys are proven", p.Name)
 		}
@@ -179,10 +210,10 @@ func provisionAs(t *testing.T, cfg config.Config, c composition, tenantID uuid.U
 // is the stronger of the two, so the assertion is the same and the message is a
 // sentence a person can act on.
 //
-// The composition is built before the role list is touched, because compose fills
-// personas from what the composed manifests declare (declaredRoles) rather than
-// from a literal this file writes: a list injected before the compose would be a
-// list compose overwrites. What is refused, and every word the refusal has to
+// The composition is built before the role list is touched, because the census
+// reads the roles off what the composed manifests declare (declaredRoles) rather
+// than from a literal this file writes: a list injected before the compose would
+// be a list compose overwrites. What is refused, and every word the refusal has to
 // say, is the same as it was.
 func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 	_, cfg := configure(t)
@@ -195,10 +226,10 @@ func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 		})
 		return err
 	}
-	saved := personas
-	t.Cleanup(func() { personas = saved })
+	saved := initialRoles
+	t.Cleanup(func() { initialRoles = saved })
 	for _, grant := range []string{"invoice:approve", "tenant:manage"} {
-		personas = []authcontracts.Role{{Name: "clerk", Grants: authcontracts.Permissions{grant}}}
+		initialRoles = []authcontracts.Role{{Name: "clerk", Grants: authcontracts.Permissions{grant}}}
 		err := plan()
 		switch {
 		case err == nil:
@@ -213,8 +244,8 @@ func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 	// one seedRoles writes into a new tenant. Read off the composition rather than
 	// from whatever the previous case left in the global, so this asks about the
 	// list a person is actually seeded with.
-	personas = declaredRoles(composed.modules)
+	initialRoles = declaredRoles(composed.modules)
 	if err := plan(); err != nil {
-		t.Errorf("the shipped personas are refused: %v", err)
+		t.Errorf("the shipped initial roles are refused: %v", err)
 	}
 }

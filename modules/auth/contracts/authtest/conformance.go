@@ -294,7 +294,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
-		"the worker looks the address up, and mails only somebody who is here": func(t *testing.T, f Fixture) {
+		"the worker looks the address up, and mails a link only to somebody who is here": func(t *testing.T, f Fixture) {
 			f.User("ada@acme.example.com", Password)
 			for _, address := range []string{"ada@acme.example.com", "nobody@acme.example.com"} {
 				if err := f.Service.Reissue(f.Ctx, f.Tx, address); err != nil {
@@ -302,11 +302,29 @@ func cases() map[string]func(*testing.T, Fixture) {
 				}
 			}
 			sent := mailed(f)
-			if len(sent) != 1 {
-				t.Fatalf("Reissue sent %d messages, want one — for the address that is here", len(sent))
+			// One credential left, for the address that is here. The other message is
+			// the sentence that says no link was sent to the address that is not — a
+			// message every implementation of this contract owes a request that names
+			// an address, because the public delivery door answers a caller only from
+			// the record its own call caused. It carries nothing, which is what the
+			// loop below is for.
+			var links []notificationcontracts.Message
+			for _, m := range sent {
+				if TokenIn(m.Body) != "" {
+					links = append(links, m)
+				}
 			}
+			if len(links) != 1 {
+				t.Fatalf("Reissue mailed %d credentials, want one — for the address that is here", len(links))
+			}
+			sent = links
 			if sent[0].To != "ada@acme.example.com" || TokenIn(sent[0].Body) == "" {
 				t.Errorf("the message is %+v, want one to Ada carrying a token", sent[0])
+			}
+			for _, m := range mailed(f) {
+				if m.To != "ada@acme.example.com" && TokenIn(m.Body) != "" {
+					t.Errorf("a credential left for %s, which has no account to hold it: %q", m.To, m.Subject)
+				}
 			}
 			// And the notice raised beside it carries no token. A notification
 			// is an ordinary row — listed by a route, readable by anybody who
@@ -450,6 +468,32 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Fatalf("invalid role name = %v, want ErrInvalid", err)
 			}
 			published(t, f, contracts.EventRoleSet)
+		},
+
+		"the role write says whether the row changed": func(t *testing.T, f Fixture) {
+			// SetRoleChanged is SetRole plus the one answer SetRole computes for
+			// itself and keeps: whether this call moved a row. The caller that
+			// needs it is modules/auth's repair, whose command prints "removed" —
+			// and prints it from an answer the write already had rather than from
+			// its own subtraction, because only the write knows whether a row moved.
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read"}, Declared); err != nil || !changed {
+				t.Errorf("writing a new role: changed=%v (%v), want true", changed, err)
+			}
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read"}, Declared); err != nil || changed {
+				t.Errorf("the same list again: changed=%v (%v), want false", changed, err)
+			}
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read", "widget:manage"}, Declared); err != nil || !changed {
+				t.Errorf("a different list: changed=%v (%v), want true", changed, err)
+			}
+			// The refusals answer the same way they do for SetRole, with nothing
+			// changed: this method adds an answer and takes no rule away.
+			if _, changed, err := f.Service.SetRoleChanged(f.Ctx, f.Tx, "editor",
+				[]string{"widget:read", "ghost:read"}, Declared); !errors.Is(err, crud.ErrInvalid) || changed {
+				t.Errorf("a permission nothing defines: changed=%v (%v), want false and ErrInvalid", changed, err)
+			}
 		},
 
 		"the last role that can administer roles cannot be emptied": func(t *testing.T, f Fixture) {

@@ -10,13 +10,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
@@ -75,9 +78,9 @@ type Deps struct {
 	EmailRegistration *contracts.EmailRegistration
 
 	// Notify is how somebody is told, inside the application, that a link was
-	// sent. It never carries the link: the notice points at /auth/reset and the
-	// secret is in the mail and nowhere else. A composition that wires none
-	// still sends the mail.
+	// sent. It never carries the link: the notice points at the set-password
+	// page (LinkPages), the secret is in the mail and nowhere else. A
+	// composition that wires none still sends the mail.
 	Notify contracts.Notifier
 
 	// Mailer is where the link itself goes, and it is the only place it goes.
@@ -96,6 +99,14 @@ type Deps struct {
 	// customer's front door. It is the notification module's own lookup, wired
 	// by the application over the tenant module.
 	Hosts contracts.Hosts
+
+	// Mails is what this module records about the mails it sends itself: one row
+	// per send, with no subject, body, link or credential in it. It is the
+	// notification module's own ledger of them, named here the way Mailer and Hosts
+	// are, so Deps reads as one list of capabilities. A composition that wires none
+	// sends exactly as it did before the record existed and leaves no trace of the
+	// attempt — which is the bug this closes, not a mode to preserve.
+	Mails contracts.MailLedger
 
 	// Tenants is how the hourly sweep reaches every tenant, to delete the
 	// sessions and tokens that have expired.
@@ -147,12 +158,71 @@ type Deps struct {
 	// Provisioner, `provision` refuses as `existing` does.
 	Provisioner contracts.Provisioner
 
+	// Messages is the application's whole catalogue of copy, this module's
+	// included, and it is what lets the passkey doors refuse a person in the
+	// language they asked to be answered in: a browser ceremony is read on the
+	// sign-in page, and that page's own words are translated. The reference
+	// composition wires the application's own Skin copy — the one catalogue the
+	// sentence names, merged from every layer that ships words — in
+	// modules/auth/provider.go; a module that read its own messages file could
+	// not answer in a language a UI catalogue carries. With none, every refusal
+	// this module answers is English, which is what it was before the field
+	// existed.
+	Messages locale.Messages
+
+	// LinkPages names the pages the set-password and confirmation links open on
+	// the tenant's host. Zero is the admin shell's workspace screens, which is what
+	// every composition mailed before the field existed. See LinkPages.
+	LinkPages LinkPages
+
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
 	// browser refuses a Secure cookie over http://localhost, so a development
 	// machine would be a development machine nobody could sign in to.
 	PublicHost string
 }
+
+// LinkPages names the pages a mailed link opens, as paths on the host the tenant
+// is served at: SetPassword for an invitation or a reset, ConfirmEmail for a
+// sign-up's confirmation. The page reads the token from the link's query and
+// calls the API door that exists for it (/api/v1/auth/password/reset,
+// /api/v1/public/auth/verify-email); this module serves no page at either.
+//
+// Each is an absolute path with no query or fragment and never under the API
+// root, and New panics on anything else. Empty is the workspace screen the admin
+// shell mounts, /app/auth/reset or /app/auth/verify-email, so either may be named
+// alone.
+type LinkPages struct {
+	SetPassword  string
+	ConfirmEmail string
+}
+
+// check answers why a named page is one a mailed link cannot open: it is not a
+// path on this site, it carries the query or fragment the appended token would
+// collide with, or it is under the API root. Nil when both are empty or usable.
+func (p LinkPages) check() error {
+	for _, page := range []string{p.SetPassword, p.ConfirmEmail} {
+		switch {
+		case page == "":
+		case !httpx.LocalPath(page) || strings.ContainsAny(page, "?#"):
+			return fmt.Errorf("auth: a mailed link cannot open %q: name an absolute path on the tenant's host, with no query or fragment", page)
+		case httpx.UnderAPI(page):
+			return fmt.Errorf("auth: a mailed link cannot open %q: it is under the API root, and a link opens a page that calls the API", page)
+		}
+	}
+	return nil
+}
+
+// NewPasskeyDoor returns the one read of a tenant's usernameless door, as
+// contracts.PasskeyDoor (contracts/passkeys.go says why that is a second interface
+// and not a method on Passkeys).
+//
+// It is a second value and not a second return of New because New is what every
+// composition already calls and a door it may not have is a field nothing reads.
+// The answer comes from the same row, by the same method, that BeginPasskeySignIn
+// and FinishPasskeyAssertion act on, so a screen that asked here cannot be shown
+// a door the ceremony then refuses.
+func NewPasskeyDoor() contracts.PasskeyDoor { return internal.NewPasskeyDoor() }
 
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
@@ -177,16 +247,36 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		}
 		deps.ApprovalRegistration = &policy
 	}
+	if err := deps.LinkPages.check(); err != nil {
+		panic(err)
+	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
-		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure,
+		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
+		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
 	})
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
-		Name:        "auth",
-		Migrations:  Migrations.Files,
-		Adopts:      Migrations.Adopts,
-		RulesFrom:   Migrations.RulesFrom,
+		Name:       "auth",
+		Migrations: Migrations.Files,
+		Adopts:     Migrations.Adopts,
+		RulesFrom:  Migrations.RulesFrom,
+		// Everything that proves a person acted. `first_factor_proofs.user_id` is a
+		// primary key with no foreign key, which is why it is declared rather than
+		// inferred from a referential edge that was never written.
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "sessions", Person: "user_id", Text: []string{"user_agent", "ip"}},
+			personaldata.Table{Name: "password_tokens", Person: "user_id"},
+			personaldata.Table{Name: "verification_tokens", Person: "user_id", Text: []string{"email"}},
+			personaldata.Table{Name: "totp_factors", Person: "user_id"},
+			personaldata.Table{Name: "recovery_codes", Person: "user_id"},
+			personaldata.Table{Name: "api_tokens", Person: "user_id", About: []string{"created_by"}, Text: []string{"name"}},
+			personaldata.Table{Name: "first_factor_proofs", Person: "user_id"},
+			// A passkey is a person's own credential: the challenge row is about the
+			// account being signed into, and the credential row is the person's key.
+			personaldata.Table{Name: "passkey_challenges", Person: "user_id"},
+			personaldata.Table{Name: "passkey_credentials", Person: "user_id"},
+		),
 		Permissions: permissions,
 		Declared:    contracts.Events,
 		// The one entry, and the shell serves it: a role is keyed by its name
@@ -223,7 +313,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
-				return svc.Offer(internal.WithServed(ctx, invited.Served), tx, invited.UserID)
+				return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
 			},
 		}, {
 			Module: "auth", Name: contracts.EventResetRequested,
@@ -232,7 +322,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 					return fmt.Errorf("auth: read the reset request: %w", err)
 				}
-				return svc.Reissue(internal.WithServed(ctx, asked.Served), tx, asked.Email)
+				return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
 			},
 		}},
 		Routes: func(s httpx.Surfaces) {
@@ -260,6 +350,18 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			// 404 that says nothing about why.
 			svc.EnableFactors([]byte(deps.FactorKey))
 			internal.RegisterFactorRoutes(s, svc, cookies)
+			// The passkey half mounts always and unconditionally, and it is not
+			// gated on the factor key: a passkey writes no secret, so a deployment
+			// with no key has nothing it cannot do here. What gates the usernameless
+			// door is that tenant's own row in passkey_settings, read per request in
+			// the transaction the host resolved it in — a capability of the tenant,
+			// never a module list and never a deployment setting. With no row
+			// anywhere, which is every installation until somebody writes one, that
+			// door answers 403 with the reason and every other door behaves as it did
+			// before this file existed. The relying party's display name is the tenant's
+			// own row's Name, so Deps carries no installation-wide name for a platform
+			// prompt and nothing here is a fact about one customer.
+			internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)
 			}
@@ -297,15 +399,27 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	return svc, manifest
 }
 
-// permissions is what the manifest declares: one, guarding the two roles
-// routes. Every other route here is about the caller themselves. See
-// contracts/permissions.go.
-var permissions = []module.Permission{{Key: contracts.PermissionRoleManage, Label: "manage roles"}}
+// permissions is what the manifest declares: two, guarding the two roles routes
+// and the one route that opens the usernameless door. Every other route here is
+// about the caller themselves. See contracts/permissions.go.
+var permissions = []module.Permission{
+	{Key: contracts.PermissionRoleManage, Label: "manage roles"},
+	{Key: contracts.PermissionPasskeySignIn, Label: "let a passkey sign people in alone"},
+}
 
 // SeedRoles provisions a newly created tenant through auth's own storage path,
-// independently of sessions, delivery and periodic jobs. Pass trusted defaults
-// checked against the composition with contracts.CheckedPermissions before
-// bootstrap or startup. Existing role grants are preserved on repeated calls.
-func SeedRoles(ctx context.Context, tx db.Tx[db.System], tenant tenancy.Tenant, operator []string, defaults []contracts.Role) error {
-	return internal.SeedRoles(ctx, tx, tenant, operator, defaults)
+// independently of sessions, delivery and periodic jobs. Existing role grants
+// are preserved on repeated calls.
+//
+// declared is the application's permission catalogue, which it gets from
+// kit/module.Grants over the modules it composed — never a list written out
+// here or at the call site. That is the whole point of the parameter: the
+// operator grants the administrator's role is created holding are the operator
+// permissions of the composed modules, so an application that does not compose
+// the module owning a permission cannot seed it, and an initial role naming one
+// no module defines is refused here instead of warned about on the hour.
+// contracts.SeededRoles is the same decision without a database, for an
+// application that wants it refused before it opens one.
+func SeedRoles(ctx context.Context, tx db.Tx[db.System], tenant tenancy.Tenant, declared []tenancy.Grant, defaults []contracts.Role) error {
+	return internal.SeedRoles(ctx, tx, tenant, declared, defaults)
 }

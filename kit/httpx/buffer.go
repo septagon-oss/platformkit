@@ -6,7 +6,9 @@ package httpx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
+	"time"
 )
 
 // buffer is a response that has not been sent yet.
@@ -41,9 +43,17 @@ type buffer struct {
 	// promise a cache in front of the surface would read.
 	public  bool
 	cookies []string
-	status  int
-	body    bytes.Buffer
-	direct  bool
+	// counted is every reading a limit put on this answer, in the order the guards
+	// consulted them — the same order `RateLimit-Policy` lists them in. It is held
+	// beside the response because a keyed write answers a retry from its record, from
+	// a different request's call stack, and the numbers the counters gave are the only
+	// account of the ceilings that answer was decided under.
+	counted       []measured
+	status        int
+	body          bytes.Buffer
+	direct        bool
+	mutation      bool
+	streamRefused bool
 }
 
 // maxBuffer is the most a held response may hold. Two megabytes is far past any
@@ -53,6 +63,14 @@ const maxBuffer = 2 << 20
 func (b *buffer) WriteHeader(status int) {
 	b.withholdCookies()
 	if b.direct {
+		if b.status == status {
+			// The response is already on the wire with this status, so declaring it
+			// again is not a change. The caller that does it is the route that wrote its
+			// own response and then told the framework what it chose — a download, a
+			// stream — and net/http's complaint about the second call is a log line per
+			// connection about a difference that did not exist.
+			return
+		}
 		b.ResponseWriter.WriteHeader(status)
 		return
 	}
@@ -66,6 +84,10 @@ func (b *buffer) Write(p []byte) (int, error) {
 	// ordered them the way the surface's promise cannot survive: by the time the
 	// first byte goes, so do the headers beside it.
 	b.withholdCookies()
+	if b.mutation && b.body.Len()+len(p) > maxBuffer {
+		b.streamRefused = true
+		return 0, errors.New("httpx: mutation response must be buffered")
+	}
 	if !b.direct && b.body.Len()+len(p) > maxBuffer {
 		b.send()
 	}
@@ -76,6 +98,10 @@ func (b *buffer) Write(p []byte) (int, error) {
 }
 
 func (b *buffer) Flush() {
+	if b.mutation {
+		b.streamRefused = true
+		return
+	}
 	b.withholdCookies()
 	b.send()
 	if f, ok := b.ResponseWriter.(http.Flusher); ok {
@@ -83,7 +109,41 @@ func (b *buffer) Flush() {
 	}
 }
 
+// FlushError is Flush with the truth attached: this writer does its own work — the
+// withheld cookies taken off, the headers and the body sent — and then asks the
+// writer underneath in the form that can fail.
+//
+// Flush keeps its void signature, because that is http.Flusher's and callers outside
+// this package have always used it. But http.ResponseController consults FlushError
+// before Flusher, and before Unwrap: without this method a flush over a connection
+// that cannot flush reports success, and a stream is the one caller that would never
+// learn that its frames stopped arriving.
+func (b *buffer) FlushError() error {
+	b.withholdCookies()
+	b.send()
+	return flushError(b.ResponseWriter)
+}
+
 func (b *buffer) Unwrap() http.ResponseWriter { return b.ResponseWriter }
+
+// noteCounted keeps the readings a limit reported on this answer, in the order they
+// were taken, each stamped with the instant it reached the answer — which is the
+// instant the counter answered, because every door that spends a counter states it at
+// the statement. The stamp is what a window is closed against: a handler that went on
+// working after its refusal must not add its own seconds to the wait a retry is told to
+// sit out. It keeps none of a response that is already on the wire: past that point
+// there is no answer left to remember, and a keyed write is spent rather than
+// replayable. See buffer.counted.
+func noteCounted(b *buffer, got ...measured) {
+	if b == nil || b.direct {
+		return
+	}
+	at := time.Now().UTC()
+	for _, m := range got {
+		m.seen = at
+		b.counted = append(b.counted, m)
+	}
+}
 
 // send writes what is held, once.
 func (b *buffer) send() {
@@ -137,6 +197,9 @@ func (b *buffer) reset() bool {
 	}
 	b.status = 0
 	b.body.Reset()
+	// The readings go with the headers: they describe the answer being thrown away,
+	// and a limit stated on an answer nobody was given is a number nothing consulted.
+	b.counted = nil
 	h := b.ResponseWriter.Header()
 	clear(h)
 	for k, v := range b.header {

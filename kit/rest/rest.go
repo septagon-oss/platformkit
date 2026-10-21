@@ -15,6 +15,7 @@
 package rest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +26,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -55,6 +55,11 @@ type UsesInput struct {
 	Module, Entity, Field, Locale string
 	Record                        uuid.UUID
 	Files                         []uuid.UUID
+	// Public is the audience this record asserts for what this write files. It is
+	// the record's state and never the request's claim: kit/rest fills it from
+	// Spec.Audience, so no body can make its own images public. False is every
+	// write a Spec with no Audience makes, which is every write there was before it.
+	Public bool
 }
 
 // Spec is one entity's presence in the application: five routes, two
@@ -73,6 +78,23 @@ type Spec[T crud.Entity] struct {
 	// that default is a resource whose images the sweep is entitled to delete
 	// under a published page, which is when this becomes a mount-time refusal.
 	FileUses FileUses
+	// History keeps a version of every write this Spec commits, in the same
+	// transaction as the write. It is a declaration and not a request: a resource
+	// whose content people revise wants a version per save, and a resource whose
+	// rows are counters does not. It requires two things, both refused at mount:
+	// Versions to keep them in, and a write count of the row's own to number them
+	// with — the version number is entity.RevisionField, and this module refuses
+	// to invent a second one.
+	History bool
+	// Versions is the store a History resource's versions are kept in, called
+	// inside the transaction that wrote the row. modules/history provides it.
+	Versions httpx.Versions
+	// Translations is the door a Spec with a `i18n:"translatable"` field knocks
+	// on: ?lang= reads through it, its commands write through it, and its delete
+	// forgets the record through it. modules/translation implements it and nothing
+	// else does; the composition assigns it by hand, the way RichTextFiles is
+	// assigned, and check() refuses either half wired without the other.
+	Translations Translations
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -158,11 +180,21 @@ type Spec[T crud.Entity] struct {
 	//
 	// This is not ReadOnly. ReadOnly is the four fields Base contributes — the
 	// server owns those at every door, and the create route discards whatever
-	// a caller sent for them. An immutable field is writable, by exactly one
-	// route. Every name here is checked against the entity's schema at mount,
-	// so a misspelled one panics where it is written instead of silently
-	// guarding nothing.
+	// a caller sent for them, as it discards the row's own write counter, which
+	// entity.ServerOwned names alongside them. An immutable field is writable,
+	// by exactly one route. Every name here is checked against the entity's
+	// schema at mount, so a misspelled one panics where it is written instead of
+	// silently guarding nothing.
 	Immutable []string
+
+	// Present is how this resource reads: the words a person is shown, which field
+	// names a row, which block a field belongs to, which fields a column may be
+	// ordered by. Every part is optional and the zero value is every resource
+	// written before it existed — the served catalogue prints no `presentation`
+	// key for an entry nobody hinted, so no shell already installed reads a
+	// different document. kit/rest refuses the declaration at mount, not the
+	// request: a hint that names no field is a wiring mistake.
+	Present entity.EntryHints
 
 	// HookEvents names the events the hooks below publish. They are appended
 	// to the create, update and delete operations' x-platformkit-events, so
@@ -177,6 +209,26 @@ type Spec[T crud.Entity] struct {
 	// but the outbox.
 	HookEvents []string
 
+	// Gate is the door in front of a write: asked once the row is locked and the
+	// body merged, before anything is written, and never at all when nothing is
+	// set. It answers one question — may these fields be written directly, by this
+	// caller, now — and it is asked here, in the orchestration the JSON routes and
+	// the in-process resources share, rather than in each module's service, because
+	// a module cannot gate a route it does not write: the generic PATCH is mounted
+	// from this file, and a gate that stood only in a module's own Save covered one
+	// door and left the other three open. See gate.go for the two rules that make it
+	// a door rather than a wall.
+	//
+	// It is not authorization, which happened already, at the permission guard, and
+	// at crud.RecheckTenant below it. This is the write's own state question, the one
+	// a change-control composition answers: modules/change asks whether the write has
+	// to be proposed first, and this package knows nothing about proposals.
+	//
+	// An entity behind a Gate has to carry the RevisionField, and Mount refuses one
+	// that does not: a door that refuses a write because the row may have moved is a
+	// door that cannot say whether it has, and a refusal nobody can act on.
+	Gate Gate
+
 	// The hooks run inside the request's transaction, after the write and
 	// after the event, so a hook can publish more events or write more rows and
 	// all of it commits together.
@@ -184,9 +236,29 @@ type Spec[T crud.Entity] struct {
 	// There is no AfterUpdate, and the absence is a decision rather than an
 	// omission: nothing in three repositories ever set one, and a hook nobody
 	// writes is a parameter every reader of this struct has to rule out. A
-	// module that needs one adds it back in the commit that uses it.
+	// module that needs one adds it back in the commit that uses it. Its other
+	// half — the question asked before a write rather than after — is Gate, above,
+	// which is the hook this repository was missing.
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
+
+	// Audience says who the record this write is writing is showing its files to —
+	// the one fact a body cannot answer, and the reason it is a function of the
+	// entity rather than a field of the request: an image a draft names stays
+	// private however the caller feels about it.
+	//
+	// It is asked once per write, on the row the transaction already locked, before
+	// anything is filed, and only when the entity has a richtext field. An error
+	// refuses the write: a record whose audience is unknown never has bytes promoted
+	// to public. Nil means the entity has no public face, which is what every Spec
+	// without it means today — the uses it files are private and nothing is
+	// recomputed.
+	//
+	// It is asked here rather than in a hook after the write because the answer has
+	// to be in the one pass over the files the write is already making: a second
+	// pass that upgrades the audience would take a stronger lock on rows it already
+	// key-shared, and two records sharing two files would deadlock taking it.
+	Audience func(ctx context.Context, tx db.Tx[db.Tenant], e T) (bool, error)
 }
 
 // The five operations a Spec may offer, spelled the way the routes that mount
@@ -283,27 +355,33 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		res.WritePath = write.Prefix() + s.Path
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
+	if s.History {
+		s.mountHistory(surfaces, read)
+	}
 
+	// The two read doors come in two shapes, and the reason is one rule: a
+	// query parameter nothing reads is not advertised. A resource with a
+	// translatable field gains ?lang= on its list and its read; a resource with
+	// none does not offer the parameter at all, and its JSON is byte-identical to
+	// what it was before this feature existed.
 	if s.offers(httpx.CRUDList) {
-		httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
-			"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
-			s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
-				tx, err := transaction(ctx)
+		listOp := s.op("list", http.MethodGet, s.Path, 0,
+			"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", "))
+		if len(translatableFields[T]()) > 0 {
+			httpx.Register(read, listOp, s.readAuth(), func(ctx context.Context, in *translatedListInput) (*TranslatedPage[T], error) {
+				out, served, err := s.pageRows(ctx, in.page(), schema, in.Lang)
 				if err != nil {
 					return nil, err
 				}
-				q, err := in.query(schema.Fields)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				items, total, err := crud.List[T](tx, q)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				out := &Page[T]{}
-				out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
+				out.ContentLanguage = served
 				return out, nil
 			})
+		} else {
+			httpx.Register(read, listOp, s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
+				out, err := s.plainRows(ctx, *in, schema)
+				return out, err
+			})
+		}
 	}
 
 	if s.offers(httpx.CRUDCreate) {
@@ -331,70 +409,142 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	}
 
 	if s.offers(httpx.CRUDRead) {
-		httpx.Register(read, s.op("read", http.MethodGet, s.item(), 0,
-			"Read a "+s.Entity, ""),
-			s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
-				tx, err := transaction(ctx)
+		readOp := s.op("read", http.MethodGet, s.item(), 0, "Read a "+s.Entity, "")
+		if len(translatableFields[T]()) > 0 {
+			httpx.Register(read, readOp, s.readAuth(), func(ctx context.Context, in *translatedIDInput) (*TranslatedItem[T], error) {
+				out, served, err := s.itemRow(ctx, in.ID, in.Lang)
 				if err != nil {
 					return nil, err
 				}
-				e, err := crud.Get[T](tx, in.ID)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				return &Item[T]{Body: e}, nil
+				out.ContentLanguage = served
+				return out, nil
 			})
+		} else {
+			httpx.Register(read, readOp, s.readAuth(), func(ctx context.Context, in *idInput) (*taggedItem[T], error) {
+				e, err := s.oneRow(ctx, in.ID)
+				if err != nil {
+					return nil, err
+				}
+				return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, nil
+			})
+		}
 	}
 
 	if s.offers(httpx.CRUDUpdate) {
-		httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
-			"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
-			s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
-				tx, err := transaction(ctx)
-				if err != nil {
-					return nil, err
-				}
-				e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				return &Item[T]{Body: e}, nil
-			})
+		if len(translatableFields[T]()) > 0 {
+			// The translated PATCH is the write half of `?lang=`: the parameter
+			// names the language the body is written in, and a body in a language
+			// other than the tenant's own is a translation, not an edit of the
+			// record. The record's own rules and the record's own port decide which
+			// of the two this was; a PATCH that ignored the parameter and wrote the
+			// Portuguese into the English column would destroy a source to file a
+			// translation under the wrong language.
+			//
+			// The row's own tag is honoured by both halves of this one door: a body
+			// quoted against a revision the row has passed is stale whether it came to
+			// edit the record or to file a translation of it, and a translation drafted
+			// against a source the caller no longer holds is the same defect wearing
+			// another language.
+			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
+				"Update a "+s.Entity,
+				"Only the fields present in the body change; read-only fields are refused. With ?lang= naming a language other than the tenant's own, the body writes that language's translation of its fields and the record itself is untouched."),
+				s.writeAuth(), func(ctx context.Context, in *translatedPatchInput) (*taggedItem[T], error) {
+					tx, err := transaction(ctx)
+					if err != nil {
+						return nil, err
+					}
+					if in.Lang != "" && in.Lang != db.TenantOf(tx).Languages.Default {
+						e, err := s.localePatch(ctx, tx, in.ID, in.Lang, in.Body, in.IfMatch)
+						return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, Fault(err)
+					}
+					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					if err != nil {
+						return nil, Fault(err)
+					}
+					return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, nil
+				})
+		} else {
+			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
+				"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
+				s.writeAuth(), func(ctx context.Context, in *patchInput) (*taggedItem[T], error) {
+					tx, err := transaction(ctx)
+					if err != nil {
+						return nil, err
+					}
+					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					if err != nil {
+						return nil, Fault(err)
+					}
+					return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, nil
+				})
+		}
 	}
 
 	if s.offers(httpx.CRUDDelete) {
 		httpx.Register(write, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
 			"Delete a "+s.Entity, ""),
-			s.writeAuth(), func(ctx context.Context, in *idInput) (*struct{}, error) {
+			s.writeAuth(), func(ctx context.Context, in *deleteInput) (*struct{}, error) {
 				tx, err := transaction(ctx)
 				if err != nil {
 					return nil, err
 				}
-				if _, err := s.deleteRow(ctx, tx, in.ID); err != nil {
+				if _, err := s.deleteRow(ctx, tx, in.ID, in.IfMatch); err != nil {
 					return nil, Fault(err)
 				}
 				return nil, nil
 			})
 	}
+	// The four translation doors, and only for a resource that declared a field
+	// worth translating: the same rule that keeps `?lang=` off a plain resource's
+	// reads keeps a `translate` command off its writes. They carry the record's own
+	// write permission, which is what guards a translation of it — and a write
+	// guard that names no grant guards nothing here. A translation is written to a
+	// row the caller names, and reaching it asks whose tenant and never whose row;
+	// operationsFault refuses the generic writes for exactly that reason, and a
+	// command mounted beside the refusal would be the way around it. A read-only
+	// resource under a membership guard keeps its reads, `?lang=` included, and
+	// mounts no write door at all.
+	if len(translatableFields[T]()) > 0 && s.writeAuth().NamesAGrant() {
+		s.mountTranslationDoors(surfaces)
+	}
 	for _, field := range schema.Fields {
 		if field.Widget == "richtext" {
 			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")
 		}
+		if field.Type == entity.TypePicture {
+			httpx.SetFieldPicture[T](read, field.Name)
+		}
+	}
+	if s.offers(httpx.CRUDUpdate) {
+		var writable []crud.Field
+		for _, field := range schema.Fields {
+			accepted, ok := crud.FieldNamed(schema.Fields, field.Name)
+			if ok && !entity.ServerOwned(accepted) && foldedName(map[string]any{field.Name: nil}, s.Immutable) == "" {
+				writable = append(writable, accepted)
+			}
+		}
+		httpx.SetPatchSchema[T](write, s.item(), writable)
 	}
 }
 
+// ErrStaleTag is a conditional write whose tag the row has passed: the caller read it
+// at one revision and is writing after somebody else moved it. kit/rest's Fault turns
+// it into the 412 that says so, with the revision the row is on now in the sentence.
+var ErrStaleTag = errors.New("rest: the row moved since this write's tag was read")
+
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
-	crud.Reset(e) // IDs, tenancy and timestamps belong to the server at both doors.
+	crud.Reset(e)                        // IDs, tenancy and timestamps belong to the server at both doors.
+	s.clearRevision(crud.Fields[T](), e) // and so does the count of this row's writes
 	// The record has to be itself before its own body can be filed. What a body
-	// shows is recorded in prepareRichText below, and a use names the record that
+	// shows is recorded in prepareFiles below, and a use names the record that
 	// shows the file — an id stamped by crud.Create one step later would be filed
 	// under nil, which is the row nobody can link back to or sweep forward. So
 	// the id is chosen here, and Create keeps the id it finds rather than making
 	// another one. Reset already dereferenced the entity, so there is nothing
 	// between these two lines that a nil body could have reached.
 	entity.BaseOf(e).ID = uuid.New()
-	if err := s.prepareRichText(ctx, tx, e, nil); err != nil {
+	if err := s.prepareFiles(ctx, tx, e, nil); err != nil {
 		return e, err
 	}
 	// The trail's field is discarded here for the same reason the id is chosen here:
@@ -407,8 +557,27 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	// fields, and the diff is no field: it answers `{"changes":[…]}` with "there is no
 	// field \"changes\"", which is the same refusal in the other door's words.
 	discardDiff(e)
+	// The create door is not gated, and the gate's own invariant is why: a proposal
+	// is a diff against a row that has a revision, so there is no proposal to make
+	// about a row that does not exist yet, and a gate here would be the only way
+	// past a field it refuses — a wall. Protecting a record's protected fields means
+	// guarding the writes that change a record somebody else may have already read:
+	// the patch, the delete, and the commands that declare them.
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
+	}
+	// The row's first version, at the number the row itself starts on. Nothing
+	// preceded it, so it names no changed fields: a version's `changed` answers
+	// "what did this write move", and the first write moved everything by being
+	// the beginning rather than by moving anything.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, nil); err != nil {
+			return e, err
+		}
 	}
 	return e, s.emit(ctx, tx, Created, e, s.AfterCreate)
 }
@@ -416,7 +585,7 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // The row lock
 // must precede the merge and validation; locking only at the write leaves
 // responses, hooks and events based on a stale snapshot after contention.
-func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any) (T, error) {
+func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any, ifMatch string) (T, error) {
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
 		return e, err
@@ -427,6 +596,14 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// replaced — history that did not happen, in the one table whose job is to have
 	// happened. See reportDiff.
 	before := rowCopy(e)
+	// The same locked row, in the two encodings the gate compares. A door asks which
+	// fields this write moves, and answers by comparing bytes rather than by reading
+	// the body's keys: a form that resends the current value changes nothing, and a
+	// gate that read the keys would refuse it. See changedNames.
+	beforeJSON, err := jsonSnapshot(e)
+	if err != nil {
+		return e, err
+	}
 	columns, err := merge(e, fields, s.Immutable, values)
 	if err != nil {
 		return e, err
@@ -446,13 +623,61 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		}
 		return e, nil
 	}
-	if err := s.prepareRichText(ctx, tx, e, columns); err != nil {
+	// The order below is a decision and not an accident, because it is the order of
+	// the answers a caller gets. An invalid body is refused before it is told which
+	// of its fields is protected: a 422 about a malformed deadline says something the
+	// caller can fix, and a 409 about a protected deadline on a request that was
+	// never going to be valid would send them to propose a change that fails the same
+	// way. Whose row it is comes next, before a word is said about its fields. Then
+	// the gate, and only then the write.
+	if err := entityValidate(ctx, e); err != nil {
 		return e, err
 	}
-	// Write only the submitted columns and timestamp. Untouched fields retain
-	// the preceding committed values used for validation and the emitted event.
-	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
+	if err := crud.RecheckTenant(tx, e); err != nil {
 		return e, err
+	}
+	// Whose row, then what the caller said about which revision they read it at, then
+	// whether these fields are this door's to write. The tag is asked against the row as
+	// the lock found it and after the tenant question, in that order on purpose: a 412
+	// names the number this row is on, and a foreign row's number is not this caller's
+	// to be told — they get the 404 every other door gives them.
+	if err := refuseStaleTag(ifMatch, s.revisionOf(fields, e)); err != nil {
+		return e, err
+	}
+	changed, err := changedNames(fields, beforeJSON, e)
+	if err != nil {
+		return e, err
+	}
+	if err := s.gate(ctx, tx, id, VerbUpdate, "", changed); err != nil {
+		return e, err
+	}
+	if err := s.prepareFiles(ctx, tx, e, columns); err != nil {
+		return e, err
+	}
+	// Write only the submitted columns, the timestamp and the row's own revision.
+	// Untouched fields retain the preceding committed values used by validation and
+	// the emitted event. The revision moves in this one UPDATE and not in a second
+	// statement: there is no window where the number and the value disagree, and no
+	// trigger moving it behind a write this file would then have to explain.
+	write := append(append([]string{}, columns...), "updated_at")
+	if err := crud.Update(ctx, tx, e, s.bumpRevision(fields, e, write)...); err != nil {
+		return e, err
+	}
+	// A source write that moved a translatable field marks its translations
+	// outdated, in this write's own transaction. The read derives the state from
+	// the source it is holding either way; what lives here is the stored column the
+	// overview counts and the audit trail quotes, and a source write that left it
+	// alone would leave every one of those saying "up to date" about a paragraph
+	// that has since been rewritten.
+	if s.tracksTranslations() {
+		for _, field := range translatableFields[T]() {
+			if !slices.Contains(columns, field.Column) {
+				continue
+			}
+			if err := s.Translations.MarkOutdated(ctx, tx, s.Module, s.Entity, field.Name, id); err != nil {
+				return e, err
+			}
+		}
 	}
 	// The diff is computed after that write and before the event, because crud.Update
 	// runs the entity's own Validate, and Validate normalises: a task trims its title,
@@ -466,6 +691,21 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return e, err
 	}
 	defer done()
+	// The version rides this transaction: the snapshot is the row as the UPDATE
+	// left it (normalised by the entity's own Validate, which is the same reason
+	// the diff below is taken here), taken before reportDiff put the diff on the
+	// entity, so no stored document holds a `changes` array that belongs to one
+	// event. It is recorded before the event is published, so a published
+	// `updated` never describes a version the database refused.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, changedNamesFrom(fields, beforeJSON, snap)); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Updated, e, nil)
 }
 
@@ -533,7 +773,7 @@ func reportDiff(before any, e any, values map[string]any) (func(), error) {
 	return func() { rec.SetChanges(nil) }, nil
 }
 
-func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, ifMatch string) (T, error) {
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
 		return e, err
@@ -546,23 +786,95 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.RecheckTenant(tx, e); err != nil {
 		return e, err
 	}
+	if err := refuseStaleTag(ifMatch, s.revisionOf(crud.Fields[T](), e)); err != nil {
+		return e, err
+	}
+	if err := refuseStaleTag(ifMatch, s.revisionOf(crud.Fields[T](), e)); err != nil {
+		return e, err
+	}
+	// A delete is the largest write there is: every value the row held goes, so the
+	// fields it held are the fields it changes, and a protected value makes the
+	// delete protected with it. It is the one verb whose own request says nothing —
+	// there is no body to read a field list from — which is why the answer is
+	// computed from the row instead, and why leaving this door out of a gate would
+	// be a way past it that nobody had to write.
+	//
+	// The baseline is a blank row with its own defaults applied, and not nothing. A
+	// value the entity defaults to is one nobody chose, and a refusal naming it would
+	// send a person to empty a field that refills itself the moment they do — a way
+	// through that closes itself is the wall this door's own invariant refuses.
+	if s.Gate != nil {
+		changed, err := changedNames(crud.Fields[T](), s.blankRow(), e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.gate(ctx, tx, id, VerbDelete, "", changed); err != nil {
+			return e, err
+		}
+	}
 	// A record that stops existing shows nothing, so its uses end in the same
 	// transaction that removes its row. A ledger row that outlived its record is a
 	// file panel that links to a record no route answers, and — once the release
 	// sweep exists — a file that can never be released because something that no
 	// longer exists is said to be reading it.
-	if err := s.clearRichTextUses(ctx, tx, e); err != nil {
+	if err := s.clearFileUses(ctx, tx, e); err != nil {
 		return e, err
 	}
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
 		return e, err
 	}
+	// The record is gone, so every translation of it is gone with it, in this
+	// same transaction. No foreign key can span two modules' schemas — the rows
+	// live in modules/translation's migration, not this one's — so the promise
+	// this call is what keeps, and the alternative is a table of translations of
+	// records that no longer exist, which no screen can name and no cleanup finds.
+	if s.tracksTranslations() {
+		if err := s.Translations.ForgetRecord(ctx, tx, s.Module, s.Entity, id); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
+}
+
+// CreateRow, UpdateRow and DeleteRow are this resource's write orchestration at
+// the door an in-process caller stands at. The JSON routes and the generated
+// screens go through the same three bodies; a seed writer, or any composition-time
+// caller that is not a person's request, stands here. The reason they are
+// exported and not copied is that the three things a write must never skip are
+// inside those bodies — the row lock, the tenant recheck a DELETE cannot get from
+// row-level security alone, and the event that announces the change — and a
+// second spelling of them in an application is a spelling that can drift.
+// Authorization is not one of them: a route asks httpx, a seed run asks its
+// Authorizer, and neither answer belongs in this file.
+func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	return s.createRow(ctx, tx, e)
+}
+
+// UpdateRow patches the columns `values` names, of this Spec's own schema, and
+// is the one door that keeps a caller from writing a field the Spec declared
+// immutable: the check is inside the merge those columns go through. It quotes no
+// revision tag, and cannot: the caller read this row inside the same transaction
+// and holds its lock, where a person's form read one somewhere earlier — which is
+// the staleness If-Match answers and the reason the JSON route hands a tag through.
+// This Spec's Gate stands here all the same, because "may these fields be written
+// directly" does not ask who is asking.
+func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
+	return s.updateRow(ctx, tx, id, crud.Fields[T](), values, "")
+}
+
+func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	return s.deleteRow(ctx, tx, id, "")
 }
 
 // CommandOptions is what a command may differ from its Spec in. It is a struct
 // and not two more parameters because a command that differs in nothing has to
 // be able to say so in one word: rest.CommandOptions{}.
+//
+// What a command writes is deliberately not among the things it can say here.
+// The kernel cannot know it without running the command, and running it is the
+// write; a list copied onto the command would be a second, editable copy of a
+// fact the module already holds, and one the author could simply forget to
+// write. The door asks the module by verb instead — Spec.Gate says how.
 type CommandOptions struct {
 	// Auth is who may run this command. The zero value is the Spec's own write
 	// permission, which is right for a command that moves a row an
@@ -570,6 +882,23 @@ type CommandOptions struct {
 	// adding an item to a basket is httpx.SignedIn(), and the alternative was a
 	// second permission every tenant would have to grant to every shopper.
 	Auth httpx.Auth
+
+	// MapArgs declares, by argument name, the map-valued arguments the schema
+	// derives no field for — because a map column belongs to no screen and no
+	// filter, `derive` leaves maps out of a struct altogether. A command that takes
+	// one value per field of the record it acts on therefore arrives at the catalog
+	// and at every generated form with *nothing* beside its language: `translate`
+	// offers a `values` map keyed by field name, and no reading of
+	// `map[string]string` can learn that this entity has a title and a body.
+	// Declaring the argument is what turns a form that can only refuse an editor
+	// into one that offers a box per field, and a name that is no map argument of
+	// this command refuses to mount.
+	//
+	// It travels by pointer because `CommandOptions` is comparable as published —
+	// apidiff names it — and a struct holding a map is not: the map would have taken
+	// `opts == other` away from every consumer of a type that has nothing to do with
+	// maps. nil says what the zero value always said.
+	MapArgs *MapArgs
 
 	// Collection mounts the command on the collection rather than on a row —
 	// POST {Path}/{verb} — and run is handed uuid.Nil.
@@ -582,6 +911,13 @@ type CommandOptions struct {
 	// caller knows the code and not the row it belongs to, so {id} in the path
 	// would be asking them for the answer.
 	Collection bool
+
+	// Present is this command as its author describes it: the word on the button,
+	// whether it is the one action a view should offer, whether it costs
+	// something, what a person reads before it runs and what they are told after.
+	// A command no person is offered says `System: true`, and ui/screens mounts no
+	// browser route for it — the JSON route keeps its guard unchanged.
+	Present entity.CommandHints
 }
 
 // Command registers one lifecycle route on a Spec: POST {Path}/{id}/{verb}, or
@@ -598,13 +934,26 @@ type CommandOptions struct {
 // that forgot the events extension is a route the boot gate cannot see.
 //
 // I is the request body and it is optional, so a command that takes no
-// arguments is a POST with no body at all; run is handed the zero I in that
-// case. A command whose argument is missing is refused by run, with
+// arguments is a POST with no body at all; explicit field defaults are applied
+// before run, or the zero I when no defaults are declared. Missing arguments
+// are refused by run, with
 // ErrInvalid, rather than by the decoder — which is what keeps "no assignee"
 // and "an assignee that is not a user" the same 422.
+//
+// Command panics before registration if I's derived fields include a server-owned
+// field, as defined by entity.ServerOwned, regardless of surface or presentation.
+// Use a caller-owned name such as ifRevision for an observed revision and map it
+// to the domain condition in run; do not embed the stored row or Base in I.
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
+	// A command's hints are checked here rather than in Spec.check because this is
+	// the one site with the verb, the options, the entity's schema and the
+	// argument's fields all in hand at once — and before any route is mounted, so
+	// a refused declaration leaves no half-described resource behind it.
+	if bad := commandFault(verb, opts.Present, crud.FieldsOf(reflect.TypeFor[I]())); bad != "" {
+		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + bad)
+	}
 	path := spec.item() + "/" + verb
 	if opts.Collection {
 		path = strings.TrimSuffix(spec.Path, "/") + "/" + verb
@@ -639,6 +988,14 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	// so the form and the JSON route perform one implementation through one
 	// guard. See docs/adr/0007 and httpx.Command.Run.
 	fields := crud.FieldsOf(reflect.TypeFor[I]())
+	fields, err := declareMapArgs(reflect.TypeFor[I](), fields, opts.MapArgs)
+	if err != nil {
+		panic("rest: " + err.Error())
+	}
+	prepare, emptyFault, err := commandDefaults[I](fields)
+	if err != nil {
+		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + err.Error())
+	}
 	// Endpoint is the command's own absolute address, which is the one path a
 	// shell can no longer derive for itself: once a command may live on the
 	// control-plane surface, {path}/{id}/{verb} stops being the rule. The
@@ -647,7 +1004,7 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
 		Endpoint: router.Prefix() + path,
-		Fields:   fields,
+		Fields:   fields, EmptyInputFault: emptyFault, Present: opts.Present,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -657,11 +1014,14 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 			// The same decode the PATCH route uses: one set of rules for "3" as an
 			// int and for null as an empty pointer, and a field the command does not
 			// take is refused rather than quietly dropped.
-			var in I
-			if _, err := merge(&in, fields, nil, values); err != nil {
+			in, err := prepare(values)
+			if err != nil {
 				return err
 			}
-			_, err := run(ctx, tx, id, in)
+			if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
+				return err
+			}
+			_, err = run(ctx, tx, id, in)
 			return err
 		},
 	})
@@ -674,7 +1034,15 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		if body != nil {
 			in = *body
 		}
+		if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
+			var zero T
+			return zero, err
+		}
 		return run(ctx, tx, id, in)
+	}
+	if slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
+		mountDefaultCommand(router, op, auth, opts.Collection, prepare, answer)
+		return
 	}
 	if opts.Collection {
 		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (T, error) {
@@ -685,6 +1053,80 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (T, error) {
 		return answer(ctx, tx, in.ID, in.Body)
 	}, OperationOptions{})
+}
+
+// MapArgs is a command's map-valued arguments, keyed by the JSON name the body uses
+// for them, and declared by whoever owns the command.
+type MapArgs struct {
+	// Args is one declaration per argument: the shape Go cannot state (what each
+	// key's value is) and the keys no reflection can discover.
+	Args map[string]crud.MapArg
+}
+
+// declareMapArgs puts each declared map argument in beside the fields the schema
+// derived, in the order the argument struct declares them, and refuses a
+// declaration describing an argument that is not a map keyed by a string: a key
+// list beside an argument that would ignore it is the bug this option exists to
+// cure, and a mount-time refusal is the only answer that cannot ship.
+func declareMapArgs(in reflect.Type, fields []crud.Field, declared *MapArgs) ([]crud.Field, error) {
+	var args map[string]crud.MapArg
+	if declared != nil {
+		args = declared.Args
+	}
+	if len(args) == 0 {
+		return fields, nil
+	}
+	if in.Kind() == reflect.Pointer {
+		in = in.Elem()
+	}
+	seen := map[string]bool{}
+	for _, sf := range reflect.VisibleFields(in) {
+		declared, ok := args[jsonNameOf(sf)]
+		if !ok {
+			continue
+		}
+		seen[jsonNameOf(sf)] = true
+		t := sf.Type
+		if t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		if t.Kind() != reflect.Map || t.Key().Kind() != reflect.String {
+			return nil, fmt.Errorf("command argument %q is declared as a map of %s and is %s",
+				jsonNameOf(sf), declared.Elem, sf.Type)
+		}
+		fields = append(fields, crud.Field{
+			Name: jsonNameOf(sf), Type: crud.TypeMap, Elem: declared.Elem,
+			Doc: cmp.Or(declared.Doc, sf.Tag.Get("doc")), Keys: slices.Clone(declared.Keys),
+			Default: sf.Tag.Get("default"),
+			Index:   sf.Index,
+		})
+	}
+	if len(args) > 0 {
+		leftover := make([]string, 0, len(args))
+		for name := range args {
+			if !seen[name] {
+				leftover = append(leftover, name)
+			}
+		}
+		if len(leftover) == 0 {
+			return fields, nil
+		}
+		slices.Sort(leftover)
+		return nil, fmt.Errorf("command declares map arguments %s and takes none of them",
+			strings.Join(leftover, ", "))
+	}
+	return fields, nil
+}
+
+// jsonNameOf is the name a struct field is addressed by, which is its json tag and
+// otherwise its Go name — the same rule entity/jsonName reads, asked of a field
+// that is deliberately absent from the derived schema.
+func jsonNameOf(sf reflect.StructField) string {
+	name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+	if name == "" {
+		return sf.Name
+	}
+	return name
 }
 
 // commandInput is a command's path id and its body. The body is a pointer
@@ -705,6 +1147,9 @@ type collectionInput[I any] struct {
 // inside the request's transaction: an event that describes a change that
 // rolled back is never seen, because it rolled back too.
 func (s Spec[T]) emit(ctx context.Context, tx db.Tx[db.Tenant], verb string, e T, hook func(context.Context, db.Tx[db.Tenant], T) error) error {
+	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
+		return err
+	}
 	if err := events.Publish(ctx, tx, s.Event(verb), e); err != nil {
 		return err
 	}
@@ -840,7 +1285,16 @@ func (s Spec[T]) check() {
 		bad = s.operationsFault()
 	}
 	if bad == "" {
+		bad = s.historyFault()
+	}
+	if bad == "" {
+		bad = s.gateFault()
+	}
+	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = s.translationFault()
 	}
 	if bad == "" {
 		for _, field := range crud.Fields[T]() {
@@ -876,7 +1330,24 @@ func (s Spec[T]) check() {
 		bad = presentationFault(crud.Fields[T]())
 	}
 	if bad == "" {
+		for _, f := range crud.Fields[T]() {
+			if f.Type == entity.TypePicture && (s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate)) && !slices.Contains(s.Immutable, f.Name) {
+				bad = fmt.Sprintf("picture field %q must be Immutable", f.Name)
+				break
+			}
+		}
+	}
+	if bad == "" {
+		bad = s.entryHintFault()
+	}
+	if bad == "" {
+		bad = fieldHintFault(s.Entity, crud.Fields[T](), s.Present)
+	}
+	if bad == "" {
 		bad = displayFieldFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = conditionFault(crud.Fields[T]())
 	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
@@ -1034,6 +1505,10 @@ func Fault(err error) error {
 			return problem.Conflict("A record already uses one of these values. Change the duplicate value and try again.")
 		}
 		return problem.Conflict(err.Error())
+	case errors.Is(err, ErrStaleTag):
+		// Precondition Failed, the status conditional writes answer with, and the row's
+		// current number in the sentence, because the cure is one re-read.
+		return problem.New(http.StatusPreconditionFailed, err.Error())
 	default:
 		return err
 	}
@@ -1060,19 +1535,35 @@ type bodyInput[T any] struct {
 	RawBody []byte
 }
 
-// patchInput is the update route's body: the fields to change, and no others.
-//
-// It keeps no RawBody: Body carries every top-level key the bytes carried, so
-// merge's foldedName sees what this route's decoder saw. The published media
-// types are not that question, and neither route's list is honest about it —
-// the create declares application/octet-stream, which huma's own registry then
-// answers 415 to, and both bind a +json suffix the document never declared.
-// Which bodies reach which door is pinned at the door, by
-// TestTheCreateDoorRefusesTheReservedNameUnderEveryMediaTypeItAdvertises; the
-// mismatch in the published list is older than the rule above it.
 type patchInput struct {
 	ID   uuid.UUID      `path:"id" format:"uuid" doc:"The row's id"`
 	Body map[string]any `doc:"The writable fields to change"`
+	// IfMatch is the ETag the caller read, if it quoted one. Absent means "write
+	// whatever is there", which stays allowed: the tag is how a client that read the row
+	// says so, and every client that never read one — the documents this repository
+	// checked in, the mobile flows, every caller written before this door — keeps
+	// working. A tag the row has passed is a 412 naming the number it is on now, and a
+	// resource whose entity carries no write count has no tag to read and answers 422.
+	IfMatch string `header:"If-Match" doc:"The row's ETag, as read; a tag the row has passed refuses the write with 412. A resource whose entity carries no write count answers 422."`
+}
+
+// deleteInput is the delete route's parameters: which row, and the same conditional
+// quote the patch honours. Removing a row somebody else has just written is the
+// largest version of the defect a tag exists to close.
+type deleteInput struct {
+	ID      uuid.UUID `path:"id" format:"uuid" doc:"The row's id"`
+	IfMatch string    `header:"If-Match" doc:"The row's ETag, as read; a tag the row has passed refuses the delete with 412. A resource whose entity carries no write count has no tag to read and answers 422."`
+}
+
+// taggedItem is one entity answered with the number of writes the row has had, which
+// is the same number quoted back as If-Match to write against it.
+//
+// It is this package's and not Item's, because the tag exists only where the kernel
+// counts writes: an entity with no revision has no tag to send, and a documented but
+// always-empty header on every module's responses would be a field nothing reads.
+type taggedItem[T any] struct {
+	ETag string `header:"ETag" doc:"This row's own write count, as quoted by If-Match"`
+	Body T
 }
 
 // Item is one entity as a response body, and Page is a page of them.
@@ -1135,30 +1626,11 @@ func (in *listInput) query(fields []crud.Field) (crud.Query, error) {
 // coerce reads a query parameter as the field's own type, so a filter on an
 // integer column compares integers. Postgres would raise on the mismatch, which
 // is a 500 for what is really a malformed request.
-func coerce(f crud.Field, raw string) (any, error) {
-	var (
-		v   any
-		err error
-	)
-	switch f.Type {
-	case crud.TypeInt:
-		v, err = strconv.ParseInt(raw, 10, 64)
-	case crud.TypeFloat:
-		v, err = strconv.ParseFloat(raw, 64)
-	case crud.TypeBool:
-		v, err = strconv.ParseBool(raw)
-	case crud.TypeUUID:
-		v, err = uuid.Parse(raw)
-	case crud.TypeTime:
-		v, err = time.Parse(time.RFC3339, raw)
-	default:
-		v = raw
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s is a %s and %q is not one", crud.ErrInvalid, f.Name, f.Type, raw)
-	}
-	return v, nil
-}
+// coerce reads a filter value as the field's own type. The table is kit/crud's,
+// because a declared highlight value and a ?filter= value are the same question —
+// what is this field's name worth as this field's type — and two tables answering
+// it would be two opinions about which filters do nothing.
+func coerce(f crud.Field, raw string) (any, error) { return crud.Coerce(f, raw) }
 
 // merge applies a PATCH body to an entity, field by field, through the schema,
 // and reports the database columns it changed so that Update writes those and
@@ -1181,8 +1653,11 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		switch {
 		case !ok:
 			return nil, fmt.Errorf("%w: there is no field %q", crud.ErrInvalid, name)
-		case f.ReadOnly:
-			return nil, fmt.Errorf("%w: %s is read-only", crud.ErrInvalid, name)
+			// Both kinds of server-owned name are refused here, in one question, with
+			// sentences that differ only in what the caller can do next: a base field is
+			// somebody else's, and the write counter moves because a write happened.
+		case entity.ServerOwned(f):
+			return nil, serverOwnedRefusal(name)
 		}
 		// Round-tripping through JSON is what makes this the same decoder the
 		// request body went through: one set of rules for "3" as an int and for
@@ -1191,12 +1666,90 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
-		if err := json.Unmarshal(encoded, target.FieldByIndex(f.Index).Addr().Interface()); err != nil {
+		field := target
+		for _, index := range f.Index {
+			if field.Kind() == reflect.Pointer {
+				if field.IsNil() {
+					if !field.CanSet() {
+						return nil, fmt.Errorf("%w: %s cannot initialize an unexported embedded field", crud.ErrInvalid, name)
+					}
+					field.Set(reflect.New(field.Type().Elem()))
+				}
+				field = field.Elem()
+			}
+			field = field.Field(index)
+		}
+		if err := json.Unmarshal(encoded, field.Addr().Interface()); err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
 		columns = append(columns, f.Column)
 	}
 	return columns, nil
+}
+
+// serverOwnedRefusal is the answer at every write door that takes a field the server
+// owns. The two sentences differ because the caller's next step differs: a base field
+// belongs to another door, and the write counter belongs to no door at all — it moves
+// when something else is written, which is the whole of what makes a stale write
+// refuseable.
+func serverOwnedRefusal(name string) error {
+	if name == RevisionField {
+		return fmt.Errorf("%w: %s is this row's own write count: it moves with a write and is not one to set",
+			crud.ErrInvalid, name)
+	}
+	return fmt.Errorf("%w: %s is read-only", crud.ErrInvalid, name)
+}
+
+// refuseStaleTag answers a conditional write whose tag the row has passed.
+//
+// The number the caller is told is the current one, read under the same row lock the
+// write would have taken, because the only useful thing a 412 can say is "here is what
+// it is on now" — a client that has to re-read to find out is a client that will send
+// the old tag again under a race. Absent If-Match is allowed everywhere: the tag is how
+// a screen that read the row says so, and every client that never read one (the checked
+// -in documents, the mobile flows, every caller written before this door) keeps working.
+func refuseStaleTag(ifMatch string, current int64) error {
+	if ifMatch == "" {
+		return nil
+	}
+	if current == 0 {
+		// Nothing can quote a resource that keeps no write count, and the honest answer
+		// is the one that says so rather than a 412 about a tag nobody ever sent or a
+		// silence that wrote whatever arrived. This is why the ETag header above is
+		// carried only by the Specs whose entity has the field: the parameter is one
+		// mount for every Spec, and this is the half of the sentence its doc says.
+		return fmt.Errorf("%w: this resource carries no write count, so no tag can be quoted against it",
+			crud.ErrInvalid)
+	}
+	sent, err := parseTag(ifMatch)
+	if err != nil {
+		return err
+	}
+	if sent == current {
+		return nil
+	}
+	return fmt.Errorf("%w: this row is on revision %d, and the tag this write quoted (%s) is not it",
+		ErrStaleTag, current, ifMatch)
+}
+
+// parseTag reads the one form this door honours: one quoted integer, the ETag it wrote.
+//
+// A weak tag, a list, a bare number and `*` are all refused 422 rather than ignored.
+// `*` — "whatever is there now" — is refused here in particular because a conditional
+// write that promises nothing about the row is not conditional, and a reviewer's
+// approval is about one revision of one row.
+func parseTag(raw string) (int64, error) {
+	unquoted := strings.TrimPrefix(strings.TrimSuffix(strings.TrimSpace(raw), "\""), "\"")
+	if unquoted == raw || unquoted == "" || strings.HasPrefix(strings.TrimSpace(raw), "W/") {
+		return 0, fmt.Errorf("%w: %q is not one quoted revision, the only tag this door writes",
+			crud.ErrInvalid, raw)
+	}
+	tag, err := strconv.ParseInt(unquoted, 10, 64)
+	if err != nil || tag < 1 {
+		return 0, fmt.Errorf("%w: %q is not one quoted revision, the only tag this door writes",
+			crud.ErrInvalid, raw)
+	}
+	return tag, nil
 }
 
 // refuseImmutable answers 422 when a create body names a field a route of its
@@ -1261,7 +1814,7 @@ func immutableRefusal(name string) error {
 func names(fields []crud.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.Type != crud.TypeList {
+		if f.Type != crud.TypeList && f.Type != entity.TypePicture {
 			out = append(out, f.Name)
 		}
 	}

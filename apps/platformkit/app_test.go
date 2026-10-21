@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -77,30 +80,94 @@ const (
 	filesPath   = "/api/v1/file/files"
 	adminEmail  = "root@acme.localhost"
 	adminPass   = "correct horse battery staple"
+	// acmeName is the tenant's own name, which the bootstrap's operator typed. It is
+	// a value and not copy: no catalogue can hold it, and the frame puts it in the
+	// tab title and the chrome, so the pseudo-locale gate reads it back as data.
+	acmeName = "Acme Corporation"
 )
 
 // quiet keeps a passing test's output to the test's own lines.
 func quiet() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
+// fixtureLockTimeout is the lock budget this product's own fixtures ask their migration
+// for, and it is not the runner's default. The reason is one database: `make check` runs
+// every package here against the Postgres this repository's stack starts, so a migration
+// meets the transactions the packages beside it hold open, and
+// modules/notification/000030's concurrent index build waits for all of them whatever
+// table they touched. A deployment wants the five-second default — a boot that cannot get
+// a lock should stop and say so — and kit/app/budget_from_configuration_test.go
+// and kit/db/migrate_expand_contract_test.go keep that answer pinned, one through the
+// configuration and one through the runner. A fixture that stops reports a schema it was
+// never given, which is why kit/db/dbtest gives its own migration the same patience.
+const fixtureLockTimeout = 90 * time.Second
+
+// webhookKey is the composition's webhook secret key: thirty-two bytes, the width
+// AES-256-GCM asks for. A fixture's value, not a secret — no receiver on this
+// planet verifies a delivery signed with it.
+const webhookKey = "0123456789abcdef0123456789abcdef"
+
 // configure writes the configuration the reference app would have read from
-// config.yaml, against a schema of this test's own, and returns the path and
-// the loaded value. The database is empty: no tables, no ledger, nothing.
+// config.yaml, against an installation of this test's own, and returns the path and
+// the loaded value.
+//
+// The installation arrives as a copy the server made of the one this package's TestMain prepared,
+// which is what a case used to buy by running the whole migration and the bootstrap for itself: the
+// copy holds the same ledger, the same tenant and the same administrator, and it holds whatever the
+// case writes for itself alone in a database no other case can reach. A case whose own claim is
+// about installing — the bootstrap's answer, the ledger, a refusal only an untouched database can
+// give — takes configureFresh rather than a copy of a finished installation.
 func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
+	migrateURL, appURL := dbtest.Clone(t)
+	path, cfg := writeConfig(t, migrateURL, appURL)
+	copied.Store(t, struct{}{})
+	t.Cleanup(func() { copied.Delete(t) })
+	return path, cfg
+}
+
+// configureFresh is configure against an empty schema of this test's own: no tables, no ledger, no
+// tenant, nothing. It is the whole cost of an installation, and it belongs to the cases for which
+// getting there is the thing being asserted — see install.
+func configureFresh(t *testing.T) (string, config.Config) {
+	t.Helper()
+	// The seed command's operator proves themselves the way every deployment
+	// does — through the environment, never argv — and the person they prove they
+	// are is the administrator install below creates, in the installation tenant
+	// this configuration names at acme's host. The case that checks the refusal of
+	// an absent credential empties both variables for itself.
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
 	migrateURL, appURL := dbtest.URLs(t)
+	return writeConfig(t, migrateURL, appURL)
+}
+
+// copied names the cases that were handed a copy of the prepared installation. install reads it,
+// and nothing else does.
+var copied sync.Map // *testing.T → struct{}
+
+// writeConfig writes config.yaml for one installation and loads what it wrote. The two URLs name
+// the database and the namespace it lives in; everything else here is this product's own answer to
+// what a reference installation is configured with.
+//
+// The file module keeps its bytes under a directory of this test's own, so a suite that uploads
+// something leaves nothing behind and two suites running at once do not share a disk. The
+// installation is reached at acme's host, which is the operator's own tenant (the bootstrap created
+// it): the control plane is served where the installation is, and nowhere else.
+// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx is where globex's answer at the same
+// address is proved.
+func writeConfig(t *testing.T, migrateURL, appURL string) (string, config.Config) {
+	t.Helper()
 	path := t.TempDir() + "/config.yaml"
-	// The file module keeps its bytes under a directory of this test's own, so
-	// a suite that uploads something leaves nothing behind and two suites
-	// running at once do not share a disk.
-	// The installation is reached at acme's host, which is the operator's own
-	// tenant (the bootstrap created it): the control plane is served where the
-	// installation is, and nowhere else. TestTheControlPlaneIsNotFoundAtATenantHost
-	// in kit/httpx is where globex's answer at the same address is proved.
 	body := "server:\n  addr: \"" + freeAddr(t) + "\"\n  public_host: \"platformkit.localhost\"\n  installation_host: \"" + acmeHost + "\"\n  docs: true\n" +
-		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n" +
+		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n  lock_timeout: \"" + fixtureLockTimeout.String() + "\"\n" +
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
 		"log:\n  level: \"error\"\n" +
 		"files:\n  dir: \"" + t.TempDir() + "\"\n" +
+		// Outbound webhooks are composed, so the composition needs the key that
+		// wraps an endpoint's signing secret. The fixture's own thirty-two bytes.
+		"webhook:\n  secret_key: \"" + webhookKey + "\"\n" +
 		"auth:\n  oidc:\n    issuer: \"\"\n    client_id: \"\"\n    client_secret: \"\"\n    redirect_path: \"\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
@@ -113,23 +180,75 @@ func configure(t *testing.T) (string, config.Config) {
 }
 
 // install runs the bootstrap subcommand exactly as the README's third command
-// does: an empty database in, a tenant and an administrator out.
+// does: an empty database in, a tenant and an administrator out. It does
+// nothing for a case configure gave a copy of the prepared installation, because
+// the bootstrap is what made that copy; a case that needs the run itself — one
+// that asserts the bootstrap's own answer, the ledger, or a refusal only an
+// untouched database can give — takes configureFresh, and this answers it in
+// full.
+//
+// A run the database declined for contention is run again, because that is what db.ErrContended
+// says instead of failing: it may be run again, with the files it applied already there to be read.
+// The decline is ordinary in this package's own database, which holds nothing but the compositions
+// this suite installs, each of them taking the composition's advisory lock and every catalog write
+// that comes with it; under -race the queue behind that lock passes the five seconds a deployment
+// chose for itself, and CI job 57346 reported one case's bootstrap as a failing test over exactly
+// that sentence. Running it again is the operator's door (apps/platformkit/migrate.go) standing in
+// the place the operator occupies here, and the production budget stays the five seconds it is, which
+// is why the configuration above names no longer patience. A migration refused for any other reason
+// ends the case as it always did, and the waiting is bounded: a decline that outlasts it is reported
+// with the count of runs it took.
 func install(t *testing.T, path string) {
 	t.Helper()
+	if _, ok := copied.Load(t); ok {
+		// The configuration names a database the server copied from the prepared installation, so
+		// the migration and the bootstrap this case would have run are what made that copy. What is
+		// left for this case to do is write into it.
+		return
+	}
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
-	// The installation's second language is one this tenant's people are served in,
-	// said at the same moment the tenant is created. A tenant is not served in it
-	// by accident of the catalogues somebody compiled: SetLocale is the declaration,
-	// and a bootstrap that says nothing leaves the tenant in the one language its
-	// copy is written in — which is what apps/platformkit/locale_test.go and
-	// e2e/localization.spec.ts then check the other language against.
-	err := bootstrap([]string{
+	args := installationArgs(path)
+	until := time.Now().Add(installContentionWait)
+	for runs := 1; ; runs++ {
+		err := bootstrap(args)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, db.ErrContended) {
+			t.Fatalf("bootstrap: %v", err)
+		}
+		if time.Now().Add(installContentionPause).After(until) {
+			t.Fatalf("bootstrap: %v (after %d runs the database declined for contention)", err, runs)
+		}
+		t.Logf("bootstrap run %d was declined for contention, so it is run again: %v", runs, err)
+		time.Sleep(installContentionPause)
+	}
+}
+
+// The two waits install's retry keeps. A declined run left what it applied behind, so the pause only
+// waits for the queue in front of it to move; the bound is what stops a suite waiting on a database
+// that has stopped answering.
+const (
+	installContentionPause = 250 * time.Millisecond
+	installContentionWait  = 2 * time.Minute
+)
+
+// installationArgs are the answers bootstrap takes from an operator standing in front of an empty
+// installation: the tenant's slug, host and name, its first administrator, and the languages its
+// people are served in. One spelling, because the package's TestMain prepares the installation every
+// case is copied from, and a case must never be looking at a different installation than its
+// neighbours.
+//
+// The installation's second language is one this tenant's people are served in, said at the same
+// moment the tenant is created. A tenant is not served in it by accident of the catalogues somebody
+// compiled: SetLocale is the declaration, and a bootstrap that says nothing leaves the tenant in the
+// one language its copy is written in — which is what apps/platformkit/locale_test.go and
+// e2e/localization.spec.ts then check the other language against.
+func installationArgs(path string) []string {
+	return []string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
-		"--name", "Acme Corporation", "--admin-email", adminEmail,
+		"--name", acmeName, "--admin-email", adminEmail,
 		"--language", "pt-PT",
-	})
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
 	}
 }
 
@@ -152,20 +271,35 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 	if opts.Installation.Host == "" {
 		opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
 	}
+	// The wait at the end asks this application what it is serving rather than
+	// asking the address, so it needs the application's own log: this wraps the
+	// logger the case named instead of replacing it, and every record still goes
+	// where the case said it should.
+	listening := make(chan struct{})
+	var watched slog.Handler = slog.DiscardHandler
+	if opts.Log != nil {
+		watched = opts.Log.Handler()
+	}
+	opts.Log = slog.New(&servingHandler{addr: cfg.Server.Addr, inner: watched, ready: listening})
 	a, err := app.New(t.Context(), cfg, mods, opts)
 	if err != nil {
 		t.Fatalf("app.New: %v", err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	stopped := make(chan error, 1)
-	go func() { stopped <- a.Run(ctx) }()
+	stopped := make(chan struct{})
+	var runErr error
+	go func() {
+		defer close(stopped)
+		runErr = a.Run(ctx)
+	}()
 	t.Cleanup(func() {
 		cancel()
-		if err := <-stopped; err != nil {
-			t.Errorf("Run: %v", err)
+		<-stopped
+		if runErr != nil {
+			t.Errorf("Run: %v", runErr)
 		}
 	})
-	waitFor(t, cfg.Server.Addr, stopped)
+	waitServing(t, cfg.Server.Addr, listening, stopped, &runErr)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -173,7 +307,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 // and its administrator, the process migrates and serves, and the whole round
 // trip — sign in, create, list, sign out — happens over a cookie.
 func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	install(t, path)
 
 	c := compose(cfg)
@@ -495,10 +629,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	}
 	// No password crossed the control plane: the operator chose none, and this
 	// is where one is chosen.
-	if code, body = do(t, cfg, nil, http.MethodPost, initechHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, first)+`","new":"a chosen passphrase for initech"}`); code != http.StatusOK {
-		t.Fatalf("the first administrator's reset = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, initechHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, first)+`","new":"a chosen passphrase for initech"}`)
 	boss := signIn(t, cfg, initechHost, "root@initech.localhost", "a chosen passphrase for initech")
 	// They administer their own tenant: listing its people needs user:read,
 	// which needs the admin role the invitation granted.
@@ -558,11 +690,11 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	token := tokenIn(t, link)
 
 	// The link works, once, and it is what turns an invitation into somebody
-	// who can sign in.
-	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+token+`","new":"a chosen passphrase for grace"}`); code != http.StatusOK {
-		t.Fatalf("the reset = %d %s, want 200", code, body)
-	}
+	// who can sign in — asked again until the row behind it is there to be spent,
+	// because the mailbox has held the message since before the transaction that
+	// minted the credential committed.
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+token+`","new":"a chosen passphrase for grace"}`)
 	signIn(t, cfg, acmeHost, "grace@acme.localhost", "a chosen passphrase for grace")
 	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
 		`{"token":"`+token+`","new":"another passphrase entirely"}`); code != http.StatusUnauthorized {
@@ -581,7 +713,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 // TestBootstrapRefusesAnInstallationThatAlreadyExists: the one write with no
 // caller to authorize is safe because it can only ever happen once.
 func TestBootstrapRefusesAnInstallationThatAlreadyExists(t *testing.T) {
-	path, _ := configure(t)
+	path, _ := configureFresh(t)
 	install(t, path)
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
 	err := bootstrap([]string{
@@ -637,13 +769,13 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			t.Fatalf("%s %s: %v", op.Method, op.Path, err)
 		}
 		switch read.Kind {
-		case "public", "signed_in", "any_credential":
+		case "public", "signed_in", "any_credential", "bearer_key":
 		case "permission", "operator_permission":
 			if read.Permission == "" {
 				t.Errorf("%s %s requires a permission with no name", op.Method, op.Path)
 			}
 		default:
-			t.Errorf("%s %s declares %q, which is not one of the five", op.Method, op.Path, read.Kind)
+			t.Errorf("%s %s declares %q, which is not one of the six", op.Method, op.Path, read.Kind)
 		}
 		kinds[read.Kind]++
 	}
@@ -654,7 +786,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	// going through kit/app's boot. What the fifth door is for is pinned where the
 	// rule lives, by kit/httpx's scoped-credential cases, and at the live
 	// composition by TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom.
-	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission"} {
+	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission", "bearer_key"} {
 		if kinds[kind] == 0 {
 			t.Errorf("no operation declares %q", kind)
 		}
@@ -690,25 +822,24 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	}
 }
 
-// knownUnservedNav is the debt this gate is adopted against: two nav entries
-// this repository declares and does not serve yet, each with the reason it is
-// not a line of work this gate can force.
+// knownUnservedNav is the debt this gate is adopted against: the nav entries this
+// repository declares and does not serve yet, each with the reason it is not a
+// line of work this gate can force.
 //
-// Neither is a mistake to delete — both are promised by their own module's
-// README — and neither can be served the way the roles screen was. The real
-// blocker is the same for both and is not in either module: there is no
-// read-only generated screen. ui/screens.Mount registers create, edit and
-// delete unconditionally and takes Resource.WriteAuth(), and httpx.Permission("")
-// panics at the mount site, so a module whose rows are read-only cannot
-// register a resource and get its list and detail from the generator. Giving
-// httpx.Resource and ui/screens a read-only mode serves both of these from the
-// generator and takes this map with it; a seventh and eighth hand-written page
-// in the shell would not.
+// The entry left here is not a mistake to delete — it is promised by its own
+// module's README — and it cannot be served the way the roles screen was: there is
+// no read-only generated screen. ui/screens.Mount registers create, edit and delete
+// unconditionally and takes Resource.WriteAuth(), and httpx.Permission("") panics at
+// the mount site, so a module whose rows are read-only cannot register a resource and
+// get its list and detail from the generator. Giving httpx.Resource and ui/screens a
+// read-only mode serves this entry from the generator and takes the map with it. A
+// hand-written page is what modules/file chose instead, because its screen is not a
+// resource the generator describes either: a browse of rows, the ledger that says what
+// shows each one, and a meter over the sum an upload is refused against.
 //
-// A name is removed from this map by serving the entry, never by moving an
-// entry into it. The gate below refuses a stale name for exactly that reason.
+// A name is removed from this map by serving the entry, never by moving an entry
+// into it. The gate below refuses a stale name for exactly that reason.
 var knownUnservedNav = map[string]string{
-	"/app/file/files":   "modules/file declares it; no read-only generated screen exists yet",
 	"/app/audit/events": "modules/audit declares it; no read-only generated screen exists yet",
 }
 
@@ -1009,7 +1140,7 @@ func notify(t *testing.T, cfg config.Config, c composition, recipient uuid.UUID)
 	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := c.notify.Notify(ctx, tx, notificationcontracts.Notice{
 			Recipient: recipient, Title: "chiller-2 supply temp is out of band",
-			Body: "The task is waiting for somebody.", Link: "/admin/task/tasks", Email: true,
+			Body: "The task is waiting for somebody.", Link: "/admin/task/tasks", Wants: notificationcontracts.WantsEmail,
 		})
 		if err == nil {
 			id = row.ID
@@ -1035,6 +1166,44 @@ func eventually(t *testing.T, what string, done func() bool) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// confirmMailboxLink redeems a confirmation link the composed mailbox is already
+// holding, and is how every case here spends a mailed credential.
+//
+// Waiting for the message is not waiting for the link. The in-memory mailbox has
+// it from the moment the transport takes the message, and the credential row
+// commits only when the delivery transaction does — a real SMTP server answers
+// first, and so does a test double. On a loaded machine that gap is wide enough to
+// read "that verification link is invalid or has expired" about a link mailed an
+// instant earlier, which is a refusal about the reader's timing rather than the
+// account. A 401 consumes nothing — the row is not there to spend — so the answer
+// is to ask again until the row is there or the tries are spent, and to fail with
+// the last answer when they are.
+func confirmMailboxLink(t *testing.T, cfg config.Config, host, link string) {
+	t.Helper()
+	redeemMailedLink(t, cfg, nil, host, "/api/v1/public/auth/verify-email", `{"token":"`+link+`"}`)
+}
+
+// redeemMailedLink is confirmMailboxLink for any route that spends a credential a
+// mail carried — the verification route and the set-password route mint their
+// tokens in different tables and are mailed by different sends, and both are read
+// out of the same mailbox by these cases.
+func redeemMailedLink(t *testing.T, cfg config.Config, client *http.Client, host, path, body string) {
+	t.Helper()
+	code, out := 0, ""
+	for attempt := 1; attempt <= 20; attempt++ {
+		code, out = do(t, cfg, client, http.MethodPost, host, path, body)
+		if code == http.StatusOK || code == http.StatusAccepted {
+			return
+		}
+		if code != http.StatusUnauthorized {
+			t.Fatalf("redeeming the mailed link at %s = %d %s", path, code, out)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("redeeming the mailed link at %s = %d %s after twenty attempts, so the credential "+
+		"the mailbox was holding never became a row the server would spend", path, code, out)
 }
 
 // provision gives a tenant its own administrator, the way the bootstrap gives
@@ -1135,62 +1304,117 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 	return client
 }
 
-// waitFor returns once the application this test started answers its own
-// liveness probe at addr.
+// servingSettle is how long the address has to keep answering this application's
+// own liveness probe, and this application has to keep running, before the wait
+// calls the boot served. It is short because everything it can be waiting for is
+// immediate: a listener either took the address or failed to, within microseconds
+// of the sentence.
+const servingSettle = 250 * time.Millisecond
+
+// waitServing returns when this application is answering at addr — not when
+// something is.
 //
-// It asks a question rather than dialling, because a dial is answered by whoever
-// holds the port and not by this test's application. The address comes from
-// freeAddr, which releases the port it chose, and Run migrates before it
-// listens, so the application is seconds away from binding it; on a host with
-// several suites live somebody else can take the port inside that window, and
-// the bare dial used to be satisfied by whoever had it. Two cases here have
-// failed that way — the second with
-// `Post "http://127.0.0.1:46755/api/v1/auth/login": ... malformed HTTP response "0"`
-// from a process that speaks no HTTP at all, in a case about signing in.
+// Two failures are answered here, and they are two different ones.
 //
-// GET /health is what the wait ends on instead: both roles serve it (kit/health
-// and app.work), it runs no check of its own, so 200 says this application is up
-// and nothing else can. Anything that answers it with something else is whoever
-// holds the port, and the case says so at once rather than after the whole bound
-// of waiting and one request that was never going to be answered here.
-func waitFor(t *testing.T, addr string, stopped ...chan error) {
+// The first is the address. Run migrates before it listens (kit/app, Start then
+// serve), and the wait for the composition's advisory lock is bounded only by the
+// caller's context (kit/db/migrate.go, holdCompositionLock) — one Postgres, one
+// lock, every suite running on this host. While this case's composition was still
+// in that queue, the address was one this test had released (see freeAddr) and some
+// other process could hold it, and a dial that connected was read as "ready": the
+// case then asked a stranger's composition for its own sign-in page and reported the
+// 404 it got back as its own failure, and the stranger's shutdown showed up later as
+// a refused connection.
+//
+// The second is that the address cannot answer for *which* application is behind
+// it. A stranger running this same binary answers GET /health with 200 too, so a
+// probe of the address — however good a question it is — is not a proof that the
+// process behind the socket is the one this case started. So the wait is on the
+// application: it returns only once the log this composition was given says it is
+// listening at this address (servingHandler matches the sentence and the address),
+// and the address has kept holding for servingSettle while this application is
+// still running. What a run that got there first — a port it could not bind, a gate
+// that refused the composition — arrives as is its own error, said at once, instead
+// of as a cascade of 404s.
+//
+// An address that answers somebody else's liveness probe is not this application's
+// either. It is not said so at once: a composition that has lost the address loses
+// the bind within microseconds of writing the sentence this wait answered to, so the
+// nearer truth is Run's own error, and the wait gives it the settle window to say so
+// before it prints the stranger's answer.
+//
+// bootWait bounds the whole thing: Run migrates a whole installation before it
+// listens, the same boot that answers in a couple of seconds alone costs an order of
+// magnitude more when every database package in the repository migrates into one
+// Postgres at once, and a bound sized for the quiet case reports a working machine as
+// a broken application. slowBoot is when a green wait starts saying how long it took.
+func waitServing(t *testing.T, addr string, listening <-chan struct{}, stopped <-chan struct{}, runErr *error) {
 	t.Helper()
 	started := time.Now()
 	deadline := started.Add(bootWait)
+	timeout := time.After(bootWait)
+	gone := func() {
+		t.Fatalf("the application stopped before it served at %s: %v", addr, *runErr)
+	}
+	select {
+	case <-listening:
+	case <-stopped:
+		gone()
+	case <-timeout:
+		t.Fatalf("the application said nothing about serving at %s within %s", addr, bootWait)
+	}
+	// The kernel writes that sentence one statement before the listener reports
+	// whether the address was this process to take, and whatever else holds the
+	// address would answer a request — so the sentence alone is not yet proof. What
+	// is proof is the pair of them holding together for servingSettle: this
+	// application still running, and the address still holding. A bind that never
+	// succeeded arrives here as itself, which is a port and an error, rather than as
+	// somebody else's 404s.
+	//
+	// The window opens at the first answer and closes servingSettle later, measured
+	// from that answer and not from every one. Measured from every one, an address
+	// that keeps answering reopens the window it had just closed, and the wait never
+	// returns: it sat out bootWait and reported an application that had been served
+	// for five minutes as one that never came up.
+	settled := time.Time{}
 	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
-		if len(stopped) > 0 {
-			select {
-			case err := <-stopped[0]:
-				stopped[0] <- err // the read above freed the slot, so this cannot block
-				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
-					addr, time.Since(started).Round(time.Millisecond), err)
-			default:
-			}
+		select {
+		case <-stopped:
+			gone()
+		default:
 		}
-		res, err := http.Get("http://" + addr + "/health")
-		if err != nil {
+		got, why := healthAt(addr)
+		last = why
+		switch got {
+		case probeNobody:
 			// Nobody is home, which is what it looks like while the application is
-			// still migrating. Keep waiting.
-			last = err.Error()
-		} else {
-			body, _ := io.ReadAll(res.Body)
-			_ = res.Body.Close()
-			if res.StatusCode == http.StatusOK {
+			// still migrating. The window starts again from an answer yet to come.
+			settled = time.Time{}
+		case probeStranger:
+			select {
+			case <-stopped:
+				gone()
+			case <-time.After(servingSettle):
+				t.Fatalf("the port %s belongs to something that is not this application: %s", addr, why)
+			}
+		case probeOwn, probeHeld:
+			// A 200 is this application's own liveness route. An address that takes the
+			// connection and says nothing over it proves only that somebody holds it —
+			// and this case's own composition can be that somebody only while its bind
+			// is unwritten, because a bind it lost is a Run that has already come back
+			// with its error, which is read at the top of every turn of this loop.
+			if settled.IsZero() {
+				settled = time.Now().Add(servingSettle)
+			}
+			if !time.Now().Before(settled) {
 				if took := time.Since(started); took > slowBoot {
 					t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
 				}
 				return
 			}
-			// /health is liveness: it runs no check, and this process answers it with
-			// 200 from the moment it listens. Anything else that answers is somebody
-			// else's socket, and no amount of waiting will make this application own
-			// it — say so at once, and say who did.
-			t.Fatalf("the port %s belongs to something that is not this application: "+
-				"GET /health answered %d, Server %q, body %q",
-				addr, res.StatusCode, res.Header.Get("Server"), firstLine(string(body)))
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("the application at %s never answered GET /health in %s: %s", addr,
 		time.Since(started).Round(time.Second), last)
@@ -1234,26 +1458,102 @@ var (
 	chosenPorts   = map[int]bool{}
 )
 
-// freeAddr picks a port the kernel cannot hand to somebody else while this test
-// is on its way to binding it.
-//
-// Asking the kernel for one and closing the listener, which is what this did,
-// picks out of the ephemeral range and then gives it back: every other process on
-// the host draws its :0 binds and its outbound source ports from that same range,
-// so the port was free at the moment it was named and possibly not one later.
-// The application migrates before it listens, so "later" is seconds, and the case
-// that noticed was speaking to whoever had taken it (waitFor carries what that
-// looked like). Below the ephemeral range a port is only ever held by something
-// that asked for that number, which is the closest thing to a guarantee this
-// shared host has. The bind is what says nobody holds it at the moment of
-// choosing, the candidate after it is what a port somebody does hold costs, and
-// the random start is what keeps two suites running at once reaching for the same
-// one.
-//
-// Even a bind is not ownership here: a container published at a host port is
-// reached there whatever socket stands underneath, so the candidate has to answer
-// the connection this test is about to make. One dial into the listener, accepted
-// on the other side, is that check, and it costs a millisecond once per case.
+// servingProbe is the shape one bounded question at an address took. The four are
+// the four a wait can act on: whether anything is home, whether the address was
+// taken without an answer, and whether what answered answered for itself.
+type servingProbe int
+
+const (
+	probeNobody   servingProbe = iota // nothing took a connection: this composition has not bound yet
+	probeHeld                         // a connection was taken and nothing answered over it
+	probeStranger                     // an answer that is not this application's own liveness
+	probeOwn                          // GET /health answered 200 at this address
+)
+
+// probeBound bounds one question at the address. An address can take a connection and
+// answer nothing over it — a bare listener with no server behind it, a process parked
+// behind its own queue — and a question with no deadline stops being a question and
+// becomes a hang that wears a test's name.
+const probeBound = time.Second
+
+// probeClient asks the liveness route under that bound. http.Get's own client has none.
+var probeClient = &http.Client{Timeout: probeBound}
+
+// healthAt asks GET /health of addr once, within probeBound, and says which shape the
+// answer took, with the sentence a failure should print beside it. It never blocks
+// past probeBound: the wait that asks has a bound of its own to spend and a running
+// application to watch while it spends it.
+func healthAt(addr string) (servingProbe, string) {
+	conn, err := net.DialTimeout("tcp", addr, probeBound)
+	if err != nil {
+		return probeNobody, err.Error()
+	}
+	_ = conn.Close()
+	res, err := probeClient.Get("http://" + addr + "/health")
+	if err != nil {
+		// Somebody holds the address and said nothing over it. Whose it is does not
+		// become knowable by waiting longer, so the caller is pointed back at the
+		// application it started rather than at the socket.
+		return probeHeld, fmt.Sprintf("%s took the connection and answered nothing over it (%v)", addr, err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	why := fmt.Sprintf("GET /health answered %d, Server %q, body %q",
+		res.StatusCode, res.Header.Get("Server"), firstLine(string(raw)))
+	if res.StatusCode == http.StatusOK {
+		return probeOwn, why
+	}
+	return probeStranger, why
+}
+
+// servingHandler watches one application's log for the sentence the kernel writes
+// when it starts serving, and closes ready the first time that sentence names this
+// address. It is the only way a test can tell its own application's listener from
+// somebody else's on the same port, so it is deliberately not filtered by the level
+// the caller chose — the caller's handler still decides what its own logger keeps.
+// If the kernel ever stops writing the sentence, waitServing times out and says so;
+// TestTheKernelStillSaysWhereItIsListening reddens at the change instead.
+type servingHandler struct {
+	addr  string
+	inner slog.Handler
+	ready chan struct{}
+	once  sync.Once
+}
+
+func (h *servingHandler) Enabled(ctx context.Context, level slog.Level) bool { return true }
+
+func (h *servingHandler) Handle(ctx context.Context, record slog.Record) error {
+	if record.Message == "app: listening" && namedAddress(record) == h.addr {
+		h.once.Do(func() { close(h.ready) })
+	}
+	if h.inner.Enabled(ctx, record.Level) {
+		return h.inner.Handle(ctx, record)
+	}
+	return nil
+}
+
+// namedAddress is the address a "listening" sentence names — the kernel writes it
+// as an attribute beside the sentence, and this asks for it rather than matching on
+// the sentence alone, so a second application serving somewhere else on the host
+// cannot close this case's wait.
+func namedAddress(record slog.Record) string {
+	var addr string
+	record.Attrs(func(a slog.Attr) bool {
+		if a.Key != "addr" {
+			return true
+		}
+		addr = a.Value.String()
+		return false
+	})
+	return addr
+}
+
+func (h *servingHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
+
+func (h *servingHandler) WithGroup(name string) slog.Handler { return h }
+
+// freeAddr picks a port the kernel cannot hand to somebody else while this test is
+// on its way to binding it, from the band stated above.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	low := min(ephemeralLow()-1, lastChosenPort)
@@ -1423,10 +1723,16 @@ func blobs(t *testing.T, cfg config.Config) int {
 // The transaction half is measured from outside, through pg_stat_activity,
 // because the claim is about a server-side connection and not about a Go value.
 // dbtest names this installation's pool after the test's schema, so the count is
-// this application's backends and nobody else's. The question it asks is the age
-// of the oldest open transaction rather than how many there are: the application
-// is running its periodic jobs too, and a job's transaction is milliseconds old,
-// while a pinned one keeps getting older for as long as the body trickles.
+// this application's backends and nobody else's.
+//
+// It asks the age of the oldest open transaction of an installation started as the
+// serving half, because that is the only installation this question has an answer
+// for. The worker half runs the outbox relay, the outbox purge and every module's
+// periodic jobs over this same pool, and a transaction of that work stays open for
+// as long as its goroutine keeps a CPU: on a host carrying several suites at once
+// it is seconds old, and no bound separates it from one a client pinned. On role
+// web nothing but a request opens a transaction, so a transaction still open and
+// old at the last sample is the trickling request's own.
 func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	const timeout = 3 * time.Second
 	path, cfg := configure(t)
@@ -1438,7 +1744,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: memory.New(), Log: quiet(),
+		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 
@@ -1447,14 +1753,28 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// asking dbtest for the URLs again would give this test a fresh schema and
 	// take the tables out from under the application that is serving.
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)
-	longest := func() float64 {
+	// longest answers the age of the oldest open transaction of this installation and
+	// names the backend holding it. The name belongs in the refusal: a bare number says
+	// the claim failed and nothing about which pool to go and look at, and the reader is
+	// left to work out by hand what this one line already knows.
+	longest := func() (float64, string) {
 		var age float64
-		const q = `SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)), 0) FROM pg_stat_activity
-			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`
-		if err := owner.QueryRowContext(t.Context(), q).Scan(&age); err != nil {
-			t.Errorf("read pg_stat_activity: %v", err)
+		var backend string
+		const q = `SELECT EXTRACT(EPOCH FROM now() - xact_start),
+				coalesce(usename::text, '?') || ' at pid ' || pid::text || ': '
+				|| coalesce(left(regexp_replace(query, '\s+', ' ', 'g'), 120), '(no statement seen)')
+			FROM pg_stat_activity
+			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')
+			ORDER BY xact_start ASC NULLS LAST LIMIT 1`
+		err := owner.QueryRowContext(t.Context(), q).Scan(&age, &backend)
+		if err == sql.ErrNoRows {
+			return 0, ""
 		}
-		return age
+		if err != nil {
+			t.Errorf("read pg_stat_activity: %v", err)
+			return 0, ""
+		}
+		return age, backend
 	}
 
 	// A multipart form whose file part never ends: one byte, then a pause,
@@ -1519,13 +1839,16 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// loop is finished before the server gives up and the handler's own failure
 	// path runs.
 	samples, oldest := 0, 0.0
+	oldestBackend := ""
 	for time.Since(start) < timeout*3/4 {
 		select {
 		case got := <-done:
 			t.Fatalf("upload ended before the read deadline: status=%d error=%v after %s", got.code, got.err, time.Since(start))
 		default:
 		}
-		oldest = max(oldest, longest())
+		if age, backend := longest(); age > oldest {
+			oldest, oldestBackend = age, backend
+		}
 		samples++
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -1535,12 +1858,12 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// The bound is half the read timeout, and it is arithmetic rather than taste. A
 	// transaction the upload pinned opens when the request arrives and is still open at
 	// the last sample, so it is at least timeout*3/4 minus one sample interval old —
-	// 2.2s here. A periodic job's transaction is milliseconds old on a quiet machine
-	// and read 0.53s on a loaded CI runner (PR 55, run 144), which a 0.5s bound
-	// refused. timeout/2 sits between the two with margin on both sides.
+	// 2.2s here. Nothing on this role opens a transaction while a body trickles and no
+	// other request is in flight, so the only way to be older than the bound is to be
+	// that transaction. timeout/2 refuses it with a second of room on both sides.
 	if limit := timeout.Seconds() / 2; oldest > limit {
-		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs); the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
-			oldest, limit)
+		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs), held by %s; the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
+			oldest, limit, oldestBackend)
 	}
 
 	var got answer
@@ -1659,16 +1982,22 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 // TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace is the
 // upgrade half of the migration move, and the half a fresh database cannot
 // check: an existing installation's ledger says "platformkit" applied all
-// twenty-four files, and the release that splits them must neither refuse the
+// thirty-three files at or below the adopted ceiling, and the release that splits them must neither refuse the
 // files the foundation no longer ships nor run the module files again.
 //
 // Success alone proves the SQL did not re-run — a second 000004_task.up.sql
 // would fail on CREATE TABLE tasks — and the applied_at comparison proves the
 // rows were re-owned rather than replaced.
 func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg := configureFresh(t)
 	sources := app.MigrationSources(compose(cfg).modules)
-	if err := db.Migrate(t.Context(), cfg.Database.MigrateURL, legacyLayout(t, sources)); err != nil {
+	// The patient budget, not the deployment's: this case is about a ledger whose rows
+	// change owner, and the legacy layout it installs carries the same concurrent build
+	// every other fixture here meets. What it refuses on the budget's own terms is
+	// kit/db's answer to a contended file, pinned in kit/db, not this product's upgrade.
+	patient := fixtureLockTimeout
+	if err := db.MigrateWith(t.Context(), cfg.Database.MigrateURL,
+		db.MigrationBudget{LockTimeout: &patient}, legacyLayout(t, sources)); err != nil {
 		t.Fatalf("the release before this one: %v", err)
 	}
 	admin := dbtest.Open(t, cfg.Database.MigrateURL)
@@ -1731,7 +2060,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the ten above the ceiling, because the
+	// 33 stays 33 for those files and for every file above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -1739,40 +2068,66 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// below has to produce, and the two counts below compare the ledger against
 	// every file the release ships.
 	//
-	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 49 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 46) and thirty-two under modules/*/migrations/
-	// (4, 7,
-	// 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36,
-	// 37, 38, 39, 40, 42, 44, 45, 47, 48, 49), all at distinct versions. The release this fixture is
-	// applied from shipped 33 of them: the thirteen under migrations/ up to the
-	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
-	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
-	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The sixteen above it — the kernel's own 34, 41, 43 and 46,
-	// modules/audit's
-	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40,
-	// modules/content's 42, modules/auth's 47 and modules/audit's 48 and 49 —
-	// postdate that release, are not in
-	// the old installation's
-	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
-	// the owner that ships them and counts them as new rows. Each continues past the
-	// highest number anywhere in the composition, which is the rule this fixture
-	// exists to enforce — and it is a rule with teeth rather than tidiness, because
+	// The whole-tree census is deliberately absent: the file count this fixture
+	// ships moves with every delivery that adds a migration, and a number quoted here
+	// is a number the next merge silently falsifies. `find migrations modules -name
+	// '*.up.sql' | wc -l` answers it, and the two counts that matter are asserted
+	// below rather than restated here — the old layout's ledger against the files at
+	// or beneath the adopted ceiling, and the upgraded ledger against every file the
+	// release ships. What the census used to enumerate is the part worth keeping: the
+	// release repeats six numbers, each above the ceiling so the flattening below
+	// never meets them — 35 is modules/audit's audit_context beside modules/auth's
+	// passkeys, 43 is the kernel's tenant-app columns beside modules/translation's
+	// field copy, 44 is modules/file's image dimensions beside modules/notification's
+	// mail ledger and modules/webhook's endpoint table, 45 is modules/file's file uses
+	// beside that module's delivery log, 50 is the kernel's tenant demo marker beside
+	// modules/task's task_revision, and 54 is modules/file's image variants beside
+	// modules/site's default accent. Every file above the ceiling continues past the
+	// highest number anywhere in the composition at the time it was written, which is
+	// the rule this fixture exists to enforce — and it is a rule with teeth rather
+	// than tidiness, because
 	// kit/db reads a repeated version only inside one owner: the kernel's
 	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
 	// under two owners, and the only thing that says so is the one map below that
-	// counts every shipped file under one key. modules/audit's 48 and 49 are this
-	// rule's newest customer: the append-only trail and its retention marks were
-	// numbered 41 and 42 while the branch was open, and main took 41 for the kernel's
-	// own outbox baggage and 42 for modules/content's body characters underneath it.
+	// counts every shipped file under one key. T-0231's four are this rule's newest
+	// customer: they arrived at 000044, 000045, 000046 and 000047, main took 000046 for
+	// its own SAML provider columns in between, and the flattened fixture below reads
+	// one version as one row whatever the owner, so they are 000058, 000059, 000060 and
+	// 000061. modules/audit's 48 and 49 are the customer before them: the append-only
+	// trail and its retention marks were numbered 41 and 42 while the branch was open,
+	// and main took 41 for the kernel's own outbox baggage and 42 for modules/content's
+	// body characters underneath it.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
-	// merged as, for the reason this paragraph has now recorded four times: this
-	// fixture flattens every owner's files under one owner, and every number from 35
-	// to 41 was taken on main while the rich-text branch was still open — 000035 is
-	// modules/audit's audit_context and 000041 is the kernel's own outbox baggage.
-	// One version, one row.
+	// merged as, for the reason this paragraph has now recorded six times: this fixture
+	// flattens every owner's files under one owner, and every number from 35 to 45 was
+	// taken on main while another branch was still open — 000035 is modules/audit's
+	// audit_context, 000041 is the kernel's own outbox baggage, and 000044 and 000045 are
+	// modules/file's image dimensions and file uses. One version, one row. This
+	// delivery's own four arrived as 000035, 000036, 000037 and modules/audit's 000038,
+	// then as 000044, 000045, 000046 and modules/audit's 000047, then as 000046, 000047,
+	// 000048 and modules/audit's 000049, and are 000050 (the tenant's demo marker),
+	// 000051 (the seed's provenance keys), 000052 (the attribution columns beside each
+	// outbox row) and modules/audit's 000053 (those four copied into the trail) for
+	//
+	// This delivery's own four continue past that: modules/notification's channel
+	// preferences and quiet window, verified sender, sent-once index and sender
+	// revision are 000054, 000055, 000056 and 000057, numbered past modules/audit's
+	// 000053 for the same reason. They sit above the adopted ceiling, so they are
+	// absent from the old ledger and are counted as new rows by the upgrade below,
+	// and modules/notification's Adopts names only 000011 and 000027 — the two
+	// files its owner applied under "platformkit" before the split.
+	// that one reason: while this branch was open main took 000046 for its own SAML
+	// provider columns, 000047 for modules/auth's replay table and 000048 and 000049
+	// for modules/audit's append-only trail and its retention marks — and two files at
+	// one version under the one owner `audit` is a refusal in kit/db before it is ever
+	// a ledger row. modules/scim's group, mapping and person tables arrived on their
+	// branch as 000044, then as 000054, and are 000064 here: main took 000044 for
+	// modules/file's image dimensions while that branch was open, then took 000054 twice
+	// more for modules/file's variants and modules/site's default accent, then 000058 to
+	// 000062 for its own ledger lock, refusal, placement and idempotency files and
+	// 000063 for modules/file's media alt text, and 000064 continues past 000063, the
+	// highest number any owner holds at the commit this merge lands.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
@@ -1780,6 +2135,20 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// The new release, through the path a person runs: bootstrap migrates with
 	// the composed sources before it writes the first tenant.
 	install(t, path)
+	// And the rest of the convergence, which is the same path: 000061 sits behind 000060,
+	// the release's placement window, and kit/db's planOwner bounds a phase=data file only
+	// when nothing of its owner is pending behind it — so this boot stops at the window and
+	// the two steps that finish a release take it: the drain the worker's first tick runs,
+	// then the migration again for the file that waited behind it. That trio is what
+	// `pkit migrate --drain` runs (apps/platformkit/migrate.go) and what
+	// scripts/rehearse_migrations.sh measures. The ledger below is the ledger of the
+	// converged installation, and the count it must reach is every file the release ships.
+	if err := app.Drain(t.Context(), cfg, compose(cfg).modules); err != nil {
+		t.Fatalf("the drain that finishes the upgrade: %v", err)
+	}
+	if err := app.Migrate(t.Context(), cfg, compose(cfg).modules); err != nil {
+		t.Fatalf("the migration behind the drain: %v", err)
+	}
 
 	owners := map[int64]string{}
 	ledger(owners, "SELECT version, owner FROM schema_migrations")
@@ -1796,12 +2165,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the sixteen files above the
-	// adopted ceiling of 33 (the kernel's own 34, 41, 43 and 46, modules/audit 35, 36
-	// and 37, modules/change 38, modules/site 39, modules/file 40, modules/content 42,
-	// modules/auth 47 and modules/audit 48 and 49, all absent from the old ledger) have
-	// to be accounted for:
-	// 49 files in the release, 49 rows.
+	// release ships is in the ledger, which is where the files above the adopted
+	// ceiling have to be accounted for. Both maps below are keyed by version, so a
+	// version two owners hold is one key in each of them: the comparison is between
+	// the ledger and the sources the composition names, never against a count carried
+	// in this comment.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

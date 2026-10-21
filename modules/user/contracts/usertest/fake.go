@@ -2,6 +2,7 @@ package usertest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -209,11 +210,45 @@ func (f *Fake) Deactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	return f.get(id)
 }
 
+// Reactivate mirrors internal.Service.Reactivate. The floor has no part in it:
+// standing a person back up takes no administrator away.
+func (f *Fake) Reactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, err := f.get(id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status == contracts.StatusActive {
+		return u, nil
+	}
+	if u.Status != contracts.StatusInactive {
+		return nil, fmt.Errorf("%w: only a person who was stood down is stood back up; %s waits for the act that fits that state", crud.ErrConflict, u.Status)
+	}
+	u.Status, u.UpdatedAt = contracts.StatusActive, db.Now()
+	f.users[id] = *u
+	f.published = append(f.published, contracts.EventReactivated)
+	return f.get(id)
+}
+
 // Get mirrors internal.Service.Get.
 func (f *Fake) Get(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.get(id)
+}
+
+// Retained mirrors internal.Service.Retained: the row the store holds after Delete hid
+// it, and the same ErrNotFound for an id that was never anybody.
+func (f *Fake) Retained(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stored, ok := f.users[id]
+	if !ok {
+		return nil, crud.ErrNotFound
+	}
+	stored.Roles = slices.Clone(stored.Roles)
+	return &stored, nil
 }
 
 // ByEmail mirrors internal.Service.ByEmail.
@@ -331,19 +366,33 @@ func addedAdministering(was, want, administering []string) []string {
 	return added
 }
 
-// floor is internal.Service.floor without a database: the same decision, from
-// the same function, so the fake and the service cannot disagree about who the
-// last administrator is. The caller holds the lock the closure reads under.
+// floor is internal.Service.floor without a database: the same gate, the same
+// reach, the same decision from the same function, so the fake and the service
+// cannot disagree about who the last administrator is. The caller holds the lock
+// the loop below reads under.
 func (f *Fake) floor(before, after *contracts.User) error {
-	return contracts.CheckedAdministration(before, after, f.administering, func() ([]*contracts.User, error) {
-		others := make([]*contracts.User, 0, len(f.users))
-		for id, stored := range f.users {
-			if id != before.ID && stored.DeletedAt == nil {
-				others = append(others, &stored)
-			}
+	if !before.Administers(f.administering) || after.Administers(f.administering) {
+		return nil
+	}
+	others := make([]*contracts.User, 0, len(f.users))
+	for id, stored := range f.users {
+		if id != before.ID && stored.DeletedAt == nil {
+			others = append(others, &stored)
 		}
-		return others, nil
-	})
+	}
+	err := contracts.CheckedAdministration(
+		contracts.UserReach(before, f.administering, others),
+		contracts.UserReach(after, f.administering, others),
+		!after.Administers(f.administering),
+		contracts.LeavingAdministration(before, f.administering))
+	if errors.Is(err, crud.ErrInvalid) {
+		// The fake records the name the service writes a row for (internal's
+		// recordRefusal), so a consumer testing against this map sees the refused
+		// attempt in the same place it sees every other event. The name is all
+		// Published keeps, so the attempt and the roles are not here.
+		f.published = append(f.published, contracts.EventAdministrationRefused)
+	}
+	return err
 }
 
 // get is a copy of the stored user, so a caller that mutates what it was handed

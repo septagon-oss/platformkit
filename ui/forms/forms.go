@@ -23,7 +23,56 @@ import (
 type Field struct {
 	Definition entity.Field
 	Label      string
-	Options    []components.SelectOption
+	// Help is the line under the control: what resource.Words.FieldHelp answers for
+	// the field — the author's declared `help:` when they wrote one, in the
+	// request's language, the field's Doc when they did not. Empty falls back to
+	// Doc, so a caller that projects no reading words at the control (a design
+	// export, a test) reads what it always read. The label beside it and this line
+	// are the same request's two words: a caller that translates one translates
+	// both.
+	Help    string
+	Options []components.SelectOption
+	// Editor carries what a widget:richtext field's chrome needs beyond the
+	// field: the record's own address and the revision this form quotes, the key
+	// an unsaved draft is kept under, the route an image is uploaded to and the
+	// deployment's stated ceiling for one.
+	//
+	// Each is decided by whoever draws the form — ui/resource for a generated
+	// screen — and each is absent rather than guessed when it cannot be known:
+	// no Endpoint means no autosave and a draft kept on this device instead, no
+	// DraftKey means nothing is kept at all (a new record has no key to be kept
+	// under), no FileUpload means the session may not upload and the image entry
+	// is not drawn. A control the browser assembled out of guesses is a control
+	// that fails at the server instead of where the person can see why.
+	Editor Editor
+}
+
+// Editor is the rich text field's server-side answer to "what may this browser
+// do, and where". Empty fields mean the feature is off for this field; the glue
+// reads the attributes this data is drawn into and never invents a URL, a key or
+// a permission of its own.
+type Editor struct {
+	// Endpoint is the record's own REST address, and ETag the quoted revision this
+	// form was drawn from. Both empty means the editor saves nothing as the author
+	// writes and keeps an unsaved draft instead. A form that posts the field itself
+	// leaves them empty: its own save is then the row's only writer.
+	Endpoint, ETag string
+	// DraftKey is where an unsaved draft is kept in this browser, composed here
+	// from the tenant, the resource, the record and the field — never by the page.
+	DraftKey string
+	// FileUpload is the route an image is posted to, and Limits the sentence that
+	// states the formats and the ceiling before any refusal.
+	FileUpload, Limits string
+	// ImageSrc is where one stored file's bytes are read back, with {file} standing
+	// for the id an upload returned: the address the editor draws a picture from
+	// while the document keeps the pk-file reference it posts. Empty means no
+	// preview is drawn and a reference shows as it was written.
+	ImageSrc string
+	// Submitted says this render is the answer to a write the server refused, so its
+	// controls hold what the person posted rather than what the record holds. The
+	// browser keeps an unsaved draft through such a page: an echo of a refused
+	// submission is no evidence that anything was saved.
+	Submitted bool
 }
 
 // Model contains a form's already-read values and already-decided field errors.
@@ -162,7 +211,11 @@ func example(id string, model Model, options Options) examples.Example {
 	for _, field := range model.Fields {
 		f := field.Definition
 		immutable := slices.Contains(model.Immutable, f.Name)
-		if f.ReadOnly || (model.Create && immutable) {
+		// Nothing the server owns renders a control. Base's four because a form
+		// cannot name them, and the row's own write count because a control that
+		// posted back the number it rendered would move the row to that number —
+		// which is the one thing the stale-write refusal is built on.
+		if entity.ServerOwned(f) || (model.Create && immutable) {
 			continue
 		}
 		value, present := model.Values[f.Name]
@@ -208,7 +261,7 @@ func example(id string, model Model, options Options) examples.Example {
 func rendersFile(model Model) bool {
 	for _, field := range model.Fields {
 		f := field.Definition
-		if f.ReadOnly || (model.Create && slices.Contains(model.Immutable, f.Name)) {
+		if entity.ServerOwned(f) || (model.Create && slices.Contains(model.Immutable, f.Name)) {
 			continue
 		}
 		if f.Widget == "file" {

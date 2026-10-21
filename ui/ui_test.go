@@ -125,7 +125,7 @@ func TestTheGateRefusesWhatABrowserActsOnAndNotACharacter(t *testing.T) {
 // kernel's own classes, the root element or a --pk- property
 // (TestComposeRefusesConsumerSheetsThatEscapeTheClientLayer),
 // and a kernel role rule shares the components layer with the utilities on its
-// own element so its selector still decides (ui/review_round1_layers_test.go).
+// own element so its selector still decides (ui/kernel_role_rule_ranked_below_utility_test.go).
 func TestAConsumerRuleCannotDisplaceAComponentRule(t *testing.T) {
 	t.Parallel()
 	// The declaration the .flex utility makes, on a doubled selector: higher
@@ -268,7 +268,7 @@ func TestTheGateRefusesAConsumerRuleAtAClassACompositionOwnsListCarries(t *testi
 	if !strings.Contains(served, ".tracking-tight {") {
 		t.Fatalf("premise: the sheet this composition emits carries no rule at .tracking-tight, so this case would refuse a rule about a class nothing styles")
 	}
-	if layer := reviewRound11LayerOf(t, served, ".tracking-tight {"); layer != "components" {
+	if layer := layerHoldingSelector(t, served, ".tracking-tight {"); layer != "components" {
 		t.Fatalf("premise: .tracking-tight is emitted in layer %q, not the components layer the client layer outranks", layer)
 	}
 	func() {
@@ -321,8 +321,9 @@ func TestTheGateRefusesAKernelWordBesideAConsumersOwnClass(t *testing.T) {
 // sides of the selector read. Refused: text that occupies the position a selector
 // occupies is tokenised as an at-rule prelude, and the block after it is the
 // at-rule's body, so a rule whose head is `@layer tokens` states a layer of its
-// own inside the client layer — refused at the head of the list and at the head
-// of any comma-separated part. Accepted: an `@` the browser already reads inside a
+// own inside the client layer — refused at the head of the list, at the head of any
+// comma-separated part, and whether or not the rule's indentation puts space in front
+// of the `@`, which is how the emitter writes a nested rule. Accepted: an `@` the browser already reads inside a
 // token — an attribute value, or an escape, where `\` is what makes an ident token
 // and never an at-keyword. Over-refusal is the expensive side of a gate: a sheet
 // refused at mount panics at composition and the consumer ships no stylesheet at
@@ -339,7 +340,7 @@ func TestTheGateRefusesASelectorThatIsAnAtRulePreludeAndReadsAnAtSignAsData(t *t
 		return css.NewSheet().Select(selector,
 			css.Decl("color", css.VarRef("pk-color-text-primary", "")))
 	}
-	for _, selector := range []string{"@layer tokens", "@media all", "  @layer client", ".store-hero, @layer base", `@import "http://x/y.css"`} {
+	for _, selector := range []string{"@layer tokens", "@layer client", "@media all", "  @layer client", ".store-hero, @layer base", `@import "http://x/y.css"`} {
 		func() {
 			defer func() {
 				if recover() == nil {
@@ -426,7 +427,7 @@ func TestTheGateRefusesASemicolonWhereTheEmitterWritesABrace(t *testing.T) {
 
 func TestComposeKeepsConsumerRulesAfterSharedUtilities(t *testing.T) {
 	t.Parallel()
-	// Carried from the round that predates cascade layers, when this asserted
+	// Carried from before cascade layers existed, when this asserted
 	// that a consumer's override of [data-component=button] survived after the
 	// utilities. That override is now refused outright (see the refusal test),
 	// which supersedes surviving after it; what still must hold is the two
@@ -514,8 +515,18 @@ func TestAssetsServeSheetsControllersAndOverlays(t *testing.T) {
 
 func TestThereAreFewControllers(t *testing.T) {
 	t.Parallel()
-	if len(ui.Controllers) > 8 {
-		t.Fatalf("there are %d browser controllers; the budget is 8", len(ui.Controllers))
+	// Nine, and the number is stated rather than discovered. Every entry here is
+	// a script each page downloads, which is what this ceiling exists to keep
+	// small. The base this branch and main both forked from shipped seven under
+	// this ceiling of eight, and two deliveries each spent that last slot: main
+	// on specialists.js, which registers the shared component families, this one
+	// on passkeys.js, which runs the two WebAuthn ceremonies. The merge is where
+	// they meet, so the merge is where the count is decided, and the decision is
+	// nine rather than a folding of one into the other: one script talks to an
+	// authenticator, the other defines custom elements, and neither is sign-in
+	// state (session.js) or component behaviour (components.js).
+	if len(ui.Controllers) > 9 {
+		t.Fatalf("there are %d browser controllers; the budget is 9", len(ui.Controllers))
 	}
 	for _, name := range ui.Controllers {
 		if !strings.HasSuffix(name, ".js") {

@@ -197,13 +197,26 @@ auth:
 #   port: 1025
 #   from: "PlatformKit <platformkit@localhost>"
 #
-# The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
+# Nothing here holds the password. `kit/secrets` reads it as `mail.password` from
+# whichever store the block below names — on a laptop, PLATFORMKIT_MAIL_PASSWORD, the
+# variable this block's own `password:` line used to name. `username:` stays because a
+# username is not a secret, so a relay that needs both is configured in two places.
+#
+# Where kit/secrets reads from. Empty adapter is the process's own environment, which
+# is why a deployment that says nothing about secrets still has one. The token is the
+# one secret that cannot arrive through the port, because the port needs it to read the
+# port: secrets.url and secrets.token belong to secrets.adapter openbao, secrets.dir to
+# file, and no secret belongs in this file.
+#
+#   secrets:
+#     adapter: file
+#     dir: /run/secrets/platformkit
+
 mail:
   host: ""
   # Submission with STARTTLS, which is what a modern relay listens on.
   port: 587
   username: ""
-  password: ""
   from: ""
 
 # How long the audit trail is kept. It is the one thing modules/audit cannot
@@ -218,6 +231,16 @@ audit:
 # belongs in PLATFORMKIT_BOOTSTRAP_PASSWORD, not here, for the same reason as
 # the other secrets.
 bootstrap:
+  password: ""
+
+# The password the demonstration people sign in with, read by the seed alone.
+# Empty means this installation offers no demo sign-in: the demo people are still
+# invited and given their roles, and the file's signIn record is neither asked for
+# nor compared. The password itself belongs in no seed file — nothing under
+# apps/platformkit/seed holds a secret, and the loader refuses a field named for
+# one — and belongs here the way every other secret does: in
+# PLATFORMKIT_DEMO_PASSWORD rather than in this file.
+demo:
   password: ""
 
 # Where uploaded bytes go, how large one upload may be, and how much disk one
@@ -248,6 +271,59 @@ files:
   # lives. An entry with no class name, or one that is not a positive duration,
   # fails the load rather than quietly deleting nothing.
   retention: {}
+  # Which object store the bytes go to: empty or local-disk for the directory
+  # above, s3 for the store below. A cloud profile writes this key for you; an
+  # operator who writes it themselves keeps what they wrote, which is the whole
+  # reason the setting exists beside the directory rather than instead of it.
+  store: ""
+  s3:
+    # host:port, with no scheme, path or credentials in any of these: the scheme is
+    # the key below and the credentials are the two keys after it, because a
+    # credential pasted into an endpoint is one that ends up in a committed file.
+    endpoint: ""
+    bucket: ""
+    region: ""
+    # https unless a deployment writes http — the spelling a store inside a private
+    # network needs, and one nobody reaches by leaving a key empty.
+    scheme: "https"
+    # How the bucket is addressed: auto asks the store, dns and path say which way
+    # this network answers. Auto is right for the clouds and a coin flip for a
+    # MinIO on a LAN, which is why the key exists.
+    bucket_lookup: "auto"
+    # The static pair the object-store client speaks. It has no credential chain, so
+    # a cloud that expects the pod to know who it is still has to be given these two,
+    # and an empty pair is not half a credential: it is an anonymous store.
+    access_key: ""
+    secret_key: ""
+
+# The one setting that says which seams this deployment runs on: local (everywhere
+# the default, and what an empty profile means), self-hosted, aws, gcp or azure. A
+# profile writes the adapter each seam runs on — the object store, the shared cache,
+# the event transport — and names what the deployment still has to provide for it:
+# an address, a bucket, a sender. It writes no endpoint and no credential, infers
+# nothing from a hostname, and dials nothing: choosing a profile is not a network
+# call. Staging and production refuse a profile whose inputs nobody named; development
+# warns, because a laptop halfway through a setup is a laptop and not an outage.
+cloud:
+  profile: ""
+
+# Outbound webhooks: the HTTPS addresses a tenant registers so a machine of its own
+# hears what happened here, signed with Standard Webhooks' own headers.
+webhook:
+  # The key that wraps the signing secret of every endpoint at rest. It is 32 bytes,
+  # and the module refuses to be composed without one. This is the laptop's key, the
+  # same kind of default as the database passwords above: a deployment that runs
+  # anywhere but here replaces it with PLATFORMKIT_WEBHOOK_SECRET_KEY, and an
+  # installation that rotates it cannot open the secrets wrapped with the old one, so
+  # this is a value that outlives the file it was first written in.
+  secret_key: "0123456789abcdef0123456789abcdef"
+  # Loopback and private addresses to be dialled. Turn it on next to a receiver on
+  # this machine; leave it off anywhere a tenant could name an address on the
+  # deployment's own network. Neither setting opens the instance-metadata address.
+  allow_local_endpoints: false
+  # How long a finished attempt keeps the whole event it signed. Zero means the
+  # module's own 90 days.
+  retention_days: 0
 
 # What this composition declares about itself, read at the migrating boot and put
 # on that session for migrations/000042_tenant_app to place tenants with. The slug
@@ -268,6 +344,14 @@ app:
   # host can place. Every value goes through the slug's grammar, and the mapping
   # has to cover every tenant left over or the migration refuses the run.
   tenant_apps: {}
+  # The same placement as a file: one <tenant-slug>=<app-slug> line each, blank
+  # lines and # comments allowed. It exists for a mapping too long to read in a
+  # YAML blob, and is merged into the map above at load, the inline map winning a
+  # disagreement. A line that is not a pair, a tenant mapped twice to two apps or
+  # an app that is not a slug refuses the load; a slug naming a tenant that does
+  # not exist yet does not, because the mapping may be describing the tenant the
+  # operator is about to create.
+  # tenant_apps_file: /etc/platformkit/tenant-apps.txt
 
 # Feature flags, under `values:` because the block is a pointer to the map and an
 # installation with no flags writes no `flags:` section at all. One boolean per

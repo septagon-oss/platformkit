@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/operation"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 // Event is one thing that happened in one tenant.
@@ -26,6 +29,15 @@ type Event struct {
 	// envelope's `type`; the address it travels on is Subject of this name and
 	// TenantID, so the tenant is in the address and not only in the body.
 	Name string
+	// App is the slug of the app whose process published this, and the empty Name
+	// the deployment of one app. It is the envelope's `app` extension, and the
+	// address the message travels on is built from the same value — the reason both
+	// exist is that an address can only say what a publisher claimed, so a delivery
+	// that reads the address alone is holding a document that agrees with itself,
+	// which is exactly what a self-consistent forgery satisfies. AddressMismatch is
+	// where the two copies are compared; the publisher stamps this half, and refuses
+	// to publish an event that names another app from a process that is not it.
+	App appname.Name
 	// TenantID is the tenant the event happened in. The outbox's Consume opens
 	// a transaction in it; transports do not establish tenant isolation. The
 	// envelope requires it, where CloudEvents leaves an extension optional:
@@ -47,7 +59,6 @@ type Event struct {
 	// inherit. kit/trace owns the format; nothing here parses it.
 	TraceParent string
 	TraceState  string
-	// Baggage is the W3C correlation member of the same propagation set, and it
 	// is the request id the router wrote on the publisher's context. The trace
 	// members above say which span this event happened under; this says which
 	// request — the one string an operator can quote from a response header, a
@@ -72,6 +83,67 @@ type Event struct {
 	// without parsing a header. One write, two readers.
 	RequestID string
 	ClientIP  string
+
+	// Attribution says what caused this when the cause was not a session: a
+	// seed run applying a file, a job reconciling a record. ActorKind names the
+	// sort of cause, SourceFile and SourceLine cite the instruction, and
+	// Initiator names the person the run served — who is not the Actor, because
+	// nobody signed in to write this. kit/events.Attribution owns the meaning;
+	// this carries it. Empty is the normal case: a person's request, which the
+	// Actor already names.
+	ActorKind  string
+	SourceFile string
+	SourceLine int
+	Initiator  uuid.UUID
+	// Operation is the originating intent, independent of this delivery actor.
+	Operation operation.Identity
+}
+
+// Attribution is the cause of an event when the cause was not a session: which
+// kind of cause, which instruction it came from, and on whose behalf. kit/events
+// owns the rules (its kind constants and Valid); this is the carried form, and
+// kit/events aliases it, the way it aliases Event.
+type Attribution struct {
+	ActorKind  string
+	SourceFile string
+	SourceLine int
+	// InitiatorID is the person the run named — for a seed, the address
+	// `--as` resolved to. It is not the Actor: no session of theirs wrote this.
+	InitiatorID uuid.UUID
+}
+
+// MaxSourceFile bounds the citation. The outbox column repeats the ceiling: a
+// source is a path inside the publisher's own module, and a longer string is not
+// a path but a payload wearing one.
+const MaxSourceFile = 512
+
+// Actor kinds, spelled the way the outbox column stores them. kit/tenancy names
+// the two a request can be; a seed and a job are the two an application's own
+// background work adds.
+// migrations/000052_outbox_attribution.up.sql repeats the four as a CHECK.
+const (
+	ActorUser   = "user"
+	ActorSystem = "system"
+	ActorSeed   = "seed"
+	ActorJob    = "job"
+)
+
+// Valid reports whether this can be stored. The checks are the outbox table's
+// CHECK constraints, said here too so a publisher hears about it in Go, at the
+// call, rather than as a failed INSERT deep inside somebody else's write path.
+func (a Attribution) Valid() bool {
+	switch a.ActorKind {
+	case ActorUser, ActorSystem, ActorSeed, ActorJob:
+	default:
+		return false
+	}
+	// A source is a place, so it is cited in whole: a line with no file, or a
+	// file with no line, is a citation nothing could follow.
+	if (a.SourceFile == "") != (a.SourceLine == 0) || a.SourceLine < 0 ||
+		len(a.SourceFile) > MaxSourceFile {
+		return false
+	}
+	return true
 }
 
 // eventName is the grammar of an event name: the module's name, a dot, and a
@@ -98,6 +170,33 @@ type Transport interface {
 	// tenant, so a transport that skipped the check would open the handler's
 	// transaction in whatever tenant the message's body claimed.
 	Subscribe(ctx context.Context, durable, name string, sink Sink) error
+
+	// Observe watches one tenant's one event from now on. It claims nothing, retries
+	// nothing and answers nothing: fn runs at most once per publish, on a goroutine
+	// the transport owns, and a delivery that cannot be handed over is lost. The
+	// outbox stays the durable path; this is the notice that something happened, and
+	// a transport never waits for fn — it shares the transport's delivery path with
+	// every other observation of the same address.
+	//
+	// Delivery is limited to the exact address this transport would publish an event
+	// of that name and tenant at — AppSubject when the transport names an app,
+	// Subject when it does not — and no wildcard is used, which is what makes the
+	// tenant segment the boundary rather than a filter over the payload. Every
+	// delivery still runs the address check a subscription runs (AddressMismatch)
+	// before fn: the address the broker routed by decides whose tenant a delivery is
+	// in, and the document does not get to decide that alone.
+	//
+	// There is no history: an observation started after a publish cannot see it, and
+	// a notice that was dropped in flight is not owed. stop withdraws the
+	// observation; it is idempotent, safe to call concurrently and never blocks on a
+	// delivery, though a delivery already in flight may still begin. stop is the only
+	// withdrawal a caller may rely on: a provider may end an observation early once
+	// the context it was given is done, so a caller that shares one observation over
+	// several of its own callers passes a context of the shared life rather than of
+	// whichever one asked first, and ends the observation with stop. A non-nil error
+	// means nothing will ever be delivered — a broker that would not take the
+	// consumer, a context already cancelled.
+	Observe(ctx context.Context, tenantID uuid.UUID, name string, fn func(Event)) (stop func(), err error)
 }
 
 // Sink handles a delivery or records its terminal failure. Dead must return

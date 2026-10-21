@@ -25,6 +25,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // Chrome is what every page of one shell has in common.
@@ -108,8 +109,36 @@ type View struct {
 	// that kept the answer. Only the public face is cacheable to begin with, so this
 	// says nothing about a workspace document, which is never stored at all.
 	Revalidate bool
-	Head       []g.Node
-	Body       []g.Node
+	// Modules are scripts this one page loads as ES modules, as paths under the
+	// shell's asset prefix. A page with a rich text field names the editor; every
+	// other page carries no tag and no bytes. It is a field of the view and not of
+	// the chrome because the question is per page: the controllers a shell loads on
+	// every page answer a different question, and a page weight budget is only real
+	// if the answer is per page too.
+	Modules []string
+	// RunsWASM says this document instantiates WebAssembly, which the content
+	// security policy refuses by default: 'self' and a nonce speak about where a
+	// script came from, and a module built from bytes came from nowhere. The
+	// adapter declares it for this response only (httpx.AllowWASM), which adds
+	// 'wasm-unsafe-eval' to its script-src — an image editor or a trace view is
+	// such a page, and a page that said nothing is served today's policy.
+	// It says nothing about the markup: the body of a view that declares it and
+	// the body of one that does not are the same bytes.
+	RunsWASM bool
+	// Live names the events this page's body is a region for — the topics a
+	// connection is opened for, each one declared by the module that owns the
+	// rows the body lists. It is the page's claim about its own body and nothing
+	// else: the shell keeps no list, and a page that names none is drawn exactly
+	// as it was before the field existed.
+	//
+	// The name is the browser's, not a new fact: the same strings are the SSE
+	// event names the server sends and the names the module declared in its
+	// manifest. Nothing here reads a topic's payload — the frame is a hint to
+	// read again, so what the person sees is a fresh read of rows they may
+	// already read, never what the frame carried.
+	Live []string
+	Head []g.Node
+	Body []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
@@ -207,14 +236,53 @@ func RequestNoticeExamples(signIn string) []examples.Example {
 	return captures
 }
 
+// liveBefore and liveAfter are what a live region needs in the document besides
+// the extension tag: htmx, which the extension registers itself with the moment
+// it is evaluated, and the controller file whose live controller turns a frame
+// into one refresh. A page that declares Live asks the kernel to draw a region,
+// so the head gives the page what that region runs on rather than assuming the
+// chrome thought of it: the chrome that carries neither is a real one (a light
+// page with no controllers at all), and a document that loaded the extension
+// alone threw on load and never opened its connection.
+//
+// htmx goes ahead of a chrome's own controllers, because the list a chrome gives
+// runs in the order it is given and htmx-config.js configures a global that has
+// to exist first; components.js goes after them, because it is the file that
+// reads what the others configure. A file the chrome already lists is never
+// handed to it twice.
+var (
+	liveBefore = []string{"htmx.min.js"}
+	liveAfter  = []string{"components.js"}
+)
+
 // head is every page's head: the stylesheet with its fingerprint, the inline
 // snippets, the controllers as deferred scripts in order — deferred, so the
 // document parses before any of them runs and the order is still theirs — and
 // whatever the view adds.
 func head(c Chrome, r Request, v View) g.Node {
-	scripts := make([]g.Node, 0, len(c.Scripts))
-	for _, name := range c.Scripts {
+	listed := c.Scripts
+	if len(v.Live) > 0 {
+		listed = liveScripts(c.Scripts)
+	}
+	scripts := make([]g.Node, 0, len(listed))
+	for _, name := range listed {
 		scripts = append(scripts, h.Script(h.Src(c.Assets+"/js/"+name), g.Attr("defer")))
+	}
+	// A module is fetched with the document it belongs to and never deferred: it
+	// is the page's own enhancement, and the page it enhances is already parsed by
+	// the time a module at the end of the head runs.
+	modules := make([]g.Node, 0, len(v.Modules))
+	for _, path := range v.Modules {
+		modules = append(modules, h.Script(h.Src(c.Assets+"/"+path), g.Attr("type", "module")))
+	}
+	// A live region is bound by the pinned extension, and only a page that names
+	// a topic pays for it. It is a module script rather than a deferred classic
+	// one because module scripts and deferred scripts share the one in-order list
+	// that runs before DOMContentLoaded, which is when htmx reads the document —
+	// so the extension is defined before any element is read, with no coordination
+	// between the two files and no inline script the policy would have to forgive.
+	if len(v.Live) > 0 {
+		modules = append(modules, h.Script(h.Src(c.Assets+"/js/"+ui.SSEExtension), g.Attr("type", "module")))
 	}
 	return h.Head(
 		h.Meta(h.Charset("utf-8")),
@@ -224,8 +292,27 @@ func head(c Chrome, r Request, v View) g.Node {
 		h.Link(h.Rel("stylesheet"), h.Href(c.Assets+"/app.css?v="+c.Stylesheet.Fingerprint)),
 		g.If(v.Theme == "", g.Group(r.Inline)),
 		g.Group(scripts),
+		g.Group(modules),
 		g.Group(v.Head),
 	)
+}
+
+// liveScripts is the chrome's own controller list with whatever a live region
+// still runs on added around it, in the order the runtime needs.
+func liveScripts(listed []string) []string {
+	out := make([]string, 0, len(listed)+len(liveBefore)+len(liveAfter))
+	for _, name := range liveBefore {
+		if !slices.Contains(listed, name) {
+			out = append(out, name)
+		}
+	}
+	out = append(out, listed...)
+	for _, name := range liveAfter {
+		if !slices.Contains(listed, name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // Brand is what the page calls the installation: the tenant's name, or the
@@ -237,10 +324,9 @@ func Brand(c Chrome, r Request) string {
 	return c.Brand
 }
 
-// Bare is the frame with no navigation: a narrow column of cards.
+// Bare is the access-page frame: an inset, narrow main landmark without navigation.
 func Bare(body []g.Node) g.Node {
-	return components.Container(components.ContainerProps{MaxWidth: "sm"},
-		components.Stack(components.StackProps{Gap: "6"}, body...))
+	return components.Standalone(components.ComponentProps{}, body...)
 }
 
 // Fault is the page for a refusal a person can act on: the status text, the
@@ -252,9 +338,37 @@ func Fault(status int, title, detail, back, backLabel string) View {
 	}
 	return View{Title: title, Status: status, Language: "en", Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: title}),
-		components.Alert(components.AlertProps{Tone: "danger", Message: detail, Bordered: true}),
+		refusalLine(detail),
 		components.Link(components.LinkProps{Label: backLabel, Href: back}),
 	}}
+}
+
+// clRefusalMeasure bounds the sentence of a refusal page to the measure the rest of
+// the frame's prose keeps. The design floor divides a paragraph's box by half its
+// font size, and a refusal whose body is the one line a person came to read spans the
+// whole content column: 142 characters at 1440 px. The bound never centres: the
+// sentence keeps the left edge the title above it sits on.
+var clRefusalMeasure = style.New().MaxWScaled(style.MaxWProse)
+
+// refusalLine is the verdict's own sentence, in the frame's content column.
+//
+// The Alert component is right for a notice that arrives beside other content —
+// that is what its icon column, its padding and its live region are for — and wrong
+// for the page whose whole body is one refusal: the frame's border and padding and
+// the icon push the one line a person came to read some four centimetres off the
+// column every other line on the page sits on, which is a third alignment on a page
+// that speaks two. The announcement stays: this is the page a person is told the
+// refusal on, and it says so as an alert the way the component says it.
+func refusalLine(sentence string) g.Node {
+	return h.Div(h.Role("alert"), refusalSentence(sentence, "danger"))
+}
+
+// refusalSentence is one line of a refusal page in the frame's own paragraph, bounded
+// to the measure the floor reads.
+func refusalSentence(sentence, color string) g.Node {
+	p := components.TextProps{Content: sentence, Element: "p", Color: color}
+	p.Class = clRefusalMeasure.Compile()
+	return components.Text(p)
 }
 
 // RefusalProps is the one verdict that arrives with parts: a refusal of a
@@ -291,13 +405,13 @@ func Refusal(p RefusalProps) View {
 	}
 	body := []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: p.Title}),
-		components.Alert(components.AlertProps{Tone: "danger", Message: p.Sentence, Bordered: true}),
+		refusalLine(p.Sentence),
 	}
 	if p.Missing != "" {
-		body = append(body, components.Text(components.TextProps{Content: p.Missing, Element: "p"}))
+		body = append(body, refusalSentence(p.Missing, ""))
 	}
 	if p.Granter != "" {
-		body = append(body, components.Text(components.TextProps{Content: p.Granter, Element: "p", Color: "secondary"}))
+		body = append(body, refusalSentence(p.Granter, "secondary"))
 	}
 	if p.Ask != "" {
 		body = append(body, components.Form(components.FormProps{Action: p.Ask, Label: p.AskLabel},

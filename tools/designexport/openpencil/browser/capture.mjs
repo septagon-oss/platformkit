@@ -142,31 +142,43 @@ export async function captureExample(browser, snapshot, exampleId, {
           }),
         ])
       } finally { clearTimeout(decodingTimer) }
-      // What this wait is waiting on, in the refusal's own words.
+      // Inherited transitions can start only when descendant styles are read.
+      // Flush those styles and await actual completion, not a fixed frame count.
       //
-      // Two clocks run inside the bound below and the bound cannot tell them apart:
-      // reading every computed style is work the *runner* owes, and finishing an
-      // animation is a fact about the *source*. The line an unreadable refusal leaves
-      // is why this exists. Run 56095 job 56717 refused `pk-ui.component.detail-sheet/pending-pt-PT`
-      // with `Capture source animation settling timed out`, and the same step of the
-      // same workflow on another task's head (run 56095's predecessor, job 56693)
-      // refused `pk-ui.component.product-card/loading-en` with the same five words.
-      // Two examples, one file, two branches: the refusal named its own timeout and
-      // nothing else, so neither reader could tell a source that never settles from a
-      // runner that never painted a frame — and those demand opposite fixes.
+      // The bound sits on one wave — the animations the flush found — and on how many
+      // waves a page may start, not on the whole wait, because what one wave waits for
+      // is a frame the *runner* delivers. This capture asks for `reducedMotion: 'reduce'`,
+      // and the motion floor in the shared sheet collapses the only two looping animations
+      // it carries (`pk-spin 1s linear infinite`, `pk-pulse 2s ... infinite`) to
+      // `animation-duration: 0.01ms !important; animation-iteration-count: 1 !important`,
+      // so what the wait is actually waiting for is delivery. Measured here at this head on
+      // a host at load 19: pk-ui.component.product-card/loading-en — 14 nodes, three active
+      // animations, endTime 0 — settles in 18 ms, inside captures of 435-573 ms each, 20 of
+      // 20 clean. A stopwatch over the whole wait therefore measures the host's run queue
+      // and not the page: CI run 56073 (job 56693, step "Native browser observations") spent
+      // more than the whole of a 1000 ms window inside those 18 ms of work and reported the
+      // capture of a page with nothing running as a failure. Five seconds per wave is the
+      // same generous bound the image decode above already carries, and eight waves is more
+      // than any sheet here needs: eight waves that each wait their full five seconds would
+      // be eight sequential five-second animations, which this stylesheet does not declare.
+      // Nothing about what is refused changes — a paused or non-finite animation still refuses
+      // on sight, a wave whose frame never arrives still refuses, and so does a page that
+      // keeps starting new waves.
       //
-      // The account below is the answer to that question, and it reports the two
-      // facts that separate them. `startTime === null` with the document's own
-      // timeline still at its first frame is the host's: no animation frame was ever
-      // produced for this page, so nothing about the source has been observed yet.
-      // A `startTime` the timeline has moved past, with `currentTime` short of a
-      // finite `endTime`, is the source's: its own animation is still running. Probed
-      // on a page held so no frame can be produced, both read null and 0 while wall
-      // clock ran on, so the pair does distinguish them. Nothing here changes what is
-      // waited for or how long it is allowed: the same single second, the same two
-      // refusals, the same settled answer.
+      // Each of those three refusals also says which clock ran out, because the bound on one
+      // wave cannot tell them apart: reading every computed style is work the *runner* owes,
+      // and finishing an animation is a fact about the *source*. Job 56717 refused
+      // `pk-ui.component.detail-sheet/pending-pt-PT` with `Capture source animation settling
+      // timed out` and job 56693 refused `pk-ui.component.product-card/loading-en` with the
+      // same five words; neither reader could tell a source that never settles from a runner
+      // that never painted a frame, and those demand opposite fixes. `startTime === null` with
+      // the document's own timeline still at its first frame is the host's — no animation frame
+      // was ever produced for this page, so nothing about the source has been observed yet —
+      // and a `startTime` the timeline has moved past, with `currentTime` short of a finite
+      // `endTime`, is the source's. Probed on a page held so no frame can be produced, both
+      // read null and 0 while wall clock ran on, so the pair does distinguish them.
       const settleStart = performance.now()
-      const settleAccount = { flushMs: 0, waiting: [] }
+      const settleAccount = { flushMs: 0 }
       const describeAnimations = animations => animations.slice(0, 3).map(animation => {
         const target = animation.effect?.target
         const timing = animation.effect?.getComputedTiming()
@@ -174,38 +186,38 @@ export async function captureExample(browser, snapshot, exampleId, {
           `${target ? `${target.tagName.toLowerCase()}${typeof target.className === 'string' && target.className ? `.${target.className.split(/\s+/)[0]}` : ''}` : 'a detached effect'}` +
           ` (playState=${animation.playState} startTime=${animation.startTime} currentTime=${animation.currentTime} endTime=${timing?.endTime ?? 'unknown'})`
       }).join(', ') + (animations.length > 3 ? `, and ${animations.length - 3} more` : '')
-      let settlingTimer
-      try {
-        await Promise.race([
-          (async () => {
-            while (true) {
-              const flushStarted = performance.now()
-              for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
-              settleAccount.flushMs += performance.now() - flushStarted
-              // A closed disclosure can retain a running, display-locked
-              // animation whose timeline never advances. It cannot paint.
-              const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
-                animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
-              settleAccount.waiting = active
-              if (active.length === 0) return
-              if (active.some(animation => animation.playState === 'paused' ||
-                !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
-                throw new Error(`Capture requires finite, running source animations to settle: ${describeAnimations(active)}`)
-              }
-              // A cancelled transition can start a replacement; inspect again.
-              await Promise.all(active.map(animation => animation.finished.catch(() => {})))
-            }
-          })(),
-          new Promise((_, reject) => {
-            settlingTimer = setTimeout(() => reject(new Error(
-              `Capture source animation settling timed out on ${exampleId}: styles read across ` +
-              `${Math.round(settleAccount.flushMs)}ms of the ${Math.round(performance.now() - settleStart)}ms of wall clock elapsed, ` +
-              `the document's own timeline is at ${Math.round(document.timeline.currentTime)}ms, ` +
-              `${settleAccount.waiting.length} animation(s) still running — ${describeAnimations(settleAccount.waiting)}`)),
-              1000)
-          }),
-        ])
-      } finally { clearTimeout(settlingTimer) }
+      const settleWave = async (running, wave) => {
+        let waveTimer
+        try {
+          await Promise.race([
+            Promise.all(running.map(animation => animation.finished.catch(() => {}))),
+            new Promise((_, reject) => {
+              waveTimer = setTimeout(() => reject(new Error(
+                `Capture source animation settling timed out on ${exampleId} in wave ${wave}: styles read across ` +
+                `${Math.round(settleAccount.flushMs)}ms of the ${Math.round(performance.now() - settleStart)}ms of wall clock elapsed, ` +
+                `the document's own timeline is at ${Math.round(document.timeline.currentTime)}ms, ` +
+                `${running.length} animation(s) still running — ${describeAnimations(running)}`)), 5000)
+            }),
+          ])
+        } finally { clearTimeout(waveTimer) }
+      }
+      for (let wave = 0; ; wave++) {
+        const flushStarted = performance.now()
+        for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
+        settleAccount.flushMs += performance.now() - flushStarted
+        // A closed disclosure can retain a running, display-locked
+        // animation whose timeline never advances. It cannot paint.
+        const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
+          animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
+        if (active.length === 0) break
+        if (active.some(animation => animation.playState === 'paused' ||
+          !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
+          throw new Error(`Capture requires finite, running source animations to settle: ${describeAnimations(active)}`)
+        }
+        if (wave === 8) throw new Error(`Capture source animations never stopped starting new waves: ${describeAnimations(active)}`)
+        // A cancelled transition can start a replacement; inspect again.
+        await settleWave(active, wave)
+      }
       for (const image of absentImages) {
         let suppressed = false
         for (let ancestor = image; ancestor; ancestor = ancestor.parentElement) {

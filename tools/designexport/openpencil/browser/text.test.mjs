@@ -101,16 +101,10 @@ test('gallery construction coverage is explicit under the supplied-font comparis
   // text, which is what this loop and the adapter's own gates verify. No built fill,
   // stroke or radius is compared with the browser's computed style here; only
   // browser/media.test.mjs makes that claim today, for Media's two error states.
-  // Remeasured across the complete shared-component catalog. The dismissible
-  // Alert now contains a dormant, uncaptured close-control boundary; its exact
-  // refusal is pinned below rather than flattening that source-owned content.
-  //
-  // 812 and 767 are this tree's run of this file, not arithmetic: the merge onto
-  // main adds Prose, whose own example the design tool refuses to construct for
-  // the named reason below, so the catalog gains one example and one refusal. The
-  // accepted list and the two capture refusals are unchanged, verified against the
-  // same run's diagnostic rather than carried over.
-  assert.equal(snapshot.examples.length, 812)
+  // The complete catalog measures 815 examples: 44 accepted, 769 refused at
+  // construction and two refused captures. Standalone and Disclosure retain opaque
+  // source composition; their exact refusals are pinned beside Alert's boundary.
+  assert.equal(snapshot.examples.length, 815)
   assert.deepEqual(accepted, [
     'pk-ui.component.alert/bordered', 'pk-ui.component.alert/compact', 'pk-ui.component.alert/danger',
     'pk-ui.component.alert/info', 'pk-ui.component.alert/success',
@@ -119,7 +113,8 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.button/disabled-link', 'pk-ui.component.button/ghost', 'pk-ui.component.button/info',
     'pk-ui.component.button/link', 'pk-ui.component.button/primary', 'pk-ui.component.button/secondary',
     'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
-    'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.grid/default',
+    'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form-sentence/default',
+    'pk-ui.component.form/default', 'pk-ui.component.grid/default',
     'pk-ui.component.input/bare', 'pk-ui.component.input/invalid', 'pk-ui.component.input/read-only',
     'pk-ui.component.media/failed', 'pk-ui.component.media/refused',
     'pk-ui.component.notice/offline-en', 'pk-ui.component.notice/offline-pt-PT',
@@ -130,14 +125,16 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.select/invalid', 'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 767)
+  assert.equal(refused.length, 769)
   const namedRefusals = {
     'pk-ui.component.alert/dismissible': 'Native component: composition cannot flatten an uncaptured component boundary',
+    'pk-ui.component.disclosure/default': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.grid/responsive': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.heading/display': 'Native component: composition text requires one supplied actual face',
     'pk-ui.component.hero/default': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.section-header/default': 'Native component: inline composition cannot flatten a source component or non-inline child',
     'pk-ui.component.section/default': 'Native component: typed, nonopaque source composition required',
+    'pk-ui.component.standalone/default': 'Native component: typed, nonopaque source composition required',
     // Media's two error panels are the only Media state that constructs today, so the
     // states beside them are named here: a picture needing an aspect ratio, a waiting
     // picture with no bytes, and a refusal that delegates to the shelf.

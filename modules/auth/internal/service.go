@@ -37,6 +37,20 @@ type Delivery struct {
 	Mailer contracts.Mailer
 	Hosts  contracts.Hosts
 	Secure bool
+
+	// Mails is what this module records about a mail it sends itself, with no
+	// notice behind it: one row per send, saying who it went to, which kind it was,
+	// what became of it and which call asked — and no subject, body, link or
+	// credential. A composition that wires none sends its mail exactly as it did
+	// before the record existed and leaves no trace of the attempt, which is the bug
+	// the record exists to close rather than a mode to preserve.
+	Mails contracts.MailLedger
+
+	// SetPasswordPage and ConfirmEmailPage are the paths the invitation or reset
+	// link and the sign-up confirmation link open on the tenant's host. Empty is
+	// ResetPath and VerifyEmailPath, the workspace screens.
+	SetPasswordPage  string
+	ConfirmEmailPage string
 }
 
 // Service is signing in and what a role may do.
@@ -76,6 +90,12 @@ func (s *Service) declared() []tenancy.Grant {
 
 // NewService returns the auth service. module.go constructs it.
 func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery) *Service {
+	if mail.SetPasswordPage == "" {
+		mail.SetPasswordPage = ResetPath
+	}
+	if mail.ConfirmEmailPage == "" {
+		mail.ConfirmEmailPage = VerifyEmailPath
+	}
 	// The counters every replica shares. httpx.ConnFrom is where they find the
 	// pool: this module is constructed before kit/app opens one, and every
 	// caller below is inside a request that carries it.
@@ -86,17 +106,32 @@ func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery)
 // Precheck is the limiter's verdict, read from the shared counters. See
 // contracts.Service.
 func (s *Service) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
-	return s.limiter.Check(ctx, email, ip)
+	// The verdict alone, and the numbers with it dropped: Precheck decides whether to
+	// pause, and the answer that goes on the wire is decided by Login, which asks its
+	// own question of the same counter. Two readings stating themselves on one answer
+	// would be two rate lines for one attempt.
+	verdict, _ := s.limiter.Check(ctx, email, ip)
+	return verdict
 }
 
 // MayAsk counts one forgotten-password request from an address. See
 // contracts.Service.
-func (s *Service) MayAsk(ctx context.Context, ip string) bool { return s.limiter.Requested(ctx, ip) }
+func (s *Service) MayAsk(ctx context.Context, ip string) contracts.Decision {
+	return s.limiter.Requested(ctx, ip)
+}
 
 // MayRedeem counts one reset-token redemption from an address. See
 // contracts.Service.
-func (s *Service) MayRedeem(ctx context.Context, ip string) bool {
+func (s *Service) MayRedeem(ctx context.Context, ip string) contracts.Decision {
 	return s.limiter.Redeemed(ctx, ip)
+}
+
+// MayAskAboutMail counts one read of a delivery record from an address. It is
+// not MayRedeem: the shell polls this read while a person waits for a link, and
+// spending the link's own budget on waiting would lock the person out of the
+// thing they are waiting for.
+func (s *Service) MayAskAboutMail(ctx context.Context, ip string) bool {
+	return s.limiter.AskedAboutMail(ctx, ip)
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -113,7 +148,9 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 	// Precheck — a two-second sleep here holds one of sixteen pool connections,
 	// and twenty-four of them at once took a replica to twenty-nine seconds of
 	// latency for every other request. See contracts.Service.Precheck.
-	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, counted := s.limiter.Check(ctx, email, from.IP)
+	sayLockout(ctx, counted, verdict == contracts.Refuse)
+	if verdict == contracts.Refuse {
 		// Once per account per address per window. The refusal happens before
 		// anything is checked, so a script against a locked account produces
 		// one of these a millisecond; the first says the account is under
@@ -282,6 +319,19 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 
 // detachedWriteBudget bounds auth writes that must survive a refused request.
 // A busy or unreachable database must not keep that request open indefinitely.
+//
+// Two seconds, and the number is a tested contract rather than a guess:
+// TestDetachedAuthWritesBoundPoolWait exhausts a one-connection pool and fails
+// a detached write that still has not given up after three, because holding the
+// pool is how every other request on this process dies. Round 15 raised this to
+// 10s to stop a loaded box being read as somebody's broken passkey (see
+// e2e/passkey-second-tenant.spec.ts, refused by `make e2e` on 2026-10-08: a
+// ceremony 358ms old answered 401 after 2244.95ms, which is this budget with a
+// pool wait inside it) and `make check` answered with that test in three places.
+// It came back down, and the lesson is the shape of the problem: giving up is
+// the designed answer, so the cure is a sign-in that does not need a second
+// connection to answer a passkey, or a connection reserved for the writes that
+// must outlive a refusal — not a longer wait. Both are named in IMPLEMENT.md.
 const detachedWriteBudget = 2 * time.Second
 
 // forget deletes one expired session, in a transaction of its own.
@@ -425,8 +475,19 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if proofs.Error != nil {
 		return 0, fmt.Errorf("auth: purge the spent first-factor proofs: %w", proofs.Error)
 	}
+	// A passkey prompt nobody answered is a nonce with a two-minute expiry and a
+	// stranger's request behind it: the begin legs are public, they each write one
+	// row, and the answer that would have deleted it may never arrive. The window is
+	// short enough that a tenant's live count is the number of people mid-ceremony,
+	// so this is the ordinary case rather than a sweep of anybody's history.
+	ceremonies := tx.DB().Exec(
+		"DELETE FROM passkey_challenges WHERE id IN ("+
+			"SELECT id FROM passkey_challenges WHERE expires_at <= now() LIMIT ?)", purgeBatch)
+	if ceremonies.Error != nil {
+		return 0, fmt.Errorf("auth: purge the unanswered passkey prompts: %w", ceremonies.Error)
+	}
 	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
-		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected, nil
+		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected + ceremonies.RowsAffected, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason
@@ -507,7 +568,8 @@ func (s *Service) identify(ctx context.Context, tx db.Tx[db.Tenant], user *userc
 // fail records one failure and returns the one answer a failed login gets.
 func (s *Service) fail(ctx context.Context, email string, from contracts.Client) error {
 	s.limiter.Failed(ctx, email, from.IP)
-	s.recordFailure(ctx, email, from, s.limiter.Check(ctx, email, from.IP) == contracts.Refuse)
+	verdict, _ := s.limiter.Check(ctx, email, from.IP)
+	s.recordFailure(ctx, email, from, verdict == contracts.Refuse)
 	return contracts.ErrCredentials
 }
 
