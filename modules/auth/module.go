@@ -36,6 +36,22 @@ func OIDCFromConfig(c config.OIDC) OIDC {
 		RedirectPath: c.RedirectPath}
 }
 
+// accountRequestsFromConfig converts the application's own account-request block
+// into this module's budget, the way OIDCFromConfig does: an omitted key is the
+// zero field, which is the module's default, and a present value is the value.
+// Presence is the loader's to judge — config.Load has refused a present zero —
+// so a Config built in Go that skips Load reads an explicit zero as the default.
+func accountRequestsFromConfig(c config.AccountRequests) contracts.AccountRequestBudget {
+	var b contracts.AccountRequestBudget
+	if c.Quota != nil {
+		b.Quota = *c.Quota
+	}
+	if c.Window != nil {
+		b.Window = *c.Window
+	}
+	return b
+}
+
 // EnvironmentSecrets is the Secrets this installation ships with: a reference is
 // an environment variable's name, which is the only secret store this repository
 // has (kit/config reads secrets from the environment and nowhere else). It is a
@@ -144,6 +160,13 @@ type Deps struct {
 	// no key signs people in exactly as it did before the table existed.
 	FactorKey string
 
+	// AccountRequests is how many account requests — a sign-up, a verification
+	// resend, a forgotten-password link — one address may make in a window. The
+	// zero value is the module's own ten per fifteen minutes, which is what every
+	// composition had before the field existed; New refuses a budget the counter
+	// cannot keep. See contracts.AccountRequestBudget.
+	AccountRequests contracts.AccountRequestBudget
+
 	// Secrets resolves the reference a tenant's row holds into the client secret
 	// it names. The reference is what is in the database, the outbox and the
 	// audit trail; the secret is in the environment and in no row. A composition
@@ -250,10 +273,14 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	if err := deps.LinkPages.check(); err != nil {
 		panic(err)
 	}
+	if err := deps.AccountRequests.Check(); err != nil {
+		panic(fmt.Errorf("auth: Deps.AccountRequests: %w", err))
+	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
 		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
+		AccountRequests: deps.AccountRequests,
 	})
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
