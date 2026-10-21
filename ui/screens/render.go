@@ -132,7 +132,8 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 			label = c.Summary
 		}
 		out = append(out, resource.Command{
-			Verb: c.Verb, Label: label, Description: c.Description,
+			Bindings: c.Bindings,
+			Verb:     c.Verb, Label: label, Description: c.Description,
 			Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,
 		})
 	}

@@ -28,17 +28,17 @@
         {
           "name": "--pk-color-text-muted",
           "type": "color",
-          "value": "#5f6b65"
+          "value": "#586461"
         },
         {
           "name": "--pk-color-border-default",
           "type": "color",
-          "value": "#cbc5b8"
+          "value": "#7a7773"
         },
         {
           "name": "--pk-color-border-strong",
           "type": "color",
-          "value": "#8f988f"
+          "value": "#636763"
         },
         {
           "name": "--pk-color-accent-default",
@@ -179,12 +179,12 @@
         {
           "name": "--pk-color-border-default",
           "type": "color",
-          "value": "#2c3b37"
+          "value": "#6b807a"
         },
         {
           "name": "--pk-color-border-strong",
           "type": "color",
-          "value": "#5c6d67"
+          "value": "#81928c"
         },
         {
           "name": "--pk-color-accent-default",
