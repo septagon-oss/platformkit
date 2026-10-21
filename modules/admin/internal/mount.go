@@ -402,7 +402,15 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery, maySetLanguages, deps.Resources...)
 		line := ""
 		if r.SignedIn {
+			// A name is a fact about a row and arrives from the account port. The
+			// absence of one is a sentence about the session, and a sentence is asked
+			// of the catalogue in the language this page is written in rather than
+			// written here: an English fallback would greet a Portuguese reader in
+			// English whenever the account holds no name and no address.
 			line = caller(ctx, deps.People, r.Principal.UserID)
+			if line == "" {
+				line = chrome(r, "workspace.signed_in", "Signed in")
+			}
 		}
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{

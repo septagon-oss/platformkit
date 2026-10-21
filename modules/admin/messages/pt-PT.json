@@ -1373,9 +1373,9 @@
     "references": [
       "modules/admin/internal/mount.go"
     ],
-    "translation": "Sessão iniciada · %s",
+    "translation": "Sessão iniciada",
     "plural": {
-      "": "Sessão iniciada · %s"
+      "": "Sessão iniciada"
     }
   },
   "admin.workspace.no_roles": {

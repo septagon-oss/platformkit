@@ -1355,9 +1355,9 @@
     "references": [
       "modules/admin/internal/mount.go"
     ],
-    "translation": "Signed in · %s",
+    "translation": "Signed in",
     "plural": {
-      "": "Signed in · %s"
+      "": "Signed in"
     }
   },
   "admin.workspace.no_roles": {

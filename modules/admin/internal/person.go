@@ -41,16 +41,21 @@ type People interface {
 }
 
 // caller is who the header names: the display name this person chose, or the
-// address they sign in with, or — when neither is known — the plain fact that
-// somebody is signed in.
+// address they sign in with, or — when neither is known — nothing at all, which is
+// the frame's cue to say the plain fact that somebody is signed in in the language
+// the page is written in.
 //
 // Never an id fragment. "8258e4cc · admin" is what a machine knows this account by,
 // printed where a greeting should be, and the id is of no use to the person reading
 // the page. Every failure path — no port composed, no transaction on the request,
-// the row gone, the read refused — answers "Signed in", because a header cannot fail
-// a page and a fact about the session is the only thing still known. That is also
-// why the roles left this line: the fallback would otherwise read "admin", a role
-// standing where a person's name should be.
+// the row gone, the read refused — answers the empty string, because a header cannot
+// fail a page and a fact about the session is the only thing still known. That is
+// also why the roles left this line: the fallback would otherwise read "admin", a
+// role standing where a person's name should be.
+//
+// The fallback is a sentence rather than a name, so it belongs to whoever renders
+// the frame and can ask a catalogue: this package has no request and no language,
+// and English written here would greet a Portuguese reader in English.
 //
 // The read costs one SELECT per signed-in page render, which is the shape the
 // dashboard's counts and the roles and sessions screens already accept. There is no
@@ -58,24 +63,21 @@ type People interface {
 // too expensive, the answer is the fallback path this function already has.
 func caller(ctx context.Context, people People, userID uuid.UUID) string {
 	if people == nil || userID == uuid.Nil {
-		return "Signed in"
+		return ""
 	}
 	person, err := people.Person(ctx, userID)
 	if err != nil {
-		return "Signed in"
+		return ""
 	}
 	return named(person)
 }
 
-// named is the formatting rule, in one place: name, else address, else the fact
-// that a person is here at all. An empty Person is what a read of a row that is
-// gone answers, so the empty case is a real one rather than a defensive branch.
+// named is the formatting rule, in one place: name, else address, else nothing for
+// the frame to name. An empty Person is what a read of a row that is gone answers,
+// so the empty case is a real one rather than a defensive branch.
 func named(person Person) string {
 	if line := strings.TrimSpace(person.DisplayName); line != "" {
 		return line
 	}
-	if line := strings.TrimSpace(person.Email); line != "" {
-		return line
-	}
-	return "Signed in"
+	return strings.TrimSpace(person.Email)
 }
