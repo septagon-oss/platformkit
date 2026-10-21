@@ -242,9 +242,11 @@ What this module does not do, stated here rather than only in the branch that le
   from a screen and an administrator cannot set a tenant's sender from anywhere but Go. The
   same is true of the grant: nothing in this repository implements `contracts.GrantChecker`,
   whose implementation is a few lines over the auth module's `Permissions`.
-- **No templates per event per locale, and no HTML alternative.** `internal/templates` holds
-  one text template, `contracts.Message.HTML` and `Lang` are read by the carrier and written
-  by nobody, and `internal/mail.go` sets `Lang: "en"`; locale is the product's copy table.
+- **No templates per event per locale.** `internal/templates` holds one notice in two parts:
+  the plain text and its HTML alternative, which carries the same words and the link as an
+  anchor on the tenant's host. `internal/mail.go` sets `Lang: "en"`; locale is the product's
+  copy table. The other channels' carriers are handed the text alone: `contracts.Delivery.HTML`
+  is written by nobody, because no provider in this repository shows HTML.
 - **Mail and push are the carriers that reach a device.** The module can host a carrier
   for any channel — `internal.Carrier` asks it and closes the ledger row around the answer —
   and `contracts.Provider` is the shape. `Deps.Push` is how a `kit/push` adapter becomes two

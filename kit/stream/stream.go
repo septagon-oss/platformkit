@@ -490,7 +490,7 @@ func (h *Hub) admit(ctx context.Context, req Request, topics []Topic) error {
 			Detail: CodeUnavailable + ": this application cannot check what this caller may watch right now"}
 	}
 	if !renewal.SignedIn {
-		return &Refusal{Status: http.StatusForbidden,
+		return &Refusal{Status: http.StatusUnauthorized,
 			Detail: httpx.CodeAnonymous + ": no session answers for this caller"}
 	}
 	for _, t := range topics {
