@@ -35,8 +35,12 @@ type Config struct {
 	Log      Log      `yaml:"log"`
 	Auth     Auth     `yaml:"auth"`
 	Mail     Mail     `yaml:"mail"`
-	Audit    Audit    `yaml:"audit"`
-	Files    Files    `yaml:"files"`
+	// Secrets names where kit/secrets reads from. Its zero value is the process's
+	// own environment, which is the one store every deployment has, so a
+	// composition is never refused for a secret store it did not name.
+	Secrets Secrets `yaml:"secrets"`
+	Audit   Audit   `yaml:"audit"`
+	Files   Files   `yaml:"files"`
 	// Cloud is the one setting that says which seams this deployment runs on —
 	// which object store, which shared cache, which event transport, where the
 	// spans go. It names the adapters and no address: see Cloud.
@@ -372,6 +376,65 @@ func (n NATS) Validate() error {
 	return nil
 }
 
+// Secrets names the store kit/secrets reads: the environment, a mounted directory,
+// or an OpenBao. See kit/secrets/README.md for what each one answers and what it
+// cannot.
+type Secrets struct {
+	// Adapter is env, file or openbao. Empty is env: the process's own environment
+	// is the one secret store every deployment has, and it opens nothing.
+	Adapter string `yaml:"adapter"`
+	// Dir is the mounted directory secrets.adapter file reads — a Kubernetes
+	// Secret volume, a Docker secret, a Vault-agent template's output.
+	Dir string `yaml:"dir"`
+	// URL is the secret service secrets.adapter openbao speaks to, and Token is
+	// its credential. The token is the one secret that cannot arrive through the
+	// port, because the port needs it to read the port: that bootstrap fact is why
+	// it is a plain environment override and not a name in the store.
+	URL   string `yaml:"url"`
+	Token string `yaml:"token"`
+	// KVMount and TransitMount are the two mounts openbao reads: KV v2 for the
+	// bytes and transit for the envelope. They default to secret and transit.
+	KVMount      string `yaml:"kv_mount"`
+	TransitMount string `yaml:"transit_mount"`
+}
+
+// Validate checks the secret store without opening it, in Cache.Validate's shape:
+// one sentence per refusal, and an adapter's fields belong to that adapter alone.
+//
+// An address is refused rather than probed, for the reason the file adapter gives:
+// the store is not dialed at boot, so a name that cannot be a URL is the only
+// mistake this line can catch, and a deployment whose secret service is down finds
+// out from the first command that needed a credential.
+func (s Secrets) Validate() error {
+	switch s.Adapter {
+	case "", "env", "file", "openbao":
+	default:
+		return errors.New("secrets.adapter must be env, file, openbao or empty for the process's own environment")
+	}
+	if s.Adapter != "file" && s.Dir != "" {
+		return errors.New("secrets.dir belongs to secrets.adapter file")
+	}
+	if s.Adapter != "openbao" && (s.URL != "" || s.Token != "" || s.KVMount != "" || s.TransitMount != "") {
+		return errors.New("secrets.url, secrets.token, secrets.kv_mount and secrets.transit_mount belong to secrets.adapter openbao")
+	}
+	if s.Adapter != "openbao" {
+		return nil
+	}
+	bad := errors.New("secrets.url must be an http or https address without credentials, paths or queries")
+	u, err := url.Parse(s.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return bad
+	}
+	if u.User != nil {
+		return errors.New("secrets.url cannot contain credentials; use secrets.token and PLATFORMKIT_SECRETS_TOKEN instead")
+	}
+	if s.Token == "" {
+		return errors.New("secrets.token is required with secrets.adapter openbao: the port cannot read the token that opens the port")
+	}
+	return nil
+}
+
 // Cache names where a value every replica must read is kept. Empty Adapter is the
 // in-process store: complete for one process, and it says so in one boot log line,
 // because forgetting a value there reaches only that process.
@@ -475,14 +538,20 @@ func (o OIDC) Enabled() bool { return o.Issuer != "" }
 // and then main wires the in-memory mailbox and says so at boot — a deployment
 // without mail still records every notification and simply sends none.
 //
-// Username and Password are optional, because a relay on a private network
-// authenticates by being unreachable from anywhere else. From is not: a message
-// with no sender is refused by the far end, hours later, in somebody else's log.
+// Username is optional, because a relay on a private network authenticates by
+// being unreachable from anywhere else. From is not: a message with no sender is
+// refused by the far end, hours later, in somebody else's log.
+//
+// There is no password field, and there was one until this line was written. A
+// credential is a secret, and a secret has a door of its own now (kit/secrets), so
+// a second field on this struct would be a second door on the same environment
+// variable with one of them dead: the carrier reads PLATFORMKIT_MAIL_PASSWORD
+// through the port at the moment it dials, which is also when it learns the
+// password changed.
 type Mail struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	Username string `yaml:"username"`
-	Password string `yaml:"password"`
 	From     string `yaml:"from"`
 }
 
@@ -656,6 +725,17 @@ var keys = []key{
 	// A secret, so it earns an override for the reason rule 7 gives and earns no
 	// place in config.example.yaml with a value in it.
 	{"cache.password", "PLATFORMKIT_CACHE_PASSWORD", func(c *Config) *string { return &c.Cache.Password }, false},
+	// The secret store's own bootstrap credential, and the one secret in this table
+	// that cannot arrive through kit/secrets: the port needs the token to read the
+	// token. The adapter and the two mount names are not secrets and are settable
+	// here for the same reason any deployment fact is — a fleet sets them per
+	// deployment — while the directory is a path and belongs in the file.
+	{"secrets.adapter", "PLATFORMKIT_SECRETS_ADAPTER", func(c *Config) *string { return &c.Secrets.Adapter }, false},
+	{"secrets.dir", "PLATFORMKIT_SECRETS_DIR", func(c *Config) *string { return &c.Secrets.Dir }, false},
+	{"secrets.url", "PLATFORMKIT_SECRETS_URL", func(c *Config) *string { return &c.Secrets.URL }, false},
+	{"secrets.token", "PLATFORMKIT_SECRETS_TOKEN", func(c *Config) *string { return &c.Secrets.Token }, false},
+	{"secrets.kv_mount", "PLATFORMKIT_SECRETS_KV_MOUNT", func(c *Config) *string { return &c.Secrets.KVMount }, false},
+	{"secrets.transit_mount", "PLATFORMKIT_SECRETS_TRANSIT_MOUNT", func(c *Config) *string { return &c.Secrets.TransitMount }, false},
 	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
 	// The one secret in the surface with an override for a reason rather than
 	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
@@ -665,7 +745,6 @@ var keys = []key{
 	// The factor key, for the same reason as the other three: it seals a
 	// credential, and config.yaml is a file somebody will commit.
 	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
-	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
 	// The fifth: the key that wraps every webhook signing secret. A deployment
 	// that loses it cannot sign again with a secret it never read back, so this one
 	// is written down by whoever can also restore it.
@@ -860,6 +939,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if err := c.NATS.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := c.Secrets.Validate(); err != nil {
+		return Config{}, err
+	}
 	if err := c.Cache.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -977,7 +1059,7 @@ const defaultSMTPPort = 587
 // cannot send, which is worse than no mailer.
 func (m *Mail) validate(path string) error {
 	if !m.Enabled() {
-		if m.Username != "" || m.Password != "" || m.From != "" {
+		if m.Username != "" || m.From != "" {
 			return fmt.Errorf("config %s: mail has credentials or a sender and no host", path)
 		}
 		return nil
@@ -999,9 +1081,6 @@ func (m *Mail) validate(path string) error {
 	}
 	if m.Port < 1 || m.Port > 65535 {
 		return fmt.Errorf("config %s: mail.port is %d, which is not a port", path, m.Port)
-	}
-	if m.Password != "" && m.Username == "" {
-		return fmt.Errorf("config %s: mail.password is set and mail.username is empty", path)
 	}
 	return nil
 }
