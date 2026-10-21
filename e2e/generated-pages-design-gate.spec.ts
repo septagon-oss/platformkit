@@ -7,6 +7,8 @@ import { expect, test, type Page } from '@playwright/test';
 // behind the administrator's cookie, written to disk with a <base> that points its sheet back at
 // the live server, measured by the gate's own probe, and judged by the gate's own rules
 // (`design_gate.py --rules`). Nothing here re-implements a rule; the counts printed are the gate's.
+// The anonymous pages are judged by URL, as the gate judges any public page: a dump on disk cannot
+// fetch its sheet, so only the live probe judges the sheet the framed pages share with sign-in.
 //
 // Opt-in: it needs the gate's files on this host, so it runs only when DESIGN_GATE_DIR names them.
 
@@ -25,24 +27,40 @@ async function signIn(page: Page) {
   await expect(page).toHaveURL(/\/app$/);
 }
 
-function judge(name: string, html: string, origin: string): { refusals: string[]; text: string } {
+type Verdict = { refusals: string[]; text: string };
+
+// Chromium refuses a singleton socket under a long TMPDIR, so the probe gets a short one.
+const shortTmp = { ...process.env, TMPDIR: '/tmp' };
+
+function judge(name: string, html: string, origin: string): Verdict {
   mkdirSync(out, { recursive: true });
   const file = join(out, `${name}.html`);
   writeFileSync(file, html.replace(/<head([^>]*)>/i, `<head$1><base href="${origin}/">`));
-  // Chromium refuses a singleton socket under a long TMPDIR, so the probe gets a short one.
   const probe = execFileSync('node', [join(gate, 'design_probe.mjs'), `file://${file}`, '390', '1440'],
-    { encoding: 'utf8', timeout: 120_000, env: { ...process.env, TMPDIR: '/tmp' } });
+    { encoding: 'utf8', timeout: 120_000, env: shortTmp });
   const lines = join(out, `${name}.jsonl`);
   writeFileSync(lines, probe);
+  return verdict(name, ['--rules', lines]);
+}
+
+/** The gate's report for one page; a refusal is a line the gate starts with " - ". */
+function verdict(name: string, args: string[]): Verdict {
   let text = '';
   try {
-    text = execFileSync('python3', [join(gate, 'design_gate.py'), '--rules', lines, '--report'], { encoding: 'utf8' });
+    text = execFileSync('python3', [join(gate, 'design_gate.py'), ...args, '--report'],
+      { encoding: 'utf8', timeout: 300_000, env: shortTmp });
   } catch (e: any) {
     text = String(e.stdout ?? '');
   }
   const refusals = text.split('\n').filter((l) => l.startsWith(' - '));
   console.log(`== ${name}: ${refusals.length} refusal(s)\n${text}`);
   return { refusals, text };
+}
+
+/** Holds one page to the gate: no refusal, and a report that measured both widths and said ok. */
+function expectPasses(name: string, v: Verdict) {
+  expect(v.refusals, `${name} fails the design gate:\n${v.text}`).toEqual([]);
+  expect(v.text, `the gate did not judge ${name} at both widths:\n${v.text}`).toContain('design gate: ok (2 width(s))');
 }
 
 test('the generated pages the frame draws, judged by the loop design gate itself', async ({ browser, baseURL }) => {
@@ -63,24 +81,31 @@ test('the generated pages the frame draws, judged by the loop design gate itself
   const someone = await page.locator('table a[href^="/app/user/users/"]').first().getAttribute('href');
   expect(someone, 'the user list links to no record').toBeTruthy();
 
+  // A page past the last is the list's empty state, whatever rows other specs wrote.
   const pages: Array<[string, string]> = [
     ['tasks-list', '/app/task/tasks'],
     ['task-record-unbreakable', record],
+    ['task-form', '/app/task/tasks/new'],
+    ['tasks-empty', '/app/task/tasks?page=9999'],
     ['users-list', '/app/user/users'],
     ['user-record', someone as string],
   ];
   const origin = baseURL ?? 'http://localhost:8099';
-  const tally: Record<string, number> = {};
+  const verdicts: Record<string, Verdict> = {};
   for (const [name, path] of pages) {
     await page.goto(path);
-    tally[name] = judge(name, await page.content(), origin).refusals.length;
+    verdicts[name] = judge(name, await page.content(), origin);
   }
-  // Anonymous pages the shared Heading reaches.
+  // Anonymous pages the shared Heading reaches, probed live so their sheets are read and judged.
   const anonymous = await (await browser.newContext()).newPage();
   for (const [name, path] of [['sign-in', '/app/admin/login'], ['public-home', '/']] as const) {
     const res = await anonymous.goto(path);
-    if (res && res.ok()) tally[name] = judge(name, await anonymous.content(), origin).refusals.length;
+    expect(res?.ok(), `${path} answered ${res?.status()}`).toBe(true);
+    verdicts[name] = verdict(name, [`${origin}${path}`, '--widths', '390,1440']);
+    expect(verdicts[name].text, `the gate could not read a sheet ${path} serves:\n${verdicts[name].text}`).not.toContain('could not read');
   }
+  const tally = Object.fromEntries(Object.entries(verdicts).map(([name, v]) => [name, v.refusals.length]));
   console.log(`DESIGN GATE TALLY ${JSON.stringify(tally)}`);
   expect(Object.keys(tally).length, 'the gate measured no page').toBeGreaterThanOrEqual(4);
+  for (const [name, v] of Object.entries(verdicts)) expectPasses(name, v);
 });
