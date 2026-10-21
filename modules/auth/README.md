@@ -228,7 +228,7 @@ the largest limit the counter's integer can refuse past once `Reserve` stops it
 at its maximum, so each ceiling is stated once. **Made reusable:**
 `limit.MaxWindow` and `limit.MaxQuota`, for the next configured budget that must
 stay inside what the counter keeps, and `NewBudgetedLimiter`, which takes the
-budget the fake or a second composition names. Inside the package, `reserve`
+budget a second composition names. Inside the package, `reserve`
 takes its window as an argument, so a second cap can be configured without
 touching the lockout's.
 
