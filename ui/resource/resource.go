@@ -523,7 +523,26 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 // control itself.
 func controlWords(words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
 	return forms.Control(forms.ControlProps{Field: formField(words, f), Value: value, Error: fieldErr,
-		Immutable: immutable, ChooseLabel: chooseWord(words)})
+		Immutable: immutable, ChooseLabel: chooseWord(words), Notes: words.notes()})
+}
+
+// notes are ui/forms' three sentences about a control — why a value is read-only
+// here, that an identifier has no picker, how a list is typed in — in the language
+// these words are read in. The generated form passes them as a set (see
+// Options.notes); a control drawn on its own, which is every command argument's
+// control, has to ask the same three or ui/forms answers them from its own English
+// and a page declared Portuguese carries one English sentence in the middle of it.
+// The fallback is empty rather than the sentence on purpose: with no seam this is
+// the form layer's English, which is what a form without a catalogue has said.
+func (w Words) notes() forms.Notes {
+	if w.text == nil {
+		return forms.Notes{}
+	}
+	return forms.Notes{
+		Immutable:      w.text("screens.immutable_note", ""),
+		RelatedRecord:  w.text("screens.related_record", ""),
+		CommaSeparated: w.text("screens.comma_separated", ""),
+	}
 }
 
 // chooseWord is the empty option's own sentence — the row a reader picks to take a
