@@ -122,10 +122,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 						return page.View{}, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
 					}
 				}
-				o := localized(o, req)
-				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
-				detail, o.Refusal = refusedWrite(req.Locale, err, detail)
-				return Form(res, o, at, o.Text("screens.new", "New %s", entryName(res, o)), sent, errs, detail, true), nil
+				return refusedForm(res, o, req, at, "screens.new", "New %s", true, sent, err), nil
 			})
 	}
 
@@ -164,10 +161,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 						return page.View{}, httpx.SeeOther(item)
 					}
 				}
-				o := localized(o, req)
-				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
-				detail, o.Refusal = refusedWrite(req.Locale, err, detail)
-				return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", entryName(res, o)), sent, errs, detail, false), nil
+				return refusedForm(res, o, req, item, "screens.edit_item", "Edit %s", false, sent, err), nil
 			})
 	}
 
@@ -316,10 +310,23 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 					return page.View{}, httpx.SeeOther(at)
 				}
 			}
-			o := localized(o, req)
-			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
-			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", entryName(res, o)), sent, errs, detail, false), nil
+			return refusedForm(res, o, req, at, "screens.edit_item", "Edit %s", false, sent, err), nil
 		})
+}
+
+// refusedForm is the one redraw every submit route answers a refused write with: the values
+// the person typed, the field the write blamed if it blamed one, and the verdict behind the
+// refusal in the words the refusal page uses. Three routes post a generated form — create,
+// update, and a singleton's update — and one redraw is what keeps a settings page from
+// printing a driver's error where the form beside it says "We couldn't save this."
+//
+// The heading is a message key rather than a sentence because a redraw is served in the
+// language the request was answered in, and so is the entry's own noun beside it.
+func refusedForm(res httpx.Resource, o Options, req page.Request, action, titleKey, titleEnglish string, create bool, sent map[string]any, err error) page.View {
+	o = localized(o, req)
+	errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
+	detail, o.Refusal = refusedWrite(req.Locale, err, detail)
+	return Form(res, o, action, o.Text(titleKey, titleEnglish, entryName(res, o)), sent, errs, detail, create)
 }
 
 // words is this request's formatter for the copy a package owns but does not
