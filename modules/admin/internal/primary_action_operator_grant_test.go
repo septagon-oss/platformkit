@@ -27,8 +27,8 @@ func TestAnOperatorPrimaryActionRequiresTheCurrentGrantAndHost(t *testing.T) {
 		for _, allowed := range []bool{true, false, true} {
 			authorize[entry.Permission] = allowed
 			body := render(t, g.Group(p.dashboard(t.Context(), tenant, resource.Options{}).Body))
-			if got, want := strings.Contains(body, `href="/app/plan/plans"`), operator && allowed; got != want {
-				t.Errorf("operator=%v, current grant=%v: primary action present=%v, want %v", operator, allowed, got, want)
+			if got := strings.Count(body, `href="/app/plan/plans"`); got > 1 || (got == 1) != (operator && allowed) {
+				t.Errorf("operator=%v, current grant=%v: primary action count=%d, want one only when both are true", operator, allowed, got)
 			}
 		}
 	}
