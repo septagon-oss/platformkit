@@ -86,14 +86,14 @@ func MountInApp(s httpx.Surfaces, p InApp) {
 		ID: "notification-inbox", Method: http.MethodGet, Path: path,
 		Summary: "The notices addressed to you", Errors: inboxFaults,
 	}, httpx.SignedIn(), func(ctx context.Context, r page.Request, in *inboxInput) (page.View, error) {
-		return p.inbox(ctx, in.Page, per, mounted)
+		return p.inbox(ctx, r.Locale, in.Page, per, mounted)
 	})
 }
 
 // inbox reads this person's rows and draws them, newest first. The caller and
 // the transaction come from the same reading the JSON list uses: the person is
 // the principal the request authenticated, never a parameter.
-func (p InApp) inbox(ctx context.Context, at, per int, mounted string) (page.View, error) {
+func (p InApp) inbox(ctx context.Context, loc *page.Locale, at, per int, mounted string) (page.View, error) {
 	tx, me, err := caller(ctx)
 	if err != nil {
 		return page.View{}, err
@@ -104,15 +104,16 @@ func (p InApp) inbox(ctx context.Context, at, per int, mounted string) (page.Vie
 		return page.View{}, rest.Fault(err)
 	}
 	last := max(int((total+int64(per)-1)/int64(per)), 1)
+	title := inboxWords(loc, "notification.inbox.title", "Notifications")
 	return page.View{
-		Title: "Notifications",
+		Title: title,
 		Live:  p.Topics,
 		Body: []g.Node{
 			components.Toolbar(components.ToolbarProps{
-				Title:    "Notifications",
-				Subtitle: fmt.Sprintf("%d notice%s, newest first. Only the person a notice is addressed to sees it here.", total, plural(total)),
+				Title:    title,
+				Subtitle: inboxCount(loc, total),
 			}),
-			inboxTable(rows),
+			inboxTable(loc, rows),
 			components.Pagination(components.PaginationProps{
 				// The mounted address, never the bare collection: /notifications is
 				// the JSON route's address and no host serves a page there, so a
@@ -127,11 +128,11 @@ func (p InApp) inbox(ctx context.Context, at, per int, mounted string) (page.Vie
 
 // inboxTable is the list. A person with nothing to read is told so where the
 // table would have been, rather than shown an empty frame.
-func inboxTable(rows []*contracts.Notification) g.Node {
+func inboxTable(loc *page.Locale, rows []*contracts.Notification) g.Node {
 	if len(rows) == 0 {
 		return components.EmptyState(components.EmptyStateProps{
-			Title:       "Nothing to read",
-			Description: "No notice has been addressed to you.",
+			Title:       inboxWords(loc, "notification.inbox.empty.title", "Nothing to read"),
+			Description: inboxWords(loc, "notification.inbox.empty.body", "No notice has been addressed to you."),
 			Bordered:    true,
 		})
 	}
@@ -193,12 +194,31 @@ func inboxRows(rows []*contracts.Notification) []components.TableRow {
 // second, which is what a notice's ordering is decided on.
 func stamp(at time.Time) string { return at.UTC().Format(time.RFC3339) }
 
-// plural is the subtitle's one grammar rule.
-func plural(n int64) string {
-	if n == 1 {
-		return ""
+// inboxWords is one sentence of this screen's own copy, in the language the request is
+// answered in: the catalogue in modules/notification/messages answers the key, and a
+// page with no catalogue composed, or no entry for it, keeps the English at the call
+// site (decision 0012 rule 2).
+func inboxWords(loc *page.Locale, key, english string) string {
+	if loc == nil {
+		return english
 	}
-	return "s"
+	return loc.Text(key, english)
+}
+
+// inboxCount is the toolbar's line about how many notices this person has, in the form
+// this request's language picks for that number rather than one built here by appending
+// a letter to a word, which is what tools/checkplurals refuses a page for doing.
+func inboxCount(loc *page.Locale, total int64) string {
+	const one = "%d notice, newest first. Only the person a notice is addressed to sees it here."
+	const other = "%d notices, newest first. Only the person a notice is addressed to sees it here."
+	if loc == nil {
+		chosen := other
+		if total == 1 {
+			chosen = one
+		}
+		return fmt.Sprintf(chosen, total)
+	}
+	return loc.Plural("notification.inbox.count", total, one, other)
 }
 
 // inboxInput is the page a person asked for, one-based, so the pager's links read

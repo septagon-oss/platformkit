@@ -89,6 +89,43 @@
       "": "um veredicto é aprovado ou recusado"
     }
   },
+  "change.queue.title": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "Revisões de alteração",
+    "plural": {
+      "": "Revisões de alteração"
+    }
+  },
+  "change.queue.count": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "%d proposta, mais recente primeiro. Cada proposta espera a decisão de outra conta, não de quem a escreveu.",
+    "plural": {
+      "one": "%d proposta, mais recente primeiro. Cada proposta espera a decisão de outra conta, não de quem a escreveu.",
+      "other": "%d propostas, mais recente primeiro. Cada proposta espera a decisão de outra conta, não de quem as escreveu."
+    }
+  },
+  "change.queue.empty.title": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "Nada está à espera",
+    "plural": {
+      "": "Nada está à espera"
+    }
+  },
+  "change.queue.empty.body": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "Nenhuma alteração neste tenant está aberta a decisão.",
+    "plural": {
+      "": "Nenhuma alteração neste tenant está aberta a decisão."
+    }
+  },
   "permission.change:read": {
     "references": [
       "modules/change/module.go"

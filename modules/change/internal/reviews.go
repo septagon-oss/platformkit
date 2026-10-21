@@ -253,13 +253,13 @@ func (p Pages) queue(ctx context.Context, r page.Request, where string, at int) 
 		return page.View{}, rest.Fault(err)
 	}
 	last := max(int((total+int64(per)-1)/int64(per)), 1)
-	return page.View{Title: "Change reviews", Body: []g.Node{
+	title := queueWords(r.Locale, "change.queue.title", "Change reviews")
+	return page.View{Title: title, Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Change reviews",
-			Subtitle: fmt.Sprintf("%d proposal%s, newest first. Each one waits for an account other than the person who wrote it.",
-				total, plural(total)),
+			Title:    title,
+			Subtitle: queueCount(r.Locale, total),
 		}),
-		queueTable(where, rows),
+		queueTable(r.Locale, where, rows),
 		components.Pagination(components.PaginationProps{
 			CurrentPage: min(at, last), TotalPages: last, BaseURL: where,
 			NavigationLabel: "Change reviews pagination",
@@ -269,11 +269,11 @@ func (p Pages) queue(ctx context.Context, r page.Request, where string, at int) 
 
 // queueTable is the list. A tenant with nothing open is told so where the table would
 // have been, rather than shown an empty frame.
-func queueTable(where string, rows []*contracts.Proposal) g.Node {
+func queueTable(loc *page.Locale, where string, rows []*contracts.Proposal) g.Node {
 	if len(rows) == 0 {
 		return components.EmptyState(components.EmptyStateProps{
-			Title:       "Nothing is waiting",
-			Description: "No change in this tenant is open for a decision.",
+			Title:       queueWords(loc, "change.queue.empty.title", "Nothing is waiting"),
+			Description: queueWords(loc, "change.queue.empty.body", "No change in this tenant is open for a decision."),
 			Bordered:    true,
 		})
 	}
@@ -595,12 +595,31 @@ func stateLabel(state string) string {
 	}
 }
 
-// plural is the one grammar the subtitle needs.
-func plural(n int64) string {
-	if n == 1 {
-		return ""
+// queueWords is one sentence of the queue screen's own copy, in the language the
+// request is answered in: the catalogue in modules/change/messages answers the key and
+// a page with no catalogue composed, or no entry for it, keeps the English written at
+// the call site (decision 0012 rule 2 — the shape refusal below uses).
+func queueWords(loc *page.Locale, key, english string) string {
+	if loc == nil {
+		return english
 	}
-	return "s"
+	return loc.Text(key, english)
+}
+
+// queueCount is the toolbar's line about how many proposals are waiting, in the form
+// this request's language picks for that number rather than one built here by appending
+// a letter to a word, which is what tools/checkplurals refuses a page for doing.
+func queueCount(loc *page.Locale, total int64) string {
+	const one = "%d proposal, newest first. Each one waits for an account other than the person who wrote it."
+	const other = "%d proposals, newest first. Each one waits for an account other than the person who wrote it."
+	if loc == nil {
+		chosen := other
+		if total == 1 {
+			chosen = one
+		}
+		return fmt.Sprintf(chosen, total)
+	}
+	return loc.Plural("change.queue.count", total, one, other)
 }
 
 // when is a timestamp the way the page reads it, and "not yet" for the nil every open

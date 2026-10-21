@@ -1,4 +1,41 @@
 {
+  "notification.inbox.title": {
+    "references": [
+      "modules/notification/internal/inapp.go"
+    ],
+    "translation": "Notificações",
+    "plural": {
+      "": "Notificações"
+    }
+  },
+  "notification.inbox.count": {
+    "references": [
+      "modules/notification/internal/inapp.go"
+    ],
+    "translation": "%d notificação, mais recente primeiro. Só a pessoa a quem é endereçada a vê aqui.",
+    "plural": {
+      "one": "%d notificação, mais recente primeiro. Só a pessoa a quem é endereçada a vê aqui.",
+      "other": "%d notificações, mais recente primeiro. Só a pessoa a quem são endereçadas as vê aqui."
+    }
+  },
+  "notification.inbox.empty.title": {
+    "references": [
+      "modules/notification/internal/inapp.go"
+    ],
+    "translation": "Nada para ler",
+    "plural": {
+      "": "Nada para ler"
+    }
+  },
+  "notification.inbox.empty.body": {
+    "references": [
+      "modules/notification/internal/inapp.go"
+    ],
+    "translation": "Nenhuma notificação foi endereçada a si.",
+    "plural": {
+      "": "Nenhuma notificação foi endereçada a si."
+    }
+  },
   "permission.sender:manage": {
     "references": [
       "modules/notification/module.go"
