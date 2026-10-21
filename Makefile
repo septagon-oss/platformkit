@@ -719,6 +719,15 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# refuses it in both of its forms, CI's explicit base and `make check-loc`'s merge base, the moment it
 	# reads the lowering as a raise. Two budget commits over one base, no network, no database.
 	bash scripts/a_lowering_needs_no_new_owner_approval_test.sh
+	# scripts/ratchet_fixtures_name_their_committer_test.sh asks the one question the eight fixtures above
+	# cannot ask of each other: whether every script test that builds a throwaway repository and runs `git
+	# merge` names its committer inside that repository. A merge commits with the identity the repository
+	# holds rather than the one an invocation passes, so a fixture added without a repository-local identity
+	# writes its history in a checkout that happens to have one and aborts at its first merge in a container
+	# that has none, taking the cases after it with it. Each fixture reads only its own file, so none of them
+	# notices a new sibling missing that identity. One grep over `scripts/*_test.sh`, no repository built, no
+	# network, no database, milliseconds.
+	bash scripts/ratchet_fixtures_name_their_committer_test.sh
 	bash scripts/check_applied_migrations_test.sh
 	bash scripts/applied_migration_merge_base_test.sh
 	bash scripts/ci_checkout_history_test.sh
