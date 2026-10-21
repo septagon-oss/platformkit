@@ -30,14 +30,21 @@ const (
 // (ui/components/shared-web-components.md, with the WCAG non-text-contrast link
 // beside it).
 //
-// It is 3 and not 4.5 for a second, harder reason: 4.5 against both canvases
-// refuses #2563eb, the colour this column used to default to and the colour every
-// existing row was written with before the default moved to the absence of one, so
-// a threshold of 4.5 would have indicted tenants that never chose anything. The
-// target above is the reason it is 3; this is the reason nobody had to argue about
-// it. A resolved accent never meets this rule at all — it is not a colour a person
-// typed, and the pair it comes from is measured against the canvases in
+// It is 3 and not 4.5 for a second, harder reason: the two canvases are 15.98:1
+// apart, and a colour that reads 4.5:1 against both asks them to be 20.25:1 apart,
+// so 4.5 on both canvases refuses every #rrggbb there is. It would therefore have
+// refused #2563eb, the colour this column used to default to and the colour every
+// existing row was written with before the default moved to the absence of one,
+// which would have indicted tenants that never chose anything. The target above is
+// the reason it is 3; this is the reason nobody had to argue about it. A resolved
+// accent never meets this rule at all — it is not a colour a person typed, and the
+// pair it comes from is measured against the canvases in
 // TestTheAccentRatiosAreTheOnesTheRuleCompared.
+//
+// The door and the paint ask different things on purpose: this one asks that a
+// stored colour be visible somewhere, because a row is edited once and read in both
+// schemes, and the paint measures the accent at 4.5 against the theme it is painting
+// (design's own gate) and repairs what fails, per mode.
 const MinAccentRatio = 3.0
 
 // ContrastRatio is the WCAG 2.x contrast ratio between two #rrggbb colours: the
