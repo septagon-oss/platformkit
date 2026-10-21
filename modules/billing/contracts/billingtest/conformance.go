@@ -130,9 +130,16 @@ func due(t *testing.T, f Fixture) contracts.Charge {
 
 func cases() map[string]func(*testing.T, Fixture) {
 	return map[string]func(*testing.T, Fixture){
-		// A plan change must not erase an unpaid period.
+		// A plan change must not erase an unpaid period. A tenant that owed money moved
+		// itself to a plan it had created at a price of nought, and the debt went with the
+		// old price. The half of the rule that lives in this interface is here; the other
+		// half — that a customer cannot create a plan at all — is a permission, which the
+		// module's own test proves over HTTP.
 		"a past-due subscription cannot be moved to another plan": refuseIndebtedPlanChange,
-		// Debt allows cancellation at period end, but never an immediate reset.
+		// Debt allows cancellation at period end, but never an immediate reset: ending it
+		// now, resubscribing and getting a fresh period is the ceiling's other escape
+		// route. Ending it now is what a customer who owes for a period already served may
+		// not do; leaving at the end of the period is what they may do.
 		"a subscription that owes for a period cannot be ended in the middle of one": refuseIndebtedImmediateCancellation,
 		// The other half of the same exploit. Whatever route a subscription
 		// took to cancelled, coming back must not clear the attempt count, the

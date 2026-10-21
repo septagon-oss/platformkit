@@ -62,7 +62,10 @@ func refuseInvitationApproval(t *testing.T, f Fixture) {
 	if !errors.Is(err, crud.ErrConflict) {
 		t.Fatalf("approving an invitation = %v, want a conflict", err)
 	}
-	// Name the invitation so the refusal cannot suggest setting a password by hand.
+	// The words are the answer, not an illustration of it. "Only a pending registration
+	// with a password can be approved" told the administrator the account was missing a
+	// password, and they set one by hand; a refusal names the state and the door that
+	// opens it, so this one names the invitation.
 	if msg := err.Error(); !strings.Contains(msg, "invitation") || strings.Contains(msg, "with a password") {
 		t.Errorf("approving an invitation said %q; it names the invitation and never reads as an instruction to set a password", msg)
 	}

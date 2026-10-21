@@ -110,7 +110,8 @@ func resubscribeWithoutTrial(t *testing.T, f Fixture) {
 	switch {
 	case back.ID != old.ID:
 		t.Error("resubscribing made a second subscription; a tenant has one")
-	// A trial is once per tenant; resubscribing must not issue another.
+	// Not a trial. The trial is once per tenant, ever: cancelling and resubscribing four
+	// times used to be four free periods, and counting them is what the ceiling is for.
 	case back.Status != contracts.StatusActive:
 		t.Errorf("status is %q, want %q", back.Status, contracts.StatusActive)
 	case back.TrialUsedAt == nil:

@@ -134,6 +134,19 @@ func (f *Fake) OrderUses(_ context.Context, _ db.Tx[db.Tenant], _ contracts.Use,
 
 var _ contracts.UsesOrder = (*Fake)(nil)
 
+// setUses is both of the ledger's doors in one: it files the set of files a body
+// references and, when the last public use of a file ends, hands back the files whose
+// grace period starts now.
+//
+// Who may read each file the rewrite touches is asked before any of it is written and
+// again with the rows down, and the flips between the two answers are published between
+// the two reads. Asked only where it can move at all — a public audience being filed, or
+// a row that asserted one being ended — which is internal.Service's rule too, and the
+// draft that renames pictures in a private record pays for neither read. Neither half is
+// written onto a file row: what a publish asserted stays in the use row that asserts it,
+// and what the file was given stays where its upload put it. That is what lets two
+// records that share two pictures be saved at all: no file row is locked by a save that
+// only names it. The whole rewrite holds f.mu.
 func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	scope, err := contracts.ScopeOf(ctx)
 	if err != nil {
@@ -151,6 +164,9 @@ func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	was := f.useAudiences(wanted, remove, public)
 	f.rewriteUses(scope, use, add, remove, public)
 	if len(remove) == 0 {
+		// Nothing ended, so no clock started — but a public audience still asks who may
+		// read the files it names, which is the published page that gained its first
+		// picture. The answer lives in the use rows this rewrite just wrote.
 		f.settleAudience(was)
 		return nil, nil
 	}

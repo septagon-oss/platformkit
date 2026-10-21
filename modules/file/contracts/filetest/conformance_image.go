@@ -46,7 +46,8 @@ func reencodeImage(t *testing.T, f Fixture) {
 	}
 }
 
-// An undecodable image is refused without retaining bytes.
+// An undecodable image is refused without retaining bytes: an SVG with a script in it,
+// offered as an image, never reaches storage.
 func refuseUndecodableImage(t *testing.T, f Fixture) {
 	before := len(f.Keys())
 	_, err := f.Service.Upload(f.Ctx, f.open, asImage(t, "diagram.svg", "image/svg+xml",

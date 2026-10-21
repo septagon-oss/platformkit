@@ -198,27 +198,81 @@ const png = "\x89PNG\r\n\x1a\n"
 
 func cases() map[string]func(*testing.T, Fixture) {
 	return map[string]func(*testing.T, Fixture){
-		"an upload is counted and hashed as it goes past":                         countAndHashUpload,
-		"the same bytes twice are two files":                                      separateRepeatedUploads,
-		"an upload past the limit keeps nothing":                                  refuseOversizeUpload,
-		"an upload of exactly the limit is kept":                                  acceptExactLimitUpload,
-		"a private file is not found at the public door":                          concealPrivateFile,
-		"a public file is served to anybody":                                      servePublicFile,
-		"an upload whose bytes disagree with its type is refused":                 refuseMIMEMismatch,
-		"an image is measured and stored as the pixels it re-encodes to":          reencodeImage,
-		"what no decoder reads is refused at the image door and keeps nothing":    refuseUndecodableImage,
+		"an upload is counted and hashed as it goes past": countAndHashUpload,
+		"the same bytes twice are two files":              separateRepeatedUploads,
+		"an upload past the limit keeps nothing":          refuseOversizeUpload,
+		"an upload of exactly the limit is kept":          acceptExactLimitUpload,
+		"a private file is not found at the public door":  concealPrivateFile,
+		"a public file is served to anybody":              servePublicFile,
+		// The bytes have to be what the upload said they were, for the types this
+		// application shows in a browser. An HTML document uploaded as an image is the
+		// second half of the stored-XSS story the download's Content-Disposition is the
+		// first half of: a browser would not run one served inline as image/png, but a
+		// proxy that rewrites a type, a caller that saves and opens it, and the next
+		// media type somebody adds to the inline set are three ways for it to matter.
+		"an upload whose bytes disagree with its type is refused": refuseMIMEMismatch,
+		// The image pass runs in both implementations from one function
+		// (contracts.ProcessImage): the row carries the frame the server stored and the
+		// container follows the pixels rather than the file name, so an opaque frame
+		// that arrived as a PNG leaves as a JPEG. That a stored image carries no
+		// metadata block is proved over the pass itself, where a fixture with a real
+		// EXIF and GPS section can be read back; a shared case that re-encodes a PNG
+		// writes the same bytes it was given, which is a deterministic encoder rather
+		// than a bug this suite should pretend to see.
+		"an image is measured and stored as the pixels it re-encodes to":       reencodeImage,
+		"what no decoder reads is refused at the image door and keeps nothing": refuseUndecodableImage,
+		// A use is what a body references, rewritten rather than appended to, and the
+		// answer to "what reads this file" is exactly the set of rows the last accepted
+		// body wrote. Both implementations run the same two decisions
+		// (contracts.CollapseRefs and contracts.DiffUses) over their own storage.
 		"a record's uses are its body's references, rewritten in place":           replaceRecordUses,
 		"the uses of a file that is not there are refused and nothing is written": refuseMissingUse,
-		"a use ended of a file that is already gone ends":                         endUseOfDeletedFile,
-		"an alt text is written against the row it was shown":                     reviseAltText,
-		"the grid filters by name, by family and by what nothing shows":           filterLibrary,
-		"a file another record shows is not removed":                              refuseUsedFile,
-		"a file two records show names two records":                               listUsingRecords,
-		"an added use of a record with a public audience is public at once":       publishAddedUse,
-		"an added use of a record with no audience flips nothing":                 keepUnshownUsePrivate,
-		"the last public use ended makes a file private again":                    privatiseLastPublicUse,
-		"deleting removes the row and says where the bytes are":                   deleteFile,
-		"an unknown id is not found":                                              refuseUnknownFile,
-		"a file needs a name and a visibility that is one of two":                 validateFile,
+		// Ending the use of a file that was removed first is not the refusal above, and a
+		// record has to survive the difference: Delete consults the ledger no more than it
+		// does today, so the row that names a gone file is ordinary rather than corrupt,
+		// and the delete of the record that shows it must go through. Refusing here would
+		// strand that record and leave the ledger saying a file nobody has is shown.
+		"a use ended of a file that is already gone ends": endUseOfDeletedFile,
+		// What a picture says about itself is one command's write, guarded by the row's own
+		// clock: a caption written against a row somebody else has already moved is refused
+		// and not merged, because the alternative is that the panel's number means nothing
+		// and two people's sentences overwrite one another.
+		"an alt text is written against the row it was shown": reviseAltText,
+		// The grid's three axes — a name, a media family, and the stamp the ledger leaves
+		// when the last use ends — are decided in contracts so the SQL and the fake cannot
+		// answer them differently. The family in particular: a filter that trusted the type
+		// prefix alone would let a drawing nobody measured pose as a photograph. An unknown
+		// value is refused naming what it accepts, because a grid that showed everything
+		// because a filter was misspelled would show a person the files they asked not to.
+		"the grid filters by name, by family and by what nothing shows": filterLibrary,
+		// A file the ledger still shows is not deletable, and the refusal is the module's
+		// rather than a control's: a library that dims a button is a courtesy, and this is
+		// the answer a client that never saw the page gets. Ending the last use is what
+		// makes the removal possible — the same rewrite that stamps the grace period the
+		// release sweep measures. The removals that outrank a record's convenience are a
+		// subject's erasure and the two sweeps, none of which come through here.
+		"a file another record shows is not removed": refuseUsedFile,
+		// Records, not rows: one page that shows one picture in its body and its summary is
+		// one page to go and edit, and contracts.DistinctRecords is the count both
+		// implementations give. Counting rows would answer 4 about a refusal a person can
+		// only act on twice.
+		"a file two records show names two records": listUsingRecords,
+		// The audience a record asserts travels into the rewrite that files its uses, so a
+		// published page that gains a picture gains public bytes in the write that added
+		// it. SetShown stays the only door that changes the audience of a row it did not
+		// write.
+		"an added use of a record with a public audience is public at once": publishAddedUse,
+		// The same rewrite with no audience asserts nothing: a private file stays private,
+		// and a file somebody raised by hand keeps what they asked for — the recompute of
+		// added files runs only under a public audience, so a draft never takes a
+		// hand-raised visibility back.
+		"an added use of a record with no audience flips nothing": keepUnshownUsePrivate,
+		// The retract this module already had, named as a case so the audience path above
+		// cannot quietly drop it: the last public use ending is what turns a file private
+		// again, in the write that ended it.
+		"the last public use ended makes a file private again":    privatiseLastPublicUse,
+		"deleting removes the row and says where the bytes are":   deleteFile,
+		"an unknown id is not found":                              refuseUnknownFile,
+		"a file needs a name and a visibility that is one of two": validateFile,
 	}
 }
