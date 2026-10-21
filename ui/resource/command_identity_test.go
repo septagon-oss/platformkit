@@ -151,31 +151,7 @@ func commandIdentities(t *testing.T, view document.View, wantForms, wantControls
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := map[string]*html.Node{}
-	for n := range doc.Descendants() {
-		if id := commandAttribute(n, "id"); id != "" {
-			if ids[id] != nil {
-				t.Fatalf("duplicate document ID %q", id)
-			}
-			ids[id] = n
-		}
-	}
-	labels := map[string]int{}
-	for n := range doc.Descendants() {
-		for _, attr := range []string{"for", "aria-describedby", "aria-errormessage"} {
-			for ref := range strings.FieldsSeq(commandAttribute(n, attr)) {
-				target := ids[ref]
-				if target == nil || commandForm(target) != commandForm(n) {
-					t.Fatalf("%s=%q does not resolve within its form", attr, ref)
-				}
-				if attr == "for" {
-					labels[ref]++
-				} else if !strings.HasPrefix(ref, commandAttribute(n, "id")+"-") {
-					t.Errorf("%s refers to another control's feedback: %s", commandAttribute(n, "name"), ref)
-				}
-			}
-		}
-	}
+	labels := commandReferenceLabels(t, doc)
 	identities := map[[3]string]string{}
 	formCount, controls := 0, 0
 	for form := range doc.Descendants() {
@@ -224,6 +200,36 @@ func commandIdentities(t *testing.T, view document.View, wantForms, wantControls
 		t.Fatalf("rendered %d forms / %d controls; want %d / %d", formCount, controls, wantForms, wantControls)
 	}
 	return identities
+}
+
+func commandReferenceLabels(t *testing.T, doc *html.Node) map[string]int {
+	t.Helper()
+	ids := map[string]*html.Node{}
+	for n := range doc.Descendants() {
+		if id := commandAttribute(n, "id"); id != "" {
+			if ids[id] != nil {
+				t.Fatalf("duplicate document ID %q", id)
+			}
+			ids[id] = n
+		}
+	}
+	labels := map[string]int{}
+	for n := range doc.Descendants() {
+		for _, attr := range []string{"for", "aria-describedby", "aria-errormessage"} {
+			for ref := range strings.FieldsSeq(commandAttribute(n, attr)) {
+				target := ids[ref]
+				if target == nil || commandForm(target) != commandForm(n) {
+					t.Fatalf("%s=%q does not resolve within its form", attr, ref)
+				}
+				if attr == "for" {
+					labels[ref]++
+				} else if !strings.HasPrefix(ref, commandAttribute(n, "id")+"-") {
+					t.Errorf("%s refers to another control's feedback: %s", commandAttribute(n, "name"), ref)
+				}
+			}
+		}
+	}
+	return labels
 }
 
 func commandAttribute(n *html.Node, name string) string {
