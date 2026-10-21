@@ -65376,6 +65376,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/export/generated_identity_consumer_extra_without_css_test.go",
+   "id": "ui/export/generated_identity_consumer_extra_without_css_test.go#TestGeneratedIdentityKeepsItsLayoutClaimWhenConsumerExtraPaintsNothing",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestGeneratedIdentityKeepsItsLayoutClaimWhenConsumerExtraPaintsNothing",
+   "needs_db": false,
+   "pkg": "ui/export",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/export/generated_identity_consumer_layout_test.go",
    "id": "ui/export/generated_identity_consumer_layout_test.go#TestGeneratedIdentityKeepsItsTokensWhenConsumerCSSInvalidatesLayout",
    "kind": "go",
@@ -77892,7 +77911,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2076,
+  "files": 2077,
   "forge_runs": [
    408,
    413,
@@ -77926,7 +77945,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3365,
+   "behaviour": 3366,
    "composition": 454,
    "contract": 21,
    "journey": 101
@@ -77945,23 +77964,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 3941,
+  "rows": 3942,
   "tiers": {
    "merge": 2410,
    "nightly": 101,
-   "push": 1430
+   "push": 1431
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1831,
+   "keep": 1832,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3555,
+   "keep": 3556,
    "keep-rewrite": 170,
    "merge": 216
   }
