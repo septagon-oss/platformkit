@@ -29,7 +29,7 @@ needed validation that nothing performed before the first request.
   contract and its requiredness. A refused module's partial outputs are
   discarded, the modules that wait on it are reported as suppressed and owe no
   sentence, independent problems are still collected, and every other panic
-  propagates unchanged. Each entry point returns a `pkit.CompositionError`
-  (`errors.As`) except for `Plan`'s own name, settings, port and role checks.
+  propagates unchanged. A refusal is a `pkit.CompositionError` (`errors.As`)
+  except `Plan`'s name, settings, port and role checks and the engine's.
 - The resolved graph is reviewable: `Explain` writes it as sentences and
   `Describe` as values, committed per app as `COMPOSITION.<env>.{md,json}`.
