@@ -1,0 +1,9 @@
+# The override a client would like and the gate refuses: pale grey text on the
+# client's own canvas, measured below 4.5:1.
+slug: broken
+seed:
+  sector: retail
+  name: Broken
+tokens:
+  light:
+    text-muted: "#cfcac2"
