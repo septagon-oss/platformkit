@@ -36811,6 +36811,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/admin/internal/primary_action_operator_grant_test.go",
+   "id": "modules/admin/internal/primary_action_operator_grant_test.go#TestAnOperatorPrimaryActionRequiresTheCurrentGrantAndHost",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnOperatorPrimaryActionRequiresTheCurrentGrantAndHost",
+   "needs_db": true,
+   "pkg": "modules/admin/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/admin/internal/screenless_resource_test.go",
    "id": "modules/admin/internal/screenless_resource_test.go#TestAResourceWithNoScreenAddressOwnsNoPages",
    "kind": "go",
@@ -75708,7 +75727,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2033,
+  "files": 2034,
   "forge_runs": [
    408,
    413,
@@ -75742,7 +75761,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3257,
+   "behaviour": 3258,
    "composition": 455,
    "contract": 21,
    "journey": 105
@@ -75761,9 +75780,9 @@
   },
   "round_named_ceiling": 61,
   "round_named_files": 61,
-  "rows": 3838,
+  "rows": 3839,
   "tiers": {
-   "merge": 2418,
+   "merge": 2419,
    "nightly": 105,
    "push": 1315
   },
@@ -75771,13 +75790,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1806,
+   "keep": 1807,
    "keep-rewrite": 73,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3482,
+   "keep": 3483,
    "keep-rewrite": 140,
    "merge": 216
   }
