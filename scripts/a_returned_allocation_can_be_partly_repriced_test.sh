@@ -37,6 +37,9 @@ main_grows() {
 }
 
 mkdir "$root/repo" && cd "$root/repo" && git init -q -b main
+# name the committer here rather than per invocation: a merge commits with the repository's own identity, and a CI container names none
+git config --local user.name ratchet-test
+git config --local user.email ratchet-test@example.invalid
 budget 3 && printf 'package a\n// one\n// two\n' > a.go && commit 'base'
 git update-ref refs/remotes/origin/main HEAD
 git checkout -q -b branch
