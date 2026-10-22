@@ -23,6 +23,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bash "$root/scripts/check_public_api_frozen_commit_test.sh"
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT
 failures=0
