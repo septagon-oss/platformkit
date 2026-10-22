@@ -82,12 +82,12 @@ var callerScoped = map[string]string{
 // test is the delivery and not the renderer's own branch.
 func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) string, ok bool) {
 	base := func() httpx.Resource {
-		return httpx.Resource{
-			Module: "note", Entity: "note", Path: "/notes", Screen: "/app/note/notes",
-			Read: "note:read", Write: "note:write",
-			Schema: entity.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: noteFields()},
-		}
+		r := resource()
+		r.Immutable = nil
+		r.Schema = entity.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: noteFields()}
+		return r
 	}
+
 	row := map[string]any{"id": "11111111-1111-1111-1111-111111111111", "title": "Buy milk", "status": "open"}
 	rows := []map[string]any{row}
 	switch name {

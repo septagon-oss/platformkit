@@ -25,17 +25,8 @@ type ChromeContextProps struct {
 	Size string `json:"size,omitempty"`
 }
 
-// ChromeContext is the workspace's name in the header, hidden from the large
-// breakpoint up. It is the mirror of SidebarDisclosure, which discloses the
-// sidebar's sections below that breakpoint: the admin sidebar paints the workspace
-// name from the large breakpoint up and paints nothing below it, so a phone reader
-// had no idea which workspace they were in — and a desktop reader was told twice.
-// One name, painted at exactly one width at a time, is what "the workspace is named
-// once" means while both clients render the same frame.
-//
-// It is Text with one rule added, not a second paragraph renderer: the frame's
-// chrome has one body step, and this line takes it from the same place every other
-// chrome sentence does.
+// ChromeContext names the workspace below the sidebar's large breakpoint.
+// Empty or whitespace-only names render nothing; Size follows Text's defaults.
 func ChromeContext(p ChromeContextProps) g.Node {
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
@@ -43,18 +34,11 @@ func ChromeContext(p ChromeContextProps) g.Node {
 	}
 	props := p.ComponentProps
 	props.Class = strings.TrimSpace(clChromeContext.Compile() + " " + strings.TrimSpace(p.Class))
-	return Text(TextProps{ComponentProps: props, Content: name, Size: p.Size, Weight: "semibold"})
+	return Text(TextProps{ComponentProps: props, Element: "span", Content: name, Size: p.Size, Weight: "semibold"})
 }
 
-// clChromeContext is the one rule that makes this line the sidebar's mirror rather
-// than its duplicate: from the large breakpoint up, where the sidebar paints, this
-// is display:none.
-//
-// The base rule is the one a <p> already has. It is written because the class list
-// compiler emits a breakpoint override beside a rule at the base — declare only the
-// override and the rule that hides this line is silently nothing at all, which is the
-// duplicate reappearing on every screen rather than a missing one.
-var clChromeContext = style.New().Display(style.DisplayBlock).
+// The base display makes the breakpoint override explicit to the class compiler.
+var clChromeContext = style.New().Display(style.DisplayInline).
 	Breakpoint(style.BreakpointLG, func(c style.ClassList) style.ClassList {
 		return c.Display(style.DisplayHidden)
 	})

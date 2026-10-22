@@ -264,8 +264,11 @@ func Localise(r httpx.Resource, text Text) httpx.Resource {
 // is asking, the set says whether anything here answers a write at all, and
 // `writable` is what this caller may *do*. See Entry.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
-		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
+	command := slices.ContainsFunc(r.Commands, func(c httpx.Command) bool {
+		return c.Run != nil && c.Auth.Declared()
+	})
+	writable = writable && (command || writeAvailable(r, httpx.CRUDCreate) ||
+		writeAvailable(r, httpx.CRUDUpdate) || writeAvailable(r, httpx.CRUDDelete))
 	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present, r.Commands), Screen: r.Screen,
 		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
 		Operations: r.OperationWords()}

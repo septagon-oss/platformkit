@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 
 	"github.com/google/uuid"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
+	"github.com/septagon-oss/platformkit/ui/style"
 )
 
 // pages are the screens no schema describes: the way in, the way around, and
@@ -586,23 +588,26 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 				break
 			}
 			heading := []g.Node{components.Icon(components.IconProps{Name: item.Icon}),
-				components.Text(components.TextProps{Content: item.Label, Weight: "semibold"})}
+				components.Text(components.TextProps{Element: "span", Content: item.Label, Weight: "semibold"})}
 			if count != nil {
 				heading = append(heading, count)
 			}
-			links = append(links, components.CardWithSlots(components.CardProps{Href: item.Href, Hoverable: true, Padding: "sm"}, components.CardSlots{
+			links = append(links, components.CardWithSlots(components.CardProps{
+				ComponentProps: components.ComponentProps{Class: style.New().Bg(style.ColorTransparent).Compile()},
+				Href:           item.Href, Hoverable: true, Padding: "sm",
+			}, components.CardSlots{
 				Content: []g.Node{components.Stack(components.StackProps{Gap: "3"},
 					components.Flex(components.FlexProps{Gap: "3", Align: "center", Wrap: true}, heading...),
-					components.Text(components.TextProps{Content: workspacePurpose(p.at, item, p.resources, o), Color: "muted", Size: "sm"}),
+					components.FormSentence(components.FormSentenceProps{Text: workspacePurpose(p.at, item, p.resources, o)}),
 				)},
 			}))
 		}
-		areas = append(areas, components.Section(components.SectionProps{MaxWidth: "full", Gap: "3"}, components.SectionSlots{
-			Header: []g.Node{components.Heading(components.HeadingProps{Text: section.Label, Level: 2, Size: 3})},
-			Body:   []g.Node{components.Grid(components.GridProps{Columns: "1", Gap: "3"}, links...)},
-		}))
+		areas = append(areas, h.Section(components.Stack(components.StackProps{Gap: "3"},
+			components.Heading(components.HeadingProps{Text: section.Label, Level: 2, Size: 3}),
+			components.Grid(components.GridProps{Columns: "1", Gap: "3"}, links...),
+		)))
 	}
-	body = append(body, components.Grid(components.GridProps{Columns: "1", MD: "2", LG: "3", Gap: "6"}, areas...))
+	body = append(body, components.Grid(components.GridProps{Columns: "1", Gap: "6"}, areas...))
 	return page.View{Title: o.Text("admin.workspace.dashboard", "Dashboard"), Body: body}
 }
 

@@ -48,13 +48,13 @@ func frameAs(t *testing.T, people People, host, tenant string) string {
 // which the header also says, and not the build stamp.
 func callerLine(t *testing.T, markup string) string {
 	t.Helper()
-	for _, line := range chromeParagraphs(t, markup) {
+	for _, line := range chromeLabels(t, markup) {
 		text := strings.SplitN(line, "\x00", 2)[1]
 		if text != "End to end" && text != "app.acme.test" && !strings.HasPrefix(text, brand) {
 			return text
 		}
 	}
-	t.Fatalf("no chrome paragraph names the caller; the frame drew %q", chromeParagraphs(t, markup))
+	t.Fatalf("no chrome paragraph names the caller; the frame drew %q", chromeLabels(t, markup))
 	return ""
 }
 
@@ -88,7 +88,7 @@ func TestTheCallerIsNamedByNameThenAddressThenNothing(t *testing.T) {
 // anonymous render draws neither a name nor the fallback that stands for one.
 func TestAnAnonymousFrameNamesNobodyAtAll(t *testing.T) {
 	markup := chromeFrameWith(t, false, peopleDouble{person: Person{DisplayName: "Ada Lovelace"}})
-	for _, line := range chromeParagraphs(t, markup) {
+	for _, line := range chromeLabels(t, markup) {
 		if text := strings.SplitN(line, "\x00", 2)[1]; text == "Signed in" || text == "Ada Lovelace" {
 			t.Errorf("an anonymous page names somebody it cannot know: %q", text)
 		}
@@ -128,7 +128,7 @@ func TestTheWorkspaceIsNamedOnce(t *testing.T) {
 			// The header's line is the paragraph that both names the workspace and
 			// carries the rule that hides it from the breakpoint the sidebar paints at.
 			tag := openingTagOf(t, markup, tc.want)
-			if !strings.Contains(tag, "lg:hidden") {
+			if !strings.Contains(tag, "lg:hidden") || !strings.Contains(tag, " inline ") {
 				t.Errorf("the header's line for the workspace %q is %q: with no rule hiding it from the large breakpoint up, the name is painted twice", tc.want, tag)
 			}
 		})
@@ -140,7 +140,10 @@ func TestTheWorkspaceIsNamedOnce(t *testing.T) {
 // sidebar says too.
 func openingTagOf(t *testing.T, markup, text string) string {
 	t.Helper()
-	for _, element := range regexp.MustCompile(`<p [^>]*>.*?</p>`).FindAllString(markup, -1) {
+	for _, element := range regexp.MustCompile(`<span [^>]*>.*?</span>`).FindAllString(markup, -1) {
+		if !strings.Contains(element, `data-component="text"`) {
+			continue
+		}
 		// Text marks its own content with comments, so the words are read out of the
 		// element rather than matched against its inside.
 		said := regexp.MustCompile(`<!--.*?-->|<[^>]*>`).ReplaceAllString(element, "")

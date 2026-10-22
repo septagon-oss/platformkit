@@ -154,3 +154,16 @@ a test — call `document.Document` or `resource.List` with values. To add
 a component, add its renderer and class lists in `ui/components` and its entry
 to `examples.Gallery`; `go test ./ui/components/...` proves every emitted class
 resolves to a rule. To change colours or type, supply a `design.Pair`.
+
+## Served design floor
+
+[The canonical test instrument](testdata/design_floor.mjs) measures rendered geometry,
+typography, contrast, spacing, primary actions, paragraph measure, overflow and linked
+stylesheets. [The reference-app test](../apps/platformkit/shell_design_floor_test.go)
+runs it under `make check` on the dashboard, populated list, record, create and edit
+forms at 390 and 1440px, in light/dark and English/Portuguese. Missing browser tools,
+assets or measurements fail the test. Install the pinned browser prerequisites with
+`npm --prefix e2e ci` and `npm --prefix e2e run install:browsers` before the Go gate.
+[The e2e adapter](../e2e/design_floor.ts) retains its existing helper API and delegates
+to the same instrument. The floor is a mechanical presentation check; keyboard and
+screen-reader journeys remain separate verification.
