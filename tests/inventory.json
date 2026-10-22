@@ -7312,6 +7312,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/sign_in_again_not_claimable_by_link_test.go",
+   "id": "apps/platformkit/sign_in_again_not_claimable_by_link_test.go#TestALinkCannotClaimThatASessionEnded",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestALinkCannotClaimThatASessionEnded",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/sign_in_offers_sign_up_test.go",
    "id": "apps/platformkit/sign_in_offers_sign_up_test.go#TestTheSignInPageOffersSignUpWhenTheCompositionOptsIn",
    "kind": "go",
@@ -81528,7 +81547,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2191,
+  "files": 2192,
   "forge_runs": [
    408,
    413,
@@ -81563,7 +81582,7 @@
   ],
   "layers": {
    "behaviour": 3530,
-   "composition": 469,
+   "composition": 470,
    "contract": 21,
    "journey": 110
   },
@@ -81581,9 +81600,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4130,
+  "rows": 4131,
   "tiers": {
-   "merge": 2563,
+   "merge": 2564,
    "nightly": 110,
    "push": 1457
   },
@@ -81591,13 +81610,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1946,
+   "keep": 1947,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3744,
+   "keep": 3745,
    "keep-rewrite": 170,
    "merge": 216
   }
