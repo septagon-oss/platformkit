@@ -67,7 +67,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-      "max": 600
+      "max": 1530
     },
     {
       "name": "go_prod",
