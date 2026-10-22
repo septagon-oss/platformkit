@@ -70940,6 +70940,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/page/fault_reference_value_test.go",
+   "id": "ui/page/fault_reference_value_test.go#TestAFiveHundredShowsItsReferenceAsAValueAndLeaksNoDetail",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAFiveHundredShowsItsReferenceAsAValueAndLeaksNoDetail",
+   "needs_db": true,
+   "pkg": "ui/page",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/page/fault_test.go",
    "id": "ui/page/fault_test.go#TestARefusalPageCarriesItsOwnVerdictAndAWayOut",
    "kind": "go",
@@ -82410,7 +82429,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2234,
+  "files": 2235,
   "forge_runs": [
    408,
    413,
@@ -82444,7 +82463,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3560,
+   "behaviour": 3561,
    "composition": 480,
    "contract": 21,
    "journey": 115
@@ -82463,9 +82482,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4176,
+  "rows": 4177,
   "tiers": {
-   "merge": 2600,
+   "merge": 2601,
    "nightly": 115,
    "push": 1461
   },
@@ -82473,13 +82492,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1989,
+   "keep": 1990,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3790,
+   "keep": 3791,
    "keep-rewrite": 170,
    "merge": 216
   }
