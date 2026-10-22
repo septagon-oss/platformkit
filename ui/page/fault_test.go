@@ -116,8 +116,13 @@ func TestAFiveHundredSaysSomethingTrueWithoutSayingWhatBroke(t *testing.T) {
 	if !strings.Contains(body, "deadbeef-0000-1111-2222-333344445555") {
 		t.Errorf("the 500 page gives no reference, so the person cannot report it: %s", trim(body))
 	}
-	if strings.Contains(body, "Internal Server Error") == false {
+	// The page has to say what it is in words the person reads, which since the copy
+	// table means the heading and the sentence, not the protocol's name for the verdict.
+	if !strings.Contains(body, "Something went wrong") {
 		t.Errorf("the 500 page never says what it is: %s", trim(body))
+	}
+	if strings.Contains(body, "Internal Server Error") {
+		t.Errorf("the 500 page speaks the protocol at the person instead of the app: %s", trim(body))
 	}
 }
 
