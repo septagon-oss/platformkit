@@ -126,7 +126,7 @@ func handleLogin(svc contracts.Service, cookies Cookies) func(context.Context, *
 			return nil, refusal(err)
 		}
 		return &sessionOutput{
-			SetCookie: cookies.Session(session.ID, session.ExpiresAt),
+			SetCookie: cookies.Session(session.ID, session.CreatedAt),
 			Body:      identity,
 		}, nil
 	}
@@ -264,7 +264,7 @@ func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Co
 			out.SetCookie = cookies.Clear()
 			return out, nil
 		}
-		out.SetCookie = cookies.Session(session.ID, session.ExpiresAt)
+		out.SetCookie = cookies.Session(session.ID, session.CreatedAt)
 		out.Body.SignedIn = true
 		return out, nil
 	}

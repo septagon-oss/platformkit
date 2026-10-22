@@ -502,7 +502,7 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc *Service, users contracts.U
 		return &redirectOutput{
 			Status: http.StatusSeeOther, Location: "/",
 			SetCookie: []http.Cookie{
-				p.cookies.Session(session.ID, session.ExpiresAt),
+				p.cookies.Session(session.ID, session.CreatedAt),
 				p.cookies.Forget(trackedCookie),
 			},
 		}, nil
