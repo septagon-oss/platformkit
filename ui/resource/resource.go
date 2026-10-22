@@ -15,6 +15,7 @@
 package resource
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -140,6 +141,21 @@ type Options struct {
 	// to read it from. Both empty reads every word exactly as written.
 	Module string
 	Entity string
+	// Refusal is the verdict a refused write came back with, worded by the layer that
+	// renders refusals (ui/page) rather than by the code that caught the error. The
+	// render that redraws a form after a refusal shows its heading and tone from here
+	// and keeps the sentence it was handed as `detail`; nil is every render that names
+	// no verdict — a design export, a shell drawing the writer's own line — and draws
+	// what it drew before this field existed.
+	Refusal *Refusal
+}
+
+// Refusal is one verdict as a form shows it: what the refusal page calls it, and how
+// loudly it is announced. Both arrive worded and classified by whoever owns refusals;
+// this package renders them and decides neither.
+type Refusal struct {
+	Heading string
+	Tone    string
 }
 
 // Text is one label through the seam: the catalog's translation of key, or
@@ -245,7 +261,10 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	// offers a create: the two questions are different, and the second is
 	// answered by the mounted routes rather than by anybody's permissions.
 	if writable && r.offers("create") {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", one), Href: at + "/new"})}
+		// The noun sits inside a sentence, so the sentence owns its case: the words a
+		// declaration or a catalogue holds are the noun itself, and "New Plan" reads as
+		// two names. The count line and the empty state lowercase theirs the same way.
+		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", strings.ToLower(one)), Href: at + "/new"})}
 	}
 	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
@@ -485,17 +504,40 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		// catalogue and the language, and left to itself it prints its own English.
 		// A Portuguese form whose every field the module had translated would
 		// otherwise report its refused save in English under a Portuguese heading.
-		CancelLabel:  o.Label("screens.cancel", "Cancel"),
-		SubmitLabel:  o.Label("screens.save", "Save"),
-		FailureTitle: o.Label("screens.failure_title", ""),
-		Notes:        o.notes(),
+		CancelLabel: o.Label("screens.cancel", "Cancel"),
+		SubmitLabel: o.Label("screens.save", "Save"),
+		Notes:       o.notes(),
 		Text: func(key, fallback string) string {
 			if o.Locale == nil {
 				return fallback
 			}
 			return o.Locale.Text(key, fallback)
 		},
+		// The heading a refusal is drawn under is the verdict's own name where the caller
+		// looked one up (ui/page words the verdicts no writer wrote a sentence for), and
+		// this catalogue's words for a failed save where it named none. Either way it is
+		// read in the request's language; the tone comes from the same verdict, so a plan
+		// exclusion is announced quietly, and a render that names neither keeps the plain
+		// notice it drew before either field existed.
+		FailureTitle: cmp.Or(refusalHeading(o), o.Label("screens.failure_title", "")),
+		DetailTone:   refusalTone(o),
 	})
+}
+
+// refusalHeading and refusalTone are the two parts of the verdict a form draws, read
+// from a render that named none as the empty pair they were drawn from before.
+func refusalHeading(o Options) string {
+	if o.Refusal == nil {
+		return ""
+	}
+	return o.Refusal.Heading
+}
+
+func refusalTone(o Options) string {
+	if o.Refusal == nil {
+		return ""
+	}
+	return o.Refusal.Tone
 }
 
 // revisionCondition is the edit form's condition on the write: the row's own write count,

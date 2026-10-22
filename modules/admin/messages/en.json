@@ -20,6 +20,12 @@
       "": "Use the address this tenant knows you by."
     }
   },
+  "admin.login.again": {
+    "translation": "Sign in again to continue.",
+    "plural": {
+      "": "Sign in again to continue."
+    }
+  },
   "admin.login.email": {
     "translation": "Email",
     "plural": {

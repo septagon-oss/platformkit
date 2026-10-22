@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,12 +32,10 @@ type Shell struct {
 	Tag       string
 	Back      string
 	BackLabel string
-	// BackKey names the catalogue entry BackLabel is worded under, so the way out
-	// of a refusal arrives in the reader's language and not in the language whoever
-	// wrote the shell happens to speak. It is named by the composition that ships
-	// the copy for it, the same way a module's refusal names its own sentence
-	// (kit/fault.Reason): one label, one key, and no two shells sharing words they
-	// did not write. Empty, and the label is shown as written.
+	// BackKey names the catalogue entry BackLabel is worded under, so the way out of
+	// a refusal arrives in the reader's language. It is named by the composition that
+	// ships the copy for it, the way a module's refusal names its own sentence
+	// (kit/fault.Reason). Empty, and the label is shown as written.
 	BackKey string
 	// Messages is composed once from the participating modules' catalogs.
 	// Nil keeps the existing untranslated shell. Do not mutate it while serving.
@@ -78,6 +77,12 @@ type Route struct {
 	// See httpx.StreamedBody. A page that sets it declares no body field: nothing
 	// above it is going to decode one.
 	StreamsBody bool
+	// Subject says what this page is about, so that the refusal it may answer is
+	// about the same thing: a person sent away from one record is told the record is
+	// gone and offered its list, not told the address is missing. A hand-written page
+	// leaves it empty and is refused about its address, which is what a page that names
+	// no subject can truthfully say.
+	Subject Subject
 }
 
 // Handler is a page. It reads through ctx and knows the caller through r; what
@@ -95,9 +100,16 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 // Serve mounts one page as an operation, exactly like every JSON route: the
 // same recording, the same authorization declaration, the same transaction. It
 // is the edge: it reads the request into a Request, renders the View through
-// the frame, turns a SeeOther into the redirect and a 4xx problem into the same
+// the frame, turns a SeeOther into the redirect and a refusal into the same
 // refusal page a kernel guard renders — worded through the locale this shell
-// negotiated — and lets a 5xx keep the kernel's problem document and log line.
+// negotiated — whatever the verdict.
+//
+// A read that broke is drawn as that page too, at its own 5xx, for the person who
+// opened the address: what they can act on is "we couldn't load the tasks, try again
+// here", and no page in this repository has ever been improved by their seeing
+// "Internal Server Error". The reason behind the failure goes to the log, which is where
+// a cause belongs, and the request keeps its 500, so a monitor watching statuses still
+// sees the failure the page refuses to name.
 func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
@@ -130,17 +142,22 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			}
 			status, detail, reason := refusal(err)
 			if status >= http.StatusInternalServerError {
-				return nil, err
+				// The page says what could not be loaded and offers the address again; the
+				// reason stays here, with the caller who can fix it.
+				slog.ErrorContext(ctx, "page: the read behind this page failed",
+					"path", r.Path, "status", status, "error", err)
 			}
 			// The refusal of a handler is the same page the kernel's guards render
 			// (fault.go) and is worded the same way: through the locale this shell just
-			// negotiated, with the sentence this shell ships for that verdict. The
-			// refusal's own sentence travels with it (`reason`) when the writer named
-			// one, which is what lets a module's rule be answered in the reader's
-			// language without this package learning what the rule was; `fault` claims a
-			// language only over a sentence it replaced, so a verdict no catalogue
-			// speaks stays English and says so.
-			refused := fault(status, detail, reason, r.Locale, "", s.Back, s.backLabel(r.Locale))
+			// negotiated, with the sentence this shell ships for that verdict. The refusal's
+			// own sentence travels with it (`reason`) when the writer named one, which is
+			// what lets a module's rule be answered in the reader's language without this
+			// package learning what the rule was; `fault` claims a language only over a
+			// sentence it replaced, so a verdict no catalogue speaks stays English and says
+			// so — and the reference is empty here because a handler's own 4xx carries no
+			// request id of its own.
+			refused := fault(verdict{status: status, detail: detail, reason: reason, loc: r.Locale,
+				back: s.Back, backLabel: s.BackLabel, backKey: s.BackKey, path: r.Path, sub: rt.Subject})
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -156,16 +173,19 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			status = http.StatusOK
 		}
 		// A live region re-reads its own address when the server tells it that its
-		// state moved, and the answer to that read is the region's contents and
-		// nothing else: htmx puts these bytes inside the element the region already
-		// is, so a document here would put a page inside a page and repeat the element
-		// holding the connection. The rows behind the two answers come from the same
-		// guarded read on the same route — the header changes the shape of an answer
-		// and none of its content — and a page that named no topic is answered as a
-		// whole document whatever the request carried, because nothing said it had a
-		// region to swap.
+		// state moved, and the answer to that read is the region's contents and nothing
+		// else: htmx puts these bytes inside the element the region already is, so a
+		// document here would put a page inside a page and repeat the element holding the
+		// connection. The rows behind the two answers come from the same guarded read on
+		// the same route — the header changes the shape of an answer, none of its
+		// content — and a page that named no topic is answered as a whole document
+		// whatever the request carried, because nothing said it had a region to swap.
+		// A refusal of a region read is the same case and used not to be drawn that way:
+		// the refresh that found the row gone, the caller refused or the service down got
+		// a whole document dropped into the element showing the rows. The answer is a
+		// fragment now; htmx-config.js decides whether a refusal's fragment is swapped.
 		var out *httpx.Page
-		if len(v.Live) > 0 && regionRequested(ctx) {
+		if regionRequested(ctx) && (len(v.Live) > 0 || status >= http.StatusBadRequest) {
 			out, err = RenderFragment(g.Group(v.Body), status)
 		} else {
 			region := v.Body
@@ -268,23 +288,10 @@ func read(ctx context.Context, c Chrome) Request {
 
 // backLabel is the shell's way out, in the language this request is answered in.
 //
-// A label is copy, and copy is the catalogue's: the shell's own words are the
-// fallback a deployment that ships no copy for the key is shown, which is what a
-// shell with no catalogue, no key, or no language for this request keeps printing.
-func (s Shell) backLabel(loc *Locale) string {
-	if s.BackKey == "" {
-		// The shell named no catalogue entry for its way out. This package still
-		// words the destination its own label names, and carries the translation of
-		// that one destination under fault.back — so the label is asked of the
-		// reader's language here rather than printed as the composition wrote it.
-		// A shell whose words name somewhere else keeps them untranslated: see backWay.
-		return backWay(loc, s.BackLabel)
-	}
-	if loc == nil {
-		return s.BackLabel
-	}
-	return loc.Text(s.BackKey, s.BackLabel)
-}
+// The rule is the one the refusal page applies to the same shell, so a link a person
+// follows from a refusal and the way out the frame offers are the same words in the
+// same language: see shellWay.
+func (s Shell) backLabel(loc *Locale) string { return shellWay(loc, s.BackKey, s.BackLabel) }
 
 // WayBack is the address and the words of this shell's way out, in the language
 // this request is answered in. A renderer outside this package that draws a page

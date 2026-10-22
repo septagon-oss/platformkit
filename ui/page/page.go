@@ -114,15 +114,20 @@ func Bare(body []g.Node) g.Node { return document.Bare(body) }
 // What a status is *called* is copy, and it used to be net/http's English copy:
 // a page whose sentence, navigation and heading were Portuguese carried "Unprocessable
 // Entity" at the head of it because that name is a string in the standard library and
-// nobody's catalogue. It is asked of the shell's catalogue now, under the `fault.title.`
-// prefix this source owns, with net/http's name as the readable fallback — so a shell
-// with no catalogue is headed exactly as it always was, and one that ships Portuguese
-// says what the status is called in the language the page is written in.
+// nobody's catalogue. It is asked of the shell's catalogue now, under the same
+// `fault.<status>.title` heading the kernel's own refusal page is headed with, with
+// net/http's name as the readable fallback — so a shell with no catalogue is headed
+// exactly as it always was, and one that ships Portuguese says what the status is
+// called in the language the page is written in.
 //
 // The language is an argument of FaultIn, not of Fault: an application that renders a
 // refusal in its own words compiles against Fault, and a shell that speaks the reader's
 // language asks the form below. Fault with no locale is the page it always was —
 // net/http's name for the verdict, the caller's own words for the sentence.
+//
+// A caller's own page, this: the refusal a guard or a handler arrives at is worded by
+// fault, which holds the plain words this package keeps for the verdicts nobody else
+// wrote a sentence for and the subject the page was about.
 func Fault(status int, detail, back, backLabel string) View {
 	return FaultIn(nil, status, detail, back, backLabel)
 }
@@ -130,7 +135,7 @@ func Fault(status int, detail, back, backLabel string) View {
 // FaultIn is Fault in the reader's language: the verdict's name asked of that
 // language's catalogue, with net/http's name for a shell that ships none.
 func FaultIn(loc *Locale, status int, detail, back, backLabel string) View {
-	return document.Fault(status, faultTitle(loc, status), detail, back, backLabel)
+	return document.Fault(status, faultTitleName(loc, status), detail, back, backLabel)
 }
 
 // Empty is the input of a page that takes none. huma needs a type per shape.

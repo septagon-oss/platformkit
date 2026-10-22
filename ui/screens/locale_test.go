@@ -31,7 +31,7 @@ func TestScreensReadTheirLabelsThroughTheRequestLocale(t *testing.T) {
 	t.Parallel()
 	rows := []map[string]any{{"id": "1", "title": "Buy milk", "status": "open", "rank": 2.0, "pinned": true}}
 	english := render(t, screens.List(resource(), opts, rows, 1, 1, "", true).Body)
-	for _, want := range []string{"1 note", ">New Note<"} {
+	for _, want := range []string{"1 note", ">New note<"} {
 		if !strings.Contains(english, want) {
 			t.Fatalf("english list lacks %q:\n%s", want, english)
 		}
@@ -49,7 +49,7 @@ func TestScreensReadTheirLabelsThroughTheRequestLocale(t *testing.T) {
 		"screens.pagination": "Paginação", "screens.breadcrumb": "Caminho",
 	}}
 	list := render(t, screens.List(resource(), pt, rows, 3*perPage, 1, "", true).Body)
-	for _, want := range []string{fmt.Sprintf("%d notes registados", 3*perPage), ">Nova Note<", `aria-label="Paginação"`} {
+	for _, want := range []string{fmt.Sprintf("%d notes registados", 3*perPage), ">Nova note<", `aria-label="Paginação"`} {
 		if !strings.Contains(list, want) {
 			t.Errorf("localized list lacks %q:\n%s", want, list)
 		}

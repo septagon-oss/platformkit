@@ -805,7 +805,7 @@ func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
 	} {
 		t.Run(tt.who, func(t *testing.T) {
 			_, list, _ := callAt(t, router, tt.host, http.MethodGet, "/app/plan/plans", "")
-			if got := strings.Contains(list, ">New Plan<"); got != tt.wants {
+			if got := strings.Contains(list, ">New plan<"); got != tt.wants {
 				t.Errorf("the list offers New plan = %v, want %v", got, tt.wants)
 			}
 			// The row itself is visible either way: the catalogue is read by

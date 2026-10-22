@@ -319,3 +319,27 @@ func entryName(r httpx.Resource, o Options) string {
 	}
 	return name
 }
+
+// subject is what one generated page is about: the entry it lists or shows, in the two
+// names its own catalogue gives it, and the collection address a refusal links back to.
+// The names are read the way every other name on the screen is read — from the schema's
+// hints, through the request's language — so a refusal speaks a word where the page
+// speaks a word, and a slug stays in the API.
+func subject(r httpx.Resource, o Options, at string, record bool) page.Subject {
+	hints := o.Words(r.Schema).Entry(r.Present)
+	one, many := hints.Singular, hints.Plural
+	if one == "" || many == "" {
+		// The entry wrote no reading words, so both names come from the name the
+		// declaration gives the entity, read through that name's own catalogue key at
+		// each count — the same seam the page's heading and its count read — so a
+		// language chooses its plural form here rather than having a letter appended.
+		declared := described(r).Name
+		if one == "" {
+			one = strings.ToLower(o.Noun(r.Schema.Module, r.Schema.Entity, declared, 1))
+		}
+		if many == "" {
+			many = strings.ToLower(o.Noun(r.Schema.Module, r.Schema.Entity, declared, 2))
+		}
+	}
+	return page.Subject{Singular: one, Plural: many, List: at, Record: record}
+}

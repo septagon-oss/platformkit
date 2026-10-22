@@ -3,7 +3,6 @@ package page
 import (
 	"encoding/json"
 	"slices"
-	"strconv"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -38,14 +37,6 @@ func raisedFaults(t *testing.T) []string {
 	// and they are copy a person reads: a missing entry is the same defect one
 	// sentence down.
 	keys = append(keys, refusalParts...)
-	// The name the verdict itself is called. `net/http` names a status in the language
-	// Go was written in; the page heads itself with that name, so it is asked of the
-	// catalogue under `faultTitles` — the same list the file is checked against here,
-	// in both directions, so a verdict the installation can answer with has a Portuguese
-	// name and a name nobody answers with is not copy somebody maintains.
-	for _, status := range faultTitles {
-		keys = append(keys, "fault.title."+strconv.Itoa(status))
-	}
 	// The session refusals the shell carries on every page are refusals too: the
 	// document renders them from ui/document, which holds the sentences, and this
 	// package is the source that owns the `fault.` prefix they are addressed under,
@@ -55,6 +46,12 @@ func raisedFaults(t *testing.T) []string {
 		keys = append(keys, "fault.request."+kind+".title", "fault.request."+kind+".message")
 	}
 	keys = append(keys, "fault.request.sign_in") // the recovery link the first and third offer
+	// The sentences a page that declared its subject shows, and the ways out they
+	// offer. No faultKey call can produce these, so the loop above is silent about
+	// them and this is the only gate that asks the catalogue for them.
+	keys = append(keys, faultSubjectKeys()...)
+	keys = append(keys, faultFormKeys()...)
+	keys = append(keys, faultSubjectWayKeys()...)
 	keys = append(keys, faultTitleKeys()...)
 	slices.Sort(keys)
 	return slices.Compact(keys)

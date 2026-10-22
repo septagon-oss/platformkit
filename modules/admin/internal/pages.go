@@ -125,6 +125,7 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 			asked = to
 		}
 	}
+	carried := sessionRanOut(ctx)
 	if asked != "" {
 		next = asked
 	} else if open := p.firstScreen(ctx, r); open != "" {
@@ -156,8 +157,14 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 			Label: text("register", "Create an account")}))
 	}
 	title := text("title", "Sign in")
+	// Someone pushed off a screen is told to come back to it, not asked who they are.
+	again := text("description", "Use the address this tenant knows you by.")
+	if carried {
+		again = text("again", "Sign in again to continue.")
+	}
 	body := []g.Node{
-		components.SectionHeader(components.SectionHeaderProps{Eyebrow: fallback(r.Tenant.Name, brand), Title: title, Description: text("description", "Use the address this tenant knows you by."), Level: 1, Size: 2}),
+		components.SectionHeader(components.SectionHeaderProps{Eyebrow: fallback(r.Tenant.Name, brand), Title: title,
+			Description: again, Level: 1, Size: 2}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				// home travels next to next because the two can be different
@@ -204,6 +211,21 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		}),
 	}
 	return accessPage(title, body...)
+}
+
+// sessionRanOut reports whether the request presents a session the server no longer
+// answers: a session cookie with nobody resolved behind it. It is the only trace of an
+// expired session the server can see, and enough to say "sign in again" rather than
+// introduce the form to a stranger. It is read from the request, never from the query:
+// a link must not be able to claim that a session ended.
+func sessionRanOut(ctx context.Context) bool {
+	h, ok := httpx.RequestFrom(ctx)
+	if !ok {
+		return false
+	}
+	_, signedIn := tenancy.PrincipalFrom(ctx)
+	_, carried := httpx.SessionCookieOf(h)
+	return carried && !signedIn
 }
 
 // accessPage keeps the introduction, form and recovery links in one surface.

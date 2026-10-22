@@ -271,71 +271,47 @@
       "": "Iniciar sessão (abre num novo separador)"
     }
   },
-  "fault.title.400": {
+  "fault.400.title": {
     "references": [
       "ui/page/fault.go"
     ],
     "translation": "Pedido inválido"
   },
-  "fault.title.401": {
+  "fault.401.title": {
     "references": [
       "ui/page/fault.go"
     ],
     "translation": "Sem sessão iniciada"
   },
-  "fault.title.403": {
+  "fault.403.title": {
     "references": [
       "ui/page/fault.go"
     ],
     "translation": "Acesso recusado"
   },
-  "fault.title.404": {
-    "references": [
-      "ui/page/fault.go"
-    ],
-    "translation": "Página não encontrada"
-  },
-  "fault.title.405": {
-    "references": [
-      "ui/page/fault.go"
-    ],
-    "translation": "Método não permitido"
-  },
-  "fault.title.409": {
+  "fault.409.title": {
     "references": [
       "ui/page/fault.go"
     ],
     "translation": "Conflito"
   },
-  "fault.title.413": {
+  "fault.413.title": {
     "references": [
       "ui/page/fault.go"
     ],
     "translation": "Pedido demasiado grande"
   },
-  "fault.title.422": {
+  "fault.422.title": {
     "references": [
       "ui/page/fault.go"
     ],
     "translation": "Pedido não processável"
   },
-  "fault.title.429": {
+  "fault.429.title": {
     "references": [
       "ui/page/fault.go"
     ],
     "translation": "Demasiados pedidos"
-  },
-  "fault.title.500": {
-    "references": [
-      "ui/page/fault.go"
-    ],
-    "translation": "Erro interno do servidor"
-  },
-  "fault.title.503": {
-    "references": [
-      "ui/page/fault.go"
-    ],
-    "translation": "Serviço indisponível"
   },
   "fault.reference": {
     "references": [
@@ -355,6 +331,24 @@
       "": "Voltar ao espaço de trabalho"
     }
   },
+  "fault.retry": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Tentar de novo",
+    "plural": {
+      "": "Tentar de novo"
+    }
+  },
+  "fault.back_to": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Voltar a %s",
+    "plural": {
+      "": "Voltar a %s"
+    }
+  },
   "fault.AUTH_ANONYMOUS.title": {
     "references": [
       "ui/page/fault.go"
@@ -368,9 +362,9 @@
     "references": [
       "ui/page/fault.go"
     ],
-    "translation": "Proibido",
+    "translation": "Não tem acesso",
     "plural": {
-      "": "Proibido"
+      "": "Não tem acesso"
     }
   },
   "fault.AUTH_NOT_OPERATOR.title": {
@@ -440,36 +434,145 @@
     "references": [
       "ui/page/fault.go"
     ],
-    "translation": "Não encontrado",
+    "translation": "Página não encontrada",
     "plural": {
-      "": "Não encontrado"
+      "": "Página não encontrada"
     }
   },
   "fault.405.title": {
     "references": [
       "ui/page/fault.go"
     ],
-    "translation": "Método não permitido",
+    "translation": "Esta página não aceita esse pedido",
     "plural": {
-      "": "Método não permitido"
+      "": "Esta página não aceita esse pedido"
     }
   },
   "fault.500.title": {
     "references": [
       "ui/page/fault.go"
     ],
-    "translation": "Erro interno no servidor",
+    "translation": "Algo correu mal",
     "plural": {
-      "": "Erro interno no servidor"
+      "": "Algo correu mal"
     }
   },
   "fault.503.title": {
     "references": [
       "ui/page/fault.go"
     ],
-    "translation": "Serviço indisponível",
+    "translation": "Não está disponível de momento",
     "plural": {
-      "": "Serviço indisponível"
+      "": "Não está disponível de momento"
+    }
+  },
+  "fault.PLAN_EXCLUDES": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Isto não está incluído no plano deste espaço de trabalho.",
+    "plural": {
+      "": "Isto não está incluído no plano deste espaço de trabalho."
+    }
+  },
+  "fault.PLAN_EXCLUDES.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não está incluído no plano",
+    "plural": {
+      "": "Não está incluído no plano"
+    }
+  },
+  "fault.load_failed": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível carregar %s.",
+    "plural": {
+      "": "Não foi possível carregar %s."
+    }
+  },
+  "fault.load_failed.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível carregar",
+    "plural": {
+      "": "Não foi possível carregar"
+    }
+  },
+  "fault.load_failed.one": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível carregar %s.",
+    "plural": {
+      "": "Não foi possível carregar %s."
+    }
+  },
+  "fault.load_failed.one.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível carregar",
+    "plural": {
+      "": "Não foi possível carregar"
+    }
+  },
+  "fault.record.missing": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Este item já não está disponível.",
+    "plural": {
+      "": "Este item já não está disponível."
+    }
+  },
+  "fault.record.missing.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Já não está disponível",
+    "plural": {
+      "": "Já não está disponível"
+    }
+  },
+  "fault.record.denied": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Já não tem acesso a este item.",
+    "plural": {
+      "": "Já não tem acesso a este item."
+    }
+  },
+  "fault.record.denied.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Acesso retirado",
+    "plural": {
+      "": "Acesso retirado"
+    }
+  },
+  "fault.save_failed": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível guardar. Nada foi guardado.",
+    "plural": {
+      "": "Não foi possível guardar. Nada foi guardado."
+    }
+  },
+  "fault.save_failed.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível guardar",
+    "plural": {
+      "": "Não foi possível guardar"
     }
   },
   "fault.VERSION_UNUSABLE": {
