@@ -476,7 +476,7 @@ func verbs(copy string) string {
 // pseudoTag is the pseudo-locale's BCP-47 tag, spelled out here rather than read
 // from kit/locale/providers/pseudo: that package must stay out of every production
 // dependency closure, and one tag string is the whole of what this refusal needs
-// from it. The refusal's own test is pseudo_test.go's TestNoSourceMayShipThePseudoTag.
+// from it. TestNoSourceMayShipThePseudoTag pins the refusal.
 const pseudoTag = "en-XA"
 
 var verbPattern = regexp.MustCompile(`%(\[[0-9]+\])?([-+# 0]*[0-9.]*[a-zA-Z])`)

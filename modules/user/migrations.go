@@ -21,21 +21,15 @@ var Migrations = db.MigrationSource{
 	Owner:  "user",
 	Files:  db.Sub(schema, "migrations"),
 	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25}}},
-	// 000075 and 000076 are deliberately absent from that list. They are files
-	// this release ships new, not history the foundation applied, and an adoption
-	// is a claim about the old ledger: apps/platformkit's upgrade fixture builds
-	// its old installation out of every version up to the highest adopted one, so
-	// naming them here would drag every post-split file of every owner below them
-	// into a ledger that never saw them — and their numbers are 75 and 76 rather
-	// than the 30 and 32 they were first written as because an adoption also
-	// matches on owner and version: 30 here would find the kernel's own
-	// 000030_tenant_oidc and refuse the upgrade over a file this module had never
-	// shown. A new file takes a number above every file in the composition,
-	// wherever it lives (apps/platformkit/app_test.go counts them): these two were
-	// 72 and 73 while this delivery was open, main took 000072 for its own
-	// command-effect marker underneath them, and the upgrade fixture reads one
-	// version as one ledger row whatever the owner, so 75 and 76 — past this
-	// delivery's own 000077 — are the numbers they carry.
+	// 000075 and 000076 are deliberately absent from that list: they are files this
+	// release ships new, not history the foundation applied, and an adoption is a
+	// claim about the old ledger. The reference app's upgrade fixture builds its old
+	// installation out of every version up to the highest adopted one, so naming them
+	// here would drag every post-split file of every owner below them into a ledger
+	// that never saw them. An adoption matches on owner and version too, so a new file
+	// takes a number above every file in the composition wherever it lives: a low one
+	// would find another owner's file of the same number — 000030_tenant_oidc, say —
+	// and refuse an upgrade over a file this module never showed.
 	//
 	// 000025 indexes users twice in a file that does not create it. Applied, so
 	// unmarkable; the guard takes version 26 onwards.

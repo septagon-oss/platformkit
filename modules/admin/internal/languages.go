@@ -16,10 +16,10 @@ package internal
 // would be a page that declares a tongue it does not speak.
 //
 // One screen holds the default and the set, and the review step above the save names
-// what removing a language can cost. A two-step disclosure with progress is the
-// brief's shape for this, and the drawer and stepper that would carry it are not in
-// this repository yet — T-0181 owns them, and this page takes the heading, Select and
-// Checkbox the foundation has over an invented imitation of a stepper.
+// what removing a language can cost. A two-step disclosure with progress would suit
+// it better; the drawer and stepper that would carry one are not here yet, so the page
+// uses the heading, Select and Checkbox the foundation has over an invented imitation
+// of a stepper.
 
 import (
 	"context"

@@ -474,7 +474,7 @@ type Service interface {
 	// resubscribed rather than duplicated, because a tenant has one.
 	//
 	// A plan change is refused while the subscription is past due, with
-	// ErrConflict. That is the review's escape route closed: a tenant that owed
+	// ErrConflict. That closes an escape route: a tenant that owed
 	// money moved itself to a cheaper plan and the debt went with the old
 	// price. What is owed is owed for a period already served, and it is
 	// settled or the grace period runs out; it is not renegotiated.

@@ -66,7 +66,7 @@ type publication struct {
 }
 
 // InstallationLanguages is the set the suite is written against: the fake carries it
-// and internal/service_test.go builds the real service with it, so the specification
+// and the real service's tests build the service with it, so the specification
 // runs against the dependency a production composition passes rather than against
 // nil, which is a service no application composes.
 func InstallationLanguages() []string { return []string{"en", "pt-PT"} }

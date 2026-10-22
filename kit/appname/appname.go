@@ -16,7 +16,7 @@
 // # The rule
 //
 // Every shared name is formed by a function in this package, from a validated
-// Name. A census test (census_test.go) scans the tree for shared names formed
+// Name. A census test scans the tree for shared names formed
 // any other way and names the site it found, so a shared name cannot be spelled
 // inline in a caller — the same argument that puts an event's address in
 // transport.Subject and nowhere else.

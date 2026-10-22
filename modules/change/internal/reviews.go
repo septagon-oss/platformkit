@@ -313,7 +313,7 @@ func tableLinks(where string) components.TableSlots {
 // nobody was refused on. It is drawn above everything else, because a decision that
 // failed is the thing they came back to read. It is also the page's one rail: every word
 // the row says itself sits on one column, so the one thing that steps aside is the thing
-// that just refused the person. apps/platformkit/change_refusal_layout_test.go measures
+// that just refused the person. The refusal layout test measures
 // that, and the two sections below are how the page kept to it.
 func (p Pages) detail(ctx context.Context, r page.Request, where string, id uuid.UUID, refusal string) (page.View, error) {
 	tx, live := httpx.TxFrom(ctx)

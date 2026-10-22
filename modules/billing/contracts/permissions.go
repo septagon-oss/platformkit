@@ -8,7 +8,7 @@ package contracts
 // what it separates. Reading the price list, enrolling in a plan and *writing
 // the price list* were one permission, billing:manage, held by every tenant's
 // own administrator — so a customer created a plan of its own, at a price of
-// its own, and switched to it. The review's probe did exactly that from
+// its own, and switched to it. A probe did exactly that from
 // past_due and its debt vanished.
 //
 // So the catalogue is the operator's. billing:catalog is declared

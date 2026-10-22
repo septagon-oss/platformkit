@@ -145,7 +145,7 @@ func startConfig(data, addr string, pgPort int) config.Config {
 
 // startWebhookKey is the key the start command wraps every endpoint's signing
 // secret with, and the value config.example.yaml carries for `make run`:
-// apps/platformkit/start_webhook_test.go reads that file and refuses the two
+// a test reads that file and refuses the two
 // spellings once they disagree, because an installation that migrated its
 // endpoints under one key and restarted with the other cannot open the secrets it
 // already wrapped. modules/webhook refuses to be composed without a key, and this

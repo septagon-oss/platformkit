@@ -95,7 +95,7 @@ func (s *Service) Subscribe(ctx context.Context, tx db.Tx[db.Tenant], planID uui
 	}
 	// A tenant that owes money does not get to choose a cheaper plan. The debt
 	// is for a period already served; it is settled, or the grace period runs
-	// out and the subscription ends. This is the review's escape route, and it
+	// out and the subscription ends. This is an escape route, and it
 	// asks Outstanding rather than the status because a subscription cancelled
 	// while it owed is cancelled and still owes.
 	if end, owes := sub.Outstanding(); owes && sub.PlanID != planID {

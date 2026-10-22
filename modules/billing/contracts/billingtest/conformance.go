@@ -133,7 +133,7 @@ func due(t *testing.T, f Fixture) contracts.Charge {
 
 func cases() map[string]func(*testing.T, Fixture) {
 	return map[string]func(*testing.T, Fixture){
-		// The review's escape probe, as a case. A tenant that owed money moved
+		// The escape probe, as a case. A tenant that owed money moved
 		// itself to a plan it had created at a price of nought, and the debt
 		// went with the old price. The half of the fix that lives in this
 		// interface is here; the other half — that a customer cannot create a
