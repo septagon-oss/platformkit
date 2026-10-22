@@ -133,6 +133,12 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 	if req, ok := httpx.RequestFrom(ctx); ok {
 		saved = req.URL.Query().Get("language") == "saved"
 	}
+	// The button never reads as the bare verb. Every generated record form carries a
+	// submit named "Save", and this control stands beside it on every page of the
+	// shell: two buttons whose names begin with the same word are two names a person
+	// has to disambiguate by looking, and the tooling that reaches for one by name
+	// reaches for both. Saying what the button uses — the language in the selector —
+	// names this control by the thing it changes.
 	controls := []g.Node{
 		components.Select(components.SelectProps{
 			Name:        "locale",
@@ -142,7 +148,7 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 			Options:     options,
 		}),
 		components.Button(components.ButtonProps{
-			Label: chrome(r, "account.save", "Save language"), Type: "submit", Variant: "secondary", Size: "sm",
+			Label: chrome(r, "account.save", "Use this language"), Type: "submit", Variant: "secondary", Size: "sm",
 		}),
 	}
 	if revision != "" {

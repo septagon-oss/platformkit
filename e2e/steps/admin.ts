@@ -13,7 +13,7 @@ import { expect, type APIRequestContext, type Locator, type Page } from '@playwr
 //
 //   - A step says what a person does, in the language the page is written in, and
 //     takes the language as an argument rather than assuming English. A step that
-//     clicks `Save language` cannot be used by the Portuguese half of a journey,
+//     clicks `Use this language` cannot be used by the Portuguese half of a journey,
 //     and the Portuguese half is the point of the journeys that exist.
 //   - A step asserts the arrival it is responsible for. `signIn` ends with the
 //     workspace URL because a step that returned before the redirect landed hands

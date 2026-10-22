@@ -36,9 +36,11 @@ test.afterEach(async ({ request }) => { await clearLanguageChoice(request) });
 
 test('a person choosing Português in the account control is answered in Portuguese, and again after signing out', async ({ page }) => {
   await signIn(page);
-  // An English browser, an English page: the control's job is to change this.
+  // An English browser, an English page: the control's job is to change this. The
+  // words below are the workspace's own — the operator's home says what it is — and
+  // they are asserted as the heading a person lands under, not as a title tag.
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Platform overview', exact: true })).toBeVisible();
 
   const control = accountLanguage(page);
   await expect(control).toBeVisible();
@@ -50,14 +52,14 @@ test('a person choosing Português in the account control is answered in Portugu
     options.map(option => option.value).filter(value => value !== ''));
   expect(offered).toEqual(['en', 'pt-PT']);
 
-  await chooseLanguage(page, 'pt-PT', 'Save language');
+  await chooseLanguage(page, 'pt-PT', 'Use this language');
 
   // Back to the page they were reading — a form post, not a swap — with the sentence
   // that says it landed, in the language they just asked for.
   await expect(page).toHaveURL(/\/app\?language=saved$/);
   await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  await expect(page.getByRole('heading', { name: 'Painel', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Visão geral da plataforma', exact: true })).toBeVisible();
   await expect(accountLanguageStatus(page)).toHaveText('Idioma guardado.');
   // The control reads the choice back rather than the browser, and its own button now
   // says it in the language it is written in.
@@ -70,7 +72,7 @@ test('a person choosing Português in the account control is answered in Portugu
   await signOut(page);
   await signIn(page);
   await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
-  await expect(page.getByRole('heading', { name: 'Painel', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Visão geral da plataforma', exact: true })).toBeVisible();
   await expect(select).toHaveValue('pt-PT');
 
   // Taking the choice back is the other half of the control — a preference you cannot
@@ -78,9 +80,9 @@ test('a person choosing Português in the account control is answered in Portugu
   // the browser and the tenant's default answer again. The button is clicked by its
   // Portuguese name because the page is Portuguese, which is the same fact the two
   // lines above assert, asserted of the control itself.
-  await chooseLanguage(page, '', 'Guardar idioma');
+  await chooseLanguage(page, '', 'Usar este idioma');
   await expect(page).toHaveURL(/\/app\?language=saved$/);
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Platform overview', exact: true })).toBeVisible();
   await expect(select).toHaveValue('');
 });

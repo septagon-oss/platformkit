@@ -675,7 +675,11 @@ func header(ctx context.Context, deps frameDeps, r page.Request, navigation comp
 			components.SidebarDisclosure(navigation),
 			components.ChromeContext(components.ChromeContextProps{Name: workspace(r, brand), Size: chromeTextSize}),
 			components.Badge(components.BadgeProps{Label: workspaceScope(r.Tenant, o), Tone: "neutral"})),
-		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
+		// The line wraps rather than grows. It carries the person's own name, the theme
+		// switch, the language control and the way out, and what the person can call
+		// themselves is nobody else's business: nothing here may be cut off at a narrow
+		// width, and nothing here may push the page wider than the screen it is read on.
+		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3", Wrap: true}, right...),
 	}
 }
 

@@ -243,9 +243,9 @@
     "references": [
       "modules/admin/internal/account.go"
     ],
-    "translation": "Save language",
+    "translation": "Use this language",
     "plural": {
-      "": "Save language"
+      "": "Use this language"
     }
   },
   "admin.account.saved": {

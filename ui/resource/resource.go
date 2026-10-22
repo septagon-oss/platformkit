@@ -162,13 +162,30 @@ func (o Options) plural(key string, count int64, one, other string, args ...any)
 	return (locale.Locale{}).Plural(key, count, one, other, args...)
 }
 
-// noun is this resource's word for a count, in the request's language. The two
-// words come from the same reading the rest of the screen's words come from — the
-// entity's declared hints, read through the request's catalogue — and the count
-// picks between them by that language's cardinal rule rather than by a comparison
-// here, so a language with two plural forms gets both of them.
+// noun is this resource's word for a count, in the request's language.
+//
+// An entry that wrote its own two words in `Present` is called by those words, and
+// by nothing else: `reading` has already put them in the reader's language, so all
+// the count still has to choose is which of the two it wants. The resource-name key
+// is not asked for such an entry, because it carries a different pair — the name the
+// declaration gives the entity for its records, its cards and its API — and a list
+// that reads its heading, its count and its trail from those words while its own
+// module wrote other ones names one thing twice. The screen and the catalogue
+// document that describes it must answer with the same noun: `presentation.plural`
+// on `/api/v1/app/resources` is the entry's declared word, and the heading a person
+// reads is taken from it.
+//
+// An entry that wrote no reading words is called by its declared name, read through
+// that name's own catalogue key so a language chooses its plural form rather than
+// having a letter appended here.
 func (o Options) noun(r Resource, count int64) string {
 	reading := r.reading(o)
+	if r.Present.Singular != "" || r.Present.Plural != "" {
+		if count == 1 {
+			return reading.Singular
+		}
+		return reading.Plural
+	}
 	return o.Noun(r.Schema.Module, r.Schema.Entity, entity.Name{One: reading.Singular, Other: reading.Plural}, count)
 }
 
