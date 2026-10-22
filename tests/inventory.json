@@ -70566,6 +70566,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/readonly_operations_draw_no_write_door_test.go",
+   "id": "ui/resource/readonly_operations_draw_no_write_door_test.go#TestAReadOnlyResourceDrawsNoWriteDoorEvenForAWriter",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAReadOnlyResourceDrawsNoWriteDoorEvenForAWriter",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/resource_test.go",
    "id": "ui/resource/resource_test.go#TestListLeadsWithTheKnownFieldAndHidesWhatTheSchemaHides",
    "kind": "go",
@@ -79828,7 +79847,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2147,
+  "files": 2148,
   "forge_runs": [
    408,
    413,
@@ -79862,7 +79881,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3449,
+   "behaviour": 3450,
    "composition": 462,
    "contract": 21,
    "journey": 109
@@ -79881,23 +79900,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4041,
+  "rows": 4042,
   "tiers": {
    "merge": 2484,
    "nightly": 109,
-   "push": 1448
+   "push": 1449
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1902,
+   "keep": 1903,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3655,
+   "keep": 3656,
    "keep-rewrite": 170,
    "merge": 216
   }
