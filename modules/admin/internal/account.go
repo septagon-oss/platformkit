@@ -148,7 +148,9 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 			Options:     options,
 		}),
 		components.Button(components.ButtonProps{
-			Label: chrome(r, "account.save", "Use this language"), Type: "submit", Variant: "secondary", Size: "sm",
+			// The quiet treatment, like the theme switch: the header carries one filled
+			// action, the way out, and the shell's own floor refuses a view with two.
+			Label: chrome(r, "account.save", "Use this language"), Type: "submit", Variant: "ghost", Size: "sm",
 		}),
 	}
 	if revision != "" {
