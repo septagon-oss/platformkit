@@ -241,7 +241,7 @@ func handleFinishPasskeyAssertion(passkeys contracts.Passkeys, cookies Cookies, 
 			return nil, passkeyRefusal(ctx, err, words)
 		}
 		return &sessionOutput{
-			SetCookie: cookies.Session(session.ID, session.ExpiresAt),
+			SetCookie: cookies.Session(session.ID, session.CreatedAt),
 			Body:      identity,
 		}, nil
 	}
