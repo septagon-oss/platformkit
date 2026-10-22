@@ -53,7 +53,38 @@ type Options = resource.Options
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
 	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
-		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present, API: r.Path}
+		Screen: r.Screen, Operations: screenOperations(r), Present: r.Present, API: r.Path}
+}
+
+// writeAvailable is structural: request authority is checked by the mounted guard.
+func writeAvailable(r httpx.Resource, verb httpx.CRUD) bool {
+	if !r.WriteAuth().Declared() || !r.Offers(verb) {
+		return false
+	}
+	switch verb {
+	case httpx.CRUDCreate:
+		return !r.Singleton && r.Create != nil
+	case httpx.CRUDUpdate:
+		return r.Update != nil
+	case httpx.CRUDDelete:
+		return !r.Singleton && r.Delete != nil
+	}
+	return false
+}
+
+// screenOperations keeps an explicit empty set distinct from the all-verbs default.
+func screenOperations(r httpx.Resource) []string {
+	out := make([]string, 0, 5)
+	for _, verb := range httpx.CRUDValues() {
+		if verb == httpx.CRUDList || verb == httpx.CRUDRead {
+			if r.Offers(verb) {
+				out = append(out, string(verb))
+			}
+		} else if writeAvailable(r, verb) {
+			out = append(out, string(verb))
+		}
+	}
+	return out
 }
 
 // view is the whole of what a mounted screen knows: the resource's own shape, and

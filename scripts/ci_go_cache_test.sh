@@ -443,11 +443,12 @@ for pair in \
 	"checkout:uses: actions/checkout@" \
 	"gocache:name: Name this job's Go cache" \
 	"restore:uses: actions/cache/restore@" \
+	"setup-node:uses: actions/setup-node@" \
+	"browser:name: Install the browser$" \
 	"make check:run: make check$" \
 	"make check-race:run: make check-race$" \
 	"govulncheck:run: go run golang.org/x/vuln" \
 	"save:uses: actions/cache/save@" \
-	"setup-node:uses: actions/setup-node@" \
 	"check-e2e-guards:run: make check-e2e-guards$" \
 	"make e2e:name: make e2e$" \
 	"budget:run: bash scripts/check_budget_ratchet.sh" ; do
@@ -564,35 +565,50 @@ done
 }
 
 before=$failures
-# 12. Where the save stands decides whether it runs. When a runner goes silent the forge finalises the
-#     job as failed and reports every step it had not reached as `failure`, without evaluating any of
-#     them: job 51417 (run 50923, 2026-10-05) ends its log with the editor suite's own sampler at
-#     23:17:11 and carries `completed_at` 23:31:36, and its save step — which stood behind ~24 minutes
-#     of npm, docker and Chromium — is reported failure having never run, so the archive this task
-#     exists to write was not written while the Go gates it archives had been green for 25 minutes.
-#     The `design` job's copy of the same step, twelve steps earlier in the same run, finished in 9s.
-#     What moving it forward gives up is measured beside the step and worth 3.38s: gate 10's
-#     `go build -o … ./apps/platformkit` (scripts/e2e.sh:137) and the editor suite's
-#     `go run ./tools/designexport` (editor/replacement.test.mjs:1696, 1790, 2013) are two final links
-#     over packages `make check`'s own `build:` goal already compiled. The invariant is therefore the
-#     two ends of the Go work: after the last step that compiles a package of this repository, before
-#     the first that brings in node.
+# 12. The Go suite needs the pinned browser before verification. Save its completed cache once,
+#     before the e2e guards and journeys, so a runner lost during that tail cannot lose the archive.
+#     Later journeys reuse the same installation; provisioning is a prerequisite, not the tail.
 check_job="$(job_text check)"
-last_compile="$(grep -nE '^[[:space:]]+run: go run golang.org/x/vuln' <<<"$check_job" | tail -1 | cut -d: -f1)"
-job_save="$(grep -nE '^[[:space:]]+uses: actions/cache/save@' <<<"$check_job" | head -1 | cut -d: -f1)"
-first_node="$(grep -nE '^[[:space:]]+- uses: actions/setup-node@' <<<"$check_job" | head -1 | cut -d: -f1)"
-gate10="$(grep -nE '^[[:space:]]+- name: make e2e$' <<<"$check_job" | head -1 | cut -d: -f1)"
-for pair in "last Go compile:$last_compile" "save:$job_save" "first node:$first_node" "gate 10:$gate10"; do
+browser="$(step_block check 'Install the browser')"
+node_setup="$(uses_block check 'actions/setup-node@')"
+grep -qE '^[[:space:]]+working-directory: e2e$' <<<"$browser" ||
+	fail "check's browser installation does not use e2e's pinned dependency tree"
+grep -qE '^[[:space:]]+npm ci$' <<<"$browser" ||
+	fail "check's browser installation does not install e2e's lockfile with npm ci"
+grep -qE '^[[:space:]]+npx playwright install --with-deps chromium$' <<<"$browser" ||
+	fail "check's browser installation does not provision pinned Chromium and its system dependencies"
+if grep -qE '^[[:space:]]+(if:|continue-on-error:)' <<<"$node_setup$browser"; then
+	fail "check's Node and browser prerequisites must run unconditionally and fail on installation errors"
+fi
+for pattern in 'uses: actions/setup-node@' 'name: Install the browser$' 'npx playwright install --with-deps chromium$' 'uses: actions/cache(/save)?@'; do
+	count="$(grep -cE "^[[:space:]]+(- )?$pattern" <<<"$check_job" || true)"
+	[ "$count" -eq 1 ] || fail "check needs exactly one [$pattern] step, found $count"
+done
+last_compile="$(grep -nE '^[[:space:]]+run: go run golang.org/x/vuln' <<<"$check_job" | tail -1 | cut -d: -f1 || true)"
+job_save="$(grep -nE '^[[:space:]]+uses: actions/cache/save@' <<<"$check_job" | head -1 | cut -d: -f1 || true)"
+first_node="$(grep -nE '^[[:space:]]+- uses: actions/setup-node@' <<<"$check_job" | head -1 | cut -d: -f1 || true)"
+browser_install="$(grep -nE '^[[:space:]]+- name: Install the browser$' <<<"$check_job" | head -1 | cut -d: -f1 || true)"
+go_check="$(grep -nE '^[[:space:]]+run: make check$' <<<"$check_job" | head -1 | cut -d: -f1 || true)"
+e2e_guards="$(grep -nE '^[[:space:]]+run: make check-e2e-guards$' <<<"$check_job" | head -1 | cut -d: -f1 || true)"
+gate10="$(grep -nE '^[[:space:]]+- name: make e2e$' <<<"$check_job" | head -1 | cut -d: -f1 || true)"
+for pair in "last Go compile:$last_compile" "save:$job_save" "first node:$first_node" "browser:$browser_install" "Go check:$go_check" "e2e guards:$e2e_guards" "gate 10:$gate10"; do
 	[ -n "${pair#*:}" ] ||
 		fail "the check job has no ${pair%%:*} step to order (case 12 cannot tell where the save stands)"
 done
-if [ -n "$job_save" ] && [ -n "$last_compile" ] && [ -n "$first_node" ] && [ -n "$gate10" ]; then
+if [ -n "$first_node" ] && [ -n "$browser_install" ] && [ -n "$go_check" ]; then
+	if [ "$first_node" -ge "$browser_install" ] || [ "$browser_install" -ge "$go_check" ]; then
+		fail "check needs Node ($first_node) and pinned Chromium ($browser_install) before the Go gate ($go_check)"
+	else
+		echo "ok   check provisions Node ($first_node) and pinned Chromium ($browser_install) before the Go gate ($go_check)"
+	fi
+fi
+if [ -n "$job_save" ] && [ -n "$last_compile" ] && [ -n "$e2e_guards" ] && [ -n "$gate10" ]; then
 	if [ "$job_save" -lt "$last_compile" ]; then
 		fail "check's save step ($job_save) stands before the Go gates ($last_compile): the archive would hold none of the suite's compilations"
-	elif [ "$job_save" -gt "$first_node" ] || [ "$job_save" -gt "$gate10" ]; then
-		fail "check's save step ($job_save) stands behind node ($first_node) and gate 10 ($gate10) — ~24 minutes of browser work a job whose runner goes silent never finishes, which is how job 51417 reported this step as failure without running it"
+	elif [ "$job_save" -gt "$e2e_guards" ] || [ "$job_save" -gt "$gate10" ]; then
+		fail "check's save step ($job_save) stands behind the e2e guards ($e2e_guards) or gate 10 ($gate10): the browser tail could swallow the archive"
 	else
-		echo "ok   check's save step ($job_save) follows the last step that compiles ($last_compile) and precedes node ($first_node) and gate 10 ($gate10): the browser tail cannot swallow the archive"
+		echo "ok   check's save step ($job_save) follows the last step that compiles ($last_compile) and precedes the e2e guards ($e2e_guards) and gate 10 ($gate10): the browser tail cannot swallow the archive"
 	fi
 fi
 

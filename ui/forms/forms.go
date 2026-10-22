@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
+	"github.com/septagon-oss/platformkit/ui/style"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 )
@@ -248,7 +249,7 @@ func example(id string, model Model, options Options) examples.Example {
 	// that sets enctype by hand and renders no file control is a page that
 	// stopped validating its own fields.
 	props := components.FormProps{
-		ComponentProps: components.ComponentProps{ID: formID},
+		ComponentProps: components.ComponentProps{ID: formID, Class: style.New().Width(style.SFull).MaxWScaled(style.MaxWSM).Compile()},
 		HTMXProps: components.HTMXProps{
 			Post: options.Action, Target: "#" + formID, Swap: "outerHTML", Select: "#" + formID},
 		Action: options.Action, Label: options.Title,
