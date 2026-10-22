@@ -273,23 +273,18 @@ func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBu
 	run := &runner{conn: conn, budget: budget}
 	// The composition lock is a session lock and this function owns the session: the two
 	// defers above hand it back and close the pool it came from, which ends the backend and
-	// drops the key with it. Nothing is unlocked on the way out, which is the guarantee this
-	// point always made ("an unreleased one would go when the connection goes") minus the
-	// statement that could only ever be refused. Those two defers are the whole unlock, and
-	// they run on every return: a run that applied all its files hands the key back when its
-	// backend exits, after Migrate has returned, and the only returns that reach them before
-	// the work is done are the caller having cancelled or a file having failed. Nor is there
-	// a probe in its place: every
-	// method on a *sql.Conn, PingContext included, goes through grabConn, which reads `done`
-	// before it takes `closemu`, so a Close completing in between returns a nil driver
-	// connection and a nil error (database/sql sql.go:2005, :2136). That is the nil a -race
-	// run of the two cancellation cases reached in this call on 2026-10-04; ending the
-	// session is what a session that may be gone answers, and the defers already do it —
-	// kit/db/migration_cancellation_lock_test.go reads pg_locks for the key after Migrate
-	// returned and finds nothing holding it. The window an `autocommit` file opens *inside* a
-	// run is the different case, and it still puts the key down with a statement: mid-run the
-	// session is the run's own, and the statement below it must wait for the transactions
-	// already in the database. See stepAwayFromTheCompositionLock.
+	// drops the key with it. Those two defers are therefore the whole unlock, and they run on
+	// every return — the guarantee this point always made, "an unreleased one would go when
+	// the connection goes", minus the statement that could only ever be refused. A run that
+	// applied all its files hands the key back when its backend exits, after Migrate has
+	// returned, and the only returns that reach the defers early are the caller having
+	// cancelled or a file having failed. No probe takes the statement's place: every method on
+	// a *sql.Conn, PingContext included, reads the connection's `done` before it takes
+	// `closemu`, so a Close completing in between answers a nil driver connection and a nil
+	// error — and ending the session is what a session that may be gone answers. The window an
+	// `autocommit` file opens *inside* a run is the different case, and it still puts the key
+	// down with a statement: mid-run the session is the run's own, and the statement below it
+	// must wait for the transactions already in the database. See stepAwayFromTheCompositionLock.
 	if err := run.holdCompositionLock(ctx); err != nil {
 		return err
 	}
