@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -35,15 +36,18 @@ func InTenant(ctx context.Context, system Tx[System], tenant tenancy.Tenant, fn 
 	if err := system.db.Exec("SELECT set_config('platformkit.tenant_id', ?, true)", tenant.ID.String()).Error; err != nil {
 		return fmt.Errorf("db: set bridged tenant: %w", err)
 	}
-	lentCtx, release := context.WithCancel(tenancy.WithTenant(ctx, tenant))
-	defer release()
+	view := new(tenantView)
+	defer view.close()
+	lentCtx := view.bind(tenancy.WithTenant(ctx, tenant))
 	// One session of the caller's transaction, bound to the context this call
 	// owns. It shares the transaction's connection and its settings, and nothing
 	// else: committing, rolling back and restoring the settings stay with the
 	// system handle the caller passed in.
 	lent := system.db.WithContext(lentCtx)
-	tenantCtx := context.WithValue(lentCtx, txKey{}, openTx{db: lent, tenant: tenant})
-	if err := fn(tenantCtx, Tx[Tenant]{db: lent, scope: Tenant{tenant: tenant}}); err != nil {
+	tenantCtx := context.WithValue(lentCtx, txKey{}, openTx{db: lent, tenant: tenant, view: view})
+	err := fn(tenantCtx, Tx[Tenant]{db: lent, scope: Tenant{tenant: tenant}})
+	view.close()
+	if err != nil {
 		return err
 	}
 	if err := sealed(system.db, tenant.ID.String(), "false"); err != nil {
@@ -56,4 +60,35 @@ func InTenant(ctx context.Context, system Tx[System], tenant tenancy.Tenant, fn 
 		return fmt.Errorf("db: restore system access: %w", err)
 	}
 	return sealed(system.db, "", "true")
+}
+
+// tenantView bounds every borrowed handle to the provisioning callback, even
+// when a nested caller removes cancellation from its own context. Closing it
+// cancels all handles synchronously before system access is restored.
+type tenantView struct {
+	mu      sync.Mutex
+	closed  bool
+	cancels []context.CancelFunc
+}
+
+func (v *tenantView) bind(ctx context.Context) context.Context {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	if v.closed {
+		cancel()
+	} else {
+		v.cancels = append(v.cancels, cancel)
+	}
+	return ctx
+}
+
+func (v *tenantView) close() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.closed = true
+	for _, cancel := range v.cancels {
+		cancel()
+	}
+	v.cancels = nil
 }
