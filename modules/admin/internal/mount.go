@@ -65,7 +65,6 @@ const brand = "PlatformKit"
 // build stamp are the chrome, and the design floor allows a page two body sizes in total — so three
 // sizes in the chrome alone leaves the page's own copy nothing. `sm` is what two of the three already
 // took, and it is the sidebar's own nav step, which leaves `base` free for the page inside <main>.
-// See modules/admin/internal/frame_chrome_text_test.go.
 const chromeTextSize = "sm"
 
 // Shell is what the manifest hands the implementation.

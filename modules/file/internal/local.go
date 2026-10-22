@@ -131,7 +131,7 @@ func (l *Local) positions(tenant, id uuid.UUID) []string {
 // join is the adapter's root with a name from kit/appname under it. One line
 // spells that join, because the join of the root with a relative position is how
 // a stored file's physical path is written, and the census counts the spelling
-// (kit/appname/census_test.go): every position that reaches a path below comes
+// (the kit/appname census): every position that reaches a path below comes
 // from a constructor in that package, whichever of them the caller needed.
 func (l *Local) join(rel string) string { return filepath.Join(l.dir, rel) }
 

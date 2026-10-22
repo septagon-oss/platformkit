@@ -6,7 +6,7 @@ package components
 // kernel owns every name in this list — ui.Compose refuses a client rule that
 // names one, because such a rule is coupled to markup the kernel may rename.
 //
-// The list is the kernel's rendered markup, not a style guide: hooks_test.go
+// The list is the kernel's rendered markup, not a style guide: a test
 // reads this package's sources and refuses a name the markup emits that the list
 // omits, and a name the list carries that no markup emits. A component that adds
 // a part adds its attribute to both files in the same change.

@@ -164,8 +164,8 @@ var ErrContended = errors.New("db: migration is contended: it could not take a l
 // a grammar mistake in a header are all reported before anything of that owner is
 // applied. The first and the third are answered from the files, before a connection is
 // opened, so a run they refuse leaves the runner's own two tables uncreated as surely
-// as it leaves no history row: kit/db/contention_err_contended_under_budget_deployment_named_test.go counts the relations
-// such a run left and requires none, and migrations/rule_floor_files_force_test.go asks the same
+// as it leaves no history row: the contention tests count the relations
+// such a run left and require none, and the rule-floor tests ask the same
 // question by pointing at a database that is not there. Files behind a backfill the
 // worker owns wait for it, and the run returns nil, because that process is the only one
 // that can finish the work.
@@ -715,7 +715,7 @@ type runner struct {
 // the cycle it stood in has already been broken by the cancellation. The ask therefore
 // goes out through execReaskable, and a database that picks the same session every time
 // is reported with the server's own words and the files unapplied.
-// kit/db/composition_lock_deadlock_test.go raises 40P01 of the ask from the database side
+// The deadlock test raises 40P01 of the ask from the database side
 // and pins both halves: the run that is picked twice and then gets the lock applies its
 // files, the run that is picked every time refuses and records nothing.
 func (r *runner) holdCompositionLock(ctx context.Context) error {
@@ -795,7 +795,7 @@ func catalogTupleRace(err error) bool {
 // per-session: the half-built index one is dropping and rebuilding is the object the other
 // is dropping and rebuilding, and two sessions doing that to one index answer each other
 // with a cycle the detector picks one of (40P01) and with "tuple concurrently updated"
-// (XX000). Measured by kit/db/concurrent_index_replicas_test.go, which starts two runs over
+// (XX000). Measured with two runs over
 // one table whose index is already invalid: with only the composition lock released, one of
 // the two boots refused, and neither the repair's retry budget nor the re-ask of the ledger
 // row could answer it, because the conflict arrives earlier than both — in the drop, and in
@@ -807,7 +807,7 @@ func catalogTupleRace(err error) bool {
 // when the turn comes is the object the first boot finished building.
 //
 // The wait is an ask repeated with the session idle between asks, and that shape is the
-// whole of the finding, measured by kit/db/concurrent_index_turn_test.go. A lock *queue* is
+// whole of the point, measured against a held lock. A lock *queue* is
 // a transaction that stays open: the session standing in it is a running statement with a
 // snapshot, and a concurrent build waits for the transactions that are in the database — so
 // queueing for this lock inside the holder's own critical section puts the two sessions in
@@ -869,7 +869,7 @@ func (r *runner) releaseFileLock(ctx context.Context) error {
 // space in pg_locks.classid, where the composition lock's row carries its own
 // (compositionLockKey, with this namespace's OID as objid — see holdCompositionLock), so
 // a reader tells the two locks apart by classid alone.
-// kit/db/concurrent_index_repair_test.go reads the composition lock by that classid to
+// The repair tests read the composition lock by that classid to
 // show a repair that holds it, and a lock the repair is entitled to hold must not read as
 // the fact that case injects around.
 //
@@ -971,7 +971,7 @@ func (r *runner) stepAwayFromTheCompositionLock(ctx context.Context) error {
 
 // stepBackToTheCompositionLock closes that window: the lock comes back, patiently and
 // bounded by the caller's context as holdCompositionLock says and as
-// source_cannot_declare_floor_past_head_test.go pins for the first acquisition, and the budgets go back on
+// the floor tests pin for the first acquisition, and the budgets go back on
 // before the file's history row, so the transaction that records the file is a normal
 // transaction with the run's patience on it.
 //

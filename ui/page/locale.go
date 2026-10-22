@@ -80,8 +80,8 @@ func TenantPreferences(r Request, preferences ...string) []string {
 			if tag == "" {
 				continue
 			}
-			// The caller's ranking stays on the entry — round 1's finding is that it
-			// must — the caller's region does not.
+			// The caller's ranking stays on the entry, because the ranking is
+			// the caller's own; the caller's region does not.
 			if quality != "" {
 				tag += ";" + quality
 			}

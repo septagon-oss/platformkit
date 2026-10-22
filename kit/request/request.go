@@ -28,8 +28,7 @@
 // deliberate: the middleware writes both keys so one reader of a call gets all
 // three facts at once, and kit/trace stays the owner of the format. A context
 // with one key and not the other is a middleware bug, which is why the test that
-// fakes a request sets both the way the middleware does
-// (modules/audit/internal/request_context_test.go).
+// fakes a request sets both the way the middleware does.
 package request
 
 import (

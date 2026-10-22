@@ -37,8 +37,8 @@ package events
 // Whose rows, then. A claim names no app, but it names its tenant, and a tenant
 // belongs to exactly one app (tenants.app, migrations/000043): the claim is work an
 // app's own consumer did in its own tenant. So the move renames the unscoped claims
-// of the tenants this app holds, and no others — which is T-0228's plan for this
-// move, read from kit/appname's §Limits: "renaming durable for the tenants whose
+// of the tenants this app holds, and no others — which is kit/appname's plan for this
+// move (its Limits): "renaming durable for the tenants whose
 // tenants.app is this app's slug". A predicate on the durable alone would let the
 // first app to move rename the whole database's unscoped history, including the
 // claims the other app made in its own tenants; that other app's consumer would then
@@ -407,8 +407,7 @@ const placeable = "app = ? OR app = ''"
 // them is refused over with the app's own, which is the same refusal, written down where the
 // membership is what is in the way.
 //
-// The set was half of it, and the review that found the other half is
-// kit/events/placement_before_ledger_commit_test.go. A tenant holding an already-committed
+// The set was half of it; the placement tests cover the other half. A tenant holding an already-committed
 // unscoped claim declares nothing until its *next* claim, so a key held over the claim
 // excluded no walk that never claims one: the placement could write the row, commit, and
 // be gone before the move's final read, which answered false because the tenant was still
