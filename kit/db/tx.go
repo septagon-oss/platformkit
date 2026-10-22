@@ -108,12 +108,10 @@ func current(ctx context.Context) (openTx, bool) {
 // the same answer, and an accessor that only knows one of the two opens a second
 // transaction beside the first. A context that carries a Pending it has not opened
 // reports false rather than opening it: asking for the transaction is Run's decision
-// or the caller's, never a reader's.
-//
-// What it hands back is what Run's join hands: an operation of ctx, whose statements
-// carry ctx's deadline and values inside the transaction, never the shared handle,
-// and which a provisioning view still ends with its callback. See README.md, "The
-// transaction's owner".
+// or the caller's, never a reader's. What it hands back is what Run's join hands: an
+// operation of ctx, never the shared handle, so its statements carry ctx's deadline
+// and values inside the transaction, and a provisioning view ends it with its
+// callback. See README.md, "The transaction's owner".
 func TxFrom(ctx context.Context) (Tx[Tenant], bool) {
 	cur, ok := current(ctx)
 	if !ok || cur.system {
