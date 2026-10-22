@@ -1,7 +1,9 @@
 package screens_test
 
 import (
+	"context"
 	"encoding/json"
+	"github.com/google/uuid"
 	"os"
 	"reflect"
 	"strings"
@@ -176,7 +178,7 @@ func TestDescribePublishesOnlyTheOperationsTheResourceOffers(t *testing.T) {
 	beside.Entity, beside.Path = "invoice", "/invoices"
 	beside.Schema.Entity, beside.Schema.Path = "invoice", "/api/v1/note/invoices"
 	beside.Operations = []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead}
-	beside.Commands = []httpx.Command{{Verb: "void", Auth: httpx.Permission("note:write")}}
+	beside.Commands = []httpx.Command{{Verb: "void", Auth: httpx.Permission("note:write"), Run: func(context.Context, uuid.UUID, map[string]any) error { return nil }}}
 	body, err := json.Marshal(screens.Catalog{Version: screens.CatalogVersion, Resources: []screens.Entry{
 		screens.Describe1(verbs, true), screens.Describe1(beside, true), screens.Describe1(resource(), true),
 	}})

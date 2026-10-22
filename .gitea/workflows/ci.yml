@@ -455,6 +455,20 @@ jobs:
       - name: Exported surface against the supported tag (make check-apidiff)
         run: make check-apidiff
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: ''
+          package-manager-cache: false
+
+      # The Go suite measures served pages with e2e's pinned Playwright and Chromium.
+      # Install them once before verification; the later journeys reuse this installation.
+      - name: Install the browser
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: make check
         if: github.event_name != 'pull_request'
         env:
@@ -494,8 +508,8 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
-      # Ahead of every step that brings in node and Chromium, behind every step that compiles. Two
-      # measurements set this position, and the first version of it got both backwards.
+      # Save after the Go gates and before the long e2e journey tail. Browser provisioning
+      # is already complete because the Go suite itself measures served pages.
       #
       # What a step of this job is worth depends on the minutes it covers. `make check` ran 22:48:52 →
       # 22:59:12, `make check-race` to 23:08:45 and govulncheck to 23:09:12 (run 50923, job 51417) —
@@ -519,7 +533,7 @@ jobs:
       # never run, and the `design` job's copy of this step, twelve steps earlier in the same run,
       # wrote its archive in 9 seconds. The archive is worth nothing to the next run if the run that
       # writes it is lost on the way to it. scripts/ci_go_cache_test.sh case 12 refuses a save that
-      # moves back behind node.
+      # moves back behind the e2e journey tail.
       #
       # The guards on the step itself are unchanged and still why they are what they are. `success()`
       # keeps a job that already failed from spending its remaining minutes uploading;
@@ -549,33 +563,14 @@ jobs:
             ${{ steps.gocache.outputs.modcache }}
             ${{ steps.gocache.outputs.gocache }}
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: ''
-          package-manager-cache: false
-
-      # Gate 10's browser: chromium alone, because this is a gate and not a
-      # compatibility matrix. The design tool installs its own pinned Playwright in
-      # its own job, so nothing here is waiting for a download it does not use.
-      - name: Install the browser
-        working-directory: e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-
       # Gate 10, and the step the deadline of run 43926 killed 46 seconds into. It
       # costs 103s on this runner (job 44137) and 176s on a development box, and it
       # used to stand last behind every other gate, which is why the failure that
       # named it said nothing about it. It now follows the Go gates and its own
       # browser, and the budget verdict still runs after it.
       # Gate 10's two refusals to drive an application it did not start, before the gate they guard.
-      # They stand here rather than in the `make check` step above for one measured reason: each one
-      # starts scripts/e2e.sh, which stops at its own node check before it prints anything either case
-      # greps for, and node appears two steps after `make check`. Here node, the browser, python3 (the
-      # decoy listener; `make check`'s own check-apidiff step proves it on this runner) and Postgres all
-      # exist. 17s for both on a development box, 2026-10-04; the mid-build case waits on gate 10's own
-      # log and so costs its build when the cure is intact and its whole run when it is not.
+      # These application-starting checks stay with the journeys after the completed Go cache
+      # is saved. They reuse the Node and browser installation the Go suite already consumed.
       - name: Gate 10's port refusals (make check-e2e-guards)
         # The same catcher, under the same names, as the step below. The mid-build
         # case starts scripts/e2e.sh and waits for it to reach its database, and
@@ -778,11 +773,19 @@ jobs:
       # or a step that stops auditing — so the number is known at the pull request rather than twelve
       # minutes into a runner. The level is not a thing to negotiate: at `critical` the finding above
       # this line is a paragraph instead of a refusal.
+      #
+      # The audit goes through scripts/ci_npm_audit.sh for the same reason the apt install goes through
+      # scripts/ci_apt_index.sh: run 8105 (job 77227, head 0ba67102) refused this step with `npm warn
+      # audit network timeout at: https://registry.npmjs.org/-/npm/v1/security/advisories/bulk` and
+      # `npm error audit endpoint returned an error` — no advisory named, no version read, and `main`
+      # passed the same step over byte-identical lock bytes twenty minutes earlier (run 75584). The
+      # retry covers only the route: an audit that printed a finding is refused on its first try, and
+      # scripts/ci_npm_audit_test.sh pins that ordering along with the bound.
       - name: Native design conformance and dependency audit
         working-directory: tools/designexport/openpencil
         run: |
           npm ci --ignore-scripts
-          npm audit --omit=dev --audit-level=high
+          bash ../../../scripts/ci_npm_audit.sh npm audit --omit=dev --audit-level=high
           npm test
 
       # Its own Playwright and its own chromium: the tooling pins a different build
