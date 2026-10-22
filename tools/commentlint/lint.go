@@ -120,106 +120,154 @@ func Scan(root string) (Report, error) {
 	return rep, nil
 }
 
+// source is one parsed file with the line arithmetic its checks share.
+type source struct {
+	fset  *token.FileSet
+	file  *ast.File
+	lines []string
+}
+
+func (s *source) line(p token.Pos) int { return s.fset.Position(p).Line }
+
+// cline is one line of one comment and the line it sits on.
+type cline struct {
+	n    int
+	text string
+}
+
 func scanFile(path, rel string, rep *Report, pkgs map[string]*Package) error {
-	src, err := os.ReadFile(path)
+	text, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	f, err := parser.ParseFile(fset, path, text, parser.ParseComments)
 	if err != nil {
 		return err
 	}
-	line := func(p token.Pos) int { return fset.Position(p).Line }
-	pkgLine := line(f.Package)
-
-	skipGroup := map[*ast.CommentGroup]bool{}
+	s := &source{fset: fset, file: f, lines: strings.Split(string(text), "\n")}
+	skip, generated := s.header()
+	if generated {
+		return nil
+	}
+	cls, directives, commentLine := s.commentLines(skip)
+	s.refuse(rel, cls, directives, rep)
 	for _, g := range f.Comments {
-		if line(g.End()) >= pkgLine {
+		if n := s.line(g.End()) - s.line(g.Pos()) + 1; n >= longBlock && !skip[g] {
+			rep.LongBlocks = append(rep.LongBlocks, Block{rel, s.line(g.Pos()), n})
+		}
+	}
+	dir := filepath.ToSlash(filepath.Dir(rel))
+	p := pkgs[dir]
+	if p == nil {
+		p = &Package{Dir: dir}
+		pkgs[dir] = p
+	}
+	for i, l := range s.lines {
+		switch {
+		case commentLine[i+1]:
+			p.CommentLines++
+		case strings.TrimSpace(l) != "":
+			p.CodeLines++
+		}
+	}
+	return nil
+}
+
+// header finds what precedes the package clause and is not the file's to
+// judge: a generated-code marker exempts the whole file, a licence group only
+// itself.
+func (s *source) header() (skip map[*ast.CommentGroup]bool, generated bool) {
+	skip = map[*ast.CommentGroup]bool{}
+	pkgLine := s.line(s.file.Package)
+	for i, g := range s.file.Comments {
+		if s.line(g.End()) >= pkgLine {
 			break
 		}
 		for _, c := range g.List {
 			if generatedHeader.MatchString(c.Text) {
-				return nil
+				return skip, true
 			}
 		}
-		if g == f.Comments[0] {
+		if i == 0 {
 			head := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(g.List[0].Text, "//"), "/*"))
 			if strings.HasPrefix(head, "Copyright") || strings.HasPrefix(head, "SPDX-License-Identifier") {
-				skipGroup[g] = true
+				skip[g] = true
 			}
 		}
 	}
+	return skip, false
+}
 
-	// Example functions are documentation that runs: their text is exempt.
-	type span struct{ from, to int }
-	var examples []span
-	for _, d := range f.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || !strings.HasPrefix(fn.Name.Name, "Example") {
-			continue
-		}
-		from := line(fn.Pos())
-		if fn.Doc != nil {
-			from = line(fn.Doc.Pos())
-		}
-		examples = append(examples, span{from, line(fn.End())})
-	}
-	inExample := func(n int) bool {
-		for _, s := range examples {
-			if n >= s.from && n <= s.to {
-				return true
-			}
-		}
-		return false
-	}
-
-	// One line per comment line, with its text, so a block comment is
-	// matched line by line and reported at the line it sits on.
-	type cline struct {
-		n    int
-		text string
-	}
-	var all []cline
-	directives := map[int]string{}
-	commentLine := map[int]bool{}
-	for _, g := range f.Comments {
+// commentLines splits every comment into lines. directives maps a line to the
+// reason written after a history directive; commentLine marks the lines that
+// hold nothing but comment, which is what the ratio counts.
+func (s *source) commentLines(skip map[*ast.CommentGroup]bool) (all []cline, directives map[int]string, commentLine map[int]bool) {
+	directives = map[int]string{}
+	commentLine = map[int]bool{}
+	for _, g := range s.file.Comments {
 		for _, c := range g.List {
-			start := line(c.Pos())
+			start := s.line(c.Pos())
+			block := strings.HasPrefix(c.Text, "/*")
 			for i, t := range strings.Split(c.Text, "\n") {
 				n := start + i
-				if strings.HasPrefix(c.Text, "/*") || strings.HasPrefix(strings.TrimSpace(t), "//") {
+				trimmed := strings.TrimSpace(t)
+				if block || strings.HasPrefix(trimmed, "//") {
 					commentLine[n] = true
 				}
-				if strings.HasPrefix(strings.TrimSpace(t), historyDirective) {
-					directives[n] = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), historyDirective))
+				if strings.HasPrefix(trimmed, historyDirective) {
+					directives[n] = strings.TrimSpace(strings.TrimPrefix(trimmed, historyDirective))
 				}
-				if !skipGroup[g] {
+				if !skip[g] {
 					all = append(all, cline{n, t})
 				}
 			}
 		}
 	}
-	// A line is comment-only when nothing but a comment is on it; a trailing
-	// comment after code counts as code.
-	lines := strings.Split(string(src), "\n")
+	// A comment that trails code on its line leaves the line a code line.
 	for n := range commentLine {
-		if n-1 < len(lines) {
-			t := strings.TrimSpace(lines[n-1])
-			if !strings.HasPrefix(t, "//") && !strings.HasPrefix(t, "/*") && !blockInterior(fset, f, n) {
-				delete(commentLine, n)
-			}
+		if n-1 >= len(s.lines) {
+			continue
+		}
+		t := strings.TrimSpace(s.lines[n-1])
+		if !strings.HasPrefix(t, "//") && !strings.HasPrefix(t, "/*") && !s.blockInterior(n) {
+			delete(commentLine, n)
 		}
 	}
+	return all, directives, commentLine
+}
 
+// exampleSpans are the line ranges of Example functions, doc comment included:
+// documentation that runs keeps its text.
+func (s *source) exampleSpans() [][2]int {
+	var spans [][2]int
+	for _, d := range s.file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || !strings.HasPrefix(fn.Name.Name, "Example") {
+			continue
+		}
+		from := s.line(fn.Pos())
+		if fn.Doc != nil {
+			from = s.line(fn.Doc.Pos())
+		}
+		spans = append(spans, [2]int{from, s.line(fn.End())})
+	}
+	return spans
+}
+
+// refuse matches every comment line against the patterns and files it as a
+// refusal, or as an exception when a directive with a reason sits above it or
+// above its comment group.
+func (s *source) refuse(rel string, all []cline, directives map[int]string, rep *Report) {
+	spans := s.exampleSpans()
 	groupStart := map[int]int{}
-	for _, g := range f.Comments {
-		for n := line(g.Pos()); n <= line(g.End()); n++ {
-			groupStart[n] = line(g.Pos())
+	for _, g := range s.file.Comments {
+		for n := s.line(g.Pos()); n <= s.line(g.End()); n++ {
+			groupStart[n] = s.line(g.Pos())
 		}
 	}
 	for _, c := range all {
-		if inExample(c.n) || isDirective(c.text) {
+		if isDirective(c.text) || inSpan(spans, c.n) {
 			continue
 		}
 		for _, p := range patterns {
@@ -241,35 +289,22 @@ func scanFile(path, rel string, rep *Report, pkgs map[string]*Package) error {
 			break
 		}
 	}
+}
 
-	for _, g := range f.Comments {
-		if n := line(g.End()) - line(g.Pos()) + 1; n >= longBlock && !skipGroup[g] {
-			rep.LongBlocks = append(rep.LongBlocks, Block{rel, line(g.Pos()), n})
+func inSpan(spans [][2]int, n int) bool {
+	for _, s := range spans {
+		if n >= s[0] && n <= s[1] {
+			return true
 		}
 	}
-
-	dir := filepath.ToSlash(filepath.Dir(rel))
-	p := pkgs[dir]
-	if p == nil {
-		p = &Package{Dir: dir}
-		pkgs[dir] = p
-	}
-	for i, l := range lines {
-		switch {
-		case commentLine[i+1]:
-			p.CommentLines++
-		case strings.TrimSpace(l) != "":
-			p.CodeLines++
-		}
-	}
-	return nil
+	return false
 }
 
 // blockInterior reports whether line n lies inside a multi-line /* */ comment.
-func blockInterior(fset *token.FileSet, f *ast.File, n int) bool {
-	for _, g := range f.Comments {
+func (s *source) blockInterior(n int) bool {
+	for _, g := range s.file.Comments {
 		for _, c := range g.List {
-			if strings.HasPrefix(c.Text, "/*") && fset.Position(c.Pos()).Line <= n && n <= fset.Position(c.End()).Line {
+			if strings.HasPrefix(c.Text, "/*") && s.line(c.Pos()) <= n && n <= s.line(c.End()) {
 				return true
 			}
 		}
