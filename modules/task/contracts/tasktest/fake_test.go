@@ -115,3 +115,42 @@ func TestTheSuiteRunsTheseCases(t *testing.T) {
 		}
 	}
 }
+
+// TestFakeConformsAsACreator runs the creator suite against the fake. The two
+// cases that need a transaction skip, with the reason, because the fake has none.
+func TestFakeConformsAsACreator(t *testing.T) {
+	tasktest.RunCreator(t, func(t *testing.T, run func(tasktest.Fixture)) {
+		ctx := tasktest.As(tenancy.WithTenant(t.Context(), acme), tasktest.Holder)
+		fake := tasktest.NewFake()
+		fake.Policy = tasktest.Policy{}
+		run(tasktest.Fixture{
+			Ctx: ctx, Service: fake, Creator: fake, Reader: fake,
+			Seed:      func(task *contracts.Task) uuid.UUID { return fake.Put(ctx, task) },
+			Task:      func(id uuid.UUID) (contracts.Task, error) { return fake.Task(ctx, id) },
+			Published: fake.Events.Names,
+			Tasks:     func() int { return fake.Count(ctx) },
+		})
+	})
+}
+
+// TestTheCreatorSuiteRunsTheseCases pins the creator case names, in order.
+func TestTheCreatorSuiteRunsTheseCases(t *testing.T) {
+	want := []string{
+		"create stores the defaults and a server identity",
+		"create publishes the created event once",
+		"two creates are two tasks",
+		"a past slaDeadline records a breach and its event once",
+		"a past dueAt with no slaDeadline records no breach",
+		"a future slaDeadline records no breach",
+		"an assignee acknowledges the task and publishes the assignment",
+		"a refused create writes nothing and says nothing",
+		"a caller with no grant creates nothing",
+		"the reader returns the created task and refuses an unknown one",
+		"a refused create takes the caller's write back with it",
+		"a failing outbox insert takes the created task back with it",
+	}
+	got := porttest.Names(tasktest.CreatorSuite(nil))
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("the creator suite runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

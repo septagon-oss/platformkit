@@ -295,3 +295,57 @@ type LockedReader interface {
 type Writer interface {
 	Save(ctx context.Context, tx db.Tx[db.Tenant], in *Task) (*Task, error)
 }
+
+// CreateTask is the input of Creator.Create: what a caller may say about a new
+// task, and nothing it may not. The id, the tenant, the timestamps, the revision
+// and the breach flag are not fields here, so no caller can supply them; the
+// resolution fields are absent because a new task is not resolved.
+//
+// Zero values mean "unsaid": an empty Status is open and an empty Priority is
+// normal, exactly as Task.Validate reads them. Times are instants and are stored
+// in UTC. AssigneeID is reachable in-process only; the REST body refuses it
+// (CommandOwnedFields) and the door that decodes a form refuses it likewise.
+type CreateTask struct {
+	Title       string
+	Description string
+	Status      string
+	Priority    string
+	DueAt       *time.Time
+	SLADeadline *time.Time
+	AssigneeID  *uuid.UUID
+	Source      string
+	SourceRef   string
+}
+
+// Creator is the one way a task comes to exist. Every door — the REST create,
+// the web form, a seed, another module — reaches it, so identity, defaults, the
+// created event and the breach-on-arrival check are decided once.
+//
+// Create runs inside the caller's transaction and publishes into it: the row, its
+// events and whatever the caller wrote beside them commit together or not at
+// all. A refusal is decided before any write, so it leaves the row and the outbox
+// as it found them; an error after the first write (the outbox insert failing)
+// leaves the caller's transaction poisoned, and the caller must roll back — it
+// must not carry on and commit.
+//
+// It publishes, in order: EventCreated (payload *Task as inserted, Changes
+// empty); EventAssigned when AssigneeID is set; EventSLABreached when SLADeadline
+// has already passed. The returned task is the row as it now stands, breach and
+// assignment included.
+//
+// Create is not idempotent: two calls are two tasks. A caller that retries owns
+// the key that makes it safe — a request operation on the context, or its own row
+// that remembers the task id. The errors are kit/crud's:
+//
+//	crud.ErrInvalid         the input is not one a task can have (correctable)
+//	tenancy.ErrPolicyDenied the actor may not create tasks (immutable)
+type Creator interface {
+	Create(ctx context.Context, tx db.Tx[db.Tenant], in CreateTask) (*Task, error)
+}
+
+// Reader is the plain read: a task by id in the caller's tenant, without a lock.
+// It exists beside LockedReader for the consumer that only needs to look — an
+// ETag over the row, a link to the task another module's row names.
+type Reader interface {
+	TaskByID(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*Task, error)
+}
