@@ -48,6 +48,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/document"
 )
 
@@ -252,7 +253,7 @@ var refusalParts = []string{
 	// offered "Try again" in English on a page otherwise in Portuguese is exactly
 	// the defect this page exists to close, wearing a smaller hat.
 	"fault.retry", "fault.retry_after", "fault.back", "fault.sign_in",
-	homeKey, referenceKey,
+	homeKey, referenceKey, referenceLabelKey,
 }
 
 // backKey is the way out this package's catalogue words: the page's own way back,
@@ -267,8 +268,15 @@ const backKey = "fault.back"
 // name would tell a person one place while the href carried another.
 const homeKey = "fault.home"
 
-// referenceKey is the words that name the request's own identifier on the page.
+// referenceKey is the words that name the request's own identifier where the
+// refusal page says it inside its sentence — the grant question's page, whose line
+// reads "… (request 1111aaaa-…)".
 const referenceKey = "fault.reference"
+
+// referenceLabelKey is the name the plain refusal page gives the identifier when it
+// shows it as a value rather than as the tail of a sentence: the one thing on that
+// page a person selects and reads to somebody else has to be labelled to be found.
+const referenceLabelKey = "fault.request_reference"
 
 // referenceWords is the English of that label. The identifier itself is data, so it
 // is rendered beside these words and never inside them: one string holding both is
@@ -293,25 +301,44 @@ func backWay(loc *Locale, label string) string {
 	return label
 }
 
-// referenceSaid is the data line under the verdict: the words that name the request's
-// own identifier, the identifier itself, and the refusal's code where this layer wrote
-// the sentence above and the code would otherwise have left the page. Each is its own
-// piece — the words a translator's, the identifier a row in a log, the code a grep
-// pattern — so they are three strings on the page and not one line no translation
-// can finish.
+// referenceSaid is the data line under the verdict: the request's own identifier under
+// its name, as a value a person can select, and the refusal's code where this layer
+// wrote the sentence above and the code would otherwise have left the page. Each is its
+// own piece — the label a translator's, the identifier a row in a log, the code a grep
+// pattern — so they are separate strings on the page and not one line no translation can
+// finish. Neither the identifier nor the code is wrapped in a sentence: a reference that
+// is the tail of a clause cannot be read back digit for digit, and a screen reader
+// reaches it as part of the prose rather than as a value with a name.
 func referenceSaid(loc *Locale, reference, code string) g.Node {
+	var parts []g.Node
+	if reference != "" {
+		parts = append(parts,
+			components.Text(components.TextProps{
+				Content: strings.TrimSpace(word0(loc, referenceLabelKey)),
+				Element: "span", Color: "muted", Size: "sm"}),
+			g.Text(" "),
+			components.Text(components.TextProps{
+				Content: reference, Element: "samp", Size: "sm", NoWrap: true}))
+	}
+	if code != "" {
+		if len(parts) > 0 {
+			parts = append(parts, g.Text(" · "))
+		}
+		parts = append(parts, h.Code(g.Text(code)))
+	}
+	return h.P(parts...)
+}
+
+// referenceSaidInSentence is the same identifier on the page that answers the grant
+// question: there the refusal's own line names the permission and the person who can
+// give it, and the reference closes that sentence rather than standing under a label of
+// its own.
+func referenceSaidInSentence(loc *Locale, reference string) g.Node {
 	words := strings.TrimSpace(word0(loc, referenceKey))
 	if words == "" {
 		words = referenceWords
 	}
-	parts := []g.Node{g.Text(words)}
-	if reference != "" {
-		parts = append(parts, g.Text(" "), h.Code(g.Text(reference)))
-	}
-	if code != "" {
-		parts = append(parts, g.Text(" · "), h.Code(g.Text(code)))
-	}
-	return h.P(append(parts, g.Text(")"))...)
+	return h.P(g.Text(words), g.Text(" "), h.Code(g.Text(reference)), g.Text(")"))
 }
 
 // titleSuffix turns a verdict's sentence key into that verdict's heading: the two
@@ -319,14 +346,14 @@ func referenceSaid(loc *Locale, reference, code string) g.Node {
 // page is.
 const titleSuffix = ".title"
 
-// statusTitle is the refusal's heading in the request's language. What it says when
-// the catalogue has nothing for the verdict is what it always said — the status text
-// this server registers — because a heading invented for one verdict and not another
-// would name a cause nobody withheld.
-// A verdict this layer words itself is called what faultTitles calls it: the protocol
-// names the status ("Internal Server Error") where the person needs what happened. The
-// catalogue's own heading wins where it ships one, so a deployment can reword a verdict
-// without a release.
+// statusTitle is the refusal's heading in the request's language. The catalogue the
+// request is answered in owns the heading wherever it ships one — which is how a
+// deployment rewords a verdict without a release — and what it says when that catalogue
+// has nothing is this layer's own word for the verdict (faultTitles), the protocol's name
+// for it only where this layer has no words of its own. A shell that ships no catalogue
+// at all is answered in these source-language words, never in net/http's name for the
+// verdict: "Internal Server Error" is a log line's words put in front of a person, and a
+// heading invented for one verdict and not another would name a cause nobody withheld.
 func statusTitle(loc *Locale, status int, detail string, sub Subject) string {
 	if key, _, _, _ := plainWords(sub, status, detail); key != "" {
 		return named(loc, key+titleSuffix, faultTitles[key])
@@ -338,9 +365,6 @@ func statusTitle(loc *Locale, status int, detail string, sub Subject) string {
 	}
 	if titled, ok := faultTitles[key]; ok {
 		english = titled
-	}
-	if shipped := strings.TrimSpace(own(key + titleSuffix)); shipped != "" {
-		english = shipped
 	}
 	return named(loc, key+titleSuffix, english)
 }
@@ -932,7 +956,7 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 	}
 	v := document.Refusal(p)
 	if reference != "" {
-		v.Body = append(v.Body, referenceSaid(loc, reference, ""))
+		v.Body = append(v.Body, referenceSaidInSentence(loc, reference))
 	}
 	if language != "" {
 		// The verdict's own line is this language, which is the line the page is

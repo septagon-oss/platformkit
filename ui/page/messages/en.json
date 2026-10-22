@@ -326,6 +326,15 @@
       "": "(request"
     }
   },
+  "fault.request_reference": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Request reference",
+    "plural": {
+      "": "Request reference"
+    }
+  },
   "fault.AUTH_ANONYMOUS.title": {
     "references": [
       "ui/page/fault.go"

@@ -451,6 +451,15 @@
       "": "(pedido"
     }
   },
+  "fault.request_reference": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Referência do pedido",
+    "plural": {
+      "": "Referência do pedido"
+    }
+  },
   "fault.400.title": {
     "references": [
       "ui/page/fault.go"
