@@ -70275,7 +70275,6 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
-<<<<<<< HEAD
    "file": "ui/page/catalogue_test.go",
    "id": "ui/page/catalogue_test.go#TestThePagesOwnLinesAreCopiedInBothCatalogues",
    "kind": "go",
@@ -70333,8 +70332,6 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
-||||||| 4bc4715
-=======
    "file": "ui/page/failed_read_served_test.go",
    "id": "ui/page/failed_read_served_test.go#TestAFailedReadOfADeclaredSubjectSaysWhatCouldNotBeLoadedAndOffersToTryAgain",
    "kind": "go",
@@ -70354,7 +70351,6 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
->>>>>>> origin/main
    "file": "ui/page/fault_denied_permission_test.go",
    "id": "ui/page/fault_denied_permission_test.go#TestAMissingGrantNamesThePermissionAndWhoGrantsIt",
    "kind": "go",
@@ -81939,13 +81935,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-<<<<<<< HEAD
-  "files": 2197,
-||||||| 4bc4715
-  "files": 2144,
-=======
-  "files": 2165,
->>>>>>> origin/main
+  "files": 2218,
   "forge_runs": [
    408,
    413,
@@ -81979,16 +81969,8 @@
    578
   ],
   "layers": {
-<<<<<<< HEAD
-   "behaviour": 3521,
-   "composition": 469,
-||||||| 4bc4715
-   "behaviour": 3477,
-   "composition": 457,
-=======
-   "behaviour": 3494,
-   "composition": 465,
->>>>>>> origin/main
+   "behaviour": 3538,
+   "composition": 477,
    "contract": 21,
    "journey": 115
   },
@@ -82006,51 +81988,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-<<<<<<< HEAD
-  "rows": 4126,
-||||||| 4bc4715
-  "rows": 4064,
-=======
-  "rows": 4089,
->>>>>>> origin/main
+  "rows": 4151,
   "tiers": {
-<<<<<<< HEAD
-   "merge": 2528,
+   "merge": 2575,
    "nightly": 115,
-   "push": 1483
-||||||| 4bc4715
-   "merge": 2476,
-   "nightly": 109,
-   "push": 1479
-=======
-   "merge": 2523,
-   "nightly": 109,
-   "push": 1457
->>>>>>> origin/main
+   "push": 1461
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-<<<<<<< HEAD
-   "keep": 1952,
-||||||| 4bc4715
-   "keep": 1899,
-=======
-   "keep": 1920,
->>>>>>> origin/main
+   "keep": 1973,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-<<<<<<< HEAD
-   "keep": 3740,
-||||||| 4bc4715
-   "keep": 3678,
-=======
-   "keep": 3703,
->>>>>>> origin/main
+   "keep": 3765,
    "keep-rewrite": 170,
    "merge": 216
   }
