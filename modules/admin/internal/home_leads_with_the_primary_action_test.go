@@ -103,17 +103,15 @@ func TestAHomeWithNoPrimaryActionIsTheDashboardItWas(t *testing.T) {
 	}
 }
 
-func TestTheHomeGridIsOneColumnBelowTheMediumBreakpoint(t *testing.T) {
+func TestTheHomeGridIsOneColumnAtEveryWidth(t *testing.T) {
 	body := homeWith(t, allow(true), primaryOf(goToTasks), nil)
 	class := func(node g.Node) string {
 		return regexp.MustCompile(`class="([^"]*)"`).FindStringSubmatch(render(t, node))[1]
 	}
-	outer := class(components.Grid(components.GridProps{Columns: "1", MD: "2", LG: "3", Gap: "6"}))
+	outer := class(components.Grid(components.GridProps{Columns: "1", Gap: "6"}))
 	cards := class(components.Grid(components.GridProps{Columns: "1", Gap: "3"}))
-	for _, want := range []string{"grid-cols-1", "md:grid-cols-2", "lg:grid-cols-3"} {
-		if !strings.Contains(" "+outer+" ", " "+want+" ") {
-			t.Errorf("the home's grid compiles to %q, which has no %q", outer, want)
-		}
+	if !strings.Contains(outer, "grid-cols-1") || strings.Contains(outer, "md:") || strings.Contains(outer, "lg:") {
+		t.Errorf("the home's grid compiles to %q; want one column at every width", outer)
 	}
 	if !strings.Contains(cards, "grid-cols-1") || strings.Contains(cards, "md:") || strings.Contains(cards, "lg:") {
 		t.Errorf("a section's card grid compiles to %q; want one column at every width", cards)

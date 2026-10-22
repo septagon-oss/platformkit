@@ -74,7 +74,7 @@ func TestTheWorkspaceFactsAreBehindOneDisclosure(t *testing.T) {
 		if summary == nil || summary[1] != "About this workspace" {
 			t.Errorf("signed in=%v: the disclosure is labelled %q, want %q", signedIn, summary, "About this workspace")
 		}
-		inside := chromeParagraphs(t, "<main></main>"+details)
+		inside := chromeLabels(t, "<main></main>"+details)
 		var scope, stamp bool
 		for _, line := range inside {
 			size, text, _ := strings.Cut(line, "\x00")
@@ -87,7 +87,7 @@ func TestTheWorkspaceFactsAreBehindOneDisclosure(t *testing.T) {
 		if !scope || !stamp {
 			t.Errorf("signed in=%v: the disclosure holds %q; want the scope and the build stamp", signedIn, inside)
 		}
-		if outside := footer[:begin] + footer[end:]; strings.Contains(outside, "<p") {
+		if outside := footer[:begin] + footer[end:]; strings.Contains(outside, `data-component="text"`) {
 			t.Errorf("signed in=%v: the footer says something outside the disclosure:\n%s", signedIn, outside)
 		}
 	}
