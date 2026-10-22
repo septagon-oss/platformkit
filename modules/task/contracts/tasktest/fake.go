@@ -103,11 +103,6 @@ func (f *Fake) Create(ctx context.Context, _ db.Tx[db.Tenant], in contracts.Crea
 	if err := task.Validate(ctx); err != nil {
 		return nil, fmt.Errorf("%w: %v", crud.ErrInvalid, err)
 	}
-	tenant, _ := tenancy.FromContext(ctx)
-	task.TenantID = tenant.ID // the policy compares the resource's tenant with the request's
-	if err := f.authorize(ctx, task, "task:create"); err != nil {
-		return nil, err
-	}
 	says := []string{contracts.EventCreated}
 	if in.AssigneeID != nil {
 		task.AssigneeID = in.AssigneeID

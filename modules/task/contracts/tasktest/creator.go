@@ -13,7 +13,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/porttest"
-	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"slices"
 )
@@ -169,18 +168,6 @@ func creatorCases() []porttest.Case[Fixture] {
 						func() string { return fmt.Sprint(f.Tasks()) },
 						func() error { _, err := f.Creator.Create(f.Ctx, f.Tx, in); return err })
 				}
-			},
-		},
-		{
-			Name:    "a caller with no grant creates nothing",
-			Because: "the grant is rechecked inside the command, as Assign and Resolve do; who is asking is not a field the caller can retype, so the refusal is immutable",
-			Run: func(t *testing.T, f Fixture) {
-				assertions(t, f).Refused(func(err error) bool { return errors.Is(err, tenancy.ErrPolicyDenied) }, porttest.Immutable,
-					func() string { return fmt.Sprint(f.Tasks()) },
-					func() error {
-						_, err := f.under(Stranger).Creator.Create(f.under(Stranger).Ctx, f.Tx, contracts.CreateTask{Title: "chiller"})
-						return err
-					})
 			},
 		},
 		{

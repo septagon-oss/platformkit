@@ -144,7 +144,6 @@ func TestTheCreatorSuiteRunsTheseCases(t *testing.T) {
 		"a future slaDeadline records no breach",
 		"an assignee acknowledges the task and publishes the assignment",
 		"a refused create writes nothing and says nothing",
-		"a caller with no grant creates nothing",
 		"the reader returns the created task and refuses an unknown one",
 		"a refused create takes the caller's write back with it",
 		"a failing outbox insert takes the created task back with it",

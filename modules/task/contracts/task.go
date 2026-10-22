@@ -338,7 +338,6 @@ type CreateTask struct {
 // that remembers the task id. The errors are kit/crud's:
 //
 //	crud.ErrInvalid         the input is not one a task can have (correctable)
-//	tenancy.ErrPolicyDenied the actor may not create tasks (immutable)
 type Creator interface {
 	Create(ctx context.Context, tx db.Tx[db.Tenant], in CreateTask) (*Task, error)
 }
