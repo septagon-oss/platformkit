@@ -39,7 +39,7 @@ const publicPageHost = "stockpilot.example"
 // about what an older kernel cost, but the line a later change has to explain
 // itself over. Raising it belongs to the one commit that names the feature on this
 // request which needs the extra allocations.
-const publicPageCeiling = 157
+const publicPageCeiling = 150
 
 // publicPageDoc is the document the measured route answers: the tenant's own
 // landing page, one field, no query behind it.
