@@ -129,10 +129,11 @@ test('the frame\'s chrome is one body step, and a generated page stays inside th
     // not, so the name is in the header at 390px and hidden at 1440px where the sidebar carries it.
     // One name at exactly one width is the claim; the count of chrome sentences follows from it. What
     // the floor actually refuses — the chrome taking more than one body step, a page left with none —
-    // is asserted on the two lines below this one and is unchanged. The scope and the build stamp
-    // are inside the footer's closed "About this workspace", which paints nothing until it is opened.
-    expect(m.chrome.length, `signed in at ${width}px the chrome should draw ${width < 1024 ? 'the workspace and the caller' : 'the caller'}: ${JSON.stringify(m.chrome)}`)
-      .toBe(width < 1024 ? 2 : 1);
+    // is asserted on the two lines below this one and is unchanged. The build stamp stays in view;
+    // the scope is inside the footer's closed "About this workspace", which paints nothing until it
+    // is opened.
+    expect(m.chrome.length, `signed in at ${width}px the chrome should draw ${width < 1024 ? 'the workspace, the caller and the stamp' : 'the caller and the stamp'}: ${JSON.stringify(m.chrome)}`)
+      .toBe(width < 1024 ? 3 : 2);
     // The floor's rule, asserted as itself: the page gets a body size because the chrome takes one.
     expect(m.body_font_sizes.length, `a generated list at ${width}px sets body text in ${m.body_font_sizes.length} sizes ${JSON.stringify(m.body_font_sizes)}`)
       .toBeLessThanOrEqual(2);
@@ -147,8 +148,6 @@ test('the footer sentence has a bounded measure at the width the floor enforces'
   test.setTimeout(60_000);
   const page = await signedInAt(browser, 1440);
   await page.goto(tasks);
-  // The stamp is behind "About this workspace"; open it so there is a sentence to measure.
-  await page.locator('footer summary').click();
   const m = await probe(page, 1440);
   console.log(`  footer chrome=${JSON.stringify(m.chrome)} widest=${JSON.stringify(m.widest[0])}`);
   expectFooterBounded(m, 'the build stamp at 1440px');

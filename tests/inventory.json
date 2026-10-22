@@ -77549,7 +77549,7 @@
    "kind": "playwright",
    "layer": "journey",
    "merge_into": "",
-   "name": "the header names the person and no identifier stands outside About this workspace",
+   "name": "the header names the person and the scope stands behind About this workspace",
    "needs_db": true,
    "pkg": "e2e",
    "round_named": false,

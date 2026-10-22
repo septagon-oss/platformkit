@@ -58,7 +58,7 @@ async function homeAt(browser: Browser, width: number, who: { email: string; pas
   return page;
 }
 
-test('the header names the person and no identifier stands outside About this workspace', async ({ browser }) => {
+test('the header names the person and the scope stands behind About this workspace', async ({ browser }) => {
   test.setTimeout(90_000);
   for (const width of widths) {
     const page = await homeAt(browser, width, maker);
@@ -74,13 +74,13 @@ test('the header names the person and no identifier stands outside About this wo
     expect(box.clipped, `the name is clipped at ${width}px`).toBeLessThanOrEqual(0);
 
     const footer = page.locator('footer');
+    await expect(footer.getByText(stamp), `the build stamp is not in the footer at ${width}px`).toBeVisible();
+    await expect(header.getByText(stamp)).toBeHidden();
     for (const region of [header, footer]) {
-      await expect(region.getByText(stamp)).toBeHidden();
       await expect(region.getByText('Tenant workspace', { exact: true })).toBeHidden();
       await expect(region.getByText('Platform operator', { exact: true })).toBeHidden();
     }
     await footer.locator('summary').filter({ hasText: 'About this workspace' }).click();
-    await expect(footer.getByText(stamp), `the build stamp is not behind the disclosure at ${width}px`).toBeVisible();
     await expect(footer.getByText(/^(Tenant workspace|Platform operator)$/), `the scope is not behind the disclosure at ${width}px`).toBeVisible();
     await page.context().close();
   }
@@ -146,19 +146,9 @@ async function homeRefusals(browser: Browser): Promise<string[]> {
   return refused;
 }
 
-// Measured on the home before the primary action and the disclosure, and after them: the same four
-// refusals, all of one rule — the card grid sets each card's icon, title and sentence on edges of
-// their own, inside a section inset from the page, so the home draws more than one content column.
-// That is the frame's left-edge work, not this page's order. This case refuses every other rule.
-test('the home refuses no floor rule but the card grid\'s left edges', async ({ browser }) => {
-  test.setTimeout(90_000);
-  expect((await homeRefusals(browser)).filter((r) => !/ left edges \[/.test(r))).toEqual([]);
-});
-
-// Known defect: the whole floor, which the card grid's left edges refuse at both widths today. It is
-// expected to fail, so the day the grid meets the floor this case goes red until test.fail() leaves.
+// The whole floor, at both widths, for both people. The card grid's left edges, which the home once
+// refused at both widths, no longer do, so nothing is excused here.
 test('the home meets the design floor at 390 and 1440', async ({ browser }) => {
-  test.fail();
   test.setTimeout(90_000);
   expect(await homeRefusals(browser)).toEqual([]);
 });
