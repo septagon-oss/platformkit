@@ -65,7 +65,7 @@ func Redirect(ctx context.Context, to string) *Page {
 // because there were two and one of them was wrong. The admin sign-in form
 // checked a leading slash and a second character that was not a slash, so
 // `next=/\evil.example` passed — and every browser resolves a slash followed by
-// a backslash as an authority, so the review's login redirect left the site.
+// a backslash as an authority, so the login redirect left the site.
 // modules/site had the correct rule for its navigation; this is that rule, in
 // the kernel, and both callers read it.
 //

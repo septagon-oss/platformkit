@@ -127,7 +127,7 @@ var ErrFields = errors.New("forms: field names must be nonempty and unique")
 // same identity only where they differ in punctuation alone, and a screen serves
 // one address, so that never puts two forms on one page. A leading digit is
 // prefixed rather than dropped, and an input with nothing usable in it gets a
-// fixed scope. namespace_test.go feeds it the inputs that would break that and
+// fixed scope. The tests feed it the inputs that would break that and
 // checks every byte of every answer.
 func Namespace(action string) string {
 	var b strings.Builder

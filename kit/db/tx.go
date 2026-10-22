@@ -54,7 +54,7 @@ func (System) isScope() {}
 // Tx is a transaction-bound handle whose scope is part of its type. A
 // repository that takes Tx[Tenant] cannot be handed a Tx[System], and neither
 // can be constructed outside this package, so there is no way to query outside
-// a transaction. See scope_compile_test.go.
+// a transaction.
 type Tx[S Scope] struct {
 	db    *gorm.DB
 	scope S

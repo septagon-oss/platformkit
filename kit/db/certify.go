@@ -72,8 +72,7 @@ func certifiableName(name string) bool {
 // is what makes it honest. A re-send that arrives after its own build was cancelled meets
 // the `IF NOT EXISTS` the file has to carry and answers "relation already exists, skipping"
 // over the invalid index the cancelled send left behind — which is the answer this file
-// exists to refuse to record, and kit/db/concurrent_index_repair_test.go is the case that
-// reads the object back. The repair needs no re-send of its own for the same reason: it
+// exists to refuse to record, so the repair case reads the object back. The repair needs no re-send of its own for the same reason: it
 // already begins at the drop.
 func (r *runner) sendRerunnable(ctx context.Context, migration migration) error {
 	if err := r.execReaskable(ctx, migration.sql); err != nil {
@@ -90,8 +89,7 @@ func (r *runner) sendRerunnable(ctx context.Context, migration migration) error 
 func (r *runner) certifyConcurrentIndex(ctx context.Context, migration migration) error {
 	// The rule table's own reading, for the same reason it uses it: outside a value,
 	// `concurrently` is the keyword and nothing else, so the file that writes a function
-	// whose body builds an index is not a file that builds one (kit/db/
-	// review8_an_autocommit_function_body_test.go). The put-away text is also where a
+	// whose body builds an index is not a file that builds one. The put-away text is also where a
 	// comment's mention of the keyword disappears.
 	for _, found := range concurrentIndex.FindAllStringSubmatch(migration.shape, -1) {
 		name := found[1]

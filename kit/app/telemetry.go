@@ -58,8 +58,8 @@ import (
 // signal is one of the process's two exports and what the collector last said
 // about it. They are kept apart because they are two calls, to two services, on
 // two schedules: spans leave in batches as they fill and numbers leave on the
-// reader's tick, so one may arrive while the other is refused. The record that
-// did not keep them apart is review 27's HIGH: one `err` for both halves meant a
+// reader's tick, so one may arrive while the other is refused. A record that
+// did not keep them apart would let one `err` serve both halves: a
 // metric tick that arrived overwrote the failed span batch, and an operator
 // asking "/ready" about the trace pipeline was answered with the metric
 // pipeline's delivery.
@@ -113,10 +113,9 @@ func (e *exported) noteMetrics(err error) {
 
 // note records an attempt nobody attributed to either half. The two wrappers
 // above always name theirs, so the kernel writes no attempt here; what lives
-// here is the record read as one pipeline, which is how two reviewers pinned it
-// (resource_never_names_a_tenant_test.go and
-// an_export_failure_names_no_address_test.go both build an
-// `exported`, hand it the collector's refusal and read /ready's answer). An
+// here is the record read as one pipeline, which is how its tests
+// build it: an `exported` handed the collector's refusal, with /ready's answer
+// read back. An
 // attempt nobody can place is held against both halves, because the honest
 // reading of a delivery nobody can attribute is that neither half can claim it.
 func (e *exported) note(err error) {

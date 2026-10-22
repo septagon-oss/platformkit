@@ -307,7 +307,7 @@ func referenceSaid(loc *Locale, reference, code string) g.Node {
 }
 
 // faultTitleKeys is every heading key this page can ask for: each key faultKey can
-// return, with the suffix on the end. catalogue_test.go reads it rather than a list,
+// return, with the suffix on the end. the catalogue test reads it rather than a list,
 // so the day a tenth code or a fifth status joins the page its heading is demanded of
 // the catalogue in the same commit — which is the rule that already holds for the
 // sentences and the whole reason a heading was ever the English one.

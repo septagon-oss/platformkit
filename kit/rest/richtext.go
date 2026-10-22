@@ -235,7 +235,7 @@ func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field
 // rewrite is the empty set, per field, because a use is keyed by field and locale
 // and a record that is gone shows nothing in any of them. The locale is the one
 // the write filed under — recordLocale answers the same question at both doors,
-// and the day a request's own language becomes that argument (T-0190) the delete
+// and the day a request's own language becomes that argument the delete
 // asks it in the request's language too, which is what kit/rest's own calls will
 // then have used.
 func (s Spec[T]) clearFileUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
@@ -291,7 +291,7 @@ func (s Spec[T]) fileUses() FileUses {
 // answers a missing Accept-Language with. A tenant that declared no languages
 // has no default to file under, and a use has to name one — so "und", the
 // register's own tag for "undetermined" and not a language this package
-// invented. T-0190 is what turns a request's own language into this argument.
+// invented. A request's own language is not yet this argument.
 func recordLocale(ctx context.Context) string {
 	if t, ok := tenancy.FromContext(ctx); ok && t.Languages != nil && t.Languages.Default != "" {
 		return t.Languages.Default
