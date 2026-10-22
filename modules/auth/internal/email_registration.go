@@ -148,8 +148,8 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 	// awaiting it, the sentence that says no link was sent when there is not
 	// (internal/no_link.go). A transport that refuses everybody therefore refuses both
 	// callers alike, which is the only case this door is allowed to speak of. The
-	// forgotten-password route is deliberately not among these kinds: review 1 pinned
-	// that one link is the only mail a known and an unknown forgot request cause
+	// forgotten-password route is deliberately not among these kinds: the public door is pinned to
+	// the fact that one link is the only mail a known and an unknown forgot request cause
 	// between them, so an unknown address causes no mail at all, and "that mail was
 	// refused" beside "that call caused no mail" is the account written twice. The
 	// door is silent about the reset flow's refusals — the row is still written, and

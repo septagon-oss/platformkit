@@ -36,8 +36,8 @@ package pkit
 // What this check is not: a lock across processes, and not a reading of what the
 // database already holds. Two OS processes pointed at one database each carry
 // their own record, and one database spelled two ways is one database to Postgres
-// and two keys here. The cross-process and cross-spelling answer is T-0231's — the
-// task that puts the app's name in every name two apps share and the check at
+// and two keys here. The cross-process and cross-spelling answer is a later change's — the
+// one that puts the app's name in every name two apps share and the check at
 // every boundary — and the refusal says so, because an operator who reads "one
 // application per database" in one process and has two databases is being told
 // about the wrong thing.

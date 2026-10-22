@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-comments check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -254,6 +254,9 @@ check-packages: ## Fail when the app links too many first-party packages
 check-gucs: ## Fail when anything outside kit/db writes a tenancy setting
 	./scripts/check_gucs.sh
 
+check-comments: ## Fail when a production comment cites a review, a round, a finding, a task id or a test file
+	./scripts/check_comments.sh
+
 check-ui: ## Fail when a layer's markup reaches past the tokens or emits a class it never styles
 	./scripts/check_ui_layers.sh
 
@@ -390,7 +393,7 @@ inference-conformance: ## Run the inference port's suite against operator-named 
 	@test -n '$(PLATFORMKIT_TEST_INFERENCE_PROVIDERS)' || { echo 'usage: make inference-conformance PROVIDERS=<name>,<name>, each configured by PLATFORMKIT_TEST_INFERENCE_<NAME>_URL, _MODEL and _KEY' >&2; exit 2; }
 	go test -v -count=1 -timeout=10m -run 'TestTheConfiguredProvidersConform' ./kit/inference
 
-check-push: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
+check-push: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
 	./scripts/check_push_tier.sh
 
 check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
@@ -561,7 +564,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an

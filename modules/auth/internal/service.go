@@ -328,7 +328,7 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // Two seconds, and the number is a tested contract rather than a guess:
 // TestDetachedAuthWritesBoundPoolWait exhausts a one-connection pool and fails
 // a detached write that still has not given up after three, because holding the
-// pool is how every other request on this process dies. Round 15 raised this to
+// pool is how every other request on this process dies. The budget is
 // 10s to stop a loaded box being read as somebody's broken passkey (see
 // e2e/passkey-second-tenant.spec.ts, refused by `make e2e` on 2026-10-08: a
 // ceremony 358ms old answered 401 after 2244.95ms, which is this budget with a
