@@ -100,7 +100,7 @@
       "suffixes": [
         "_test.go"
       ],
-      "max": 226156
+      "max": 225690
     },
     {
       "name": "js",
@@ -130,7 +130,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 11200
+      "max": 11206
     },
     {
       "name": "design_tooling_test",
@@ -142,7 +142,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 22800
+      "max": 22919
     },
     {
       "name": "markdown",

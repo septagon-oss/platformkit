@@ -476,7 +476,7 @@ func header(r page.Request, navigation components.SidebarProps, line string) []g
 		// name should be, and would put a second fact on a line this frame measures
 		// as one.
 		right = append([]g.Node{
-			components.Text(components.TextProps{Content: line, Size: chromeTextSize, Color: "muted"}),
+			components.Text(components.TextProps{Element: "span", Content: line, Size: chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
@@ -498,8 +498,8 @@ func header(r page.Request, navigation components.SidebarProps, line string) []g
 func about(r page.Request) g.Node {
 	o := resource.Options{Locale: r.Locale}
 	return components.Disclosure(components.DisclosureProps{Label: o.Text("admin.workspace.about", "About this workspace"), Flush: true},
-		components.Text(components.TextProps{Content: workspaceScope(r.Tenant, o), Size: chromeTextSize, Color: "muted"}),
-		components.Text(components.TextProps{Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"}))
+		components.Text(components.TextProps{Element: "span", Content: workspaceScope(r.Tenant, o), Size: chromeTextSize, Color: "muted"}),
+		components.Text(components.TextProps{Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"}))
 }
 
 // version is what the footer says. It is the revision the binary was built

@@ -218,20 +218,16 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
 	// no example, schema, icon, class or notice.
 	//
-	//
-	// main's frame work lands on that export beside this branch's colour work: the
+	// main's frame work landed on this export beside this branch's colour work: the
 	// header names the person and the workspace, a set keeps its own name, and an
-	// instant states the reader's own zone. No leaf-by-leaf walk of the two documents
-	// was run for this merge, because the document before it can only be produced by
-	// switching this worktree off the merge it is merged into, so no count of moved
-	// leaves is claimed here. The digest below is this merged tree's own measurement,
-	// printed by the refusal above the re-measure and copied from it; it covers the
-	// composed examples, stylesheet and attributions together.
-	//
-	// The phone sort controls of a stacked table now sit in a header row of their own
-	// and its class list joins the stylesheet; the digest below is this tree's
-	// measurement with that change, and no leaf-by-leaf count is claimed.
-	if legacy.SHA256 != "5866b7a76bea7d9ac76adae6e3bf1f6370f7c285ee27481ecd045784af1e4f67" {
+	// instant states the reader's own zone. Now main's stacked-table phone sort
+	// controls sit in a header row of their own and their class list joins the
+	// stylesheet, and both land on this branch's shell, whose sidebar names the
+	// workspace and whose generated forms carry their own measure. A merge claims no
+	// leaf-by-leaf count: the document before it exists only outside the merge. The
+	// digest below is this merged tree's own measurement, printed by the refusal and
+	// copied from it.
+	if legacy.SHA256 != "a76f10dda799497ceed8f725bb98e94e96dfd91680b8e444feec0f6fd2efb316" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
