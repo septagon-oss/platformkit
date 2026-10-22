@@ -832,6 +832,14 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# arrived. It breaks no mirror of its own: the stub apt-get answers from memory, and the one case that
 	# pays the real waits pays the first of them.
 	bash scripts/ci_apt_index_test.sh
+	# scripts/ci_npm_audit_test.sh asks the same question of the one npm command in this repository that
+	# answers against a live feed. Forge run 8105 refused the design job's audit step with `npm error
+	# audit endpoint returned an error` over lock bytes `main` had passed twenty minutes earlier; the
+	# retry it replaced is bounded, retries only a registry that would not answer, and refuses an audit
+	# that printed a finding on its first try — that last ordering is the whole of the difference between
+	# a retry and a way to lose an advisory, so it is asked first. It reads no registry: the stub npm
+	# answers from memory, and the workflows' own audit line is run as the job runs it.
+	bash scripts/ci_npm_audit_test.sh
 	# scripts/ci_package_install_refusal_test.py runs the half of that step the guard above cannot see: the
 	# index answered, the ask went out, and the package did not arrive. apt-get install exits 100, and the
 	# `-e` act_runner runs every step body under is what stops it there. A body that lost it, or gained a

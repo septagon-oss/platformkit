@@ -1,6 +1,8 @@
 package screens_test
 
 import (
+	"context"
+	"github.com/google/uuid"
 	"strings"
 	"testing"
 
@@ -34,7 +36,10 @@ func resource() httpx.Resource {
 	return httpx.Resource{
 		Name:   entity.Name{One: "Note", Other: "Notes"},
 		Module: "note", Entity: "note", Path: "/notes", Screen: "/app/note/notes",
-		Read: "note:read", Write: "note:write", Immutable: []string{"status"},
+		Create: func(context.Context, map[string]any) (map[string]any, error) { return nil, nil },
+		Update: func(context.Context, uuid.UUID, map[string]any) (map[string]any, error) { return nil, nil },
+		Delete: func(context.Context, uuid.UUID) error { return nil },
+		Read:   "note:read", Write: "note:write", Immutable: []string{"status"},
 		Schema: crud.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: crud.Fields[*Note]()},
 	}
 }

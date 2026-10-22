@@ -793,9 +793,9 @@ var (
 	clSidebarColumnContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1().
 				Bg(style.SurfacePrimary).OverflowY(style.OverflowVisible)
 	clSidebarBrandAdmin = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexShrink0().
-				PaddingX(style.S4).MarginBottom(style.S8)
+				PaddingX(style.S4).MarginBottom(style.S8).TextColor(style.FgOnInverse)
 	clSidebarBrandContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S3).
-				FlexShrink0().MarginBottom(style.S4)
+				FlexShrink0().MarginBottom(style.S4).TextColor(style.FgPrimary)
 	// The brand link is tabbable, so it is in the contrast set the design floor reads, and it is the one
 	// link in the frame that inherits no colour of its own: `a { color: inherit }` (ui/ui.go) hands it the
 	// column's text colour, which on the admin's inverse column is a foreground token on a foreground

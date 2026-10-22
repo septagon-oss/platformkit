@@ -299,6 +299,23 @@ The module does not grant anything itself. `gallery:read` is held by any role th
 
 ## Composition
 
+The shell keeps workspace, caller and build labels inline; destination groups share
+one column, and purpose sentences use the shared bounded measure. Navigation cards
+stay unfilled in both themes so they remain quiet destinations. Generated forms
+use the existing `MaxWSM` control column, and write screens appear only for a
+declared guard, offered verb and executable closure; missing new/edit screens
+answer 404 while a mounted form still enforces its caller's grants.
+
+**Reused** — `Text`, `ChromeContext`, `Sidebar`, `Stack`, `Grid`, `Card`,
+`FormSentence`, `forms.MustExample`, `MaxWSM`, the guarded `httpx.Resource` and
+`page.Serve` carry the presentation and route rules.
+**Added** — one canonical test-only [floor instrument](../../ui/testdata/design_floor.mjs)
+and a [served reference-app assertion](../../apps/platformkit/shell_design_floor_test.go),
+because the existing browser helpers did not enforce all nine rules under `make check`.
+**Made reusable** — the same floor oracle now serves the Go gate and existing
+Playwright journeys, including stylesheet checks, chrome diagnostics and form measures.
+
+
 **Reused** — the shell's `components.Shell`, `Sidebar`, `SectionHeader`, `FormSentence`
 and `Badge`; the `Present` reading each resource already declares (`entity.EntryHints`)
 and the `Words` translation seam; `ui/screens`' generated register; and this module's

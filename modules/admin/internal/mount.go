@@ -421,7 +421,7 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 				Header:  header(ctx, deps, r, navigation, line),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
-					Content: brand + " " + version(), Size: chromeTextSize, Color: "muted",
+					Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted",
 					Measure: true})},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{
@@ -663,7 +663,7 @@ func header(ctx context.Context, deps frameDeps, r page.Request, navigation comp
 		// name should be, and would put a second fact on a line this frame measures
 		// as one.
 		right = append([]g.Node{
-			components.Text(components.TextProps{Content: line, Size: chromeTextSize, Color: "muted"}),
+			components.Text(components.TextProps{Element: "span", Content: line, Size: chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
