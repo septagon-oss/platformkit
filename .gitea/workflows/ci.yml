@@ -471,6 +471,8 @@ jobs:
 
       - name: make check
         if: github.event_name != 'pull_request'
+        env:
+          COMPLEXITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: make check
 
       # The push tier (decision 0088): the contracts, and the behaviour of the
@@ -487,6 +489,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           PKIT_BASE_REF: ${{ github.event.pull_request.base.sha }}
+          COMPLEXITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: make check-push
 
       # Second, and load-bearing: the outbox, the request transaction, the advisory
