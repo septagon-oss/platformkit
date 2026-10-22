@@ -770,11 +770,19 @@ jobs:
       # or a step that stops auditing — so the number is known at the pull request rather than twelve
       # minutes into a runner. The level is not a thing to negotiate: at `critical` the finding above
       # this line is a paragraph instead of a refusal.
+      #
+      # The audit goes through scripts/ci_npm_audit.sh for the same reason the apt install goes through
+      # scripts/ci_apt_index.sh: run 8105 (job 77227, head 0ba67102) refused this step with `npm warn
+      # audit network timeout at: https://registry.npmjs.org/-/npm/v1/security/advisories/bulk` and
+      # `npm error audit endpoint returned an error` — no advisory named, no version read, and `main`
+      # passed the same step over byte-identical lock bytes twenty minutes earlier (run 75584). The
+      # retry covers only the route: an audit that printed a finding is refused on its first try, and
+      # scripts/ci_npm_audit_test.sh pins that ordering along with the bound.
       - name: Native design conformance and dependency audit
         working-directory: tools/designexport/openpencil
         run: |
           npm ci --ignore-scripts
-          npm audit --omit=dev --audit-level=high
+          bash ../../../scripts/ci_npm_audit.sh npm audit --omit=dev --audit-level=high
           npm test
 
       # Its own Playwright and its own chromium: the tooling pins a different build
