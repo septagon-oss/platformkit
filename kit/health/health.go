@@ -82,21 +82,17 @@ type Report interface {
 
 // Faults answers a probe's failure in the shape the caller asked for. kit/httpx's
 // (*API).Siteless satisfies it and is the only implementation: a probe never writes
-// its own body again, which is what makes the answer to a monitor the same document
-// every other kernel refusal writes — the same encoder, the same field order, the
-// same Content-Type — rather than a copy of it kept beside it.
+// its own body again, so the answer to a monitor is the document every other kernel
+// refusal writes — same encoder, field order and Content-Type — not a copy beside it.
 //
-// It is one call and it is deliberately not `fail`, because the probe cannot pay for
-// what `fail` does: resolving the request's host is a real query with a two second
-// budget (this package's comment names the restart storm it caused), and a probe
-// request has no tenant transaction to resolve anything inside. So the port states the
-// constraint instead of leaving it as a comment: the thing that answers a probe's
-// failure is the door that never asks who owns the address.
-// A refusal, and not a status and a sentence, because the two audiences of one probe
-// failure are owed different words: the monitor that diffs the problem document reads
-// Detail, which names the checks, and the person who navigated to /ready reads the
-// sentence the shell ships for the verdict. See problem.Problem's Diagnostic and the line
-// in Mux that says so.
+// It is one call and deliberately not `fail`, because a probe cannot pay for what
+// `fail` does: resolving the host is a real query with a two second budget (this
+// package's comment names the restart storm it caused), and a probe has no tenant
+// transaction to resolve anything inside. The port states that constraint: what
+// answers a probe's failure is the door that never asks who owns the address.
+//
+// A refusal, not a status and a sentence, because the two audiences of one failure
+// are owed different words — see problem.Problem's Diagnostic.
 type Faults func(w http.ResponseWriter, r *http.Request, refused *problem.Problem)
 
 // Register mounts the two probes beside the API, on the router that carries
@@ -156,22 +152,19 @@ func Mux(log *slog.Logger, faults Faults, checks []Check, reports ...Report) htt
 			return
 		}
 		// The one line in this package that answers a failure, and it is a call to the
-		// kernel's door rather than a body written here. That substitution is the point:
-		// a person who navigated to /ready during an outage was shown problem+json in a
-		// browser window because this mux sits outside the middleware chain and so had no
-		// *API to ask, and a second encoder of the problem shape is what fault.go exists
-		// to refuse. The port costs this package nothing it must not pay — no host is
-		// resolved, no transaction opened, no Accept header read (see Faults).
+		// kernel's door rather than a body written here: a person who navigated to /ready
+		// during an outage was shown problem+json in a browser window because this mux
+		// sits outside the middleware chain and had no *API to ask, and a second encoder
+		// of the problem shape is what fault.go exists to refuse. The port costs nothing
+		// this package must not pay — no host resolved, no transaction, no Accept read.
 		//
 		// Which check failed is the monitor's and the operator's, and it is said twice:
 		// in the problem document a readiness stanza diffs, and in the log line below,
 		// joined to the request id a person reads back off a screenshot. It is not the
-		// browser's. A check's name is an internal thing — the names a composition
-		// registers are its subsystems — so a page that lists them tells the person in
-		// front of it nothing they can act on and tells anybody who asks what makes this
-		// installation run. The refusal therefore says which of its sentences a page may
-		// show, and the shell answers with the outage sentence its catalogue holds, in the
-		// language the reader asked in.
+		// browser's. A check's name names this composition's subsystems, so a page that
+		// lists them tells the reader nothing they can act on and tells an asker what
+		// makes this installation run. The refusal says which of its sentences a page
+		// may show; the shell answers with its outage copy, in the reader's language.
 		refused := problem.New(http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", "))
 		refused.Diagnostic = true
 		faults(w, r, refused)

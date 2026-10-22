@@ -171,10 +171,9 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		// once per account: every later ask arrives as an explicit resend. So a
 		// delivery of it that finds its own link already sent can only be that
 		// delivery arriving twice. The row which set this branch off is the record
-		// that the transport took the link for this creation: the mail went, its
-		// call was answered, and a second message here would tell the person holding
-		// the link that no link was sent, and write a second record for a request the
-		// door has already read. The retry owes nothing, so it sends nothing.
+		// that the transport took the link for this creation: the mail went, and a
+		// second message would tell the person holding it that no link was sent, and
+		// record a request the door has already read. The retry owes nothing.
 		if asked == askedAtSignUp {
 			return nil
 		}
@@ -310,24 +309,20 @@ func (s *Service) refuseVerification(ctx context.Context, tx db.Tx[db.Tenant],
 	return ErrDeliveryRefused
 }
 
-// writeCredential runs one statement about one emailed credential in a
-// transaction that commits by itself, which is the only shape that puts a row in
-// front of a reader before the message that names it is sent. Both credentials
-// this module mails are written through here, because "ahead of the message, on
-// the pool the caller carries" is one rule and two spellings of it drift.
+// writeCredential runs one statement about one emailed credential in a transaction that
+// commits by itself, which is the only shape that puts a row in front of a reader before
+// the message that names it is sent. Both credentials this module mails are written
+// through here, because "ahead of the message, on the pool the caller carries" is one
+// rule and two spellings of it drift.
 //
-// The pool is the one on the context — the same door every detached write in
-// this module asks (see forget), and the reason it is asked rather than carried:
-// the wiring path composes routes before the deployment opens its database, so
-// the connection a module captured there would be no connection at all. A
-// request carries it on the middleware's context and a delivery on the one
-// kit/app hands the subscription, so both callers of this function are in the
-// position the sentence describes; one with neither writes no credential.
+// The pool is the one on the context — the same door every detached write here asks,
+// see forget — because the wiring path composes routes before the deployment opens its
+// database, so a connection a module captured there would be no connection at all. A
+// request carries it on the middleware's context and a delivery on the one kit/app
+// hands the subscription; a caller with neither writes no credential.
 //
-// db.Detached because the caller's transaction is open on the context and db.Run
-// would join it rather than end before the send; context.WithoutCancel because a
-// delivery whose deadline has passed must not abandon a row halfway through
-// writing it — the statement is bounded by its own budget instead.
+// db.Detached because db.Run would join the caller's open transaction rather than end
+// before the send; WithoutCancel so a delivery whose deadline passed still finishes.
 func (s *Service) writeCredential(ctx context.Context, verb, kind string, stmt func(db.Tx[db.Tenant]) error) error {
 	conn, ok := httpx.ConnFrom(ctx)
 	if !ok {

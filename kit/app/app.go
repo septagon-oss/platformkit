@@ -1318,8 +1318,8 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 	// emailed credential — reaches the pool through httpx.ConnFrom rather than
 	// holding a handle of its own.
 	//
-	// It cannot reach it through the wiring path. Decision 0074 rule 1 composes
-	// the routes and answers every gate over them before this pool is dialled, so
+	// It cannot reach it through the wiring path. The composition builds the
+	// routes and answers every gate over them before this pool is dialled, so
 	// a module that took a connection while its Routes callback ran took nothing,
 	// and the failure only surfaced as a mail that never arrived.
 	ctx = httpx.WithConn(ctx, conn)

@@ -196,29 +196,19 @@ type declared struct {
 func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 
 // WantsValue reports the mirror half of the same negotiation: a client that named a
-// JSON media type more generously than any markup is asking to be *handed* the answer. It
-// is exported for ui/page, which mounts a page as an ordinary operation and therefore has
-// to decide the same question when one of its handlers refuses — but the two halves are
-// not the same question, and the difference is deliberate.
+// JSON media type more generously than any markup is asking to be *handed* the answer.
+// It is exported for ui/page, which mounts a page as an ordinary operation and so must
+// decide the same question when one of its own handlers refuses.
 //
-// WantsDocument answers "did this caller ask to be shown something", and only an
-// explicit text/html counts, because that is the question a *guard* asks ahead of
-// routing, where the default answer for a curl or an SDK is the machine-readable one.
-// WantsValue answers "did this caller refuse the page", and only an explicit JSON media
-// type counts, because the caller asking it is a route that *owns* a page: a client that
-// named nothing (a bare httptest request, a health-style client, anything that sent no
-// Accept at all) is not refusing markup, it simply has no opinion, and the page is the
-// answer this route exists to give. htmx names nothing here either: the controllers
-// inside a page read the refusal's code back out of the document the kernel writes for a
-// guard (ui/assets/js/htmx-config.js), and the fragments they swap are the success path.
+// The two halves are not one question, deliberately. WantsDocument asks "did this
+// caller ask to be shown something", where only an explicit text/html counts, because
+// a guard asks it ahead of routing and the answer a curl or an SDK expects is the
+// machine-readable one. WantsValue asks "did this caller refuse the page", where only
+// an explicit JSON media type counts, because the caller asking it owns a page: one
+// that named nothing has no opinion to honour, and the page is the answer this route
+// exists to give.
 //
-// So the two predicates are one rule read from each side — a refusal is a page for a
-// caller that came to look at one, and a problem document for one that named a value more
-// generously than it named markup — and both readings live here rather than in the caller
-// that needed them. They read the header through one function, offered, because two
-// readers of the same Accept header are two answers to when each one wins, and the two
-// answers drift on exactly the requests nobody thought to write a case for: the one that
-// names both representations with weights.
+// Both read the header through offered, so one weighing decides when each side wins.
 func WantsValue(r *http.Request) bool {
 	if r == nil || r.Header.Get("HX-Request") == "true" {
 		return false
@@ -228,22 +218,18 @@ func WantsValue(r *http.Request) bool {
 }
 
 // offered is the one reading of a request's Accept header this kernel has: the highest
-// weight the caller gave markup, and the highest weight it gave a machine-readable value,
-// each negative when it named nothing of that kind. Both predicates read the header here
-// so the weights are compared, not the order the caller happened to write its entries
-// in: `application/json;q=0.5, text/html;q=1` and `text/html;q=1,
-// application/json;q=0.5` are one preference stated twice, and a negotiation that looked
-// at the first entry it liked answered them with two different documents.
+// weight the caller gave markup, and the highest weight it gave a machine-readable
+// value, each negative when it named nothing of that kind. Both predicates read the
+// header here so the weights are compared, not the order the caller wrote its entries
+// in: `application/json;q=0.5, text/html;q=1` and the same list reversed are one
+// preference stated twice, and a negotiation that took the first entry it liked
+// answered them with two different documents.
 //
-// `q=0` is an explicit refusal rather than a low preference, so an entry weighted to zero
-// never counts as offered — that is the reading text/html;q=0 has always had here, now
-// read the same way on both sides. An unparsable weight falls back to 1, which is what
+// `q=0` is an explicit refusal rather than a low preference, so an entry weighted to
+// zero never counts as offered; an unparsable weight falls back to 1, which is what
 // RFC 9110 says a missing weight means.
 //
-// A wildcard is deliberately in neither set. `*/*` is what curl, monitors, SDKs and
-// health checks send; counting it as markup would answer machines with a page, and
-// counting it as a value would answer a browser-shaped `text/html,*/*` with a body — the
-// same asymmetry WantsDocument's comment has always stated, now stated once.
+// A wildcard sits in neither set on purpose — see WantsDocument and HX-Request below.
 func offered(r *http.Request) (markup, value float64) {
 	markup, value = -1, -1
 	for _, entry := range strings.Split(r.Header.Get("Accept"), ",") {
@@ -276,44 +262,18 @@ func offered(r *http.Request) (markup, value float64) {
 }
 
 // WantsDocument reports whether the client asked to be *shown* the answer rather than
-// handed a value.
+// handed a value. It is exported because the question is the kernel's and there is one
+// answer to it; ui/page asks the mirror, WantsValue, of a refusal its own handler made.
 //
-// It is exported because the question is the kernel's and there is one answer to it.
-// ui/page asks it of a refusal a *page handler* made (Serve): a page route answers a
-// browser with a page, and a client that named application/json with the problem
-// document — the same division this function decides for every guard's refusal. A
-// second copy of the rule in ui would be a second answer to which client gets which
-// shape, and the two would drift exactly where they matter, which is the htmx line and
-// the `q=0` line below.
+// Only an explicit text/html (or its XHTML sibling) counts: `Accept: */*` is what curl,
+// health checks, SDKs and monitoring send, and answering them with a page breaks the
+// clients that need the machine-readable body. offered weighs both sides when a caller
+// names both, and WantsValue is the same weighing read from the other side.
 //
-// Only an explicit text/html (or its XHTML sibling) counts. `Accept: */*` deliberately
-// does not: that is what curl, health checks, SDKs and monitoring send, and answering
-// them with a page would break exactly the clients that need the machine-readable body.
-//
-// A media type may carry parameters before its weight — `text/html;charset=utf-8;q=0.4`
-// is one offer of markup at 0.4, and `;q=0` after a charset is as much a refusal of it
-// as `;q=0` on its own. Reading the suffix as one string instead of as parameters is the
-// bug this file exists to fix, got back by omission: the weight was only ever seen when
-// it came first, so an offer weighted to zero counted at 1.
-//
-// A weight decides between the two sides when a caller names both: markup counts when
-// it is offered at least as generously as any JSON media type is, and a caller that
-// weighted `application/json` above `text/html` is asking to be handed a value. Reading
-// the header as a set instead of weighing it is what made the answer depend on the order
-// two entries happened to be written in — see offered, which is the one place that
-// number is read, and WantsValue, which is the same reading from the other side.
-//
-// An htmx request does not count either, which is the half of this rule that reads
-// backwards — htmx asks with `Accept: text/html,*/*`. It does not ask to be *shown*
-// anything: it is a controller in a page, and this composition's controller
-// (ui/assets/js/htmx-config.js) configures htmx to swap nothing for a 4xx
-// (`{code: "[45]..", swap: false, error: true}`) and then reads the refusal's code out
-// of the problem document to choose the recovery notice and to keep the form's unsaved
-// input. Answering it with a page throws the body away in the library and leaves the
-// person with a form that silently did nothing; the journeys in
-// e2e/session-recovery.spec.ts are what that was built for. A swapped fragment is still
-// what htmx gets on a success (see Redirect and Page), so this says only that a
-// refusal goes to the caller that parses it.
+// A media type carries parameters before its weight, so `text/html;charset=utf-8;q=0.4`
+// offers markup at 0.4 and `;q=0` after a charset refuses it as plainly as on its own.
+// The weight was only ever seen when it came first, and reading the suffix as one string
+// instead of as parameters is the bug this file exists to fix.
 func WantsDocument(r *http.Request) bool {
 	if r == nil {
 		// No request means no client asked to be shown anything — which is the answer a

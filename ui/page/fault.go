@@ -57,17 +57,14 @@ import (
 // in English, and nobody has to notice.
 //
 // The code is namespaced, because a kernel refusal and a module's own copy share one
-// catalog and "AUTH_DENIED" on its own is a name either of them could want — and because
-// this shell claims the `fault.` prefix against every catalogue that comes after it
-// (kit/locale/providers/xtext refuses a later source a key under it), the codes named
-// here are the codes allowed to be shown under that prefix. A module with a page of its
-// own, and so with copy for refusals only it makes, names its entry on the refusal itself
-// instead: see problem.Problem's Key and sentence. Two codes are absent here on purpose
-// rather than by oversight, for one reason: CodeWriteElsewhere names the address the write
-// belongs at and CodePlanExcludes names the feature to ask the plan for, and a sentence
-// that carries something the caller has to *have* cannot be replaced by one that only
-// describes it — this mechanism swaps a sentence and does not interpolate an argument. Neither is carried
-// by any catalogue either, which is the same refusal stated as data.
+// catalog and "AUTH_DENIED" on its own is a name either of them could want — and
+// because this shell claims the `fault.` prefix against every catalogue that comes after
+// it, the codes named here are the codes allowed to be shown under it. A module with a
+// page of its own names its entry on the refusal instead: see problem.Problem's Key.
+// Two codes are absent on purpose, for one reason: a sentence that carries something
+// the caller has to *have* — an address, a feature to ask the plan for — cannot be
+// replaced by one that only describes it, and this swaps a sentence without passing an
+// argument.
 var faultKeys = map[string]string{
 	httpx.CodeAnonymous:         "fault.AUTH_ANONYMOUS",
 	httpx.CodeDenied:            "fault.AUTH_DENIED",

@@ -5,26 +5,20 @@ import (
 	"sync"
 )
 
-// ownCopy is this package's own copy, in the language its call sites are written
-// in, read from the file copy lives in rather than written at the call site.
+// ownCopy is this package's own copy, read from the file copy lives in rather than
+// written at the call site, once, lazily, and never mutated.
 //
 // Decision 0012 rule 2 puts a piece of copy in a catalogue file, and a label is
 // copy: "Try again" is a decision about a page and not a fact about this program,
 // so the deployment that re-words its Portuguese refusal should be able to re-word
-// the English label under the same key, and a person who is offered Retry should be
-// offered the label the catalogue carries rather than one glued into the binary at
+// the English label under the same key, rather than one glued into the binary at
 // compile time.
 //
 // The gettext rule still holds for the sentences this package did not write. A
-// guard's line ("AUTH_DENIED: this operation requires task.read", "… try again in
-// 30 seconds") carries something only the refusal knows, so the source-language
-// copy of those keys is the guard's own sentence and no static entry could carry it
-// — which is why messages/en.json carries exactly the lines fault.go and access.go
-// write themselves and no others. catalogue_test.go refuses the two lists drifting.
-//
-// It is read once, lazily, and never mutated. A shell that ships no catalogue of
-// its own is answered from here, which is why the refusal page can never render an
-// empty label whatever the composition wired.
+// guard's line carries something only the refusal knows, so the source-language copy
+// of those keys is the guard's own sentence and no static entry could carry it —
+// which is why messages/en.json carries exactly the lines fault.go and access.go
+// write themselves. catalogue_test.go refuses the two lists drifting.
 var ownCopy = sync.OnceValue(func() map[string]string {
 	body, err := catalogues.ReadFile("messages/en.json")
 	if err != nil {

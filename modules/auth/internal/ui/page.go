@@ -1,34 +1,19 @@
 package ui
 
-// page.go is the page the address in the verification mail opens, and the only
-// file in this module that writes markup.
+// page.go is the page the address in the verification mail opens, and the only file in
+// this module that writes markup. Until now the mail carried an address and nothing
+// answered it: the JSON door was registered and no page, so the one thing a new person
+// does with the message — open the link — landed on the kernel's 404.
 //
-// Until now the mail carried an address and nothing answered it: the module
-// registered the JSON door at /api/v1/public/auth/verify-email and no page, so
-// the one thing a new person does with the message — open the link — landed on
-// the kernel's 404. The journey was green because it read the credential out of
-// the message and posted the door itself, which is what an SDK does and not what
-// a person does.
+// Two routes, one command, the shape ui/page/access.go already sets down for the ask
+// form. GET renders the state the credential points at and a form, and consumes
+// nothing: a mail scanner fetches every link in every message it is handed, so a link
+// that spent itself on sight would leave the person behind it to ask for another — the
+// same reason spending is a POST. POST spends the credential through the module's one
+// command, not a second implementation of it (docs/adr/0007), and redirects to the
+// sign-in page the composition named.
 //
-// Two routes, one command, the shape ui/page/access.go already sets down for the
-// ask form:
-//
-//   - GET the address renders the state the credential points at and a form. It
-//     reads the token and consumes nothing, because a mail scanner fetches every
-//     link in every message it is handed, and a link that spent itself on sight
-//     would mean the person behind it has to ask for another one. This is the
-//     same reason the consumption door is a POST and not the page.
-//   - POST the address spends the credential through the module's one command —
-//     not a second implementation of it (docs/adr/0007) — and redirects to the
-//     sign-in page the composition named, because a confirmed account's next step
-//     is signing in with the password it already chose.
-//
-// The page carries a bearer credential in its body and its form, so it is
-// marked Sensitive: no-store, and no referrer leaked to whatever the page links.
-//
-// What this file may reach is the port below and the foundation's layers, and
-// nothing else: the credential, the account state and the command that spends
-// them stay in the package that owns them, which imports this one.
+// What this file may reach is the port below and the foundation's layers, and nothing
 
 import (
 	"context"

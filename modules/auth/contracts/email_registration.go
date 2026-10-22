@@ -46,9 +46,8 @@ const (
 	// It is a contract and not an internal fact because two packages have to
 	// agree on it: the delivery that writes the link and the page that mounts
 	// under the address it mounted itself at, whose guard reads this name and
-	// panics at boot if the two ever part ways. internal.VerifyEmailPath is this
-	// constant, so the mail and the page cannot be moved apart by an edit that
-	// reaches one of them.
+	// panics at boot if the two ever part ways. internal.VerifyEmailPath is the
+	// same constant, so an edit cannot move the mail and the page apart.
 	//
 	// It is on the public face, and not under the workspace prefix like
 	// ResetPath is, because of who opens it: a person who has just chosen a

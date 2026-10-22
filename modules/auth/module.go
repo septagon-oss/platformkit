@@ -342,20 +342,17 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		// Two subscriptions, and they are the same fact from two directions:
 		// somebody who cannot sign in has to be sent a link they can use.
 		//
-		// Both are subscriptions rather than calls inside the request, and for
-		// two different reasons. The invitation one, because sending mail is
-		// somebody else's machine and a request that waited on one would hold a
-		// transaction open across it. The reset one, because the request may
-		// not look the address up at all: a public route that took longer for
-		// an address somebody has is an account enumeration oracle with a
-		// stopwatch, so the lookup happens here, where nobody is timing it.
+		// Both are subscriptions rather than calls inside the request, for two
+		// different reasons. The invitation one, because sending mail is somebody
+		// else's machine and a request that waited on one would hold a transaction
+		// open across it. The reset one, because the request may not look the
+		// address up at all: a public route that took longer for an address
+		// somebody has is an enumeration oracle with a stopwatch, so the lookup
+		// happens here, where nobody is timing it.
 		//
 		// A refused send is acknowledged rather than retried, on every entry below:
 		// the record of the refusal is written in this transaction, so only a commit
-		// lets anybody read that the mail did not go, and the credential is already
-		// back where it was before the send. internal.AcknowledgeRefusedDelivery is
-		// the rule; a caller that asked for the mail in a command still gets that
-		// error and its own transaction unwinds beside it.
+		// lets anybody read it. The rule is internal.AcknowledgeRefusedDelivery.
 		Subscriptions: []events.Subscription{{
 			Module: "auth", Name: usercontracts.EventInvited,
 			Handler: internal.AcknowledgeRefusedDelivery(func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {

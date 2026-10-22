@@ -389,9 +389,8 @@ const offerStatement = "INSERT INTO password_tokens (token_hash, tenant_id, user
 // send would make a refused transport the author of that person's bad hour: the
 // unexpired link in their mailbox answers "those credentials are not right", the
 // replacement never left, and the cooldown holds the next attempt off for five
-// minutes more. Mailed first, a rotation supersedes the link it replaces only
-// once the replacement has arrived, and a refusal writes nothing at all — the old
-// row, its expiry and its spendability untouched.
+// minutes more. Mailed first, a rotation supersedes the old link only once the
+// replacement has arrived; a refusal writes nothing, old row and expiry intact.
 //
 // The window it accepts is the short one: between the transport's answer and this
 // write the new mail names a link the table does not hold yet, and a person
@@ -430,19 +429,17 @@ func (s *Service) commitDelivered(ctx context.Context, tx db.Tx[db.Tenant], user
 // postOffer puts one set-password credential where the person reading the mail
 // will look for it, and says whether it got a commit of its own.
 //
-// That commit is the rule, and the database is what decides whether it is
-// possible: password_tokens.user_id is a foreign key, so the write itself answers
-// whether the person the link names is a fact outside this transaction. A worker
-// always finds that fact — the event that asked for the link is relayed from
-// committed rows, so the invitation committed before the mail was ever offered —
-// and a credential committed by a delivery that then fails is a live link in
-// nobody's mail, which is the half-journey this ordering exists to end.
+// That commit is the rule, and the database decides whether it is possible:
+// password_tokens.user_id is a foreign key, so the write itself answers whether
+// the person the link names is a fact outside this transaction. A worker always
+// finds that fact, the event that asked for the link being relayed from committed
+// rows; and a credential committed by a delivery that then fails is a live link
+// in nobody's mail, the half-journey this ordering exists to end.
 //
 // One caller is refused that answer: the registration subscriber that invites an
 // address and mails its link in the same breath (see RegistrationSubscription).
-// There the row goes inside the caller's own transaction, where it and the send
-// can only stand or fall together, which is what sent_at beside the insert says:
-// a row that survives is a row whose mail went.
+// There the row goes inside the caller's transaction, where it and the send stand
+// or fall together — sent_at beside the insert says a surviving row got its mail.
 func (s *Service) postOffer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID,
 	token string, at time.Time) (bool, error) {
 	expiry := at.Add(contracts.TokenLifetime)

@@ -454,7 +454,7 @@ type RefusalProps struct {
 	Ask, AskLabel, Permission, Path string
 	// SignIn is the chrome's own sign-in address, offered only on the verdict
 	// signing in could change (a 401), and "" leaves no link on the page — the
-	// same rule Ask follows. T-0184's refusal page is unchanged by everything
+	// same rule Ask follows. The refusal page is unchanged by everything
 	// below it: the fields are empty there, and an empty field renders nothing.
 	SignIn, SignInLabel string
 	// Retry, RetryAfter and the label beside it are the transient verdict's way on,

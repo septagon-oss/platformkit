@@ -32,27 +32,18 @@ import (
 
 // renegotiate replaces a held refusal that huma wrote with the answer this package
 // would have written for the same verdict. The guard is the shape, not the status: a
-// body this package's encoder wrote is already the one answer (fault.go's fail, refuse
-// and Siteless all end at writeProblem), so re-writing it would be two writers again.
-// The status the line carries and the status the body names have to agree, because the
-// verdict is the one thing a replacement may not move.
+// body this package's encoder wrote is already the one answer (fault.go ends at
+// writeProblem), so re-writing it would be two writers again.
 //
 // The body is discarded and the encoder's two headers with it; every other header
-// stays, because those are the guard's answer and not the encoder's. Retry-After is the
-// one that matters: a refusal that says "come back in 8 seconds" in its body and drops
-// the number from its headers tells a client to stop and not when — which is what
-// buffer's reset would have done, reset being the tool for a held 200 whose transaction
-// failed, where the headers beside it are the thing that must not survive.
+// stays, because those are the guard's answer and not the encoder's. Retry-After is
+// the one that matters: a refusal that says "come back in 8 seconds" in its body and
+// drops it from its headers tells a client to stop and not when — which is what
+// buffer's reset would have done, reset being the tool for a held 200 whose
+// transaction failed, where the headers beside it must not survive.
 //
-// The verdict it re-answers with is the handler's own refusal when there is one to have
-// (buffer.carried), and the body only the shape that refusal was serialised into. Reading
-// the sentence back out of the JSON is reading it without the two facts the JSON does not
-// carry — the catalogue entry a person is shown for the verdict, and that the detail is an
-// operator's and not the reader's — and those two are the whole of what a page has to get
-// right about a sentence it is about to print. A handler that answered with something this
-// package has no business naming, a wrapped error the framework turned into a 500 about
-// its cause so that the status the line carries and the status the body name disagree,
-// keeps the body's answer, which is what this function did before a verdict was carried.
+// It re-answers with the handler's own refusal when the buffer carries one: the body
+// alone lacks the catalogue entry a page shows and whose detail the operator owns.
 func (a *API) renegotiate(b *buffer, r *http.Request) {
 	if a.opts.Fault == nil || b.direct || b.status < http.StatusBadRequest ||
 		!strings.HasPrefix(b.Header().Get("Content-Type"), problem.ContentType) ||
@@ -174,26 +165,20 @@ func (a *API) respond(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(b, r)
 
-		// The public surface sets no cookie. It is a promise the surface makes to
-		// a visitor — nothing about this request is remembered, which is what lets
-		// it be cached and indexed — and a handler that minted one broke it on a
-		// page a crawler will keep. The writer is where the promise is kept (see
-		// withholdCookies): the cookie never reaches the visitor, whatever size the
-		// body turned out to be. What is left here is the honest *answer*: where
-		// the response is still held, it becomes a 500 naming the fault with the
-		// body discarded, because a route that broke the surface's own promise has
-		// not produced a response worth caching. Where the bytes already went, the
-		// status is one the visitor has seen and the line names the route for
-		// whoever owns it.
+		// The public surface sets no cookie. It is a promise the surface makes to a
+		// visitor — nothing about this request is remembered, which is what lets it be
+		// cached and indexed — and a handler that minted one broke it on a page a
+		// crawler will keep. The writer keeps the promise (see withholdCookies): the
+		// cookie never reaches the visitor, whatever size the body turned out to be.
+		// Where the response is still held it becomes a 500 naming the fault, the body
+		// discarded; where the bytes went, the line names the route.
+		//
 		// The last chance to answer a refusal in the shape the caller asked for. huma
-		// writes the refusals it makes itself — a body over the operation's bound, a body
-		// that will not decode, a handler's 5xx — with its own encoder, past the reach of
-		// fault.go, because the negotiation lives where the request is and huma's writer is
-		// reached from inside generated code. This is the one place above all of them that
-		// holds the finished answer, so a problem document that arrived here from huma is
-		// read back and answered through the kernel's one writer, and the client that came
-		// to look at a page is not sent a body to parse. A caller that named a value is
-		// untouched, and so is any response that has begun reaching the wire.
+		// writes the refusals it makes itself — a body over the operation's bound, a
+		// body that will not decode, a handler's 5xx — with its own encoder, past the
+		// reach of fault.go. This is the one place that holds the finished answer, so a
+		// problem document that arrived from huma is read back through the kernel's one
+		// writer. A caller that named a value is untouched, as is a begun response.
 		a.renegotiate(b, r)
 		if minted := b.withheld(); len(minted) > 0 {
 			a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: a public route set a cookie",
