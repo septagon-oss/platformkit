@@ -39085,6 +39085,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/contracts/audittest/service_case_names_are_distinct_test.go",
+   "id": "modules/audit/contracts/audittest/service_case_names_are_distinct_test.go#TestServiceCaseNamesAreDistinct",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestServiceCaseNamesAreDistinct",
+   "needs_db": false,
+   "pkg": "modules/audit/contracts/audittest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/internal/column_append_privilege_test.go",
    "id": "modules/audit/internal/column_append_privilege_test.go#TestColumnAppenderCannotExpireHistory",
    "kind": "go",
@@ -80558,7 +80577,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2156,
+  "files": 2157,
   "forge_runs": [
    408,
    413,
@@ -80592,7 +80611,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3487,
+   "behaviour": 3488,
    "composition": 462,
    "contract": 21,
    "journey": 109
@@ -80611,23 +80630,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4079,
+  "rows": 4080,
   "tiers": {
    "merge": 2484,
    "nightly": 109,
-   "push": 1486
+   "push": 1487
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1911,
+   "keep": 1912,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3693,
+   "keep": 3694,
    "keep-rewrite": 170,
    "merge": 216
   }
