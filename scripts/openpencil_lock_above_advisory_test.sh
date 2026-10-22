@@ -63,9 +63,9 @@ ADVISORIES = (
     {
         "package": "dompurify",
         "since": None,
-        "upto": (3, 4, 15),
-        "ids": ("GHSA-p98j-92pf-mc4p", "GHSA-6688-9rhm-gjv2"),
-        "severity": "low",
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"),
+        "severity": "critical",
         "parent": "jspdf",
     },
 )
