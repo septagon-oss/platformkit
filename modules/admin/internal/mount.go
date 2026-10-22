@@ -491,15 +491,17 @@ func header(r page.Request, navigation components.SidebarProps, line string) []g
 	}
 }
 
-// about is the footer: the facts support reads and a person does not look for —
-// whose workspace the host serves, and the build — behind one closed disclosure,
-// so the header is left to name the person. Signed in or not, as the build stamp
-// always was.
+// about is the footer: the build stamp, always in view, and behind one closed
+// disclosure the fact support reads and a person does not look for — whose
+// workspace the host serves — so the header is left to name the person. Signed in
+// or not, as the build stamp always was.
 func about(r page.Request) g.Node {
 	o := resource.Options{Locale: r.Locale}
-	return components.Disclosure(components.DisclosureProps{Label: o.Text("admin.workspace.about", "About this workspace"), Flush: true},
-		components.Text(components.TextProps{Element: "span", Content: workspaceScope(r.Tenant, o), Size: chromeTextSize, Color: "muted"}),
-		components.Text(components.TextProps{Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"}))
+	return g.Group([]g.Node{
+		components.Text(components.TextProps{Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"}),
+		components.Disclosure(components.DisclosureProps{Label: o.Text("admin.workspace.about", "About this workspace"), Flush: true},
+			components.Text(components.TextProps{Element: "span", Content: workspaceScope(r.Tenant, o), Size: chromeTextSize, Color: "muted"})),
+	})
 }
 
 // version is what the footer says. It is the revision the binary was built

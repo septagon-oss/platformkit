@@ -1,9 +1,10 @@
 package internal
 
 // workspace_facts_disclosure_test.go is where the frame keeps what support reads
-// and a person does not look for: the header names the person, and whose
-// workspace the host serves and which build answered stay reachable behind one
-// closed disclosure in the footer — never removed, never in the open.
+// and a person does not look for: the header names the person, whose workspace
+// the host serves stays reachable behind one closed disclosure in the footer —
+// never removed, never in the open — and the build stamp stays in view, as the
+// shared design floor requires.
 
 import (
 	"context"
@@ -75,20 +76,22 @@ func TestTheWorkspaceFactsAreBehindOneDisclosure(t *testing.T) {
 			t.Errorf("signed in=%v: the disclosure is labelled %q, want %q", signedIn, summary, "About this workspace")
 		}
 		inside := chromeLabels(t, "<main></main>"+details)
-		var scope, stamp bool
+		var scope bool
 		for _, line := range inside {
 			size, text, _ := strings.Cut(line, "\x00")
 			if size != chromeTextSize {
 				t.Errorf("signed in=%v: a disclosed fact is size %q, want the chrome's %q", signedIn, size, chromeTextSize)
 			}
 			scope = scope || text == "Tenant workspace"
-			stamp = stamp || strings.HasPrefix(text, brand+" ")
+			if strings.HasPrefix(text, brand+" ") {
+				t.Errorf("signed in=%v: the build stamp is hidden in the disclosure", signedIn)
+			}
 		}
-		if !scope || !stamp {
-			t.Errorf("signed in=%v: the disclosure holds %q; want the scope and the build stamp", signedIn, inside)
+		if !scope {
+			t.Errorf("signed in=%v: the disclosure holds %q; want the scope", signedIn, inside)
 		}
-		if outside := footer[:begin] + footer[end:]; strings.Contains(outside, `data-component="text"`) {
-			t.Errorf("signed in=%v: the footer says something outside the disclosure:\n%s", signedIn, outside)
+		if outside := footer[:begin] + footer[end:]; !strings.Contains(outside, brand+" ") || strings.Contains(outside, "Tenant workspace") {
+			t.Errorf("signed in=%v: the footer must show the build stamp and only the scope behind the disclosure:\n%s", signedIn, outside)
 		}
 	}
 }

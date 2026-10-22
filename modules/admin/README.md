@@ -202,7 +202,8 @@ first on the home, for whoever may follow it, with no page of its own.
   printed as written like a nav label. A product summary beyond the action's purpose
   sentence is not declared here: a product that wants a page of its own at `/app`
   claims `Router.Home()`.
-- "About this workspace" holds the host's scope and the build revision. The account
+- "About this workspace" holds the host's scope; the build revision stays in view beside it, which the
+  shared design floor requires. The account
   id is not shown there (support reads it on the person's record), and whether the
   tenant's slug joins it is undecided.
 
