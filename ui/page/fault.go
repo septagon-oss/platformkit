@@ -41,13 +41,9 @@ import (
 	"strconv"
 	"strings"
 
-	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
-
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
-	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/document"
 )
 
@@ -65,46 +61,6 @@ func backWay(loc *Locale, label string) string {
 		return words
 	}
 	return label
-}
-
-// referenceSaid is the data line under the verdict: the request's own identifier under
-// its name, as a value a person can select, and the refusal's code where this layer
-// wrote the sentence above and the code would otherwise have left the page. Each is its
-// own piece — the label a translator's, the identifier a row in a log, the code a grep
-// pattern — so they are separate strings on the page and not one line no translation can
-// finish. Neither the identifier nor the code is wrapped in a sentence: a reference that
-// is the tail of a clause cannot be read back digit for digit, and a screen reader
-// reaches it as part of the prose rather than as a value with a name.
-func referenceSaid(loc *Locale, reference, code string) g.Node {
-	var parts []g.Node
-	if reference != "" {
-		parts = append(parts,
-			components.Text(components.TextProps{
-				Content: strings.TrimSpace(word0(loc, referenceLabelKey)),
-				Element: "span", Color: "muted", Size: "sm"}),
-			g.Text(" "),
-			components.Text(components.TextProps{
-				Content: reference, Element: "samp", Size: "sm", NoWrap: true}))
-	}
-	if code != "" {
-		if len(parts) > 0 {
-			parts = append(parts, g.Text(" · "))
-		}
-		parts = append(parts, h.Code(g.Text(code)))
-	}
-	return h.P(parts...)
-}
-
-// referenceSaidInSentence is the same identifier on the page that answers the grant
-// question: there the refusal's own line names the permission and the person who can
-// give it, and the reference closes that sentence rather than standing under a label of
-// its own.
-func referenceSaidInSentence(loc *Locale, reference string) g.Node {
-	words := strings.TrimSpace(word0(loc, referenceKey))
-	if words == "" {
-		words = referenceWords
-	}
-	return h.P(g.Text(words), g.Text(" "), h.Code(g.Text(reference)), g.Text(")"))
 }
 
 // shown is the half of a refusal this shell may repeat to the person in front of it:
@@ -292,6 +248,11 @@ func fault(rf verdict) View {
 		Home: rf.back, HomeLabel: backWay(rf.loc, rf.backLabel),
 		BackLabel: word0(rf.loc, backKey),
 	}
+	if rf.reference != "" {
+		p.Reference = rf.reference
+		p.ReferenceLabel = strings.TrimSpace(word0(rf.loc, referenceLabelKey))
+	}
+	p.Code = shownCode
 	// The way out: a subject page sends a person back to the list the item belongs to,
 	// a verdict that may pass on a second attempt sends them to this address again, and
 	// everything else takes the shell's way out, which is the one it promised.
@@ -317,9 +278,6 @@ func fault(rf verdict) View {
 		p.SignIn, p.SignInLabel = rf.signIn, word0(rf.loc, "fault.sign_in")
 	}
 	v := document.Fault(p)
-	if rf.reference != "" || shownCode != "" {
-		v.Body = append(v.Body, referenceSaid(rf.loc, rf.reference, shownCode))
-	}
 	if language != "" {
 		v.Language = language
 	}
@@ -401,6 +359,14 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 	}
 	p := document.RefusalProps{Status: status, Title: statusTitle(loc, status, detail, Subject{}),
 		Sentence: line, Home: s.Back, HomeLabel: backWay(loc, s.BackLabel)}
+	if reference != "" {
+		p.Reference = reference
+		if words := strings.TrimSpace(word0(loc, referenceKey)); words != "" {
+			p.ReferenceWords = words
+		} else {
+			p.ReferenceWords = referenceWords
+		}
+	}
 	if ref.Code == httpx.CodePolicyDenied {
 		p.Missing, _ = word(loc, "fault.holds_the_row", ref.Reason)
 	} else {
@@ -416,9 +382,6 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 		}
 	}
 	v := document.Refusal(p)
-	if reference != "" {
-		v.Body = append(v.Body, referenceSaidInSentence(loc, reference))
-	}
 	if language != "" {
 		// The verdict's own line is this language, which is the line the page is
 		// read for; a part the catalogue has no copy for is English beside it, as

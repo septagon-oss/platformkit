@@ -370,6 +370,13 @@ type FaultProps struct {
 	// SignIn is the chrome's own sign-in address, offered only on the verdict
 	// signing in could change.
 	SignIn, SignInLabel string
+	// Reference is the request's own identifier — the one an operator finds the log
+	// line by — and ReferenceLabel the words that name it, which the shell's
+	// catalogue provides. Code is the refusal's own code, carried here where the
+	// caller wrote the person's sentence in place of the guard's line and the code
+	// would otherwise have left the page. All three are "" where there is nothing
+	// to show, and one empty identifier leaves the line off the page.
+	Reference, ReferenceLabel, Code string
 }
 
 // Fault is the page for a refusal a person may be able to act on.
@@ -385,12 +392,15 @@ func Fault(p FaultProps) View {
 		body = append(body, components.Link(components.LinkProps{Label: p.RetryLabel, Href: p.Retry}))
 	}
 	if p.RetryAfter > 0 {
-		body = append(body, components.Text(components.TextProps{Content: p.RetryAfterLabel, Element: "p", Color: "secondary"}))
+		body = append(body, refusalSentence(p.RetryAfterLabel, "secondary"))
 	}
 	for _, way := range []struct{ href, label string }{{p.Back, p.BackLabel}, {p.Home, p.HomeLabel}, {p.SignIn, p.SignInLabel}} {
 		if way.href != "" {
 			body = append(body, components.Link(components.LinkProps{Label: way.label, Href: way.href}))
 		}
+	}
+	if p.Reference != "" || p.Code != "" {
+		body = append(body, refusalReference(p.ReferenceLabel, p.Reference, p.Code))
 	}
 	return View{Title: p.Title, Status: p.Status, Language: "en", Body: body}
 }
@@ -429,6 +439,43 @@ func refusalSentence(sentence, color string) g.Node {
 	return components.Text(p)
 }
 
+// refusalReference is the identifier line under a verdict. The identifier is drawn as
+// a value a person can select and read back digit for digit, under the words that name
+// it, and the code follows beside it rather than inside either sentence: the label is a
+// translator's, the identifier a row in a log, the code a grep pattern, so they are
+// separate strings on the page and not one line no translation can finish. The line
+// keeps the measure the verdict's own sentence keeps — the person reads both, and a
+// second line that spans the column is the same defect one paragraph lower.
+func refusalReference(label, reference, code string) g.Node {
+	var parts []g.Node
+	if reference != "" {
+		if label != "" {
+			parts = append(parts,
+				components.Text(components.TextProps{
+					Content: label, Element: "span", Color: "muted", Size: "sm"}),
+				g.Text(" "))
+		}
+		parts = append(parts, components.Text(components.TextProps{
+			Content: reference, Element: "samp", Size: "sm", NoWrap: true}))
+	}
+	if code != "" {
+		if len(parts) > 0 {
+			parts = append(parts, g.Text(" · "))
+		}
+		parts = append(parts, h.Code(g.Text(code)))
+	}
+	return h.P(h.Class(clRefusalMeasure.Compile()), g.Group(parts))
+}
+
+// refusalReferenceInSentence is the same identifier on the page that answers the grant
+// question: there the refusal's own line names the permission and the person who can
+// give it, and the reference closes that sentence rather than standing under a label of
+// its own. It keeps the measure refusalReference keeps, for the same reason.
+func refusalReferenceInSentence(words, reference string) g.Node {
+	return h.P(h.Class(clRefusalMeasure.Compile()),
+		g.Text(words), g.Text(" "), h.Code(g.Text(reference)), g.Text(")"))
+}
+
 // RefusalProps is the one verdict that arrives with parts: a refusal of a
 // person who could be told their way out. Fault draws an alert and a link, and
 // that is every other verdict needs; a person who was refused a grant needs four
@@ -465,6 +512,10 @@ type RefusalProps struct {
 	Retry, RetryLabel string
 	RetryAfter        int
 	RetryAfterLabel   string
+	// Reference is the request's identifier, as in FaultProps. The words that name it
+	// arrive as ReferenceWords because on this page they open the clause the
+	// identifier closes rather than labelling a line of its own.
+	Reference, ReferenceWords string
 }
 
 // Refusal is the page for a person the kernel refused before any handler ran.
@@ -493,13 +544,16 @@ func Refusal(p RefusalProps) View {
 		body = append(body, components.Link(components.LinkProps{Label: p.RetryLabel, Href: p.Retry}))
 	}
 	if p.RetryAfter > 0 {
-		body = append(body, components.Text(components.TextProps{Content: p.RetryAfterLabel, Element: "p", Color: "secondary"}))
+		body = append(body, refusalSentence(p.RetryAfterLabel, "secondary"))
 	}
 	if p.SignIn != "" {
 		body = append(body, components.Link(components.LinkProps{Label: p.SignInLabel, Href: p.SignIn}))
 	}
 	if p.Home != "" {
 		body = append(body, components.Link(components.LinkProps{Label: p.HomeLabel, Href: p.Home}))
+	}
+	if p.Reference != "" {
+		body = append(body, refusalReferenceInSentence(p.ReferenceWords, p.Reference))
 	}
 	return View{Title: p.Title, Status: p.Status, Language: "en", Body: body}
 }
