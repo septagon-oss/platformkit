@@ -551,7 +551,7 @@ func (a *App) Explain(d Deployment) (string, error) {
 			case dl.kind == contributes:
 				c := dm.Contributes[given]
 				given++
-				// Decided here (0074 rule 4, and T-0225's open question): a
+				// Decided here (0074 rule 4): a
 				// contribution no composed module takes is a note, not a refusal.
 				// A taker declares Needs[[]E], which the resolver reads as zero or
 				// more, and an app that composes the contributor without the taker

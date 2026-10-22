@@ -6,8 +6,8 @@
 //	go run ./tools/locbudget --check                  # exit 1 if any bucket is over budget
 //	go run ./tools/locbudget --write                  # lower maxima to current counts
 //	go run ./tools/locbudget --write --bucket go_prod # lower one bucket only
-//	go run ./tools/locbudget --write --round 100      # re-baseline: count, rounded up
-//	go run ./tools/locbudget --write --round 100 --allow 500
+//	go run ./tools/locbudget --write --round N        # re-baseline: count, rounded up to a multiple of N
+//	go run ./tools/locbudget --write --round N --allow M
 //	      # re-baseline with one acceptance round reserved first
 //	go run ./tools/locbudget                          # print counts
 package main
@@ -201,7 +201,7 @@ func (bu *Budget) Baseline(counts map[string]int, round int) {
 // and one acceptance round here brought a file of 139, so `--check` refused the
 // review for the crime of reading the delivery. The reservation is measured from what this
 // repository already holds — the largest single acceptance-round test file here is
-// 499 lines, kit/httpx/control_plane_refusal_test.go — so a branch that expects to be
+// 499 lines — so a branch that expects to be
 // reviewed passes --allow 500 for the bucket a review file is counted in, which is
 // go_test, and leaves every other bucket unreserved, because a review round adds
 // no production Go and no shipped module.

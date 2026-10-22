@@ -22,7 +22,7 @@ import (
 // It ignores the transaction it is handed, and that is the honest limit of it:
 // it cannot tell a caller that a write did not commit, because nothing here
 // commits. Everything it can be wrong about is what RunService checks, and
-// fake_test.go runs the whole suite against it.
+// the fake's own tests run the whole suite against it.
 type Fake struct {
 	mu    sync.Mutex
 	plans map[uuid.UUID]contracts.Plan

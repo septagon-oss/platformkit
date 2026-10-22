@@ -92,7 +92,7 @@ func (s Schema) Tables() []string { return sortedKeys(map[string]map[string]Colu
 // `ALTER TABLE` in the same file; otherwise ReadMigrations returns an error and Check
 // refuses the module. A column that arrived in a shape this reader cannot read is
 // therefore a red boot, and not a person column nobody had to declare. The three
-// shapes outside the reach are each a case in personaldata_test.go.
+// shapes outside the reach are each a case in this package's tests.
 func readSQL(schema Schema, text, file string) error {
 	body := stripComments(text)
 

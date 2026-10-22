@@ -25,10 +25,10 @@ type ControlProps struct {
 // widgetInputType names the <input> type each widget that draws an input asks
 // for. The rest of entity.Widgets draw a component (select, textarea), a
 // decorated input (entity-picker) or the bool control (checkbox), so they have
-// no input type to name. ui/forms/widget_test.go renders one control per name
+// no input type to name. a test renders one control per name
 // in that vocabulary and refuses a name with no drawn control, which is what
 // keeps this table and that list from drifting apart again: `file` was added to
-// the component by the E6 review and reached no schema until now.
+// the component earlier and reached no schema until now.
 var widgetInputType = map[string]string{
 	"color":    "color",
 	"date":     "date",
@@ -96,7 +96,7 @@ func Control(p ControlProps) g.Node {
 			Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
 			MaxLength: f.MaxLength, CharacterLimitOnly: true,
 		}, components.Textarea).Node
-		// TODO(T-0181): replace this native disclosure when the shared disclosure lands.
+		// Replace this native disclosure when the shared disclosure lands.
 		help := h.Details(
 			h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
 			h.Ul(

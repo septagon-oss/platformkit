@@ -41,7 +41,7 @@ import (
 // screen whose copy this repository writes in English and declares as English
 // (modules/admin/internal/sessions.go, `Language: writtenHere`), and /login's
 // sentence is pinned to its element's declaration by
-// apps/platformkit/review_r9_login_refusal_language_test.go. Naming those gaps
+// the login refusal-language test. Naming those gaps
 // and leaving them is the honest share of this change; closing them belongs to
 // those screens and to every refusal in the module at once.
 type PasskeyWords struct {

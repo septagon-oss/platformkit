@@ -131,8 +131,8 @@ type Served struct {
 }
 
 // Handler is the served process's HTTP surface. With one application hosted it is
-// that application's handler; choosing between two over one listener is what
-// T-0231 buys, and until then there is nothing to choose between.
+// that application's handler; choosing between two over one listener is what a
+// later change adds, and until then there is nothing to choose between.
 func (s *Served) Handler() http.Handler {
 	if len(s.runtimes) == 0 {
 		return http.NotFoundHandler()

@@ -32,7 +32,7 @@ const (
 // call caused through the transport. contracts.MailReport refuses to report
 // anything but a refusal, precisely because "a mail left" is the shape of "somebody
 // has this account"; the previous cure for that answered a caller whose call left no
-// record with the tenant's newest row instead, and review 3 showed the same oracle
+// record with the tenant's newest row instead, which was the same oracle
 // through it: a transport that refuses one mailbox can be refilled by the caller, so
 // every no-account probe was answered `failed` while every account was answered
 // `pending`.
