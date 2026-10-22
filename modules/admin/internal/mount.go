@@ -337,7 +337,7 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 				Header:  header(r, navigation, line),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
-					Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"})},
+					Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"})},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{Title: "Are you sure?"}),
 		})
@@ -466,7 +466,7 @@ func header(r page.Request, navigation components.SidebarProps, line string) []g
 		// name should be, and would put a second fact on a line this frame measures
 		// as one.
 		right = append([]g.Node{
-			components.Text(components.TextProps{Content: line, Size: chromeTextSize, Color: "muted"}),
+			components.Text(components.TextProps{Element: "span", Content: line, Size: chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},

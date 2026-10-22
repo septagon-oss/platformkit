@@ -280,6 +280,14 @@ func sidebarItemNode(
 		prefixClass = clSidebarPrefixContent
 		labelClass = clSidebarLabelContent
 	}
+	foreground := style.FgOnInverse
+	if flavor == "content" {
+		foreground = style.FgSecondary
+		if active {
+			foreground = style.FgBrand
+		}
+	}
+	attrs = append(attrs, h.Class(style.New().TextColor(foreground).Compile()))
 	if p.Collapsed && flavor == "admin" {
 		linkClass = linkClass.Merge(clSidebarLinkPadCollapsed)
 		labelClass = clSidebarLabelHidden
