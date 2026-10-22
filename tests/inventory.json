@@ -73858,6 +73858,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/new_action_language_test.go",
+   "id": "ui/resource/new_action_language_test.go#TestTheCreateLinkUsesTheRequestsLanguageAndSentenceCase",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheCreateLinkUsesTheRequestsLanguageAndSentenceCase",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/new_action_present_test.go",
    "id": "ui/resource/new_action_present_test.go#TestTheListOffersTheNewActionInSentenceCase",
    "kind": "go",
@@ -83560,7 +83579,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2287,
+  "files": 2288,
   "forge_runs": [
    408,
    413,
@@ -83594,7 +83613,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3602,
+   "behaviour": 3603,
    "composition": 501,
    "contract": 21,
    "journey": 112
@@ -83613,23 +83632,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4236,
+  "rows": 4237,
   "tiers": {
    "merge": 2645,
    "nightly": 112,
-   "push": 1479
+   "push": 1480
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2042,
+   "keep": 2043,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3850,
+   "keep": 3851,
    "keep-rewrite": 170,
    "merge": 216
   }
