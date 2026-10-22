@@ -32,9 +32,9 @@ func TestRequestNoticeExamplesRetainTheRenderedRecoveryContract(t *testing.T) {
 		signin               bool
 	}{
 		{"anonymous", "Sign-in required", "Keep this page open to retain your input. Sign in in another tab, then return and try again. Nothing is retried automatically.", true},
-		{"denied", "Permission denied", "You do not have permission for this action. Keep this page open to retain your input and contact an administrator if you need access.", false},
+		{"denied", "You don't have access", "Keep this page open to retain your input. Ask an administrator for the access this needs.", false},
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
-		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
+		{"uncertain", "We couldn't confirm whether your changes were saved.", "Keep this page open and check whether the action completed before trying again.", false},
 	} {
 		example := captures[index]
 		if example.ID != "pk-auth-"+want.kind || example.Name != want.title || example.ComponentID != "pk-ui.component.stack" {
@@ -133,7 +133,7 @@ func TestRequestNoticeSourceEditsAreDetachedAndUseSharedReplacementContracts(t *
 		t.Fatalf("same-interface Alert replacement failed: %v", err)
 	}
 	index := slices.IndexFunc(replaced.Examples, func(e examples.ExampleDescription) bool { return e.ID == path[0] })
-	if index < 0 || !strings.Contains(replaced.Examples[index].HTML, "Permission denied") {
+	if index < 0 || !strings.Contains(replaced.Examples[index].HTML, "You don&#39;t have access") {
 		t.Fatal("Alert replacement did not retain its destination or source copy")
 	}
 	if _, _, err := export.ProjectReplacement(theme, source, export.ReplacementProposal{

@@ -343,7 +343,7 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 			// The session, and the state cookie thrown away: it is worthless
 			// now and leaving it is a verifier somebody could replay.
 			SetCookie: []http.Cookie{
-				p.cookies.Session(session.ID, session.ExpiresAt),
+				p.cookies.Session(session.ID, session.CreatedAt),
 				p.cookies.Forget(stateCookie),
 			},
 		}, nil
