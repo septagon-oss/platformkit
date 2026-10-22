@@ -39579,6 +39579,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/contracts/audittest/every_case_opens_a_fixture_test.go",
+   "id": "modules/audit/contracts/audittest/every_case_opens_a_fixture_test.go#TestEveryServiceCaseRunsAgainstAFixture",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryServiceCaseRunsAgainstAFixture",
+   "needs_db": false,
+   "pkg": "modules/audit/contracts/audittest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/contracts/audittest/fake_test.go",
    "id": "modules/audit/contracts/audittest/fake_test.go#TestTheFakeIsAService",
    "kind": "go",
@@ -39589,6 +39608,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/audit/contracts/audittest/service_case_names_are_distinct_test.go",
+   "id": "modules/audit/contracts/audittest/service_case_names_are_distinct_test.go#TestServiceCaseNamesAreDistinct",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestServiceCaseNamesAreDistinct",
+   "needs_db": false,
+   "pkg": "modules/audit/contracts/audittest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "push",
    "unique_lines": null,
    "unique_reach": [],
@@ -45606,6 +45644,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/billing/contracts/billingtest/service_cases_run_once_each_test.go",
+   "id": "modules/billing/contracts/billingtest/service_cases_run_once_each_test.go#TestServiceCasesRunOnceEach",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestServiceCasesRunOnceEach",
+   "needs_db": false,
+   "pkg": "modules/billing/contracts/billingtest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "push",
    "unique_lines": null,
    "unique_reach": [],
@@ -81223,7 +81280,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2181,
+  "files": 2184,
   "forge_runs": [
    408,
    413,
@@ -81257,7 +81314,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3516,
+   "behaviour": 3519,
    "composition": 468,
    "contract": 21,
    "journey": 109
@@ -81276,23 +81333,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4114,
+  "rows": 4117,
   "tiers": {
    "merge": 2548,
    "nightly": 109,
-   "push": 1457
+   "push": 1460
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1936,
+   "keep": 1939,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3728,
+   "keep": 3731,
    "keep-rewrite": 170,
    "merge": 216
   }
