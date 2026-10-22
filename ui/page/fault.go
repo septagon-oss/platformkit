@@ -474,31 +474,26 @@ type verdict struct {
 	sub                                      Subject
 }
 
-// fault is the refusal document, with the two things a person in front of one actually
-// needs: what to do next, and the reference an operator can find the request by in a
-// log. The reference is the same URN the JSON body carries, so a screenshot and a log
-// line agree — which matters most for the failures that are nobody's fault and still
-// happened.
+// fault is the refusal document, with what a person in front of one needs and the
+// reference an operator can find the request by in a log. The reference is the same URN
+// the JSON body carries, so a screenshot and a log line agree.
 //
 // The sentence is one of three things, in this order: the words this package holds for
 // the verdict when the page declared a subject or the verdict is a plan exclusion, the
 // shell's own copy when its catalogue holds the code the guard travels under, and the
-// guard's line as it was written. The first is why a person at a record is told about
-// the record and not about HTTP; the last is why a refusal nobody has read yet is never
-// smoothed over.
+// guard's line as written. The first is why a person at a record is told about the record
+// and not about HTTP; the last is why a refusal nobody has read is never smoothed over.
 //
-// The declared language follows whichever sentence is actually on the page and not the
-// negotiation: a refusal the catalog has no sentence for is English copy whatever the
-// caller asked for, and a document that declares Portuguese over an English line lies
-// in the same shape as the page that was English to everybody.
+// The declared language follows whichever sentence is on the page, not the negotiation: a
+// refusal the catalogue has no sentence for is English copy whatever was asked for, and a
+// document declaring Portuguese over an English line mislabels the words on the page.
 //
 // What a translation replaces is the sentence, and the code goes on the data line below
 // rather than at its head: a guard writes "<CODE>: <sentence>", and the code is the half
-// a person reads back to support and an operator greps a log for, so it stays on the
-// page whatever the copy says.
-//
-// deniedPermission is the English sentence for a missing grant; the catalogue carries it as
-// deniedPermissionKey, with the permission as its one argument.
+// a person reads back to support and an operator greps a log for, so it stays on the page
+// whatever the copy says.
+// deniedPermission is the English sentence for a missing grant; the catalogue carries it
+// as deniedPermissionKey, with the permission as its one argument.
 const (
 	deniedPermission    = "You can't do this. You need the %s permission for it. Anyone who manages roles here can grant it: ask your administrator."
 	deniedPermissionKey = "fault.AUTH_DENIED.permission"

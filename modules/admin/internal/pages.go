@@ -113,7 +113,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, register string) page.View {
 	home := p.at.dashboard.at
 	locale := r.Locale
-	asked, carried := "", false
+	asked := ""
 	if h, ok := httpx.RequestFrom(ctx); ok {
 		// The kernel's rule, because this one used to be its own and was
 		// wrong: "/\\evil.example" has a leading slash and a second character
@@ -121,15 +121,8 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		if to := h.URL.Query().Get("next"); httpx.LocalPath(to) {
 			asked = to
 		}
-		// A cookie that named nobody: the only thing the server can see of an expired
-		// session, and enough to say "again" rather than to introduce the form to a
-		// stranger. It is read from the request, never from the query, because a link
-		// anybody can type must not be able to make this page claim a session ended.
-		_, carried = httpx.SessionCookieOf(h)
 	}
-	if _, resolved := tenancy.PrincipalFrom(ctx); resolved {
-		carried = false
-	}
+	carried := sessionRanOut(ctx)
 	if asked != "" {
 		next = asked
 	} else if open := p.firstScreen(ctx, r); open != "" {
@@ -161,15 +154,13 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 			Label: text("register", "Create an account")}))
 	}
 	title := text("title", "Sign in")
+	// Someone pushed off a screen is told to come back to it, not asked who they are.
 	again := text("description", "Use the address this tenant knows you by.")
 	if carried {
 		again = text("again", "Sign in again to continue.")
 	}
 	body := []g.Node{
 		components.SectionHeader(components.SectionHeaderProps{Eyebrow: fallback(r.Tenant.Name, brand), Title: title,
-			// A person pushed off a screen is told to come back to it, not asked to
-			// explain which account they use; anyone else gets the line that names
-			// the address this tenant knows them by.
 			Description: again, Level: 1, Size: 2}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
@@ -217,6 +208,23 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		}),
 	}
 	return accessPage(title, body...)
+}
+
+// sessionRanOut reports whether the request presents a session the server no longer
+// answers: a session cookie from someone who is not signed in. It is the only trace of
+// an expired session the server can see, and enough to say "sign in again" rather than
+// introduce the form to a stranger. It is read from the request, never from the query,
+// because a link anybody can type must not be able to make a page claim a session ended.
+func sessionRanOut(ctx context.Context) bool {
+	h, ok := httpx.RequestFrom(ctx)
+	if !ok {
+		return false
+	}
+	if _, signedIn := tenancy.PrincipalFrom(ctx); signedIn {
+		return false
+	}
+	_, carried := httpx.SessionCookieOf(h)
+	return carried
 }
 
 // accessPage keeps the introduction, form and recovery links in one surface.

@@ -150,22 +150,16 @@ func NewCookies(secure bool) Cookies { return Cookies{secure: secure} }
 // Session is the cookie that carries a session id. The value is the credential
 // and nothing stores it; what the row holds is its hash.
 //
-// Its own lifetime is the one the session it names could still have, and not the
-// expiry the row happened to carry at sign-in. The row slides on use, up to
-// SessionMaxLifetime from the moment it opened, and the server — not the browser
-// — is what decides whether a session is live. A cookie that expired with the
-// expiry on the row would leave the browser first in both cases worth naming: for
-// the session that ran out of time while its person was away, and for the one
-// used enough to be slid past the moment the cookie said. What a browser that got
-// there first carries is nothing, and a server handed nothing cannot tell the
-// person who was signed in from somebody arriving for the first time — so it
-// greets them as a stranger. An id whose row is gone names no session and grants
-// nothing: the row is the credential's other half, and it is deleted on the first
-// request that refuses it. Signing out still clears this cookie whatever its own
-// expiry says.
-//
-// The seconds are rounded up. Truncated down, the cookie would land a beat inside
-// the cap it is meant to outlive, which is the one thing it must not do.
+// Its lifetime is the one the session it names could still have — SessionMaxLifetime
+// from the moment it opened — and not the expiry the row happened to carry at
+// sign-in. The row slides on use and the server, not the browser, decides whether a
+// session is live; a cookie that expired with that expiry would be gone first in the
+// two cases worth naming, the session that ran out while its person was away and the
+// one used enough to be slid past the moment the cookie said. A server handed no id
+// then cannot tell the person who was signed in from somebody arriving for the first
+// time, and greets them as a stranger. An id whose row is gone names no session and
+// grants nothing, and signing out clears this cookie whatever its expiry says. The
+// seconds are rounded up, so the cookie outlives the cap it is meant to outlive.
 func (c Cookies) Session(id uuid.UUID, openedAt time.Time) http.Cookie {
 	return c.set(httpx.SessionCookie, id.String(), int(time.Until(openedAt.Add(contracts.SessionMaxLifetime))/time.Second)+1)
 }
