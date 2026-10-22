@@ -1501,32 +1501,56 @@ func (h *servingHandler) WithGroup(name string) slog.Handler { return h }
 
 // freeAddr picks a port the kernel cannot hand to somebody else while this test is
 // on its way to binding it, from the band stated above.
+//
+// The port is claimed (see claimPort) from here until the case ends, and the socket
+// that proves the port free is still released, because the application under test has
+// to bind the number itself. The claim is what carries the port across that window:
+// the migration between this return and that bind is seconds alone and minutes with
+// every database package on this host migrating into one Postgres, and the map below
+// remembers only what this one process served. A run whose claim the kernel refused
+// takes the next port; a claim this process cannot take at all ends the case, because
+// a choice that went on without one would be sharing ports and saying nothing about it.
 func freeAddr(t *testing.T) string {
 	t.Helper()
 	low := min(ephemeralLow()-1, lastChosenPort)
 	first := rand.IntN(low - firstChosenPort + 1)
 	chosenPortsMu.Lock()
 	defer chosenPortsMu.Unlock()
+	claimedElsewhere := 0
 	for i := range chosenPortTries {
 		port := firstChosenPort + (first+i)%(low-firstChosenPort+1)
 		if chosenPorts[port] {
 			continue
 		}
+		claim, err := claimPort(port)
+		if err != nil {
+			if !errors.Is(err, errPortClaimHeld) {
+				t.Fatalf("claim port %d for this case: %v", port, err)
+			}
+			claimedElsewhere++
+			continue
+		}
 		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 		if err != nil {
+			claim.release()
 			continue
 		}
 		addr := l.Addr().String()
 		if !loopbackReaches(l) {
 			_ = l.Close()
+			claim.release()
 			continue
 		}
 		_ = l.Close()
 		chosenPorts[port] = true
+		// Registered before start's stopper, so this runs after it: the case's cleanups
+		// are last-in, first-out, and the port is never open to the next run while this
+		// one is still serving on it.
+		t.Cleanup(claim.release)
 		return addr
 	}
-	t.Fatalf("every port between %d and %d is held by something else",
-		firstChosenPort, low)
+	t.Fatalf("every port between %d and %d is held by something else, %d of them claimed by another test process",
+		firstChosenPort, low, claimedElsewhere)
 	return ""
 }
 

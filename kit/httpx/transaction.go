@@ -142,14 +142,15 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 // hungUp reports that the transaction ended the way a client going away ends
 // one, rather than the way a database going away does.
 //
-// A browser that closes the tab cancels the request context. database/sql
-// notices before this middleware does and rolls the transaction back itself, so
-// the commit asked for a moment later comes back "sql: transaction has already
-// been committed or rolled back", and the settings re-read before it fails on
-// the same cancelled context. Both read as faults and neither is one: there is
-// nobody left to tell. A cancellation that lands while the COMMIT's answer is on
-// its way may follow a write that did commit; this reading only chooses the log
-// line, and the idempotency record is left to the effect marker before it.
+// A browser that closes the tab cancels the request context, which owns the
+// request transaction (kit/db's README, "The transaction's owner"). Close then
+// refuses to commit whatever status the handler decided, answering with the
+// context's cause; a cancel landing after that check but before COMMIT has
+// database/sql roll back first, and the commit answers sql.ErrTxDone. Either
+// reads as a fault and is not one: nobody is left to tell. A cancellation that
+// lands while the COMMIT's answer is on its way may follow a write that did
+// commit; this reading only chooses the log line, and the idempotency record is
+// left to the effect marker before it.
 //
 // It matters because the alternative was an ERROR line per abandoned request.
 // An alert that fires on ordinary browsing is an alert people turn off, and the

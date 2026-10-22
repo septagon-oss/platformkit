@@ -328,3 +328,45 @@ parses;
 `scripts/testdata/rehearse/seed.sql`, the ten-thousand-row fixture any future
 rehearsal or size-shaped test composes; and the batch-with-a-cursor pattern, which
 `events.Purge` is the next candidate for.
+
+# The transaction's owner
+
+A tenant transaction opened through a `Pending` (`tx.go`) has two kinds of context, and they
+are never confused.
+
+The **owner** is the context the `Pending` was created with: the request's, for `Lazy`, or the
+caller's, for a standalone `Run`. `BEGIN`, the `set_config`, the transaction span, the settings
+re-read and `COMMIT` all run under it, because database/sql binds a transaction's life to the
+context it began with. When the owner ends before `Close`, database/sql rolls the transaction back
+and releases the connection, `Close` reports the owner's cause whatever `keep` asked for, and no
+later `Tx` opens: a request whose client went away commits neither its rows nor its outbox events,
+even when its handler answered 2xx.
+
+An **operation** is each caller of `Tx`, each nested `Run`, and each `TxFrom` on a context already
+inside the transaction. It gets a clone of the shared GORM handle bound to its own context, so its
+statements carry its deadline, its values and the transaction span, and the shared handle is never
+changed. An operation ending stops its statements alone. If PostgreSQL aborted the transaction
+underneath — a statement cancelled mid-way — nothing later commits it: there are no savepoints.
+
+`InTenant` also bounds its borrowed handles to the provisioning callback. Nested `Run` and `TxFrom`
+calls retain that restriction even when their caller uses `context.WithoutCancel`: their own
+deadlines and values still apply, but every borrowed handle is cancelled before system access is
+restored. A saved callback context cannot open a fresh usable handle after the callback has
+returned.
+
+What follows from that:
+
+| Event | Outcome |
+|---|---|
+| An operation ended before the transaction opened | that `Tx` is refused; the next live caller opens it |
+| The owner ended before it opened, or while it waited for a connection | refused with the owner's cause, not remembered by `Err`, so `Err` still means the database refused |
+| The owner ended while it was open | rolled back; `Close` returns the owner's cause |
+| The owner ended after `Close` committed | reported as committed; `Close` is idempotent |
+| `Close` under a live owner | the `Pending` may open again: the streamed upload route commits its guard transaction and its handler opens a second one |
+
+Limits. Waiting for a pooled connection is bounded by the owner, not by the first caller: an
+operation that ends during that wait gets a handle whose first statement fails, and the transaction
+stays open for the next caller. Owner cancellation does not interrupt a running statement whose
+context does not derive from the owner; every in-tree caller's does. A cancel that lands during the
+`COMMIT` round trip is reported as not committed, though PostgreSQL may have committed. `RunSystem`
+keeps one context for its whole transaction: its caller is owner and only operation.

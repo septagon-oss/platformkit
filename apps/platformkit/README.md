@@ -217,3 +217,18 @@ the second grant would have landed on the first copy's database. The budget in `
 leaves room for the prefix and the ask number, and `dbtest.identifier` keeps the tail of a name the
 server would otherwise cut — the contract is on `Role`, and
 `TestEachRepeatedCopyCanHoldAnIndependentRoleInItsOwnDatabase` is the case.
+
+### The port a case serves at
+
+Three sentences, for the next person who changes how this package gets an address.
+
+**Reused** — `freeAddr`'s band, its tries and its loopback probe, the `chosenPorts` map, `bootWait`,
+and the two observations `waitServing` and `servingHandler` make, unchanged. **Added** — `claimPort`,
+one exclusive `flock(2)` per port number in `/tmp`, because the choice released the socket it had just
+proved free and the application under test binds that number only after migrating a whole
+installation: the window between the two is seconds alone and minutes on a loaded host, and a second
+run of this package from another checkout could be handed the same number inside it — `chosenPorts`
+remembers one process, and nothing in the tree held a port across processes. **Made reusable** — the
+claim itself, an empty file per port locked until the case ends and never unlinked, named by
+`portClaimPath` and witnessed by `TestAPortTakenWhileBootingIsNotTheCasesPort`. A claim is advisory,
+so the serving wait stays the proof of which application is behind an address.
