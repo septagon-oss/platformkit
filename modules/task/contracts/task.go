@@ -317,25 +317,17 @@ type CreateTask struct {
 	SourceRef   string
 }
 
-// Creator is the one way a task comes to exist. Every door — the REST create,
-// the web form, a seed, another module — reaches it, so identity, defaults, the
-// created event and the breach-on-arrival check are decided once.
+// Creator is the one way a task comes to exist: the REST create, the web form, a
+// seed and other modules all reach it, so identity, defaults, events and the
+// breach-on-arrival check are decided once.
 //
-// Create runs inside the caller's transaction and publishes into it: the row, its
-// events and whatever the caller wrote beside them commit together or not at
-// all. A refusal is decided before any write, so it leaves the row and the outbox
-// as it found them; an error after the first write (the outbox insert failing)
-// leaves the caller's transaction poisoned, and the caller must roll back — it
-// must not carry on and commit.
-//
-// It publishes, in order: EventCreated (payload *Task as inserted, Changes
-// empty); EventAssigned when AssigneeID is set; EventSLABreached when SLADeadline
-// has already passed. The returned task is the row as it now stands, breach and
-// assignment included.
-//
-// Create is not idempotent: two calls are two tasks. A caller that retries owns
-// the key that makes it safe — a request operation on the context, or its own row
-// that remembers the task id. The errors are kit/crud's:
+// Create runs in the caller's transaction and publishes into it, so the row, its
+// events and the caller's own writes commit together or not at all. A refusal is
+// decided before any write; an error after the first write leaves the transaction
+// poisoned and the caller must roll back. It publishes EventCreated (the *Task as
+// inserted), then EventAssigned when AssigneeID is set, then EventSLABreached when
+// SLADeadline has passed, and returns the row as it now stands. It is not
+// idempotent: a retrying caller owns the key. Errors are kit/crud's:
 //
 //	crud.ErrInvalid         the input is not one a task can have (correctable)
 type Creator interface {

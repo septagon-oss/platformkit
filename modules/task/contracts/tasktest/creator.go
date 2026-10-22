@@ -49,6 +49,15 @@ func created(t *testing.T, f Fixture, in contracts.CreateTask) *contracts.Task {
 func publishedAfter(f Fixture, before int) []string { return slices.Clone(f.Published()[before:]) }
 
 func creatorCases() []porttest.Case[Fixture] {
+	var all []porttest.Case[Fixture]
+	for _, group := range [][]porttest.Case[Fixture]{storedCases(), breachCases(), refusalCases(), rollbackCases()} {
+		all = append(all, group...)
+	}
+	return all
+}
+
+// storedCases are what a successful create leaves: the row, its events and its read.
+func storedCases() []porttest.Case[Fixture] {
 	return []porttest.Case[Fixture]{
 		{
 			Name:    "create stores the defaults and a server identity",
@@ -89,6 +98,12 @@ func creatorCases() []porttest.Case[Fixture] {
 				}
 			},
 		},
+	}
+}
+
+// breachCases are the SLA breach on arrival and the assignment a create may carry.
+func breachCases() []porttest.Case[Fixture] {
+	return []porttest.Case[Fixture]{
 		{
 			Name:    "a past slaDeadline records a breach and its event once",
 			Because: "breach on arrival: the created event describes the row as inserted and the breach follows it, in the same transaction",
@@ -146,6 +161,12 @@ func creatorCases() []porttest.Case[Fixture] {
 				}
 			},
 		},
+	}
+}
+
+// refusalCases are the correctable refusals of the input and the read of what was made.
+func refusalCases() []porttest.Case[Fixture] {
+	return []porttest.Case[Fixture]{
 		{
 			Name:    "a refused create writes nothing and says nothing",
 			Because: "every correctable refusal of the input, each with no row to snapshot: the count of tasks and the events are the comparison",
@@ -184,6 +205,12 @@ func creatorCases() []porttest.Case[Fixture] {
 				}
 			},
 		},
+	}
+}
+
+// rollbackCases need a real transaction: a refusal or a failing outbox insert undoes the caller's write too.
+func rollbackCases() []porttest.Case[Fixture] {
+	return []porttest.Case[Fixture]{
 		{
 			Name:    "a refused create takes the caller's write back with it",
 			Because: "real-only: the fake ignores the transaction it is handed, so only a world with one can show that the caller's own write rolls back",
