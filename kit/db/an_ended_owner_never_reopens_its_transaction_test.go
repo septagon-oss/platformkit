@@ -28,5 +28,5 @@ func TestAnOwnerEndedAfterAWriteRollsItBackAndNeverReopens(t *testing.T) {
 	if _, opened := p.Opened(); opened {
 		t.Error("a Pending whose owner ended reports an open transaction")
 	}
-	waitUntil(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
+	waitForPoolStat(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
 }
