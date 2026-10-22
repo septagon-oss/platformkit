@@ -1,6 +1,6 @@
 {
-  "funcs_over_100": 98,
-  "cc_over_30": 69,
+  "funcs_over_100": 78,
+  "cc_over_30": 50,
   "files_over_800": 25,
   "long_comment_blocks": 594,
   "history_comment_lines": 113,
