@@ -25,12 +25,12 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
-// chromeParagraphs returns every <p> the frame draws outside <main>, as
+// chromeLabels returns every Text label the frame draws outside <main>, as
 // `data-size` plus its text. The chrome is found structurally — the header and
 // footer are main's siblings — for the same reason the browser probe finds it
 // that way: no data-* attribute was invented for a region the shell already
 // knows about.
-func chromeParagraphs(t *testing.T, markup string) []string {
+func chromeLabels(t *testing.T, markup string) []string {
 	t.Helper()
 	begin := strings.Index(markup, "<main")
 	if begin < 0 {
@@ -42,12 +42,15 @@ func chromeParagraphs(t *testing.T, markup string) []string {
 	}
 	outside := markup[:begin] + markup[begin+end:]
 	var out []string
-	for _, element := range regexp.MustCompile(`<p [^>]*>.*?</p>`).FindAllString(outside, -1) {
+	for _, element := range regexp.MustCompile(`<(?:p|span) [^>]*>.*?</(?:p|span)>`).FindAllString(outside, -1) {
 		// Only the paragraphs the Text component drew: the frame also mounts a
 		// confirm dialog outside <main>, whose empty message <p> carries neither
 		// data-element nor data-size, and is not the frame's own copy.
-		if !strings.Contains(element, `data-element="p"`) {
+		if !strings.Contains(element, `data-component="text"`) {
 			continue
+		}
+		if !strings.HasPrefix(element, "<span ") || !strings.Contains(element, `data-element="span"`) {
+			t.Errorf("chrome label must be a span: %s", element)
 		}
 		size := regexp.MustCompile(`data-size="([^"]*)"`).FindStringSubmatch(element)
 		if size == nil {
@@ -123,7 +126,7 @@ func chromeFrameWith(t *testing.T, signedIn bool, people People) string {
 // stamp — three steps, which is the refusal the floor measures.
 func TestTheFramesChromeIsOneBodyStep(t *testing.T) {
 	t.Parallel()
-	signedIn := chromeParagraphs(t, chromeFrame(t, true))
+	signedIn := chromeLabels(t, chromeFrame(t, true))
 	steps := map[string]int{}
 	for _, line := range signedIn {
 		size := strings.SplitN(line, "\x00", 2)[0]
@@ -155,7 +158,7 @@ func TestTheFramesChromeIsOneBodyStep(t *testing.T) {
 // lines remain — and the remaining ones still agree.
 func TestAnAnonymousFrameKeepsTheOneStep(t *testing.T) {
 	t.Parallel()
-	for _, line := range chromeParagraphs(t, chromeFrame(t, false)) {
+	for _, line := range chromeLabels(t, chromeFrame(t, false)) {
 		if size := strings.SplitN(line, "\x00", 2)[0]; size != chromeTextSize {
 			t.Errorf("anonymous chrome paragraph is size %q, want %q (%q)", size, chromeTextSize, line)
 		}
@@ -171,7 +174,7 @@ func TestChromeTextSizeIsWhatTheFloorAllowsTwoOf(t *testing.T) {
 	if chromeTextSize != "sm" {
 		t.Errorf("chromeTextSize = %q; the page's own copy is base, and the floor allows two", chromeTextSize)
 	}
-	for _, line := range chromeParagraphs(t, chromeFrame(t, true)) {
+	for _, line := range chromeLabels(t, chromeFrame(t, true)) {
 		if size := strings.SplitN(line, "\x00", 2)[0]; size != chromeTextSize {
 			t.Errorf("the chrome draws a second step %q, which leaves the page's copy one", size)
 		}

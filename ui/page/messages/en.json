@@ -272,15 +272,6 @@
       "": "What is missing: %s"
     }
   },
-  "fault.request_reference": {
-    "references": [
-      "ui/page/fault.go"
-    ],
-    "translation": "Request reference",
-    "plural": {
-      "": "Request reference"
-    }
-  },
   "fault.retry": {
     "references": [
       "ui/page/fault.go"
@@ -523,5 +514,83 @@
     "plural": {
       "": "Service Unavailable"
     }
+  },
+  "fault.PLAN_EXCLUDES": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "This isn't included in this workspace's plan."
+  },
+  "fault.PLAN_EXCLUDES.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Not in this plan"
+  },
+  "fault.load_failed": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "We couldn't load %s."
+  },
+  "fault.load_failed.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "We couldn't load this"
+  },
+  "fault.load_failed.one": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "We couldn't load this %s."
+  },
+  "fault.load_failed.one.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "We couldn't load this"
+  },
+  "fault.record.missing": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "This item is no longer available."
+  },
+  "fault.record.missing.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "No longer available"
+  },
+  "fault.record.denied": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "You no longer have access to this item."
+  },
+  "fault.record.denied.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Access withdrawn"
+  },
+  "fault.save_failed": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "We couldn't save this. Nothing was saved."
+  },
+  "fault.save_failed.title": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "We couldn't save this"
+  },
+  "fault.back_to": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Back to %s"
   }
 }

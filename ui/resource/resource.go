@@ -126,6 +126,21 @@ type Options struct {
 	// same seam the sign-in page uses. Nil keeps the English. Entity names
 	// stay as the schema humanizes them.
 	Locale *locale.Locale
+	// Refusal is the verdict a refused write came back with, worded by the layer that
+	// renders refusals (ui/page) rather than by the code that caught the error. The
+	// render that redraws a form after a refusal shows its heading and tone from here
+	// and keeps the sentence it was handed as `detail`; nil is every render that names
+	// no verdict — a design export, a shell drawing the writer's own line — and draws
+	// what it drew before this field existed.
+	Refusal *Refusal
+}
+
+// Refusal is one verdict as a form shows it: what the refusal page calls it, and how
+// loudly it is announced. Both arrive worded and classified by whoever owns refusals;
+// this package renders them and decides neither.
+type Refusal struct {
+	Heading string
+	Tone    string
 }
 
 // Text is one label through the seam: the catalog's translation of key, or
@@ -393,7 +408,27 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 			}
 			return o.Locale.Text(key, fallback)
 		},
+		// The verdict's own name and tone, from the caller that looked them up. A render
+		// that names none keeps "That could not be saved" and the fault tone it kept
+		// before either field existed.
+		FailureTitle: refusalHeading(o), DetailTone: refusalTone(o),
 	})
+}
+
+// refusalHeading and refusalTone are the two parts of the verdict a form draws, read
+// from a render that named none as the empty pair they were drawn from before.
+func refusalHeading(o Options) string {
+	if o.Refusal == nil {
+		return ""
+	}
+	return o.Refusal.Heading
+}
+
+func refusalTone(o Options) string {
+	if o.Refusal == nil {
+		return ""
+	}
+	return o.Refusal.Tone
 }
 
 // revisionCondition is the edit form's condition on the write: the row's own write count,

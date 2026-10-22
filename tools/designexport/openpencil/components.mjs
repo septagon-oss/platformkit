@@ -467,11 +467,16 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
     const native = planPresentation(node, paintFor, parentLayout), style = node.style
     const fixedWidth = /^\d+(?:\.\d+)?px$/.test(node.sizing.width), fixedHeight = /^\d+(?:\.\d+)?px$/.test(node.sizing.height)
     requireComponent(!(fixedWidth || fixedHeight) || ['flex', 'inline-flex'].includes(style.display), 'fixed composition sizing requires flex layout')
+    // A maximum written in pixels caps the box without choosing its width: a block path
+    // wraps its content inside the cap and a flex box stretches to it, so either one
+    // becomes the native maximum below. A percentage, a keyword or the content box would
+    // leave what the cap means to a second parent this observation does not hold.
+    const capped = ['block', 'flex', 'inline-flex'].includes(style.display) && style['box-sizing'] === 'border-box' &&
+      /^\d+(?:\.\d+)?px$/.test(node.sizing['max-width'])
     requireComponent((['auto', '100%'].includes(node.sizing.width) || fixedWidth && style['box-sizing'] === 'border-box' && near(pixels(node.sizing.width), node.bounds.width)) &&
       (node.sizing.height === 'auto' || fixedHeight && style['box-sizing'] === 'border-box' && near(pixels(node.sizing.height), node.bounds.height)) &&
       ['auto', '0px'].includes(node.sizing['min-width']) && ['auto', '0px'].includes(node.sizing['min-height']) &&
-      (node.sizing['max-width'] === 'none' || style.display === 'block' && style['box-sizing'] === 'border-box' &&
-        /^\d+(?:\.\d+)?px$/.test(node.sizing['max-width'])) && node.sizing['max-height'] === 'none',
+      (node.sizing['max-width'] === 'none' || capped) && node.sizing['max-height'] === 'none',
     'composition constrained sizing requires further conversion')
     let plan
     if (node.control) {
@@ -650,7 +655,8 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       }
     }
     if (node.sizing['max-width'] !== 'none') {
-      requireComponent(plan.textBlock || plan.blockFlow, 'maximum width requires a wrapping paragraph or ordinary block flow')
+      requireComponent(plan.textBlock || plan.blockFlow || capped,
+        'maximum width requires a wrapping paragraph, ordinary block flow or an admitted flex box')
       plan.native.maxWidth = pixels(node.sizing['max-width'])
     }
     plan.children = members.group(node, plan.children, owner, seen)

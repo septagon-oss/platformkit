@@ -53,7 +53,38 @@ type Options = resource.Options
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
 	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
-		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present, API: r.Path}
+		Screen: r.Screen, Operations: screenOperations(r), Present: r.Present, API: r.Path}
+}
+
+// writeAvailable is structural: request authority is checked by the mounted guard.
+func writeAvailable(r httpx.Resource, verb httpx.CRUD) bool {
+	if !r.WriteAuth().Declared() || !r.Offers(verb) {
+		return false
+	}
+	switch verb {
+	case httpx.CRUDCreate:
+		return !r.Singleton && r.Create != nil
+	case httpx.CRUDUpdate:
+		return r.Update != nil
+	case httpx.CRUDDelete:
+		return !r.Singleton && r.Delete != nil
+	}
+	return false
+}
+
+// screenOperations keeps an explicit empty set distinct from the all-verbs default.
+func screenOperations(r httpx.Resource) []string {
+	out := make([]string, 0, 5)
+	for _, verb := range httpx.CRUDValues() {
+		if verb == httpx.CRUDList || verb == httpx.CRUDRead {
+			if r.Offers(verb) {
+				out = append(out, string(verb))
+			}
+		} else if writeAvailable(r, verb) {
+			out = append(out, string(verb))
+		}
+	}
+	return out
 }
 
 // view is the whole of what a mounted screen knows: the resource's own shape, and
@@ -287,4 +318,22 @@ func entryName(r httpx.Resource, o Options) string {
 		return r.Entity
 	}
 	return name
+}
+
+// subject is what one generated page is about: the entry it lists or shows, in the two
+// names its own catalogue gives it, and the collection address a refusal links back to.
+// The names are read the way every other name on the screen is read — from the schema's
+// hints, through the request's language — so a refusal speaks a word where the page
+// speaks a word, and a slug stays in the API.
+func subject(r httpx.Resource, o Options, at string, record bool) page.Subject {
+	hints := o.Words(r.Schema).Entry(r.Present)
+	one := hints.Singular
+	if one == "" {
+		one = strings.ToLower(display.Humanize(r.Schema.Entity))
+	}
+	many := hints.Plural
+	if many == "" {
+		many = display.Plural(one)
+	}
+	return page.Subject{Singular: one, Plural: many, List: at, Record: record}
 }

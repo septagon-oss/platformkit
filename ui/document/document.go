@@ -216,9 +216,9 @@ func RequestNoticeExamples(signIn string) []examples.Example {
 		signin               bool
 	}{
 		{"anonymous", "Sign-in required", "Keep this page open to retain your input. Sign in in another tab, then return and try again. Nothing is retried automatically.", true},
-		{"denied", "Permission denied", "You do not have permission for this action. Keep this page open to retain your input and contact an administrator if you need access.", false},
+		{"denied", "You don't have access", "Keep this page open to retain your input. Ask an administrator for the access this needs.", false},
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
-		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
+		{"uncertain", "We couldn't confirm whether your changes were saved.", "Keep this page open and check whether the action completed before trying again.", false},
 	} {
 		body := []g.Node{examples.ExampleWithSlots(
 			examples.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},
@@ -329,14 +329,19 @@ func Bare(body []g.Node) g.Node {
 	return components.Standalone(components.ComponentProps{}, body...)
 }
 
-// FaultProps is the generic verdict page: what happened, in one line, and every
-// way on that actually exists for this request.
+// ToneInfo is the quiet voice: an outcome the application reached by working as
+// designed — a feature the plan does not carry — rather than one that broke.
+const ToneInfo = "info"
+
+// FaultProps is the generic verdict page: what happened, in one line, how loudly it is
+// announced, and every way on that actually exists for this request.
 //
 // It is a props struct rather than five positional strings for the reason 0015
 // gives for RefusalProps: the affordances are conditional, and a page drawn from
 // five strings in a row cannot leave one out without the reader of the call
 // knowing which one meant "nothing". Every field here is optional, and a field
 // that is empty renders no control — the page never offers a door nobody mounted.
+// Every string arrives already worded by the caller, in the request's language.
 type FaultProps struct {
 	Status int
 	// Title is what the status is called — ui/page passes http.StatusText, which
@@ -344,6 +349,9 @@ type FaultProps struct {
 	Title string
 	// Sentence is the verdict's own line, code first, as every refusal shows it.
 	Sentence string
+	// Tone is "" for a fault, announced as an alert, or ToneInfo for a verdict that
+	// is not a fault, announced politely and drawn without the alarm colour.
+	Tone string
 	// Retry is the request's own address, offered for a verdict that clears by
 	// waiting and only on a method a link can re-issue. RetryAfter is the guard's
 	// own Retry-After in whole seconds, and 0 says no guard sent one — which the
@@ -362,11 +370,6 @@ type FaultProps struct {
 	// SignIn is the chrome's own sign-in address, offered only on the verdict
 	// signing in could change.
 	SignIn, SignInLabel string
-	// Reference is the request's id — the problem document's instance read back
-	// as a bare identifier — and the label it is named by on the page. It is
-	// rendered as a labelled value, not glued into the sentence, because the one
-	// thing a person does with it is select it and read it to somebody.
-	Reference, ReferenceLabel string
 }
 
 // Fault is the page for a refusal a person may be able to act on.
@@ -376,7 +379,7 @@ func Fault(p FaultProps) View {
 	}
 	body := []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: p.Title}),
-		refusalLine(p.Sentence),
+		refusalLine(p.Sentence, p.Tone),
 	}
 	if p.Retry != "" {
 		body = append(body, components.Link(components.LinkProps{Label: p.RetryLabel, Href: p.Retry}))
@@ -388,13 +391,6 @@ func Fault(p FaultProps) View {
 		if way.href != "" {
 			body = append(body, components.Link(components.LinkProps{Label: way.label, Href: way.href}))
 		}
-	}
-	if p.Reference != "" {
-		// A labelled value: the id is a thing a person reads out, so it is a thing
-		// they can select and a screen reader reaches as a value with a name
-		// rather than as the tail of a sentence.
-		body = append(body, components.Text(components.TextProps{Content: p.ReferenceLabel, Element: "span", Color: "muted", Size: "sm"}),
-			components.Text(components.TextProps{Content: p.Reference, Element: "samp", Size: "sm", NoWrap: true}))
 	}
 	return View{Title: p.Title, Status: p.Status, Language: "en", Body: body}
 }
@@ -414,9 +410,15 @@ var clRefusalMeasure = style.New().MaxWScaled(style.MaxWProse)
 // the icon push the one line a person came to read some four centimetres off the
 // column every other line on the page sits on, which is a third alignment on a page
 // that speaks two. The announcement stays: this is the page a person is told the
-// refusal on, and it says so as an alert the way the component says it.
-func refusalLine(sentence string) g.Node {
-	return h.Div(h.Role("alert"), refusalSentence(sentence, "danger"))
+// refusal on, and it says so as an alert the way the component says it — except for a
+// verdict drawn in the info tone, which announces itself politely because nothing
+// broke and a screen reader should not interrupt for it.
+func refusalLine(sentence, tone string) g.Node {
+	role, color := "alert", "danger"
+	if tone == ToneInfo {
+		role, color = "status", ""
+	}
+	return h.Div(h.Role(role), refusalSentence(sentence, color))
 }
 
 // refusalSentence is one line of a refusal page in the frame's own paragraph, bounded
@@ -472,7 +474,7 @@ func Refusal(p RefusalProps) View {
 	}
 	body := []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: p.Title}),
-		refusalLine(p.Sentence),
+		refusalLine(p.Sentence, ""),
 	}
 	if p.Missing != "" {
 		body = append(body, refusalSentence(p.Missing, ""))

@@ -7,12 +7,28 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 <!-- BEGIN GENERATED: scripts/inventory_figures.py scale -->
 | quantity | value | measured by |
 |---|---|---|
+<<<<<<< HEAD
 | test rows | 4126 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
 | files | 2197 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
 | Go test functions | 3817 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+||||||| 4bc4715
+| test rows | 4064 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 2144 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 3764 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+=======
+| test rows | 4089 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 2165 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 3787 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+>>>>>>> origin/main
 | files named for a round (`review*`, `round*`, `probe*`) | 79 | filename prefix |
 | rows inside them | 123 | same walk |
+<<<<<<< HEAD
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 114 / 1 / 100 / 94 | same walk |
+||||||| 4bc4715
+| Playwright specs / Maestro flows / `scripts/` pins / node tests | 108 / 1 / 97 / 94 | same walk |
+=======
+| Playwright specs / Maestro flows / `scripts/` pins / node tests | 108 / 1 / 98 / 95 | same walk |
+>>>>>>> origin/main
 <!-- END GENERATED -->
 
 ## Layers and tiers
@@ -21,9 +37,19 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 21 | push, first | asserts a golden or the published API set |
+<<<<<<< HEAD
 | behaviour | 3521 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 469 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
 | journey | 115 | nightly | `e2e/`: browser or device |
+||||||| 4bc4715
+| behaviour | 3477 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| composition | 457 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
+| journey | 109 | nightly | `e2e/`: browser or device |
+=======
+| behaviour | 3494 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| composition | 465 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
+| journey | 109 | nightly | `e2e/`: browser or device |
+>>>>>>> origin/main
 <!-- END GENERATED -->
 
 Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. Rows sit in packages that open nothing, in packages that do, and in the browser. The push tier's headline, which `scripts/check_test_inventory.sh` prints, also counts the contract-key rows (openapi, asyncapi, golden, wire_compatibility, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
@@ -51,7 +77,13 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 <!-- BEGIN GENERATED: scripts/inventory_figures.py verdicts -->
 | verdict | files | rows | meaning |
 |---|---|---|---|
+<<<<<<< HEAD
 | `keep` | 1952 | 3740 | not named for a round: 0088 rule 2 does not reach it |
+||||||| 4bc4715
+| `keep` | 1899 | 3678 | not named for a round: 0088 rule 2 does not reach it |
+=======
+| `keep` | 1920 | 3703 | not named for a round: 0088 rule 2 does not reach it |
+>>>>>>> origin/main
 | `keep-rewrite` | 91 | 170 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -122,16 +154,38 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 <!-- BEGIN GENERATED: scripts/inventory_figures.py area-verdicts -->
 | area | files | keep-rewrite | merge | delete |
 |---|---|---|---|---|
+<<<<<<< HEAD
 | modules | 614 | 35 | 36 | 0 |
 | kit | 613 | 69 | 139 | 0 |
 | apps | 299 | 24 | 28 | 0 |
 | ui | 228 | 22 | 5 | 0 |
 | e2e | 115 | 5 | 0 | 0 |
 | tools | 106 | 1 | 0 | 0 |
+||||||| 4bc4715
+| kit | 604 | 69 | 139 | 0 |
+| modules | 591 | 35 | 36 | 0 |
+| apps | 290 | 24 | 28 | 0 |
+| ui | 225 | 22 | 5 | 0 |
+| e2e | 109 | 5 | 0 | 0 |
+| tools | 106 | 1 | 0 | 0 |
+=======
+| kit | 606 | 69 | 139 | 0 |
+| modules | 591 | 35 | 36 | 0 |
+| apps | 297 | 24 | 28 | 0 |
+| ui | 235 | 22 | 5 | 0 |
+| e2e | 109 | 5 | 0 | 0 |
+| tools | 107 | 1 | 0 | 0 |
+>>>>>>> origin/main
 | design | 15 | 9 | 0 | 0 |
 | migrations | 15 | 5 | 8 | 0 |
 
+<<<<<<< HEAD
 The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that hold no verdict, with their file populations: `scripts` (100 files), `pkit` (92 files).
+||||||| 4bc4715
+The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that hold no verdict, with their file populations: `scripts` (97 files), `pkit` (92 files).
+=======
+The verdict columns sum to 170 keep-rewrite, 216 merge and 0 delete. Areas that hold no verdict, with their file populations: `scripts` (98 files), `pkit` (92 files).
+>>>>>>> origin/main
 <!-- END GENERATED -->
 
 `tools` appears with the design tooling's JavaScript cases: one of them, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above. The table lists the areas that hold a verdict; an area that holds none is every `keep`, so a row for it would carry three zeroes beside a population and tell a reader nothing the `Verdicts` table above does not, and the sentence under the table names it with its population instead. `ui`'s merge column is small because the round-named sheets that carried those verdicts folded into the named pins beside them. The table and that sentence are written by `scripts/inventory_figures.py` from the same rows (`make generate`), and `make check` refuses this file when they no longer answer them.
