@@ -24422,6 +24422,63 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/public_page_allocations_internal_test.go",
+   "id": "kit/httpx/public_page_allocations_internal_test.go#TestAPublicPageIsAnsweredFromTheSharedResolution",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAPublicPageIsAnsweredFromTheSharedResolution",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/httpx/public_page_allocations_internal_test.go",
+   "id": "kit/httpx/public_page_allocations_internal_test.go#TestAPublicPageCostsWhatItWasMeasuredAt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAPublicPageCostsWhatItWasMeasuredAt",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/httpx/public_page_allocations_internal_test.go",
+   "id": "kit/httpx/public_page_allocations_internal_test.go#BenchmarkAPublicPageRequest",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "BenchmarkAPublicPageRequest",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/public_read_uncounted_test.go",
    "id": "kit/httpx/public_read_uncounted_test.go#TestAPublicReadIsNeverSpentAgainstTheWriteLimit",
    "kind": "go",
@@ -81402,7 +81459,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2183,
+  "files": 2184,
   "forge_runs": [
    408,
    413,
@@ -81436,7 +81493,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3525,
+   "behaviour": 3528,
    "composition": 468,
    "contract": 21,
    "journey": 109
@@ -81455,9 +81512,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4123,
+  "rows": 4126,
   "tiers": {
-   "merge": 2548,
+   "merge": 2551,
    "nightly": 109,
    "push": 1466
   },
@@ -81465,13 +81522,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1938,
+   "keep": 1939,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3737,
+   "keep": 3740,
    "keep-rewrite": 170,
    "merge": 216
   }
