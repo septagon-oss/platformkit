@@ -15,7 +15,7 @@ import (
 // (it is the boundary rule the whole of contracts/ lives by: importing design
 // would put a stylesheet in the closure of every module that imports these
 // contracts). What keeps the duplication honest is not a comment:
-// TestTheCanvasesAreTheKitsOwn, in modules/site/module_test.go, asks package by
+// TestTheCanvasesAreTheKitsOwn, in the site module's tests, asks package by
 // package that both values still equal design.Light().SurfaceCanvas and
 // design.Dark().SurfaceCanvas, so a theme that moves turns a test red naming both
 // spellings rather than leaving a second, quieter palette registry behind it.

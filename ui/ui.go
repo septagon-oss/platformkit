@@ -370,7 +370,7 @@ func outsideValues(text string) string {
 // here would mean shipping one, and a gate that answers a weaker question than
 // the promise would quietly refuse less than it claims. A consumer that styled
 // its own element with an ordinary word the kernel happens to use renames its own
-// hook or its own utility, which the message says; ui_test.go pins the refusal,
+// hook or its own utility, which the message says; the tests pin the refusal,
 // so widening or
 // narrowing it is a decision somebody reads rather than a slip.
 //

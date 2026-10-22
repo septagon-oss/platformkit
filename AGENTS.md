@@ -13,6 +13,11 @@ Module contracts live in `contracts/` and implementations in `internal/`. Each
 module's `provider.go` declares it to pkit and calls its one `New(Deps)`, and the
 reference application composes modules in [apps/platformkit/app.go](apps/platformkit/app.go)
 with `pkit.NewApp(...).Use(...)` ([ADR 0022](docs/adr/0022-pkit-orchestrates-composition.md)).
+
+A production comment says what and why, in a few lines. It never cites a review, a
+round, a finding, a task id or a `*_test.go` file name; `make check-comments` refuses
+them. A doc comment states the contract (what, inputs, defaults, failure, lifetime);
+longer reasoning goes to the package's `doc.go` or an ADR, linked.
 Use the existing `design/` and `ui/` owners. Keep one logical change in this
 repository; keep secrets, local configuration and generated artifacts out of commits.
 

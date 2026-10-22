@@ -438,7 +438,7 @@ func caches() app.Caches {
 // makes an implementation choosable (pkit refuses one whose inputs are absent),
 // and the values it runs on are read from the typed section by the module that
 // picked it. The one thing that can go wrong here is the pair disagreeing with
-// cfg.Mail.Enabled(), and composition_deployment_inputs_test.go refuses that.
+// cfg.Mail.Enabled(); the composition tests refuse that.
 func deploymentInputs(cfg config.Config) map[string]string {
 	if !cfg.Mail.Enabled() {
 		return nil

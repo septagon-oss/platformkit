@@ -22,7 +22,7 @@ var schema embed.FS
 // of the foundation applied under its own name. The retention file is 40,
 // numbered past the highest any owner ships, so no installation ever saw it
 // under "platformkit" and nothing declares it here — the upgrade fixture
-// (apps/platformkit/app_test.go, legacyLayout) flattens every owner's files
+// (legacyLayout in the reference application's tests) flattens every owner's files
 // under the foundation's name up to the foundation's own highest, and a file
 // above that number is simply new work the old ledger does not claim.
 //
