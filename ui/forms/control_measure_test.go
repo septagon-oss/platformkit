@@ -53,3 +53,34 @@ func TestEveryGeneratedControlSpansTheFormsMeasure(t *testing.T) {
 		}
 	}
 }
+
+func TestSchemaFormsBoundTheColumnAndKeepRefusedFieldIdentity(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		model := fixture()
+		if !failed {
+			model.Errors = nil
+		}
+		_, description := describe(t, "record/editor", "record", model)
+		var formClass string
+		for _, n := range elements(t, description.HTML) {
+			if n.Data == "form" {
+				formClass = attribute(n, "class")
+			}
+		}
+		for _, want := range []string{"max-w-sm", "w-full"} {
+			if !strings.Contains(" "+formClass+" ", " "+want+" ") {
+				t.Errorf("refused=%v: form classes %q lack %q", failed, formClass, want)
+			}
+		}
+		if !strings.Contains(description.HTML, `id="record-form"`) || !strings.Contains(description.HTML, `hx-target="#record-form"`) {
+			t.Fatal("bounded form lost its swap identity")
+		}
+	}
+	var plain strings.Builder
+	if err := components.Form(components.FormProps{}).Render(&plain); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plain.String(), "max-w-") {
+		t.Fatal("generic Form acquired the schema form's measure")
+	}
+}
