@@ -66,17 +66,17 @@ func TestTrackedCommandResolvesItsCommitWithoutChangingItsOccurrence(t *testing.
 				if err := events.Publish(ctx, tx, "probe.accepted", struct{}{}); err != nil {
 					return nil, err
 				}
-				if runs == 1 {
+				if shared, open := httpx.RequestTx(ctx); runs == 1 && open {
 					if test.fault == "refused-commit" {
-						pool := tx.DB().Statement.ConnPool
+						pool := shared.DB().Statement.ConnPool
 						refused = &refusedCommit{ConnPool: pool, TxCommitter: pool.(gorm.TxCommitter)}
-						tx.DB().Statement.ConnPool = refused
+						shared.DB().Statement.ConnPool = refused
 					} else {
 						ackError := io.ErrUnexpectedEOF
 						if test.fault == "cancelled-acknowledgement" {
 							ackError = context.Canceled
 						}
-						tx.DB().Statement.ConnPool = lostAcknowledgement(ackError, &committed)(tx)
+						shared.DB().Statement.ConnPool = lostAcknowledgement(ackError, &committed)(shared)
 					}
 				}
 				return &struct{ Body keyedOut }{Body: keyedOut{ID: rowID}}, nil

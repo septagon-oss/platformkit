@@ -216,9 +216,9 @@ func RequestNoticeExamples(signIn string) []examples.Example {
 		signin               bool
 	}{
 		{"anonymous", "Sign-in required", "Keep this page open to retain your input. Sign in in another tab, then return and try again. Nothing is retried automatically.", true},
-		{"denied", "Permission denied", "You do not have permission for this action. Keep this page open to retain your input and contact an administrator if you need access.", false},
+		{"denied", "You don't have access", "Keep this page open to retain your input. Ask an administrator for the access this needs.", false},
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
-		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
+		{"uncertain", "We couldn't confirm whether your changes were saved.", "Keep this page open and check whether the action completed before trying again.", false},
 	} {
 		body := []g.Node{examples.ExampleWithSlots(
 			examples.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},
@@ -330,16 +330,43 @@ func Bare(body []g.Node) g.Node {
 }
 
 // Fault is the page for a refusal a person can act on: the status text, the
-// detail, and one way back. title is what the status is called — ui/page
-// passes http.StatusText, which this package does not link net/http to say.
+// detail, and one way back. title is what the status is called — the caller words it,
+// because this package links no net/http and holds no copy of its own.
 func Fault(status int, title, detail, back, backLabel string) View {
-	if strings.TrimSpace(detail) == "" {
-		detail = "That did not work."
+	return FaultPage(FaultProps{Status: status, Title: title, Sentence: detail, Way: back, WayLabel: backLabel})
+}
+
+// ToneInfo is the quiet voice: an outcome the application reached by working as
+// designed — a feature the plan does not carry — rather than one that broke.
+const ToneInfo = "info"
+
+// FaultProps is a refusal page as one value: the verdict, what it is called, the
+// sentence that says what happened, how loudly it is announced and the one way out.
+// Every string arrives already worded by the caller, in the request's language.
+type FaultProps struct {
+	Status int
+	Title  string
+	// Sentence is what happened, in the page's language. An empty sentence is answered
+	// with "That did not work.", which is true of every refusal and says nothing more.
+	Sentence string
+	// Tone is "" for a fault, announced as an alert, or ToneInfo for a verdict that is
+	// not a fault, announced politely and drawn without the alarm colour.
+	Tone string
+	// Way is the one link the page offers and WayLabel names its destination. The page
+	// is a dead end without one: a person who cannot open a thing must still be able to
+	// leave it.
+	Way, WayLabel string
+}
+
+// FaultPage is the refusal document: the verdict's name, its sentence, and a way out.
+func FaultPage(p FaultProps) View {
+	if strings.TrimSpace(p.Sentence) == "" {
+		p.Sentence = "That did not work."
 	}
-	return View{Title: title, Status: status, Language: "en", Body: []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title}),
-		refusalLine(detail),
-		components.Link(components.LinkProps{Label: backLabel, Href: back}),
+	return View{Title: p.Title, Status: p.Status, Language: "en", Body: []g.Node{
+		components.Toolbar(components.ToolbarProps{Title: p.Title}),
+		refusalLine(p.Sentence, p.Tone),
+		components.Link(components.LinkProps{Label: p.WayLabel, Href: p.Way}),
 	}}
 }
 
@@ -358,9 +385,15 @@ var clRefusalMeasure = style.New().MaxWScaled(style.MaxWProse)
 // the icon push the one line a person came to read some four centimetres off the
 // column every other line on the page sits on, which is a third alignment on a page
 // that speaks two. The announcement stays: this is the page a person is told the
-// refusal on, and it says so as an alert the way the component says it.
-func refusalLine(sentence string) g.Node {
-	return h.Div(h.Role("alert"), refusalSentence(sentence, "danger"))
+// refusal on, and it says so as an alert the way the component says it — except for a
+// verdict drawn in the info tone, which announces itself politely because nothing
+// broke and a screen reader should not interrupt for it.
+func refusalLine(sentence, tone string) g.Node {
+	role, color := "alert", "danger"
+	if tone == ToneInfo {
+		role, color = "status", ""
+	}
+	return h.Div(h.Role(role), refusalSentence(sentence, color))
 }
 
 // refusalSentence is one line of a refusal page in the frame's own paragraph, bounded
@@ -405,7 +438,7 @@ func Refusal(p RefusalProps) View {
 	}
 	body := []g.Node{
 		components.Toolbar(components.ToolbarProps{Title: p.Title}),
-		refusalLine(p.Sentence),
+		refusalLine(p.Sentence, ""),
 	}
 	if p.Missing != "" {
 		body = append(body, refusalSentence(p.Missing, ""))
