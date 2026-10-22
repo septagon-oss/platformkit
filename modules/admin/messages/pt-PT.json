@@ -17,6 +17,15 @@
       "": "Utilize o endereço associado à sua conta nesta organização."
     }
   },
+  "admin.login.again": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Inicie sessão de novo para continuar.",
+    "plural": {
+      "": "Inicie sessão de novo para continuar."
+    }
+  },
   "admin.login.email": {
     "references": [
       "modules/admin/internal/pages.go"

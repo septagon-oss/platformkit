@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -70,6 +71,12 @@ type Route struct {
 	// See httpx.StreamedBody. A page that sets it declares no body field: nothing
 	// above it is going to decode one.
 	StreamsBody bool
+	// Subject says what this page is about, so that the refusal it may answer is
+	// about the same thing: a person sent away from one record is told the record is
+	// gone and offered its list, not told the address is missing. A hand-written page
+	// leaves it empty and is refused about its address, which is what a page that names
+	// no subject can truthfully say.
+	Subject Subject
 }
 
 // Handler is a page. It reads through ctx and knows the caller through r; what
@@ -87,9 +94,16 @@ const beforePaint = `try{var t=localStorage.getItem("platformkit-theme");if(t)do
 // Serve mounts one page as an operation, exactly like every JSON route: the
 // same recording, the same authorization declaration, the same transaction. It
 // is the edge: it reads the request into a Request, renders the View through
-// the frame, turns a SeeOther into the redirect and a 4xx problem into the same
+// the frame, turns a SeeOther into the redirect and a refusal into the same
 // refusal page a kernel guard renders — worded through the locale this shell
-// negotiated — and lets a 5xx keep the kernel's problem document and log line.
+// negotiated — whatever the verdict.
+//
+// A read that broke is drawn as that page too, at its own 5xx, for the person who
+// opened the address: what they can act on is "we couldn't load the tasks, try again
+// here", and no page in this repository has ever been improved by their seeing
+// "Internal Server Error". The reason behind the failure goes to the log, which is where
+// a cause belongs, and the request keeps its 500, so a monitor watching statuses still
+// sees the failure the page refuses to name.
 func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler Handler[I]) {
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
@@ -132,7 +146,10 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			}
 			status, detail := refusal(err)
 			if status >= http.StatusInternalServerError {
-				return nil, err
+				// The page says what could not be loaded and offers the address again; the
+				// reason stays here, with the caller who can fix it.
+				slog.ErrorContext(ctx, "page: the read behind this page failed",
+					"path", r.Path, "status", status, "error", err)
 			}
 			// The refusal of a handler is the same page the kernel's guards render
 			// (fault.go) and is worded the same way: through the locale this shell just
@@ -143,7 +160,8 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			// actually replaced, so a verdict no catalogue speaks stays English and says
 			// so — and the reference is empty here because a handler's own 4xx carries no
 			// request id of its own.
-			refused := fault(status, detail, r.Locale, "", s.Back, s.BackLabel)
+			refused := fault(verdict{status: status, detail: detail, loc: r.Locale,
+				back: s.Back, backLabel: s.BackLabel, path: r.Path, sub: rt.Subject})
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -159,16 +177,19 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			status = http.StatusOK
 		}
 		// A live region re-reads its own address when the server tells it that its
-		// state moved, and the answer to that read is the region's contents and
-		// nothing else: htmx puts these bytes inside the element the region already
-		// is, so a document here would put a page inside a page and repeat the element
-		// holding the connection. The rows behind the two answers come from the same
-		// guarded read on the same route — the header changes the shape of an answer
-		// and none of its content — and a page that named no topic is answered as a
-		// whole document whatever the request carried, because nothing said it had a
-		// region to swap.
+		// state moved, and the answer to that read is the region's contents and nothing
+		// else: htmx puts these bytes inside the element the region already is, so a
+		// document here would put a page inside a page and repeat the element holding the
+		// connection. The rows behind the two answers come from the same guarded read on
+		// the same route — the header changes the shape of an answer, none of its
+		// content — and a page that named no topic is answered as a whole document
+		// whatever the request carried, because nothing said it had a region to swap.
+		// A refusal of a region read is the same case and used not to be drawn that way:
+		// the refresh that found the row gone, the caller refused or the service down got
+		// a whole document dropped into the element showing the rows. The answer is a
+		// fragment now; htmx-config.js decides whether a refusal's fragment is swapped.
 		var out *httpx.Page
-		if len(v.Live) > 0 && regionRequested(ctx) {
+		if regionRequested(ctx) && (len(v.Live) > 0 || status >= http.StatusBadRequest) {
 			out, err = RenderFragment(g.Group(v.Body), status)
 		} else {
 			region := v.Body
