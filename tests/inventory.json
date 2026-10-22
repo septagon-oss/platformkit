@@ -54576,11 +54576,68 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/task/create_delegates_to_creator_test.go",
+   "id": "modules/task/create_delegates_to_creator_test.go#TestTheJSONCreateReachesTheCreatorAndPublishesNothingItself",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheJSONCreateReachesTheCreatorAndPublishesNothingItself",
+   "needs_db": true,
+   "pkg": "modules/task",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/task/create_history_owned_test.go",
    "id": "modules/task/create_history_owned_test.go#TestTaskCreateCannotSupplyItsOwnHistory",
    "kind": "go",
    "layer": "behaviour",
    "name": "TestTaskCreateCannotSupplyItsOwnHistory",
+   "needs_db": true,
+   "pkg": "modules/task",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/task/create_owned_fields_test.go",
+   "id": "modules/task/create_owned_fields_test.go#TestTheCreateRefusesTheFieldsTheLifecycleOwns",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheCreateRefusesTheFieldsTheLifecycleOwns",
+   "needs_db": true,
+   "pkg": "modules/task",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/task/create_owned_fields_test.go",
+   "id": "modules/task/create_owned_fields_test.go#TestACreateWithAPastDeadlineAnswersTheBreach",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACreateWithAPastDeadlineAnswersTheBreach",
    "needs_db": true,
    "pkg": "modules/task",
    "round_named": false,
@@ -81280,7 +81337,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2182,
+  "files": 2184,
   "forge_runs": [
    408,
    413,
@@ -81314,7 +81371,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3519,
+   "behaviour": 3522,
    "composition": 468,
    "contract": 21,
    "journey": 109
@@ -81333,9 +81390,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4117,
+  "rows": 4120,
   "tiers": {
-   "merge": 2549,
+   "merge": 2552,
    "nightly": 109,
    "push": 1459
   },
@@ -81343,13 +81400,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1937,
+   "keep": 1939,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3731,
+   "keep": 3734,
    "keep-rewrite": 170,
    "merge": 216
   }
