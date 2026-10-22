@@ -7,7 +7,7 @@ package page
 // reference a person reads back. This file holds the other decision, and the two are
 // asked by different things: the page moves when the kernel offers a new way out, and
 // these tables move when a guard publishes a new code or a deployment ships new copy.
-// Every key named here is read by the catalogue gate in catalogue_test.go, which is what
+// Every key named here is read by the package's catalogue gate, which is what
 // keeps a sentence this package writes from shipping in English to a tenant served in
 // Portuguese.
 
@@ -23,7 +23,7 @@ import (
 )
 
 // faultKeys is the inventory of the refusal codes kit/httpx publishes that this shell
-// ships a sentence for, and catalogue_test.go reads it as one: a code in the kernel with
+// ships a sentence for, and the catalogue test reads it as one: a code in the kernel with
 // no key beside it is a refusal a Portuguese tenant is answered in English, and nobody
 // has to notice.
 //
@@ -283,7 +283,7 @@ func statusTitle(loc *Locale, status int, detail string, sub Subject) string {
 }
 
 // faultTitleKeys is every heading key this page can ask for: each key faultKey can
-// return, with the suffix on the end. catalogue_test.go reads it rather than a list,
+// return, with the suffix on the end. The catalogue test reads it rather than a list,
 // so the day a tenth code or a fifth status joins the page its heading is demanded of
 // the catalogue in the same commit — which is the rule that already holds for the
 // sentences and the whole reason a heading was ever the English one.

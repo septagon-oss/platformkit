@@ -373,8 +373,7 @@ func (a *API) notHere(ctx huma.Context) {
 // Through refuse, because this is the answer six of the codes below travel in,
 // and a person who navigated to a page they hold no grant for is the reader
 // ui/page's table of sentences exists for. Answering them with the document is
-// the defect apps/platformkit/app_fault_test.go names in its own opening line:
-// "a person who navigated and gets JSON".
+// the defect "a person who navigated and gets JSON".
 // challenge refuses a BearerKey operation to a request that brought no key the
 // installation recognises: 401 with a Bearer challenge (RFC 6750 §3.1), because a
 // key is the only credential that operation accepts, so there is one scheme to

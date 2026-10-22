@@ -300,7 +300,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 		// and the container follows the pixels rather than the file name, so an
 		// opaque frame that arrived as a PNG leaves as a JPEG. That a stored
 		// image carries no metadata block is proved over the pass itself, in
-		// contracts/image_test.go, where a fixture with a real EXIF and GPS
+		// the contracts' image tests, where a fixture with a real EXIF and GPS
 		// section can be read back; a shared case that re-encodes a PNG writes
 		// the same bytes it was given, which is the encoder being deterministic
 		// and not a bug the suite should pretend to see.

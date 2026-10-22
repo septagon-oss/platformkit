@@ -401,11 +401,10 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 // ever took this statement; a fresh one might"; an error that reaches the
 // sentinel through somebody's wrapper is kit/db answering with a bad
 // connection from inside a transaction it opened, which is the store's own
-// verdict and keeps its error while the wall stands (the pair of cases in
-// attempt_wall_internal_test.go). It is the same answer a pool with nothing
+// verdict and keeps its error while the wall stands (the pair of cases for the attempt wall). It is the same answer a pool with nothing
 // free gives one step later than the wait for the row's lock, and the timing
 // the burst case carries from CI says it arrives both sides of the wall —
-// measured behind it (see wallPassed and wall_deadline_internal_test.go) and,
+// measured behind it (see wallPassed) and,
 // on a starved runner, two milliseconds ahead of it. A store that is down
 // answers this wait in kind and at once — a refused connect, a closed
 // database — and none of those errors is the sentinel, so they keep their

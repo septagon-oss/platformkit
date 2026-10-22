@@ -16,7 +16,7 @@ import "fmt"
 // one has to lead somewhere in the repository that refused it. An id nothing prints is a
 // second, unenforced name for the same refusal, and it drifts from the sentence it stands
 // for with no gate noticing — so the code that refuses prints the id, the table in
-// README.md names it, and kit/db/refusal_names_test.go walks each one through the door
+// README.md names it, and a test walks each one through the door
 // that refuses it and reads it back off the message.
 const (
 	refusalTableMissing     = "data-table-missing"

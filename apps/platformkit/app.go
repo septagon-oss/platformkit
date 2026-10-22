@@ -222,8 +222,8 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	// The mailer is read without the panic every other value gets, because nil is
 	// one of the three answers this deployment can give for it: an installation
 	// that names no mail server and does not ask for the in-process sink composes
-	// no transport (modules/notification's "none"), which is the state
-	// email_delivery_unavailable_test.go boots on purpose. Every reader of this
+	// no transport (modules/notification's "none"), which is the state a
+	// mail-less production deployment boots on purpose. Every reader of this
 	// field already treats nil as "nothing sends here", which is what makes the
 	// module's own refusal and this line the same fact.
 	c.mail, _ = pkit.Value[notificationcontracts.Mailer](p)

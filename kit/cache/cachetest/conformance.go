@@ -1,5 +1,5 @@
 // Package cachetest is the one conformance suite every adapter of cache.Cache
-// runs — the kernel's version of a module's contracts/<slug>test harness (T-0084).
+// runs — the kernel's version of a module's contracts/<slug>test harness.
 //
 // Both adapters in this repository call it: the in-process store in kit/cache's
 // own test, the Valkey provider in its package's. That is the reason the
@@ -255,7 +255,7 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	// C10. One spelling, pinned to the byte. Any drift — a dropped app segment, a
 	// different separator, a shortened uuid, a slash where a colon was — orphans
 	// every entry written before it, which reads as a cache that came back empty
-	// after a deploy. T-0228's adoption of this constructor passes this case
+	// after a deploy. A constructor that replaces this one passes this case
 	// unchanged or is caught here.
 	t.Run("the key spelling is one spelling", func(t *testing.T) {
 		id := uuid.MustParse("33333333-3333-4333-8333-333333333333")

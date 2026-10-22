@@ -35,8 +35,8 @@ import (
 // answer. That edge is late-bound rather than built — the user module is built
 // before auth, because auth looks people up — and a declaration in either
 // direction would be the cycle user → auth → user, which is a fact about the
-// graph and no composition edits it. pkit/late_bound_holder_test.go is the
-// mechanism's own case; refusing when nothing filled the holder is pinned here
+// graph and no composition edits it. The late-bound holder's own tests cover the
+// mechanism; refusing when nothing filled the holder is pinned here
 // rather than left to the first roles write.
 var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.Users](),

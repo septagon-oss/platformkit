@@ -8,7 +8,7 @@
 // from the code that publishes. apps/platformkit checks the bytes in as a
 // golden file (its own testdata/asyncapi.json), so make check fails when the
 // catalogue moved and the committed document did not — the same arrangement
-// ui/screens/catalog_test.go keeps for the screen catalog.
+// the screen catalog keeps.
 //
 // The version in info is "1.0.0" and not the build's, because that field
 // documents the version of the interface, not of the binary that rendered it:

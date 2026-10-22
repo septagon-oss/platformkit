@@ -23,7 +23,7 @@ import (
 // RFC 6238 in one file, over crypto/hmac.
 //
 // This is the whole of the second factor's crypto: HMAC-SHA1 is the primitive
-// and the standard library has it, which is what T-0013's own rule means by "no
+// and the standard library has it, which is what the project rule means by "no
 // new dependency beyond the standard library and x/crypto". What the RFC adds
 // on top is a counter, a truncation and a window, and a library that wrapped
 // these thirty lines would move the review rather than remove it. Nothing here

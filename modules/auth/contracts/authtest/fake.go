@@ -33,7 +33,7 @@ var resetPage = httpx.Workspace("/auth/reset")
 // part of what Login promises rather than of how it stores things. What it
 // cannot be is what row-level security is: there is one tenant here, so "a
 // session from another tenant is invisible" is a claim only the real service
-// can be held to, and internal/service_test.go holds it.
+// can be held to, and the real service's tests hold it.
 type Fake struct {
 	// Users is where the fake finds people. It is exported so that a consumer
 	// invites somebody through the same interface the real module takes.
@@ -136,7 +136,7 @@ func (f *Fake) RevokeSessions(_ context.Context, _ db.Tx[db.Tenant], userID, exc
 // applied. The fake can be asked for another user's id and will answer for it,
 // which is exactly the claim it cannot make and the real service can — one
 // tenant, no row-level security — so the cross-tenant case lives in
-// internal/sessions_test.go and not in the conformance suite.
+// the real service's tests and not in the conformance suite.
 func (f *Fake) Sessions(_ context.Context, _ db.Tx[db.Tenant], userID, current uuid.UUID) ([]*contracts.SessionListing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

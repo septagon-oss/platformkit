@@ -172,7 +172,7 @@ type AdministrationRefused struct {
 // LoggedIn is the payload of EventLoggedIn.
 type LoggedIn struct {
 	UserID uuid.UUID `json:"userId"`
-	// SessionRef(id), never the id: the id is the cookie credential (review 2026-09-29).
+	// SessionRef(id), never the id: the id is the cookie credential.
 	SessionRef string `json:"sessionRef"`
 	// Method says how the door was opened: a contracts.SignInMethod — "password",
 	// "oidc" or "saml" — for the three that arrive through Service.Open, "passkey"

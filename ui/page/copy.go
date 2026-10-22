@@ -8,7 +8,7 @@ import (
 // ownCopy is this package's own copy, read from the file copy lives in rather than
 // written at the call site, once, lazily, and never mutated.
 //
-// Decision 0012 rule 2 puts a piece of copy in a catalogue file, and a label is
+// Copy lives in a catalogue file rather than at the call site, and a label is
 // copy: "Try again" is a decision about a page and not a fact about this program,
 // so the deployment that re-words its Portuguese refusal should be able to re-word
 // the English label under the same key, rather than one glued into the binary at
@@ -18,7 +18,7 @@ import (
 // guard's line carries something only the refusal knows, so the source-language copy
 // of those keys is the guard's own sentence and no static entry could carry it —
 // which is why messages/en.json carries exactly the lines fault.go and access.go
-// write themselves. catalogue_test.go refuses the two lists drifting.
+// write themselves. The catalogue gate refuses the two lists drifting.
 var ownCopy = sync.OnceValue(func() map[string]string {
 	body, err := catalogues.ReadFile("messages/en.json")
 	if err != nil {

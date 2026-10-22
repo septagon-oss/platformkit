@@ -177,7 +177,7 @@ func handleFinishPasskeyRegistration(passkeys contracts.Passkeys) func(context.C
 			// writes in English and declares as English (sessionsPage sets
 			// Language: writtenHere). A translated refusal under an English heading,
 			// in an element declaring English, is the mismatch
-			// review_r9_login_refusal_language_test.go exists to catch. The sign-in
+			// the login refusal-language test exists to catch. The sign-in
 			// legs take the request's language because that page's own words are
 			// translated.
 			return nil, passkeyRefusal(ctx, err, PasskeyWords{})

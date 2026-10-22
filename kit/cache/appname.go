@@ -6,9 +6,9 @@ package cache
 // the shape decision 0074 rule 7 names for "cache keys": every shared name this
 // kernel writes — a cache key, a metric name, a stream subject — starts with the
 // application that wrote it, because a fleet that shares a Valkey has one
-// keyspace and two clients named "acme". T-0228 carries the same two
-// declarations in kit/appname; this package carries them because kit/httpx needs
-// a shared cache before that package lands.
+// keyspace and two clients named "acme". kit/appname carries the same two
+// declarations; this package carries them because kit/httpx needs a shared
+// cache before that package lands.
 //
 // Adoption is a deletion, not a rewrite: parse with appname.Parse, build the key
 // with appname.CacheKey, and TestTheKeySpellingIsOneSpelling must not notice —
@@ -24,17 +24,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// separator is what T-0228 chose: a colon, which no host, no id and no
+// separator is a colon, which no host, no id and no
 // namespace this kernel writes begins with.
 const separator = ":"
 
-// maxName is the length limit of an application name, as T-0228 sets it.
+// maxName is the length limit of an application name, as kit/appname sets it.
 const maxName = 32
 
 // grammar is the sentence Slug refuses with. It names the rule and an example
 // and never quotes the value that arrived, because the value that arrives is
 // often a client's own name and a refused configuration is read in a log by
-// whoever comes next (T-0228's rule for error text).
+// whoever comes next.
 const grammar = `an application name is lower-case letters, digits and single dashes, must begin and end with a letter or a digit, and is at most 32 characters — "platformkit", "billing-service"`
 
 // CacheKey is the whole address of one entry: <app>:<tenant>:<name>.

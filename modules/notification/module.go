@@ -39,7 +39,7 @@ type Deps struct {
 	// says so rather than pretending the tenant chose it.
 	Senders contracts.Senders
 
-	// Providers are the carriers beyond mail — VAPID for a browser, T-0120's
+	// Providers are the carriers beyond mail — VAPID for a browser, an
 	// adapter for a phone, an HTTP client for a tenant's endpoint. Each one is
 	// carried by a subscription the manifest composes for it (internal.Carrier),
 	// named by the same event Notify asks that channel by, so a channel this list

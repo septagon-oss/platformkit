@@ -168,7 +168,7 @@ func project(t reflect.Type) *Schema {
 				// it (kit/events/change.go's Recorder), and the CRUD door does
 				// write it into the payload it publishes, so a projection that
 				// dropped every hidden member would take a promise the
-				// integration contract already makes. See hidden_field_test.go.
+				// integration contract already makes.
 				//
 				// What is skipped stays marshalled: encoding/json reads no such
 				// tag, so a payload that carries the member is still accepted —

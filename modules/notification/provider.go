@@ -114,7 +114,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	default:
 		// The implementation named "none": this deployment sends no mail. It is a
 		// value rather than a nil so the port the module Provides always answers
-		// (apps/platformkit/composition_wiring_test.go refuses a Provided port
+		// (the composition tests refuse a Provided port
 		// that answers with nothing), and the value says what it is: every send
 		// answers ErrNoTransport, the delivery ledger records the notice as
 		// suppressed, and the command that would promise a link in a mailbox

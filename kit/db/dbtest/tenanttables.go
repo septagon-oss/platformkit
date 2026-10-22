@@ -5,7 +5,7 @@ package dbtest
 // scoped to a tenant or declared exempt.
 //
 // It is exported because the claim is one claim and two repositories make it.
-// migrations/rls_test.go and the catalog's own application test ran byte-
+// the migrations' RLS test and the catalog's own application test ran byte-
 // identical copies of the SELECT below, and both were pinned to
 // current_schema(), which was the only schema until a module's SQL could own
 // one. A table in a module's schema is a table that check never saw, and the

@@ -446,9 +446,9 @@ func caches() app.Caches {
 // nothing at all leaves the mail-less choice to the module itself — its simulated
 // mailbox in a development deployment, the sender that refuses every send
 // anywhere else. What can go wrong here is the list disagreeing with what
-// kit/config loaded — email_delivery_unavailable_test.go boots a running
-// production application that names no server, and every case that reads a link
-// out of this process's memory boots the development one that does not.
+// kit/config loaded, and the composition tests refuse that: one boots a running
+// production application that names no mail server, and every case that reads a
+// link out of this process's memory boots the development one that does not.
 func deploymentInputs(cfg config.Config) map[string]string {
 	if !cfg.Mail.Enabled() {
 		return nil
