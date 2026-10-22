@@ -211,20 +211,18 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 }
 
 // sessionRanOut reports whether the request presents a session the server no longer
-// answers: a session cookie from someone who is not signed in. It is the only trace of
-// an expired session the server can see, and enough to say "sign in again" rather than
-// introduce the form to a stranger. It is read from the request, never from the query,
-// because a link anybody can type must not be able to make a page claim a session ended.
+// answers: a session cookie with nobody resolved behind it. It is the only trace of an
+// expired session the server can see, and enough to say "sign in again" rather than
+// introduce the form to a stranger. It is read from the request, never from the query:
+// a link must not be able to claim that a session ended.
 func sessionRanOut(ctx context.Context) bool {
 	h, ok := httpx.RequestFrom(ctx)
 	if !ok {
 		return false
 	}
-	if _, signedIn := tenancy.PrincipalFrom(ctx); signedIn {
-		return false
-	}
+	_, signedIn := tenancy.PrincipalFrom(ctx)
 	_, carried := httpx.SessionCookieOf(h)
-	return carried
+	return carried && !signedIn
 }
 
 // accessPage keeps the introduction, form and recovery links in one surface.
