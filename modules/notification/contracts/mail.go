@@ -92,7 +92,7 @@ type MailLedger interface {
 	// id: a caller learns what became of the mail its own call caused and nothing
 	// about anybody else's. An empty requestID is a caller's mistake and is refused
 	// as one — the newest untraced row in the tenant is not an answer to a question
-	// about one call, and review 3 showed why when this port also carried a
+	// about one call, and it went wrong when this port also carried a
 	// newest-record read: an anonymous door that answered a caller with the tenant's
 	// latest refusal let whoever could plant one refusal classify every address that
 	// had caused no mail. See MailReport.
