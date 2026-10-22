@@ -2,6 +2,7 @@ package screens
 
 import (
 	"context"
+	"maps"
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -147,17 +148,30 @@ type Entry struct {
 // reachable by — so a document written before this key existed is read the same
 // way it always was.
 type Command struct {
-	Verb        string         `json:"verb"`
-	Summary     string         `json:"summary,omitempty"`
-	Description string         `json:"description,omitempty"`
-	Collection  bool           `json:"collection,omitempty"`
-	Path        string         `json:"path,omitempty"`
-	Fields      []entity.Field `json:"fields,omitempty"`
+	Bindings    map[string]string `json:"bindings,omitempty"`
+	Undo        string            `json:"undo,omitempty"`
+	HasResult   bool              `json:"hasResult,omitzero"`
+	Output      []entity.Field    `json:"output,omitempty"`
+	Verb        string            `json:"verb"`
+	Summary     string            `json:"summary,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Collection  bool              `json:"collection,omitempty"`
+	Path        string            `json:"path,omitempty"`
+	Fields      []entity.Field    `json:"fields,omitempty"`
 	// Presentation is this command as its author described it: the word on the
 	// button, whether it is the action to offer, what a person reads before it
 	// runs. It sits last so the six keys a shell has always read keep their
 	// positions, and it is absent for every command nobody described.
 	Presentation *CommandPresentation `json:"presentation,omitempty"`
+}
+
+func authorizedUndo(commands []httpx.Command, verb string) string {
+	for _, command := range commands {
+		if command.Verb == verb && !command.Present.System {
+			return verb
+		}
+	}
+	return ""
 }
 
 // Describe is the catalog for this caller in the language its author wrote it
@@ -250,8 +264,11 @@ func Localise(r httpx.Resource, text Text) httpx.Resource {
 // is asking, the set says whether anything here answers a write at all, and
 // `writable` is what this caller may *do*. See Entry.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
-		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
+	command := slices.ContainsFunc(r.Commands, func(c httpx.Command) bool {
+		return c.Run != nil && c.Auth.Declared()
+	})
+	writable = writable && (command || writeAvailable(r, httpx.CRUDCreate) ||
+		writeAvailable(r, httpx.CRUDUpdate) || writeAvailable(r, httpx.CRUDDelete))
 	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present, r.Commands), Screen: r.Screen,
 		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
 		Operations: r.OperationWords()}
@@ -260,6 +277,7 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 	}
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
+			Bindings: maps.Clone(c.Bindings), Undo: authorizedUndo(r.Commands, c.Undo), HasResult: c.HasResult, Output: c.Output,
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
 			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
 			Presentation: commandDeviations(c.Present),

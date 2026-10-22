@@ -11,6 +11,7 @@ const (
 	DisplayInlineFlex  Display = "inline-flex"
 	DisplayGrid        Display = "grid"
 	DisplayInlineGrid  Display = "inline-grid"
+	DisplayTableCell   Display = "table-cell"
 	DisplayHidden      Display = "hidden"
 )
 
@@ -82,7 +83,7 @@ func AllDisplays() []Display {
 	return []Display{
 		DisplayBlock, DisplayInline, DisplayInlineBlock,
 		DisplayFlex, DisplayInlineFlex, DisplayGrid, DisplayInlineGrid,
-		DisplayHidden,
+		DisplayTableCell, DisplayHidden,
 	}
 }
 

@@ -212,6 +212,26 @@ the next module that must refuse a named page under the API, and
 `MailedLinksOpen`'s shape — a value the composition supplies, refused at the plan
 rather than at its first use.
 
+For the account-request budget: **Reused** — `contracts.Limiter`, `NewLimiter`
+and `reserve` over `kit/limit.Reserve`, which already took a quota and a window
+per call; `Decision.Policy`, `asked` and `httpx.SayCounted`, so the 429 and its
+`RateLimit` headers state the configured figure with no change of their own;
+`config.Auth` with the pointer-for-omitted shape of `Telemetry.SampleRatio`;
+`OIDCFromConfig`'s converter shape and `wire`'s one read of the block; and
+`internal.Delivery` to carry the budget to `NewService`. **Added** —
+`contracts.AccountRequestBudget` with `Check` and `NewBudgetedLimiter`, because
+`Policy` carries a name a configuration must not set and the quota and window
+were package constants nothing could move; `Deps.AccountRequests`,
+`config.AccountRequests` with its loader refusal of an explicit zero;
+`limit.MaxWindow`, the export of the day the sweep keeps, and `limit.MaxQuota`,
+the largest limit the counter's integer can refuse past once `Reserve` stops it
+at its maximum, so each ceiling is stated once. **Made reusable:**
+`limit.MaxWindow` and `limit.MaxQuota`, for the next configured budget that must
+stay inside what the counter keeps, and `NewBudgetedLimiter`, which takes the
+budget a second composition names. Inside the package, `reserve`
+takes its window as an argument, so a second cap can be configured without
+touching the lockout's.
+
 ## The pages a mailed link opens
 
 The set-password link (an invitation or a reset) and the sign-up confirmation

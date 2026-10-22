@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -19,9 +20,11 @@ import (
 // holds the two owners to.
 const perPage = resource.PerPage
 
-// The inputs. huma needs a type per shape, and there are four: a page of a
-// list, one row, a form, and a form about one row.
+// Typed request inputs for collection, record and form routes.
 type (
+	readInput struct {
+		ID string `path:"id"`
+	}
 	listInput struct {
 		Page int    `query:"page" minimum:"1" default:"1"`
 		Sort string `query:"sort"`
@@ -98,7 +101,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if res.Offers(httpx.CRUDCreate) {
+	if writeAvailable(res, httpx.CRUDCreate) {
 		page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
 			func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 				o := localized(o, req)
@@ -106,7 +109,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if res.Offers(httpx.CRUDCreate) {
+	if writeAvailable(res, httpx.CRUDCreate) {
 		page.Serve(router, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
 			func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
 				// Immutable is refused here rather than dropped: this form does not
@@ -127,8 +130,15 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 
 	if res.Offers(httpx.CRUDRead) {
 		page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity}, read,
-			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
-				row, err := res.Get(ctx, in.ID)
+			func(ctx context.Context, req page.Request, in *readInput) (page.View, error) {
+				if in.ID == "new" {
+					return page.View{}, huma.Error404NotFound("No form is available")
+				}
+				rowID, err := uuid.Parse(in.ID)
+				if err != nil {
+					return page.View{}, huma.Error422UnprocessableEntity("Invalid record ID")
+				}
+				row, err := res.Get(ctx, rowID)
 				if err != nil {
 					return page.View{}, err
 				}
@@ -136,7 +146,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if res.Offers(httpx.CRUDUpdate) {
+	if writeAvailable(res, httpx.CRUDUpdate) {
 		page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form"}, write,
 			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
 				row, err := res.Get(ctx, in.ID)
@@ -148,7 +158,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if res.Offers(httpx.CRUDUpdate) {
+	if writeAvailable(res, httpx.CRUDUpdate) {
 		page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
 			func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
 				item := at + "/" + in.ID.String()
@@ -164,7 +174,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if res.Offers(httpx.CRUDDelete) {
+	if writeAvailable(res, httpx.CRUDDelete) {
 		page.Serve(router, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: rel + "/{id}/delete", Summary: "Delete a " + res.Entity}, write,
 			func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
 				if err := res.Delete(ctx, in.ID); err != nil {
@@ -211,6 +221,9 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 		// AndNotAGuess is the failure, not a hypothetical.
 		if c.Collection {
 			collection := func(ctx context.Context, body []byte) (page.View, error) {
+				if c.HasResult {
+					return commandOutput(res, c, ctx, uuid.Nil, body, o, at, at)
+				}
 				if err := perform(c, ctx, uuid.Nil, body); err != nil {
 					return page.View{}, err
 				}
@@ -218,13 +231,13 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 			}
 			if len(c.Fields) == 0 {
 				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
+					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 					func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
 						return collection(ctx, nil)
 					})
 			} else {
 				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary}, c.Auth,
+					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 					func(ctx context.Context, _ page.Request, in *formInput) (page.View, error) {
 						return collection(ctx, in.RawBody)
 					})
@@ -232,6 +245,9 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 			continue
 		}
 		item := func(ctx context.Context, rowID uuid.UUID, body []byte) (page.View, error) {
+			if c.HasResult {
+				return commandOutput(res, c, ctx, rowID, body, o, at, at+"/"+rowID.String())
+			}
 			if err := perform(c, ctx, rowID, body); err != nil {
 				return page.View{}, err
 			}
@@ -239,14 +255,14 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 		}
 		if len(c.Fields) == 0 {
 			page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-				Path: rel + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
+				Path: rel + "/{id}/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 				func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
 					return item(ctx, in.ID, nil)
 				})
 			continue
 		}
 		page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
-			Path: rel + "/{id}/" + c.Verb, Summary: c.Summary}, c.Auth,
+			Path: rel + "/{id}/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 			func(ctx context.Context, _ page.Request, in *itemFormInput) (page.View, error) {
 				return item(ctx, in.ID, in.RawBody)
 			})
@@ -290,6 +306,10 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 			}
 			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
 		})
+
+	if !writeAvailable(res, httpx.CRUDUpdate) {
+		return
+	}
 
 	page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/edit", Summary: "The edit-" + res.Entity + " form"}, write,
 		func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {

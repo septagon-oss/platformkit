@@ -54,6 +54,13 @@ files. Keep decision functions deterministic and caller-owned values
 unchanged. Comments should explain a constraint or reason; the code should
 express the steps.
 
+Compose through pkit. A module declares what it provides, needs, optionally
+uses and contributes in its `provider.go`, and its build calls the module's one
+`New(Deps)`. An application is `pkit.NewApp(name).Use(...)`. Add no `init()`
+registration, no registry addressed by string and no second wiring path. A read
+a build did not declare refuses that module by name before anything opens
+([ADR 0022](docs/adr/0022-pkit-orchestrates-composition.md)).
+
 Remove the implementation a change replaces. Preserve established data and
 upgrade contracts: the clean-baseline policy in
 [ADR 0011](docs/adr/0011-migration-ownership.md) is not permission to discard
@@ -227,6 +234,21 @@ acceptance round prices that too, because the round arrives with a test file of
 its own after the feature's lines are counted: re-baseline the bucket it writes
 (`go_test`) with `--round 100 --allow 500`, 500 being the measured cost — the
 largest acceptance-round test file this repository holds is 499 lines.
+
+[complexity-budget.json](complexity-budget.json) separately ratchets seven
+source-debt counts. `make check-complexity` (included in `check` and `check-push`)
+requires exact equality: when code removes an offender, lower the corresponding
+ceiling in the same change. An excess prints every offender; a lower count prints
+the exact ceiling to write. Counts, source selection and merge rules are defined
+in [the complexity command](tools/complexity/README.md).
+
+Every complexity increase, even one, needs an isolated `build(complexity):`
+commit changing only that file with a nonempty `Owner-approved:` trailer. Review
+verifies the approval claim. `--history-only` can validate that allocation before
+its source lands; final checks still demand equality. Deletions, malformed
+budgets, uncommitted increases and merges restoring returned room are refused.
+CI supplies its event base through `COMPLEXITY_BASE`; locally it defaults to
+`origin/main`. Supply an earlier base explicitly to audit already merged history.
 
 ## Generated and golden files
 

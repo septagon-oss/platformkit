@@ -2229,13 +2229,17 @@ func main() {
           const reopened = await parseFigFile(figBuffer(buffer), { populate: 'all' })
           const role = [...reopened.variables.values()].find(variable => variable.name === roleName)
           const mode = reopened.variableCollections.get(role.collectionId).modes.find(mode => mode.name === 'light').modeId
-          const paper = [...reopened.variables.values()].find(variable => variable.name === '--pk-color-surface-primary')
+          const muted = [...reopened.variables.values()].find(variable => variable.name === '--pk-color-text-muted')
           const instance = named(reopened, 'Derived paragraph'), text = reopened.getChildren(instance.id).find(node => node.type === 'TEXT')
           assert.equal(text.boundVariables['fills/0/color'], role.id)
           assert.equal(instance.componentId, named(reopened, 'Derived paragraph master').id)
           assert.equal(role.valuesByMode[mode].cssColor.value, observedRole.roots[0].paintSources.color.expressionCandidate.value)
+          // The arithmetic of the tree's own declaration: design.RoleLayer mixes
+          // 66% of text-primary into text-muted for fg-secondary, so an edit of the
+          // input colour must still reach the role through the provider's evaluator
+          // at exactly those two weights over the reopened inputs.
           assert.ok(Math.abs(reopened.resolveVariable(role.id, mode).r -
-            (.78 * Math.fround(200 / 255) + .22 * reopened.resolveVariable(paper.id, mode).r)) < 1e-6)
+            (.66 * Math.fround(200 / 255) + .34 * reopened.resolveVariable(muted.id, mode).r)) < 1e-6)
           for (const id of examples) {
             const before = sourceNode(baseline, [id]), after = sourceNode(reopened, [id])
             const oldParent = baseline.getNode(before.parentId), newParent = reopened.getNode(after.parentId)

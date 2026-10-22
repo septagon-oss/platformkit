@@ -54,8 +54,8 @@ func TestAKeyedSelfRevocationNeverConfirmsALiveKeyIsRetired(t *testing.T) {
 		if second.Body.Len() != 0 {
 			t.Errorf("laptop retirement returned a stale body: %s", second.Body.String())
 		}
-		if res := call(t, original, http.MethodGet, "/api/v1/auth/roles", "", bearer(laptop)); res.Code != http.StatusForbidden {
-			t.Errorf("laptop was told 204 but its key still authenticates: GET roles = %d %s, want 403", res.Code, res.Body.String())
+		if res := call(t, original, http.MethodGet, "/api/v1/auth/roles", "", bearer(laptop)); res.Code != http.StatusUnauthorized {
+			t.Errorf("laptop was told 204 but its key still authenticates: GET roles = %d %s, want 401", res.Code, res.Body.String())
 		}
 	case http.StatusConflict, http.StatusUnprocessableEntity:
 		if second.Body.Len() == 0 {

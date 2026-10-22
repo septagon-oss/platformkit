@@ -70,10 +70,13 @@ ADVISORIES = (
     },
 )
 
-# The three commands of the gate, in the order the design job runs them.
+# The three commands of the gate, in the order the design job runs them. The audit may stand behind
+# scripts/ci_npm_audit.sh, which retries only a registry that would not answer; anything else between
+# this file and the audit line is not the gate, which is why the prefix is spelled out rather than
+# matched loosely.
 GATE = ("npm ci --ignore-scripts", "npm audit --omit=dev --audit-level=high", "npm test")
-AUDIT_AT_HIGH = re.compile(r"^\s*npm audit[^\n]*--audit-level=high\s*$", re.M)
-COMMANDS = re.compile(r"^\s*(npm (?:ci|audit|test)[^\n]*)\s*$", re.M)
+AUDIT_AT_HIGH = re.compile(r"^\s*(?:bash\s+\S*scripts/ci_npm_audit\.sh\s+)?npm audit[^\n]*--audit-level=high\s*$", re.M)
+COMMANDS = re.compile(r"^\s*(?:bash\s+\S*scripts/ci_npm_audit\.sh\s+)?(npm (?:ci|audit|test)[^\n]*)\s*$", re.M)
 
 
 def version(text):
@@ -192,6 +195,16 @@ if audit_steps(design_steps):
         sys.exit("FAIL: an audit line loosened past --audit-level=high still reads as a gate to this "
                  "file: the line above that says it is enforced promises nothing")
     ok_lines.append("an audit line loosened past --audit-level=high is no longer a gate to this file")
+
+    # The retry this step is allowed, given to something that throws the answer away. A gate whose
+    # verdict can be swallowed is a gate that prints a paragraph, which is what --audit-level is for.
+    swallowed = {**audit_steps(design_steps)[0],
+                 "run": str(audit_steps(design_steps)[0].get("run")).replace(
+                     "--audit-level=high", "--audit-level=high || true")}
+    swallowed_ok, swallowed_failures = gate_verdict([swallowed])
+    if swallowed_ok or not swallowed_failures:
+        sys.exit("FAIL: an audit line whose exit is thrown away still reads as a gate to this file")
+    ok_lines.append("an audit line whose exit is thrown away is no longer a gate to this file")
 
 sys.exit(0 if report(ok_lines, failures) else 1)
 PY

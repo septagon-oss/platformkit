@@ -436,7 +436,7 @@ func TestEveryGuardRefusalInTheChainIsOneDocument(t *testing.T) {
 		{
 			name: "a door that asks for somebody and found nobody", give: guardSetup{allow: true},
 			surface: "app", method: http.MethodGet, path: "/plans", anonymous: true,
-			want: http.StatusForbidden, code: httpx.CodeAnonymous,
+			want: http.StatusUnauthorized, code: httpx.CodeAnonymous,
 		},
 		{
 			name: "the roles table that could not decide", give: guardSetup{authErr: errors.New("the roles table is not answering")},

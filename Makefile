@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc generate check-generated check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -229,6 +229,10 @@ load-test: ## Compare bounded tenant work and database pool capacity
 check-loc: ## Fail when a bucket grew beyond what this branch's build(budget) commits declare
 	bash scripts/check_budget_ratchet.sh --merge-base origin/main
 
+COMPLEXITY_BASE ?= origin/main
+check-complexity: ## Require exact complexity ceilings and reviewed budget transitions
+	go run ./tools/complexity --check --merge-base "$(COMPLEXITY_BASE)"
+
 # Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
 # A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is
 # never written here (CONTRIBUTING.md, "Generated and golden files").
@@ -386,7 +390,7 @@ inference-conformance: ## Run the inference port's suite against operator-named 
 	@test -n '$(PLATFORMKIT_TEST_INFERENCE_PROVIDERS)' || { echo 'usage: make inference-conformance PROVIDERS=<name>,<name>, each configured by PLATFORMKIT_TEST_INFERENCE_<NAME>_URL, _MODEL and _KEY' >&2; exit 2; }
 	go test -v -count=1 -timeout=10m -run 'TestTheConfiguredProvidersConform' ./kit/inference
 
-check-push: build check-generated vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
+check-push: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
 	./scripts/check_push_tier.sh
 
 check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
@@ -557,7 +561,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build check-generated vet fmt-check check-loc check-packages check-gucs check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -716,6 +720,15 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# refuses it in both of its forms, CI's explicit base and `make check-loc`'s merge base, the moment it
 	# reads the lowering as a raise. Two budget commits over one base, no network, no database.
 	bash scripts/a_lowering_needs_no_new_owner_approval_test.sh
+	# scripts/ratchet_fixtures_name_their_committer_test.sh asks the one question the eight fixtures above
+	# cannot ask of each other: whether every script test that builds a throwaway repository and runs `git
+	# merge` names its committer inside that repository. A merge commits with the identity the repository
+	# holds rather than the one an invocation passes, so a fixture added without a repository-local identity
+	# writes its history in a checkout that happens to have one and aborts at its first merge in a container
+	# that has none, taking the cases after it with it. Each fixture reads only its own file, so none of them
+	# notices a new sibling missing that identity. One grep over `scripts/*_test.sh`, no repository built, no
+	# network, no database, milliseconds.
+	bash scripts/ratchet_fixtures_name_their_committer_test.sh
 	bash scripts/check_applied_migrations_test.sh
 	bash scripts/applied_migration_merge_base_test.sh
 	bash scripts/ci_checkout_history_test.sh
@@ -816,6 +829,14 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# arrived. It breaks no mirror of its own: the stub apt-get answers from memory, and the one case that
 	# pays the real waits pays the first of them.
 	bash scripts/ci_apt_index_test.sh
+	# scripts/ci_npm_audit_test.sh asks the same question of the one npm command in this repository that
+	# answers against a live feed. Forge run 8105 refused the design job's audit step with `npm error
+	# audit endpoint returned an error` over lock bytes `main` had passed twenty minutes earlier; the
+	# retry it replaced is bounded, retries only a registry that would not answer, and refuses an audit
+	# that printed a finding on its first try — that last ordering is the whole of the difference between
+	# a retry and a way to lose an advisory, so it is asked first. It reads no registry: the stub npm
+	# answers from memory, and the workflows' own audit line is run as the job runs it.
+	bash scripts/ci_npm_audit_test.sh
 	# scripts/ci_package_install_refusal_test.py runs the half of that step the guard above cannot see: the
 	# index answered, the ask went out, and the package did not arrive. apt-get install exits 100, and the
 	# `-e` act_runner runs every step body under is what stops it there. A body that lost it, or gained a
@@ -898,12 +919,15 @@ check: build check-generated vet fmt-check check-loc check-packages check-gucs c
 	# from the committed go.mod, so three branches of it live unless a synthetic tree reaches them: the
 	# directory argument that names such a tree, the rule that a commented-out dependency is not a pin
 	# (`\t// golang.org/x/net v0.60.0` answers `is absent, so nothing here resolves above the range`),
-	# and a release *superseding* a fix — the committed pins sit exactly at v0.60.0 and go1.27.2, so
-	# "strictly above" is never asked of them. This case writes five go.mod files into a temporary
-	# directory and asks the guard about each through its subprocess, and asserts exit codes rather than
-	# sentences, so a floor comparison that passes for the wrong reason — an absent pin read as a
-	# satisfied range — cannot answer 0. It reaches no network and builds nothing.
+	# and a release *superseding* every fix — the committed pins sit exactly at v0.60.0 and at go1.27.3,
+	# the newest toolchain floor, so "above all of them" is never asked. This case writes six go.mod files
+	# into a temporary directory and asks the guard about each through its subprocess, and asserts exit
+	# codes rather than sentences, so a floor comparison that passes for the wrong reason — an absent pin
+	# read as a satisfied range — cannot answer 0. It reaches no network and builds nothing.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_advisory_inputs_test.py
+	# The x509 floor alone: go.mod at go1.27.2, go1.27.3 and go1.27.4 with x/net already fixed, so the
+	# first is refused by GO-2026-6809's line and no other, and the two later releases pass.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_x509_floor_test.py
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say

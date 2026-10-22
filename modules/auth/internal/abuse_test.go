@@ -432,8 +432,8 @@ func TestAnExpiredSessionGoesOnTheRefusalItCauses(t *testing.T) {
 	exec(t, admin, `UPDATE sessions SET expires_at = now() - interval '1 day'`)
 
 	res := call(t, router, http.MethodGet, "/api/v1/auth/me", "", withSession(session))
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("an expired session = %d %s, want 403", res.Code, res.Body)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("an expired session = %d %s, want 401", res.Code, res.Body)
 	}
 	var left int
 	row(t, admin, `SELECT count(*) FROM sessions`).Scan(&left)
