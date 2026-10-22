@@ -76601,6 +76601,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/ci_npm_audit_test.sh",
+   "id": "scripts/ci_npm_audit_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "ci_npm_audit_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/ci_package_install_refusal_test.py",
    "id": "scripts/ci_package_install_refusal_test.py",
    "kind": "shell_pin",
@@ -78147,6 +78167,26 @@
    "layer": "behaviour",
    "merge_into": "",
    "name": "real EmptyState keeps enlarged copy and its keyboard action usable at 320px",
+   "needs_db": false,
+   "pkg": "tools/designexport/openpencil/browser",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
+   "file": "tools/designexport/openpencil/browser/constrained-flex.test.mjs",
+   "id": "tools/designexport/openpencil/browser/constrained-flex.test.mjs",
+   "kind": "node",
+   "layer": "behaviour",
+   "merge_into": "",
+   "name": "a generated form keeps its capped column in the projection, at both sides of the cap and after the save",
    "needs_db": false,
    "pkg": "tools/designexport/openpencil/browser",
    "round_named": false,
@@ -79788,7 +79828,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2145,
+  "files": 2147,
   "forge_runs": [
    408,
    413,
@@ -79822,8 +79862,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3448,
-   "composition": 461,
+   "behaviour": 3449,
+   "composition": 462,
    "contract": 21,
    "journey": 109
   },
@@ -79841,23 +79881,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4039,
+  "rows": 4041,
   "tiers": {
    "merge": 2484,
    "nightly": 109,
-   "push": 1446
+   "push": 1448
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1900,
+   "keep": 1902,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3653,
+   "keep": 3655,
    "keep-rewrite": 170,
    "merge": 216
   }
