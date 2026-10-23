@@ -380,6 +380,10 @@ Decision 0022, for this delivery. **Reused:** `Pending`, the one commit site
 writes after its transaction has ended must read one name in both. **Added:**
 `AfterCommit`, `ErrEffectNotRun` and the queue on `Pending` — nothing existing could
 carry them: `Detached` commits *earlier*, and the outbox cannot hold the one effect
-this exists for, a secret that may not become a row. **Made reusable:** a hand-off
+this exists for, a secret that may not become a row. The queue is the transaction's,
+not the `Pending`'s: `open` starts one and `end` hands it over or drops it, so the
+actions registered to a rolled back transaction are dropped with its rows and a
+request that reopened under a live owner runs only what the transaction it is ending
+registered. **Made reusable:** a hand-off
 any module can register on, and an error that separates "committed, effect missing"
 from a rollback, which is the fact every retry underneath this has to branch on.

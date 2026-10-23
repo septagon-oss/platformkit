@@ -278,10 +278,12 @@ type Pending struct {
 	hooks *commitQueue
 }
 
-// newPending is the only way to hold one, and it exists so the queue that waits
-// for the commit is never nil on a transaction that can commit.
+// newPending is the only way to hold one. The queue that waits for the commit comes
+// with the transaction that can commit, in open, and not here: a Pending whose
+// transaction has ended owns no queue, which is what keeps an effect registered to
+// one transaction out of the next one's commit.
 func newPending(c *Conn, t tenancy.Tenant, owner context.Context) *Pending {
-	return &Pending{conn: c, tenant: t, owner: owner, hooks: &commitQueue{}}
+	return &Pending{conn: c, tenant: t, owner: owner}
 }
 
 type pendingKey struct{}
@@ -358,12 +360,18 @@ func (p *Pending) open() error {
 	// trace of this shape.
 	ctx, span := telemetry.Tracer().Start(p.owner, "database transaction",
 		trace.WithAttributes(telemetry.SpanAttrs(p.owner)...))
+	// One queue per opened transaction, for as long as that transaction is open:
+	// see Close. A Pending that reopened after a rollback gets a queue that owes
+	// nothing to the transaction that ended.
+	p.hooks = &commitQueue{}
 	gtx := p.conn.db.WithContext(ctx).Begin()
 	if gtx.Error != nil {
+		p.hooks = nil
 		return p.failed(span, fmt.Errorf("db: begin: %w", gtx.Error))
 	}
 	if err := gtx.Exec("SELECT set_config('platformkit.tenant_id', ?, true)", p.tenant.ID.String()).Error; err != nil {
 		_ = gtx.Rollback().Error
+		p.hooks = nil
 		return p.failed(span, fmt.Errorf("db: set tenant: %w", err))
 	}
 	p.gtx, p.span = gtx, span
@@ -431,25 +439,32 @@ func (p *Pending) handle() (*gorm.DB, trace.Span) {
 // back otherwise. An owner that ended first is reported as an error wrapping its
 // cause, whatever keep asked for. It is a no-op when nothing is open, and
 // idempotent; a Close under a live owner leaves the Pending able to open again.
+//
+// The effects registered to after the commit belong to the transaction that
+// registered them, so they run here and nowhere else: a rollback drops them with
+// the rows, and the transaction this Pending opens next runs only its own.
 func (p *Pending) Close(keep bool) error {
-	committed, err := p.end(keep)
+	committed, deferred, err := p.end(keep)
 	if err != nil || !committed {
 		return err
 	}
 	// Outside the mutex, because the queue is somebody else's code and an action
 	// that opens a transaction of its own must not have to wait for this Pending.
-	return runAfter(p.conn, p.hooks.drain())
+	return runAfter(p.conn, deferred.drain())
 }
 
 // end commits or rolls back the open transaction and reports whether it committed,
-// which is what decides whether the effects deferred to after it run.
-func (p *Pending) end(keep bool) (bool, error) {
+// which is what decides whether the effects deferred to after it run. The queue
+// those effects are in leaves the Pending either way, so nothing a later
+// transaction registers can be run by this one's ending, and nothing the rollback
+// dropped can be run by the next commit.
+func (p *Pending) end(keep bool) (bool, *commitQueue, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	gtx, span := p.gtx, p.span
-	p.gtx, p.span = nil, nil
+	gtx, span, deferred := p.gtx, p.span, p.hooks
+	p.gtx, p.span, p.hooks = nil, nil, nil
 	if gtx == nil {
-		return false, nil
+		return false, nil, nil
 	}
 	// open sets gtx and span together, so span is live here. It ends before the
 	// outcome is returned, whatever it is: the transaction is over the moment the
@@ -461,24 +476,24 @@ func (p *Pending) end(keep bool) (bool, error) {
 		err := fmt.Errorf("db: the transaction's owner ended before it was finalised: %w", context.Cause(p.owner))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return false, err
+		return false, deferred, err
 	}
 	if !keep {
-		return false, gtx.Rollback().Error
+		return false, deferred, gtx.Rollback().Error
 	}
 	if err := sealed(gtx, p.tenant.ID.String(), ""); err != nil {
 		_ = gtx.Rollback().Error
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return false, err
+		return false, deferred, err
 	}
 	err := gtx.Commit().Error
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return false, err
+		return false, deferred, err
 	}
-	return true, nil
+	return true, deferred, nil
 }
 
 // sealed refuses to commit a transaction that ends under different settings

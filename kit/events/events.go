@@ -683,6 +683,15 @@ const handlerTimeout = 25 * time.Second
 // same ownership transition MoveLedger performs for rows that got there first:
 // the unscoped name, prefixed with the app tenants.app names.
 //
+// A claim already standing is not always finished work: one still counting effects it
+// deferred past its own commit is a delivery the ladder is giving up on with those
+// effects outstanding, and that exhaustion has to be recorded too. The write below
+// therefore records the letter for such a claim as well as for one it makes itself, and
+// owes nothing of the count while it does: the letter is the operator's record of work
+// that stopped, not a declaration that it finished. Writing nothing here would lose the
+// work twice over — no letter to review, and no payload left once the purge took the
+// row no letter refers to — and the owed claim goes on refusing a redelivery over it.
+//
 // The read is as authoritative as holdsUnscoped's, for the same reason and in the
 // same order: declare the tenant, then ask. While this transaction holds that
 // shared key its tenant's move refuses rather than queues, so the answer is either
@@ -713,9 +722,14 @@ func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, ca
 		return tx.DB().Exec(`WITH claimed AS (
    INSERT INTO `+handled+` (event_id, durable, tenant_id) VALUES (?, ?, ?)
    ON CONFLICT DO NOTHING RETURNING event_id
+  ), owed AS (
+   SELECT event_id FROM `+handled+` WHERE event_id = ? AND durable = ? AND effects_owed > 0
+  ), ending AS (
+   SELECT event_id FROM claimed UNION SELECT event_id FROM owed
   ) INSERT INTO `+deadLetters+` (event_id, durable, tenant_id, name, error)
-   SELECT event_id, ?, ?, ?, ? FROM claimed ON CONFLICT DO NOTHING`,
-			ev.ID, recorded, ev.TenantID, recorded, ev.TenantID, ev.Name, cause.Error()).Error
+   SELECT event_id, ?, ?, ?, ? FROM ending ON CONFLICT DO NOTHING`,
+			ev.ID, recorded, ev.TenantID, ev.ID, recorded,
+			recorded, ev.TenantID, ev.Name, cause.Error()).Error
 	})
 }
 

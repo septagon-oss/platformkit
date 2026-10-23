@@ -330,3 +330,16 @@ them comes back, so a delivery that owes two is not acknowledged by the one that
 finished first. **Made reusable:** a delivery that can say what it still owes, read
 under its row lock, and the release that makes a failed effect come back rather than
 vanish.
+
+Two endings read that count rather than ignore it. The transport's ladder running out
+over an owed effect writes its dead letter — `deadLetter` records the exhaustion beside
+a claim already standing when the count above zero is what stopped every attempt — and
+writes none of the count away, because a terminal record says work an operator has to
+look at and not that the work finished. It is what keeps the outbox row, and so the
+payload, past the purge, which exempts a row a dead letter describes, and
+`events.Replay` stays the verb that recovers it. And `MoveLedger` refuses a rename over
+a claim that still owes one: the rename makes a new primary key, so an outstanding
+effect would be left naming a row the move deleted, the scoped twin would read as owed
+nothing, and the debt would have been paid by moving it. The run after the effect comes
+back moves the row, and the refusal is `ErrLedgerMoveContended`, which is the sentence
+for "ask again".

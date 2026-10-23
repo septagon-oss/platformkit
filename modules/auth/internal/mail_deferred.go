@@ -107,7 +107,18 @@ func (s *Service) undelivered(ctx context.Context, m linkMail, failure error) er
 		// A transport retries a delivery, and retries nothing else: a request that
 		// waited on a mail server would be a request whose answer depends on a machine
 		// nobody here controls.
-		return fmt.Errorf("auth: the mail transport refused a link after its token committed: %w", failure)
+		//
+		// What it is told is the redacted sentence, not the transport's own. A failure
+		// that ends the ladder becomes a dead letter, and a dead letter is a row: the
+		// cause is written down and read back for a week, and the transport's error
+		// repeats what it was handed, which is a link carrying a live credential. The
+		// module that minted the secret is the one that knows it, so the module is the
+		// one that scrubs it — the same redaction the mail ledger's reason carries, from
+		// the same two values. The failure itself still comes back as a failure: this
+		// delivery is owed an effect nobody carried out, and an acknowledgement here
+		// would be the loss this mark exists to refuse.
+		return fmt.Errorf("auth: the mail transport refused a link after its token committed: %s",
+			notificationcontracts.RedactMailReason(failure.Error(), m.token, string(m.digest)))
 	}
 	return nil
 }
