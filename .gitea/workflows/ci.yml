@@ -159,12 +159,12 @@ jobs:
       # across commits nobody fetched. `scripts/ci_checkout_history_test.sh` pins both halves — this
       # line stays deep while that walk exists, and no other job goes deep without one.
       #
-      # This job therefore keeps the exposure the two above lose: its checkout was still fetching 49
-      # minutes into run 49357, and its ceiling is 75. Bounding it from here would mean either a
-      # shallow fetch (which takes the budget verdict's commits away) or a stall timeout (which turns
-      # the wait into a faster red and nothing else). What answers it is outside this file: the forge's
-      # git-http throughput under a contended queue, or T-0219's split of these steps across runners.
+      # Abort an HTTP transfer that stops making progress so checkout's bounded fetch retries
+      # can reconnect while the job still has time to run its checks. Full history remains required.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        env:
+          GIT_HTTP_LOW_SPEED_LIMIT: '1'
+          GIT_HTTP_LOW_SPEED_TIME: '60'
         with:
           fetch-depth: 0
           persist-credentials: false
