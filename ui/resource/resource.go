@@ -581,7 +581,17 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 // Control has no request to read. ui/forms stays this package's only owner of the
 // control itself.
 func controlWords(words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(words, f), Value: value, Error: fieldErr,
+	return controlIn("", words, f, value, fieldErr, immutable)
+}
+
+// controlIn draws one control under a DOM identity the caller owns — a command's
+// argument, whose id names the action and the locale so two commands of one verb on
+// one page stay two controls — with the words the request is read in. Empty id leaves
+// the identity to the form, which is what a control drawn inside a generated screen
+// asks. Both routes build their props here, so a control cannot be addressed by one
+// caller and untranslated by another.
+func controlIn(id string, words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
+	return forms.Control(forms.ControlProps{ID: id, Field: formField(words, f), Value: value, Error: fieldErr,
 		Immutable: immutable, ChooseLabel: chooseWord(words), Notes: words.notes()})
 }
 
