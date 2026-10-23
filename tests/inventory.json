@@ -79127,6 +79127,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/openpencil_lock_rejects_reported_release_test.sh",
+   "id": "scripts/openpencil_lock_rejects_reported_release_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "openpencil_lock_rejects_reported_release_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/package_install_refusal_guard_test.py",
    "id": "scripts/package_install_refusal_guard_test.py",
    "kind": "shell_pin",
@@ -81027,6 +81047,26 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/designexport/openpencil/locked-dependency-rollback.test.mjs",
+   "id": "tools/designexport/openpencil/locked-dependency-rollback.test.mjs",
+   "kind": "node",
+   "layer": "behaviour",
+   "merge_into": "",
+   "name": "the dependency pin refuses a reported DOMPurify release even when its override and lock agree",
+   "needs_db": false,
+   "pkg": "tools/designexport/openpencil",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/designexport/openpencil/native.test.mjs",
    "id": "tools/designexport/openpencil/native.test.mjs",
    "kind": "node",
@@ -81554,7 +81594,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2189,
+  "files": 2191,
   "forge_runs": [
    408,
    413,
@@ -81588,8 +81628,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3533,
-   "composition": 468,
+   "behaviour": 3534,
+   "composition": 469,
    "contract": 21,
    "journey": 109
   },
@@ -81607,23 +81647,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4131,
+  "rows": 4133,
   "tiers": {
    "merge": 2552,
    "nightly": 109,
-   "push": 1470
+   "push": 1472
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1944,
+   "keep": 1946,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3745,
+   "keep": 3747,
    "keep-rewrite": 170,
    "merge": 216
   }
