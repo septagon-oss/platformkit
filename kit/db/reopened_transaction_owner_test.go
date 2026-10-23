@@ -40,5 +40,5 @@ func TestOwnerCancellationRollsBackTheReopenedTransactionOnly(t *testing.T) {
 		t.Error("ended owner reopened a third transaction")
 	}
 	_ = p.Close(false)
-	waitUntil(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
+	waitForPoolStat(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
 }

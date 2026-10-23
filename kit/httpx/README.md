@@ -356,7 +356,7 @@ answers the decision, the quota left and the window left from a single statement
 replaced `Allow`+`Count` rather than sitting beside them, because two calls are two
 readings of a row that had other writers between them. That widens `kit/limit`'s
 published `Limiter` the same way — one method, same SQL, one more answer — and the break
-is a deliberate one, recorded in the re-recorded baseline under scripts/baselines.
+is a deliberate one, taken before the release line froze its exported surface.
 
 | Field | Carried on | Says |
 | --- | --- | --- |

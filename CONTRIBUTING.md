@@ -35,6 +35,9 @@ implementation: migrate the traced caller and remove the replaced logic in the
 same dependent delivery.
 A compatible alias or delegate may preserve an existing public API. Publication,
 moving files and synthetic examples do not establish adopted consumer reduction.
+Within a release line the exported surface only grows or gains a deprecation, and
+removal waits for a major: [the compatibility rule](docs/COMPATIBILITY.md) is what
+`make check-apidiff` enforces.
 Show ordinary versioned consumption with an [executable public example](ui/forms/testdata/standalone/README.md),
 explicit optional providers, dependency limits, error behavior and compatibility
 expectations. Reuse existing checks and identify any pending migration.
@@ -185,7 +188,9 @@ Browser installation may require permission to install system packages. The [tes
 script](scripts/e2e.sh) removes its database and uploads, keeping failed Playwright
 results at the printed path. A run picks a free loopback port, `PLATFORMKIT_E2E_PORT`
 pins one; a taken pin and a port whose listener the run did not start are both refused.
-[Makefile](Makefile) owns the commands; [RELEASE.md](RELEASE.md) the publication procedure.
+[Makefile](Makefile) owns the commands; [RELEASE.md](RELEASE.md) the publication procedure;
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) the rule a release line keeps, which
+`make check-apidiff` refuses a change to.
 
 For a behavior change, demonstrate the failing case and its correction.
 For a refactor, retain the independent behavior tests and explain what

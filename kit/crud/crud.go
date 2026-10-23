@@ -332,7 +332,7 @@ func validate(ctx context.Context, e any) error {
 		return nil
 	}
 	if err := v.Validate(ctx); err != nil {
-		return fmt.Errorf("%w: %s", ErrInvalid, err)
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	return nil
 }

@@ -35,6 +35,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/richtext"
@@ -244,6 +245,14 @@ type Spec[T crud.Entity] struct {
 	// half — the question asked before a write rather than after — is Gate, above,
 	// which is the hook this repository was missing.
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
+
+	// Create makes the entity's owner the one creator: when set, the JSON create,
+	// the generated form and CreateRow hand the decoded body to it and return what
+	// it answers, and they run none of their own create steps — no identity, no
+	// file filing, no version, no event and no AfterCreate. The owner publishes in
+	// the transaction it is given. Mount refuses it beside History, whose first
+	// version would never be recorded.
+	Create      func(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error)
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 
 	// Audience says who the record this write is writing is showing its files to —
@@ -538,6 +547,9 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if s.Create != nil {
+		return s.Create(ctx, tx, e)
+	}
 	crud.Reset(e)                        // IDs, tenancy and timestamps belong to the server at both doors.
 	s.clearRevision(crud.Fields[T](), e) // and so does the count of this row's writes
 	// The record has to be itself before its own body can be filed. What a body
@@ -1319,6 +1331,9 @@ func (s Spec[T]) writeAuth() httpx.Auth {
 // events. It panics, at the mount site, for the same reason httpx.Permission
 // does: this is a wiring mistake, not a request-time condition.
 func (s Spec[T]) check() {
+	if s.Create != nil && s.History {
+		panic("rest: Create replaces the create steps, so a History resource would never record its first version")
+	}
 	if s.Source != nil {
 		if s.Source.Get == nil || s.Source.List == nil {
 			panic("rest: Source requires Get and List")
@@ -1574,7 +1589,8 @@ func Fault(err error) error {
 	case errors.Is(err, crud.ErrNotFound):
 		return problem.NotFound("no such row, or none this tenant may see")
 	case errors.Is(err, crud.ErrInvalid):
-		return problem.New(http.StatusUnprocessableEntity, err.Error())
+		violations, _ := errors.AsType[fault.Violations](err)
+		return problem.Refusal(err.Error(), violations, err)
 	case errors.Is(err, crud.ErrConflict):
 		if _, unique := errors.AsType[*crud.UniqueConflict](err); unique {
 			return problem.Conflict("A record already uses one of these values. Change the duplicate value and try again.")

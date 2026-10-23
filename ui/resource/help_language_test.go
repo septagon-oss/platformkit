@@ -44,7 +44,7 @@ func speak(language string, s spoken) *locale.Locale {
 
 // Line is the note entity this file renders: `slug` declares both a label and a
 // help line, `Title` declares only a Doc. A command's argument reaches the same
-// projection (controlWords), so one assertion here covers both screens.
+// projection (formField), so one assertion here covers both screens.
 type Line struct {
 	entity.Base
 	Title string `json:"title" doc:"What this line is about"`

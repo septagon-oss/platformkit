@@ -6,6 +6,7 @@ package events
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/appname"
@@ -106,88 +107,51 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 // TestJetStreamStopsRedeliveringAPoisonEvent is the same policy on the other
 // transport, against the NATS `make up` starts. The handler cap and consumer
 // backoff bound work while terminal recording remains recoverable.
+//
+// What this can ask about the retry ladder is bounded by where its facts live. The
+// ladder is timed by the server; the only clock inside this process reads the moment a
+// callback started, and a callback that cannot run — descheduled by a busy host, stopped
+// at a debugger, parked behind a garbage collection — leaves the broker firing its
+// redelivery timers anyway and the client stamping the queued deliveries a few
+// milliseconds apart the moment it resumes. Held at the poison handler's return for two
+// seconds, this case recorded its five attempts and its one terminal row, its last three
+// redeliveries stamped 3ms, 4ms and 1ms apart and the row written 217ms after its own wait
+// began; released at once the row lands 1.83s to 2.00s after the relay and the stamps sit
+// on their rungs — 44ms, 200ms, 500ms, 1.001s — or below them, when a cold first delivery
+// outlasts the 50ms AckWait that is rung one. Same policy, same binary, same broker: this
+// case asks the server what it was told to do, and keeps the one bound a stall lengthens.
 func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
-	url := os.Getenv("PLATFORMKIT_TEST_NATS_URL")
-	if url == "" {
+	if os.Getenv("PLATFORMKIT_TEST_NATS_URL") == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
 	fast(t)
-	// Unequal rungs catch a second retry delay layered onto the broker timer.
+	// Unequal rungs: the stored ladder and the printed gaps name which rung they carry.
 	delivery.Backoff = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, 500 * time.Millisecond, time.Second}
 	admin, conn := dbtest.Schema(t)
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
 
-	// This run's own subjects and consumers: the stream is shared with every
+	// This run's own subject and consumer: the stream is shared with every
 	// other run.
-	seed := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
-	name, warmup := seed+".happened", seed+".warmed"
-	transport, err := provider.JetStream(appname.Name(""), url)
-	if err != nil {
-		t.Fatalf("JetStream: %v", err)
-	}
-	t.Cleanup(func() { _ = transport.(interface{ Close() error }).Close() })
+	name := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "") + ".happened"
+	transport, js := jetstreamForTest(t)
 
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 	var mu sync.Mutex
 	attempts := 0
 	var deliveries []time.Time
-	handled := make(chan struct{}, 1)
-	err = Consume(ctx, conn, transport, []Subscription{
-		// A second event on its own subject and its own durable, so it is not a
-		// delivery of the one under test: it is handled once and acknowledged.
-		{Module: "ledger", Name: warmup,
-			Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
-				handled <- struct{}{}
-				return nil
-			},
+	err := Consume(ctx, conn, transport, []Subscription{{
+		Module: "ledger", Name: name,
+		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
+			mu.Lock()
+			attempts++
+			deliveries = append(deliveries, time.Now())
+			mu.Unlock()
+			return errors.New("this will never work")
 		},
-		{Module: "ledger", Name: name,
-			Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
-				mu.Lock()
-				attempts++
-				deliveries = append(deliveries, time.Now())
-				mu.Unlock()
-				return errors.New("this will never work")
-			},
-		},
-	})
+	}})
 	if err != nil {
 		t.Fatalf("Consume: %v", err)
-	}
-
-	// Spend the cold start before making a measurement of a warm path.
-	//
-	// `deliveries` records when a handler is *entered*: after the broker sent
-	// the delivery, after the connection's callback goroutine woke, and after
-	// Consume opened the tenant transaction and wrote the claim — whose first
-	// use of the pool dialled a connection too. Only the first delivery of a run
-	// pays for that, so only its gap is measured short of the rung it is timed
-	// against. Sixteen runs of the ladder as it was show exactly that shape: the
-	// median gap at rung 1 was 45.9 ms against its 50 while rungs 2-4 medians
-	// were 200.5, 500.6 and 1000.8 against 200, 500 and 1000. The one recorded
-	// failure read 16.3 ms — 33.7 ms of one-sided cost, on a gate run carrying
-	// every other suite in this repository at once — and the want/2 floor refused
-	// a ladder whose broker timer had run each rung in full.
-	//
-	// Awaiting one ordinary delivery first moves that cost out of the window
-	// between two timestamps: the same sixteen runs afterwards read a rung-1
-	// median of 51.7 ms, and a worst-case shortfall (6.4 ms) below rung 2's worst
-	// (8.9 ms) in the same sample. No bound here moved: a retry that never comes,
-	// comes immediately, or is delayed twice still fails the loop below, and the
-	// rungs stay unequal so a layered second delay still doubles a gap.
-	if err := db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return Publish(ctx, tx, warmup, nil)
-	}); err != nil {
-		t.Fatalf("publish the warm-up event: %v", err)
-	}
-	if err := Relay(t.Context(), conn, transport); err != nil {
-		t.Fatalf("relay the warm-up event: %v", err)
-	}
-	select {
-	case <-handled:
-	case <-time.After(20 * time.Second):
-		t.Fatal("the warm-up delivery never reached its handler")
 	}
 
 	err = db.Run(tenancy.WithTenant(t.Context(), tenant), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -197,14 +161,48 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 	// The first delivery cannot leave the server before the relay hands the event over,
-	// so relayed bounds the first rung from below whatever the handler's own start costs.
+	// so relayed is the instant the broker's own ladder starts from, and every rung below
+	// is measured against the server's clock rather than this process's.
 	relayed := time.Now()
 	if err := Relay(t.Context(), conn, transport); err != nil {
 		t.Fatalf("Relay: %v", err)
 	}
 
+	// The wait the policy itself imposes before a terminal row can exist: the server
+	// times delivery n+1 from delivery n by rung n, and the row follows the last
+	// delivery. No schedule inside this process can pull any of those instants earlier —
+	// a stalled client only adds to the total — so this bound stands whatever the host
+	// does, and breaking it means the ladder was not applied at the broker.
+	var floor time.Duration
+	for n := 1; n < delivery.MaxDeliveries; n++ {
+		floor += delivery.Backoff[min(n, len(delivery.Backoff))-1]
+	}
+
+	// The dead-letter row is what this waits for, and the wait asks the table, not
+	// the clock: every turn of this loop reads state, and it leaves as soon as the
+	// row is there. deadLetterBound then bounds how long the broker may take to give
+	// up — it is not a budget the case spends.
+	//
+	// The floor under it is the policy's own: `floor` above, 1.75s, and nothing is
+	// dead-lettered before the last rung has expired. Measured against the relay rather
+	// than against the start of the wait, six runs on a host carrying seven other
+	// worktrees' databases answered 1.829s to 1.997s — the worst of them the policy plus
+	// 0.25s of scheduling, 14%, so the wait is the ladder and not the machine.
+	//
+	// The bound is not 10 × that. The brief's formula is 10 × the p99 *on the CI
+	// runner*, and no CI log holds this wait yet — the line below prints it on every
+	// run, so the next reader prices this number from the job's own output. Two numbers
+	// are actually in hand: 10 × 2.0s ≈ 20s from this host, and the 30s this case
+	// already waited, which appears in no log as ever approached. A bound is a refusal,
+	// and the one thing a bound priced on a workstation cannot afford is to refuse more
+	// than the number it replaced: CI's runner is slower than the machine that measured
+	// 2.0s, and narrowing a wait no run ever came near turns a slow broker into a red
+	// job for no fact about the code. So the bound goes up, to double the wait it
+	// replaces — 60s, 30 × the worst answer seen here and 34 × the policy's own floor.
+	const deadLetterBound = 60 * time.Second
 	var got int
-	deadline := time.Now().Add(30 * time.Second)
+	waited := time.Now()
+	deadline := waited.Add(deadLetterBound)
 	for {
 		if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM platformkit_dead_letters`).Scan(&got); err != nil {
 			t.Fatalf("count the dead letters: %v", err)
@@ -213,36 +211,75 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("JetStream never gave up: %d dead letters after %d attempts", got, attempts)
+			mu.Lock()
+			seen := attempts
+			mu.Unlock()
+			t.Fatalf("JetStream never gave up within the %s this case allows: %d dead letters after %d attempts",
+				deadLetterBound, got, seen)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	answered := time.Now()
+	t.Logf("the dead letter answered %s after the relay — the policy's own floor is %s — inside the %s the case allows",
+		answered.Sub(relayed).Truncate(time.Millisecond), floor, deadLetterBound)
 	mu.Lock()
-	defer mu.Unlock()
-	if attempts != delivery.MaxDeliveries {
-		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, delivery.MaxDeliveries)
+	seenAttempts, stamped := attempts, slices.Clone(deliveries)
+	mu.Unlock()
+	if seenAttempts != delivery.MaxDeliveries {
+		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", seenAttempts, delivery.MaxDeliveries)
 	}
-	// JetStream schedules each redelivery from the moment it *delivered* (the message is
-	// left pending and AckWait is the ladder's first rung), and the handler stamps the
-	// moment it *started*, which trails the delivery by however long the first,
-	// cold call took: under -race on CI that was 31 ms of a 50 ms rung, and locally
-	// the gap read 1.6 ms in one run of eight. So the first rung is measured from
-	// the relay, which no delivery precedes — a lower bound no handler latency can
-	// break — and the later rungs between warm deliveries, where both ends carry the
-	// same small latency and the gaps land on their rungs to the millisecond.
-	for i := 1; i < len(deliveries); i++ {
-		want := delivery.Backoff[min(i, len(delivery.Backoff))-1]
-		gap, from := deliveries[i].Sub(deliveries[i-1]), "the delivery before"
-		low := want / 2
-		if i == 1 {
-			gap, from, low = deliveries[1].Sub(relayed), "the relay", want
-		}
-		t.Logf("delivery %d at %s after %s, configured %s", i+1, gap, from, want)
-		if gap < low || gap > want+250*time.Millisecond {
-			t.Errorf("delivery %d came %s after %s, want one %s backoff plus scheduling tolerance", i+1, gap, from, want)
-		}
+	// One row, still, after everything the broker retried. The wait above leaves as
+	// soon as it sees the first; this reads it again at the end of the case, so a
+	// second terminal row for the same event is a failure and not a race a reader
+	// happens never to hit.
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM platformkit_dead_letters`).Scan(&got); err != nil {
+		t.Fatalf("count the dead letters again: %v", err)
 	}
-
+	if got != 1 {
+		t.Errorf("%d dead letters after %d attempts, want exactly 1", got, seenAttempts)
+	}
+	// What the server was told, read back from the server. The consumer this
+	// subscription made carries the ladder the code asked for: the rungs it waits
+	// between deliveries, the first rung as its acknowledgement deadline, and no cap of
+	// its own — the handler cap in Subscribe is what ends attempts, and a broker cap
+	// would stop redelivery before terminal recovery is ever recorded. These are the
+	// ladder's three facts, they are the broker's own state rather than this process's
+	// schedule, and a consumer that came back with a shorter one is the regression the
+	// gaps this case used to assert on stood in for.
+	durable := Subscription{Module: "ledger", Name: name}.durable()
+	info, err := js.ConsumerInfo(stream, durable)
+	if err != nil {
+		t.Fatalf("read the consumer back from the broker: %v", err)
+	}
+	if info.Config.AckWait != delivery.Backoff[0] {
+		t.Errorf("the consumer's ack_wait is %s, want the ladder's first rung %s", info.Config.AckWait, delivery.Backoff[0])
+	}
+	if !slices.Equal(info.Config.BackOff, delivery.Backoff) {
+		t.Errorf("the consumer's backoff is %v, want %v", info.Config.BackOff, delivery.Backoff)
+	}
+	if info.Config.MaxDeliver != -1 {
+		t.Errorf("the consumer's max_deliver is %d, want -1: the handler cap bounds attempts, and a broker cap ends redelivery before the terminal row is ever written",
+			info.Config.MaxDeliver)
+	}
+	// And the one timing bound that runs entirely on the server's clock, for the reason
+	// given where it is computed: a terminal row inside the ladder's own floor is a ladder
+	// the broker never applied — a second delay layered on its timer is why the rungs are
+	// unequal, and a server that redelivered immediately is the same defect wearing the
+	// other sign.
+	if since := answered.Sub(relayed); since < floor {
+		t.Errorf("the terminal row arrived %s after the relay, before the %s of backoff the broker holds between %d deliveries",
+			since.Truncate(time.Millisecond), floor, delivery.MaxDeliveries)
+	}
+	// The stamps are printed and not asserted, which is the whole finding this case was
+	// rewritten around: they are the client's clock, so a gap here is a fact about the
+	// host that ran the case. They stay in the job log because the wait above, the
+	// server's own configuration and these numbers together are what the next reader
+	// prices a bound from — and because a reader who cannot see the schedule cannot tell
+	// a stalled client from a broker that fired early either.
+	for i := 1; i < len(stamped); i++ {
+		t.Logf("delivery %d stamped %s after the one before, on the client's clock",
+			i+1, stamped[i].Sub(stamped[i-1]).Truncate(time.Millisecond))
+	}
 }
 
 // TestADriftedConsumerIsReconciled, against the NATS `make up` starts.
@@ -516,6 +553,39 @@ func TestADriftedStreamIsReconciled(t *testing.T) {
 	deliver(t, transport, seen, name)
 }
 
+// childCommitBound is how long the case below gives the child row to be in the outbox.
+// It bounds the one thing this process cannot order, and it is not a budget the case
+// spends. In the restart=false shape the handler was still running when Relay gave up:
+// close(release) lets it return on the worker's own schedule, and the transaction that
+// carries the child event is *that* delivery's, not the pass's — so the commit lands
+// whenever the session that has been waiting on a channel gets to finish, and a single
+// read of the table races it. Measured on 2026-10-09 at 13:35:01Z, `make check` with 33
+// packages booting schemas beside this one answered `committed child events=0, want 1:
+// <nil>` — no error from the read, and no dead-letter row, because the handler never
+// failed, it was simply not finished — while the same case with the package to itself
+// answered 1 in 0.53 s, 0.69 s and 0.82 s. Ten seconds is the host's share; a delivery
+// whose transaction never commits still fails the case, and the message below says which
+// of the three states it found.
+const childCommitBound = 10 * time.Second
+
+// awaitCommittedChildEvents counts the child rows in the outbox, leaving as soon as one
+// is there and giving up at the bound. Every turn asks the table, so the wait costs only
+// what the commit costs, and "never" is still an answer this case refuses.
+func awaitCommittedChildEvents(t *testing.T, admin *sql.DB, bound time.Duration) int {
+	t.Helper()
+	deadline := time.Now().Add(bound)
+	var completed int
+	for {
+		if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil {
+			t.Fatalf("reading the committed child events: %v", err)
+		}
+		if completed > 0 || time.Now().After(deadline) {
+			return completed
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // A relay deadline does not acknowledge a handler that is still running. Its
 // transaction can finish after the pass ends, or roll back when the worker dies.
 func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
@@ -581,27 +651,21 @@ func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
 			if err := Relay(finish, conn, transport); err != nil {
 				t.Fatal(err)
 			}
-			// The committed child is the fact under test, and it becomes true when
-			// Postgres commits it, not when this test next looks. At restart=false
-			// nothing ever cancelled that delivery: the pass ended, its transaction
-			// carried on, and its commit races this read — a pass that finds the
-			// parent row still locked by the cancelled pass's own transaction skips
-			// it with SKIP LOCKED and returns nil without waiting for anything.
-			// The window the pass was given is the window the commit is given, and
-			// the assertion on the other side of it is the same number as before.
-			var completed int
-			settle := time.Now().Add(3 * time.Second)
-			for {
-				if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil {
-					t.Fatalf("committed child events: %v", err)
+			if completed := awaitCommittedChildEvents(t, admin, childCommitBound); completed != 1 {
+				var pending bool
+				var dead int
+				if err := admin.QueryRowContext(t.Context(), "SELECT published_at IS NULL FROM platformkit_outbox WHERE name=$1", name).Scan(&pending); err != nil {
+					t.Fatalf("reading the parent row after the child failed to arrive: %v", err)
 				}
-				if completed >= 1 || !time.Now().Before(settle) {
-					break
+				if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_dead_letters").Scan(&dead); err != nil {
+					t.Fatalf("reading the dead letters after the child failed to arrive: %v", err)
 				}
-				time.Sleep(20 * time.Millisecond)
-			}
-			if completed != 1 {
-				t.Fatalf("committed child events=%d, want 1", completed)
+				// Three states, three meanings, and the old message could not tell them
+				// apart: still pending with no dead letter is the handler's transaction
+				// never finishing, stamped with no dead letter is a child publish that
+				// vanished between the handler and the INSERT, and a dead letter is the
+				// handler refusing — a refusal, not a slow commit.
+				t.Fatalf("committed child events=%d, want 1 within %v: parent still pending=%t, %d dead letter(s)", completed, childCommitBound, pending, dead)
 			}
 		})
 	}

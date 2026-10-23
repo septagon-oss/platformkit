@@ -338,71 +338,22 @@ func cases() []porttest.Case[Fixture] {
 		{
 			Name:    "a tenant that has configured nothing has the defaults",
 			Because: "what a read answers before anybody has written is the port's domain: system, not dark, and a colour somebody chose for everyone",
-			Run: func(t *testing.T, f Fixture) {
-				got, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				switch {
-				case got.Theme != contracts.ThemeSystem:
-					t.Errorf("theme is %q, want %q: a tenant that has said nothing has not chosen dark",
-						got.Theme, contracts.ThemeSystem)
-				case got.PrimaryColor != f.Palette.Accent(contracts.ThemeLight):
-					// The stored colour is DefaultPrimaryColor — nobody chose one — and what
-					// the read answers is the installation's own. A tenant that has never
-					// opened the form is never handed the empty colour to do with as it likes.
-					t.Errorf("the colour is %q, want the installation's %q",
-						got.PrimaryColor, f.Palette.Accent(contracts.ThemeLight))
-				case got.Title != "" || len(got.Nav) != 0:
-					t.Errorf("an unconfigured site says %+v", got)
-				case got.Revision != 0:
-					t.Errorf("an unconfigured site is at revision %d; the number counts writes", got.Revision)
-				}
-			},
+			Run:     readDefaults,
 		},
 		{
 			Name:    "saving records what was configured",
 			Because: "domain contents: every field reads back as it was written, and the navigation in the order it was written in",
-			Run: func(t *testing.T, f Fixture) {
-				if out := save(t, f, acme()); out.ID == uuid.Nil {
-					t.Error("the saved settings have no id")
-				}
-				got, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				switch {
-				case got.Title != "Acme" || got.Tagline != "We make things" || got.HomeSlug != "welcome":
-					t.Errorf("the settings read back as %+v", got)
-				case got.Theme != contracts.ThemeDark || got.PrimaryColor != "#b45309":
-					t.Errorf("the look reads back as %q/%q", got.Theme, got.PrimaryColor)
-				case len(got.Nav) != 2 || got.Nav[0].Label != "About" || got.Nav[1].Path != "/blog":
-					t.Errorf("the navigation reads back as %+v, and its order is the order it was written in", got.Nav)
-				}
-			},
+			Run:     saveSettings,
 		},
 		{
 			Name:    "changing one thing says so",
 			Because: "the generated success saves onto an unconfigured site; this is the other half of the same promise — a second save that does change something is news, and it is still one site",
-			Run: func(t *testing.T, f Fixture) {
-				first := save(t, f, acme())
-				changed := acme()
-				changed.Nav = append(changed.Nav, contracts.NavItem{Label: "Contact", Path: "/contact"})
-				var out *contracts.SiteSettings
-				f.one(t, "adding a link", func() { out = save(t, f, changed) })
-				if out.ID != first.ID || len(out.Nav) != 3 {
-					t.Errorf("the changed settings are %s with %d links", out.ID, len(out.Nav))
-				}
-			},
+			Run:     changeOneSetting,
 		},
 		{
 			Name:    "a site with no home page is saved",
 			Because: "the success half of \"a home page is named by a slug\": empty is not a refusal, because a site is configurable before anything is published at any name, and a description states a refusal or a success and not both",
-			Run: func(t *testing.T, f Fixture) {
-				if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme"}); err != nil {
-					t.Errorf("a site with no home page: %v", err)
-				}
-			},
+			Run:     saveWithoutHome,
 		},
 		{
 			// The other side of the six contrast refusals above, and the reason they are
@@ -414,35 +365,14 @@ func cases() []porttest.Case[Fixture] {
 			// comparison made on rounded ratios refuses #8a8a8a, and this case is red.
 			Name:    "an accent inside the band is accepted",
 			Because: "the success half of the contrast refusals, and where the band's edge is pinned: a description states a refusal or a success and not both",
-			Run: func(t *testing.T, f Fixture) {
-				save(t, f, acme())
-				for _, colour := range []string{
-					"#2563eb", // 4.50 / 3.55 — a blue inside the band, and one a tenant may choose
-					"#b45309", // 4.37 / 3.66
-					"#0f766e", // 4.76 / 3.36
-					"#7c3aed", // 4.96 / 3.22
-					"#7f7f7f", // 3.48 / 4.59 — a mid grey clears both by a wider margin than either extreme
-					"#8a8a8a", // 3.0044 / 5.32 — the nearest colour above the band's edge
-				} {
-					if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: colour}); err != nil {
-						t.Errorf("saving %q: %v: a colour that reads at least %g:1 against both canvases is accepted", colour, err, contracts.MinAccentRatio)
-					}
-				}
-			},
+			Run:     acceptAccentBand,
 		},
 		{
 			// A colour is compared, not guessed: the trim and the lower-case happen
 			// first, so the same colour typed two ways is stored one way.
 			Name:    "a colour typed with room and case is the colour it means",
 			Because: "the shape of a refusal is the refusal's own; what a storable colour is, and in what spelling it is stored, is this port's domain and no description states it",
-			Run: func(t *testing.T, f Fixture) {
-				out := save(t, f, &contracts.SiteSettings{Title: "Acme", PrimaryColor: " #2563EB "})
-				if out.PrimaryColor != "#2563eb" {
-					t.Errorf("the stored colour is %q, want %q", out.PrimaryColor, "#2563eb")
-				}
-				_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: "#2563E b"})
-				mustBe(t, err, crud.ErrInvalid)
-			},
+			Run:     normaliseColour,
 		},
 		{
 			// The read's answer is a storable document, and saving it back is not an
@@ -452,30 +382,7 @@ func cases() []porttest.Case[Fixture] {
 			// the trail that nobody typed.
 			Name:    "the read's answer, saved back, is not a change",
 			Because: "the generated retry saves the same input twice; this one saves what the read answered, which is a different document from the one anybody typed",
-			Run: func(t *testing.T, f Fixture) {
-				shown, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				if shown.PrimaryColor == contracts.DefaultPrimaryColor {
-					t.Fatalf("the read answered the empty colour; every door that shows these settings needs a colour")
-				}
-				if first := save(t, f, shown); first.Revision != 1 {
-					t.Errorf("the first save left the row at revision %d", first.Revision)
-				}
-				again, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				var out *contracts.SiteSettings
-				f.silent(t, "saving the read's answer back", func() { out = save(t, f, again) })
-				if out.Revision != 1 {
-					t.Errorf("echoing the read's answer moved the revision to %d; nothing was chosen, so nothing was written", out.Revision)
-				}
-				if out.PrimaryColor != f.Palette.Accent(contracts.ThemeLight) {
-					t.Errorf("the save answered %q, want the installation's accent it was given", out.PrimaryColor)
-				}
-			},
+			Run:     echoSettings,
 		},
 		{
 			// The echo is compared against both of the installation's accents and not
@@ -486,74 +393,21 @@ func cases() []porttest.Case[Fixture] {
 			// colour.
 			Name:    "the theme can change while the accent stays unchosen",
 			Because: "it sends the read's answer for one mode and asks the other mode's answer back, which is a rule about two reads and one write, not a refusal of an input",
-			Run: func(t *testing.T, f Fixture) {
-				if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", Theme: contracts.ThemeLight}); err != nil {
-					t.Fatalf("save a light site: %v", err)
-				}
-				shown, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				if shown.PrimaryColor != f.Palette.Accent(contracts.ThemeLight) {
-					t.Fatalf("a light site with no accent reads %q", shown.PrimaryColor)
-				}
-				shown.Theme = contracts.ThemeDark
-				save(t, f, shown)
-				got, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				if got.PrimaryColor != f.Palette.Accent(contracts.ThemeDark) {
-					t.Errorf("the dark site reads %q, want %q: the theme moved and the accent is still nobody's",
-						got.PrimaryColor, f.Palette.Accent(contracts.ThemeDark))
-				}
-			},
+			Run:     changeUnchosenTheme,
 		},
 		{
 			// A colour somebody did choose is not the installation's, whichever door it
 			// is read from.
 			Name:    "an accent the tenant chose survives every door",
 			Because: "it asks the locked read, which the description has no channel for: Save and Settings are the two operations the floor runs",
-			Run: func(t *testing.T, f Fixture) {
-				save(t, f, acme())
-				got, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				if got.PrimaryColor != "#b45309" {
-					t.Errorf("Settings answers %q, want the #b45309 this tenant wrote", got.PrimaryColor)
-				}
-				locked, err := f.Locked.SettingsForUpdate(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("SettingsForUpdate: %v", err)
-				}
-				if locked.PrimaryColor != got.PrimaryColor || locked.Revision != got.Revision {
-					t.Errorf("the locked read answers %q at revision %d and the unlocked read %q at %d",
-						locked.PrimaryColor, locked.Revision, got.PrimaryColor, got.Revision)
-				}
-			},
+			Run:     preserveChosenAccent,
 		},
 		{
 			// Both reads are the same answer, which is what lets a change proposal be
 			// diffed against the document the person was shown.
 			Name:    "the locked read says what the unlocked read says",
 			Because: "a second read of the same row is not one of the port's operations: contracts.LockedReader is a door on Settings, and the floor runs two operations",
-			Run: func(t *testing.T, f Fixture) {
-				unlocked, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				locked, err := f.Locked.SettingsForUpdate(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("SettingsForUpdate: %v", err)
-				}
-				if locked.PrimaryColor != unlocked.PrimaryColor {
-					t.Errorf("the locked read answers %q and the plain read %q", locked.PrimaryColor, unlocked.PrimaryColor)
-				}
-				if locked.Revision != unlocked.Revision {
-					t.Errorf("the locked read is at revision %d and the plain read at %d", locked.Revision, unlocked.Revision)
-				}
-			},
+			Run:     readLockedSettings,
 		},
 		{
 			// The installation's own accent is not a colour this tenant may hold, and the
@@ -562,38 +416,14 @@ func cases() []porttest.Case[Fixture] {
 			// which — for the accent of the *other* mode — is not the value it sent.
 			Name:    "the installation's own accent is not a tenant's colour",
 			Because: "it is not a refusal at all: the write is accepted and the echoed value is cleared, which is a third answer no Refusal of this description can be",
-			Run: func(t *testing.T, f Fixture) {
-				save(t, f, &contracts.SiteSettings{
-					Title: "Acme", Theme: contracts.ThemeLight,
-					PrimaryColor: f.Palette.Accent(contracts.ThemeDark),
-				})
-				got, err := f.Service.Settings(f.Ctx, f.Tx)
-				if err != nil {
-					t.Fatalf("Settings: %v", err)
-				}
-				if got.PrimaryColor != f.Palette.Accent(contracts.ThemeLight) {
-					t.Errorf("a light site sent the installation's dark accent and reads %q, want %q: the value was nobody's choice",
-						got.PrimaryColor, f.Palette.Accent(contracts.ThemeLight))
-				}
-			},
+			Run:     distinguishInstallationAccent,
 		},
 		{
 			// The two numbers a shell is told are the two the rule compared — same
 			// arithmetic, same rounding, one implementation.
 			Name:    "the ratio the document quotes is the ratio the rule used",
 			Because: "contracts.AccentRatios is arithmetic beside the port and not a call on it: nothing in the description could run it",
-			Run: func(t *testing.T, f Fixture) {
-				light, dark, ok := contracts.AccentRatios("#2563eb")
-				if !ok {
-					t.Fatal("AccentRatios cannot read a colour this rule has measured for years")
-				}
-				if light != 4.50 || dark != 3.55 {
-					t.Errorf("#2563eb reads %.2f / %.2f, want 4.50 / 3.55", light, dark)
-				}
-				if _, err := contracts.ContrastRatio("mint", contracts.CanvasLight); err == nil || !strings.Contains(err.Error(), "mint") {
-					t.Errorf("ContrastRatio(%q, …) = %v, want an error naming the value", "mint", err)
-				}
-			},
+			Run:     verifyContrastRatio,
 		},
 	}
 }
