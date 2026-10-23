@@ -55237,6 +55237,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/tenant/contracts/tenanttest/service_case_names_are_distinct_test.go",
+   "id": "modules/tenant/contracts/tenanttest/service_case_names_are_distinct_test.go#TestServiceCaseNamesAreDistinct",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestServiceCaseNamesAreDistinct",
+   "needs_db": false,
+   "pkg": "modules/tenant/contracts/tenanttest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/tenant/hosts_test.go",
    "id": "modules/tenant/hosts_test.go#TestPublishedPortReadsAPortAndNothingElse",
    "kind": "go",
@@ -81459,7 +81478,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2186,
+  "files": 2187,
   "forge_runs": [
    408,
    413,
@@ -81493,7 +81512,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3528,
+   "behaviour": 3529,
    "composition": 468,
    "contract": 21,
    "journey": 109
@@ -81512,23 +81531,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4126,
+  "rows": 4127,
   "tiers": {
    "merge": 2548,
    "nightly": 109,
-   "push": 1469
+   "push": 1470
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1941,
+   "keep": 1942,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3740,
+   "keep": 3741,
    "keep-rewrite": 170,
    "merge": 216
   }
