@@ -79719,6 +79719,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/sign_in_link_evidence_test.py",
+   "id": "scripts/sign_in_link_evidence_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "sign_in_link_evidence_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/test_comments_explain_what_they_protect_test.sh",
    "id": "scripts/test_comments_explain_what_they_protect_test.sh",
    "kind": "shell_pin",
@@ -81726,7 +81746,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2194,
+  "files": 2195,
   "forge_runs": [
    408,
    413,
@@ -81761,7 +81781,7 @@
   ],
   "layers": {
    "behaviour": 3539,
-   "composition": 470,
+   "composition": 471,
    "contract": 21,
    "journey": 110
   },
@@ -81779,23 +81799,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4140,
+  "rows": 4141,
   "tiers": {
    "merge": 2564,
    "nightly": 110,
-   "push": 1466
+   "push": 1467
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1949,
+   "keep": 1950,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3754,
+   "keep": 3755,
    "keep-rewrite": 170,
    "merge": 216
   }
