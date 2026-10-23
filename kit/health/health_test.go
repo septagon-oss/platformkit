@@ -302,7 +302,7 @@ func (sawContext) Report(ctx context.Context) (string, error) {
 // poll running past the request it answered, unbounded, on a path probed every few
 // seconds. Handed context.Background() instead, nothing could stop it.
 func TestAReportSeesTheCancellationOfTheProbeThatAskedForIt(t *testing.T) {
-	h := health.Mux(nil, func(w http.ResponseWriter, _ *http.Request, refused *problem.Problem) {
+	h := health.MuxWithFaults(nil, func(w http.ResponseWriter, _ *http.Request, refused *problem.Problem) {
 		// Nothing fails in this composition, so the fault door must never be asked:
 		// the assertion below is about the report, and a probe that refused would
 		// never reach it.

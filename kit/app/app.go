@@ -1381,7 +1381,7 @@ func (a *App) race(ctx context.Context, halves ...func(context.Context) error) e
 // own. The worker role builds the API on the way through Start whatever role it
 // serves, so this costs no second one.
 func (a *App) probes(api *httpx.API, conn *db.Conn) http.Handler {
-	return health.Mux(a.log, api.Siteless, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
+	return health.MuxWithFaults(a.log, api.Siteless, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
 }
 
 // routeKind names the constructor a route used, for the one error that has to

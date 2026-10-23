@@ -81,9 +81,10 @@ type Report interface {
 // that needs it.
 
 // Faults answers a probe's failure in the shape the caller asked for. kit/httpx's
-// (*API).Siteless satisfies it and is the only implementation: a probe never writes
-// its own body again, so the answer to a monitor is the document every other kernel
-// refusal writes — same encoder, field order and Content-Type — not a copy beside it.
+// (*API).Siteless is the only implementation the composition passes, so a monitor is
+// answered by the document every other kernel refusal writes — same encoder, field
+// order and Content-Type — and a person at the address is shown a page. A caller with
+// no API leaves the port nil, and writeProblem answers with that document alone.
 //
 // It is one call and deliberately not `fail`, because a probe cannot pay for what
 // `fail` does: resolving the host is a real query with a two second budget (this
@@ -98,13 +99,28 @@ type Faults func(w http.ResponseWriter, r *http.Request, refused *problem.Proble
 // Register mounts the two probes beside the API, on the router that carries
 // neither the request middleware nor a transaction. Both roles therefore answer
 // the same bytes from the same handler, which is what the deployment's one
-// probe stanza already assumed. See Mux, and httpx.API.Probes.
+// probe stanza already assumed. See MuxWithFaults, and httpx.API.Probes.
 func Register(api *httpx.API, checks []Check, reports ...Report) {
-	api.Probes(Mux(slog.Default(), api.Siteless, checks, reports...), livePath, readyPath)
+	api.Probes(MuxWithFaults(slog.Default(), api.Siteless, checks, reports...), livePath, readyPath)
 }
 
-// Mux is the two probes. It is a plain net/http mux because that is all a probe
-// needs: no tenant, no session, no operation to declare, and no transaction.
+// Mux is the two probes with no fault door: every failure of a probe is answered
+// by the problem document this package writes (writeProblem), which is the shape
+// a readiness stanza has compared since the probe existed. A caller that has the
+// kernel's API hands its door to MuxWithFaults instead, and a refused probe then
+// reaches the person as a page in the reader's language rather than as a document
+// only a monitor reads.
+func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
+	return MuxWithFaults(log, nil, checks, reports...)
+}
+
+// MuxWithFaults is the two probes answered through the caller's fault door, which
+// is (*httpx.API).Siteless: the one composition that has an API to ask has a page
+// to give a probe, and a probe that has none — a worker served alone — passes nil
+// and is answered in the problem shape, as Mux does.
+//
+// It is a plain net/http mux because that is all a probe needs: no tenant, no
+// session, no operation to declare, and no transaction.
 //
 // It is the whole answer in both roles — the worker serves it alone, the web
 // role mounts it beside the API — because a readiness probe that says one thing
@@ -112,21 +128,12 @@ func Register(api *httpx.API, checks []Check, reports ...Report) {
 // learn twice. It was two implementations of two routes until the web role's
 // probes had to stop resolving a tenant, at which point the one that already
 // did not was the answer.
-//
-// The fault door is a parameter rather than something Mux builds, because a mux
-// built without an *API has no way to reach one: it lives outside the middleware
-// chain that owns one. Every caller passes the same door — (*httpx.API).Siteless —
-// which is what makes a refused probe read alike in both roles.
-func Mux(log *slog.Logger, faults Faults, checks []Check, reports ...Report) http.Handler {
+func MuxWithFaults(log *slog.Logger, faults Faults, checks []Check, reports ...Report) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
 	if faults == nil {
-		// A wiring mistake, caught at boot where the wiring is, rather than at the
-		// first probe during the outage it is there to report. Refusing it is also the
-		// only honest answer available: the alternative is a mux that writes a problem
-		// body of its own, which is the second encoder this port exists to remove.
-		panic("health: Mux requires the kernel's fault door; pass (*httpx.API).Siteless")
+		faults = writeProblem
 	}
 	mux := http.NewServeMux()
 	// Both probes answer GET, and say so themselves. Registering the address without a
@@ -211,6 +218,16 @@ func ready(ctx context.Context, reports []Report) string {
 		return `{"status":"ok"}`
 	}
 	return string(body)
+}
+
+// writeProblem is the door Mux mounts when the caller has no *httpx.API to borrow
+// one from: the kernel's one problem document, written from kit/problem rather than
+// copied here. It is what the two probes wrote before they had a door to be handed,
+// and a monitor that diffs their body reads the same bytes either way — the page a
+// real fault door can render is what a caller without one is missing, not the verdict.
+func writeProblem(w http.ResponseWriter, _ *http.Request, refused *problem.Problem) {
+	body, _ := json.Marshal(refused)
+	write(w, refused.Status, string(body), problem.ContentType)
 }
 
 // onlyGet is the verb gate both probes answer for themselves: GET, and HEAD because a

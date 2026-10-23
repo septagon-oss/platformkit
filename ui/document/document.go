@@ -329,6 +329,18 @@ func Bare(body []g.Node) g.Node {
 	return components.Standalone(components.ComponentProps{}, body...)
 }
 
+// Fault is the page for a refusal a person can act on: the status text, the
+// detail, and one way back. title is what the status is called — the caller words it,
+// because this package links no net/http and holds no copy of its own.
+//
+// It is five positional strings rather than FaultProps for one reason: the affordances
+// a person may act on grew into the props struct, and the page that has only the way
+// back stays the simplest thing to call. It is the same document either way — this is
+// FaultPage with one field filled.
+func Fault(status int, title, detail, back, backLabel string) View {
+	return FaultPage(FaultProps{Status: status, Title: title, Sentence: detail, Way: back, WayLabel: backLabel})
+}
+
 // ToneInfo is the quiet voice: an outcome the application reached by working as
 // designed — a feature the plan does not carry — rather than one that broke.
 const ToneInfo = "info"
@@ -362,11 +374,11 @@ type FaultProps struct {
 	// Back is the page the visitor came from, and only ever a path on this site;
 	// ui/page checks that before it gets here.
 	Back, BackLabel string
-	// Home is the way on the composition owns — what this page used to call its
-	// only link. It is never the address that refused: Retry already is that,
-	// deliberately, and it appears above Home so a person who could simply wait
-	// is not offered the loss of their place instead.
-	Home, HomeLabel string
+	// Way is the way on the composition owns — the one link Fault offers. It is
+	// never the address that refused: Retry already is that, deliberately, and it
+	// appears above Way so a person who could simply wait is not offered the loss of
+	// their place instead.
+	Way, WayLabel string
 	// SignIn is the chrome's own sign-in address, offered only on the verdict
 	// signing in could change.
 	SignIn, SignInLabel string
@@ -379,8 +391,10 @@ type FaultProps struct {
 	Reference, ReferenceLabel, Code string
 }
 
-// Fault is the page for a refusal a person may be able to act on.
-func Fault(p FaultProps) View {
+// FaultPage is the refusal document a person may be able to act on: the verdict's
+// name, its sentence, and every way on that exists for this request. A field that is
+// empty renders no control, so the page never offers a door nobody mounted.
+func FaultPage(p FaultProps) View {
 	if strings.TrimSpace(p.Sentence) == "" {
 		p.Sentence = "That did not work."
 	}
@@ -394,7 +408,7 @@ func Fault(p FaultProps) View {
 	if p.RetryAfter > 0 {
 		body = append(body, refusalSentence(p.RetryAfterLabel, "secondary"))
 	}
-	for _, way := range []struct{ href, label string }{{p.Back, p.BackLabel}, {p.Home, p.HomeLabel}, {p.SignIn, p.SignInLabel}} {
+	for _, way := range []struct{ href, label string }{{p.Back, p.BackLabel}, {p.Way, p.WayLabel}, {p.SignIn, p.SignInLabel}} {
 		if way.href != "" {
 			body = append(body, components.Link(components.LinkProps{Label: way.label, Href: way.href}))
 		}

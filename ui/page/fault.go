@@ -245,7 +245,7 @@ func fault(rf verdict) View {
 		// person least wants to be reading it.
 		Status: rf.status, Title: statusTitle(rf.loc, rf.status, rf.detail, rf.sub),
 		Sentence: line, Tone: toneOf(key),
-		Home: rf.back, HomeLabel: backWay(rf.loc, rf.backLabel),
+		Way: rf.back, WayLabel: backWay(rf.loc, rf.backLabel),
 		BackLabel: word0(rf.loc, backKey),
 	}
 	if rf.reference != "" {
@@ -258,7 +258,7 @@ func fault(rf verdict) View {
 	// everything else takes the shell's way out, which is the one it promised.
 	switch {
 	case (key == recordMissingKey || key == recordDeniedKey) && httpx.LocalPath(rf.sub.List):
-		p.Home, p.HomeLabel = rf.sub.List, label(rf.loc, backToKey, rf.sub.Plural)
+		p.Way, p.WayLabel = rf.sub.List, label(rf.loc, backToKey, rf.sub.Plural)
 	case retryTo && httpx.LocalPath(rf.path):
 		p.Retry, p.RetryLabel = rf.path, word0(rf.loc, retryKey)
 	}
@@ -277,7 +277,7 @@ func fault(rf verdict) View {
 	if rf.signIn != "" && rf.status == http.StatusUnauthorized {
 		p.SignIn, p.SignInLabel = rf.signIn, word0(rf.loc, "fault.sign_in")
 	}
-	v := document.Fault(p)
+	v := document.FaultPage(p)
 	if language != "" {
 		v.Language = language
 	}
