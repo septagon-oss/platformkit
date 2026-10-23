@@ -32142,6 +32142,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/function_length_test.go",
+   "id": "kit/rest/function_length_test.go#TestNoFunctionInThePackageRunsPastOneHundredLines",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestNoFunctionInThePackageRunsPastOneHundredLines",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/highlight_gate_test.go",
    "id": "kit/rest/highlight_gate_test.go#TestTheMountRefusesAHighlightThatNamesNothing",
    "kind": "go",
@@ -82174,7 +82193,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2217,
+  "files": 2218,
   "forge_runs": [
    408,
    413,
@@ -82208,7 +82227,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3554,
+   "behaviour": 3555,
    "composition": 479,
    "contract": 21,
    "journey": 109
@@ -82227,9 +82246,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4163,
+  "rows": 4164,
   "tiers": {
-   "merge": 2562,
+   "merge": 2563,
    "nightly": 109,
    "push": 1492
   },
@@ -82237,13 +82256,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1972,
+   "keep": 1973,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3777,
+   "keep": 3778,
    "keep-rewrite": 170,
    "merge": 216
   }
