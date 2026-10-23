@@ -68,9 +68,9 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	// resolution that fails open on an error then fails open on every request.
 	t.Run("a miss is not an error", func(t *testing.T) {
 		c := fresh(t, store)
-		val, found, _, err := c.Get(context.Background(), cache.Shared("host").Entry("nobody.example"))
-		if err != nil || found || val != nil {
-			t.Fatalf("Get of an absent key = %q, found=%v, err=%v; want nothing, false, no error", val, found, err)
+		entry, err := cache.GetEntry(t.Context(), c, cache.Shared("host").Entry("nobody.example"))
+		if err != nil || entry.Found || entry.Value != nil {
+			t.Fatalf("Get of an absent key = %+v, err=%v; want nothing, false, no error", entry, err)
 		}
 	})
 
@@ -84,12 +84,12 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 		if err := fill(t, c, key, want, time.Minute); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
-		got, found, _, err := c.Get(context.Background(), key)
-		if err != nil || !found {
-			t.Fatalf("Get: found=%v err=%v", found, err)
+		entry, err := cache.GetEntry(t.Context(), c, key)
+		if err != nil || !entry.Found {
+			t.Fatalf("Get: found=%v err=%v", entry.Found, err)
 		}
-		if !bytes.Equal(got, want) {
-			t.Errorf("Get = % x; want % x", got, want)
+		if !bytes.Equal(entry.Value, want) {
+			t.Errorf("Get = % x; want % x", entry.Value, want)
 		}
 	})
 
@@ -435,50 +435,7 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 // It runs wherever kit/cache's store runs — both adapters share that code — and it
 // is the case a delete-only adapter passes today and must not.
 func Generations(t *testing.T) {
-	t.Run("a write stamped by the read before a move is not believed", func(t *testing.T) {
-		backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
-		c, err := cache.New("pkit", backend)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
-		ctx := context.Background()
-		key := cache.Shared("host").Entry("acme.example")
-
-		// Replica B misses, and the miss hands it the generation it missed under.
-		// It goes to the loader — the slow part, the one a suspension overtakes —
-		// and replica A commits the suspension and moves the Scope while B is away.
-		// Nothing orders these two any more: the stamp is the synchronisation.
-		_, found, under, err := c.Get(ctx, key)
-		if err != nil || found {
-			t.Fatalf("the read that decided the load: found=%v err=%v", found, err)
-		}
-		if err := c.Move(ctx, cache.Shared("host")); err != nil {
-			t.Fatalf("Move during the racing load: %v", err)
-		}
-
-		// B writes what it loaded. The port neither refuses nor warns: the entry
-		// carries a closed generation, which is the state a delete left it in, and
-		// it expires on the lifetime this call was made with.
-		reads, writes := backend.commands()
-		if err := c.Set(ctx, key, []byte("the tenant as it was before the suspension"), time.Minute, under); err != nil {
-			t.Fatalf("the racing Set: %v", err)
-		}
-		// The stamp travelled for free. A write that asked the store what is open
-		// would cost one more command on every fill — and would stamp this entry
-		// with the generation that just opened, which is the resurrection below.
-		if r, w := backend.commands(); r != reads || w != writes+1 {
-			t.Errorf("one fill cost %d reads and %d writes; want no read and one write", r-reads, w-writes)
-		}
-
-		if _, found, _, err := c.Get(ctx, key); err != nil || found {
-			t.Fatalf("the answer the installation revoked came back: found=%v err=%v; a delete alone leaves exactly this window", found, err)
-		}
-		// And the entry expires on its own: the resurrection is bounded even where
-		// the invalidation is missed, which is why every Set carries a lifetime.
-		if _, ok := backend.expiry(key.String()); !ok {
-			t.Error("the racing write was stored with no expiry")
-		}
-	})
+	t.Run("a write stamped by the read before a move is not believed", fillAcrossMove)
 
 	t.Run("a write stamped by no read is refused and writes nothing", func(t *testing.T) {
 		backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
@@ -527,6 +484,59 @@ func Generations(t *testing.T) {
 			t.Errorf("eight moves left the generation at %d; a lost move is a suspension nobody honoured", got)
 		}
 	})
+}
+
+func fillAcrossMove(t *testing.T) {
+	backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
+	c, err := cache.New("pkit", backend)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	reader, err := cache.NewFor("pkit", backend)
+	if err != nil {
+		t.Fatalf("NewFor: %v", err)
+	}
+	ctx := t.Context()
+	key := cache.Shared("host").Entry("acme.example")
+
+	// Replica B misses, and the miss hands it the generation it missed under.
+	// It goes to the loader — the slow part, the one a suspension overtakes —
+	// and replica A commits the suspension and moves the Scope while B is away.
+	// Nothing orders these two any more: the stamp is the synchronisation.
+	reads, writes := backend.commands()
+	entry, err := cache.GetEntry(ctx, reader, key)
+	if err != nil || entry.Found {
+		t.Fatalf("the read that decided the load: found=%v err=%v", entry.Found, err)
+	}
+	if r, w := backend.commands(); r != reads+1 || w != writes {
+		t.Fatalf("one GetEntry cost %d reads and %d writes", r-reads, w-writes)
+	}
+	if err := c.Move(ctx, cache.Shared("host")); err != nil {
+		t.Fatalf("Move during the racing load: %v", err)
+	}
+
+	// B writes what it loaded. The port neither refuses nor warns: the entry
+	// carries a closed generation, which is the state a delete left it in, and
+	// it expires on the lifetime this call was made with.
+	reads, writes = backend.commands()
+	if err := c.Set(ctx, key, []byte("the tenant as it was before the suspension"), time.Minute, entry.Generation); err != nil {
+		t.Fatalf("the racing Set: %v", err)
+	}
+	// The stamp travelled for free. A write that asked the store what is open
+	// would cost one more command on every fill — and would stamp this entry
+	// with the generation that just opened, which is the resurrection below.
+	if r, w := backend.commands(); r != reads || w != writes+1 {
+		t.Errorf("one fill cost %d reads and %d writes; want no read and one write", r-reads, w-writes)
+	}
+
+	if got, err := cache.GetEntry(ctx, reader, key); err != nil || got.Found || string(got.Value) != "the tenant as it was before the suspension" {
+		t.Fatalf("the closed generation's bytes were not preserved as a miss: %+v, %v", got, err)
+	}
+	// And the entry expires on its own: the resurrection is bounded even where
+	// the invalidation is missed, which is why every Set carries a lifetime.
+	if _, ok := backend.expiry(key.String()); !ok {
+		t.Error("the racing write was stored with no expiry")
+	}
 }
 
 // Groups runs decision 0028 §4's bounded lazy composition over the same store, so

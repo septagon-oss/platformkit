@@ -178,11 +178,11 @@ func (c Cookies) Forget(base string) http.Cookie { return c.set(base, "", -1) }
 
 // Name is what a cookie this policy sets is called, so a handler reading one
 // back spells it the way it was written.
-func (c Cookies) Name(base string) string { return httpx.CookieName(base, c.secure) }
+func (c Cookies) Name(base string) string { return httpx.CookieNameFor("", base, c.secure) }
 
 func (c Cookies) set(base, value string, maxAge int) http.Cookie {
 	return http.Cookie{
-		Name: httpx.CookieName(base, c.secure), Value: value, Path: "/", MaxAge: maxAge,
+		Name: httpx.CookieNameFor("", base, c.secure), Value: value, Path: "/", MaxAge: maxAge,
 		HttpOnly: true, Secure: c.secure, SameSite: http.SameSiteLaxMode,
 	}
 }
