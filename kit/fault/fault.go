@@ -35,6 +35,11 @@
 //
 // # The messages are a marker other packages parse, not decoration
 //
+// A validator that returns Violations is read without any of this: the wrap
+// keeps its identity (errors.As) and the problem document carries it as
+// "violations". The prefix is parsed only for validators that still return
+// prose; that fallback goes with the last of them.
+//
 // Each message keeps the "crud: " prefix it was given. That prefix names the
 // package that owned these values before this one, and it is load-bearing past
 // its own package rather than inert text: kit/rest derives the field message a
@@ -55,6 +60,7 @@ package fault
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // The three failures a caller distinguishes. What the mapping recognises past
@@ -127,3 +133,93 @@ func (r *Reason) Error() string {
 // in words costs a caller nothing: errors.Is(err, ErrInvalid) matches whichever
 // way the writer spelled it.
 func (r *Reason) Unwrap() error { return r.Kind }
+
+// Violation is one correctable refusal of a submission. Location is the wire
+// name of the field it is about ("a.b" when nested, empty for the whole
+// entity), Code a stable lower_snake token a client may branch or translate on
+// (required, too_long, not_one_of, inconsistent, invalid, schema), and Message
+// the English sentence a person reads. A message never echoes a submitted value
+// that could be a secret.
+type Violation struct {
+	Location string `json:"location"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+}
+
+// Violations is the error a validator returns when it refused a submission for
+// one or more reasons. It answers errors.Is(err, ErrInvalid) and is found with
+// errors.As, so a wrapper that keeps the chain keeps the fields. Its text is the
+// messages alone, because the sentinel's wrap supplies the prefix.
+type Violations []Violation
+
+// Error joins the messages with "; ".
+func (v Violations) Error() string {
+	messages := make([]string, len(v))
+	for i, one := range v {
+		messages[i] = one.Message
+	}
+	return strings.Join(messages, "; ")
+}
+
+// Is reports that Violations are an ErrInvalid.
+func (v Violations) Is(target error) bool { return target == ErrInvalid }
+
+// Invalid returns the violations as an error, or nil when there are none: a
+// submission that broke no rule is accepted.
+func Invalid(v ...Violation) error {
+	if len(v) == 0 {
+		return nil
+	}
+	return Violations(v)
+}
+
+// Rule is one rule a submission broke, in the two shapes that same refusal has:
+// Violation is what a program branches on and what the problem document answers,
+// and Reason is the sentence the writer of the rule keeps in its own catalogue,
+// which is what a person is shown. A rule whose writer ships no copy carries a
+// Reason with an empty Key.
+type Rule struct {
+	Violation Violation
+	Reason    Reason
+}
+
+// Keyed is a submission its own value refused for one or more rules the writer can
+// name in a catalogue. errors.Is answers the verdict underneath the rules, and
+// errors.As finds the Violations — the rules alone, spelled exactly as Invalid
+// spells them — and the *Reason of the first rule, which is the sentence a refusal
+// page shows. Error is the rules' own messages joined, so the Detail a client is
+// answered did not move when the sentences were keyed.
+type Keyed struct {
+	Rules []Rule
+}
+
+// Refuse returns the rules as an error, or nil when the submission broke none: a
+// submission that broke no rule is accepted. Each rule's Reason carries its own
+// verdict, so Refuse needs none.
+func Refuse(rules ...Rule) error {
+	if len(rules) == 0 {
+		return nil
+	}
+	return &Keyed{Rules: rules}
+}
+
+// Error is the refused sentences in the language they were written in, which is the
+// text a log line, a problem document and a shell with no catalogue all print.
+func (k *Keyed) Error() string { return k.violations().Error() }
+
+// Unwrap is the rules and the first rule's sentence: a caller that branches on
+// violations reads what Invalid answers, and a caller that shows a person one
+// sentence reads a *Reason.
+func (k *Keyed) Unwrap() []error {
+	first := k.Rules[0].Reason
+	return []error{k.violations(), &first}
+}
+
+// violations is what the rules look like to a caller that never wrote a sentence.
+func (k *Keyed) violations() Violations {
+	out := make(Violations, len(k.Rules))
+	for i, rule := range k.Rules {
+		out[i] = rule.Violation
+	}
+	return out
+}

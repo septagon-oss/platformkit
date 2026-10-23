@@ -11,6 +11,7 @@ package contracts
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -198,55 +199,90 @@ func (t *Task) IsOverdue(now time.Time) bool {
 
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: a title that differs
-// only in whitespace is the same title, and two callers must not disagree.
-//
-// Each refusal is a fault.Reason rather than a bare sentence: the verdict, the
-// sentence the check is written in, and the entry of modules/task/messages that
-// same sentence is kept under. Whoever renders the refusal then chooses — a form
-// marks the control with the reader's own Portuguese, the problem document and the
-// log keep this text, and a composition with no catalogue reads this text too.
-// The words are the task module's, because the rule that refused is.
+// only in whitespace is the same title, and two callers must not disagree. It
+// reports every rule the task breaks at once, so a form can mark each control, and
+// each refusal carries the two shapes it is answered in: the violation a program and
+// a form field work from, and the sentence the refusal is kept under in
+// modules/task/messages, which is what lets a person be refused in the language the
+// rest of their page is in. The words are the task module's, because the rule that
+// refused is.
 func (t *Task) Validate(context.Context) error {
+	var rules []fault.Rule
 	// Match the JSON schema and varchar limit in characters, before normalization.
 	if utf8.RuneCountInString(t.Title) > 200 {
-		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.title.length",
-			Text: "title must have at most 200 characters"}
+		rules = append(rules, rule("title", "too_long", "invalid.task.title.length",
+			"title must have at most 200 characters"))
 	}
 	t.Title = strings.TrimSpace(t.Title)
 	if t.Title == "" {
-		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.title",
-			Text: "a task needs a title"}
+		rules = append(rules, rule("title", "required", "invalid.task.title",
+			"a task needs a title"))
 	}
 	if t.Status == "" {
 		t.Status = StatusOpen
 	}
-	if !slices.Contains(statuses, t.Status) {
-		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.status",
-			Text: "status %q is not a lifecycle state", Args: []any{t.Status}}
-	}
 	if t.Priority == "" {
 		t.Priority = PriorityNormal
 	}
-	if !slices.Contains(priorities, t.Priority) {
-		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.priority",
-			Text: "priority %q is not a priority", Args: []any{t.Priority}}
+	rules = append(rules, t.vocabularyRules()...)
+	rules = append(rules, t.stateRules()...)
+	return fault.Refuse(rules...)
+}
+
+// rule is one refusal of a task in the one value that carries both shapes: the
+// violation the wire answers and a form marks, and the writer's own sentence, which
+// is the format with its holes still in it and the values that fill them. Message is
+// that sentence as this file wrote it, because the wire answer, the log line and a
+// page whose composition ships no catalogue all print the source.
+func rule(location, code, key, format string, args ...any) fault.Rule {
+	message := format
+	if len(args) > 0 {
+		message = fmt.Sprintf(format, args...)
 	}
+	return fault.Rule{
+		Violation: fault.Violation{Location: location, Code: code, Message: message},
+		Reason:    fault.Reason{Kind: fault.ErrInvalid, Key: key, Text: format, Args: args},
+	}
+}
+
+// vocabularyRules refuses a status or priority outside its closed set.
+func (t *Task) vocabularyRules() []fault.Rule {
+	var rules []fault.Rule
+	if !slices.Contains(statuses, t.Status) {
+		rules = append(rules, rule("status", "not_one_of", "invalid.task.status",
+			"status %q is not a lifecycle state", t.Status))
+	}
+	if !slices.Contains(priorities, t.Priority) {
+		rules = append(rules, rule("priority", "not_one_of", "invalid.task.priority",
+			"priority %q is not a priority", t.Priority))
+	}
+	return rules
+}
+
+// stateRules refuses the combinations of fields that contradict each other. A
+// status outside its set is reported by vocabularyRules alone, since "resolved"
+// cannot be judged against it.
+func (t *Task) stateRules() []fault.Rule {
+	var rules []fault.Rule
 	if t.SLABreached && t.SLADeadline == nil {
-		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.breach.deadline",
-			Text: "a breach needs the deadline it broke"}
+		rules = append(rules, rule("slaBreached", "inconsistent", "invalid.task.breach.deadline",
+			"a breach needs the deadline it broke"))
+	}
+	if !slices.Contains(statuses, t.Status) {
+		return rules
 	}
 	// Both halves of "resolved means resolved at a time", so a resolved task
 	// can always answer when.
 	resolved := t.Status == StatusResolved || t.Status == StatusClosed
 	if t.ResolvedAt != nil && !resolved {
-		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.resolved_at.extra",
-			Text: "a %s task cannot have a resolution time", Args: []any{t.Status}}
+		rules = append(rules, rule("resolvedAt", "inconsistent", "invalid.task.resolved_at.extra",
+			"a %s task cannot have a resolution time", t.Status))
 	}
 	if resolved && t.ResolvedAt == nil {
-		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.resolved_at.missing",
-			Text: "a %s task needs a resolution time", Args: []any{t.Status}}
+		rules = append(rules, rule("resolvedAt", "required", "invalid.task.resolved_at.missing",
+			"a %s task needs a resolution time", t.Status))
 	}
-	return nil
+	return rules
 }
 
 // Service is the task lifecycle: the three transitions generic CRUD cannot

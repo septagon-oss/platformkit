@@ -1359,6 +1359,15 @@
       "": "A sua conta"
     }
   },
+  "admin.workspace.about": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Sobre este espaço de trabalho",
+    "plural": {
+      "": "Sobre este espaço de trabalho"
+    }
+  },
   "admin.workspace.sessions": {
     "references": [
       "modules/admin/internal/sessions.go",

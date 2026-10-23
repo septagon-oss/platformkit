@@ -22,6 +22,7 @@
         "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Pictures",
+        "admincontracts.PrimaryAction",
         "tenantcontracts.Languages",
         "webhookcontracts.Catalogue"
       ],
@@ -845,6 +846,10 @@
         },
         {
           "contract": "tenantcontracts.Languages",
+          "from": "product"
+        },
+        {
+          "contract": "admincontracts.PrimaryAction",
           "from": "product"
         }
       ],

@@ -19,6 +19,8 @@ test('the admin frame keeps its legible brand and bounded chrome after a theme c
     // Reload observes the persisted choice after theme transitions have ended.
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme!);
+    // The stamp is behind "About this workspace"; open it so the footer has a sentence to bound.
+    await page.locator('footer summary').click();
     const measurement = await probe(page, 1440);
     console.log(`frame ${theme}: ${JSON.stringify(measurement.brand_link)}`);
     expectBrandLinkLegible(measurement, `the ${theme} admin brand link`);

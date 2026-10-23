@@ -101,7 +101,7 @@ func (f *Fake) Create(ctx context.Context, _ db.Tx[db.Tenant], in contracts.Crea
 		return nil, err
 	}
 	if err := task.Validate(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %v", crud.ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %w", crud.ErrInvalid, err)
 	}
 	says := []string{contracts.EventCreated}
 	if in.AssigneeID != nil {
