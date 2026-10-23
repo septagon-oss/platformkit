@@ -40,7 +40,7 @@
     "@open-pencil/kiwi": "0.14.0",
     "@open-pencil/pen": "0.14.0",
     "@open-pencil/scene-graph": "0.14.0",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.17",
     "source-map-js": "1.2.2"
   }
 }
