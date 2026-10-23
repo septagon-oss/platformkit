@@ -21,7 +21,7 @@ import (
 // writes. ui/components exports its own vocabulary — components.Hooks — because
 // that markup lives there; these packages import ui rather than the other way
 // round, so their names are declared here, beside the gate that reads them, and
-// the attribution is checked rather than asserted: hooks_test.go reads the
+// the attribution is checked rather than asserted: a test reads the
 // markup each name is attributed to (a name in a comment is not markup), refuses
 // a name the kernel renders that the list omits and a name the list carries that
 // nothing renders — the same pin components' own test runs on its own list,
@@ -146,7 +146,7 @@ var kernelHooks = func() map[string]string {
 // resolves into @layer components and the same lists ui.Gallery deduplicates
 // against — and not copied out of a stylesheet, because a component that gains a
 // class gains its refusal in the same change and cannot be forgotten here.
-// components/hooks_test.go runs the completeness check on the lists themselves.
+// The components package runs the completeness check on the lists themselves.
 //
 // These names keep the ASCII case they were written with, which is the one
 // difference from kernelHooks: an HTML attribute name matches case-insensitively

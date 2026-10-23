@@ -25,7 +25,7 @@ import (
 // commits. Nor can it claim row-level security, the unique indexes or the row
 // lock that settles two writers — those are database facts, and
 // modules/task/internal proves them against the schema. Everything it can be
-// wrong about is what RunService checks, and fake_test.go runs the whole suite
+// wrong about is what RunService checks, and the fake's own tests run the whole suite
 // against it.
 //
 // Its store is partitioned by the tenant on the context and refuses a context

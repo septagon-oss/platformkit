@@ -23,7 +23,7 @@
 // and these two personas are the task module's, declared and granted to match what
 // that module declares. Adding webhook words to them would be a grant nobody asked
 // for and a persona test that can no longer refuse anything. What each
-// persona may do, and what each is refused, is persona_test.go's table; which task
+// persona may do, and what each is refused, is the persona table's; which task
 // a coordinator may resolve is policy/task.rego's, not a grant's.
 //
 // What is *not* in this file is the operator half of a new administrator's grants.

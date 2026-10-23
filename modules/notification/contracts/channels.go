@@ -182,7 +182,7 @@ type Delivery struct {
 // addressed, after it where the provider answered.
 //
 // The implementations are composed in apps/platformkit: go-mail for
-// ChannelEmail, a VAPID sender for ChannelWebPush, T-0120's adapter for
+// ChannelEmail, a VAPID sender for ChannelWebPush, a phone adapter for
 // ChannelPush, an HTTP client for ChannelWebhook. A stub still owes the ledger
 // an answer, which is why the ledger is written by the module and not by the
 // stub: a provider that forgets cannot make a notice unaccounted for.

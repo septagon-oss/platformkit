@@ -72,7 +72,7 @@ func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string)
 //
 // The no-account branches send no mail and leave no record. The public delivery door
 // is pinned to what one link is the whole of — a known and an unknown forgotten-
-// password request cause one message between them (review 1's case), so an unknown
+// password request cause one message between them, so an unknown
 // address causes none, and the door that answered "that mail was refused" about one
 // caller and "that call caused no mail at all" about the other would be saying which
 // address has an account in the shape of its silence. This flow therefore mails to
