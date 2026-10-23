@@ -19,7 +19,12 @@ import (
 
 // Service owns task transitions. Optional policy decisions use the locked task
 // and the current principal; they never replace the lifecycle's state checks.
-type Service struct{ Policy tenancy.Policy }
+type Service struct {
+	Policy tenancy.Policy
+	// Lifecycle, when set, runs the commands Create follows the insert with
+	// (assignment, the breach check), so a composed service sees them.
+	Lifecycle contracts.Service
+}
 
 // NewService returns the lifecycle commands. It takes nothing, on purpose: see
 // the type. module.go constructs it.
