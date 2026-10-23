@@ -9,11 +9,11 @@ package events
 // loss is twice over — the effect fails, the transport retries, the retry finds the
 // claim taken, skips the handler and acknowledges work nobody finished.
 //
-// So a claim knows one more fact: whether its delivery still owes an effect. It is
-// one column of the row that already marks the delivery (000075), written in the
-// delivery's own transaction so it appears exactly when the claim does, and read
-// under that row's lock by the next delivery. A delivery that owes nothing
-// acknowledges; one that owes leaves the message to the transport's own ladder.
+// So a claim knows one more fact: how many effects its delivery still owes, counted
+// because a handler may defer several and kit/db runs them as one queue. The column
+// is written in the delivery's own transaction so it appears exactly when the claim
+// does, and read under that row's lock by the next delivery. A delivery that owes
+// nothing acknowledges; one that owes leaves the message to the transport's ladder.
 
 import (
 	"context"
@@ -27,9 +27,9 @@ import (
 )
 
 // ErrDeliveryOwesEffect says this delivery's mark is held by an attempt whose
-// deferred effect has not carried out. It is not a refusal of the work and not a
-// record that the work was done: nothing acknowledges it, the transport retries on
-// its own ladder, and the attempt that owes the effect releases the claim if that
+// deferred effects have not all carried out. It is not a refusal of the work and not
+// a record that the work was done: nothing acknowledges it, the transport retries on
+// its own ladder, and the attempt that owes an effect releases the claim if that
 // effect finally fails.
 var ErrDeliveryOwesEffect = errors.New("events: this delivery still owes an effect that has not run")
 
@@ -41,12 +41,12 @@ var ErrDeliveryOwesEffect = errors.New("events: this delivery still owes an effe
 // answered by its own caller, which learns the failure from Run, and nothing marks
 // the effect as owed because no transport is retrying the call.
 //
-// Inside a delivery it additionally marks this delivery's claim as owing an effect,
-// in the delivery's own transaction, and wraps the action so that success clears the
-// mark in a transaction of its own and failure leaves it. The mark is what stops a
-// redelivery arriving mid-flight from acknowledging an effect nobody carried out;
-// the release in Consume is what stops a failed one being acknowledged at all.
-// Refuses with db.ErrNoTransactionToDefer when ctx carries no tenant transaction.
+// Inside a delivery it additionally adds one to the count of effects this claim owes,
+// in that transaction, and wraps the action so that success takes one off the count in
+// a transaction of its own and failure leaves it standing. The count is what stops a
+// redelivery mid-flight acknowledging an effect nobody carried out: it reaches zero
+// only once every effect this delivery deferred has come back. Refuses with
+// db.ErrNoTransactionToDefer when ctx carries no tenant transaction.
 func Defer(ctx context.Context, action func(context.Context) error) error {
 	if action == nil {
 		return fmt.Errorf("%w: a nil action would be dropped without ever being noticed", db.ErrNoTransactionToDefer)
@@ -59,17 +59,17 @@ func Defer(ctx context.Context, action func(context.Context) error) error {
 	if !ok {
 		return db.ErrNoTransactionToDefer
 	}
-	if err := markEffectOwed(tx, carried.event.ID, carried.durable); err != nil {
+	if err := oweEffect(tx, carried.event.ID, carried.durable); err != nil {
 		return err
 	}
 	return db.AfterCommit(ctx, func(ctx context.Context) error {
 		if err := action(ctx); err != nil {
-			// The mark stays, so a redelivery cannot acknowledge what this attempt
-			// failed to do; Consume releases the claim beside this error, so the
-			// handler itself runs again rather than being skipped.
+			// The count stays where it was, so a redelivery cannot acknowledge what
+			// this attempt failed to do; Consume releases the claim beside this error,
+			// so the handler itself runs again rather than being skipped.
 			return err
 		}
-		return clearEffectOwed(ctx, carried.event.ID, carried.durable)
+		return markEffectRun(ctx, carried.event.ID, carried.durable)
 	})
 }
 
@@ -93,12 +93,13 @@ func DeliveryOf(ctx context.Context) (uuid.UUID, bool) {
 	return d.event.ID, true
 }
 
-// markEffectOwed sets the mark on the claim this delivery's own transaction
-// inserted. The UPDATE is the lock as well as the write, and the row it must find
-// is the one this transaction just inserted: a mark that landed on somebody else's
-// claim would owe an effect to the wrong delivery.
-func markEffectOwed(tx db.Tx[db.Tenant], id uuid.UUID, durable string) error {
-	res := tx.DB().Exec("UPDATE "+handled+" SET effect_owed = true WHERE event_id = ? AND durable = ?", id, durable)
+// oweEffect adds one effect to what this delivery's claim owes, on the row this
+// delivery's own transaction inserted. The UPDATE is the lock as well as the write,
+// and the row it must find is the one this transaction just inserted: a mark that
+// landed on somebody else's claim would owe an effect to the wrong delivery. A
+// handler that defers twice asks twice, because each effect is owed on its own.
+func oweEffect(tx db.Tx[db.Tenant], id uuid.UUID, durable string) error {
+	res := tx.DB().Exec("UPDATE "+handled+" SET effects_owed = effects_owed + 1 WHERE event_id = ? AND durable = ?", id, durable)
 	if res.Error != nil {
 		return fmt.Errorf("events: mark %s owed an effect: %w", id, res.Error)
 	}
@@ -108,22 +109,26 @@ func markEffectOwed(tx db.Tx[db.Tenant], id uuid.UUID, durable string) error {
 	return nil
 }
 
-// clearEffectOwed takes the mark back once the effect succeeded, in a transaction
-// of its own: the one it was set in has committed, and what is being said is that
-// the commit's effect really happened.
+// markEffectRun takes one effect off the count once that effect succeeded, in a
+// transaction of its own: the one it was deferred out of has committed, and what is
+// being said is that this effect of that commit really happened. The arithmetic is
+// the row's own and not a value read first, because the delivery's other effects are
+// outstanding in the same row and the count is theirs to keep: a claim whose handler
+// deferred two effects still owes one after the first comes back.
 //
 // Its failure is returned rather than logged, and the consequence is deliberate: a
-// claim left marking itself owed makes every redelivery refuse, which is safer than
-// the opposite — a mark left false is an ack over an effect nobody confirmed. The
-// attempt that fails here releases its claim, and the handler runs again to find its
-// work already done and finish the delivery without sending anything twice.
-func clearEffectOwed(ctx context.Context, id uuid.UUID, durable string) error {
+// claim left counting itself owed makes every redelivery refuse, which is safer than
+// the opposite — a count brought to zero early is an ack over an effect nobody
+// confirmed. The attempt that fails here releases its claim, and the handler runs
+// again to find its work already done and finish the delivery without sending
+// anything twice.
+func markEffectRun(ctx context.Context, id uuid.UUID, durable string) error {
 	conn, ok := db.ConnFrom(ctx)
 	if !ok {
 		return fmt.Errorf("events: the effect of %s ran on a context carrying no connection, so its mark cannot be cleared", id)
 	}
 	err := db.Run(db.Detached(ctx), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		return tx.DB().Exec("UPDATE "+handled+" SET effect_owed = false WHERE event_id = ? AND durable = ?", id, durable).Error
+		return tx.DB().Exec("UPDATE "+handled+" SET effects_owed = effects_owed - 1 WHERE event_id = ? AND durable = ?", id, durable).Error
 	})
 	if err != nil {
 		return fmt.Errorf("events: the effect of %s ran and its claim still says otherwise: %w", id, err)

@@ -320,9 +320,13 @@ Decision 0022, for this delivery. **Reused:** the claim in `platformkit_handled`
 (`claim`, `000003`), the delivery context `Consume` already builds, the system-token
 precedent of `deadLetter`, and the transport ladder in
 `internal/delivery/policy.go` — no provider line changed, because `Sink.Handle`
-already acks on nil and nothing else. **Added:** `Defer`, the `effect_owed` mark
-(`000073`) and `ErrDeliveryOwesEffect`: a claim used to know only *claimed*, and a
+already acks on nil and nothing else. **Added:** `Defer`, the `effects_owed` count
+(`000075`) and `ErrDeliveryOwesEffect`: a claim used to know only *claimed*, and a
 redelivery that arrived while the first attempt was still handing an effect over had
-nothing to read, so it acknowledged work nobody finished. **Made reusable:** a
-delivery that can say what it still owes, read under its row lock, and the release
-that makes a failed effect come back rather than vanish.
+nothing to read, so it acknowledged work nobody finished. The debt is counted rather
+than flagged because a handler may defer more than one effect and `kit/db` runs them as
+one queue registered by different work: the count reaches zero only when the last of
+them comes back, so a delivery that owes two is not acknowledged by the one that
+finished first. **Made reusable:** a delivery that can say what it still owes, read
+under its row lock, and the release that makes a failed effect come back rather than
+vanish.

@@ -63,8 +63,8 @@ func TestARedeliveryCannotAcknowledgeAnUnfinishedDeferredEffect(t *testing.T) {
 	if err := <-first; err != nil {
 		t.Fatalf("a delivery whose effect succeeded returned %v", err)
 	}
-	if n := handled(t, admin, "effect_owed = false"); n != 1 {
-		t.Errorf("%d claims left marking themselves clear, want the one that finished", n)
+	if n := handled(t, admin, "effects_owed = 0"); n != 1 {
+		t.Errorf("%d claims left counting themselves owed nothing, want the one that finished", n)
 	}
 
 	// A third arrival finds the mark clear: it runs no handler and acknowledges.

@@ -589,11 +589,11 @@ func insertClaim(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
 
 // owedOrHandled reads the claim this delivery conflicted with, under its lock, and
 // says which of two facts the conflict proves: the work is finished, or somebody
-// still owes an effect it deferred past its own commit.
+// still owes effects it deferred past its own commit.
 //
 // The lock is the point of the read: the attempt that wrote the row may still be
-// running its effect, and the value that decides this answer is one it is about to
-// change. FOR UPDATE takes the row from them — either the clear is in, or this
+// running its effects, and the value that decides this answer is one it is about to
+// change. FOR UPDATE takes the row from them — either the last count is in, or this
 // delivery waits for the attempt that owes and reads what it settled on.
 //
 // The row can also be gone: its attempt released the claim after this transaction's
@@ -601,8 +601,8 @@ func insertClaim(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
 // answer; with neither record the work is for the taking, so the INSERT is retried
 // once and a second conflict is refused rather than guessed at.
 func owedOrHandled(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
-	var owed bool
-	err := tx.DB().Raw("SELECT effect_owed FROM "+handled+" WHERE event_id = ? AND "+durableSet(len(names))+
+	var owed int
+	err := tx.DB().Raw("SELECT effects_owed FROM "+handled+" WHERE event_id = ? AND "+durableSet(len(names))+
 		" FOR UPDATE", append([]any{id}, names...)...).Row().Scan(&owed)
 	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, gorm.ErrRecordNotFound) {
 		// No claim to read the mark off. A terminal record is the other way this
@@ -621,7 +621,7 @@ func owedOrHandled(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error)
 	if err != nil {
 		return false, fmt.Errorf("events: ask whether %s still owes an effect: %w", id, err)
 	}
-	if owed {
+	if owed > 0 {
 		return false, fmt.Errorf("events: %s is claimed by a delivery whose effect has not run: %w", id, ErrDeliveryOwesEffect)
 	}
 	return false, nil
