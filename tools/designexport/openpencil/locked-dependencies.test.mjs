@@ -10,7 +10,7 @@ import { test } from 'node:test'
 // it, and this check is what keeps that override from drifting quietly: the lock
 // has to resolve each name to the reviewed release named here, and to the very
 // release package.json overrides it to.
-const reviewed = { dompurify: '3.4.16', 'source-map-js': '1.2.2' }
+const reviewed = { dompurify: '3.4.17', 'source-map-js': '1.2.2' }
 
 const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 const lock = JSON.parse(readFileSync(new URL('./package-lock.json', import.meta.url), 'utf8'))

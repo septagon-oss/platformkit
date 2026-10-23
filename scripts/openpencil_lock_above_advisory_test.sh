@@ -68,6 +68,30 @@ ADVISORIES = (
         "severity": "low",
         "parent": "jspdf",
     },
+    {
+        "package": "dompurify",
+        "since": (3, 4, 4),
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-cg2g-xh64-v4q7",),
+        "severity": "critical",
+        "parent": "jspdf",
+    },
+    {
+        "package": "dompurify",
+        "since": None,
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-mrv2-3pqr-j5jr",),
+        "severity": "high",
+        "parent": "jspdf",
+    },
+    {
+        "package": "dompurify",
+        "since": None,
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-c6gr-qvv4-5v3f",),
+        "severity": "low",
+        "parent": "jspdf",
+    },
 )
 
 # The three commands of the gate, in the order the design job runs them. The audit may stand behind
