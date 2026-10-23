@@ -27,7 +27,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-      "max": 60005
+      "max": 60061
     },
     {
       "name": "ui",
@@ -80,7 +80,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-      "max": 151549
+      "max": 151619
     },
     {
       "name": "go_testsupport",
@@ -93,14 +93,14 @@
       "dir_suffixes": [
         "test"
       ],
-      "max": 20918
+      "max": 20929
     },
     {
       "name": "go_test",
       "suffixes": [
         "_test.go"
       ],
-      "max": 235134
+      "max": 235140
     },
     {
       "name": "js",
