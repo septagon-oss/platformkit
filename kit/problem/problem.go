@@ -11,6 +11,8 @@ package problem
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
 // ContentType is the media type of a problem response.
@@ -29,6 +31,9 @@ type Problem struct {
 	Detail string `json:"detail,omitempty"`
 	// Errors carries per-field validation messages, when there are any.
 	Errors []string `json:"errors,omitempty"`
+	// Violations carries the same refusals as values: the field each is about,
+	// a stable code and the sentence, so a client needs no prose parsing.
+	Violations []fault.Violation `json:"violations,omitempty"`
 	// Instance identifies this occurrence. kit/httpx sets it to
 	// "urn:request:<request id>", which is the same id the log line carries, so
 	// a report of "I got a 500" is one grep away from the reason.

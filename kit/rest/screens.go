@@ -28,6 +28,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
@@ -533,6 +534,7 @@ func conditionFault(fields []crud.Field) string {
 func invalid(field, why string) error {
 	p := problem.New(http.StatusUnprocessableEntity, field+" "+why)
 	p.Errors = []string{field + ": " + why}
+	p.Violations = []fault.Violation{{Location: field, Code: "invalid", Message: why}}
 	return p
 }
 
@@ -548,6 +550,9 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok {
 		return nil, err.Error()
+	}
+	if len(p.Violations) > 0 {
+		return violationFields(p.Violations, fields)
 	}
 	out := map[string]string{}
 	for _, e := range p.Errors {
@@ -571,6 +576,20 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 		}
 	}
 	return out, detail
+}
+
+// violationFields marks each known field with its violations' messages and
+// returns all messages as the whole. Nothing is parsed: a violation's location
+// is the field's wire name or it marks no control.
+func violationFields(violations []fault.Violation, fields []crud.Field) (map[string]string, string) {
+	out, all := map[string]string{}, make([]string, 0, len(violations))
+	for _, v := range violations {
+		all = append(all, v.Message)
+		if _, known := crud.FieldNamed(fields, v.Location); known {
+			out[v.Location] = strings.TrimPrefix(out[v.Location]+"; "+v.Message, "; ")
+		}
+	}
+	return out, strings.Join(all, "; ")
 }
 
 // mentions reports whether detail names field as a word of its own.

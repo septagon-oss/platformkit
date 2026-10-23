@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -550,3 +551,35 @@ func TestFaultKeepsUniqueAndBusinessConflictsDistinct(t *testing.T) {
 // TestDisplayIsTheOneWayAValueIsShown is the E4 review's consistency finding:
 // an enum was humanized in a form's options and raw in a cell, and a boolean
 // was the word true in both.
+
+func TestFieldErrorsReadsViolationsWithoutParsingProse(t *testing.T) {
+	t.Parallel()
+	fields := []crud.Field{{Name: "title"}, {Name: "status"}}
+	p := problem.New(http.StatusUnprocessableEntity, "crud: invalid: mentions status in prose")
+	p.Violations = []fault.Violation{
+		{Location: "title", Code: "required", Message: "a task needs a title"},
+		{Location: "nosuch", Code: "invalid", Message: "elsewhere"},
+	}
+	errs, msg := rest.FieldErrors(p, fields)
+	if errs["title"] != "a task needs a title" || len(errs) != 1 {
+		t.Errorf("errs = %v", errs)
+	}
+	if msg != "a task needs a title; elsewhere" {
+		t.Errorf("msg = %q", msg)
+	}
+}
+
+func TestFaultMapsViolationsBesideTheDetail(t *testing.T) {
+	t.Parallel()
+	err := fmt.Errorf("%w: %w", crud.ErrInvalid, fault.Invalid(
+		fault.Violation{Location: "title", Code: "required", Message: "a"},
+		fault.Violation{Location: "status", Code: "not_one_of", Message: "b"}))
+	p, ok := rest.Fault(err).(*problem.Problem)
+	if !ok || p.Status != http.StatusUnprocessableEntity || p.Detail != "crud: invalid: a; b" || len(p.Violations) != 2 {
+		t.Fatalf("problem = %+v", p)
+	}
+	body, _ := json.Marshal(p)
+	if !strings.Contains(string(body), `"violations":[{"location":"title"`) {
+		t.Errorf("body = %s", body)
+	}
+}
