@@ -1,0 +1,7 @@
+{
+  "note": "The exported API of github.com/septagon-oss/platformkit is frozen at `frozen.commit`. Within a release line an exported Go identifier, a wire field, a JSON tag, a catalogue key and a CLI flag are only ever added or deprecated; removal and reshaping wait for the next major. This file grants no licence and lists no accepted change: the gate passes no list, so a break somebody wrote down is refused exactly like one nobody did. `line` names the tag that, once published, is the base instead of `frozen`; the release that publishes it deletes `frozen`, and the release that moves the line edits `line`. Whether the next major lands on this module path or a /v2 one is the owner's and RELEASE.md leaves it open. See docs/COMPATIBILITY.md.",
+  "line": "v2.0.0",
+  "frozen": {
+    "commit": "45fbddf52d8432b576deaeba4e74d99c41ed3c97"
+  }
+}
