@@ -310,7 +310,11 @@ database-free reader of manifests appeared.
 
 A consumer imports another module's `contracts/`, not its `internal/` or
 constructor. Application composition is the place that connects them.
-[scripts/check_imports.sh](scripts/check_imports.sh) checks this boundary.
+[scripts/check_imports.sh](scripts/check_imports.sh) checks Go's direct production
+and test imports. Production contracts have an exact dependency policy, and test
+suites composing foreign constructors declare their targets and reason in
+`scripts/imports-integration.txt`. The [import gate](tools/importgate/README.md)
+documents provenance, refusals, build context and the per-pair edge report.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.
 
