@@ -220,6 +220,12 @@ func (d Declaration) declare(ctx context.Context, conn *sql.Conn) error {
 	return nil
 }
 
+// compositionLockKey is the first half of the advisory lock one migration run holds for
+// its whole composition, so that two replicas do not apply the same file at once. The
+// second half is the namespace the run resolves to: see holdCompositionLock, which says
+// why the key is one namespace's and not one database's.
+const compositionLockKey = 7240101
+
 // MigrateDeclaring is MigrateWith plus what the boot declares about itself. An
 // empty Declaration declares nothing, which is what every caller that predates
 // the tenant app column already meant.
@@ -307,4 +313,14 @@ func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBu
 		}
 	}
 	return nil
+}
+
+// stepAwayFromTheCompositionLock releases the composition lock and its lock
+// timeout for an autocommit statement. The statement timeout remains in
+// force while concurrent transactions finish.
+func (r *runner) stepAwayFromTheCompositionLock(ctx context.Context) error {
+	if err := r.setBudgets(ctx, noLockBudget); err != nil {
+		return err
+	}
+	return r.releaseCompositionLock(ctx)
 }

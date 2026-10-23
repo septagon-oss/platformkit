@@ -11,12 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// compositionLockKey is the first half of the advisory lock one migration run holds for
-// its whole composition, so that two replicas do not apply the same file at once. The
-// second half is the namespace the run resolves to: see holdCompositionLock, which says
-// why the key is one namespace's and not one database's.
-const compositionLockKey = 7240101
-
 // runner is one pinned connection and the budgets in force for one run. Every file and
 // every batch of the run is sent with the budgets re-asserted on the session first,
 // which is what stops a file that sets a budget for itself from leaving it on the
@@ -220,21 +214,6 @@ const unbudgeted = "SET lock_timeout TO '0'; SET statement_timeout TO '0'"
 // noLockBudget removes the lock timeout for an autocommit statement's snapshot
 // waits while retaining the deployment's statement timeout.
 const noLockBudget = "SET lock_timeout TO '0'"
-
-// stepAwayFromTheCompositionLock opens the window one `autocommit` file opens, and is
-// the half of ADR 0011 that runs before its statement: the lock goes down, because a
-// build that waits for the transactions already in the database, held under the lock
-// every other replica's boot queues behind, was measured deadlocking the queue.
-//
-// The lock budget goes down with the lock and the statement budget stays on for the
-// statement; both come off for the wait to come back. The two constants above each carry
-// the measurement for their own half.
-func (r *runner) stepAwayFromTheCompositionLock(ctx context.Context) error {
-	if err := r.setBudgets(ctx, noLockBudget); err != nil {
-		return err
-	}
-	return r.releaseCompositionLock(ctx)
-}
 
 // stepBackToTheCompositionLock closes that window: the lock comes back, patiently and
 // bounded by the caller's context as holdCompositionLock says and as

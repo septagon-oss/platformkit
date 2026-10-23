@@ -379,7 +379,7 @@ steps and separate history, planning, runner, window and SQL-reader files make
 those existing responsibilities independently readable. **Made reusable** —
 source validation steps shared by migration and backfill entry points.
 
-The public inputs and entry points remain in [migrate.go](migrate.go).
+The public inputs, entry points and composition-lock window remain in [migrate.go](migrate.go).
 [History](migration_history.go), [planning](migration_plan.go) and
 [execution](migration_runner.go) retain the same pinned connection and lock order.
 [Backfill lifecycle](backfill.go), [windows](backfill_window.go) and
