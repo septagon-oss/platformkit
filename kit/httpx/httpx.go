@@ -40,6 +40,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"reflect"
 	"slices"
@@ -56,6 +57,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/idempotency"
+	"github.com/septagon-oss/platformkit/kit/internal/jsonbody"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -134,19 +136,9 @@ type Options struct {
 	// comes from that request's own Host header, never from this.
 	PublicHost string
 
-	// JSONMediaTypes are the media types this composition reads and writes as
-	// JSON, beside application/json. A protocol that defines its own type —
-	// SCIM says application/scim+json — arrives with a Content-Type the API has
-	// never heard of, and huma answers a body it cannot parse with 415 before
-	// any route runs: the door exists and refuses every client that speaks it.
-	// Registering the type here is the one place that can be said, because it is
-	// the composition that knows which protocols it serves, not a module that
-	// would have to reach the API to say so.
-	//
-	// Each entry has to be a media type of the form type/subtype or
-	// type/subtype+suffix; anything else refuses the build. What is registered is
-	// JSON — the same encoder and decoder application/json uses — so the type
-	// changes the wire's name and never its grammar.
+	// JSONMediaTypes adds protocol media, such as application/scim+json, using
+	// ordinary JSON encoding. Invalid type/subtype declarations refuse the build.
+	// The built-in int64 media retains its decimal-string codec.
 	JSONMediaTypes []string
 
 	// Docs serves /openapi.json, /openapi.yaml and /docs. They are public and
@@ -368,6 +360,7 @@ func StreamedBody() (string, any) { return StreamedBodyExtension, true }
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
+	integers []*integerAPI
 	// moved is this composition's own migration rows (API.Alias), asked after the
 	// kernel's table in aliases.go.
 	moved []struct{ from, to string }
@@ -458,6 +451,11 @@ func New(cfg Options) (*API, *chi.Mux) {
 
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
 	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
+	config.Formats = maps.Clone(config.Formats)
+	format := huma.DefaultJSONFormat
+	format.Unmarshal = jsonbody.Decode
+	config.Formats["application/json"], config.Formats["json"] = format, format
+	config.Formats[int64JSONMediaType] = huma.Format{Marshal: jsonbody.Encode, Unmarshal: jsonbody.Decode}
 	// The extra JSON media types go into the same map the defaults went into,
 	// bound to the same format: parsing and rendering stay JSON's, and the type
 	// name is what a protocol client negotiated for.
@@ -467,7 +465,9 @@ func New(cfg Options) (*API, *chi.Mux) {
 			badMediaTypes = append(badMediaTypes, mt)
 			continue
 		}
-		config.Formats[mt] = huma.DefaultJSONFormat
+		if mt != int64JSONMediaType {
+			config.Formats[mt] = huma.DefaultJSONFormat
+		}
 	}
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}
@@ -508,89 +508,32 @@ func New(cfg Options) (*API, *chi.Mux) {
 	}
 	a.opsHost = HostOnly(cfg.Installation)
 
-	// Which surface is this address, then the security headers that surface
-	// decided, then whether the address is served here at all — outermost and on
-	// the router that carries the static tree as well as the API: a stylesheet, a
-	// 404 from chi and a panic that never reached a handler are all responses a
-	// browser acts on. chi refuses a middleware added after the first route, so
-	// all three are here rather than beside Static.
-	//
-	// The gate runs *inside* the headers, and that order is the whole of its
-	// secrecy: the answer it gives for an address it refuses is the answer an
-	// address nobody mounted gets, and to be that answer it has to be dressed by
-	// the same layer that dresses every other answer of this host. A gate that
-	// answered ahead of the headers was distinguishable from an unmounted address
-	// by five response headers, which is the one fact it exists to hide. See
-	// surfaces.go and headers.go.
+	// Resolve the surface and apply security headers before the address gate,
+	// including on static files, router refusals and panics. A refused address
+	// must have the same headers as an address that was never mounted.
 	root.Use(tracing, a.requestID, a.surface, a.headers, a.address)
 
-	// What chi itself answers when nothing matched, or matched but not for this verb.
-	//
-	// These are the refusals a browser runs into most often — a mistyped address, a
-	// bookmark left over from an earlier deployment, a form action that outlived the
-	// route it pointed at — and none of them reaches a module handler, so the answer used
-	// to be net/http's plain-text "404 page not found": a note meant for a developer,
-	// displayed in a browser window with no way onward. Through a.fail they are the same
-	// verdict as every other refusal and take the shape the client asked for, which is
-	// also what keeps a monitor seeing a problem document it can parse.
+	// Router refusals use the same negotiated problem or browser page as guards.
 	root.NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, http.StatusNotFound, "nothing is served at this address")
 	}))
 	root.MethodNotAllowed(http.HandlerFunc(a.methodNotAllowed))
 
-	// The net/http half of the chain, in order, and before any route: chi
-	// refuses a middleware added after the first one is mounted, and the huma
-	// adapter below mounts huma's own.
-	//
-	// respond is first, holding the response and catching a panic, outside the
-	// transaction on purpose. csrf is second: a cross-site write is refused
-	// before it reaches a router, a tenant or a transaction. carry is last and
-	// does nothing but put the request itself on the context, for the
-	// authentication hook further down, which runs inside the tenant transaction
-	// and still has to read the caller's cookies.
-	//
-	// The request id is not here: it went to the root router with the surfaces,
-	// so that the refusals chi answers for itself — an address nobody mounted —
-	// carry one too. A person quoting a 404 and an operator reading the log have
-	// to land on the same request, and the 404 is the response most likely to be
-	// quoted.
+	// Buffer and recover outside the transaction so a panic rolls back before
+	// any response escapes. Reject CSRF before tenant work; carry the request
+	// inward so authentication can read cookies inside the tenant transaction.
 	inner.Use(a.respond, a.csrf, a.carry)
 
-	// huma.NewAPI mounts its own documentation routes through the adapter it is
-	// handed, so the recorder declares those Public as they arrive: they serve
-	// no tenant data and have no module to declare them, and Recorded is only
-	// worth reading if it is the whole list.
+	// Record the engine's public documentation routes along with module routes.
 	rec := &recordingAdapter{Adapter: humachi.NewAdapter(inner), api: a, builtin: true}
 	a.api = huma.NewAPI(config, rec)
 	rec.builtin = false
 	a.adapter = rec
 
-	// The huma half of the chain, in order. Tenant first, because everything
-	// after it is scoped to one. The public write limit second, and that place is
-	// the point twice over: the key it counts under names the tenant the host just
-	// resolved, and it is still ahead of the transaction, so a refused anonymous
-	// write is not a request that opened a transaction to be told no and the count
-	// survives the refusal by being written on a detached context of its own.
-	// Transaction third, so that authentication and authorization can read the
-	// tenant's own rows: both are queries, and they belong inside the same
-	// transaction as the work they guard. Authentication fourth, because a session
-	// is a row of the tenant that has just resolved. Authorization fifth, so a
-	// denial rolls that transaction back untouched. Bodies last, after every guard
-	// and before the handler, which is where the two things it does both belong:
-	// nothing above it reads a body, and the transaction it ends for a streaming
-	// route is the one the guards opened.
-	// writeLimits sits between the permission guard and the body reader: a caller
-	// who may not perform the write never spends the allowance, and a refused one
-	// has cost the process nothing but the count, because no byte of the request
-	// had been read and the guards' transaction rolls back untouched.
-	// Idempotency last of all, after bodies, because it is the one guard that reads
-	// a body and needs the one the caller got, in that order: bodies is where the
-	// ceiling on a request body is applied and where reading one becomes safe, and
-	// authenticate and authorize are where the caller is named and checked, which a
-	// replay has to satisfy all over again before it is answered. It is below
-	// transaction because the answer it remembers is finalised even further below,
-	// in respond — a guard above the transaction would remember a 200 that the
-	// buffer then replaced with a 500.
+	// Resolve the tenant before counting anonymous writes or opening its transaction.
+	// Authenticate and authorize inside that transaction, before spending a write
+	// allowance or reading a bounded body. Replays recheck those same guards;
+	// respond finalizes their stored answer only after the transaction finishes.
 	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.writeLimits, a.bodies, a.idempotency)
 
 	// The API is mounted last and at the root, so a static tree registered
@@ -724,6 +667,9 @@ type recordingAdapter struct {
 func (r *recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if r.builtin && op != nil {
 		declare(op, Public())
+		if op.Path == "/openapi.json" {
+			handler = r.api.integerDocumentation(handler)
+		}
 	}
 	// The document says what the middleware does, on the same operation both of them
 	// read: a POST or PATCH that can be replayed declares the header that makes it
@@ -763,6 +709,7 @@ func (a *API) Recorded() []*huma.Operation {
 // middleware denies the same operations, so this turns a 403 nobody notices
 // into a startup failure someone has to fix.
 func (a *API) ValidateDeclarations() error {
+	a.integerDocuments()
 	// Huma mounts a route of its own — /schemas/{schema}, which a problem
 	// document's $schema points at — and it was not mounted through a router, so
 	// nothing stamped its surface. The address is the answer, and it is the same

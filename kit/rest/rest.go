@@ -36,6 +36,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/internal/jsonbody"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -1721,17 +1722,9 @@ func (in *listInput) query(fields []crud.Field) (crud.Query, error) {
 // it would be two opinions about which filters do nothing.
 func coerce(f crud.Field, raw string) (any, error) { return crud.Coerce(f, raw) }
 
-// merge applies a PATCH body to an entity, field by field, through the schema,
-// and reports the database columns it changed so that Update writes those and
-// no others. A name the schema does not know, one it knows as read-only, or one
-// that folds onto a name the Spec reserved is refused rather than ignored,
-// because a caller who spells a field wrong — or reaches for the wrong door —
-// has to be told.
+// merge binds writable PATCH fields and returns their database columns.
+// Unknown, server-owned and reserved names are refused before persistence.
 func merge(e any, fields []crud.Field, immutable []string, patch map[string]any) ([]string, error) {
-	// The reserved names are asked of the whole body first, so the answer does
-	// not depend on map order, and folded, because this map is a decoded body:
-	// encoding/json binds "Status" into Status, and the exact lookup below
-	// would answer "there is no field" about a field that is there.
 	if name := foldedName(patch, immutable); name != "" {
 		return nil, immutableRefusal(name)
 	}
@@ -1742,18 +1735,8 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		switch {
 		case !ok:
 			return nil, fmt.Errorf("%w: there is no field %q", crud.ErrInvalid, name)
-			// Both kinds of server-owned name are refused here, in one question, with
-			// sentences that differ only in what the caller can do next: a base field is
-			// somebody else's, and the write counter moves because a write happened.
 		case entity.ServerOwned(f):
 			return nil, serverOwnedRefusal(name)
-		}
-		// Round-tripping through JSON is what makes this the same decoder the
-		// request body went through: one set of rules for "3" as an int and for
-		// null as an empty pointer.
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
 		field := target
 		for _, index := range f.Index {
@@ -1768,7 +1751,7 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 			}
 			field = field.Field(index)
 		}
-		if err := json.Unmarshal(encoded, field.Addr().Interface()); err != nil {
+		if err := jsonbody.Bind(value, field.Addr().Interface()); err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
 		columns = append(columns, f.Column)

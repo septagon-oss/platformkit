@@ -615,7 +615,9 @@ func (r *Router) relFault(rel string) string {
 func Register[I, O any](r *Router, op huma.Operation, auth Auth, handler func(context.Context, *I) (*O, error)) {
 	op.Path = r.compose(op.Path, false)
 	prepare(r, &op, auth, false)
-	huma.Register(r.api.api, op, handler)
+	api := newIntegerAPI[I, O](r.api)
+	huma.Register(api, op, handler)
+	api.documentIntegers()
 }
 
 // prepare is the shared half of the two doors: the panic for the zero Auth, the
