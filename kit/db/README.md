@@ -370,3 +370,20 @@ stays open for the next caller. Owner cancellation does not interrupt a running 
 context does not derive from the owner; every in-tree caller's does. A cancel that lands during the
 `COMMIT` round trip is reported as not committed, though PostgreSQL may have committed. `RunSystem`
 keeps one context for its whole transaction: its caller is owner and only operation.
+
+## Composition of migration steps
+
+**Reused** — `MigrateDeclaring`, the existing runner, history ledger and backfill
+cursor remain the execution path. **Added** — private source/file/rule/adoption
+steps and separate history, planning, runner, window and SQL-reader files make
+those existing responsibilities independently readable. **Made reusable** —
+source validation steps shared by migration and backfill entry points.
+
+The public inputs and entry points remain in [migrate.go](migrate.go).
+[History](migration_history.go), [planning](migration_plan.go) and
+[execution](migration_runner.go) retain the same pinned connection and lock order.
+[Backfill lifecycle](backfill.go), [windows](backfill_window.go) and
+[body checks](backfill_sql.go) share the [SQL reader](migration_sql.go) with
+[migration rules](migration_rules.go). [Source reading](migration_files.go)
+finishes before connecting; an out-of-range rule floor is still judged against
+pending history before any pending file executes.
