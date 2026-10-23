@@ -93,7 +93,7 @@ export async function captureExample(browser, snapshot, exampleId, {
     await page.setContent(`<!doctype html><html><head><meta charset="utf-8">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; base-uri 'none'; form-action 'none'">
       <meta name="viewport" content="width=device-width, initial-scale=1"></head><body></body></html>`)
-    await page.evaluate(async ({ css, html, mode, fonts }) => {
+    await page.evaluate(async ({ css, exampleId, html, mode, fonts }) => {
       const violations = []
       document.addEventListener('securitypolicyviolation', event => violations.push(event.effectiveDirective))
       document.documentElement.lang = 'en'
@@ -164,19 +164,47 @@ export async function captureExample(browser, snapshot, exampleId, {
       // Nothing about what is refused changes — a paused or non-finite animation still refuses
       // on sight, a wave whose frame never arrives still refuses, and so does a page that
       // keeps starting new waves.
-      const settleWave = async running => {
+      //
+      // Each of those three refusals also says which clock ran out, because the bound on one
+      // wave cannot tell them apart: reading every computed style is work the *runner* owes,
+      // and finishing an animation is a fact about the *source*. Job 56717 refused
+      // `pk-ui.component.detail-sheet/pending-pt-PT` with `Capture source animation settling
+      // timed out` and job 56693 refused `pk-ui.component.product-card/loading-en` with the
+      // same five words; neither reader could tell a source that never settles from a runner
+      // that never painted a frame, and those demand opposite fixes. `startTime === null` with
+      // the document's own timeline still at its first frame is the host's — no animation frame
+      // was ever produced for this page, so nothing about the source has been observed yet —
+      // and a `startTime` the timeline has moved past, with `currentTime` short of a finite
+      // `endTime`, is the source's. Probed on a page held so no frame can be produced, both
+      // read null and 0 while wall clock ran on, so the pair does distinguish them.
+      const settleStart = performance.now()
+      const settleAccount = { flushMs: 0 }
+      const describeAnimations = animations => animations.slice(0, 3).map(animation => {
+        const target = animation.effect?.target
+        const timing = animation.effect?.getComputedTiming()
+        return `${animation.animationName || animation.constructor.name} on ` +
+          `${target ? `${target.tagName.toLowerCase()}${typeof target.className === 'string' && target.className ? `.${target.className.split(/\s+/)[0]}` : ''}` : 'a detached effect'}` +
+          ` (playState=${animation.playState} startTime=${animation.startTime} currentTime=${animation.currentTime} endTime=${timing?.endTime ?? 'unknown'})`
+      }).join(', ') + (animations.length > 3 ? `, and ${animations.length - 3} more` : '')
+      const settleWave = async (running, wave) => {
         let waveTimer
         try {
           await Promise.race([
             Promise.all(running.map(animation => animation.finished.catch(() => {}))),
             new Promise((_, reject) => {
-              waveTimer = setTimeout(() => reject(new Error('Capture source animation settling timed out')), 5000)
+              waveTimer = setTimeout(() => reject(new Error(
+                `Capture source animation settling timed out on ${exampleId} in wave ${wave}: styles read across ` +
+                `${Math.round(settleAccount.flushMs)}ms of the ${Math.round(performance.now() - settleStart)}ms of wall clock elapsed, ` +
+                `the document's own timeline is at ${Math.round(document.timeline.currentTime)}ms, ` +
+                `${running.length} animation(s) still running — ${describeAnimations(running)}`)), 5000)
             }),
           ])
         } finally { clearTimeout(waveTimer) }
       }
       for (let wave = 0; ; wave++) {
+        const flushStarted = performance.now()
         for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
+        settleAccount.flushMs += performance.now() - flushStarted
         // A closed disclosure can retain a running, display-locked
         // animation whose timeline never advances. It cannot paint.
         const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
@@ -184,11 +212,11 @@ export async function captureExample(browser, snapshot, exampleId, {
         if (active.length === 0) break
         if (active.some(animation => animation.playState === 'paused' ||
           !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
-          throw new Error('Capture requires finite, running source animations to settle')
+          throw new Error(`Capture requires finite, running source animations to settle: ${describeAnimations(active)}`)
         }
-        if (wave === 8) throw new Error('Capture source animations never stopped starting new waves')
+        if (wave === 8) throw new Error(`Capture source animations never stopped starting new waves: ${describeAnimations(active)}`)
         // A cancelled transition can start a replacement; inspect again.
-        await settleWave(active)
+        await settleWave(active, wave)
       }
       for (const image of absentImages) {
         let suppressed = false
@@ -199,7 +227,7 @@ export async function captureExample(browser, snapshot, exampleId, {
       }
       if (violations.length) throw new Error(`Capture refused resources blocked by CSP: ${violations.join(', ')}`)
     }, {
-      css: snapshot.css, html: prepared.html, mode,
+      css: snapshot.css, exampleId, html: prepared.html, mode,
       fonts: faces.map(face => ({ family: face.family, weight: face.weight, style: face.style, bytes: [...face.bytes] })),
     })
     const sourceOccurrences = await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })

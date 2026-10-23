@@ -133,7 +133,7 @@ func TestAnOwnerCancelledMidHandlerReleasesItsTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancelOwner()
-	waitUntil(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
+	waitForPoolStat(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
 	if n := committed(t, admin); n != 0 {
 		t.Errorf("rows visible after the owner ended = %d, want 0", n)
 	}
@@ -185,7 +185,7 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 		if err := p.Err(); err != nil {
 			t.Errorf("the owner's end was remembered as a database failure: %v", err)
 		}
-		waitUntil(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
+		waitForPoolStat(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
 	})
 	t.Run("owner ended while waiting for a connection", func(t *testing.T) {
 		_, appURL := dbtest.URLs(t)
@@ -213,7 +213,7 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 			_, err := p.Tx(context.WithoutCancel(owner))
 			opened <- err
 		}()
-		waitUntil(t, "the open to wait for the pool", func() bool { return app.Stats().WaitCount > before })
+		waitForPoolStat(t, "the open to wait for the pool", func() bool { return app.Stats().WaitCount > before })
 		cancelOwner()
 		if err := <-opened; !errors.Is(err, context.Canceled) {
 			t.Errorf("an open whose owner ended while it waited = %v, want context.Canceled", err)
@@ -233,7 +233,7 @@ func TestACancelBeforeOrDuringBeginStrandsNoConnection(t *testing.T) {
 			t.Fatal(err)
 		}
 		_ = p.Close(true)
-		waitUntil(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
+		waitForPoolStat(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
 	})
 }
 
@@ -304,7 +304,7 @@ func TestACancelRacingTheCommitFinalisesOnceAndNeverReopens(t *testing.T) {
 			t.Fatalf("iteration %d: Tx after the owner ended opened a transaction", i)
 		}
 	}
-	waitUntil(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
+	waitForPoolStat(t, "no connection in use", func() bool { return app.Stats().InUse == 0 })
 }
 
 type valueKey struct{}
@@ -454,8 +454,10 @@ func insertThrough(t *testing.T, ctx context.Context, p *db.Pending, tenant tena
 	}
 }
 
-// waitUntil polls cond until it holds, failing after ten seconds.
-func waitUntil(t *testing.T, what string, cond func() bool) {
+// waitForPoolStat polls cond until it holds, failing after ten seconds. The name
+// says what its cases poll: kit/db's migration tests keep a waitUntil of their own
+// that takes a budget and the run's result channel, and one package cannot hold two.
+func waitForPoolStat(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for !cond() {
