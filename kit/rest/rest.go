@@ -1589,11 +1589,8 @@ func Fault(err error) error {
 	case errors.Is(err, crud.ErrNotFound):
 		return problem.NotFound("no such row, or none this tenant may see")
 	case errors.Is(err, crud.ErrInvalid):
-		p := problem.New(http.StatusUnprocessableEntity, err.Error())
-		if violations, found := errors.AsType[fault.Violations](err); found {
-			p.Violations = violations
-		}
-		return p
+		violations, _ := errors.AsType[fault.Violations](err)
+		return problem.Refusal(err.Error(), violations, err)
 	case errors.Is(err, crud.ErrConflict):
 		if _, unique := errors.AsType[*crud.UniqueConflict](err); unique {
 			return problem.Conflict("A record already uses one of these values. Change the duplicate value and try again.")

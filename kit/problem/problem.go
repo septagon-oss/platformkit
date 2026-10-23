@@ -65,6 +65,16 @@ func NotFound(detail string) *Problem { return New(http.StatusNotFound, detail) 
 // Conflict is 409: the request contradicts the current state.
 func Conflict(detail string) *Problem { return New(http.StatusConflict, detail) }
 
+// Refusal is a 422 whose detail is the refusal's whole message and whose cause
+// stays reachable through errors.Is and errors.As, so a Go caller of the mapped
+// error still sees the typed validation error behind the document.
+func Refusal(detail string, violations []fault.Violation, cause error) *Problem {
+	p := New(http.StatusUnprocessableEntity, detail)
+	p.Violations = violations
+	p.cause = cause
+	return p
+}
+
 // serverError is any 5xx: the status is kept, because 503 asks a caller to come
 // back and 500 asks them not to, and the message is not — a server error's real
 // message belongs in the log, and repeating the title in the detail says
