@@ -552,7 +552,7 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 		return nil, err.Error()
 	}
 	if len(p.Violations) > 0 {
-		return violationFields(p.Violations, fields)
+		return violationFields(p, fields)
 	}
 	out := map[string]string{}
 	for _, e := range p.Errors {
@@ -578,18 +578,18 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 	return out, detail
 }
 
-// violationFields marks each known field with its violations' messages and
-// returns all messages as the whole. Nothing is parsed: a violation's location
-// is the field's wire name or it marks no control.
-func violationFields(violations []fault.Violation, fields []crud.Field) (map[string]string, string) {
-	out, all := map[string]string{}, make([]string, 0, len(violations))
-	for _, v := range violations {
-		all = append(all, v.Message)
+// violationFields marks each known field with its violations' messages. The
+// whole message is the problem's detail, as for every other refusal. Nothing is
+// parsed: a violation's location is the field's wire name or it marks no
+// control.
+func violationFields(p *problem.Problem, fields []crud.Field) (map[string]string, string) {
+	out := map[string]string{}
+	for _, v := range p.Violations {
 		if _, known := crud.FieldNamed(fields, v.Location); known {
 			out[v.Location] = strings.TrimPrefix(out[v.Location]+"; "+v.Message, "; ")
 		}
 	}
-	return out, strings.Join(all, "; ")
+	return out, strings.TrimPrefix(p.Detail, "crud: invalid: ")
 }
 
 // mentions reports whether detail names field as a word of its own.

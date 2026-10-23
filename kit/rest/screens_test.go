@@ -564,7 +564,7 @@ func TestFieldErrorsReadsViolationsWithoutParsingProse(t *testing.T) {
 	if errs["title"] != "a task needs a title" || len(errs) != 1 {
 		t.Errorf("errs = %v", errs)
 	}
-	if msg != "a task needs a title; elsewhere" {
+	if msg != "mentions status in prose" {
 		t.Errorf("msg = %q", msg)
 	}
 }
