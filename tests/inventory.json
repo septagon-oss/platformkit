@@ -14313,6 +14313,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/db/composition_lock_replicas_apply_once_test.go",
+   "id": "kit/db/composition_lock_replicas_apply_once_test.go#TestTwoReplicasOfOneNamespaceApplyAFileOnce",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoReplicasOfOneNamespaceApplyAFileOnce",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/db/concurrent_index_repair_test.go",
    "id": "kit/db/concurrent_index_repair_test.go#TestConcurrentIndexRepairRebuildsAfterACancelledBuild",
    "kind": "go",
@@ -82853,7 +82872,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2241,
+  "files": 2242,
   "forge_runs": [
    408,
    413,
@@ -82887,7 +82906,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3580,
+   "behaviour": 3581,
    "composition": 486,
    "contract": 22,
    "journey": 110
@@ -82906,9 +82925,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4198,
+  "rows": 4199,
   "tiers": {
-   "merge": 2585,
+   "merge": 2586,
    "nightly": 110,
    "push": 1503
   },
@@ -82916,13 +82935,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1996,
+   "keep": 1997,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3812,
+   "keep": 3813,
    "keep-rewrite": 170,
    "merge": 216
   }
