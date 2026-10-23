@@ -946,8 +946,8 @@ selects each of them still allows the vulnerable range: `dompurify@3.4.17`,
 reached through `jspdf`'s `^3.3.1`, fixes the
 [shadow-root template bypass](https://github.com/advisories/GHSA-cg2g-xh64-v4q7),
 [detached-subtree handlers](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) and
-[XHTML SMIL guard](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f); `source-map-js@1.2.2`,
-reached through `css-tree`'s `^1.2.1`, fixes the
+[XHTML SMIL guard](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f); `source-map-js@1.2.2`, reached through `css-tree`'s
+`^1.2.1`, fixes the
 [event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
 vulnerability. Neither is a direct dependency, so neither is a version
 anybody edits by hand; `locked-dependencies.test.mjs` requires the lock to resolve
