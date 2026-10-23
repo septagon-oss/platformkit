@@ -24,7 +24,15 @@
 # because it is free to downgrade the pinned SDK past the source-hash checks):
 #
 #   @open-pencil/core -> unifont -> css-tree -> source-map-js ^1.2.1   -> 1.2.2
-#   @open-pencil/core -> jspdf (optional) -> dompurify ^3.3.1          -> 3.4.16
+#   @open-pencil/core -> jspdf (optional) -> dompurify ^3.3.1          -> 3.4.17
+#
+# The feed moved the same way a second time. Forge job 78498 at 2026-10-22T19:06:48Z — the step red on
+# `main`'s own head, 45fbddf, before any branch touched it — reported `dompurify <=3.4.16` at three
+# critical advisories (GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr, GHSA-c6gr-qvv4-5v3f), the second of
+# them an incomplete fix for one of the two this file was written for. dompurify 3.4.17 is the release
+# above that line and is still inside `^3.3.1`, so the second record below is the whole cure and the
+# first is left standing: a version under 3.4.15 sits in both ranges, and this file names ranges rather
+# than the history of how each was discovered.
 #
 # The parent's range is not re-derived here, because `npm ci` on the line above the audit already
 # refuses a lock that fails one and names the offending edge; re-checking that fact would be a number
@@ -66,6 +74,14 @@ ADVISORIES = (
         "upto": (3, 4, 15),
         "ids": ("GHSA-p98j-92pf-mc4p", "GHSA-6688-9rhm-gjv2"),
         "severity": "low",
+        "parent": "jspdf",
+    },
+    {
+        "package": "dompurify",
+        "since": None,
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"),
+        "severity": "critical",
         "parent": "jspdf",
     },
 )
