@@ -26,7 +26,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 
 | Contract | Implementation and consumer |
 |---|---|
-| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
+| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`](kit/rest/rest.go)/[`Command`](kit/rest/command.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). A refusal the kernel makes before a handler exists — the cross-site guard, a panic — is the same problem value, shaped by whoever asked ([ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)): `httpx.Options.Fault`, and the application supplies `page.FaultHandler(shell)` so a browser gets a page and a client gets the JSON. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/app/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
 | Rich text field | A string with `ui:"widget:richtext"` enters [`richtext.Prepare`](kit/richtext/render.go) through `rest.Spec` inside the tenant transaction; the same package renders sanitized HTML for [`components.Prose`](ui/components/prose.go) in generated details and public content. [`richtext.Files`](kit/richtext/render.go) resolves images per tenant and audience, with [`modules/file.RichTextFiles`](modules/file/richtext.go) wired at composition. The schema publishes `contentMediaType: text/markdown`, and the no-JavaScript form uses a textarea with formatting help. |
@@ -75,7 +75,7 @@ Explain and Describe return alike because all four resolve through one plan.
 
 | Area | Observed limitation and counterexample | Required direction |
 |---|---|---|
-| Resource | [`rest.Operation[I,O]`](kit/rest/operation.go) accepts projections, but [`rest.Spec`/`Command`](kit/rest/rest.go) require [`crud.Entity`'s storage identity](kit/entity/entity.go). An existing catalogue reservation screen adds Base/TableName scaffolding to an already identified contract; duplicate identity/timestamp fields can change its JSON. An availability answer has no stored row at all. | Extend the existing resource/presentation owner with non-storage input/output metadata; retain operation validation and commands. Remove the reservation adapter only after proving IDs, timestamps, wire fields and absent generic write routes remain intact. A status PATCH must never replace Confirm's revision, command identity and eligibility checks. |
+| Resource | [`rest.Operation[I,O]`](kit/rest/operation.go) accepts projections, but [`rest.Spec`](kit/rest/rest.go)/[`Command`](kit/rest/command.go) require [`crud.Entity`'s storage identity](kit/entity/entity.go). An existing catalogue reservation screen adds Base/TableName scaffolding to an already identified contract; duplicate identity/timestamp fields can change its JSON. An availability answer has no stored row at all. | Extend the existing resource/presentation owner with non-storage input/output metadata; retain operation validation and commands. Remove the reservation adapter only after proving IDs, timestamps, wire fields and absent generic write routes remain intact. A status PATCH must never replace Confirm's revision, command identity and eligibility checks. |
 | Content | Markdown is a meaning even when its editor is a textarea. Work already stores a format, while its traced display drops it. Current resource media metadata follows the richtext widget. The saved string `*draft*` is literal in plain text and emphasis in Markdown. | Extend semantic format propagation through the existing entity/rest, content/richtext and file owners, independently of editor selection. Preserve saved meaning and publication digests. A successful generic CRUD upload does not prove custom Work commands validate private attachments or roll file-use writes back. |
 | Operation | Existing operation/catalog schemas describe command fields and presentation without a complete retry/effect/completion contract. AddItem repeated twice increments twice; Checkout recovers the existing transition. Equal-amount refunds can be distinct intents. | Extend existing descriptions and [`httpx` receipts](kit/httpx/operation_receipt.go), retaining domain receipts and the catalogue's refund intent/reservation owner. Do not create another journal. Describe local commit, outbox delivery and external completion separately; a timeout must not turn an uncertain refund into available funds. |
 | Payment subject | The traced payment contract's `SubjectKind`/`Subject` supports cart and subscription; the actual payers use cart. No traced reservation or Work operation needs another payable kind. | Retain that closed set. “PaymentSubject” is a description, not a new type or generic entity reference. A named consumer must justify another subject before the shared contract grows. |
@@ -353,8 +353,8 @@ describes the constraint.
 A service records events in its transaction. [kit/events](kit/events/) delivers
 the committed outbox through the selected transport and claims each event for
 a subscription in the handler's transaction.
-[Spec](kit/rest/rest.go) shares create, update and delete mutations between JSON
-routes and registered resources. Updates and deletes lock the live row before merging,
+[Spec](kit/rest/rest.go) shares its [create, update and delete core](kit/rest/write.go)
+between JSON routes and registered resources. Updates and deletes lock the live row before merging,
 validation, hooks and event snapshots. This serializes server-side decisions;
 it does not reject an old form based on the revision its user originally saw.
 Use [rest.Operation](kit/rest/operation.go) for typed service projections with
@@ -662,9 +662,9 @@ vocabulary of its own.
 
 ### Events: CloudEvents, the outbox, JetStream
 
-**Where it lives.** `kit/events` — `Publish` (`kit/events/events.go:61`),
-`PublishFor` (`:80`) for a system transaction that has to name its tenant,
-`Consume` (`:208`), and the claim and dead-letter paths (`:284`, `:293`). The
+**Where it lives.** `kit/events` — [`Publish` and `PublishFor`](kit/events/events.go)
+record tenant and system writes; [`Consume`](kit/events/consume.go) delivers them
+through the [claim and dead-letter paths](kit/events/events.go). The
 wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
 (`kit/events/transport/transport.go:192`) is the other door onto the same stream:
 one tenant's one event, watched from now on, claiming nothing, retrying nothing
@@ -683,7 +683,7 @@ against the `nats:2-alpine` container (`compose.yaml:52`).
 
 **How the tenant crosses it.** Three ways, all load-bearing: `Publish` takes a
 `db.Tx[db.Tenant]`, so no call publishes without a tenant transaction
-(`kit/events/events.go:61`); the `tenantid` extension is required here, because an
+([publication](kit/events/events.go)); the `tenantid` extension is required here, because an
 event with no tenant has no transaction to deliver it in
 (`kit/events/transport/cloudevents.go:50-54`); and the outbox rows are filtered by
 row-level security (`migrations/000002_outbox.up.sql:15`, `:37-38`).
@@ -693,7 +693,7 @@ and `tracestate` (`kit/events/transport/cloudevents.go:56-62`), plus a PlatformK
 owned `baggage` carrying the publisher's request id, because the specification fixes
 those two members and says nothing about correlation (`:63-70`; the column is
 `migrations/000041_outbox_baggage.up.sql:42`). Spans: the relay's batch
-(`kit/events/relay.go:281`), `<event> publish` and `<event> deliver`
+([relay batches](kit/events/relay.go)), `<event> publish` and `<event> deliver`
 (`kit/events/trace.go:143`, `:178`). The trail *is* this stream: `SubscribeAll`
 (`modules/audit/module.go:93`) turns every declared event into a row.
 
@@ -841,7 +841,7 @@ process serves many tenants, as `## Follow a request` says.
 **How it is traced and audited.** This pillar *is* the trace: the transport span
 (`kit/httpx/traced.go:50`), named after the operation id (`:86`), the transaction
 span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:143`, `:178`),
-the relay batch (`kit/events/relay.go:281`), and the job run with one span per
+the relay batch ([relay batches](kit/events/relay.go)), and the job run with one span per
 tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
 verbatim and indexes the trace out of it, as the audit section below explains.
 The instruments are the three named at `kit/telemetry/instruments.go:61-69`,
@@ -936,7 +936,7 @@ flaky spec is a bug report, not a retry.
 **Where it lives.** The contract is a document. `ui/screens` publishes the screen
 and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Catalog`
 (`:31`), `Entry` with the operation ids an app calls (`:42`, `:77`) — at
-`/api/v1/app/resources` (`kit/httpx/surfaces.go:77`); `kit/app` renders the event
+`/api/v1/app/resources` ([surface addresses](kit/httpx/surfaces.go)); `kit/app` renders the event
 half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:48`, `CoveredEvents`
 `:161`), pinned by the golden files in `apps/platformkit/testdata/`.
 `apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
@@ -954,7 +954,7 @@ dependency. Screens are derived from schemas rather than authored
 
 **How the tenant crosses it.** The document is reached behind host resolution, on
 the tenant's own address, so a shell never names a tenant
-(`kit/httpx/surfaces.go:77`), and every operation inside it carries the tenant
+([surface addresses](kit/httpx/surfaces.go)), and every operation inside it carries the tenant
 through the request's transaction like any other call. `CoveredEvents`
 (`kit/app/asyncapi.go:161`) counts the declared events the document names, which
 is the claim that a shell sees no event nobody declared.
