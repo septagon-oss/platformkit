@@ -292,10 +292,13 @@ func TestTheForgottenPasswordRouteCostsTheSameEitherWay(t *testing.T) {
 		t.Errorf("a request wrote %d password token(s); the token is the worker's, and a request that writes one has looked the address up", tokensAfter-tokensBefore)
 	}
 
-	// 2. The clock, paired.
-	if testing.Short() {
-		t.Skip("the timing half needs samples")
-	}
+	// 2. The clock, paired. There is no shorter form of this half: the property is
+	// that an address somebody has is not measurable against one nobody has, and a
+	// run that skipped the measurement would be a green tick over an unmeasured
+	// privacy claim. `go test -short` therefore changes nothing here (task T-0219,
+	// rule 4: a flaky case is fixed, never hidden) — and the case is not flaky, because
+	// it no longer compares two medians. It asks 200 pairs of requests, and the sign
+	// test below refuses only a split far beyond what fair coin flips explain.
 	const pairs = 200
 	var known, unknown []time.Duration
 	slower := 0
