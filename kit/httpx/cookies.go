@@ -61,6 +61,14 @@ func CookieNameOf(app appname.Name, base string, secure bool) string {
 // the current code minted rather than the older one. The legacy names are read
 // for one release and written never.
 func SessionCookieOf(r *http.Request) (*http.Cookie, bool) {
+	if r.Header.Get("Cookie") == "" {
+		// Nothing to look for, and the search is not free: every spelling of the
+		// session cookie's name is built before the first read, so an anonymous
+		// request paid for a list of names it cannot carry. The Cookie header is
+		// the only place a request presents a cookie — net/http reads no other —
+		// which is what makes this the same answer, reached without the list.
+		return nil, false
+	}
 	for _, name := range append([]string{CookieName(SessionCookie, true), SessionCookie}, legacyNames()...) {
 		if c, err := r.Cookie(name); err == nil && c.Value != "" {
 			return c, true
