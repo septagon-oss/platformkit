@@ -58,7 +58,12 @@ func newTask(ctx context.Context, in contracts.CreateTask) (*contracts.Task, err
 		DueAt: utc(in.DueAt), SLADeadline: utc(in.SLADeadline), Source: in.Source, SourceRef: in.SourceRef,
 	}
 	if err := task.Validate(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %v", crud.ErrInvalid, err)
+		// Both halves are wrapped, the way kit/crud wraps the same check: errors.Is
+		// still answers ErrInvalid for the JSON door, and the *fault.Reason the entity
+		// wrote stays reachable as the value it is, so a redrawn form can read the key
+		// off it and answer the refusal in the reader's language. The reason as text
+		// would leave the English sentence on a page written in another one.
+		return nil, fmt.Errorf("%w: %w", crud.ErrInvalid, err)
 	}
 	return task, nil
 }
