@@ -61,9 +61,16 @@ test('each revocation on the sessions screen ends the sessions its button named,
 
   // The design floor's "one thing to do per view", measured on the live page
   // rather than on a mirror of it: one filled submit control, and every row's
-  // own revocation drawn unfilled, one per row.
+  // own revocation drawn unfilled, one per row. The unfilled count is taken
+  // inside the rows, and the page is asked for its total as well, because the
+  // shell's header carries one quiet submit of its own — the account language
+  // control, which the same floor holds unfilled beside the way out. A page-wide
+  // count alone cannot tell a row that lost its button from a header that grew
+  // one, so each half is named where it lives and the total is pinned too.
   await expect(here.locator('button[type="submit"][data-variant="primary"]')).toHaveCount(1);
-  await expect(here.locator('button[type="submit"][data-variant="ghost"]')).toHaveCount(baseline + 1);
+  await expect(rows(here).locator('button[type="submit"][data-variant="ghost"]')).toHaveCount(baseline + 1);
+  await expect(here.locator('form[data-account-language] button[type="submit"][data-variant="ghost"]')).toHaveCount(1);
+  await expect(here.locator('button[type="submit"][data-variant="ghost"]')).toHaveCount(baseline + 2);
 
   // One row's own button ends that row and nothing else. The row is named by
   // the ref it carries, so the assertion is about the machine that was clicked.
