@@ -134,6 +134,19 @@ func (f *Fake) OrderUses(_ context.Context, _ db.Tx[db.Tenant], _ contracts.Use,
 
 var _ contracts.UsesOrder = (*Fake)(nil)
 
+// setUses is both of the ledger's doors in one: it files the set of files a body
+// references and, when the last public use of a file ends, hands back the files whose
+// grace period starts now.
+//
+// Who may read each file the rewrite touches is asked before any of it is written and
+// again with the rows down, and the flips between the two answers are published between
+// the two reads. Asked only where it can move at all — a public audience being filed, or
+// a row that asserted one being ended — which is internal.Service's rule too, and the
+// draft that renames pictures in a private record pays for neither read. Neither half is
+// written onto a file row: what a publish asserted stays in the use row that asserts it,
+// and what the file was given stays where its upload put it. That is what lets two
+// records that share two pictures be saved at all: no file row is locked by a save that
+// only names it. The whole rewrite holds f.mu.
 func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	scope, err := contracts.ScopeOf(ctx)
 	if err != nil {
@@ -142,101 +155,22 @@ func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	wanted := contracts.CollapseRefs(refs)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// Nothing is written until every id the new set names has been found. That is
-	// the whole of the refusal's promise: a body that names one gone file records
-	// no uses at all, rather than the uses of the files that happen to still be
-	// there. Ids this rewrite is dropping are not asked: they may be gone, and
-	// the rows that name them are what the write is here to remove.
-	for _, id := range wanted {
-		if _, ok := f.rows[id]; !ok {
-			return nil, fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
-		}
+	// Validate the entire desired set before changing any use.
+	if err := f.validateUseFiles(wanted); err != nil {
+		return nil, err
 	}
-	var from []uuid.UUID
-	live := map[uuid.UUID]bool{}
-	// Who may read each file this rewrite is about to change, asked before any of it
-	// is written: the audience is the answer to a question about the ledger, so the
-	// rewrite asks it once here and once the rows are down, and publishes the flips
-	// between the two. Asked only where it can move at all — a public audience being
-	// filed, or a row that asserted one being ended — which is internal.Service's
-	// rule too, and the draft that renames pictures in a private record pays for
-	// neither read.
-	var was map[uuid.UUID]bool
-	for _, row := range f.uses {
-		if row.TenantID == scope.TenantID() && row.Module == use.Module && row.Entity == use.Entity &&
-			row.Record == use.Record && row.Field == use.Field && row.Locale == use.Locale {
-			from = append(from, row.FileID)
-			live[row.FileID] = true
-		}
-	}
+	from := f.usedFiles(scope, use)
 	add, remove := contracts.DiffUses(from, wanted)
-	retract := contracts.CollapseRefs(remove)
-	if public || len(retract) > 0 {
-		was = map[uuid.UUID]bool{}
-		for _, id := range append(append([]uuid.UUID{}, wanted...), remove...) {
-			was[id] = f.readsPublicly(id)
-		}
-	}
-	kept := f.uses[:0]
-	for _, row := range f.uses {
-		if row.TenantID == scope.TenantID() && slices.Contains(remove, row.FileID) &&
-			row.Module == use.Module && row.Entity == use.Entity &&
-			row.Record == use.Record && row.Field == use.Field && row.Locale == use.Locale {
-			continue
-		}
-		kept = append(kept, row)
-	}
-	for _, id := range add {
-		kept = append(kept, contracts.FileUse{
-			Base:   crud.Base{ID: uuid.New(), TenantID: scope.TenantID(), CreatedAt: db.Now(), UpdatedAt: db.Now()},
-			FileID: id, Module: use.Module, Entity: use.Entity, Record: use.Record, Field: use.Field, Locale: use.Locale,
-			Public: public,
-		})
-	}
-	slices.SortFunc(kept, func(a, b contracts.FileUse) int { return bytes.Compare(a.FileID[:], b.FileID[:]) })
-	f.uses = kept
-	for _, id := range add {
-		// Shown again, so the grace period is over — the same arm internal.Service
-		// writes with its UPDATE, run against the row this fake keeps in memory.
-		if row, ok := f.rows[id]; ok {
-			row.UnusedSince = nil
-			f.rows[id] = row
-		}
-	}
+	was := f.useAudiences(wanted, remove, public)
+	f.rewriteUses(scope, use, add, remove, public)
 	if len(remove) == 0 {
-		// Nothing ended, so no clock started — but a public audience still asks who
-		// may read the files it names, which is the published page that gained its
-		// first picture. The answer lives in the use rows this rewrite just wrote.
+		// Nothing ended, so no clock started — but a public audience still asks who may
+		// read the files it names, which is the published page that gained its first
+		// picture. The answer lives in the use rows this rewrite just wrote.
 		f.settleAudience(was)
 		return nil, nil
 	}
-	var unused []uuid.UUID
-	for _, id := range remove {
-		still := false
-		for _, row := range f.uses {
-			if row.FileID == id && row.TenantID == scope.TenantID() {
-				still = true
-			}
-		}
-		if !still {
-			unused = append(unused, id)
-			if row, ok := f.rows[id]; ok && row.DeletedAt == nil && row.Width > 0 {
-				// The grace period starts at the moment the last use went, on the
-				// row and not on the copy: the grid's unused filter reads this
-				// column, and a stamp that vanished with the local was the fake
-				// disagreeing with the row-level policy the SQL service writes.
-				at := db.Now()
-				row.UnusedSince = &at
-				f.rows[id] = row
-			}
-		}
-	}
-	// The audience of every file this rewrite named, asked again with the rows in
-	// their new state and published as the flips between the two answers. Neither half
-	// is written onto a file row: what a publish asserted stays in the use row that
-	// asserts it, and what the file was given stays where its upload put it — one
-	// answer either way, and no file row locked by a save that only names it, which is
-	// what lets two records that share two pictures be saved at all.
+	unused := f.startUnused(scope, remove)
 	f.settleAudience(was)
 	return unused, nil
 }
@@ -391,36 +325,9 @@ func (f *Fake) Upload(ctx context.Context, open contracts.Tx, up contracts.Uploa
 		_ = f.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
-	// The same image pass the SQL service runs — the same function, not a
-	// second implementation of it — at the kernel's default ceiling. A
-	// deployment's own ceiling is a Deps value, and the case that exercises a
-	// deployment that changed one lives in internal, beside the Deps that sets
-	// it; what this suite pins is that both implementations of Upload agree
-	// about what an image becomes.
-	body, err := f.storage.Get(ctx, scope, key)
+	pass, err := f.uploadImage(ctx, scope, key, up, counted.head[:min(counted.n, int64(len(counted.head)))])
 	if err != nil {
-		_ = f.storage.Delete(ctx, scope, key)
 		return nil, err
-	}
-	var pass *contracts.ImagePass
-	if contracts.ReadsAsImage(up, counted.head[:min(counted.n, int64(len(counted.head)))]) {
-		got, perr := contracts.ProcessImage(body, contracts.DefaultMaxImagePixels)
-		if perr != nil {
-			err = perr
-		} else {
-			pass = &got
-		}
-	}
-	_ = body.Close()
-	if err != nil {
-		// The same rule as the service: a pass that failed refuses and removes
-		// the object only when the caller called it an image or asked for more
-		// pixels than this deployment decodes.
-		if contracts.RefusesPass(err, up.Image) {
-			_ = f.storage.Delete(ctx, scope, key)
-			return nil, err
-		}
-		err = nil
 	}
 	size, digestHex, contentType := counted.n, hex.EncodeToString(digest.Sum(nil)), up.ContentType
 	var width, height int

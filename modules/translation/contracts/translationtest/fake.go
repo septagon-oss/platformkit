@@ -427,28 +427,9 @@ func (f *Fake) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.Overvie
 	if limit <= 0 || limit > crud.MaxLimit {
 		limit = crud.MaxLimit
 	}
-	total := int64(0)
-	records, pageTotal, err := src.Page(ctx, tx, limit, q.Offset)
+	records, total, err := overviewRecords(ctx, tx, src, q, limit)
 	if err != nil {
 		return nil, rest.OverviewCounts{}, 0, err
-	}
-	if q.State != "" {
-		// A filter over a derived state cannot be pushed into the entity's query,
-		// so the whole set is judged and the page cut out of the survivors —
-		// which is the only way the total can be the total after the filter.
-		records = nil
-		for offset := 0; ; offset += crud.MaxLimit {
-			page, _, err := src.Page(ctx, tx, crud.MaxLimit, offset)
-			if err != nil {
-				return nil, rest.OverviewCounts{}, 0, err
-			}
-			records = append(records, page...)
-			if len(page) < crud.MaxLimit {
-				break
-			}
-		}
-	} else {
-		total = pageTotal
 	}
 	ids := make([]uuid.UUID, 0, len(records))
 	for _, rec := range records {
@@ -473,30 +454,9 @@ func (f *Fake) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.Overvie
 		row := rest.OverviewRow{ID: rec.ID, UpdatedAt: rec.UpdatedAt, States: map[string]string{}}
 		for _, field := range fields {
 			stored := f.find(tenantID, q.Module, q.Entity, q.Locale, rec.ID, field)
-			state := rest.StateMissing
-			if stored != nil && !speaks {
-				state = rest.FallbackRemoved
-			} else {
-				hash, err := contracts.Hash(current[rec.ID][field], rich[field])
-				state = contracts.StateOf(stored != nil,
-					stored != nil && stored.Origin == rest.OriginMachine && stored.ReviewedAt == nil,
-					stored != nil && err == nil && hash == stored.SourceHash)
-			}
+			state := overviewState(stored, current[rec.ID][field], rich[field], speaks)
 			row.States[field] = state
-			switch state {
-			case rest.StateMissing:
-				row.Missing++
-				counts.Missing++
-			case rest.StateOutdated:
-				row.Outdated++
-				counts.Outdated++
-			case rest.StateMachine:
-				row.Machine++
-				counts.Machine++
-			case rest.StateComplete:
-				row.Complete++
-				counts.Complete++
-			}
+			countOverviewField(&row, &counts, state)
 		}
 		if q.State != "" {
 			matches := false
