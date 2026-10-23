@@ -320,3 +320,48 @@ type LockedReader interface {
 type Writer interface {
 	Save(ctx context.Context, tx db.Tx[db.Tenant], in *Task) (*Task, error)
 }
+
+// CreateTask is the input of Creator.Create: what a caller may say about a new
+// task, and nothing it may not. The id, the tenant, the timestamps, the revision
+// and the breach flag are not fields here, so no caller can supply them; the
+// resolution fields are absent because a new task is not resolved.
+//
+// Zero values mean "unsaid": an empty Status is open and an empty Priority is
+// normal, exactly as Task.Validate reads them. Times are instants and are stored
+// in UTC. AssigneeID is reachable in-process only; the REST body refuses it
+// (CommandOwnedFields) and the door that decodes a form refuses it likewise.
+type CreateTask struct {
+	Title       string
+	Description string
+	Status      string
+	Priority    string
+	DueAt       *time.Time
+	SLADeadline *time.Time
+	AssigneeID  *uuid.UUID
+	Source      string
+	SourceRef   string
+}
+
+// Creator is the one way a task comes to exist: the REST create, the web form, a
+// seed and other modules all reach it, so identity, defaults, events and the
+// breach-on-arrival check are decided once.
+//
+// Create runs in the caller's transaction and publishes into it, so the row, its
+// events and the caller's own writes commit together or not at all. A refusal is
+// decided before any write; an error after the first write leaves the transaction
+// poisoned and the caller must roll back. It publishes EventCreated (the *Task as
+// inserted), then EventAssigned when AssigneeID is set, then EventSLABreached when
+// SLADeadline has passed, and returns the row as it now stands. It is not
+// idempotent: a retrying caller owns the key. Errors are kit/crud's:
+//
+//	crud.ErrInvalid         the input is not one a task can have (correctable)
+type Creator interface {
+	Create(ctx context.Context, tx db.Tx[db.Tenant], in CreateTask) (*Task, error)
+}
+
+// Reader is the plain read: a task by id in the caller's tenant, without a lock.
+// It exists beside LockedReader for the consumer that only needs to look — an
+// ETag over the row, a link to the task another module's row names.
+type Reader interface {
+	TaskByID(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*Task, error)
+}

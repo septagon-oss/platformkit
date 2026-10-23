@@ -60,6 +60,32 @@ type Fixture struct {
 	// only see return values could not check that, and it is the half a retry
 	// exercises every day.
 	Published func() []string
+
+	// The next four belong to CreatorSuite and are nil in a world that runs only
+	// RunService. Creator is the implementation under test; Reader is the plain
+	// read the same world offers; Tasks counts every task the world holds, which
+	// is what "a refused create wrote nothing" compares, since a refused create has
+	// no row id to snapshot; Atomic is the transaction-shaped half, nil where the
+	// world has no transaction to roll back (the fake).
+	Creator contracts.Creator
+	Reader  contracts.Reader
+	Tasks   func() int
+	Atomic  *Atomic
+}
+
+// Atomic is what only a real transaction can show. Attempt runs do as the unit a
+// caller's transaction is made of: when do returns an error everything it wrote —
+// the caller's own rows, the task, the outbox — is undone, as a rolled-back
+// request leaves nothing. FailOutbox makes the outbox insert of the named event
+// fail until undo is called; it is injected at the insert, since the transport runs
+// after commit and cannot roll anything back. Wrote writes one row of the
+// caller's own in tx and Rows counts the caller's rows, so a case can say the
+// refused create took them along.
+type Atomic struct {
+	Attempt    func(do func(ctx context.Context, tx db.Tx[db.Tenant]) error) error
+	FailOutbox func(event string) (undo func())
+	Wrote      func(ctx context.Context, tx db.Tx[db.Tenant]) error
+	Rows       func() int
 }
 
 // Harness builds one Fixture and calls run with it. It is written this way
