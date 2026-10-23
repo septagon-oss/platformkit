@@ -19,9 +19,10 @@
 # not hold is whether the version it pinned falls inside a range npm has said it will report.
 #
 # Both fixes were already inside the range the parent declares, so the cure is the lock and not a new
-# `overrides` entry (which this directory's package.json reserves for the two packages whose published
-# *identity* has to be replaced) and not `npm audit fix --force` (which the tool's own README forbids,
-# because it is free to downgrade the pinned SDK past the source-hash checks):
+# `overrides` entry — that block already holds these two names at a reviewed release, and the two
+# entries that replace a package's published *identity* are a different instrument — and not
+# `npm audit fix --force` (which the tool's own README forbids, because it is free to downgrade the
+# pinned SDK past the source-hash checks):
 #
 #   @open-pencil/core -> unifont -> css-tree -> source-map-js ^1.2.1   -> 1.2.2
 #   @open-pencil/core -> jspdf (optional) -> dompurify ^3.3.1          -> 3.4.16
@@ -33,6 +34,22 @@
 # A package that has left the lock is not a finding: jspdf and unifont bring these two in, and a
 # vulnerability that leaves with its parent is gone rather than fixed. The finding is a package this
 # file names, present, at a version inside a range npm reports.
+#
+# The feed moved a second time, over a lock nobody had touched since that cure. The middle command
+# exited 1 again at `a1e5920` (forge job 78932 at 2026-10-23T01:38:18Z) with `dompurify  <=3.4.16`
+# at `Severity: critical` beside three advisory titles, and `main` was refused the same step at
+# 45fbddf over byte-identical lock bytes (forge job 78498), so the feed moved under both. What npm
+# merged into that one block are three ranges: GHSA-cg2g-xh64-v4q7 at `>=3.4.4 <=3.4.16` (critical),
+# GHSA-mrv2-3pqr-j5jr (high) and GHSA-c6gr-qvv4-5v3f (low) at `<=3.4.16`, each of them reporting the
+# 3.4.16 the paragraph above pinned and none reaching 3.4.17, which is the release the registry
+# holds above them. Each range keeps its own row below, with its own lower edge and its own
+# severity — the severity beside a merged block is the highest of the advisories inside it, and one
+# widened row would record a range npm never reported — and their union is the `<=3.4.16` it shows.
+#
+# A pin at the newest release of a package is therefore refused the day a newer advisory lands on
+# it. Nothing here can see that day coming, because this file reads no feed by design; what it does
+# is name every range npm has reported, so the tree that carries a reported release fails locally
+# rather than twelve minutes into a runner.
 #
 # Both verdicts go through one function each, and the mutations at the end feed that same function: a
 # version printed as "locked above" without the comparison behind it prints `ok` about a lock nobody
@@ -68,6 +85,30 @@ ADVISORIES = (
         "severity": "low",
         "parent": "jspdf",
     },
+    {
+        "package": "dompurify",
+        "since": (3, 4, 4),
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-cg2g-xh64-v4q7",),
+        "severity": "critical",
+        "parent": "jspdf",
+    },
+    {
+        "package": "dompurify",
+        "since": None,
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-mrv2-3pqr-j5jr",),
+        "severity": "high",
+        "parent": "jspdf",
+    },
+    {
+        "package": "dompurify",
+        "since": None,
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-c6gr-qvv4-5v3f",),
+        "severity": "low",
+        "parent": "jspdf",
+    },
 )
 
 # The three commands of the gate, in the order the design job runs them. The audit may stand behind
@@ -80,8 +121,8 @@ COMMANDS = re.compile(r"^\s*(?:bash\s+\S*scripts/ci_npm_audit\.sh\s+)?(npm (?:ci
 
 
 def version(text):
-    """(3, 4, 15) from "3.4.15". No suffix handling: npm reports both advisories on stable ranges
-    and no version this lock holds carries one."""
+    """(3, 4, 15) from "3.4.15". No suffix handling: every range below is a stable one and no
+    version this lock holds carries one."""
     parts = re.match(r"(\d+)\.(\d+)\.(\d+)", text)
     if not parts:
         sys.exit(f"FAIL: cannot read the version {text!r} as major.minor.patch")
