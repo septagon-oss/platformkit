@@ -40,9 +40,9 @@ The module declares no export and no event handler (`Subscriptions: nil`). The S
 
 The request carries `Resource.Kind` `"task"`, the task id and tenant id, and the actor as a user taken from `tenancy.PrincipalFrom`. The trusted attributes are `status`, `priority` and `assignee_id` (empty string if unassigned). `Assign` also sends `requested_assignee_id`. If there is no principal the call returns `tenancy.ErrPolicyDenied`. `CheckSLA` and the generic CRUD routes do not consult the policy.
 
-The policy is optional. With `Service.Policy == nil` the check returns nil and the route grants alone decide. A composition enables it with `Deps.Policy` or `NewServiceWithPolicy` in `modules/task/module.go`.
+The policy is optional. With `Service.Policy == nil` the check returns nil and the route grants alone decide. A composition enables it with `Deps.Policy` or `NewServiceWithPolicy` in `modules/task/module.go`. The [substitution matrix](../../ARCHITECTURE.md#policy-substitution-boundary) defines adapter, retry and transaction limits.
 
-The reference application (`apps/platformkit`) enables it with a rule written in Rego, `apps/platformkit/policy/task.rego`, evaluated in process by `kit/tenancy/providers/opa`: assignment is allowed, an unassigned task may be resolved by any holder of `task:resolve`, and an assigned one only by its assignee. A refusal answers 403 `POLICY_DENIED` and is recorded as `security.denied` with the action, the rule's reason and the policy's revision (`sha256:` and twelve hex characters of the source), because `kit/httpx` hands every `tenancy.RequirePolicy` refusal of an authenticated request to the same audit hook as a missing grant.
+The reference application (`apps/platformkit`) enables it with a rule written in Rego, `apps/platformkit/policy/task.rego`, evaluated in process by `kit/tenancy/providers/opa`: assignment is allowed, an unassigned task may be resolved by any holder of `task:update`, and an assigned one only by its assignee. `task:resolve` is the policy action, not a route grant. A refusal answers 403 `POLICY_DENIED` and is recorded as `security.denied` with the action, the rule's reason and the policy's revision (`sha256:` and twelve hex characters of the source), because `kit/httpx` hands every `tenancy.RequirePolicy` refusal of an authenticated request to the same audit hook as a missing grant.
 
 ### Duties the module enforces itself
 
@@ -103,6 +103,11 @@ None. No permission in `permissions` sets `Operator: true`, and `spec` sets no `
 The module does not create roles. A composition grants `task:read` and `task:update` through the tenant's roles, using the auth module's roles API (see `modules/auth/README.md`). The administrator role holds the wildcard `*`, which satisfies these two keys (`docs/adr/0006-system-access-is-a-token.md`). The code does not name any other persona. To use resource decisions, pass a `tenancy.Policy` in `task.Deps.Policy`. `modules/auth/policies` has a Topaz adapter.
 
 ## Composition
+
+**Reused** — `tasktest.Fixture`, `porttest`, `dbtest.Schema`, `domain.Resolve`, the OPA/Topaz adapters and the reference product's typed declarations.
+**Added** — one shared adversarial policy consumer suite, because adapter-only cases could not prove task retries, row locks, rollback or HTTP refusal behavior; task commands now return no row if outbox insertion fails.
+**Made reusable** — `tasktest.RunPolicy` and the disposable `topaztest.Client` protocol fixture. The [substitution boundary](../../ARCHITECTURE.md#policy-substitution-boundary) names service fidelity and unsupported cached-reply authority guarantees.
+
 
 **Reused** — the reading vocabulary `kit/entity` froze (`EntryHints`,
 `FieldHints`, `CommandHints`, `Icons`, `Tones`, `DoneValues`) declared at the three
