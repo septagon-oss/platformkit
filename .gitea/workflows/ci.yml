@@ -823,8 +823,18 @@ jobs:
         working-directory: tools/designexport/openpencil
         run: |
           npx playwright install --with-deps chromium
+          # The samples run beside the suite, and the account comes out with the failure.
+          # This step refused run 56095 job 56717 with one line - `Capture source
+          # animation settling timed out` - from a 286-test file that had taken 299.5 s
+          # against the 103-110 s the same test took in the 141 job logs task T-0219
+          # holds (`zgrep -h "gallery construction coverage" logs/*.gz`), and the run
+          # said nothing about the host it did that on. The host-share guard below waits
+          # for a free core and samples every 30 s; `run` adds the browser count in each
+          # sample and the memory verdict at the exit. The verdict is still the suite's:
+          # both wrappers pass its exit code through and change no assertion.
           bash ../../../scripts/ci_browser_host_share.sh wait 300
-          bash ../../../scripts/ci_browser_host_share.sh watch 30 npm run test:browser
+          bash ../../../scripts/ci_browser_report.sh run "native browser observations" \
+            bash ../../../scripts/ci_browser_host_share.sh watch 30 npm run test:browser
 
       # Last, and for the same reason as the step of the same name in `check` — this suite compiles
       # Go itself (browser/fixtures.test.mjs: `go build -o <executable> <file>`), so the save that
@@ -1087,9 +1097,22 @@ jobs:
           # verdict to replace the one it distrusts, and the queue belongs to nobody here.
           # No assertion, skip, retry, reorder or second attempt: the same 31 tests still have
           # to pass, and a test that fails after the wait still fails the job.
+          # The host-share guard waits for a free core and prints the numbers it waited
+          # through; it cannot answer "what was left alive when the step died", because
+          # the sampler's trap takes it with the step. Nine of the 141 job logs task
+          # T-0219 holds end this step with a Chromium that reported `Target crashed`
+          # (jobs 44315, 45285, 45346, 45702, 45734 among them), and run 56095 job 56718
+          # is the tenth - `locator.press: Target crashed` at 10.9 s into its own case,
+          # with the sampler printing 19484 MB available and load 13.19 across 32 cores
+          # one line before it, so the host's own numbers cleared it and the reader was
+          # left with a dead renderer and no account. `run` adds that account: a browser
+          # count in every sample, and the kernel's memory verdict at the exit. The
+          # suite's exit code is still the step's answer; nothing here asserts anything
+          # or retries.
           bash ../../../scripts/ci_browser_host_share.sh wait 720
-          bash ../../../scripts/ci_browser_host_share.sh watch 30 \
-            node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
+          bash ../../../scripts/ci_browser_report.sh run "built editor" \
+            bash ../../../scripts/ci_browser_host_share.sh watch 30 \
+              node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
         id: preview
