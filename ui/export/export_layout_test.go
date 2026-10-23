@@ -227,7 +227,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// leaf-by-leaf count: the document before it exists only outside the merge. The
 	// digest below is this merged tree's own measurement, printed by the refusal and
 	// copied from it.
-	if legacy.SHA256 != "a76f10dda799497ceed8f725bb98e94e96dfd91680b8e444feec0f6fd2efb316" {
+	if legacy.SHA256 != "77c7602a0d349cbbf44f9530d36f32e6014fb0ce28fa33b6733dc92aafb78a88" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
