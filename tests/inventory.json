@@ -80161,6 +80161,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/openpencil_advisory_boundary_test.py",
+   "id": "scripts/openpencil_advisory_boundary_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "openpencil_advisory_boundary_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/openpencil_lock_above_advisory_test.sh",
    "id": "scripts/openpencil_lock_above_advisory_test.sh",
    "kind": "shell_pin",
@@ -82608,7 +82628,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2237,
+  "files": 2238,
   "forge_runs": [
    408,
    413,
@@ -82643,7 +82663,7 @@
   ],
   "layers": {
    "behaviour": 3570,
-   "composition": 480,
+   "composition": 481,
    "contract": 21,
    "journey": 115
   },
@@ -82661,23 +82681,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4186,
+  "rows": 4187,
   "tiers": {
    "merge": 2601,
    "nightly": 115,
-   "push": 1470
+   "push": 1471
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1992,
+   "keep": 1993,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3800,
+   "keep": 3801,
    "keep-rewrite": 170,
    "merge": 216
   }
