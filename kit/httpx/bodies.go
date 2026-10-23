@@ -55,7 +55,13 @@ func (a *API) bodies(ctx huma.Context, next func(huma.Context)) {
 	// schema'd body from — huma copies the request on every WithContext, and
 	// that body is huma's business and bounded by op.MaxBodyBytes. This is the
 	// other kind, which nothing bounded.
-	if r, ok := RequestFrom(ctx.Context()); ok && r.Body != nil {
+	//
+	// A request that brought no body is answered http.NoBody, and a reader at EOF
+	// needs no ceiling: the limit exists to bound the bytes a caller may push, and
+	// there are none to push. Wrapping it anyway replaced the one reader every later
+	// layer shares with one nobody read and everybody had to close, on every GET this
+	// server answers.
+	if r, ok := RequestFrom(ctx.Context()); ok && mayCarryBytes(r) {
 		limit := int64(MaxBodyBytes)
 		if streams {
 			limit = max(a.opts.MaxUpload, MaxBodyBytes) + multipartEnvelope
@@ -75,4 +81,12 @@ func (a *API) bodies(ctx huma.Context, next func(huma.Context)) {
 		}
 	}
 	next(ctx)
+}
+
+// mayCarryBytes is whether this request brought a body that could yield anything.
+// net/http hands http.NoBody for a request with no body, and http.NoBody and a nil
+// reader are the two shapes of "there is nothing here": both answer EOF before a
+// byte, so no ceiling can be crossed and nothing is refused by reading them.
+func mayCarryBytes(r *http.Request) bool {
+	return r.Body != nil && r.Body != http.NoBody
 }
