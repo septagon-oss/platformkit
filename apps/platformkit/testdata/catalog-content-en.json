@@ -161,6 +161,639 @@
     "coverField": "coverImageId",
     "thumbnailField": "coverImageId"
   },
+  "resolved": {
+    "policyVersion": 1,
+    "language": "en",
+    "identity": {
+      "singular": "page",
+      "plural": "pages",
+      "description": "Write, review and publish the pages your audience sees.",
+      "emptyDescription": "Create a page and save a draft before publishing.",
+      "icon": "document",
+      "group": {
+        "key": "content",
+        "label": "Content"
+      },
+      "order": 0
+    },
+    "titles": {
+      "listCandidates": [
+        "title",
+        "slug"
+      ],
+      "recordCandidates": [
+        "title",
+        "slug",
+        "body"
+      ],
+      "emptyTitle": "—",
+      "preview": "",
+      "status": "status",
+      "cover": "coverImageId",
+      "thumbnail": "coverImageId",
+      "summary": [
+        "kind"
+      ]
+    },
+    "layout": {
+      "columns": [
+        "title",
+        "kind",
+        "status",
+        "coverImageId"
+      ],
+      "overview": [
+        "status",
+        "kind"
+      ],
+      "information": [
+        "createdAt",
+        "updatedAt",
+        "slug",
+        "body",
+        "publishedAt",
+        "author",
+        "revision"
+      ],
+      "sections": [],
+      "create": [
+        "slug",
+        "title",
+        "body",
+        "coverImageId",
+        "kind",
+        "status",
+        "publishedAt",
+        "author"
+      ],
+      "update": [
+        "slug",
+        "title",
+        "body",
+        "coverImageId",
+        "kind"
+      ]
+    },
+    "fields": [
+      {
+        "name": "id",
+        "label": "Id",
+        "help": "",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "text",
+        "kind": "text",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "createdAt",
+        "label": "Created at",
+        "help": "",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "datetime",
+        "kind": "instant",
+        "reading": {
+          "format": "datetime",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "updatedAt",
+        "label": "Updated at",
+        "help": "",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "datetime",
+        "kind": "instant",
+        "reading": {
+          "format": "datetime",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "slug",
+        "label": "Address name",
+        "help": "Used to build this page's web address",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "text",
+        "kind": "text",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "title",
+        "label": "Title",
+        "help": "Headline",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "text",
+        "kind": "text",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "body",
+        "label": "Body",
+        "help": "The content itself, in Markdown",
+        "section": "",
+        "onList": false,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "richtext",
+        "kind": "longtext",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "coverImageId",
+        "label": "Cover",
+        "help": "File id of the cover picture",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "text",
+        "kind": "image",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "kind",
+        "label": "Type",
+        "help": "page or post",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "control": "select",
+        "kind": "enum",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [
+          {
+            "value": "page",
+            "label": "Page",
+            "tone": "neutral",
+            "done": false
+          },
+          {
+            "value": "post",
+            "label": "Post",
+            "tone": "neutral",
+            "done": false
+          }
+        ],
+        "reference": null
+      },
+      {
+        "name": "status",
+        "label": "Status",
+        "help": "Lifecycle state",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": false
+        },
+        "control": "select",
+        "kind": "enum",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [
+          {
+            "value": "draft",
+            "label": "Draft",
+            "tone": "neutral",
+            "done": false
+          },
+          {
+            "value": "published",
+            "label": "Published",
+            "tone": "success",
+            "done": false
+          },
+          {
+            "value": "archived",
+            "label": "Archived",
+            "tone": "neutral",
+            "done": false
+          }
+        ],
+        "reference": null
+      },
+      {
+        "name": "publishedAt",
+        "label": "Published",
+        "help": "When this was published",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": false
+        },
+        "control": "datetime",
+        "kind": "instant",
+        "reading": {
+          "format": "datetime",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      },
+      {
+        "name": "author",
+        "label": "Author",
+        "help": "The user who created this",
+        "section": "",
+        "onList": false,
+        "onRecord": true,
+        "editable": {
+          "create": true,
+          "update": false
+        },
+        "control": "entity-picker",
+        "kind": "reference",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": null,
+          "time": null,
+          "money": null
+        },
+        "options": [],
+        "reference": {
+          "resource": "user/user"
+        }
+      },
+      {
+        "name": "revision",
+        "label": "Revision",
+        "help": "This row's own write count, from 1",
+        "section": "",
+        "onList": true,
+        "onRecord": true,
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "control": "number",
+        "kind": "number",
+        "reading": {
+          "format": "",
+          "missing": "—",
+          "true": "",
+          "false": "",
+          "precision": 0,
+          "time": null,
+          "money": null
+        },
+        "options": [],
+        "reference": null
+      }
+    ],
+    "list": {
+      "defaultSort": "-createdAt",
+      "sorts": [
+        {
+          "query": "title",
+          "label": "Title",
+          "field": "title",
+          "desc": false
+        },
+        {
+          "query": "-title",
+          "label": "Title",
+          "field": "title",
+          "desc": true
+        },
+        {
+          "query": "publishedAt",
+          "label": "Published",
+          "field": "publishedAt",
+          "desc": false
+        },
+        {
+          "query": "-publishedAt",
+          "label": "Published",
+          "field": "publishedAt",
+          "desc": true
+        },
+        {
+          "query": "updatedAt",
+          "label": "Updated at",
+          "field": "updatedAt",
+          "desc": false
+        },
+        {
+          "query": "-updatedAt",
+          "label": "Updated at",
+          "field": "updatedAt",
+          "desc": true
+        }
+      ],
+      "filters": [
+        {
+          "field": "kind",
+          "label": "Type",
+          "kind": "enum",
+          "values": [
+            {
+              "value": "page",
+              "label": "Page",
+              "tone": "neutral",
+              "done": false
+            },
+            {
+              "value": "post",
+              "label": "Post",
+              "tone": "neutral",
+              "done": false
+            }
+          ]
+        },
+        {
+          "field": "status",
+          "label": "Status",
+          "kind": "enum",
+          "values": [
+            {
+              "value": "draft",
+              "label": "Draft",
+              "tone": "neutral",
+              "done": false
+            },
+            {
+              "value": "published",
+              "label": "Published",
+              "tone": "success",
+              "done": false
+            },
+            {
+              "value": "archived",
+              "label": "Archived",
+              "tone": "neutral",
+              "done": false
+            }
+          ]
+        }
+      ]
+    },
+    "commands": [
+      {
+        "verb": "restore",
+        "label": "Restore this version",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": {
+          "title": "Restore this version?",
+          "body": "A new version will be written with this content. Nothing is deleted.",
+          "confirmLabel": "Restore"
+        },
+        "successMessage": "A new version was written with the content you restored."
+      },
+      {
+        "verb": "translate",
+        "label": "Translate a content",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": null,
+        "successMessage": ""
+      },
+      {
+        "verb": "review-translation",
+        "label": "Mark a content's translation reviewed",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": null,
+        "successMessage": ""
+      },
+      {
+        "verb": "suggest-translation",
+        "label": "Ask the machine for a draft of a content",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": null,
+        "successMessage": ""
+      },
+      {
+        "verb": "untranslate",
+        "label": "Remove a content's translation",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": null,
+        "successMessage": ""
+      },
+      {
+        "verb": "publish",
+        "label": "Publish",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": null,
+        "successMessage": ""
+      },
+      {
+        "verb": "unpublish",
+        "label": "Unpublish",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": false,
+        "confirmation": null,
+        "successMessage": ""
+      },
+      {
+        "verb": "archive",
+        "label": "Archive",
+        "visible": true,
+        "system": false,
+        "primary": false,
+        "destructive": true,
+        "confirmation": {
+          "title": "Archive this page?",
+          "body": "It stops being served. You can publish it again later.",
+          "confirmLabel": "Archive"
+        },
+        "successMessage": ""
+      }
+    ],
+    "deck": {
+      "undoable": false,
+      "queue": [
+        "status:draft"
+      ],
+      "order": "updatedAt",
+      "directions": {
+        "down": {
+          "command": "",
+          "label": "",
+          "tone": "",
+          "icon": "",
+          "skip": true,
+          "undo": ""
+        },
+        "left": {
+          "command": "archive",
+          "label": "Archive",
+          "tone": "warning",
+          "icon": "folder",
+          "skip": false,
+          "undo": ""
+        },
+        "right": {
+          "command": "publish",
+          "label": "Publish",
+          "tone": "success",
+          "icon": "document",
+          "skip": false,
+          "undo": ""
+        }
+      }
+    },
+    "summary": {
+      "highlight": null,
+      "trendField": ""
+    }
+  },
   "screen": "/app/content/contents",
   "immutable": [
     "status",

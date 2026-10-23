@@ -1,0 +1,57 @@
+{
+ "name": "read-only-resource",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:027e651d127a97d3c68c8da441f0ed250d27e7dc81d851635c0c2bb00101580c",
+  "expectedHash": "sha256:e5c5757f2a656bbdad668040da93f8b3dc9adc08310512f47af42803f7288a49"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    }
+   ]
+  },
+  "hints": {},
+  "rows": [],
+  "operations": [
+   "list",
+   "read"
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "layout": {
+    "create": [],
+    "update": [],
+    "columns": [
+     "title"
+    ]
+   },
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "title",
+     "editable": {
+      "create": true,
+      "update": true
+     }
+    }
+   ]
+  }
+ }
+}
