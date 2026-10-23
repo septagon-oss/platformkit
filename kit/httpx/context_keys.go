@@ -21,10 +21,6 @@ type (
 	bufferKey     struct{}
 	txKey         struct{}
 	answerNoteKey struct{}
-	// forgetKey holds the list ForgetTenantOnCommit appends to and the commit
-	// middleware reads: a handler decides what it changed, the middleware that
-	// commits decides whether anything is therefore stale.
-	forgetKey struct{}
 )
 
 // TxFrom returns the request's tenant transaction, opening it if this is the

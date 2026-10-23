@@ -140,20 +140,21 @@ func countRefusal(ctx context.Context, status int) {
 	telemetry.Shared().CountRefusal(ctx, telemetry.RefusalClass(status), telemetry.MetricAttrs(ctx)...)
 }
 
-// answerNote is where the tenant a request resolved is carried outward to the
-// middleware that counts the answer, which sits outside the middleware that
-// resolved it and holds a request context that predates the resolution.
+// answerNote carries a deeper step's fact outward to the middleware above it, which
+// holds a request context that predates the fact: the tenant a request resolved, and
+// the tenants a committed write changed.
 //
-// The alternative was to count where the tenant is known and accept counting an
-// answer that may still be replaced by the buffer — a refusal counted for a request
-// that was finally answered 200, which is the number this counter exists not to
-// write. So the tenant travels, one pointer beside the buffer it shares a lifetime
-// with, and the count happens once, after the response is final.
+// The alternative was to act where the fact is known and accept acting on an answer
+// the buffer may still replace — a refusal counted for a request that was finally
+// answered 200, which is the number this counter exists not to write, or a resolution
+// closed over a write that never committed. So the facts travel beside the buffer,
+// and each job happens once the response is final.
 //
-// Nothing guards it: the write happens inside the call stack of the read, on one
-// goroutine, and the read happens after that stack has returned.
+// Only the tenant goes unguarded: its write happens inside the call stack of the
+// read, on one goroutine, and the read happens after that stack has returned.
 type answerNote struct {
-	tenant tenancy.Tenant
+	tenant    tenancy.Tenant
+	forgotten forgottenTenants
 }
 
 // noteAnswer records the resolved tenant on this request's note, where respond is

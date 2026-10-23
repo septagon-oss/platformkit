@@ -52,9 +52,7 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// The connection travels with the transaction: a control-plane route needs
 	// both it and a token to open a transaction of its own. See ConnFrom.
 	rctx = WithConn(rctx, a.opts.Conn)
-	// The list a handler may ask to forget at the commit: see ForgetTenantOnCommit.
-	asks := new(forgottenTenants)
-	inner := huma.WithContext(ctx, context.WithValue(context.WithValue(rctx, txKey{}, p), forgetKey{}, asks))
+	inner := huma.WithContext(ctx, context.WithValue(rctx, txKey{}, p))
 	next(inner)
 
 	if openErr := p.Err(); openErr != nil {
@@ -70,7 +68,7 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	if err != nil {
 		noteUncommitted(ctx.Context())
 	}
-	if !a.forgetResolutions(ctx, asks, keep, err) {
+	if !a.forgetResolutions(ctx, keep, err) {
 		return
 	}
 	if !a.recordRolledBackOperation(ctx, keep, err, unmarked) {
@@ -153,11 +151,15 @@ func (a *API) prepareCommit(ctx huma.Context, p *db.Pending, status int) (bool, 
 // says so; past that point the request can only go on, because the commit is not
 // going back and repeating the write is what finishes it. It reports whether the
 // request may go on to the answer its transaction decided.
-func (a *API) forgetResolutions(ctx huma.Context, asks *forgottenTenants, keep bool, err error) bool {
+func (a *API) forgetResolutions(ctx huma.Context, keep bool, err error) bool {
 	if err != nil || !keep {
 		return true
 	}
-	if dropErr := a.dropResolutions(ctx.Context(), asks.drain()); dropErr != nil {
+	note, ok := ctx.Context().Value(answerNoteKey{}).(*answerNote)
+	if !ok {
+		return true
+	}
+	if dropErr := a.dropResolutions(ctx.Context(), note.forgotten.drain()); dropErr != nil {
 		if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
 			a.refuse(ctx, http.StatusServiceUnavailable, "")
 			return false

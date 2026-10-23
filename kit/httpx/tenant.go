@@ -395,10 +395,11 @@ func HostOnly(host string) string {
 	return strings.TrimSuffix(strings.ToLower(host), ".")
 }
 
-// forgottenTenants is the list one request accumulates while it runs, and the
-// reason it is a pointer behind a context value: the middleware that commits the
-// transaction is above the handler that decided to change a tenant, and it has to
-// read what that handler asked for.
+// forgottenTenants is the list one request accumulates while it runs, and the reason
+// it is a list with a lock: the middleware that commits sits above the handler that
+// decided to change a tenant, and reads what that handler asked for once the commit
+// happened. It rides on the request's answerNote rather than a slot of its own so the
+// read that asks for nothing allocates nothing.
 type forgottenTenants struct {
 	mu      sync.Mutex
 	tenants []uuid.UUID
@@ -451,8 +452,8 @@ func ForgetTenantOnCommit(ctx context.Context, tenant uuid.UUID) {
 	if tenant == uuid.Nil {
 		return
 	}
-	if f, ok := ctx.Value(forgetKey{}).(*forgottenTenants); ok {
-		f.add(tenant)
+	if n, ok := ctx.Value(answerNoteKey{}).(*answerNote); ok {
+		n.forgotten.add(tenant)
 	}
 }
 
