@@ -603,24 +603,22 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 	for _, section := range sections {
 		var links []g.Node
 		for _, item := range section.Items {
-			// The figure a destination carries is a sentence the reader reads, so both
-			// its halves belong to that reader: the number takes the shape their
-			// language gives a count, and the noun is the resource's own word chosen by
-			// that language's cardinal rule rather than by a letter appended here. One
-			// text node, because a figure beside a name is one thing said.
-			heading := item.Label
+			// A destination is named by its own word, and the figure beside it is a
+			// sentence the reader reads: the number takes the shape their language gives
+			// a count, and the noun is the resource's own word, chosen by that language's
+			// cardinal rule rather than by a letter appended here.
+			names := []g.Node{components.Icon(components.IconProps{Name: item.Icon}),
+				components.Text(components.TextProps{Element: "span", Content: item.Label, Weight: "semibold"})}
 			for _, r := range p.resources {
 				if r.Screen != item.Href || r.Count == nil {
 					continue
 				}
 				if total, err := r.Count(ctx); err == nil {
-					heading = o.Text("admin.workspace.count_number", "%d", total) + " " +
-						o.Noun(r.Module, r.Entity, r.Name, total)
+					figure := o.Text("admin.workspace.count_number", "%d", total) + " " + o.Noun(r.Module, r.Entity, r.Name, total)
+					names = append(names, components.Badge(components.BadgeProps{Tone: "neutral", Label: figure}))
 				}
 				break
 			}
-			names := []g.Node{components.Icon(components.IconProps{Name: item.Icon}),
-				components.Text(components.TextProps{Element: "span", Content: heading, Weight: "semibold"})}
 			links = append(links, components.CardWithSlots(components.CardProps{
 				ComponentProps: components.ComponentProps{Class: style.New().Bg(style.ColorTransparent).Compile()},
 				Href:           item.Href, Hoverable: true, Padding: "sm",
