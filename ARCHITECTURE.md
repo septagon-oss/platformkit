@@ -426,8 +426,8 @@ database, and a stylesheet adds none of it.
 one stylesheet per pair rather than recomposing per request
 (`design/design.go:165-166`); no span opens and no event publishes.
 
-**How an app extends it.** Hand `ui.Compose` (`ui/ui.go:440`) a `Pair` of its
-own, plus a `ui.Extra` (`ui/ui.go:103`) for rules. The reference product's own
+**How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
+own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
 line is `apps/platformkit/fault.go:110`: `ui.Compose(design.Default())`, the same
 pair the composition hands the shell at `apps/platformkit/app.go:167`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
@@ -438,8 +438,8 @@ a role.
 **Where it lives.** `ui/css` is the stylesheet's IR — `Sheet`
 (`ui/css/css.go:130`), `AddRule` (`ui/css/css.go:142`) — and `ui/style` compiles
 tokens into it (`ThemeVars`, `ui/style/theme.go:24`). Behaviour is controllers
-served as static files beside the API (`ui/ui.go:2`), mounted by `ui.Assets`
-(`ui/ui.go:529`) in `modules/web/internal/mount.go:78` and
+served as static files beside the API ([ui/assets.go](ui/assets.go)), mounted by `ui.Assets`
+([ui/assets.go](ui/assets.go)) in `modules/web/internal/mount.go:78` and
 `modules/admin/internal/mount.go:146`.
 
 **Builds on.** `maragu.dev/gomponents` v1.3.0 (MIT) for the DOM the controllers
@@ -597,7 +597,7 @@ matching and CLDR plural rules. Nothing here is a service.
 hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
-(`ui/page/serve.go:101`, `ui/page/locale.go:61`). Why a refusal may not answer in
+([ui/page/serve.go](ui/page/serve.go), `ui/page/locale.go:61`). Why a refusal may not answer in
 an undeclared language is the comment at `kit/httpx/tenant.go:281-289` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
