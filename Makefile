@@ -330,10 +330,12 @@ check-pillars: ## Fail when the pillar section drifts or one of its citations la
 # exported name a pinned consumer compiled against last time — and a question
 # answered only after a version is published is a review of the damage.
 #
-# The base is v1.1.0 for both, because that is the release consumers are on and
-# it is the tag scripts/PUBLIC-API.md already names. The seed is the fixture the
-# rehearsal script documents, because a migration measured against an empty table
-# is a migration measured against nothing.
+# The rehearsal's base is v1.1.0, because that is the release an installed database
+# replays from. The exported API freezes at its own revision, named by the line record
+# below: one variable drove both lines while the API kept moving, and where one name
+# chooses the migration base and the API base, freezing either moves the other in
+# silence. The seed is the fixture the rehearsal script documents, because a migration
+# measured against an empty table is a migration measured against nothing.
 #
 # The cost is measured, not assumed: against a copy of the v1.1.0 ledger seeded
 # with 10,000 rows per table, the rehearsal of this tree's nine pending files ran
@@ -343,18 +345,19 @@ check-pillars: ## Fail when the pillar section drifts or one of its citations la
 # job; nothing is removed from `check` to fit it.
 REHEARSE_BASE ?= v1.1.0
 REHEARSE_ARGS ?= --base-ref $(REHEARSE_BASE) --seed scripts/testdata/rehearse/seed.sql
-APIDIFF_BASELINE ?= scripts/baselines/public-api-$(REHEARSE_BASE).json
+APIDIFF_RECORD ?= scripts/baselines/public-api-v2.0.0-candidate.json
 
 check-rehearse: ## Apply this tree's pending migrations to a copy of the previous release's database
 	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
 
-# The baseline is the reviewed set of incompatibilities the release already owed
-# at the merge base of this change; `--baseline` then refuses a *new* one and a
-# vanished one, so a documented breaking line cannot hide an accidental one.
-# Regenerating it is its own deliberate act: --write-baseline at the base commit,
-# committed alone, with the diff of the list as the review.
-check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
-	python3 scripts/check_public_api.py $(REHEARSE_BASE) HEAD --baseline $(APIDIFF_BASELINE)
+# The line record names the revision the exported surface is frozen at: the published
+# tag once the owner cuts it, the frozen commit until then. No list of accepted breaks
+# is passed and none is read, so within a line the surface only grows and any reported
+# incompatibility is a refusal — including one somebody had written down. Moving the
+# freeze is the owner's, in a commit of its own: the diff of that one line is the
+# review, and a red gate is not a reason. docs/COMPATIBILITY.md owns the rule.
+check-apidiff: ## Fail on any exported API change from the release line's frozen surface
+	python3 scripts/check_public_api.py --line-record $(APIDIFF_RECORD) HEAD
 
 # The tiers decision 0088 rules, as goals beside `check` rather than as a narrowing of it.
 #
@@ -972,6 +975,13 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# judged on what it exported. These cases drive the gate's own main() with the tool's
 	# subprocess calls answered from memory, so they need no network and no second tree.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
+	# What the frozen line refuses, measured rather than argued: a throwaway removal, a
+	# throwaway addition, a method added to an exported interface and a reshape, each run
+	# through the shipped gate over a scratch module under mktemp -d. The fake above cannot
+	# say what the comparison tool reports, and what it reports is what this gate rests on,
+	# so these cases pay the same module proxy the target pays — ten seconds of it.
+	bash scripts/check_public_api_line_test.sh
+	bash scripts/the_release_line_record_and_the_design_pin_agree_test.sh
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	# The other half of that ordering, which nobody had asked. Gate 10 runs `make e2e` inside
 	# scripts/ci_browser_host_share.sh's sampler, and the sampler's whole contract is that it
