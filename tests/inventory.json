@@ -71399,6 +71399,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/command_control_references_resolve_test.go",
+   "id": "ui/resource/command_control_references_resolve_test.go#TestCommandControlReferencesResolveToElementsOnThePage",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestCommandControlReferencesResolveToElementsOnThePage",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/command_controls_floor_test.go",
    "id": "ui/resource/command_controls_floor_test.go#TestQuietCommandControlsKeepTheirNativeSubmitAndAccessibleName",
    "kind": "go",
@@ -81535,7 +81554,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2188,
+  "files": 2189,
   "forge_runs": [
    408,
    413,
@@ -81569,7 +81588,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3532,
+   "behaviour": 3533,
    "composition": 468,
    "contract": 21,
    "journey": 109
@@ -81588,23 +81607,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4130,
+  "rows": 4131,
   "tiers": {
    "merge": 2548,
    "nightly": 109,
-   "push": 1473
+   "push": 1474
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1943,
+   "keep": 1944,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3744,
+   "keep": 3745,
    "keep-rewrite": 170,
    "merge": 216
   }
