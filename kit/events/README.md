@@ -313,3 +313,18 @@ session or actor impersonation. Explicit completion and owner-designated termina
 callbacks share the existing delivery transaction. Audit copies the six facts
 and exposes an exact operation-reference filter. [The receipt contract](../idempotency/README.md)
 is the canonical explanation of transitions, admission and retention.
+
+## Composition of delivery steps
+
+**Reused** — `Consume`, `MoveLedger`, `relayBatch`, `Schema.check` and the existing
+claim, transport and telemetry helpers retain delivery behavior. **Added** —
+private subscription, claim/handler, ledger publication, relay-row and JSON-shape
+steps expose the ordering previously nested in long functions. **Made reusable** —
+named internal steps operating on the caller's existing transaction and context.
+
+[Subscription delivery](consume.go) validates and subscribes in order, then checks
+tenant placement before claiming and handling. [Ledger movement](ledger.go)
+locks tenants and durables before renaming both ledgers and publishing records.
+[Relay](relay.go) reads locked rows, settles lag, publishes envelopes and stamps
+only after publication. [Schema validation](schema.go) preserves null handling
+and open projections. These steps add no transaction or transport boundary.
