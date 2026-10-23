@@ -1338,6 +1338,15 @@
       "": "Your account"
     }
   },
+  "admin.workspace.about": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "About this workspace",
+    "plural": {
+      "": "About this workspace"
+    }
+  },
   "admin.workspace.sessions": {
     "references": [
       "modules/admin/internal/sessions.go",
