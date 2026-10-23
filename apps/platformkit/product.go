@@ -62,6 +62,7 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
+	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
@@ -117,6 +118,7 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Pictures](),
 		pkit.Provides[admincontracts.Locale](),
+		pkit.Provides[admincontracts.PrimaryAction](),
 		pkit.Provides[tenantcontracts.Languages](),
 		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
@@ -230,6 +232,11 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
 		pkit.Put[admincontracts.Pictures](w, pictures)
 		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
+		// What a person comes to this installation's workspace to do: the home leads
+		// with it, for whoever may read the tasks it opens.
+		pkit.Put[admincontracts.PrimaryAction](w, admincontracts.PrimaryAction{
+			Label: "Go to tasks", Screen: "task/tasks", Permission: taskcontracts.PermissionTaskRead,
+		})
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
 		// exists before the operator narrows it, so a page can answer a person in
