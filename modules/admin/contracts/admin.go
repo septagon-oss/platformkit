@@ -1,15 +1,29 @@
 // Package contracts holds the ports modules/admin declares and consumes: the
 // sign-in page's two halves, where a generated screen fetches a picture, the
-// language the shell answers in before the browser negotiates one, and the
-// composition the gallery shows.
+// language the shell answers in before the browser negotiates one, the
+// composition the gallery shows, and the action the workspace home leads with.
 package contracts
 
 import (
 	"context"
 
+	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
+
+// PrimaryAction is the one thing this application's people come to the workspace
+// to do: the home draws it first, as its only primary button, above the counters.
+// It is a navigation entry's three facts — the words on the button, the screen
+// relative to the workspace ("task/tasks"), and the permission a caller must hold
+// to be shown it — and is filtered the way a nav entry is, by the Authorizer the
+// route enforces with, so the button never leads to a refusal.
+//
+// It is Optional: the zero value draws no action and the home is the dashboard it
+// always was. A non-empty Screen with an empty Label or Permission, or a Permission
+// no composed module defines, refuses the plan; a Screen no route serves is
+// reported at boot and draws nothing.
+type PrimaryAction module.NavEntry
 
 // Signin is the shell's own front door: where the sign-in form posts, and the
 // way in for a person the tenant has no account for.
