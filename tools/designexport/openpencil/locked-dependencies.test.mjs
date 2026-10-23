@@ -2,15 +2,16 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-// The two transitive dependencies the audit gate pointed at, each reached through
-// a package this adapter does not depend on directly: @open-pencil/core → jspdf →
-// dompurify@^3.3.1, whose lock carried 3.4.14, and unifont → css-tree →
-// source-map-js@^1.2.1, whose lock carried 1.2.1. Both parents still accept the
-// vulnerable range, so the override in package.json is what keeps `npm ci` out of
-// it, and this check is what keeps that override from drifting quietly: the lock
-// has to resolve each name to the reviewed release named here, and to the very
-// release package.json overrides it to.
-const reviewed = { dompurify: '3.4.17', 'source-map-js': '1.2.2' }
+// The three dependencies the audit gate has pointed at, each reached through a package this adapter
+// does not depend on directly: @open-pencil/core → jspdf → dompurify@^3.3.1, whose lock carried
+// 3.4.14, and unifont → css-tree → source-map-js@^1.2.1, whose lock carried 1.2.1. The third is
+// not a dependency at all but a peer: @ai-sdk/provider-utils asks for zod ^3.25.76 || ^4.1.8, npm
+// installs one on its own, and that range allows the releases the memory-exhaustion advisory
+// reports, so the version that lands is the feed's choice rather than anybody's. Each parent still
+// accepts the vulnerable range, so the override in package.json is what keeps `npm ci` out of it,
+// and this check is what keeps that override from drifting quietly: the lock has to resolve each
+// name to the reviewed release named here, and to the very release package.json overrides it to.
+const reviewed = { dompurify: '3.4.17', 'source-map-js': '1.2.2', zod: '4.6.7' }
 
 const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 const lock = JSON.parse(readFileSync(new URL('./package-lock.json', import.meta.url), 'utf8'))

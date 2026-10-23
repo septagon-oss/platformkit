@@ -906,8 +906,9 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# prose about them, with the committed text kept as the accepted shape. Substitution is on raw text
 	# and the guard does the parsing, so this line needs no parser of its own.
 	bash scripts/ci_container_sweep_age_guard_test.sh
-	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
-	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
+	# The one `make check` line that reads an npm lock. It asks that the three packages the design job's
+	# `npm audit --omit=dev --audit-level=high` has refused (source-map-js and dompurify for `0bfae63`, zod
+	# for the collection-memory advisory that reported 4.6.5) are
 	# locked above the ranges that report names, and that the gate that named them is still a step in
 	# the job that reads this lock, at that level and in that directory. It reads no feed and installs
 	# nothing: the feed moved under the runner, so the lock is the only half of this a tree can answer.

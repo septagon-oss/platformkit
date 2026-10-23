@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keep the design lock above the published source-map-js and DOMPurify advisories.
+# Keep the design lock above the published source-map-js, DOMPurify and Zod advisories.
 # The audit threshold and its place between install and conformance stay enforced.
 # Mutated copies of the lock exercise the same comparison as the real lock;
 # a removed package is safe, but a present vulnerable version is refused.
@@ -33,6 +33,17 @@ ADVISORIES = (
         "ids": ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"),
         "severity": "critical",
         "parent": "jspdf",
+    },
+    # `zod` is not a dependency of this adapter: it is the peer `@ai-sdk/provider-utils` asks for and
+    # npm installs on its own, so the version that lands is the newest one the declared range allows
+    # at install time. The lock holds it in the production subtree, which is why `--omit=dev` reads it.
+    {
+        "package": "zod",
+        "since": None,
+        "upto": (4, 6, 5),
+        "ids": ("GHSA-mrhx-c7xc-m3w5",),
+        "severity": "high",
+        "parent": "@ai-sdk/provider-utils",
     },
 )
 
