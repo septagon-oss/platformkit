@@ -27009,6 +27009,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/internal/jsonbody/int64_limits_test.go",
+   "id": "kit/internal/jsonbody/int64_limits_test.go#TestInt64ExtremesSurviveEncodeThenDecodeAndInexactFloatsAreRefused",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestInt64ExtremesSurviveEncodeThenDecodeAndInexactFloatsAreRefused",
+   "needs_db": false,
+   "pkg": "kit/internal/jsonbody",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/internal/jsonbody/scalar_test.go",
    "id": "kit/internal/jsonbody/scalar_test.go#TestIntegerNumberSpellingsNeverPassThroughFloat",
    "kind": "go",
@@ -83184,7 +83203,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2247,
+  "files": 2248,
   "forge_runs": [
    408,
    413,
@@ -83218,7 +83237,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3597,
+   "behaviour": 3598,
    "composition": 486,
    "contract": 22,
    "journey": 110
@@ -83237,23 +83256,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4215,
+  "rows": 4216,
   "tiers": {
    "merge": 2597,
    "nightly": 110,
-   "push": 1508
+   "push": 1509
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2002,
+   "keep": 2003,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3829,
+   "keep": 3830,
    "keep-rewrite": 170,
    "merge": 216
   }
