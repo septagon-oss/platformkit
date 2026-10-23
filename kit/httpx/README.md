@@ -15,7 +15,7 @@ nonce (`Nonce`) and what a page may declare about its own response
 A module's `Routes` receives `httpx.Surfaces` — three routers, one per surface —
 and mounts on the one that fits the door. It never writes a prefix: `Prefix`,
 `Path` and `PagePath` compose an address from the surface and the module, and
-`Register` refuses a path that repeats either. See [surfaces.go](surfaces.go).
+`Register` refuses a path that repeats either. See [router.go](router.go) and [mounted_routes.go](mounted_routes.go).
 
 ## One page may run WebAssembly
 
@@ -439,3 +439,21 @@ Prerequisites: a `db.Conn`, a `TenantLoader`, an `Authorizer` and the
 authenticate hook; [apps/platformkit](../../apps/platformkit/app.go) is the
 composition to copy. Tests run against the development database: `make up`,
 then `make test TEST_PACKAGES=./kit/httpx`.
+
+## Composition of request steps
+
+**Reused** — `New`, `Register`, `API.authorize`, the two admission paths and the
+lazy request transaction remain the HTTP lifecycle. **Added** — private admission
+and finalisation steps plus separate option, declaration, addressing and static
+files make that lifecycle readable without adding a router or policy layer.
+**Made reusable** — named steps for principal/grant checks, body restoration,
+receipt reservation and commit preparation within the existing request owner.
+
+[Construction](httpx.go) retains the middleware order, with inputs in
+[options.go](options.go) and the boot gate in [declarations.go](declarations.go).
+[Surfaces](surfaces.go), [router paths](router.go), [mounted routes](mounted_routes.go)
+and [static trees](static.go) retain their existing addresses and recording.
+[Authorization](authorize.go) precedes [legacy keyed admission](idempotency.go) or
+[receipt admission](operation_receipt.go); their clocks, contexts and responses
+remain distinct. [Transaction finalisation](transaction.go) prepares the receipt
+and effect marker before the single ordinary close, then chooses the response.
