@@ -313,3 +313,16 @@ session or actor impersonation. Explicit completion and owner-designated termina
 callbacks share the existing delivery transaction. Audit copies the six facts
 and exposes an exact operation-reference filter. [The receipt contract](../idempotency/README.md)
 is the canonical explanation of transitions, admission and retention.
+
+## The ack rule: a delivery owes its effects
+
+Decision 0022, for this delivery. **Reused:** the claim in `platformkit_handled`
+(`claim`, `000003`), the delivery context `Consume` already builds, the system-token
+precedent of `deadLetter`, and the transport ladder in
+`internal/delivery/policy.go` — no provider line changed, because `Sink.Handle`
+already acks on nil and nothing else. **Added:** `Defer`, the `effect_owed` mark
+(`000073`) and `ErrDeliveryOwesEffect`: a claim used to know only *claimed*, and a
+redelivery that arrived while the first attempt was still handing an effect over had
+nothing to read, so it acknowledged work nobody finished. **Made reusable:** a
+delivery that can say what it still owes, read under its row lock, and the release
+that makes a failed effect come back rather than vanish.

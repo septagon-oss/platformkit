@@ -370,3 +370,16 @@ stays open for the next caller. Owner cancellation does not interrupt a running 
 context does not derive from the owner; every in-tree caller's does. A cancel that lands during the
 `COMMIT` round trip is reported as not committed, though PostgreSQL may have committed. `RunSystem`
 keeps one context for its whole transaction: its caller is owner and only operation.
+
+## An effect that waits for the commit
+
+Decision 0022, for this delivery. **Reused:** `Pending`, the one commit site
+(`Close`), `Run`'s join, `Detached` as the context a deferred action is handed, and
+`httpx`'s position for the application connection — which now lives here
+(`WithConn`/`ConnFrom`), because a delivery runs on the same pool and code that
+writes after its transaction has ended must read one name in both. **Added:**
+`AfterCommit`, `ErrEffectNotRun` and the queue on `Pending` — nothing existing could
+carry them: `Detached` commits *earlier*, and the outbox cannot hold the one effect
+this exists for, a secret that may not become a row. **Made reusable:** a hand-off
+any module can register on, and an error that separates "committed, effect missing"
+from a rollback, which is the fact every retry underneath this has to branch on.

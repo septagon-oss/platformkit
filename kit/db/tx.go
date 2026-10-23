@@ -78,6 +78,10 @@ type openTx struct {
 	tenant tenancy.Tenant
 	span   trace.Span
 	view   *tenantView
+	// hooks is the queue the transaction that will end this one runs after it
+	// commits. It is nil for a system transaction, which defers nothing: see
+	// ErrNoTransactionToDefer.
+	hooks *commitQueue
 }
 
 type txKey struct{}
@@ -92,7 +96,7 @@ func current(ctx context.Context) (openTx, bool) {
 	// Pending it never used.
 	if p, ok := pendingOf(ctx); ok {
 		if gtx, span := p.handle(); gtx != nil {
-			return openTx{db: gtx, tenant: p.tenant, span: span}, true
+			return openTx{db: gtx, tenant: p.tenant, span: span, hooks: p.hooks}, true
 		}
 	}
 	return openTx{}, false
@@ -162,6 +166,8 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 	}
 	if cur, ok := current(ctx); ok {
 		if cur.system || cur.tenant.ID != t.ID {
+			// A nested frame that cannot join still has to say so before it defers
+			// anything of its own; AfterCommit reads the frame below, not this one.
 			return ErrScopeMismatch
 		}
 		if cur.view != nil {
@@ -182,7 +188,7 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 		return fn(ctx, tx)
 	}
 
-	p := &Pending{conn: c, tenant: t, owner: ctx}
+	p := newPending(c, t, ctx)
 	tx, err := p.Tx(ctx)
 	if err != nil {
 		return err
@@ -196,7 +202,7 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 	}()
 	// A nested join clones the shared handle, never this caller's operation handle.
 	gtx, span := p.handle()
-	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: gtx, tenant: t, span: span}), tx); err != nil {
+	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: gtx, tenant: t, span: span, hooks: p.hooks}), tx); err != nil {
 		_ = p.Close(false)
 		return err
 	}
@@ -266,6 +272,16 @@ type Pending struct {
 	gtx  *gorm.DB
 	err  error
 	span trace.Span
+	// hooks is a pointer, and not for taste: Pending is compared by callers of the
+	// API this package publishes, and a queue holding a slice makes it not
+	// comparable, which the exported-API gate refuses as a new incompatibility.
+	hooks *commitQueue
+}
+
+// newPending is the only way to hold one, and it exists so the queue that waits
+// for the commit is never nil on a transaction that can commit.
+func newPending(c *Conn, t tenancy.Tenant, owner context.Context) *Pending {
+	return &Pending{conn: c, tenant: t, owner: owner, hooks: &commitQueue{}}
 }
 
 type pendingKey struct{}
@@ -290,7 +306,7 @@ func Lazy(ctx context.Context, c *Conn, tok tenancy.SystemToken) (context.Contex
 	if !ok {
 		return ctx, nil, ErrNoTenant
 	}
-	p := &Pending{conn: c, tenant: t, owner: ctx}
+	p := newPending(c, t, ctx)
 	return context.WithValue(ctx, pendingKey{}, p), p, nil
 }
 
@@ -416,12 +432,24 @@ func (p *Pending) handle() (*gorm.DB, trace.Span) {
 // cause, whatever keep asked for. It is a no-op when nothing is open, and
 // idempotent; a Close under a live owner leaves the Pending able to open again.
 func (p *Pending) Close(keep bool) error {
+	committed, err := p.end(keep)
+	if err != nil || !committed {
+		return err
+	}
+	// Outside the mutex, because the queue is somebody else's code and an action
+	// that opens a transaction of its own must not have to wait for this Pending.
+	return runAfter(p.conn, p.hooks.drain())
+}
+
+// end commits or rolls back the open transaction and reports whether it committed,
+// which is what decides whether the effects deferred to after it run.
+func (p *Pending) end(keep bool) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	gtx, span := p.gtx, p.span
 	p.gtx, p.span = nil, nil
 	if gtx == nil {
-		return nil
+		return false, nil
 	}
 	// open sets gtx and span together, so span is live here. It ends before the
 	// outcome is returned, whatever it is: the transaction is over the moment the
@@ -433,23 +461,24 @@ func (p *Pending) Close(keep bool) error {
 		err := fmt.Errorf("db: the transaction's owner ended before it was finalised: %w", context.Cause(p.owner))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return false, err
 	}
 	if !keep {
-		return gtx.Rollback().Error
+		return false, gtx.Rollback().Error
 	}
 	if err := sealed(gtx, p.tenant.ID.String(), ""); err != nil {
 		_ = gtx.Rollback().Error
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return false, err
 	}
 	err := gtx.Commit().Error
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		return false, err
 	}
-	return err
+	return true, nil
 }
 
 // sealed refuses to commit a transaction that ends under different settings

@@ -18,7 +18,9 @@ package events
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -298,10 +300,13 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				// A handler holds a transaction, so it is bounded. The
 				// acknowledgement deadline is the ladder's first rung, which
 				// is shorter than this, so a handler slower than that rung is
-				// redelivered while its first attempt is still writing: the
-				// claim's row lock serializes the two, and the redelivery acks
-				// as soon as the first attempt commits. handlerTimeout is what
-				// bounds that wait. See claim, and providers/nats/jetstream.go's ackWait.
+				// redelivered while its first attempt is still writing. Both arrivals
+				// ask the claim the same question, and the claim now answers two:
+				// is the work done, and did every effect the handler deferred actually
+				// run. The second waits on the first's row lock and is then told either
+				// that it may acknowledge (both true) or that an effect is still owed
+				// (it refuses the copy, the transport retries). handlerTimeout is what
+				// bounds that wait. See claim, Defer, and jetstream.go's ackWait.
 				ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 				defer cancel()
 				holds, err := holdsTenant(ctx, conn, s.App, ev.TenantID)
@@ -331,6 +336,11 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				ctx = request.WithOperation(ctx, ev.Operation)
 				request.DeferOperation(ctx)
 				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
+				// The pool this delivery runs on, put on the context of its work. A
+				// deferred effect records what became of it after the transaction that
+				// produced it has ended, and the only pool it may record that on is this
+				// one. See Defer.
+				ctx = db.WithConn(ctx, conn)
 				// One span per delivery, on the trace of the work that published the
 				// event rather than of the worker that woke up. See trace.go.
 				ctx, span := startDelivery(ctx, ev)
@@ -369,6 +379,26 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 					ctx = context.WithValue(ctx, commandDeliveryKey{}, commandDelivery{event: ev, durable: durable})
 					return h(ctx, tx, ev)
 				})
+				if errors.Is(err, db.ErrEffectNotRun) {
+					// The handler's rows committed and an effect it deferred to after the
+					// commit did not happen. The claim marks the delivery done, and this one
+					// is not: it owes an effect it cannot be told to forget. Leaving the claim
+					// would make every redelivery a no-op that acks — the rows in, the effect
+					// never run again, the outbox row stamped over work nobody did — so the
+					// claim goes, the failure goes back to the transport, and the work comes
+					// round on its own ladder. The handler runs again over rows it already
+					// wrote, which is what deferring an effect promises; Defer is the other
+					// half, and the mark it leaves is what stops a redelivery that arrives
+					// before this release from acking over the same unfinished effect.
+					slog.ErrorContext(ctx, "events: delivery committed its rows and its deferred effect did not run, releasing the claim",
+						"event", ev.Name, "id", ev.ID, "durable", durable, "error", err)
+					if rerr := releaseClaim(ctx, conn, ev.ID, durable); rerr != nil {
+						// Nothing left to do but say it: the claim stands, so the event is
+						// terminal until an operator reviews it, which is what replay is for.
+						slog.ErrorContext(ctx, "events: the claim of an unfinished delivery is still held",
+							"event", ev.Name, "id", ev.ID, "durable", durable, "error", rerr)
+					}
+				}
 				endSpan(span, err)
 				return err
 			},
@@ -465,8 +495,12 @@ func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID)
 }
 
 // claim writes this subscription's mark against the event and reports whether
-// it was the one that wrote it. A second delivery conflicts on the primary key,
-// inserts nothing, and is told to skip the handler.
+// it was the one that wrote it. A second delivery conflicts on the primary key and
+// inserts nothing — and what that proves is decided by the mark beside the claim: an
+// attempt that deferred no effect is finished work, so the second delivery skips the
+// handler and acknowledges, and one that still owes one has not finished, so the
+// second delivery refuses the copy and leaves it to the transport's ladder. See
+// owedOrHandled and Defer.
 //
 // It runs inside the handler's own transaction, which is the whole design: the
 // mark and everything the handler writes commit together, so a handler that
@@ -527,18 +561,94 @@ func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable, older string) (bool, erro
 	if older != "" && older != durable {
 		names = append(names, older)
 	}
-	args := append([]any{id, durable, db.TenantOf(tx).ID, id}, names...)
-	// Older releases wrote dead letters without a claim. They are terminal too.
+	first, err := insertClaim(tx, id, names)
+	if err != nil || first {
+		return first, err
+	}
+	return owedOrHandled(tx, id, names)
+}
+
+// insertClaim writes the mark and reports whether this transaction wrote it. The
+// two guards are the two ways the work is already spoken for: a claim under either
+// spelling of this subscription's name, and — for releases that wrote a dead letter
+// with no claim beside it — a terminal record, which is as finished as a claim.
+func insertClaim(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	n := len(names)
 	q := "INSERT INTO " + handled + " (event_id, durable, tenant_id) SELECT ?, ?, ?" +
-		" WHERE NOT EXISTS (SELECT 1 FROM " + deadLetters + " WHERE event_id = ? AND " + durableSet(len(names)) + ")" +
-		" AND NOT EXISTS (SELECT 1 FROM " + handled + " WHERE event_id = ? AND " + durableSet(len(names)) + ")"
+		" WHERE NOT EXISTS (SELECT 1 FROM " + deadLetters + " WHERE event_id = ? AND " + durableSet(n) + ")" +
+		" AND NOT EXISTS (SELECT 1 FROM " + handled + " WHERE event_id = ? AND " + durableSet(n) + ")"
+	args := append([]any{id, names[0], db.TenantOf(tx).ID, id}, names...)
 	args = append(args, id)
 	args = append(args, names...)
 	res := tx.DB().Exec(q+" ON CONFLICT DO NOTHING", args...)
 	if res.Error != nil {
-		return false, fmt.Errorf("events: claim %s for %s: %w", id, durable, res.Error)
+		return false, fmt.Errorf("events: claim %s for %v: %w", id, names, res.Error)
 	}
 	return res.RowsAffected == 1, nil
+}
+
+// owedOrHandled reads the claim this delivery conflicted with, under its lock, and
+// says which of two facts the conflict proves: the work is finished, or somebody
+// still owes an effect it deferred past its own commit.
+//
+// The lock is the point of the read: the attempt that wrote the row may still be
+// running its effect, and the value that decides this answer is one it is about to
+// change. FOR UPDATE takes the row from them — either the clear is in, or this
+// delivery waits for the attempt that owes and reads what it settled on.
+//
+// The row can also be gone: its attempt released the claim after this transaction's
+// zero-row INSERT, or the purge took it. A terminal record beside it is still an
+// answer; with neither record the work is for the taking, so the INSERT is retried
+// once and a second conflict is refused rather than guessed at.
+func owedOrHandled(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	var owed bool
+	err := tx.DB().Raw("SELECT effect_owed FROM "+handled+" WHERE event_id = ? AND "+durableSet(len(names))+
+		" FOR UPDATE", append([]any{id}, names...)...).Row().Scan(&owed)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, gorm.ErrRecordNotFound) {
+		// No claim to read the mark off. A terminal record is the other way this
+		// event is finished — deadLetter writes its claim beside the letter, and older
+		// releases wrote the letter alone — and neither record means the work is there
+		// for the taking.
+		terminal, terr := terminalRecorded(tx, id, names)
+		if terr != nil {
+			return false, terr
+		}
+		if terminal {
+			return false, nil
+		}
+		return claimAfterTheRowWentAway(tx, id, names)
+	}
+	if err != nil {
+		return false, fmt.Errorf("events: ask whether %s still owes an effect: %w", id, err)
+	}
+	if owed {
+		return false, fmt.Errorf("events: %s is claimed by a delivery whose effect has not run: %w", id, ErrDeliveryOwesEffect)
+	}
+	return false, nil
+}
+
+// terminalRecorded reports whether this event already has a dead letter under
+// either spelling of this subscription's name.
+func terminalRecorded(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	var recorded bool
+	err := tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM "+deadLetters+" WHERE event_id = ? AND "+durableSet(len(names))+")",
+		append([]any{id}, names...)...).Row().Scan(&recorded)
+	if err != nil {
+		return false, fmt.Errorf("events: ask whether %s is dead-lettered: %w", id, err)
+	}
+	return recorded, nil
+}
+
+// claimAfterTheRowWentAway takes the claim a conflict no longer stands on, once
+// terminalRecorded has said nothing ended this event. One row affected means this
+// delivery is the first to do the work after all; none means a claim this delivery
+// has never seen appeared while it was reading, which it must not run over.
+func claimAfterTheRowWentAway(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	first, err := insertClaim(tx, id, names)
+	if err != nil || first {
+		return first, err
+	}
+	return false, fmt.Errorf("events: %s is claimed again as fast as it is read: %w", id, ErrDeliveryOwesEffect)
 }
 
 // handlerTimeout bounds each transaction and any wait on another delivery's
