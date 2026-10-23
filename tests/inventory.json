@@ -82560,7 +82560,7 @@
    "kind": "node",
    "layer": "behaviour",
    "merge_into": "",
-   "name": "the dependency pin refuses a reported DOMPurify release even when its override and lock agree",
+   "name": "the dependency pin refuses a reported release even when its override and lock agree",
    "needs_db": false,
    "pkg": "tools/designexport/openpencil",
    "round_named": false,
