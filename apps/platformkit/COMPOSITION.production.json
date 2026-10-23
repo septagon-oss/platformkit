@@ -138,6 +138,7 @@
       "name": "tenant",
       "provides": [
         "tenantcontracts.Service",
+        "tenantcontracts.LanguageDeclaration",
         "httpx.TenantLoader",
         "jobs.TenantLister",
         "notificationcontracts.HostLookup",
@@ -801,6 +802,10 @@
         },
         {
           "contract": "tenantcontracts.Service",
+          "from": "tenant"
+        },
+        {
+          "contract": "tenantcontracts.LanguageDeclaration",
           "from": "tenant"
         }
       ],
