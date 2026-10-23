@@ -1,20 +1,7 @@
 package httpx
 
-// idempotency.go keeps a caller's promise that a write is one write.
-//
-// The caller says it with `Idempotency-Key` (draft-ietf-httpapi-idempotency-key-header),
-// and this is where the kernel does something with it: remember the attempt, hand
-// a retry the answer the first attempt got, and refuse the two requests that would
-// make the promise false — the same key carrying a different body, and the same key
-// while the first attempt is still running.
-//
-// The memory itself is kit/idempotency, and the reason it is not a map in this
-// package is the reason kit/limit's counters are not one either: a retry arrives at
-// whichever replica the load balancer chose, minutes later, after a deploy that
-// emptied every map in the fleet. What stays here is everything HTTP-shaped about
-// the deal — which requests are keyed, what the header may contain, what each
-// disposition answers with, and where an answer becomes a remembered one.
-
+// Idempotency-Key binds a POST/PATCH body to one result. kit/idempotency stores
+// claims across replicas; this adapter owns HTTP admission, replay and finalization.
 import (
 	"bytes"
 	"context"
@@ -42,25 +29,12 @@ import (
 const IdempotencyKeyHeader = "Idempotency-Key"
 
 const (
-	// maxKeyedBody is the largest body a keyed request may carry. It is
-	// MaxBodyBytes rather than a second number: that is the ceiling every schema'd
-	// body already has, so a keyed write of that shape is bounded exactly as an
-	// unkeyed one. It bites on one route only — the one that reads its own request,
-	// which takes Options.MaxUpload of it without a key — and that is the deal the
-	// header is: a promise about a write costs the memory that keeps the promise, and
-	// the alternative to refusing a body this guard cannot digest is running the write
-	// twice on the caller's own account. The document says so wherever the header is
-	// declared (keyDescription).
+	// Keyed uploads use the ordinary body ceiling so the complete body can be
+	// hashed before admission, even on a route that otherwise streams uploads.
 	maxKeyedBody = MaxBodyBytes
 
-	// maxRecordedAnswer is the largest answer the memory can hold. Past it the
-	// write is remembered as spent rather than replayable, which is the safe
-	// direction: losing an answer costs a caller a 409 on its retry, and forgetting
-	// a record so a retry can run again costs them the second write the header
-	// exists to prevent. A quarter of a megabyte is past every document this API
-	// answers with and below the 2 MiB a held response may already reach
-	// (buffer.go's maxBuffer), so what it selects for is a streamed or file-shaped
-	// answer, which is not a body to keep in a row.
+	// Larger answers leave a spent record: losing replay bytes must not let a
+	// retry execute the write again. Streaming/file answers need no stored body.
 	maxRecordedAnswer = 256 << 10
 
 	// maxKeyLength bounds the header's value. The key is a primary-key column, so
@@ -69,14 +43,8 @@ const (
 	maxKeyLength = operation.MaxTokenLength
 )
 
-// keyedMethod reports whether a verb is one a key is promised on.
-//
-// This is deliberately not unsafeMethod. That predicate is "not one of the four
-// safe methods", which makes PUT and DELETE keyed writes, and the draft says the
-// opposite (draft-ietf-httpapi-idempotency-key-header §1, following RFC 9110):
-// OPTIONS, HEAD, GET, PUT and DELETE are already idempotent in the protocol, and
-// POST and PATCH are not. A key on a retried PUT buys nothing the verb does not
-// already promise, and a record of its body is a body kept for nothing.
+// keyedMethod selects POST/PATCH; PUT/DELETE already promise HTTP idempotence
+// without retaining a keyed copy of their bodies.
 func keyedMethod(method string) bool {
 	return method == http.MethodPost || method == http.MethodPatch
 }
@@ -315,25 +283,10 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	}
 }
 
-// replay answers a retry with the answer its own write was given.
-//
-// Only Content-Type travels with the stored body. Never Set-Cookie — the public
-// surface's promise that nobody standing at it is remembered would be broken by
-// one call in a thousand, and respond's writer would withhold it anyway — and never
-// Cache-Control or Vary, which are properties of this response rather than of the
-// answer. X-Request-ID therefore names this call while a problem document inside
-// the body keeps naming the request that did the work: a person quoting a replayed
-// 422 is quoting the call that produced it, and the two ids are how an operator
-// joins them. That divergence is stated so nobody calls it a bug later.
-//
-// What does travel, besides the body, is whatever keptHeaders names: the headers
-// the answer cannot be without. A redirect is a functional answer — the write is
-// done and the caller is being sent somewhere — and the retry of one that dropped
-// its destination is a caller left at a status with no page to go to, and the same is
-// true of the ceilings the answer said it was decided under. What travels beside
-// them, in a shape of its own rather than as a rendered header, is the reading behind
-// those ceilings: see sayRecorded, which restates it against the moment the replay is
-// being answered at.
+// replay rechecks current authority and representation before sending stored bytes.
+// Content-Type and keptHeaders travel with the answer; cookies never do. Cache/Vary
+// and X-Request-ID belong to this exchange, while a stored problem retains its
+// original request identity. Recorded limits retain their decision and age their wait.
 func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	if auth, ok := declarationOf(ctx.Operation()); ok && auth.replay != nil {
 		tx, present := TxFrom(ctx.Context())
@@ -351,35 +304,20 @@ func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 			return
 		}
 	}
+	if !a.replayRepresentation(ctx, stored.ContentType, stored.Status) {
+		return
+	}
 	r, w := humachi.Unwrap(ctx)
 	if stored.ContentType != "" {
 		w.Header().Set("Content-Type", stored.ContentType)
 	}
-	// The kept headers go on before the status line, as every header does: a 303
-	// replayed without its Location is a status with nothing to act on, and the
-	// retry of a form that worked would arrive somewhere it could not go.
-	//
-	// Set and not added: a guard above this one may have stated one of these names for
-	// this exchange already — the public write limit states its policy line on every
-	// reply it applies to — and an answer remembered under its ceilings is stated once,
-	// as it was decided, rather than twice under two readings of one ceiling.
+	// Replace current guard headers with the recorded decision, including redirects.
 	for _, h := range stored.Headers {
 		w.Header().Set(h.Name, h.Value)
 	}
-	// The ceilings the write was refused under go on the replay too, with the one
-	// number that ages worked out again, and they are the whole of the line: the guard
-	// above this one spends its own counter on the way down to the memory, and that
-	// reading belongs to the exchange asking again, not to the answer it is being given
-	// (sayRecorded). The policy line is already on its way: the answer kept it among its
-	// own headers just above. The reading is the one the deciding counter gave, and the
-	// wait is what is left of the window that refusal landed in. A replay that said
-	// nothing let respond.go's floor stand in — a minute for a window of an hour — which
-	// is a guess where the answer had a number.
+	// Restate the original ceiling with the remaining wait, not this retry's counter.
 	sayRecorded(w.Header(), stored.Limits, stored.Status == http.StatusTooManyRequests, time.Now().UTC())
-	// Both places, as declared does: the writer holds the answer, and the huma
-	// context holds the verdict the transaction middleware commits or rolls back on.
-	// A replay runs no handler and writes nothing either way, and committing the
-	// transaction that read the record is what keeps it a transaction.
+	// The writer sends the answer; Huma's status also governs transaction completion.
 	ctx.SetStatus(stored.Status)
 	w.WriteHeader(stored.Status)
 	if _, err := w.Write(stored.Body); err != nil {
