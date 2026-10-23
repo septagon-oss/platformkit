@@ -19,12 +19,13 @@
 # not hold is whether the version it pinned falls inside a range npm has said it will report.
 #
 # Both fixes were already inside the range the parent declares, so the cure is the lock and not a new
-# `overrides` entry (which this directory's package.json reserves for the two packages whose published
-# *identity* has to be replaced) and not `npm audit fix --force` (which the tool's own README forbids,
-# because it is free to downgrade the pinned SDK past the source-hash checks):
+# `overrides` entry — the block already holds these two names at a reviewed release, and the two
+# entries that replace a package's published *identity* are a different instrument — and not
+# `npm audit fix --force` (which the tool's own README forbids, because it is free to downgrade the
+# pinned SDK past the source-hash checks):
 #
 #   @open-pencil/core -> unifont -> css-tree -> source-map-js ^1.2.1   -> 1.2.2
-#   @open-pencil/core -> jspdf (optional) -> dompurify ^3.3.1          -> 3.4.16
+#   @open-pencil/core -> jspdf (optional) -> dompurify ^3.3.1          -> 3.4.17
 #
 # The parent's range is not re-derived here, because `npm ci` on the line above the audit already
 # refuses a lock that fails one and names the offending edge; re-checking that fact would be a number
@@ -33,6 +34,19 @@
 # A package that has left the lock is not a finding: jspdf and unifont bring these two in, and a
 # vulnerability that leaves with its parent is gone rather than fixed. The finding is a package this
 # file names, present, at a version inside a range npm reports.
+#
+# The feed moved a second time, and this file moved with it. The middle command exited 1 again at
+# `824cf40` (forge job 78805 at 2026-10-22T23:42:00Z), reporting `dompurify  <=3.4.16` at
+# `Severity: critical` and three advisory titles, while `main` was refused the same step at the same
+# minute over byte-identical lock bytes (forge job 78498). What npm merged into that one block are
+# three ranges: GHSA-cg2g-xh64-v4q7 at `>= 3.4.4, <= 3.4.16` (critical) and GHSA-mrv2-3pqr-j5jr
+# (high) with GHSA-c6gr-qvv4-5v3f (low) at `<= 3.4.16`, each of which names 3.4.17 as its first
+# patched release. The lock carried 3.4.16, the release the refusal above this one moved it to, and
+# 3.4.17 still sits inside jspdf's `^3.3.1`, so the cure was the pinned half of one existing
+# `overrides` entry and the three lines of the lock that resolve it. Each range keeps its own row
+# below with its own edges and its own severity — the severity npm prints beside a block is the
+# highest of the advisories whose ranges it merged — and the union of the rows is the `<=3.4.16` the
+# report shows.
 #
 # Both verdicts go through one function each, and the mutations at the end feed that same function: a
 # version printed as "locked above" without the comparison behind it prints `ok` about a lock nobody
@@ -68,6 +82,22 @@ ADVISORIES = (
         "severity": "low",
         "parent": "jspdf",
     },
+    {
+        "package": "dompurify",
+        "since": None,
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"),
+        "severity": "high",
+        "parent": "jspdf",
+    },
+    {
+        "package": "dompurify",
+        "since": (3, 4, 4),
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-cg2g-xh64-v4q7",),
+        "severity": "critical",
+        "parent": "jspdf",
+    },
 )
 
 # The three commands of the gate, in the order the design job runs them. The audit may stand behind
@@ -80,8 +110,8 @@ COMMANDS = re.compile(r"^\s*(?:bash\s+\S*scripts/ci_npm_audit\.sh\s+)?(npm (?:ci
 
 
 def version(text):
-    """(3, 4, 15) from "3.4.15". No suffix handling: npm reports both advisories on stable ranges
-    and no version this lock holds carries one."""
+    """(3, 4, 15) from "3.4.15". No suffix handling: every range below is a stable one and no
+    version this lock holds carries one."""
     parts = re.match(r"(\d+)\.(\d+)\.(\d+)", text)
     if not parts:
         sys.exit(f"FAIL: cannot read the version {text!r} as major.minor.patch")

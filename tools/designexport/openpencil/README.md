@@ -942,13 +942,13 @@ These checks exclude binary and streaming-event readers. This does not clear the
 upstream lock audit or establish complete browser dependency reachability.
 
 Two transitive dependencies are held by override, because the package that
-selects each of them still allows the vulnerable range: `dompurify@3.4.16`,
-reached through `jspdf`'s `^3.3.1` and the release the
-[node-removing](https://github.com/advisories/GHSA-p98j-92pf-mc4p) and
-[rawtext-root](https://github.com/advisories/GHSA-6688-9rhm-gjv2) DOM XSS
-advisories describe, and `source-map-js@1.2.2`, reached through `css-tree`'s
-`^1.2.1` and the release the
-[event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
+selects each of them still allows the vulnerable range: `dompurify@3.4.17`,
+reached through `jspdf`'s `^3.3.1` and the first release above the DOM XSS
+advisories [node-removing](https://github.com/advisories/GHSA-p98j-92pf-mc4p),
+[rawtext-root](https://github.com/advisories/GHSA-6688-9rhm-gjv2) and the three
+published against 3.4.16 (GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr, GHSA-c6gr-qvv4-5v3f),
+and `source-map-js@1.2.2`, reached through `css-tree`'s `^1.2.1` and the release
+the [event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
 advisory describes. Neither is a direct dependency, so neither is a version
 anybody edits by hand; `locked-dependencies.test.mjs` requires the lock to resolve
 both names to exactly these releases, which is what makes a regenerated lock that
