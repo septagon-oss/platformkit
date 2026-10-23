@@ -24,5 +24,5 @@ func TestAnOwnerCancelledBeforeKeepPersistsNoWriteOfAnyCaller(t *testing.T) {
 	if n := committed(t, admin); n != 0 {
 		t.Errorf("committed rows = %d, want 0", n)
 	}
-	waitUntil(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
+	waitForPoolStat(t, "the connection to return to the pool", func() bool { return app.Stats().InUse == base })
 }

@@ -464,15 +464,7 @@ func revisionCondition(r Resource, row map[string]any, create bool) (string, boo
 // Control adapts an entity field to the portable form control, preserving the
 // generated screens' existing labels, choices and name-derived DOM identity.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return controlWords(Words{}, f, value, fieldErr, immutable)
-}
-
-// controlWords is Control with one thing added: the words a request's language
-// chose, which is what a command's argument controls need and what the exported
-// Control has no request to read. ui/forms stays this package's only owner of the
-// control itself.
-func controlWords(words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(words, f), Value: value, Error: fieldErr, Immutable: immutable})
+	return forms.Control(forms.ControlProps{Field: formField(Words{}, f), Value: value, Error: fieldErr, Immutable: immutable})
 }
 
 // formField projects display words at the screen boundary. The portable form

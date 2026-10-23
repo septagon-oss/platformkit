@@ -1,42 +1,8 @@
 #!/usr/bin/env bash
-# The lock the design job audits sits above the advisories that job was refused for.
-#
-# Why this file exists. The `design` job runs three npm commands in `tools/designexport/openpencil`:
-# a locked install, an audit of what that install produced, and the native suites. At `0bfae63` the
-# middle one exited 1 (forge job 51838 at 2026-10-06T05:17:44Z, the run's only failed step, which the
-# forge names `Native design conformance and dependency audit`):
-#
-#   source-map-js  1.0.0 - 1.2.1  Severity: high  GHSA-68fv-2mgg-jv7q                     (pinned 1.2.1)
-#   dompurify      <=3.4.15                        GHSA-p98j-92pf-mc4p, GHSA-6688-9rhm-gjv2 (3.4.14)
-#
-# and `--audit-level=high` is what turns an audit report of that shape into a red tick rather than a
-# paragraph. Nothing in this repository moved: forge run 51055 on `main` reports the same step `success`
-# over lockfile bytes byte-identical to the ones that head carries (`git diff f8bad33 0bfae63 -- tools/
-# designexport/openpencil/package-lock.json` answers nothing), and both fixed releases postdate the
-# commit that last wrote this lock on 2026-09-11 — source-map-js 1.2.2 published 2026-09-30, dompurify
-# 3.4.16 on 2026-09-23. npm's advisory feed is what moved under the runner — which is why this case
-# reads the lock and never npm's feed. The one question a working tree can answer about a feed it does
-# not hold is whether the version it pinned falls inside a range npm has said it will report.
-#
-# Both fixes were already inside the range the parent declares, so the cure is the lock and not a new
-# `overrides` entry (which this directory's package.json reserves for the two packages whose published
-# *identity* has to be replaced) and not `npm audit fix --force` (which the tool's own README forbids,
-# because it is free to downgrade the pinned SDK past the source-hash checks):
-#
-#   @open-pencil/core -> unifont -> css-tree -> source-map-js ^1.2.1   -> 1.2.2
-#   @open-pencil/core -> jspdf (optional) -> dompurify ^3.3.1          -> 3.4.16
-#
-# The parent's range is not re-derived here, because `npm ci` on the line above the audit already
-# refuses a lock that fails one and names the offending edge; re-checking that fact would be a number
-# nothing reads. What `npm ci` cannot see is which side of an advisory a locked version lands on.
-#
-# A package that has left the lock is not a finding: jspdf and unifont bring these two in, and a
-# vulnerability that leaves with its parent is gone rather than fixed. The finding is a package this
-# file names, present, at a version inside a range npm reports.
-#
-# Both verdicts go through one function each, and the mutations at the end feed that same function: a
-# version printed as "locked above" without the comparison behind it prints `ok` about a lock nobody
-# compared. The first draft of this file did exactly that, and the mutation below is what caught it.
+# Keep the design lock above the published source-map-js and DOMPurify advisories.
+# The audit threshold and its place between install and conformance stay enforced.
+# Mutated copies of the lock exercise the same comparison as the real lock;
+# a removed package is safe, but a present vulnerable version is refused.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -63,9 +29,9 @@ ADVISORIES = (
     {
         "package": "dompurify",
         "since": None,
-        "upto": (3, 4, 15),
-        "ids": ("GHSA-p98j-92pf-mc4p", "GHSA-6688-9rhm-gjv2"),
-        "severity": "low",
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"),
+        "severity": "critical",
         "parent": "jspdf",
     },
 )

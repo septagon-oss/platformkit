@@ -12,7 +12,8 @@
 # retries forever (a hang nobody reads as a hang).
 #
 # What these cases cannot reach is the verdict itself — whether an exported signature moved. That is the
-# baseline diff in check_public_api.py's own output, which is why the fourth case drives the real script
+# report check_public_api.py prints, which the release line turns into a refusal, and which is why the
+# fourth case drives the real script
 # end to end: it has to show that a fetch which never heals still exits non-zero. A retry that could turn
 # a refusal into a pass would be a removed gate, and it cannot: with -m -incompatible apidiff exits 0
 # whatever it finds (cmd/apidiff/main.go exits non-zero only when it cannot write its report), so the
@@ -73,8 +74,8 @@ expect "final" "the third blip is the failure the run reports" 2 "$TIMEOUT"
 #    the one `make check-apidiff` must return, and the two retry lines are the evidence the loop ran.
 #    25 s of waiting is the bound itself, paid here rather than asserted as a number.
 out="$(GOPROXY='http://127.0.0.1:1' GOFLAGS= timeout 180 \
-	python3 scripts/check_public_api.py v1.1.0 HEAD \
-	--baseline scripts/baselines/public-api-v1.1.0.json 2>&1)" && got=0 || got=$?
+	python3 scripts/check_public_api.py \
+	--line-record scripts/baselines/public-api-v2.0.0-candidate.json 2>&1)" && got=0 || got=$?
 if [ "$got" != 2 ]; then
 	echo "FAIL: an unreachable proxy still refuses the gate: exit $got, wanted 2"
 	printf '    %s\n' "$out" | tail -20
