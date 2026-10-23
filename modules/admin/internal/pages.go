@@ -571,11 +571,11 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 	// measure a full-width SectionHeader description does not.
 	body := []g.Node{components.SectionHeader(components.SectionHeaderProps{Title: title, Level: 1})}
 	for _, entry := range p.primary.Visible(ctx, t, p.Authorize) {
-		item := components.SidebarItem{Label: entry.Label, Href: entry.Screen}
+		item := components.SidebarItem{Label: entryWord(p.at, o, entry), Href: entry.Screen}
 		body = append(body, components.Stack(components.StackProps{Gap: "3"},
 			components.FormSentence(components.FormSentenceProps{Text: workspacePurpose(p.at, item, p.resources, o)}),
 			components.Flex(components.FlexProps{Direction: "row"},
-				components.Button(components.ButtonProps{Label: entry.Label, Href: entry.Screen, Variant: "primary"}))))
+				components.Button(components.ButtonProps{Label: item.Label, Href: entry.Screen, Variant: "primary"}))))
 	}
 	body = append(body, components.FormSentence(components.FormSentenceProps{Text: description}))
 	if t.Operator {
