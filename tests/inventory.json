@@ -56511,6 +56511,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/task/internal/creator_refusal_reason_test.go",
+   "id": "modules/task/internal/creator_refusal_reason_test.go#TestCreatorRefusalKeepsItsReasonReachable",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestCreatorRefusalKeepsItsReasonReachable",
+   "needs_db": true,
+   "pkg": "modules/task/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/task/internal/erasure_keeps_bounded_text_anonymous_test.go",
    "id": "modules/task/internal/erasure_keeps_bounded_text_anonymous_test.go#TestErasureLeavesNoNameWhenABoundedTitleEndsInALongerName",
    "kind": "go",
@@ -84370,7 +84389,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2323,
+  "files": 2324,
   "forge_runs": [
    408,
    413,
@@ -84404,7 +84423,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3633,
+   "behaviour": 3634,
    "composition": 512,
    "contract": 21,
    "journey": 112
@@ -84423,9 +84442,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4278,
+  "rows": 4279,
   "tiers": {
-   "merge": 2659,
+   "merge": 2660,
    "nightly": 112,
    "push": 1507
   },
@@ -84433,13 +84452,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2078,
+   "keep": 2079,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3892,
+   "keep": 3893,
    "keep-rewrite": 170,
    "merge": 216
   }
