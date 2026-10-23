@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 
 test('a workspace keeps people, permissions and work reachable at desktop and phone widths', async ({ page }) => {
   await expect(page.locator('main a[href="/app/auth/roles"]')).toBeVisible();
-  await expect(page.locator('main a[href="/app/task/tasks"]')).toBeVisible();
+  await expect(page.locator('main a[href="/app/task/tasks"][data-component="card"]')).toBeVisible();
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     if (width < 1024) await page.locator('[data-component="sidebar-disclosure"] summary').click();

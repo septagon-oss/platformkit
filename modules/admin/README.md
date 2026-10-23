@@ -184,7 +184,28 @@ screens did not read `SummaryFields`. **Made reusable** — `components.Disclosu
 declares `PrimaryField`, `SummaryFields`, `Description` and `EmptyDescription` gets
 its list, record and empty state read that way without a page of its own.
 
+The home's primary action and the footer's "About this workspace": **Reused** —
+`components.Disclosure`, `Text`, `Button` and `Stack`; `page.NewNavigation`,
+`Visible` and `Unserved`, so the action is filtered and reported exactly as a nav
+entry is; `workspacePurpose` for its sentence; `module.Grants` and kit/module's
+nav-entry refusal wording; `pkit.Optional`, `Provides` and `Put`. **Added** —
+`admincontracts.PrimaryAction`, a defined type over `module.NavEntry`, because no
+module or application could say what its people come to the workspace to do: a
+flag on `NavEntry` would let many modules claim the home at once, and claiming
+`Router.Home()` moves the dashboard to another route. **Made reusable** — the port
+itself: an application that `Provides[admincontracts.PrimaryAction]` gets its action
+first on the home, for whoever may follow it, with no page of its own.
+
 ## Limits
+
+- The home's primary action is one per composition; its words are the product's,
+  printed as written like a nav label. A product summary beyond the action's purpose
+  sentence is not declared here: a product that wants a page of its own at `/app`
+  claims `Router.Home()`.
+- "About this workspace" holds the host's scope; the build revision stays in view beside it, which the
+  shared design floor requires. The account
+  id is not shown there (support reads it on the person's record), and whether the
+  tenant's slug joins it is undecided.
 
 - The dashboard intro is a `SectionHeader` title over a `FormSentence`, because a
   `SectionHeader` description has no reading measure. Giving it one is a change to
