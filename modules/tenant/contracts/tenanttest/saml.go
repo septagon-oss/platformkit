@@ -100,6 +100,19 @@ func sameSAML(a, b contracts.SAMLSettings) bool {
 }
 
 func validSAML(in contracts.SAMLSettings) error {
+	if err := validSAMLIdentity(in); err != nil {
+		return err
+	}
+	if err := validSAMLMetadataURL(in); err != nil {
+		return err
+	}
+	if err := validSAMLMetadata(in); err != nil {
+		return err
+	}
+	return validSAMLRegistration(in)
+}
+
+func validSAMLIdentity(in contracts.SAMLSettings) error {
 	u, err := url.Parse(in.EntityID)
 	switch {
 	case err != nil || !u.IsAbs() || u.Host == "" && u.Scheme != "urn":
@@ -111,6 +124,10 @@ func validSAML(in contracts.SAMLSettings) error {
 	case in.MetadataURL == "" && in.MetadataXML == "":
 		return fmt.Errorf("%w: saml needs a metadata source: a URL, a document, or both", crud.ErrInvalid)
 	}
+	return nil
+}
+
+func validSAMLMetadataURL(in contracts.SAMLSettings) error {
 	if in.MetadataURL != "" {
 		m, err := url.Parse(in.MetadataURL)
 		switch {
@@ -122,6 +139,10 @@ func validSAML(in contracts.SAMLSettings) error {
 			return fmt.Errorf("%w: saml.metadataUrl %q carries a fragment", crud.ErrInvalid, in.MetadataURL)
 		}
 	}
+	return nil
+}
+
+func validSAMLMetadata(in contracts.SAMLSettings) error {
 	if in.MetadataXML != "" {
 		descriptor, err := samlsp.ParseMetadata([]byte(in.MetadataXML))
 		if err != nil {
@@ -155,6 +176,10 @@ func validSAML(in contracts.SAMLSettings) error {
 			return fmt.Errorf("%w: saml.metadataXml carries no signing certificate, so no assertion it vouches for could ever be verified", crud.ErrInvalid)
 		}
 	}
+	return nil
+}
+
+func validSAMLRegistration(in contracts.SAMLSettings) error {
 	switch in.RegistrationMode() {
 	case contracts.RegistrationDisabled, contracts.RegistrationExisting, contracts.RegistrationProvision:
 	default:
