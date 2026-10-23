@@ -26,7 +26,9 @@ func TestTheAccountLanguagePortIsTheUserCommandSeenFromTheShell(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := accountLanguage{users: users}
+	// One service answers both doors the account control asks through: the lifecycle
+	// read the choice is stored on, and the person's own language door beside it.
+	port := accountLanguage{users: users, language: users}
 	if got, err := port.Preferred(ctx, tx, ada.ID); err != nil || got != "" {
 		t.Fatalf("Preferred of a person who never chose = %q, %v", got, err)
 	}

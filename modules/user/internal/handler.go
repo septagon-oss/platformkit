@@ -17,6 +17,18 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
+// door is what these routes ask of the service: the person lifecycle of
+// contracts.Service and, beside it, the person's own language (contracts.
+// LanguagePreference). Composition hands over one object that answers both — the SQL
+// service and the shared fake alike — and the two are named together here rather than
+// folded into Service, because an exported interface that gains a method is a break
+// for anybody outside this repository who implemented the old one. modules/tenant
+// and modules/file/internal name the same shape `door` for the same reason.
+type door interface {
+	contracts.Service
+	contracts.LanguagePreference
+}
+
 // RegisterRoutes mounts the lifecycle commands on the same resource the
 // Spec mounts the five CRUD routes on.
 //
@@ -27,7 +39,7 @@ import (
 // one would make "who was made an administrator, and when" a question with no
 // answer. spec.Immutable is the other half of that argument, and rest.Command
 // is the part all three share.
-func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], svc contracts.Service) {
+func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], svc door) {
 	// The invitation, which is a route of its own and not the create route with
 	// a flag.
 	//

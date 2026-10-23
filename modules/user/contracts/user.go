@@ -318,25 +318,13 @@ func ValidHandle(handle string) bool {
 //
 // Commands document their retry behavior. An unchanged idempotent command emits
 // no event; verification replay conflicts rather than asserting fresh proof.
+//
+// What the person signed in as may change about their own row is not here: the
+// three commands that write a language choice are LanguagePreference, a door beside
+// this one, because this interface is on the frozen surface of the v2.0.0 line
+// (docs/COMPATIBILITY.md) and they are not on it.
 type Service interface {
 	Registrations
-	// SetPreferredLocale changes the language the person signed in as is answered
-	// in. No argument names a person: the row is the principal's own, which is the
-	// half that keeps a preference from being a way to edit a colleague. A tag this
-	// tenant no longer serves is refused rather than stored, an empty tag clears
-	// the choice, and a choice that is already the one held changes nothing and
-	// publishes nothing.
-	SetPreferredLocale(ctx context.Context, tx db.Tx[db.Tenant], tag string) (*User, error)
-	// SetPreferredLocaleAt is the same choice with the revision it was read at.
-	// The account door — GET then PUT /api/v1/user/me/language — brings one, so a
-	// page that has been open while the person's other tab chose answers with a
-	// conflict instead of quietly writing the older intent again. The two methods
-	// are one decision: the command, the lock and the counter are shared, and an
-	// expected revision is the only difference between them.
-	SetPreferredLocaleAt(ctx context.Context, tx db.Tx[db.Tenant], expectedRevision int64, tag string) (*User, error)
-	// OwnLanguage answers the choice the person signed in as holds, and the
-	// revision to bring back with the next change. No argument names a person.
-	OwnLanguage(ctx context.Context, tx db.Tx[db.Tenant]) (Language, error)
 	// Invite creates a user with no password, in status invited, and publishes
 	// user.invited. Inviting an address that is already here is a conflict.
 	Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*User, error)

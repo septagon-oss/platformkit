@@ -19,10 +19,11 @@ import (
 // Module is the people of a tenant as the resolver sees it, for an application
 // that names it in Use: `Use(user.Module)`.
 //
-// It hands out five contracts. Service is the whole of it. The other four are
-// the ports a peer declares over people, and this module answers each of them
-// because every one is the same read seen from a different door: a password
-// login finding a person (auth.Users), the person a verified claim names
+// It hands out six contracts. Service is the whole of the lifecycle, and
+// LanguagePreference is that same service's door onto the person's own language.
+// The other four are the ports a peer declares over people, and this module answers
+// each of them because every one is the same read seen from a different door: a
+// password login finding a person (auth.Users), the person a verified claim names
 // (auth.Provisioner), the address a notice goes to
 // (notification.RecipientLookup), and the first administrator an invitation
 // makes (tenant.Inviter). They used to be four adapters written in the
@@ -38,10 +39,15 @@ var Module = pkit.NewModule("user", wire,
 	pkit.Needs[usercontracts.Granting](),
 	// Which languages a person may ask to be answered in is the control plane's
 	// fact, not this module's; the composition answers the port from the tenant
-	// service, which is built after this one because a new tenant's first
-	// administrator is looked up here.
+	// module's language declaration, which is built after this one because a new
+	// tenant's first administrator is looked up here.
 	pkit.Needs[usercontracts.LocalePolicy](),
 	pkit.Provides[usercontracts.Service](),
+	// The person's own language, which the same service answers. A second provided
+	// port rather than more methods on Service, because that interface is one a
+	// consumer may have implemented, and one the frozen release line carries: see
+	// contracts.LanguagePreference.
+	pkit.Provides[usercontracts.LanguagePreference](),
 	pkit.Provides[authcontracts.Users](),
 	pkit.Provides[authcontracts.Provisioner](),
 	pkit.Provides[notificationcontracts.RecipientLookup](),
@@ -50,20 +56,20 @@ var Module = pkit.NewModule("user", wire,
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
-	svc, manifest := New(Deps{
+	svc, manifest := newService(Deps{
 		Administration: pkit.Get[usercontracts.Administration](w),
 		Granting:       pkit.Get[usercontracts.Granting](w),
 		LocalePolicy:   pkit.Get[usercontracts.LocalePolicy](w),
 	})
-	pkit.Put(w, svc)
+	pkit.Put[usercontracts.Service](w, svc)
+	pkit.Put[usercontracts.LanguagePreference](w, svc)
 	pkit.Put[authcontracts.Users](w, svc)
 	pkit.Put[authcontracts.Provisioner](w, provisioner{users: svc})
 	pkit.Put[notificationcontracts.RecipientLookup](w, recipients{users: svc})
 	pkit.Put[tenantcontracts.Inviter](w, firstAdmin{users: svc})
-	// The one place in this composition that reads a concrete type back out of an
-	// interface: New builds the *internal.Service and hands it out as the contract, and
-	// the erasure needs the service's own floor, not a second copy of the rule.
-	pkit.Put[personaldata.Part](w, internal.PersonalData(svc.(*internal.Service)))
+	// The erasure's floor is the service's own rule over its own rows, so it goes out
+	// as the concrete value it is built from rather than as a copy of the rule.
+	pkit.Put[personaldata.Part](w, internal.PersonalData(svc))
 	return manifest, nil
 }
 

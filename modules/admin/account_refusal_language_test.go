@@ -20,7 +20,10 @@ import (
 
 // Adapt the published user service to the shell's port, as composition does.
 // The shared fake owns the decision and event history.
-type accountUsers struct{ usercontracts.Service }
+type accountUsers struct {
+	usercontracts.Service
+	usercontracts.LanguagePreference
+}
 
 func (a accountUsers) Preferred(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (string, error) {
 	u, err := a.Get(ctx, tx, id)
@@ -39,7 +42,7 @@ func TestAccountLanguageRefusalSpeaksPortuguese(t *testing.T) {
 	users := usertest.NewFake()
 	users.ServeLanguages(tenancy.Languages{Default: "pt-PT", Others: []string{"en"}})
 	router := mountAs(t, caller{}, func(d *admin.Deps) {
-		d.Language = accountUsers{users}
+		d.Language = accountUsers{Service: users, LanguagePreference: users}
 		d.Messages = xtext.Load("en", admin.Catalogue())
 	})
 	req := httptest.NewRequest(http.MethodPost, "http://"+host+"/app/admin/language", strings.NewReader("locale=de"))

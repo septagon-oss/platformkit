@@ -277,19 +277,30 @@ func languageCases() map[string]func(*testing.T, Fixture) {
 	// to be and a set to be served in. A harness that wired neither would run
 	// every case below against an anonymous caller and an empty set, and the
 	// refusals would look like decisions.
-	ready := func(t *testing.T, f Fixture) {
+	// ready is the two doors a self-only command needs before it means anything,
+	// and the command's own door out of them. The service is handed back as
+	// contracts.LanguagePreference because that is the interface the commands are on:
+	// the suite holds one value and asks it through each door it exercises, and an
+	// implementation that answers Service but not the language door fails here, by
+	// name, rather than in a composition.
+	ready := func(t *testing.T, f Fixture) contracts.LanguagePreference {
 		t.Helper()
 		if f.As == nil || f.Serving == nil {
 			t.Fatal("this harness wired neither Fixture.As nor Fixture.Serving, so the language command is untested against this implementation")
 		}
 		f.Serving(Served)
+		door, ok := f.Service.(contracts.LanguagePreference)
+		if !ok {
+			t.Fatalf("%T answers no language door: an implementation of contracts.Service that does not answer LanguagePreference is a person with no language at all", f.Service)
+		}
+		return door
 	}
 	return map[string]func(*testing.T, Fixture){
 		"a person chooses a language this tenant serves": func(t *testing.T, f Fixture) {
-			ready(t, f)
+			language := ready(t, f)
 			ada := administrator(t, f, "language-choose@acme.test")
 			before := len(languageEvents(f))
-			got, err := f.Service.SetPreferredLocale(f.As(ada.ID), f.Tx, "pt-PT")
+			got, err := language.SetPreferredLocale(f.As(ada.ID), f.Tx, "pt-PT")
 			if err != nil {
 				t.Fatalf("SetPreferredLocale: %v", err)
 			}
@@ -302,10 +313,10 @@ func languageCases() map[string]func(*testing.T, Fixture) {
 		},
 
 		"a language this tenant does not serve is refused and nothing is written": func(t *testing.T, f Fixture) {
-			ready(t, f)
+			language := ready(t, f)
 			ada := administrator(t, f, "language-refused@acme.test")
 			before := len(languageEvents(f))
-			_, err := f.Service.SetPreferredLocale(f.As(ada.ID), f.Tx, "de")
+			_, err := language.SetPreferredLocale(f.As(ada.ID), f.Tx, "de")
 			if !errors.Is(err, crud.ErrInvalid) {
 				t.Fatalf("a tag outside the served set = %v, want ErrInvalid", err)
 			}
@@ -322,14 +333,14 @@ func languageCases() map[string]func(*testing.T, Fixture) {
 		},
 
 		"the choice already held publishes nothing": func(t *testing.T, f Fixture) {
-			ready(t, f)
+			language := ready(t, f)
 			ada := administrator(t, f, "language-held@acme.test")
 			who := f.As(ada.ID)
-			if _, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
+			if _, err := language.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
 				t.Fatalf("first SetPreferredLocale: %v", err)
 			}
 			before := len(languageEvents(f))
-			got, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT")
+			got, err := language.SetPreferredLocale(who, f.Tx, "pt-PT")
 			if err != nil {
 				t.Fatalf("second SetPreferredLocale: %v", err)
 			}
@@ -342,14 +353,14 @@ func languageCases() map[string]func(*testing.T, Fixture) {
 		},
 
 		"an empty tag takes the choice back": func(t *testing.T, f Fixture) {
-			ready(t, f)
+			language := ready(t, f)
 			ada := administrator(t, f, "language-clear@acme.test")
 			who := f.As(ada.ID)
-			if _, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
+			if _, err := language.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
 				t.Fatalf("SetPreferredLocale: %v", err)
 			}
 			before := len(languageEvents(f))
-			got, err := f.Service.SetPreferredLocale(who, f.Tx, "")
+			got, err := language.SetPreferredLocale(who, f.Tx, "")
 			if err != nil {
 				t.Fatalf("clearing the choice: %v", err)
 			}
@@ -362,9 +373,9 @@ func languageCases() map[string]func(*testing.T, Fixture) {
 		},
 
 		"nobody signed in is refused": func(t *testing.T, f Fixture) {
-			ready(t, f)
+			language := ready(t, f)
 			before := len(languageEvents(f))
-			_, err := f.Service.SetPreferredLocale(f.Ctx, f.Tx, "pt-PT")
+			_, err := language.SetPreferredLocale(f.Ctx, f.Tx, "pt-PT")
 			if !errors.Is(err, contracts.ErrNoSignIn) {
 				t.Errorf("the command with no principal = %v, want ErrNoSignIn", err)
 			}
@@ -379,17 +390,17 @@ func languageCases() map[string]func(*testing.T, Fixture) {
 		// row — with 409, which is the verdict that says the account has to be reopened
 		// first, and with nothing written and nothing published.
 		"a closed account is refused its own language": func(t *testing.T, f Fixture) {
-			ready(t, f)
+			language := ready(t, f)
 			ada := openAccount(t, f, "language-closed@acme.test")
 			who := f.As(ada.ID)
-			if _, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
+			if _, err := language.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
 				t.Fatalf("the open account's own choice: %v", err)
 			}
 			if _, err := f.Service.Deactivate(f.Ctx, f.Tx, ada.ID); err != nil {
 				t.Fatalf("Deactivate: %v", err)
 			}
 			before := len(languageEvents(f))
-			row, err := f.Service.SetPreferredLocale(who, f.Tx, "en")
+			row, err := language.SetPreferredLocale(who, f.Tx, "en")
 			if !errors.Is(err, contracts.ErrAccountInactive) {
 				t.Errorf("a closed account's own command = %v, want the refusal that says so", err)
 			}

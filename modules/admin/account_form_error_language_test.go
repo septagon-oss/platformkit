@@ -16,7 +16,8 @@ import (
 
 func TestAccountFormErrorsKeepPortugueseThroughoutThePage(t *testing.T) {
 	router := mountAs(t, caller{}, func(d *admin.Deps) {
-		d.Language = accountUsers{usertest.NewFake()}
+		users := usertest.NewFake()
+		d.Language = accountUsers{Service: users, LanguagePreference: users}
 		d.Messages = xtext.Load("en", admin.Catalogue(), page.Catalogue())
 	})
 	for _, tc := range []struct{ name, body string }{

@@ -78,14 +78,19 @@ func loginLocale(ctx context.Context, _ page.Request) string {
 // shell's account control reads the choice to draw itself and hands a submitted one
 // to the user module's command.
 //
-// Two types over one field is deliberate. The locale resolver only ever reads, and a
-// resolver that could write would be a page that changes what it was asked about;
-// the account surface writes, and so it is a second, narrower thing composition
-// wires — both to the same service, which is the one place the decision lives.
+// Two doors, and so two fields. The resolver above only ever reads, and a resolver
+// that could write would be a page that changes what it was asked about; this one
+// writes. Inside it, the choice as the row holds it is the user service's read, and
+// the counted read and both writes are the person's own language door
+// (usercontracts.LanguagePreference): two fields because the module answers them as
+// two contracts, both wired to the one service, which is where the decision lives.
 // Choose takes no user id for the reason the command gives no user id: the
 // principal of the request transaction is the subject, and an id written by a
 // browser is an id that can name a colleague.
-type accountLanguage struct{ users usercontracts.Service }
+type accountLanguage struct {
+	users    usercontracts.Service
+	language usercontracts.LanguagePreference
+}
 
 func (a accountLanguage) Preferred(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (string, error) {
 	u, err := a.users.Get(ctx, tx, userID)
@@ -96,7 +101,7 @@ func (a accountLanguage) Preferred(ctx context.Context, tx db.Tx[db.Tenant], use
 }
 
 func (a accountLanguage) Choose(ctx context.Context, tx db.Tx[db.Tenant], tag string) error {
-	_, err := a.users.SetPreferredLocale(ctx, tx, tag)
+	_, err := a.language.SetPreferredLocale(ctx, tx, tag)
 	return err
 }
 
@@ -111,7 +116,7 @@ func (a accountLanguage) Choose(ctx context.Context, tx db.Tx[db.Tenant], tag st
 // picture of an old row submitted back is a write from a read whether or not
 // anybody calls it one.
 func (a accountLanguage) Revision(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error) {
-	own, err := a.users.OwnLanguage(ctx, tx)
+	own, err := a.language.OwnLanguage(ctx, tx)
 	if err != nil {
 		return 0, err
 	}
@@ -119,19 +124,22 @@ func (a accountLanguage) Revision(ctx context.Context, tx db.Tx[db.Tenant]) (int
 }
 
 func (a accountLanguage) ChooseAt(ctx context.Context, tx db.Tx[db.Tenant], tag string, expectedRevision int64) error {
-	_, err := a.users.SetPreferredLocaleAt(ctx, tx, expectedRevision, tag)
+	_, err := a.language.SetPreferredLocaleAt(ctx, tx, expectedRevision, tag)
 	return err
 }
 
 // tenantLocales is user.Deps.LocalePolicy: which languages the tenant of the
 // running transaction is served in, read where that fact lives.
 //
-// The tenant module's Service answers the interface as it stands — the port and the
-// method are the same question — so this type only carries the value and refuses to
-// answer before the control plane is composed, rather than inventing a set. It is
-// late-bound because the control plane is built after the module that asks: a new
-// tenant's first administrator is a person, and people are the user module's rows.
-type tenantLocales struct{ tenants tenantcontracts.Service }
+// The tenant module's language declaration answers the interface as it stands — the
+// port and the method are the same question — so this type only carries the value
+// and refuses to answer before the control plane is composed, rather than inventing
+// a set. It is late-bound because the control plane is built after the module that
+// asks: a new tenant's first administrator is a person, and people are the user
+// module's rows.
+type tenantLocales struct {
+	tenants tenantcontracts.LanguageDeclaration
+}
 
 func (l *tenantLocales) CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error) {
 	if l.tenants == nil {

@@ -338,12 +338,17 @@ func workspace(messages pkit.Catalogue) *pkit.Module {
 func access(ask *accessReach, ports *latePorts, messages pkit.Catalogue) *pkit.Module {
 	return pkit.NewModule("access", func(w *pkit.Wiring) (module.Module, error) {
 		users, notices := pkit.Get[usercontracts.Service](w), pkit.Get[notificationcontracts.Service](w)
+		// The account control's own half of the same service: the door a person writes
+		// their own language through, which the user module provides beside its Service
+		// so that interface stays the one the release line froze (see
+		// usercontracts.LanguagePreference).
+		ownLanguage := pkit.Get[usercontracts.LanguagePreference](w)
 		sites := pkit.Get[sitecontracts.Service](w)
 		// The two late language edges, filled by the first build that has met both
 		// answers: see latePorts. Until this line each holder refuses to answer, so a
 		// composition that never built this module cannot read a language set it was
 		// never given and cannot pass a language command with nobody behind its door.
-		ports.locales.tenants = pkit.Get[tenantcontracts.Service](w)
+		ports.locales.tenants = pkit.Get[tenantcontracts.LanguageDeclaration](w)
 		ports.localeGrant.auth = pkit.Get[authcontracts.Auth](w)
 		// Which language a page is written in: the person's own choice first, the
 		// sign-in link's `?lang=` and the browser's negotiation after it. It is put
@@ -357,8 +362,8 @@ func access(ask *accessReach, ports *latePorts, messages pkit.Catalogue) *pkit.M
 		resolve := accountLocale{users: users}.Locale
 		ports.chrome.resolve = resolve
 		pkit.Put[admincontracts.Locale](w, resolve)
-		pkit.Put[admincontracts.AccountLanguage](w, accountLanguage{users: users})
-		pkit.Put[admincontracts.AccountLanguageVersion](w, accountLanguage{users: users})
+		pkit.Put[admincontracts.AccountLanguage](w, accountLanguage{users: users, language: ownLanguage})
+		pkit.Put[admincontracts.AccountLanguageVersion](w, accountLanguage{users: users, language: ownLanguage})
 		// Recipients joins the two modules that each own half the answer. Tell
 		// writes one notice through the notification module — the bell in the
 		// application, with no mail: a message to every administrator for every
@@ -404,8 +409,9 @@ func access(ask *accessReach, ports *latePorts, messages pkit.Catalogue) *pkit.M
 		return module.Module{Name: "access"}, nil
 	},
 		pkit.Needs[usercontracts.Service](),
+		pkit.Needs[usercontracts.LanguagePreference](),
 		pkit.Needs[notificationcontracts.Service](),
-		pkit.Needs[tenantcontracts.Service](),
+		pkit.Needs[tenantcontracts.LanguageDeclaration](),
 		pkit.Needs[sitecontracts.Service](),
 		pkit.Needs[sitecontracts.LockedReader](),
 		pkit.Needs[usercontracts.Granting](),

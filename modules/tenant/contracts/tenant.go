@@ -377,20 +377,28 @@ type Inviter interface {
 var ErrNoOperatorTenant = errors.New("tenant: this installation has no operator tenant, so a lifecycle command cannot audit both sides")
 
 // LanguageDeclaration is one tenant's own statement of the languages it speaks,
-// read and written from inside that tenant's transaction: the declaration, and the
-// revision it was read at, which is what a change has to agree with.
+// read and written from inside that tenant's transaction: the set, the revision it
+// is held at, and the change that has to agree with it.
 //
 // It is a second interface beside Service, not methods on it, for the reason
-// modules/task's contracts.LockedReader gives: a method added to an exported
-// interface breaks every implementation a consumer wrote, and a caller that resolves
-// a reader's language should not be handed the tenant lifecycle beside it. Neither
-// half names a tenant — a tenant cannot be shown a door that reaches a neighbour, and
-// a form cannot expect a revision it was never shown.
+// modules/task's contracts.LockedReader gives, and for one more that is measured:
+// Service is on the frozen surface of the v2.0.0 line (docs/COMPATIBILITY.md), so a
+// language method added to it is a break the release line refuses. Neither half
+// names a tenant — a tenant cannot be shown a door that reaches a neighbour, and a
+// form cannot expect a revision it was never shown.
 //
-// The plain read of the set stays on Service (see CurrentLanguages), where every
-// reader of it already stands; the control plane's door onto the same fact (SetLocale)
-// is a different capability, over a row a tenant transaction may only read.
+// The control plane's door onto the same fact (Service.SetLocale) stays a different
+// capability: it decides over a row a tenant transaction may only read.
 type LanguageDeclaration interface {
+	// CurrentLanguages locks this tenant's row and reads its current language
+	// set. A preference command calls it before locking its user row.
+	//
+	// It is the plain read, and it is the one every reader of it stands on:
+	// modules/user's contracts.LocalePolicy is the same question, answered by this
+	// door for exactly this one method. OwnLocale is the read beside it that also
+	// carries the revision a form is about to send back.
+	CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error)
+
 	// OwnLocale is this tenant's declaration as the tenant's own transaction may
 	// read it: the set, and the revision a command has to agree with.
 	//
@@ -430,16 +438,10 @@ type LanguageDeclaration interface {
 //
 // The errors are kit/crud's, so one mapping answers for these routes and the
 // generated ones alike: crud.ErrNotFound, crud.ErrInvalid, crud.ErrConflict.
+// A tenant's own languages — the set, the counted read, the declaration — are
+// LanguageDeclaration, a door beside this one, which this interface's frozen
+// surface does not carry.
 type Service interface {
-	// CurrentLanguages locks this tenant's row and reads its current language
-	// set. A preference command calls it before locking its user row.
-	//
-	// It is the plain read of the set, and it is where every reader of it stands:
-	// modules/user's contracts.LocalePolicy is answered by a Service for exactly this
-	// one method. The counted read and the write beside it are
-	// LanguageDeclaration, the tenant's own door.
-	CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error)
-
 	// Create writes the tenant, its first host and whatever the hooks add, in
 	// one transaction. A slug or a host already taken is a conflict.
 	Create(ctx context.Context, tx db.Tx[db.System], in NewTenant) (*Tenant, error)

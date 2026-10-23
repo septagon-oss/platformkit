@@ -33,8 +33,9 @@ import (
 type Deps struct {
 	// LocalePolicy answers which languages the tenant of a request is served in,
 	// which is the set a personal language choice has to be found in. The tenant
-	// module owns that fact; modules/tenant's contracts.Service answers this
-	// interface as it stands, and wiring one to the other is the composition's.
+	// module owns that fact; modules/tenant's contracts.LanguageDeclaration answers
+	// this interface as it stands — not its Service, which is a lifecycle and not a
+	// language read — and wiring one to the other is the composition's.
 	LocalePolicy contracts.LocalePolicy
 	// Administration answers which of a tenant's roles grant the permission
 	// that can grant every other one back. Wire
@@ -131,7 +132,20 @@ var permissions = []module.Permission{
 
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
+//
+// The person's own language is the same service under a second contract, which
+// provider.go provides beside this one so the frozen Service can stay frozen: see
+// contracts.LanguagePreference.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest := newService(deps)
+	return svc, manifest
+}
+
+// newService is New's build before it is narrowed to the interface New hands out.
+// The value stays concrete because it is the one answer to three questions — the
+// person lifecycle, the person's own language door, and the floor under an erasure —
+// and provider.go hands each out under the contract its caller names.
+func newService(deps Deps) (*internal.Service, module.Module) {
 	if deps.Administration == nil {
 		panic("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
 	}

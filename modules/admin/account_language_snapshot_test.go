@@ -45,7 +45,7 @@ func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 		Languages: []string{"en", "pt-PT"}, LocaleManager: tenanttest.NewFake(),
 	})
 	users, _ := user.New(user.Deps{
-		LocalePolicy: tenants,
+		LocalePolicy: tenants.(usercontracts.LocalePolicy),
 		Administration: &usercontracts.AdministrationFunc{Ask: func(context.Context, db.Tx[db.Tenant]) ([]string, error) {
 			return []string{"admin"}, nil
 		}},
@@ -80,7 +80,7 @@ func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 	}
 	actor := tenancy.WithPrincipal(tenancy.WithTenant(t.Context(), tenantRow.Tenancy()), tenancy.Principal{UserID: person.ID})
 	if err := db.Run(actor, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := users.SetPreferredLocaleAt(ctx, tx, 0, "en")
+		_, err := users.(usercontracts.LanguagePreference).SetPreferredLocaleAt(ctx, tx, 0, "en")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	account := countedAccountUsers{accountUsers{users}}
+	account := countedAccountUsers{accountUsers{Service: users, LanguagePreference: users.(usercontracts.LanguagePreference)}}
 	shell := admin.New(admin.Deps{SignIn: "/api/v1/auth/login", Authorize: caller{}, Language: account,
 		LanguageVersion: account, Messages: xtext.Load("en", admin.Catalogue())})
 	var grants []tenancy.Grant
@@ -115,7 +115,7 @@ func TestAccountLanguageFormCannotCombineDifferentRevisions(t *testing.T) {
 			}
 			// A second tab commits after the preference read, before the frame finishes.
 			if err := db.Run(actor, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				_, err := users.SetPreferredLocaleAt(ctx, tx, 1, "pt-PT")
+				_, err := users.(usercontracts.LanguagePreference).SetPreferredLocaleAt(ctx, tx, 1, "pt-PT")
 				return err
 			}); err != nil {
 				t.Errorf("intervening language choice: %v", err)
