@@ -941,16 +941,18 @@ browser-appropriate memory budget; a smaller application limit remains undefined
 These checks exclude binary and streaming-event readers. This does not clear the separate
 upstream lock audit or establish complete browser dependency reachability.
 
-Two transitive dependencies use overrides because their parent ranges still allow
-vulnerable versions. `jspdf`'s `^3.3.1` range resolves to `dompurify@3.4.17`, which
-addresses the
+Two transitive dependencies are held by override, because the package that
+selects each of them still allows the vulnerable range: `dompurify@3.4.17`,
+reached through `jspdf`'s `^3.3.1`, fixes the
 [shadow-root template bypass](https://github.com/advisories/GHSA-cg2g-xh64-v4q7),
-[detached subtree hooks](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) and
-[XHTML SMIL guard](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f) advisories.
-`css-tree`'s `^1.2.1` range resolves to `source-map-js@1.2.2`, which fixes the
+[detached-subtree handlers](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) and
+[XHTML SMIL guard](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f); `source-map-js@1.2.2`, reached through `css-tree`'s
+`^1.2.1`, fixes the
 [event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
-vulnerability. Regenerate the lock from these overrides. `locked-dependencies.test.mjs`
-requires the manifest and lock to name these exact reviewed releases.
+vulnerability. Neither is a direct dependency, so neither is a version
+anybody edits by hand; `locked-dependencies.test.mjs` requires the lock to resolve
+both names to exactly these releases, which is what makes a regenerated lock that
+drifts back into either range a failed test rather than a passed audit.
 
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
 or editor release. Active CI enforces this gate after the locked install and

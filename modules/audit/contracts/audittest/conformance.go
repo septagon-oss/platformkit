@@ -10,13 +10,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/modules/audit/contracts"
@@ -90,167 +88,12 @@ func compact(t *testing.T, payload []byte) string {
 
 func cases() map[string]func(*testing.T, Fixture) {
 	return map[string]func(*testing.T, Fixture){
-		"an event becomes a row saying what happened, who caused it and when": func(t *testing.T, f Fixture) {
-			ev := event("task.task.created", ada, noon)
-			f.silent(t, "Record", func() {
-				if err := f.Service.Record(f.Ctx, f.Tx, ev); err != nil {
-					t.Fatalf("Record: %v", err)
-				}
-			})
-			rows, total, err := f.Service.List(f.Ctx, f.Tx, contracts.Query{})
-			if err != nil {
-				t.Fatalf("List: %v", err)
-			}
-			if total != 1 || len(rows) != 1 {
-				t.Fatalf("the trail holds %d rows, want one", total)
-			}
-			got := rows[0]
-			switch {
-			case got.Name != ev.Name:
-				t.Errorf("name is %q, want %q", got.Name, ev.Name)
-			case got.EventID != ev.ID:
-				t.Errorf("eventId is %s, want the event's own id %s", got.EventID, ev.ID)
-			case got.Actor == nil || *got.Actor != ada:
-				t.Errorf("actor is %v, want %s", got.Actor, ada)
-			case !got.OccurredAt.Equal(noon):
-				t.Errorf("occurredAt is %s, want when the state changed, %s", got.OccurredAt, noon)
-			case compact(t, got.Payload) != compact(t, ev.Payload):
-				t.Errorf("payload is %s, want what the module published: %s", got.Payload, ev.Payload)
-			}
-			back, err := f.Service.Get(f.Ctx, f.Tx, got.ID)
-			if err != nil || back.EventID != ev.ID {
-				t.Errorf("Get = %v, %v; want the row List returned", back, err)
-			}
-		},
-
-		"work nobody asked for is recorded as nobody's": func(t *testing.T, f Fixture) {
-			if err := f.Service.Record(f.Ctx, f.Tx, event("task.sla_breached", uuid.Nil, noon)); err != nil {
-				t.Fatalf("Record: %v", err)
-			}
-			rows, _, err := f.Service.List(f.Ctx, f.Tx, contracts.Query{})
-			if err != nil {
-				t.Fatalf("List: %v", err)
-			}
-			if len(rows) != 1 || rows[0].Actor != nil {
-				t.Errorf("a job's event is credited to %v; nobody asked for it", rows[0].Actor)
-			}
-		},
-
-		"the same event twice leaves one row": func(t *testing.T, f Fixture) {
-			ev := event("user.invited", ada, noon)
-			for range 3 {
-				if err := f.Service.Record(f.Ctx, f.Tx, ev); err != nil {
-					t.Fatalf("Record: %v", err)
-				}
-			}
-			// The kernel claims each delivery, so this is the second lock, for
-			// what the first cannot cover: a replayed outbox row, or a handler
-			// that failed after writing.
-			if _, total, err := f.Service.List(f.Ctx, f.Tx, contracts.Query{}); err != nil || total != 1 {
-				t.Errorf("three deliveries of one event left %d rows (%v), want one", total, err)
-			}
-		},
-
-		"a row belongs to the transaction's tenant, not to the envelope": func(t *testing.T, f Fixture) {
-			// The envelope names a tenant, and Consume opened this transaction
-			// in it, so the two always agree in production. Taking the tenant
-			// from the transaction anyway is what every other write here does,
-			// and it is the difference between an isolation the database
-			// enforces and one a struct field asks for.
-			if err := f.Service.Record(f.Ctx, f.Tx, event("tenant.created", ada, noon)); err != nil {
-				t.Fatalf("Record: %v", err)
-			}
-			if _, total, err := f.Service.List(f.Ctx, f.Tx, contracts.Query{}); err != nil || total != 1 {
-				t.Errorf("the row landed somewhere else: %d rows, %v", total, err)
-			}
-		},
-
-		"the trail is filtered by name, by actor and by time": func(t *testing.T, f Fixture) {
-			bob := uuid.New()
-			for _, ev := range []events.Event{
-				event("task.task.created", ada, noon.Add(-2*time.Hour)),
-				event("task.task.created", bob, noon),
-				event("user.invited", ada, noon.Add(2*time.Hour)),
-			} {
-				if err := f.Service.Record(f.Ctx, f.Tx, ev); err != nil {
-					t.Fatalf("Record: %v", err)
-				}
-			}
-			// Since is inclusive and Until exclusive, so the row at noon
-			// belongs to exactly one of the two and the halves do not overlap.
-			for _, c := range []struct {
-				what string
-				q    contracts.Query
-				want int64
-			}{
-				{"by name", contracts.Query{Name: "task.task.created"}, 2},
-				{"by actor", contracts.Query{Actor: ada}, 2},
-				{"since noon", contracts.Query{Since: noon}, 2},
-				{"until noon", contracts.Query{Until: noon}, 1},
-				{"the hour around noon", contracts.Query{Since: noon, Until: noon.Add(time.Hour)}, 1},
-			} {
-				rows, total, err := f.Service.List(f.Ctx, f.Tx, c.q)
-				if err != nil {
-					t.Fatalf("List %s: %v", c.what, err)
-				}
-				if total != c.want {
-					t.Errorf("List %s = %d rows, want %d", c.what, total, c.want)
-				}
-				if int64(len(rows)) != total {
-					t.Errorf("List %s returned %d rows for a total of %d", c.what, len(rows), total)
-				}
-			}
-			// Newest first, because a trail is read from the end.
-			rows, _, err := f.Service.List(f.Ctx, f.Tx, contracts.Query{})
-			if err != nil {
-				t.Fatalf("List: %v", err)
-			}
-			if len(rows) != 3 || rows[0].Name != "user.invited" {
-				t.Errorf("the trail starts with %v, want the newest row first", rows)
-			}
-			// And a page is a page.
-			if rows, _, err = f.Service.List(f.Ctx, f.Tx, contracts.Query{Limit: 1, Offset: 1}); err != nil ||
-				len(rows) != 1 || rows[0].Name != "task.task.created" {
-				t.Errorf("the second row of the trail = %v, %v", rows, err)
-			}
-		},
-
-		"the trail is filtered by the row an event is about": func(t *testing.T, f Fixture) {
-			// The three shapes a payload names its row with, and one that
-			// names a different row. A generated write carries the row itself;
-			// a command carries its own argument, under a name of its own.
-			row := uuid.New()
-			for _, payload := range []string{
-				`{"id":"` + row.String() + `","title":"Buy milk"}`,
-				`{"taskId":"` + row.String() + `","to":"somebody"}`,
-				`{"changes":[{"record":{"id":"` + row.String() + `"}}]}`,
-				`{"id":"` + uuid.NewString() + `"}`,
-			} {
-				ev := event("task.task.changed", ada, noon)
-				ev.Payload = json.RawMessage(payload)
-				if err := f.Service.Record(f.Ctx, f.Tx, ev); err != nil {
-					t.Fatalf("Record: %v", err)
-				}
-			}
-			rows, total, err := f.Service.List(f.Ctx, f.Tx, contracts.Query{Record: row})
-			if err != nil {
-				t.Fatalf("List by record: %v", err)
-			}
-			if total != 3 || len(rows) != 3 {
-				t.Errorf("the trail of one row = %d rows (total %d), want the three that name it", len(rows), total)
-			}
-			// And it composes with the page, which is what a screen reading a
-			// long trail a page at a time depends on.
-			if rows, total, err = f.Service.List(f.Ctx, f.Tx, contracts.Query{Record: row, Limit: 2}); err != nil ||
-				len(rows) != 2 || total != 3 {
-				t.Errorf("a page of one row's trail = %d rows of %d, %v", len(rows), total, err)
-			}
-		},
-
-		"an unknown id is not found": func(t *testing.T, f Fixture) {
-			if _, err := f.Service.Get(f.Ctx, f.Tx, uuid.New()); !errors.Is(err, crud.ErrNotFound) {
-				t.Errorf("Get of a row nobody has = %v, want ErrNotFound", err)
-			}
-		},
+		"an event becomes a row saying what happened, who caused it and when": recordEvent,
+		"work nobody asked for is recorded as nobody's":                       recordUnattributedWork,
+		"the same event twice leaves one row":                                 recordDuplicateEvent,
+		"a row belongs to the transaction's tenant, not to the envelope":      recordTransactionTenant,
+		"the trail is filtered by name, by actor and by time":                 filterTrail,
+		"the trail is filtered by the row an event is about":                  filterRecordTrail,
+		"an unknown id is not found":                                          unknownAuditRow,
 	}
 }
