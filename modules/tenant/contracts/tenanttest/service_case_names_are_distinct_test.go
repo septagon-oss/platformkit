@@ -27,6 +27,7 @@ func TestServiceCaseNamesAreDistinct(t *testing.T) {
 		run(tenanttest.Fixture{
 			Ctx:             trace.With(t.Context(), trace.New()),
 			Service:         fake,
+			Language:        fake,
 			Operator:        operator.ID,
 			Published:       fake.Published,
 			PublishedScopes: fake.PublishedScopes,

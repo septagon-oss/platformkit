@@ -121,7 +121,7 @@ func CheckedAdministration(name string, was, want Permissions,
 	if len(after) > 0 {
 		leaving += " that any active person holds"
 	}
-	refusal := usercontracts.CheckedAdministration(usercontracts.Reach{CanAdminister: reached},
+	refusal := usercontracts.CheckedAdministrationWithArgs(usercontracts.Reach{CanAdminister: reached},
 		usercontracts.Reach{CanAdminister: left}, len(after) == 0, leaving, name, PermissionRoleManage)
 	if refusal == nil {
 		return nil

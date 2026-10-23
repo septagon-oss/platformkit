@@ -35,6 +35,18 @@ import (
 // table anything, and no wildcard satisfies the grant even there.
 const path = "/tenants"
 
+// door is what these routes ask of the service: the tenant lifecycle of
+// contracts.Service and, beside it, the tenant's own language declaration
+// (contracts.LanguageDeclaration). Composition hands over one object that answers
+// both — the SQL service and the shared fake alike — and the two are named together
+// here rather than folded into Service, because an exported interface that gains a
+// method is a break for anybody outside this repository who implemented the old one.
+// modules/file/internal's `door` is the same shape for the same reason.
+type door interface {
+	contracts.Service
+	contracts.LanguageDeclaration
+}
+
 // RegisterRoutes mounts the thirteen control-plane routes and the tenant's own two.
 //
 // They are written by hand rather than mounted from a rest.Spec because a
@@ -47,7 +59,7 @@ const path = "/tenants"
 // system transaction cannot widen a tenant one: db.Detached is what says so out
 // loud. The consequence is written down where it matters — a tenant created
 // here is created whether or not the response afterwards reaches the caller.
-func RegisterRoutes(s httpx.Surfaces, svc contracts.Service, invite contracts.Inviter, token tenancy.SystemToken) {
+func RegisterRoutes(s httpx.Surfaces, svc door, invite contracts.Inviter, token tenancy.SystemToken) {
 	// The tenant's own door first, because it is the one a customer uses: the
 	// control-plane routes below all take a system transaction and name a tenant,
 	// and this one has no tenant to name.

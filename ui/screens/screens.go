@@ -346,7 +346,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 // language the request was answered in, and so is the entry's own noun beside it.
 func refusedForm(res httpx.Resource, o Options, req page.Request, action, titleKey, titleEnglish string, create bool, sent map[string]any, err error) page.View {
 	o = localized(o, req)
-	errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, refusalWords{req.Locale})
+	errs, detail := rest.FieldErrorsWithWords(err, res.Schema.Fields, refusalWords{req.Locale})
 	detail, o.Refusal = refusedWrite(req.Locale, err, detail)
 	return Form(res, o, action, o.Text(titleKey, titleEnglish, entryName(res, o)), sent, errs, detail, create)
 }

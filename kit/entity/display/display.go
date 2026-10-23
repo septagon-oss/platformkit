@@ -148,6 +148,42 @@ func Moment(v any) (at time.Time, text string, ok bool) {
 	return at, at.UTC().Format(DateTimeLayout), true
 }
 
+// massNouns are the English words that are already a set: an entity named
+// "Content" is not pluralised into "Contents" any more than one named "Settings"
+// becomes "Settingss". The list is closed on purpose — it is the shape of the
+// defect the screens showed, not an English dictionary — and it is the same
+// eight words the phone client refuses, so the two screens answer one question
+// the same way. A noun a client needs added is a translation of that client's
+// own vocabulary, not a change to this shared rule.
+var massNouns = map[string]struct{}{
+	"content": {}, "settings": {}, "news": {}, "media": {},
+	"data": {}, "staff": {}, "feedback": {}, "information": {},
+}
+
+// Plural is how a screen writes the name of an English set: "Task" becomes "Tasks"
+// and "Content" stays "Content", because the catalogue already wrote it as a set. A
+// word that ends in "s" is kept as it is written, case and all, since the rule that
+// adds an "s" to it is the rule that produced "Settingss". An empty name answers
+// empty: there is no noun to inflect, and "s" would be a word nobody asked about.
+// Only the comparison is trimmed — what comes back is what went in.
+//
+// The generated screens no longer call it. A set's word is the reader's catalogue's
+// (ui/resource.Options.Noun), which answers a declared singular where no plural is
+// declared rather than appending a letter this package has no business deciding for
+// a language it does not speak. It stays as the one English answer for a caller that
+// names a set with no catalogue in front of it, and as part of the exported surface
+// the release line freezes: see docs/COMPATIBILITY.md.
+func Plural(one string) string {
+	if strings.TrimSpace(one) == "" {
+		return one
+	}
+	key := strings.ToLower(strings.TrimSpace(one))
+	if _, mass := massNouns[key]; mass || strings.HasSuffix(key, "s") {
+		return one
+	}
+	return one + "s"
+}
+
 // Humanize turns a JSON name or an enum value into something a person reads:
 // "slaDeadline" becomes "Sla deadline" and "in_progress" becomes "In progress".
 // It is not a dictionary and does not try to be one; a field that wants a

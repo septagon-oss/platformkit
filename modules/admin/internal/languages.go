@@ -66,7 +66,7 @@ func (p pages) mountLanguages(app *httpx.Router) {
 			if err != nil {
 				return p.unreadable(ctx, r)
 			}
-			landed, err := p.Tenants.SetOwnLocale(ctx, tx, expected, tenantcontracts.SetLocale{
+			landed, err := p.TenantLanguages.SetOwnLocale(ctx, tx, expected, tenantcontracts.SetLocale{
 				Default: form.Get("default"), Supported: form["supported"],
 			})
 			if err == nil {
@@ -204,7 +204,7 @@ func (p pages) languagesView(ctx context.Context, r page.Request, notice *refusa
 	if !live {
 		return page.View{}, unreachable
 	}
-	current, err := p.Tenants.OwnLocale(ctx, tx)
+	current, err := p.TenantLanguages.OwnLocale(ctx, tx)
 	if err != nil {
 		return page.View{}, rest.Fault(err)
 	}

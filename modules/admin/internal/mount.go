@@ -73,6 +73,13 @@ type Shell struct {
 	Nav       []module.NavEntry
 	Authorize httpx.Authorizer
 	Tenants   tenantcontracts.Service
+	// TenantLanguages is the tenant's own declaration of the languages it speaks,
+	// the door the Languages page reads and writes. It is beside Tenants rather than
+	// a method on it because contracts.LanguageDeclaration is a second interface:
+	// which languages a customer is served in is written from inside that customer's
+	// transaction, and the control plane's read of the same fact is a different
+	// capability held by a different person.
+	TenantLanguages tenantcontracts.LanguageDeclaration
 	// Roles is the auth module's role administration, for the screen that
 	// module's nav entry names. Nil mounts no screen, and then Mount reports
 	// the entry as unserved, which is what it is.

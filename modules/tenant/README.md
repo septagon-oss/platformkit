@@ -38,7 +38,7 @@ composition wires it over the same authorizer the route guard consulted
 (`tenantLocaleManager` in `apps/platformkit/locale.go`), so a link and a door cannot
 disagree about who may use it.
 
-`Service.SetOwnLocale` (`modules/tenant/internal/service.go`) takes no tenant id — a
+`LanguageDeclaration.SetOwnLocale` (`modules/tenant/internal/service.go`) takes no tenant id — a
 tenant cannot be shown a door it could point at a neighbour — and inside its own
 transaction rechecks the actor's grant, locks its own row `FOR UPDATE` under
 row-level security, normalises the pair with the operator's own rules, compares the

@@ -145,7 +145,7 @@ outside the served set is refused with `crud.ErrInvalid`, no row and no event.
   about. Tenant scope is the same transaction row-level security already enforces.
 - One required dependency: `user.Deps{LocalePolicy: ...}` (`contracts.LocalePolicy`),
   which answers which languages this tenant is served in. The reference composition
-  wires `tenant.Service.CurrentLanguages` (`apps/platformkit/modules.go`); a
+  wires `tenant.Service.CurrentLanguages` (`apps/platformkit/locale.go`); a
   composition that wires nothing is refused by `module.Module` at startup.
 - The tenant's row is locked before the person's — the order every write touching
   both takes — so the read and the write below are one decision.

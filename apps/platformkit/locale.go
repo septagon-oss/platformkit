@@ -126,12 +126,11 @@ func (a accountLanguage) ChooseAt(ctx context.Context, tx db.Tx[db.Tenant], tag 
 // tenantLocales is user.Deps.LocalePolicy: which languages the tenant of the
 // running transaction is served in, read where that fact lives.
 //
-// The tenant module's own Service answers the interface as it stands — the port
-// and the method are the same question — so this type only carries the value and
-// refuses to answer before the control plane is composed, rather than inventing a
-// set. It is late-bound because the control plane is built after the module that
-// asks: a new tenant's first administrator is a person, and people are the user
-// module's rows.
+// The tenant module's Service answers the interface as it stands — the port and the
+// method are the same question — so this type only carries the value and refuses to
+// answer before the control plane is composed, rather than inventing a set. It is
+// late-bound because the control plane is built after the module that asks: a new
+// tenant's first administrator is a person, and people are the user module's rows.
 type tenantLocales struct{ tenants tenantcontracts.Service }
 
 func (l *tenantLocales) CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error) {

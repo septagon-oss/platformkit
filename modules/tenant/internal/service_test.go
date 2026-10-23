@@ -65,7 +65,7 @@ func TestServiceConforms(t *testing.T) {
 
 		err := dbtest.System(trace.With(t.Context(), trace.New()), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 			run(tenanttest.Fixture{
-				Ctx: ctx, Tx: tx, Service: svc, Operator: operator,
+				Ctx: ctx, Tx: tx, Service: svc, Language: svc, Operator: operator,
 				Published:       func() []string { return outbox(t, tx, func(r outboxRow) string { return r.Name }) },
 				PublishedScopes: func() []uuid.UUID { return outbox(t, tx, func(r outboxRow) uuid.UUID { return r.TenantID }) },
 				PublishedTraces: func() []string { return outbox(t, tx, func(r outboxRow) string { return r.TraceParent() }) },

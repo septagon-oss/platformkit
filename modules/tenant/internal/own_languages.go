@@ -55,9 +55,10 @@ const ownLanguages = "/languages"
 // mountOwnLanguages registers the two routes, the resource they belong to, and the
 // command the catalog names them by. One `guard` value is handed to all four, so the
 // page, the JSON door and the catalog entry cannot disagree about who may use them —
-// and `Service.SetOwnLocale` asks the same question again inside the transaction that
-// writes, which is what makes the guard an early refusal rather than the whole answer.
-func mountOwnLanguages(s httpx.Surfaces, svc contracts.Service) {
+// and `LanguageDeclaration.SetOwnLocale` asks the same question again inside the
+// transaction that writes, which is what makes the guard an early refusal rather
+// than the whole answer.
+func mountOwnLanguages(s httpx.Surfaces, svc door) {
 	guard := httpx.Permission(contracts.PermissionLocaleManage)
 	app := s.App
 
@@ -214,7 +215,7 @@ func mountOwnLanguages(s httpx.Surfaces, svc contracts.Service) {
 // The admin module's Languages page writes the same command and asks the same thing:
 // it is the fourth door, and it is why this is a function the doors call rather than
 // a detail of one of them.
-func spokeOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], svc contracts.Service,
+func spokeOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], svc door,
 	in ownLanguagesWrite,
 ) (*contracts.Tenant, error) {
 	landed, err := svc.SetOwnLocale(ctx, tx, in.ExpectedRevision, contracts.SetLocale{
@@ -274,7 +275,7 @@ func languageFields() []entity.Field {
 
 // answeredLanguages is the read both resource closures make, in the caller's own
 // tenant transaction — the same read the GET route performs.
-func answeredLanguages(ctx context.Context, svc contracts.Service) (map[string]any, error) {
+func answeredLanguages(ctx context.Context, svc door) (map[string]any, error) {
 	tx, ok := httpx.TxFrom(ctx)
 	if !ok {
 		return nil, unreachableDatabase()

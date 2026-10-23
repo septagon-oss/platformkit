@@ -82,7 +82,10 @@ func NewFake() *Fake {
 // environment variable.
 var secretRefName = regexp.MustCompile(`^[A-Z][A-Z0-9_]{2,63}$`)
 
-var _ contracts.Service = (*Fake)(nil)
+var (
+	_ contracts.Service             = (*Fake)(nil)
+	_ contracts.LanguageDeclaration = (*Fake)(nil)
+)
 
 // OwnLocale is CurrentLanguages with the revision the fake counts, for the suite
 // that submits an expected one.

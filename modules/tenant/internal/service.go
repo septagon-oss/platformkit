@@ -96,7 +96,10 @@ func (refusedLocales) MaySetOwnLocale(context.Context, db.Tx[db.Tenant]) (bool, 
 	return false, errors.New("tenant: no LocaleManager is wired, so a tenant's languages cannot be checked against its administrator's grant")
 }
 
-var _ contracts.Service = (*Service)(nil)
+var (
+	_ contracts.Service             = (*Service)(nil)
+	_ contracts.LanguageDeclaration = (*Service)(nil)
+)
 
 // OwnLocale reads the declaration and its revision on a tenant transaction: the
 // rows are this tenant's by row-level security, so nothing here names an id.

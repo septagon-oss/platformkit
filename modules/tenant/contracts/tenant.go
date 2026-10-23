@@ -376,18 +376,21 @@ type Inviter interface {
 // installation, not a bad request.
 var ErrNoOperatorTenant = errors.New("tenant: this installation has no operator tenant, so a lifecycle command cannot audit both sides")
 
-// Service is the tenant lifecycle, and the kernel's host resolution.
+// LanguageDeclaration is one tenant's own statement of the languages it speaks,
+// read and written from inside that tenant's transaction: the declaration, and the
+// revision it was read at, which is what a change has to agree with.
 //
-// Every command takes a db.Tx[db.System], because these rows belong to no
-// tenant: a create happens before there is a tenant to scope a transaction to,
-// and a list is the one query in the application that is meant to see every
-// tenant there is. A module cannot mint that capability, so every caller of
-// these methods was handed one — which is what makes them greppable. See
-// docs/adr/0006.
+// It is a second interface beside Service, not methods on it, for the reason
+// modules/task's contracts.LockedReader gives: a method added to an exported
+// interface breaks every implementation a consumer wrote, and a caller that resolves
+// a reader's language should not be handed the tenant lifecycle beside it. Neither
+// half names a tenant — a tenant cannot be shown a door that reaches a neighbour, and
+// a form cannot expect a revision it was never shown.
 //
-// The errors are kit/crud's, so one mapping answers for these routes and the
-// generated ones alike: crud.ErrNotFound, crud.ErrInvalid, crud.ErrConflict.
-type Service interface {
+// The plain read of the set stays on Service (see CurrentLanguages), where every
+// reader of it already stands; the control plane's door onto the same fact (SetLocale)
+// is a different capability, over a row a tenant transaction may only read.
+type LanguageDeclaration interface {
 	// OwnLocale is this tenant's declaration as the tenant's own transaction may
 	// read it: the set, and the revision a command has to agree with.
 	//
@@ -397,23 +400,6 @@ type Service interface {
 	// to change the set needs the count, because it is about to submit an expected
 	// revision and a form cannot expect a number it was never shown.
 	OwnLocale(ctx context.Context, tx db.Tx[db.Tenant]) (Locale, error)
-
-	// CurrentLanguages locks this tenant's row and reads its current language
-	// set. A preference command calls it before locking its user row.
-	CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error)
-	// Create writes the tenant, its first host and whatever the hooks add, in
-	// one transaction. A slug or a host already taken is a conflict.
-	Create(ctx context.Context, tx db.Tx[db.System], in NewTenant) (*Tenant, error)
-
-	// AddHost gives an existing tenant another name to answer at, and says
-	// whether it becomes the primary one — the host every absolute URL this
-	// application builds for that tenant is built on. Adding a host the tenant
-	// already answers at changes nothing unless it promotes it.
-	AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string, primary bool) (*Tenant, error)
-
-	// Suspend stops the tenant being served. Suspending it again changes
-	// nothing and publishes nothing.
-	Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
 
 	// SetOwnLocale is the tenant's own declaration of the same pair, through the
 	// transaction that already resolved to that tenant: no id names the tenant, because
@@ -431,6 +417,42 @@ type Service interface {
 	// floor, so removing the final *other* language is allowed and a blank default is
 	// not. Refusing removes nothing: a refusal returns no row and publishes nothing.
 	SetOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], expectedRevision int64, in SetLocale) (*Tenant, error)
+}
+
+// Service is the tenant lifecycle, and the kernel's host resolution.
+//
+// Every command takes a db.Tx[db.System], because these rows belong to no
+// tenant: a create happens before there is a tenant to scope a transaction to,
+// and a list is the one query in the application that is meant to see every
+// tenant there is. A module cannot mint that capability, so every caller of
+// these methods was handed one — which is what makes them greppable. See
+// docs/adr/0006.
+//
+// The errors are kit/crud's, so one mapping answers for these routes and the
+// generated ones alike: crud.ErrNotFound, crud.ErrInvalid, crud.ErrConflict.
+type Service interface {
+	// CurrentLanguages locks this tenant's row and reads its current language
+	// set. A preference command calls it before locking its user row.
+	//
+	// It is the plain read of the set, and it is where every reader of it stands:
+	// modules/user's contracts.LocalePolicy is answered by a Service for exactly this
+	// one method. The counted read and the write beside it are
+	// LanguageDeclaration, the tenant's own door.
+	CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error)
+
+	// Create writes the tenant, its first host and whatever the hooks add, in
+	// one transaction. A slug or a host already taken is a conflict.
+	Create(ctx context.Context, tx db.Tx[db.System], in NewTenant) (*Tenant, error)
+
+	// AddHost gives an existing tenant another name to answer at, and says
+	// whether it becomes the primary one — the host every absolute URL this
+	// application builds for that tenant is built on. Adding a host the tenant
+	// already answers at changes nothing unless it promotes it.
+	AddHost(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, host string, primary bool) (*Tenant, error)
+
+	// Suspend stops the tenant being served. Suspending it again changes
+	// nothing and publishes nothing.
+	Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
 
 	// Rename changes what a tenant is called. Renaming it to what it is already
 	// called changes nothing and publishes nothing, as every other command here

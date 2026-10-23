@@ -46,6 +46,10 @@ var Module = pkit.NewModule("tenant", wire,
 	pkit.Needs[tenantcontracts.LocaleManager](),
 	pkit.Optional[tenantcontracts.Languages](),
 	pkit.Provides[tenantcontracts.Service](),
+	// The tenant's own declaration of the languages it speaks. A second provided
+	// port, rather than more methods on Service, because that interface is one a
+	// consumer may have implemented: see contracts.LanguageDeclaration.
+	pkit.Provides[tenantcontracts.LanguageDeclaration](),
 	// Which host is which tenant is this module's rows and nobody else's: the
 	// kernel asks the question before a request is about anything, and the
 	// answer used to be put by a module apps/platformkit wrote for the purpose.
@@ -73,14 +77,15 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if err != nil {
 		return module.Module{}, err
 	}
-	svc, manifest := New(Deps{
+	svc, manifest := newService(Deps{
 		OnCreate:      pkit.All[tenantcontracts.Hook](w),
 		Invite:        pkit.Get[tenantcontracts.Inviter](w),
 		LocaleManager: pkit.Get[tenantcontracts.LocaleManager](w),
 		Languages:     pkit.Get[tenantcontracts.Languages](w).Tags,
 		App:           slug,
 	})
-	pkit.Put(w, svc)
+	pkit.Put[tenantcontracts.Service](w, svc)
+	pkit.Put[tenantcontracts.LanguageDeclaration](w, svc)
 	pkit.Put[httpx.TenantLoader](w, svc)
 	pkit.Put[jobs.TenantLister](w, tenantcontracts.Active{Service: svc})
 	hosts := tenantHosts{tenants: svc, published: publishedPort(server.PublicHost)}

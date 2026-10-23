@@ -84,6 +84,16 @@ type Deps struct {
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest := newService(deps)
+	return svc, manifest
+}
+
+// newService is New's build before it is narrowed to the interface New hands out.
+// The value is the concrete service because that is the one answer to two questions:
+// it is the control plane's Service, and it is the tenant's own language door
+// (contracts.LanguageDeclaration), which provider.go provides beside the first so a
+// module that needs the door asks for the door.
+func newService(deps Deps) (*internal.Service, module.Module) {
 	if deps.LocaleManager == nil {
 		panic("tenant.New: Deps.LocaleManager is nil; the self-service language command would have no authorizer to ask")
 	}

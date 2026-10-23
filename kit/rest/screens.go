@@ -581,7 +581,7 @@ func conditionFault(fields []crud.Field) string {
 // substring, so a message about "subtitle" marked "title" — the wrong control,
 // with the right message, which is the confusing half of both.
 func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
-	return FieldErrorsIn(err, fields, nil)
+	return FieldErrorsWithWords(err, fields, nil)
 }
 
 // Words is a request's language, as far as a form's refusal needs it: one
@@ -592,19 +592,42 @@ type Words interface {
 	Text(key, fallback string, args ...any) string
 }
 
-// FieldErrorsIn is FieldErrors told in the language words answers in: the same
-// controls marked, the same sentence above them, and — where the module that
+// FieldErrorsIn is FieldErrors for a screen that does not speak English. A
+// rich-text refusal carries its structured issues beside the problem, because
+// the English sentences are the contract the JSON API answers with and a form
+// redrawn in another language must not print them at a reader who asked in
+// theirs. text is that language's formatter — the same one that names the form's
+// own labels — and each issue's key is in its package's catalogue.
+//
+// Every other refusal is prose this package cannot take apart, so it comes back
+// from FieldErrors as it stands. A caller that also wants a module's own refusal
+// sentence read in the reader's language asks FieldErrorsWithWords, which is this
+// function's rich-text answer and the whole refusal in one pass.
+func FieldErrorsIn(err error, fields []crud.Field, text func(key, fallback string) string) (map[string]string, string) {
+	if text == nil {
+		return FieldErrors(err, fields)
+	}
+	marked, detail, richtext := richTextErrors(err, fields, text)
+	if !richtext {
+		return FieldErrors(err, fields)
+	}
+	return marked, detail
+}
+
+// FieldErrorsWithWords is FieldErrors told in the language words answers in: the
+// same controls marked, the same sentence above them, and — where the module that
 // refused the write ships its copy in this composition — that sentence read in the
 // reader's own language rather than the one the Go source is written in. Which
 // control is at fault is worked out from the source sentence first, because the
 // source sentence is the one that names the field: a Portuguese reason says
 // "título", and a match on the English word would lose the marker from the control
-// the moment the reason was translated.
-//
-// A refusal whose writer named no key, a composition that wired no catalogue, and a
-// catalogue with no entry for the key are all answered the source sentence, which is
-// what FieldErrors answers.
-func FieldErrorsIn(err error, fields []crud.Field, words Words) (map[string]string, string) {
+// the moment the reason was translated. A refusal with no key, a composition with no
+// catalogue, and a catalogue with no entry for the key are all answered the source
+// sentence, which is what FieldErrors answers. It is a second name beside
+// FieldErrorsIn rather than a wider parameter on it: taking this package's Words port
+// instead of a two-argument function changes that signature, and a frozen release line
+// keeps the one a caller compiled against — docs/COMPATIBILITY.md.
+func FieldErrorsWithWords(err error, fields []crud.Field, words Words) (map[string]string, string) {
 	if words != nil {
 		if marked, detail, richtext := richTextErrors(err, fields,
 			func(key, fallback string) string { return words.Text(key, fallback) }); richtext {

@@ -171,7 +171,7 @@ refusal heading, `fault.title.<status>`, that goes with them.
   reason and with the same effect.
 - The tenant's own languages are `/app/tenant/languages` (GET and POST), offered in
   the sidebar to whoever `Authorizer` says holds `tenant:locale_manage` — the same
-  question `Service.SetOwnLocale` asks inside its transaction, so the link and the
+  question `LanguageDeclaration.SetOwnLocale` asks inside its transaction, so the link and the
   door cannot disagree. The page offers the languages `admin.Deps.Installed` names,
   which is the set this installation's catalogues carry: a page offering a language
   no catalogue carries is a page that lies about its own copy.

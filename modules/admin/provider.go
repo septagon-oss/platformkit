@@ -32,6 +32,10 @@ import (
 var Module = pkit.NewModule("admin", wire,
 	pkit.Needs[authcontracts.Auth](),
 	pkit.Needs[tenantcontracts.Service](),
+	// The tenant's own language door, which is the tenant module's second answer and
+	// not a method on the first: the Languages page writes the declaration from inside
+	// the tenant's transaction, and the shell asks for that door by name.
+	pkit.Needs[tenantcontracts.LanguageDeclaration](),
 	// Optional, not Needs: a composition with no user module has no names to show,
 	// and the header says "Signed in" rather than the application refusing to boot.
 	pkit.Optional[usercontracts.Service](),
@@ -59,6 +63,8 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Modules:   pkit.Composition(w),
 		Authorize: auths,
 		Tenants:   pkit.Get[tenantcontracts.Service](w),
+		// The same service seen as the tenant's own language door.
+		TenantLanguages: pkit.Get[tenantcontracts.LanguageDeclaration](w),
 		// The three questions the shell asks are the same value seen through the
 		// three interfaces it uses: what may this caller do, which roles exist,
 		// which sessions are live.

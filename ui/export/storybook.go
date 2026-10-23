@@ -94,10 +94,21 @@ func (b Storybook) groups() []string {
 	return groups
 }
 
-// StorybookPage renders the index and one live example. Previews use their own
-// document so a modal can own focus without taking over the documentation.
-// The server validates the selected ID and applies Props before calling this.
-func StorybookPage(b Storybook, o Options, path, group string, selected examples.Example, props, mode, width string) (g.Node, error) {
+// StorybookPage renders the index and one live example in the gallery's own English.
+// Previews use their own document so a modal can own focus without taking over the
+// documentation. The server validates the selected ID and applies Props before
+// calling this. A server that answers the page in the reader's language calls
+// StorybookPageWithOptions, which is this page with a locale carried in.
+func StorybookPage(b Storybook, path, group string, selected examples.Example, props, mode, width string) (g.Node, error) {
+	return StorybookPageWithOptions(b, Options{}, path, group, selected, props, mode, width)
+}
+
+// StorybookPageWithOptions is the gallery page told in o's language: every word of
+// its own chrome — the group choices, the landmarks, the empty note — is asked of the
+// composition's catalogue rather than written here. An empty Options renders exactly
+// what StorybookPage renders, which is what a composition that ships no ui/export
+// catalogue is served.
+func StorybookPageWithOptions(b Storybook, o Options, path, group string, selected examples.Example, props, mode, width string) (g.Node, error) {
 	var links []g.Node
 	for _, name := range append([]string{""}, b.groups()...) {
 		label := name

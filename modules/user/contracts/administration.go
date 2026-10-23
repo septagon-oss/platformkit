@@ -249,11 +249,23 @@ type Reach struct {
 // administrator who has forgotten a password nobody can reset for them is a
 // lockout no row shows, and a module that someday renames or deletes a role will
 // have to answer this rule about the name it removes, because nothing here does.
-// `leaving` is the caller's own sentence for which grant this write takes last, and
-// `values` are the arguments that sentence was written to take: a caller that names
-// what it refused in words rather than in values leaves the screen redrawing the form
-// with a sentence it cannot complete.
-func CheckedAdministration(before, after Reach, lastWayBack bool, leaving string, values ...any) error {
+// `leaving` is the caller's own sentence for which grant this write takes last.
+func CheckedAdministration(before, after Reach, lastWayBack bool, leaving string) error {
+	return CheckedAdministrationWithArgs(before, after, lastWayBack, leaving)
+}
+
+// CheckedAdministrationWithArgs is this rule with the sentence's own arguments:
+// `leaving` is written to take `values` (%q, %s), and a caller that names what it
+// refused in words rather than in values leaves the screen redrawing the form with a
+// sentence it cannot complete. The verdict, the verdict's arguments and the refusal
+// are CheckedAdministration's, unchanged; the two are one decision with the
+// arguments either present or absent.
+//
+// It is a second name and not a variadic parameter on CheckedAdministration, because
+// widening that signature is an exported API change on a frozen release line: every
+// caller that compiled against it would have to be recompiled against a function that
+// answers a different shape. See docs/COMPATIBILITY.md.
+func CheckedAdministrationWithArgs(before, after Reach, lastWayBack bool, leaving string, values ...any) error {
 	if len(after.CanAdminister) > 0 {
 		return nil // somebody would still be able to act; this write takes nothing last
 	}

@@ -310,7 +310,8 @@ func (e *richTextFieldError) Unwrap() error { return crud.ErrInvalid }
 // richTextProblem is the answer a request gets, with the refusals still in it.
 // The Problem is what the API serialises, in the language this repository
 // promises its wire contract in; the issues beside it are for the screen that
-// redraws the form in the language the reader asked with. See FieldErrorsIn.
+// redraws the form in the language the reader asked with. See FieldErrorsIn and
+// FieldErrorsWithWords.
 type richTextProblem struct {
 	*problem.Problem
 	field  string

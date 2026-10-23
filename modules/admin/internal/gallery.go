@@ -104,7 +104,7 @@ func (p pages) mountGallery(app *httpx.Router) {
 			if err != nil {
 				return page.View{}, err
 			}
-			body, err := export.StorybookPage(book, export.Options{Locale: r.Locale}, p.at.gallery.at, in.Group, example, in.Props, in.Theme, in.Width)
+			body, err := export.StorybookPageWithOptions(book, export.Options{Locale: r.Locale}, p.at.gallery.at, in.Group, example, in.Props, in.Theme, in.Width)
 			return page.View{Title: book.Title, Head: []g.Node{
 				h.Link(h.Rel("stylesheet"), h.Href(p.at.assets.at+"/gallery.css?v="+ui.Gallery().Fingerprint)),
 				h.StyleEl(g.Raw(export.StorybookCSS())),

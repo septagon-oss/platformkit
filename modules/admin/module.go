@@ -116,6 +116,14 @@ type Deps struct {
 	// read in this module, and it needs the token Routes is handed.
 	Tenants tenantcontracts.Service
 
+	// TenantLanguages is the same module seen as the tenant's own language door:
+	// the declaration this shell's Languages page reads and writes from inside the
+	// tenant's transaction. It is a separate field because
+	// tenantcontracts.LanguageDeclaration is a separate interface — see
+	// internal.Shell.TenantLanguages — and composition, which met both halves of the
+	// one service, hands over the pair.
+	TenantLanguages tenantcontracts.LanguageDeclaration
+
 	// Roles is the auth module's role administration, for the screen that
 	// module's nav entry names. It is the same value main hands the kernel as
 	// the authorizer, seen through the two methods this screen uses.
@@ -198,8 +206,10 @@ func New(deps Deps) module.Module {
 				Nav:       navigation(deps.Modules),
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
-				Roles:     deps.Roles,
-				Language:  deps.Language,
+				// The tenant's own door onto its languages, beside the control plane's.
+				TenantLanguages: deps.TenantLanguages,
+				Roles:           deps.Roles,
+				Language:        deps.Language,
 				// Counted, when this composition's account door counts: the same value
 				// is not assumed, because a composition whose choice carries no counter
 				// has no revision to draw and says so by wiring nothing here.

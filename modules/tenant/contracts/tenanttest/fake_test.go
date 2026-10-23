@@ -35,7 +35,7 @@ func TestFakeConforms(t *testing.T) {
 		// report, so the suite's filter decides both implementations.
 		fake, operator, _ := tenanttest.Installed()
 		run(tenanttest.Fixture{
-			Ctx: trace.With(t.Context(), trace.New()), Service: fake,
+			Ctx: trace.With(t.Context(), trace.New()), Service: fake, Language: fake,
 			Operator:        operator.ID,
 			Published:       fake.Published,
 			PublishedScopes: fake.PublishedScopes,

@@ -30,6 +30,11 @@ type Fixture struct {
 	Ctx     context.Context
 	Tx      db.Tx[db.System]
 	Service contracts.Service
+	// Language is the same implementation as Service, asked as the door a tenant
+	// walks through from inside its own transaction: contracts.LanguageDeclaration
+	// is a second interface, so a harness hands the suite both halves of the one
+	// value. The own-language cases refuse to run without it.
+	Language contracts.LanguageDeclaration
 	// Published is the names of the events published so far, in order. The
 	// fake returns its own slice; the real harness reads the outbox. It is what
 	// makes "an idempotent command says nothing" a thing the suite can check,
@@ -236,8 +241,8 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 	// refusals would read as decisions.
 	own := func(t *testing.T, f Fixture, body func(*testing.T, Fixture, Own)) {
 		t.Helper()
-		if f.OwnWorld == nil || f.LocaleDoor == nil {
-			t.Fatal("this harness wired neither Fixture.OwnWorld nor Fixture.LocaleDoor, " +
+		if f.OwnWorld == nil || f.LocaleDoor == nil || f.Language == nil {
+			t.Fatal("this harness did not wire all of Fixture.OwnWorld, Fixture.LocaleDoor and Fixture.Language, " +
 				"so the tenant's own language command is untested against this implementation")
 		}
 		f.LocaleDoor(true)
@@ -256,7 +261,7 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 	// row, not about what the refused call happened to return.
 	held := func(t *testing.T, f Fixture, w Own) contracts.Locale {
 		t.Helper()
-		got, err := f.Service.OwnLocale(w.Ctx, w.Tx)
+		got, err := f.Language.OwnLocale(w.Ctx, w.Tx)
 		if err != nil {
 			t.Fatalf("OwnLocale: %v", err)
 		}
@@ -266,7 +271,7 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 		"a tenant declares the languages it is served in": func(t *testing.T, f Fixture) {
 			own(t, f, func(t *testing.T, f Fixture, w Own) {
 				born := held(t, f, w)
-				got, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision, contracts.SetLocale{
+				got, err := f.Language.SetOwnLocale(w.Ctx, w.Tx, born.Revision, contracts.SetLocale{
 					Default: "pt-PT", Supported: []string{"en", "PT-pt", "pt-PT"},
 				})
 				if err != nil {
@@ -292,7 +297,7 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 		"the declaration the tenant already holds changes nothing and says nothing": func(t *testing.T, f Fixture) {
 			own(t, f, func(t *testing.T, f Fixture, w Own) {
 				in := contracts.SetLocale{Default: "pt-PT", Supported: []string{"en"}}
-				first, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, held(t, f, w).Revision, in)
+				first, err := f.Language.SetOwnLocale(w.Ctx, w.Tx, held(t, f, w).Revision, in)
 				if err != nil {
 					t.Fatalf("SetOwnLocale: %v", err)
 				}
@@ -300,7 +305,7 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 				// read at: an operator who retried the request that already landed changed
 				// nothing, so nothing is written, nothing is counted and nothing is said —
 				// however old the revision the retry carries.
-				again, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, first.LocaleRevision-1, in)
+				again, err := f.Language.SetOwnLocale(w.Ctx, w.Tx, first.LocaleRevision-1, in)
 				if err != nil {
 					t.Fatalf("SetOwnLocale again: %v", err)
 				}
@@ -316,7 +321,7 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 		"a declaration read at an old revision is refused and writes nothing": func(t *testing.T, f Fixture) {
 			own(t, f, func(t *testing.T, f Fixture, w Own) {
 				born := held(t, f, w)
-				if _, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision,
+				if _, err := f.Language.SetOwnLocale(w.Ctx, w.Tx, born.Revision,
 					contracts.SetLocale{Default: "pt-PT", Supported: []string{"en"}}); err != nil {
 					t.Fatalf("SetOwnLocale: %v", err)
 				}
@@ -324,7 +329,7 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 				// read before that. Winning the row would erase the other declaration, so
 				// the stale one loses — and loses without a trace, the same as every other
 				// refusal.
-				_, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision,
+				_, err := f.Language.SetOwnLocale(w.Ctx, w.Tx, born.Revision,
 					contracts.SetLocale{Default: "en", Supported: []string{"pt-PT"}})
 				if !errors.Is(err, crud.ErrConflict) {
 					t.Errorf("a declaration read at revision %d = %v, want ErrConflict", born.Revision, err)
@@ -343,7 +348,7 @@ func ownCases() map[string]func(*testing.T, Fixture) {
 			own(t, f, func(t *testing.T, f Fixture, w Own) {
 				born := held(t, f, w)
 				f.LocaleDoor(false)
-				row, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision, contracts.SetLocale{Default: "pt-PT"})
+				row, err := f.Language.SetOwnLocale(w.Ctx, w.Tx, born.Revision, contracts.SetLocale{Default: "pt-PT"})
 				if err == nil {
 					t.Error("a caller with no locale_manage wrote the tenant's languages")
 				}
