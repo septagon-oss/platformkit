@@ -981,6 +981,7 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# say what the comparison tool reports, and what it reports is what this gate rests on,
 	# so these cases pay the same module proxy the target pays — ten seconds of it.
 	bash scripts/check_public_api_line_test.sh
+	bash scripts/the_release_line_record_and_the_design_pin_agree_test.sh
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	# The other half of that ordering, which nobody had asked. Gate 10 runs `make e2e` inside
 	# scripts/ci_browser_host_share.sh's sampler, and the sampler's whole contract is that it
