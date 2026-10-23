@@ -22,6 +22,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/modules/task/domain"
 )
 
@@ -187,41 +188,63 @@ func (t *Task) IsOverdue(now time.Time) bool {
 
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: a title that differs
-// only in whitespace is the same title, and two callers must not disagree.
+// only in whitespace is the same title, and two callers must not disagree. It
+// reports every rule the task breaks as a fault.Violation, so a form can mark
+// each control at once.
 func (t *Task) Validate(context.Context) error {
+	var out []fault.Violation
 	// Match the JSON schema and varchar limit in characters, before normalization.
 	if utf8.RuneCountInString(t.Title) > 200 {
-		return fmt.Errorf("title must have at most 200 characters")
+		out = append(out, fault.Violation{Location: "title", Code: "too_long", Message: "title must have at most 200 characters"})
 	}
 	t.Title = strings.TrimSpace(t.Title)
 	if t.Title == "" {
-		return fmt.Errorf("a task needs a title")
+		out = append(out, fault.Violation{Location: "title", Code: "required", Message: "a task needs a title"})
 	}
 	if t.Status == "" {
 		t.Status = StatusOpen
 	}
-	if !slices.Contains(statuses, t.Status) {
-		return fmt.Errorf("status %q is not a lifecycle state", t.Status)
-	}
 	if t.Priority == "" {
 		t.Priority = PriorityNormal
 	}
-	if !slices.Contains(priorities, t.Priority) {
-		return fmt.Errorf("priority %q is not a priority", t.Priority)
+	out = append(out, t.vocabularyViolations()...)
+	out = append(out, t.stateViolations()...)
+	return fault.Invalid(out...)
+}
+
+// vocabularyViolations refuses a status or priority outside its closed set.
+func (t *Task) vocabularyViolations() []fault.Violation {
+	var out []fault.Violation
+	if !slices.Contains(statuses, t.Status) {
+		out = append(out, fault.Violation{Location: "status", Code: "not_one_of", Message: fmt.Sprintf("status %q is not a lifecycle state", t.Status)})
 	}
+	if !slices.Contains(priorities, t.Priority) {
+		out = append(out, fault.Violation{Location: "priority", Code: "not_one_of", Message: fmt.Sprintf("priority %q is not a priority", t.Priority)})
+	}
+	return out
+}
+
+// stateViolations refuses the combinations of fields that contradict each
+// other. A status outside its set is reported by vocabularyViolations alone,
+// since "resolved" cannot be judged against it.
+func (t *Task) stateViolations() []fault.Violation {
+	var out []fault.Violation
 	if t.SLABreached && t.SLADeadline == nil {
-		return fmt.Errorf("a breach needs the deadline it broke")
+		out = append(out, fault.Violation{Location: "slaBreached", Code: "inconsistent", Message: "a breach needs the deadline it broke"})
+	}
+	if !slices.Contains(statuses, t.Status) {
+		return out
 	}
 	// Both halves of "resolved means resolved at a time", so a resolved task
 	// can always answer when.
 	resolved := t.Status == StatusResolved || t.Status == StatusClosed
 	if t.ResolvedAt != nil && !resolved {
-		return fmt.Errorf("a %s task cannot have a resolution time", t.Status)
+		out = append(out, fault.Violation{Location: "resolvedAt", Code: "inconsistent", Message: fmt.Sprintf("a %s task cannot have a resolution time", t.Status)})
 	}
 	if resolved && t.ResolvedAt == nil {
-		return fmt.Errorf("a %s task needs a resolution time", t.Status)
+		out = append(out, fault.Violation{Location: "resolvedAt", Code: "required", Message: fmt.Sprintf("a %s task needs a resolution time", t.Status)})
 	}
-	return nil
+	return out
 }
 
 // Service is the task lifecycle: the three transitions generic CRUD cannot
@@ -294,4 +317,49 @@ type LockedReader interface {
 // it safe is that it is named, single and audited — not that it is hidden.
 type Writer interface {
 	Save(ctx context.Context, tx db.Tx[db.Tenant], in *Task) (*Task, error)
+}
+
+// CreateTask is the input of Creator.Create: what a caller may say about a new
+// task, and nothing it may not. The id, the tenant, the timestamps, the revision
+// and the breach flag are not fields here, so no caller can supply them; the
+// resolution fields are absent because a new task is not resolved.
+//
+// Zero values mean "unsaid": an empty Status is open and an empty Priority is
+// normal, exactly as Task.Validate reads them. Times are instants and are stored
+// in UTC. AssigneeID is reachable in-process only; the REST body refuses it
+// (CommandOwnedFields) and the door that decodes a form refuses it likewise.
+type CreateTask struct {
+	Title       string
+	Description string
+	Status      string
+	Priority    string
+	DueAt       *time.Time
+	SLADeadline *time.Time
+	AssigneeID  *uuid.UUID
+	Source      string
+	SourceRef   string
+}
+
+// Creator is the one way a task comes to exist: the REST create, the web form, a
+// seed and other modules all reach it, so identity, defaults, events and the
+// breach-on-arrival check are decided once.
+//
+// Create runs in the caller's transaction and publishes into it, so the row, its
+// events and the caller's own writes commit together or not at all. A refusal is
+// decided before any write; an error after the first write leaves the transaction
+// poisoned and the caller must roll back. It publishes EventCreated (the *Task as
+// inserted), then EventAssigned when AssigneeID is set, then EventSLABreached when
+// SLADeadline has passed, and returns the row as it now stands. It is not
+// idempotent: a retrying caller owns the key. Errors are kit/crud's:
+//
+//	crud.ErrInvalid         the input is not one a task can have (correctable)
+type Creator interface {
+	Create(ctx context.Context, tx db.Tx[db.Tenant], in CreateTask) (*Task, error)
+}
+
+// Reader is the plain read: a task by id in the caller's tenant, without a lock.
+// It exists beside LockedReader for the consumer that only needs to look — an
+// ETag over the row, a link to the task another module's row names.
+type Reader interface {
+	TaskByID(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*Task, error)
 }

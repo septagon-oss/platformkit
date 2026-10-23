@@ -150,3 +150,7 @@ declares no `help:` anywhere: the line under one of its controls is that field's
 carries no key — the difference between the two only shows in a language other
 than English, which is why `apps/platformkit/help_language_test.go` asks it of
 `content`, which declares one.
+
+## Creation
+
+**Reused** — `crud.Create`, `events.Publish`, `Task.Validate`, `Service.Assign` and `Service.CheckSLA`, composed by `internal.Service.Create`. **Added** — `contracts.Creator`, `CreateTask` and `contracts.Reader`, plus `rest.Spec.Create`, because the generic create had no seam through which an owner could take over identity, defaults and its events. The JSON create and the web form reach the creator and publish nothing of their own; `task:create` is not a policy action, so the route's `task:update` grant stands. **Made reusable** — `rest.Spec.Create` for any entity that owns its creation, and `tasktest.RunCreator` with its real-database harness (savepoint rollback, outbox-insert failure injection) as the pattern for the next creator.
