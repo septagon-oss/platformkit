@@ -19,7 +19,7 @@ package resource
 // person on the screen reads.
 
 import (
-	"cmp"
+	"encoding/hex"
 	"strconv"
 
 	g "maragu.dev/gomponents"
@@ -174,26 +174,34 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 		label = label + " — " + locale.Locale
 	}
 	arguments := words.forCommand(c.Verb)
+	// Hex keeps action, locale and field boundaries distinct, including punctuation
+	// and empty locales, without consuming the components' help/error suffixes.
+	scope := "pk-command-" + hex.EncodeToString([]byte(c.Action(item))) + "-" + hex.EncodeToString([]byte(locale.Locale))
 	for _, f := range c.Fields {
+		id := scope + "-field-" + hex.EncodeToString([]byte(f.Name))
 		if source := c.Bindings[f.Name]; source != "" {
+			// The argument comes from the row the person is looking at, so the box is
+			// hidden and still carries this control's own identity.
 			hidden := f
 			hidden.Widget = "hidden"
-			controls = append(controls, controlWords(arguments, hidden, display.Text(row[source]), "", false))
+			controls = append(controls, forms.Control(forms.ControlProps{
+				Field: formField(arguments, hidden), ID: id, Value: display.Text(row[source]),
+			}))
 			continue
 		}
 		if len(f.Keys) > 0 {
 			for _, k := range f.Keys {
-				controls = append(controls, mapKeyControl(f, k, locale))
+				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale))
 			}
 			continue
 		}
+		value := ""
 		if locale.Locale != "" && f.Name == "lang" {
-			hidden := f
-			hidden.Widget = "hidden"
-			controls = append(controls, controlWords(arguments, hidden, locale.Locale, "", false))
-			continue
+			f.Widget, value = "hidden", locale.Locale
 		}
-		controls = append(controls, controlWords(arguments, f, "", "", false))
+		controls = append(controls, forms.Control(forms.ControlProps{
+			Field: formField(arguments, f), ID: id, Value: value,
+		}))
 	}
 	// Outline, so the screen's one filled action stays its toolbar's — Edit on a
 	// record, New on a list. A filled submit per command put three brand-filled
@@ -215,7 +223,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 // what they did not mean to change, and the command writes every field the body
 // names: an unchanged box reposted without its revision would be a 409 on six
 // fields of which one was edited. An empty box is a field left alone.
-func mapKeyControl(f entity.Field, k entity.MapKey, locale entity.LocaleState) g.Node {
+func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState) g.Node {
 	key := entity.Field{
 		Name:   f.Name + "[" + k.Name + "]",
 		Type:   f.Elem,
@@ -226,10 +234,6 @@ func mapKeyControl(f entity.Field, k entity.MapKey, locale entity.LocaleState) g
 	if k.From == entity.KeyFromRevision {
 		value = strconv.FormatInt(locale.Revisions[k.Name], 10)
 	}
-	// The control's identity is per form and per language: one record screen
-	// offers one translate form per language the tenant speaks, and six inputs
-	// sharing three ids is a label that points at somebody else's box.
-	id := "pk-translate-" + cmp.Or(locale.Locale, "any") + "-" + key.Name
 	return forms.Control(forms.ControlProps{
 		Field: forms.Field{Definition: key, Label: k.Label},
 		ID:    id, Value: value,

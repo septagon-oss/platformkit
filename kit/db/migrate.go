@@ -247,19 +247,23 @@ func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBu
 	}
 
 	run := &runner{conn: conn, budget: budget}
+	// The composition lock is a session lock and this function owns the session: the two
+	// defers above hand it back and close the pool it came from, which ends the backend and
+	// drops the key with it. Those two defers are therefore the whole unlock, and they run on
+	// every return — the guarantee this point always made, "an unreleased one would go when
+	// the connection goes", minus the statement that could only ever be refused. A run that
+	// applied all its files hands the key back when its backend exits, after Migrate has
+	// returned, and the only returns that reach the defers early are the caller having
+	// cancelled or a file having failed. No probe takes the statement's place: every method on
+	// a *sql.Conn, PingContext included, reads the connection's `done` before it takes
+	// `closemu`, so a Close completing in between answers a nil driver connection and a nil
+	// error — and ending the session is what a session that may be gone answers. The window an
+	// `autocommit` file opens *inside* a run is the different case, and it still puts the key
+	// down with a statement: mid-run the session is the run's own, and the statement below it
+	// must wait for the transactions already in the database. See stepAwayFromTheCompositionLock.
 	if err := run.holdCompositionLock(ctx); err != nil {
 		return err
 	}
-	// The lock is a session lock and this session ends here, so an unreleased one
-	// would go when the connection goes; the release is still attempted on a
-	// context that cannot be the caller's cancellation, because the statement is
-	// what lets the next replica's boot start on time rather than on timeout.
-	defer func() {
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_ = run.releaseCompositionLock(cleanup)
-	}()
-
 	if err := createOwnTables(ctx, conn); err != nil {
 		return err
 	}

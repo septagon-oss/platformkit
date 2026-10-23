@@ -3,8 +3,10 @@ package db_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io/fs"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -309,6 +311,23 @@ const (
 		AND a.application_name = current_setting('search_path')`
 )
 
+// The count is the reading and the bool is the answer: nothing here asks how many
+// sessions hold the key, only whether any do, so the count stays inside this one read
+// rather than becoming a second predicate that could disagree with it. The tree's lock
+// observation guard runs these exact bytes against a live server — this namespace's
+// hold, another namespace's, the single-key form, none — so a change to the predicate
+// below is answered by that guard and its mutations, not by a re-read.
+func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
+	t.Helper()
+	var held int
+	scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+		WHERE l.locktype = 'advisory' AND l.granted AND l.objsubid = 2
+			AND l.classid = `+strconv.FormatInt(compositionLockKey, 10)+`::oid
+			AND l.objid = coalesce(to_regnamespace(a.application_name), 0)::oid
+			AND a.application_name = current_setting('search_path')`, &held)
+	return held > 0
+}
+
 // takeCompositionKey holds the composition key on a session of this test's own, and
 // returns the function that hands it back. The session is renamed: the runs this case
 // starts wear the test's schema, and the hand-off below has to be able to tell its own
@@ -391,6 +410,38 @@ func handKeyToTheRun(t *testing.T, admin sqlDB, handBack func(), failed <-chan e
 	}
 }
 
+// runIsInsideItsFile says the run reached the SQL of its file, on the server's own
+// account: this schema's session parked in pg_sleep.
+func runIsInsideItsFile(t *testing.T, admin sqlDB) bool {
+	t.Helper()
+	var sleeping bool
+	scan(t, admin, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+		WHERE application_name = current_setting('search_path') AND wait_event = 'PgSleep')`, &sleeping)
+	return sleeping
+}
+
+// waitUntil polls what the server says until it is true, until the run answers, or
+// until the budget runs out — and says which. The run's own result belongs in the
+// wait because a migration that has returned cannot become true later; without that
+// read a case sits out its whole budget and then blames the wrong thing. "" means the
+// read came true; anything else names the window that closed, so a failure reports
+// what expired rather than the nearest suspicion.
+func waitUntil(t *testing.T, budget time.Duration, done <-chan error, what string, read func() bool) string {
+	t.Helper()
+	deadline := time.Now().Add(budget)
+	for !read() {
+		select {
+		case err := <-done:
+			return fmt.Sprintf("the run returned first: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			return fmt.Sprintf("%s did not become true within %v", what, budget)
+		}
+	}
+	return ""
+}
+
 func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	files := fstest.MapFS{
@@ -429,12 +480,7 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	// and a session whose cancel request never lands is reaped only once that statement
 	// ends. What the bound refuses is a run that came back from Migrate holding the key.
 	released := time.Now().Add(45 * time.Second)
-	for {
-		var held int
-		scan(t, admin, cancellationKeyHolder, &held)
-		if held == 0 {
-			break
-		}
+	for holdsCompositionKey(t, admin) {
 		if time.Now().After(released) {
 			t.Fatal("the cancelled run's session still holds the composition key after forty-five seconds")
 		}

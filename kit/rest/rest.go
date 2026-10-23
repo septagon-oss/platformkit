@@ -171,6 +171,14 @@ type Spec[T crud.Entity] struct {
 	// half — the question asked before a write rather than after — is Gate, above,
 	// which is the hook this repository was missing.
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
+
+	// Create makes the entity's owner the one creator: when set, the JSON create,
+	// the generated form and CreateRow hand the decoded body to it and return what
+	// it answers, and they run none of their own create steps — no identity, no
+	// file filing, no version, no event and no AfterCreate. The owner publishes in
+	// the transaction it is given. Mount refuses it beside History, whose first
+	// version would never be recorded.
+	Create      func(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error)
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 
 	// Audience computes the richtext record's file visibility before filing uses.

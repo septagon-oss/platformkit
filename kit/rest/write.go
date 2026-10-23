@@ -22,6 +22,9 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if s.Create != nil {
+		return s.Create(ctx, tx, e)
+	}
 	crud.Reset(e)                        // IDs, tenancy and timestamps belong to the server at both doors.
 	s.clearRevision(crud.Fields[T](), e) // and so does the count of this row's writes
 	// The record has to be itself before its own body can be filed. What a body
