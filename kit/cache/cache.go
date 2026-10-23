@@ -1,13 +1,9 @@
 // Package cache is one value every replica can read.
 //
-// A map in one process's memory is three answers when three pods are running and
-// none after a deploy — the same argument kit/limit makes about a counter, run
-// against a value instead of a count. It is also three answers to the question
-// "who may I treat this host as?": a suspension that invalidates one process
-// leaves the other two believing what the installation just stopped believing,
-// for the whole life of the entry. This package holds the port, the key type that
-// names whose value an entry is, and the in-process adapter that is a deployment
-// for one process and the double every test runs on.
+// Multiple replicas need shared invalidation: a host suspension must reach
+// every process that cached the host. This package holds the cache port and
+// tenant-qualified keys. The in-process adapter serves a single-process
+// deployment and the same conformance cases as a shared store.
 //
 // Two things make this more than a shared map. The first is the key: an entry is
 // addressed by the tenant that owns it, and no caller can form a key without
@@ -24,6 +20,9 @@
 // store: modules/auth's own kernel says why ("A permission cache is a window in
 // which a revoked grant still works"), and the read path for those is the
 // transaction under row-level security. docs/cache.md holds the table.
+//
+// The [Cache] example loads a value on a miss and reads it again from memory.
+// It uses [Cache.Get] and [Cache.Set] with the original generation and an explicit lifetime.
 package cache
 
 import (

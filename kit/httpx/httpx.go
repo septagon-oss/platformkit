@@ -4,11 +4,8 @@
 //
 // # The declaration
 //
-// Register is the only way a module mounts a handler, and it takes an Auth
-// alongside the operation, so "I forgot to say who may call this" is not a
-// state a route can be in. The declaration is written into op.Extensions, which
-// is the same object the OpenAPI document renders and ctx.Operation() returns at
-// request time: the reviewer, the document and the middleware read one value.
+// Register mounts a handler with an explicit Auth. Its declaration is stored
+// in op.Extensions, shared by OpenAPI and the request middleware.
 //
 // # Recording
 //
@@ -33,6 +30,9 @@
 // transaction on the context; TxFrom opens it on the first query, so a request
 // that never touches the database never opens one. A response of 400 or worse
 // rolls it back, and the response itself is held until the commit succeeds.
+//
+// The [Register] example mounts a typed operation with explicit authorization.
+// It inspects the registered route without opening a server or serving tenant work.
 package httpx
 
 import (

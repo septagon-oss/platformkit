@@ -1,17 +1,15 @@
 // Package rest is an entity's projection onto HTTP: five routes, the commands
 // beside them, and the one mapping from kit/crud's errors to statuses.
 //
-// A module declares one Spec per entity and gets list, create, read, update and
-// delete as declared routes, each with its permission, each emitting the events
-// the manifest promises. What a module writes is the struct, in its contracts/
-// package, and the Spec, in its manifest; what it does not write is a
-// repository, a service, a handler, a DTO or a mapper.
+// A module declares its entity in contracts/ and one Spec in its manifest.
+// Spec supplies list, create, read, update and delete routes with declared
+// permissions and events.
 //
-// It is a package of its own, and not the other half of kit/crud, because a
-// contracts/ package imports the entity half and every consumer of a module
-// compiles against its contracts/. Keeping the routes here is what keeps huma,
-// chi and NATS out of the build graph of a module that only wanted to name a
-// Task. See ARCHITECTURE.md, idea 3.
+// Keeping routes separate from entity contracts lets consumers name an entity
+// without importing HTTP dependencies. See ARCHITECTURE.md.
+//
+// The [Spec.Mount] example registers a resource and inspects its routes.
+// The [Command] example adds a command and inspects its authorization and address.
 package rest
 
 import (

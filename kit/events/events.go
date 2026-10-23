@@ -1,10 +1,7 @@
 // Package events is the one door a module's events leave through.
 //
-// A module writes an event with Publish, inside the same transaction as the
-// state change that caused it, so the row and the change commit together or
-// not at all: there is no window in which the state moved and the event was
-// lost. The relay in the worker role reads those rows and hands them to a
-// transport — in-process for a single-process run, JetStream for a fleet.
+// Publish commits an event with its state change in the same transaction.
+// The worker relay delivers committed rows through the selected transport.
 //
 // Delivery is at-least-once, and Consume is what turns that into exactly-once
 // handling: it claims each (event, subscription) pair in platformkit_handled
@@ -14,6 +11,9 @@
 // This is also the job queue: durable, retried, transactional background work
 // is what an outbox is, and asking for it twice buys nothing. Periodic work is
 // kit/jobs. Both arguments are docs/adr/0004.
+//
+// The [Publish] example declares an event and writes it in a tenant transaction.
+// It then relays the committed event to a subscription through the in-process transport.
 package events
 
 import (

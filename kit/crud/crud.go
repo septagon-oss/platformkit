@@ -16,11 +16,8 @@
 //
 // # Instantiate with the pointer type
 //
-// Entity is implemented by *Task and not by Task: base() has a pointer
-// receiver, because the kernel stamps the tenant into it. So every function
-// here is instantiated with the pointer — crud.Get[*Task](tx, id) — and List
-// returns []*Task. The alternative, two type parameters everywhere, costs every
-// call site a repetition the compiler could not check anyway.
+// Entity requires a pointer so the kernel can stamp its tenant: use
+// crud.Get[*Task](tx, id), and List returns []*Task.
 //
 // # The tenant is never a parameter
 //
@@ -28,6 +25,9 @@
 // carrying a different one. That is defense in depth rather than the boundary:
 // row-level security refuses the same write in the database, whatever Go
 // believes. See docs/adr/0003.
+//
+// The [Get] example reads a row through an explicit tenant transaction.
+// The [List] example reads a page and total from a tenant-isolated PostgreSQL fixture.
 package crud
 
 import (
