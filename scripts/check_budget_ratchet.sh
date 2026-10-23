@@ -89,8 +89,8 @@ fi
 # CONTRIBUTING.md's "separate owner budget commit before the implementation", made checkable: a raise
 # passes when every commit between the base and HEAD that touches a budget file is a `build(budget):`
 # commit touching nothing else, so the raise stands alone in history where a reviewer reads it. A removed
-# bucket or a changed measurement is never excused this way. CI checks out with fetch-depth 0; history
-# that cannot be read refuses.
+# bucket or a changed measurement is never excused this way. CI checks out the window its own commits
+# fill, not the whole mirror; a history that cannot be walked refuses, below.
 #
 # The walk prints no commit before its own children (--topo-order), which is what makes "newest" below
 # mean nearest to HEAD rather than latest by a clock a rebase moved, and it names no paths. A path-limited
@@ -106,6 +106,21 @@ fi
 # 600 reads as 1,200. The `!seen[sha]++` guard runs only on a budget filename, so a commit that touches
 # neither file still prints nothing.
 budget_files='loc-budget.json packages-budget.json'
+	# Nothing above needs history: a ceiling, a removed bucket and a changed measurement are all read
+	# from two files at the base, which is why a one-commit CI checkout answers them after fetching that
+	# one commit by name. Excusing a raise is the one read that walks, so a shallow window (`fetch-depth:
+	# <n>`, see .gitea/workflows/ci.yml) has to reach the fork point before this point is passed — but only
+	# where a raise stands. A checkout with nothing to excuse asks the walk for nothing: its verdict is in
+	# the two files already, and a one-commit checkout of a branch that lowered a ceiling or moved no
+	# number at all is an ordinary CI run, its base an island of one commit fetched by SHA. Where a raise
+	# does stand, a window that stops above the fork point fails here, by name, rather than excusing growth
+	# from a range it never fetched: the walk answers over such a gap, and the answer it gives names commits
+	# that never touched a budget file and misses ones that did, which is not a footing for a ceiling.
+	if [ -n "$raised" ] && [ "$(git rev-parse --is-shallow-repository)" = true ] \
+		&& ! git merge-base "$base" HEAD >/dev/null 2>&1; then
+		echo 'budget ratchet: a raise is excused only by the commits that carry it, and this shallow checkout cannot find where the base and HEAD diverge' >&2
+		exit 2
+	fi
 if ! touched="$(git -c color.ui=false log --no-merges --topo-order --format='commit %H' --name-only "$base..HEAD" 2>/dev/null \
 	| awk -v files="$budget_files" '
 		BEGIN { split(files, names, " "); for (i in names) budget[names[i]] = 1 }
