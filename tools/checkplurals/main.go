@@ -8,11 +8,26 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
+
+// frozenEnglish names the one file whose plural construction this check does not read.
+// kit/entity/display.Plural is exported on the release line, which freezes that English
+// set-name helper as it was written; docs/COMPATIBILITY.md names who may move a frozen
+// name. Stopping the helper from appending a letter is what the plural rule wants and
+// what the frozen line refuses, so the helper keeps its letter and this check says out
+// loud where it stopped reading. The exemption is one path — not a package, not a
+// directory: this package's test plants the same sentence in a sibling file and
+// requires the refusal.
+var frozenEnglish = map[string]struct{}{"kit/entity/display/display.go": {}}
+
+// frozenPaths is frozenEnglish's keys in one order, for the line the check prints.
+func frozenPaths() []string { return slices.Sorted(maps.Keys(frozenEnglish)) }
 
 func main() {
 	problems, err := scan(".")
@@ -26,7 +41,8 @@ func main() {
 	if len(problems) > 0 {
 		os.Exit(1)
 	}
-	fmt.Println("plural source check: clean")
+	fmt.Println("plural source check: clean;", len(frozenEnglish), "frozen English file read no plural rule:",
+		strings.Join(frozenPaths(), " "))
 }
 
 func scan(root string) ([]string, error) {
@@ -42,6 +58,14 @@ func scan(root string) ([]string, error) {
 			return nil
 		}
 		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			// The exemption is a path in this repository, so it is matched on the path
+			// under the directory being walked: the same file is exempt whether the walk
+			// starts at "." or at a copy of the tree in a temporary directory.
+			if rel, err := filepath.Rel(root, path); err == nil {
+				if _, frozen := frozenEnglish[filepath.ToSlash(rel)]; frozen {
+					return nil
+				}
+			}
 			found, err := scanGo(path)
 			problems = append(problems, found...)
 			return err

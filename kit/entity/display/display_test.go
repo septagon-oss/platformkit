@@ -51,6 +51,31 @@ func TestDisplayIsTheOneWayAValueIsShown(t *testing.T) {
 	}
 }
 
+// TestPluralKeepsAWordTheCatalogueAlreadyWroteAsASet is the rule behind "Settingss"
+// and "Contents": a mass noun and a word that already ends in s are returned
+// exactly as the schema wrote them, and everything else takes one "s". The list is
+// the phone's eight words, so the two clients inflect one noun the same way.
+func TestPluralKeepsAWordTheCatalogueAlreadyWroteAsASet(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct{ one, want string }{
+		{"Task", "Tasks"}, {"plan", "plans"}, {"Note", "Notes"},
+		// Mass nouns, kept whole, in either case.
+		{"Content", "Content"}, {"content", "content"}, {"Settings", "Settings"},
+		{"settings", "settings"}, {"News", "News"}, {"Media", "Media"}, {"Data", "Data"},
+		{"Staff", "Staff"}, {"Feedback", "Feedback"}, {"Information", "Information"},
+		// Words that end in s anyway: the rule that adds another is the defect.
+		{"Business", "Business"}, {"Status", "Status"}, {"Analysis", "Analysis"},
+		// Nothing to inflect, and an inflection nobody asked for is not an answer.
+		{"", ""},
+		// The input is returned as written — only the comparison is trimmed.
+		{"  Task  ", "  Task  s"},
+	} {
+		if got := display.Plural(c.one); got != c.want {
+			t.Errorf("Plural(%q) = %q, want %q", c.one, got, c.want)
+		}
+	}
+}
+
 // TestMomentSaysTheSameWordsItAlwaysSaid pins the reading, and Instant keeps the
 // moment beside it: the zone a person reads is chosen by the reader's own engine,
 // so the string every reading shares did not move when the datetime attribute
