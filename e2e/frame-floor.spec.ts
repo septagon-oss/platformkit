@@ -129,7 +129,9 @@ test('the frame\'s chrome is one body step, and a generated page stays inside th
     // not, so the name is in the header at 390px and hidden at 1440px where the sidebar carries it.
     // One name at exactly one width is the claim; the count of chrome sentences follows from it. What
     // the floor actually refuses — the chrome taking more than one body step, a page left with none —
-    // is asserted on the two lines below this one and is unchanged.
+    // is asserted on the two lines below this one and is unchanged. The build stamp stays in view;
+    // the scope is inside the footer's closed "About this workspace", which paints nothing until it
+    // is opened.
     expect(m.chrome.length, `signed in at ${width}px the chrome should draw ${width < 1024 ? 'the workspace, the caller and the stamp' : 'the caller and the stamp'}: ${JSON.stringify(m.chrome)}`)
       .toBe(width < 1024 ? 3 : 2);
     // The floor's rule, asserted as itself: the page gets a body size because the chrome takes one.
