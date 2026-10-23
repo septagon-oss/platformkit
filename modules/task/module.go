@@ -8,8 +8,10 @@
 package task
 
 import (
+	"context"
 	"time"
 
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -86,8 +88,8 @@ var Spec = rest.Spec[*contracts.Task]{
 	// The one list of them, in the contracts package, which also decides what an
 	// apply refuses and what the gate may name: one sentence, three doors.
 	Immutable: contracts.CommandOwnedFields,
-	// What AfterCreate publishes, so the create operation declares it and the
-	// boot gate can check it against Events below. See internal.BreachOnArrival.
+	// What the creator publishes beyond task.task.created, so the create operation
+	// declares it and the boot gate can check it against Events below.
 	HookEvents: []string{contracts.EventSLABreached},
 	// Present is how a task reads to the person holding one: the words, the icon,
 	// which field names a row and which say what waiting costs. Every word
@@ -160,6 +162,10 @@ func NewLockedReader() contracts.LockedReader { return internal.NewService() }
 // draws.
 func NewWriter() contracts.Writer { return internal.NewService() }
 
+// NewReader returns the plain read of a task by id (contracts.Reader), for a
+// module that links to another module's task without locking it.
+func NewReader() contracts.Reader { return internal.NewReader() }
+
 // NewServiceWithPolicy adds resource decisions to assignment and resolution.
 // The caller still owns route grants, current identity and tenant transactions.
 func NewServiceWithPolicy(policy tenancy.Policy) contracts.Service {
@@ -202,13 +208,17 @@ func New(deps Deps) module.Module {
 	if every == 0 {
 		every = sweepEvery
 	}
-	// The one thing about this entity that is not generic on the way in: a task
-	// created with a deadline already behind it is breached on arrival, in the
-	// create's own transaction, rather than a minute later when the sweep gets
-	// to it. The hook is set here and not in the spec literal above because it
-	// needs the service, and the service is constructed here.
+	// Creation is this module's: the JSON create, the web form and the seed all
+	// reach the creator, which publishes inside their transaction. A Service that
+	// does not create is paired with the module's own implementation.
+	creator, ok := svc.(contracts.Creator)
+	if !ok {
+		own := internal.NewService()
+		own.Policy, own.Lifecycle = deps.Policy, svc
+		creator = own
+	}
 	mounted := Spec
-	mounted.AfterCreate = internal.BreachOnArrival(svc)
+	mounted.Create = createWith(creator)
 	mounted.Gate = deps.Gate
 	return module.Module{
 		Name:       "task",
@@ -235,5 +245,16 @@ func New(deps Deps) module.Module {
 			mounted.Mount(s)
 			internal.RegisterRoutes(s, mounted, svc)
 		},
+	}
+}
+
+// createWith adapts the creator to the REST seam: the decoded body supplies only
+// the fields a CreateTask has, so a body cannot name an id, a revision or a breach.
+func createWith(creator contracts.Creator) func(context.Context, db.Tx[db.Tenant], *contracts.Task) (*contracts.Task, error) {
+	return func(ctx context.Context, tx db.Tx[db.Tenant], t *contracts.Task) (*contracts.Task, error) {
+		return creator.Create(ctx, tx, contracts.CreateTask{
+			Title: t.Title, Description: t.Description, Status: t.Status, Priority: t.Priority,
+			DueAt: t.DueAt, SLADeadline: t.SLADeadline, Source: t.Source, SourceRef: t.SourceRef,
+		})
 	}
 }
