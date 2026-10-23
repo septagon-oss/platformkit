@@ -64,6 +64,7 @@
       "name": "user",
       "provides": [
         "usercontracts.Service",
+        "usercontracts.LanguagePreference",
         "authcontracts.Users",
         "authcontracts.Provisioner",
         "notificationcontracts.RecipientLookup",
@@ -504,11 +505,15 @@
           "from": "user"
         },
         {
+          "contract": "usercontracts.LanguagePreference",
+          "from": "user"
+        },
+        {
           "contract": "notificationcontracts.Service",
           "from": "notification"
         },
         {
-          "contract": "tenantcontracts.Service",
+          "contract": "tenantcontracts.LanguageDeclaration",
           "from": "tenant"
         },
         {

@@ -126,8 +126,9 @@ pkit: media.Module is built after auth.Module.
 pkit: media.Module needs authcontracts.Auth from auth.Module.
 pkit: access.Module is built after product.Module, user.Module, tenant.Module, notification.Module, auth.Module and site.Module.
 pkit: access.Module needs usercontracts.Service from user.Module.
+pkit: access.Module needs usercontracts.LanguagePreference from user.Module.
 pkit: access.Module needs notificationcontracts.Service from notification.Module.
-pkit: access.Module needs tenantcontracts.Service from tenant.Module.
+pkit: access.Module needs tenantcontracts.LanguageDeclaration from tenant.Module.
 pkit: access.Module needs sitecontracts.Service from site.Module.
 pkit: access.Module needs sitecontracts.LockedReader from site.Module.
 pkit: access.Module needs usercontracts.Granting from product.Module.
