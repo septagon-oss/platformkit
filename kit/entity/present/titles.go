@@ -97,7 +97,9 @@ func emptyLayout() ResolvedLayout {
 func layout(in Input, t ResolvedTitles) ResolvedLayout {
 	fs := in.Schema.Fields
 	l := emptyLayout()
-	l.Columns = columns(in, t)
+	if !in.Singleton && in.offers("list") {
+		l.Columns = columns(in, t)
+	}
 	l.Information = []string{}
 	overview := newNames(fs, visible)
 	overview.add(t.Status)
@@ -122,9 +124,15 @@ func layout(in Input, t ResolvedTitles) ResolvedLayout {
 			l.Information = append(l.Information, f.Name)
 		}
 	}
-	l.Create = form(in, "create", func(f entity.Field) bool { return !entity.ServerOwned(f) })
+	l.Create = form(in, "create", func(f entity.Field) bool { return editableCreate(in, f) })
 	l.Update = form(in, "update", func(f entity.Field) bool { return editableUpdate(in, f) })
 	return l
+}
+
+// editableCreate is false for a field a command owns: the create route refuses
+// it, so a form offering it could never be submitted.
+func editableCreate(in Input, f entity.Field) bool {
+	return !entity.ServerOwned(f) && !slices.Contains(in.Immutable, f.Name)
 }
 
 func editableUpdate(in Input, f entity.Field) bool {

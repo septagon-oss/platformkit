@@ -264,12 +264,8 @@
         "description",
         "status",
         "priority",
-        "assigneeId",
         "dueAt",
-        "slaDeadline",
-        "slaBreached",
-        "resolvedAt",
-        "resolution"
+        "slaDeadline"
       ],
       "update": [
         "title",
@@ -576,7 +572,7 @@
         "onList": false,
         "onRecord": true,
         "editable": {
-          "create": true,
+          "create": false,
           "update": false
         },
         "control": "entity-picker",
@@ -659,7 +655,7 @@
         "onList": true,
         "onRecord": true,
         "editable": {
-          "create": true,
+          "create": false,
           "update": false
         },
         "control": "checkbox",
@@ -684,7 +680,7 @@
         "onList": false,
         "onRecord": true,
         "editable": {
-          "create": true,
+          "create": false,
           "update": false
         },
         "control": "datetime",
@@ -712,7 +708,7 @@
         "onList": false,
         "onRecord": true,
         "editable": {
-          "create": true,
+          "create": false,
           "update": false
         },
         "control": "textarea",

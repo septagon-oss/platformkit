@@ -145,7 +145,6 @@
           "create": [
             "title",
             "body",
-            "status",
             "rank",
             "pinned",
             "tags"
@@ -298,7 +297,7 @@
             "onList": true,
             "onRecord": true,
             "editable": {
-              "create": true,
+              "create": false,
               "update": false
             },
             "control": "select",

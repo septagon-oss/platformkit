@@ -12,7 +12,7 @@ func fields(in Input) []ResolvedField {
 	done := in.Hints.StatusField
 	for _, f := range in.Schema.Fields {
 		h := f.Presentation
-		create := !entity.ServerOwned(f)
+		create := editableCreate(in, f)
 		rf := ResolvedField{
 			Name: f.Name, Label: display.FieldLabel(f), Help: display.FieldHelp(f),
 			Section: h.Section, OnList: f.OnList(), OnRecord: visible(f),

@@ -107,7 +107,6 @@
           "create": [
             "title",
             "body",
-            "status",
             "rank",
             "pinned",
             "tags"
@@ -260,7 +259,7 @@
             "onList": true,
             "onRecord": true,
             "editable": {
-              "create": true,
+              "create": false,
               "update": false
             },
             "control": "select",
@@ -1161,15 +1160,7 @@
           "summary": []
         },
         "layout": {
-          "columns": [
-            "title",
-            "createdAt",
-            "updatedAt",
-            "status",
-            "rank",
-            "pinned",
-            "tags"
-          ],
+          "columns": [],
           "overview": [],
           "information": [
             "createdAt",
@@ -1181,14 +1172,7 @@
             "tags"
           ],
           "sections": [],
-          "create": [
-            "title",
-            "body",
-            "status",
-            "rank",
-            "pinned",
-            "tags"
-          ],
+          "create": [],
           "update": [
             "title",
             "body",

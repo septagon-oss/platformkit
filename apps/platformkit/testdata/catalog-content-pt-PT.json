@@ -221,10 +221,7 @@
         "title",
         "body",
         "coverImageId",
-        "kind",
-        "status",
-        "publishedAt",
-        "author"
+        "kind"
       ],
       "update": [
         "slug",
@@ -462,7 +459,7 @@
         "onList": true,
         "onRecord": true,
         "editable": {
-          "create": true,
+          "create": false,
           "update": false
         },
         "control": "select",
@@ -506,7 +503,7 @@
         "onList": true,
         "onRecord": true,
         "editable": {
-          "create": true,
+          "create": false,
           "update": false
         },
         "control": "datetime",
@@ -534,7 +531,7 @@
         "onList": false,
         "onRecord": true,
         "editable": {
-          "create": true,
+          "create": false,
           "update": false
         },
         "control": "entity-picker",

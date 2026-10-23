@@ -77,6 +77,9 @@ func (in Input) word(key, fallback string) string {
 }
 
 func (in Input) offers(op string) bool {
+	if in.Singleton && op != "update" && op != "read" {
+		return false
+	}
 	return in.Operations == nil || slices.Contains(in.Operations, op)
 }
 
