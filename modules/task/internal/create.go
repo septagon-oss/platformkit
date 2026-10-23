@@ -58,7 +58,7 @@ func newTask(ctx context.Context, in contracts.CreateTask) (*contracts.Task, err
 		DueAt: utc(in.DueAt), SLADeadline: utc(in.SLADeadline), Source: in.Source, SourceRef: in.SourceRef,
 	}
 	if err := task.Validate(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %v", crud.ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %w", crud.ErrInvalid, err)
 	}
 	return task, nil
 }
