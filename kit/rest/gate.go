@@ -245,7 +245,7 @@ func entityValidate(ctx context.Context, e any) error {
 		return nil
 	}
 	if err := v.Validate(ctx); err != nil {
-		return fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		return fmt.Errorf("%w: %w", crud.ErrInvalid, err)
 	}
 	return nil
 }

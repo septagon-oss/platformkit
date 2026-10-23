@@ -35,6 +35,11 @@
 //
 // # The messages are a marker other packages parse, not decoration
 //
+// A validator that returns Violations is read without any of this: the wrap
+// keeps its identity (errors.As) and the problem document carries it as
+// "violations". The prefix is parsed only for validators that still return
+// prose; that fallback goes with the last of them.
+//
 // Each message keeps the "crud: " prefix it was given. That prefix names the
 // package that owned these values before this one, and it is load-bearing past
 // its own package rather than inert text: kit/rest derives the field message a
@@ -52,7 +57,10 @@
 // what a client is answered.
 package fault
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // The three failures a caller distinguishes. What the mapping recognises past
 // these is an outage, except the authorization refusals kit/tenancy declares,
@@ -70,3 +78,42 @@ var (
 	// package's: a duplicate value is correctable, and the last one away is not.
 	ErrConflict = errors.New("crud: conflict")
 )
+
+// Violation is one correctable refusal of a submission. Location is the wire
+// name of the field it is about ("a.b" when nested, empty for the whole
+// entity), Code a stable lower_snake token a client may branch or translate on
+// (required, too_long, not_one_of, inconsistent, invalid, schema), and Message
+// the English sentence a person reads. A message never echoes a submitted value
+// that could be a secret.
+type Violation struct {
+	Location string `json:"location"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+}
+
+// Violations is the error a validator returns when it refused a submission for
+// one or more reasons. It answers errors.Is(err, ErrInvalid) and is found with
+// errors.As, so a wrapper that keeps the chain keeps the fields. Its text is the
+// messages alone, because the sentinel's wrap supplies the prefix.
+type Violations []Violation
+
+// Error joins the messages with "; ".
+func (v Violations) Error() string {
+	messages := make([]string, len(v))
+	for i, one := range v {
+		messages[i] = one.Message
+	}
+	return strings.Join(messages, "; ")
+}
+
+// Is reports that Violations are an ErrInvalid.
+func (v Violations) Is(target error) bool { return target == ErrInvalid }
+
+// Invalid returns the violations as an error, or nil when there are none: a
+// submission that broke no rule is accepted.
+func Invalid(v ...Violation) error {
+	if len(v) == 0 {
+		return nil
+	}
+	return Violations(v)
+}

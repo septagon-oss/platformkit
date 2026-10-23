@@ -22,6 +22,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/modules/task/domain"
 )
 
@@ -187,41 +188,63 @@ func (t *Task) IsOverdue(now time.Time) bool {
 
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: a title that differs
-// only in whitespace is the same title, and two callers must not disagree.
+// only in whitespace is the same title, and two callers must not disagree. It
+// reports every rule the task breaks as a fault.Violation, so a form can mark
+// each control at once.
 func (t *Task) Validate(context.Context) error {
+	var out []fault.Violation
 	// Match the JSON schema and varchar limit in characters, before normalization.
 	if utf8.RuneCountInString(t.Title) > 200 {
-		return fmt.Errorf("title must have at most 200 characters")
+		out = append(out, fault.Violation{Location: "title", Code: "too_long", Message: "title must have at most 200 characters"})
 	}
 	t.Title = strings.TrimSpace(t.Title)
 	if t.Title == "" {
-		return fmt.Errorf("a task needs a title")
+		out = append(out, fault.Violation{Location: "title", Code: "required", Message: "a task needs a title"})
 	}
 	if t.Status == "" {
 		t.Status = StatusOpen
 	}
-	if !slices.Contains(statuses, t.Status) {
-		return fmt.Errorf("status %q is not a lifecycle state", t.Status)
-	}
 	if t.Priority == "" {
 		t.Priority = PriorityNormal
 	}
-	if !slices.Contains(priorities, t.Priority) {
-		return fmt.Errorf("priority %q is not a priority", t.Priority)
+	out = append(out, t.vocabularyViolations()...)
+	out = append(out, t.stateViolations()...)
+	return fault.Invalid(out...)
+}
+
+// vocabularyViolations refuses a status or priority outside its closed set.
+func (t *Task) vocabularyViolations() []fault.Violation {
+	var out []fault.Violation
+	if !slices.Contains(statuses, t.Status) {
+		out = append(out, fault.Violation{Location: "status", Code: "not_one_of", Message: fmt.Sprintf("status %q is not a lifecycle state", t.Status)})
 	}
+	if !slices.Contains(priorities, t.Priority) {
+		out = append(out, fault.Violation{Location: "priority", Code: "not_one_of", Message: fmt.Sprintf("priority %q is not a priority", t.Priority)})
+	}
+	return out
+}
+
+// stateViolations refuses the combinations of fields that contradict each
+// other. A status outside its set is reported by vocabularyViolations alone,
+// since "resolved" cannot be judged against it.
+func (t *Task) stateViolations() []fault.Violation {
+	var out []fault.Violation
 	if t.SLABreached && t.SLADeadline == nil {
-		return fmt.Errorf("a breach needs the deadline it broke")
+		out = append(out, fault.Violation{Location: "slaBreached", Code: "inconsistent", Message: "a breach needs the deadline it broke"})
+	}
+	if !slices.Contains(statuses, t.Status) {
+		return out
 	}
 	// Both halves of "resolved means resolved at a time", so a resolved task
 	// can always answer when.
 	resolved := t.Status == StatusResolved || t.Status == StatusClosed
 	if t.ResolvedAt != nil && !resolved {
-		return fmt.Errorf("a %s task cannot have a resolution time", t.Status)
+		out = append(out, fault.Violation{Location: "resolvedAt", Code: "inconsistent", Message: fmt.Sprintf("a %s task cannot have a resolution time", t.Status)})
 	}
 	if resolved && t.ResolvedAt == nil {
-		return fmt.Errorf("a %s task needs a resolution time", t.Status)
+		out = append(out, fault.Violation{Location: "resolvedAt", Code: "required", Message: fmt.Sprintf("a %s task needs a resolution time", t.Status)})
 	}
-	return nil
+	return out
 }
 
 // Service is the task lifecycle: the three transitions generic CRUD cannot

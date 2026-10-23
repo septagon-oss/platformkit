@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -54,7 +55,8 @@ func Fault(err error) error {
 	case errors.Is(err, crud.ErrNotFound):
 		return problem.NotFound("no such row, or none this tenant may see")
 	case errors.Is(err, crud.ErrInvalid):
-		return problem.New(http.StatusUnprocessableEntity, err.Error())
+		violations, _ := errors.AsType[fault.Violations](err)
+		return problem.Refusal(err.Error(), violations, err)
 	case errors.Is(err, crud.ErrConflict):
 		if _, unique := errors.AsType[*crud.UniqueConflict](err); unique {
 			return problem.Conflict("A record already uses one of these values. Change the duplicate value and try again.")
