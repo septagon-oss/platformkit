@@ -1,0 +1,60 @@
+{
+ "name": "commands-only",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:49f8e9e7afb685304c3aed6b9b51d0f43bafedf83dd0d2bf652f238647fc9b5c",
+  "expectedHash": "sha256:260398a42d4988402d62990301e060d8057ef05899de2d43c985a60d2e0de248"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": []
+  },
+  "hints": {},
+  "rows": [],
+  "commandsOnly": true,
+  "operations": [],
+  "commands": [
+   {
+    "Verb": "retire_key",
+    "Summary": "",
+    "Undo": "",
+    "HasResult": false,
+    "Hints": {
+     "Destructive": true,
+     "Confirmation": {
+      "title": "Retire?",
+      "body": "b",
+      "confirmLabel": "Retire"
+     },
+     "SuccessMessage": "Retired"
+    }
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "fields": [],
+   "layout": {
+    "columns": [],
+    "create": []
+   },
+   "commands": [
+    {
+     "verb": "retire_key",
+     "label": "Retire key",
+     "destructive": true,
+     "confirmation": {
+      "title": "Retire?",
+      "confirmLabel": "Retire"
+     },
+     "successMessage": "Retired"
+    }
+   ]
+  }
+ }
+}
