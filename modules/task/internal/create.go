@@ -26,7 +26,7 @@ func NewReader() contracts.Reader { return NewService() }
 // row, publishes created (then assigned, then sla_breached when they apply) and
 // returns the row as it now stands. Every refusal is decided before the insert.
 func (s *Service) Create(ctx context.Context, tx db.Tx[db.Tenant], in contracts.CreateTask) (*contracts.Task, error) {
-	task, err := newTask(ctx, in)
+	task, err := NewTask(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +48,20 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.Tenant], in contracts.
 	return s.lifecycle().CheckSLA(ctx, tx, task.ID)
 }
 
-// newTask is the entity a CreateTask describes, normalised and checked.
-func newTask(ctx context.Context, in contracts.CreateTask) (*contracts.Task, error) {
+// NewTask is the entity a CreateTask describes: normalised and checked, with the
+// identity fields left for the caller that can supply them.
+//
+// Create runs it before anything is inserted, so every refusal is decided with no
+// write behind it, and this module's test double runs the same call rather than a
+// copy of it, which is why the two worlds cannot decide creation differently.
+//
+// It refuses with crud.ErrInvalid — a source over 40 characters, a sourceRef over
+// 120, an assignee that is uuid.Nil, a non-nil time that is the zero instant, and
+// every rule Task.Validate refuses — and otherwise returns the task with its title
+// trimmed, its Status and Priority defaulted by that same Validate, its two times
+// in UTC, and its id, tenant, revision, timestamps, breach flag and assignee left
+// zero.
+func NewTask(ctx context.Context, in contracts.CreateTask) (*contracts.Task, error) {
 	if err := refuseInput(in); err != nil {
 		return nil, err
 	}

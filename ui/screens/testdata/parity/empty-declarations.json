@@ -1,0 +1,57 @@
+{
+ "name": "empty-declarations",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:d98541bb54280035af4b0ba52e0b27dedbe5ff7e7a78e4d2bad660564809772d",
+  "expectedHash": "sha256:789ed1bae1a0f6e3ee3a72b275ac04dd012958b55be73938e48abc53b7e4d524"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "note",
+     "type": "string"
+    }
+   ]
+  },
+  "hints": {
+   "SummaryFields": [],
+   "Sortable": [],
+   "Sections": []
+  },
+  "rows": []
+ },
+ "expected": {
+  "resolved": {
+   "titles": {
+    "summary": []
+   },
+   "layout": {
+    "columns": [
+     "title",
+     "note"
+    ],
+    "sections": []
+   },
+   "list": {
+    "sorts": [],
+    "filters": [],
+    "defaultSort": ""
+   }
+  }
+ }
+}

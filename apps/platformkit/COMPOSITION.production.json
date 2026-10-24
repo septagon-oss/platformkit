@@ -254,7 +254,10 @@
     {
       "name": "task",
       "provides": [
-        "taskcontracts.Service"
+        "taskcontracts.Service",
+        "taskcontracts.Creator",
+        "taskcontracts.Reader",
+        "taskcontracts.LockedReader"
       ],
       "needs": [
         {

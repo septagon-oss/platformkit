@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui/resource"
 )
@@ -100,6 +101,13 @@ type Entry struct {
 	// already installed reads what it read before this field existed and
 	// CatalogVersion stays where it is.
 	Presentation *EntryPresentation `json:"presentation,omitempty"`
+	// Resolved is the presentation policy decided once on the server — titles,
+	// column order, labels, tones, sort queries, command copy — for the request's
+	// language, so no shell derives it again. It follows Presentation, which it is
+	// computed from, and is absent only from a document an older server wrote; a
+	// shell that finds a policyVersion it knows uses it whole, and one that does
+	// not keeps reading the entry the way it always did.
+	Resolved *present.Resolved `json:"resolved,omitempty"`
 	// Screen is the workspace address of the generated screen — /app/task/tasks
 	// — stated because the kernel composed it and a shell cannot derive it any
 	// more. It used to derive the screen's path from the API's, by cutting
@@ -221,6 +229,13 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // on the registration, which every request reads, so writing a translated word
 // into them would let one request's Accept-Language decide the next one's screen.
 func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text) Catalog {
+	return DescribeIn(ctx, resources, text, "")
+}
+
+// DescribeIn is DescribeLanguage that also says which language `text` speaks, so
+// every entry's `resolved.language` names the tag the strings were resolved for.
+// An empty tag is the declaration as written, printed as English.
+func DescribeIn(ctx context.Context, resources []httpx.Resource, text Text, language string) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
 		// r is this loop's copy, so narrowing its commands to the ones this
@@ -231,7 +246,7 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 				// A key retiring itself reads nothing about keys: the resource mounts
 				// no read route at all, so the entry is the command alone, for the one
 				// caller that command admits.
-				out.Resources = append(out.Resources, commandsNotRows(Localise(r, text)))
+				out.Resources = append(out.Resources, commandsNotRows(Localise(r, text), text, language))
 			}
 			continue
 		}
@@ -248,11 +263,11 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 			// The row schema names fields of rows this caller may not look at, and the
 			// screen is the list of them: both go before the resource is translated.
 			r.Schema.Fields, r.Immutable = nil, nil
-			out.Resources = append(out.Resources, commandsNotRows(Localise(r, text)))
+			out.Resources = append(out.Resources, commandsNotRows(Localise(r, text), text, language))
 			continue
 		}
 		r = Localise(r, text)
-		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
+		out.Resources = append(out.Resources, DescribeEntry(r, r.Writable(ctx), text, language))
 	}
 	return out
 }
@@ -261,7 +276,9 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 // through one of its commands, which is the case two different ways: a CommandsOnly
 // resource mounts no read route at all, and a readable resource can be readable to
 // everybody but this caller. Either way the entry names no screen, describes no row
-// and offers no operation, so a shell draws the commands and no list or form.
+// and offers no operation, so a shell draws the commands and no list or form. The
+// policy it does carry is resolved in the request's language, as every other entry
+// in the document is.
 //
 // The operation list prints empty rather than absent for the one reason that
 // matters to a build in a pocket: an absent list means all five, so leaving it out
@@ -269,8 +286,8 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 // doors to draw on the very routes that answer this caller nothing. Writable
 // follows the same rule — with no create, update or delete on offer, no guard on a
 // write route makes a write possible here.
-func commandsNotRows(r httpx.Resource) Entry {
-	e := Describe1(r, false)
+func commandsNotRows(r httpx.Resource, text Text, language string) Entry {
+	e := DescribeEntry(r, false, text, language)
 	e.Screen, e.Operations = "", []string{}
 	return e
 }
@@ -307,6 +324,14 @@ func Localise(r httpx.Resource, text Text) httpx.Resource {
 // is asking, the set says whether anything here answers a write at all, and
 // `writable` is what this caller may *do*. See Entry.
 func Describe1(r httpx.Resource, writable bool) Entry {
+	return DescribeEntry(r, writable, nil, "")
+}
+
+// DescribeEntry is Describe1 for one request: the resource is already localised
+// (see Localise), and `text` and `language` reach the words the policy adds and
+// name the tag printed as `resolved.language`. A nil text and an empty language
+// are Describe1.
+func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) Entry {
 	command := slices.ContainsFunc(r.Commands, func(c httpx.Command) bool {
 		return c.Run != nil && c.Auth.Declared()
 	})
@@ -333,6 +358,7 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 			Presentation: commandDeviations(c.Present),
 		})
 	}
+	e.Resolved = resolve(r, text, language)
 	return e
 }
 
@@ -345,6 +371,39 @@ func verb(c httpx.Command) string {
 		return ""
 	}
 	return c.Method
+}
+
+// resolve is the entry's presentation policy for the commands this caller may call.
+func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
+	commands := make([]present.CommandInput, 0, len(r.Commands))
+	for _, c := range r.Commands {
+		commands = append(commands, present.CommandInput{Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
+	}
+	resolved := present.Resolve(present.Input{
+		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
+		CommandsOnly: r.CommandsOnly, Operations: r.OperationWords(), Commands: commands,
+		Language: language, Text: policyText(text),
+	})
+	return &resolved
+}
+
+// policyKeys maps the words the policy adds to the screens.* copy keys that
+// every locale carries, so the policy and the generated screens share one list.
+var policyKeys = map[string]string{
+	"present.missing": "screens.missing", "present.true": "screens.true",
+	"present.false": "screens.false", "present.emptyTitle": "screens.empty_title",
+}
+
+func policyText(text Text) func(key, fallback string) string {
+	if text == nil {
+		return nil
+	}
+	return func(key, fallback string) string {
+		if mapped, ok := policyKeys[key]; ok {
+			key = mapped
+		}
+		return text(key, fallback)
+	}
 }
 
 // derived is the command's address when a shell could not work it out itself,

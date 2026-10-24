@@ -386,5 +386,41 @@
     "plural": {
       "": "Continue"
     }
+  },
+  "screens.missing": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "—",
+    "plural": {
+      "": "—"
+    }
+  },
+  "screens.true": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "Yes",
+    "plural": {
+      "": "Yes"
+    }
+  },
+  "screens.false": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "No",
+    "plural": {
+      "": "No"
+    }
+  },
+  "screens.empty_title": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "—",
+    "plural": {
+      "": "—"
+    }
   }
 }

@@ -92,6 +92,12 @@ func product(cfg config.Config, grants *lateCatalogue, ports *latePorts) *pkit.M
 // productPictures uses the application's declared picture doors in its ordinary
 // provider, so fixture and production compositions share the same typed wiring.
 func productPictures(cfg config.Config, grants *lateCatalogue, ports *latePorts, pictures admincontracts.Pictures) *pkit.Module {
+	return productWithPolicy(cfg, grants, ports, pictures, taskPolicy)
+}
+
+// productWithPolicy supplies explicit policy rules through the same product
+// declarations as the reference composition. The caller owns the adapter.
+func productWithPolicy(cfg config.Config, grants *lateCatalogue, ports *latePorts, pictures admincontracts.Pictures, policy tenancy.Policy) *pkit.Module {
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
@@ -172,8 +178,8 @@ func productPictures(cfg config.Config, grants *lateCatalogue, ports *latePorts,
 		// this file's decision and not the audit module's: an installation that
 		// sells the trail to everybody composes no Plan and nothing is asked.
 		pkit.Put[auditcontracts.Plan](w, auditcontracts.Plan("audit-trail"))
-		// Object scope (decision 0011): tasks are decided by policy/task.rego.
-		pkit.Put[tenancy.Policy](w, taskPolicy)
+		// The product supplies object-scope rules; modules keep their lifecycle rules.
+		pkit.Put[tenancy.Policy](w, policy)
 		// The installation's flags, read by kit/config out of the flags block and
 		// answered once for the whole process: configFlags targets nobody, not even
 		// by tenant. One evaluator is built here, for the one door that asks it.
