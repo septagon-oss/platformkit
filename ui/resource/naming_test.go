@@ -31,13 +31,12 @@ func named(entityName string) resource.Resource {
 
 func TestASetTheCatalogueAlreadyNamedKeepsItsOwnName(t *testing.T) {
 	t.Parallel()
-	// The heading humanises the entity and the empty state says it as the schema
-	// wrote it: "settings" is a set in both, and neither line adds a second s.
+	// The heading and empty state read the resolved noun: "settings" is a set in both, and neither line adds a second s.
 	for _, c := range []struct{ entity, want, empty, mustNot string }{
-		{"settings", "Settings", "No settings yet.", "Settingss"},
-		{"content", "Content", "No content yet.", "Contents"},
-		{"news", "News", "No news yet.", "Newss"},
-		{"note", "Notes", "No notes yet.", ""},
+		{"settings", "settings", "No settings yet.", "Settingss"},
+		{"content", "content", "No content yet.", "Contents"},
+		{"news", "news", "No news yet.", "Newss"},
+		{"note", "notes", "No notes yet.", ""},
 	} {
 		out := render(t, resource.List(named(c.entity), opts, nil, 0, 1, "", false).Body)
 		for _, want := range []string{">" + c.want + "<", c.empty} {
@@ -60,9 +59,9 @@ func TestTheRecordTrailNamesTheSetNotTheWordPlusAnS(t *testing.T) {
 	t.Parallel()
 	row := map[string]any{"id": "7", "name": "Welcome"}
 	for _, c := range []struct{ entity, want, mustNot string }{
-		{"content", "Content", "Contents"},
-		{"settings", "Settings", "Settingss"},
-		{"note", "Notes", ""},
+		{"content", "content", "Contents"},
+		{"settings", "settings", "Settingss"},
+		{"note", "notes", ""},
 	} {
 		detail := render(t, resource.Detail(named(c.entity), opts, row, true).Body)
 		if !strings.Contains(detail, `href="/app/workspace/`+c.entity+`">`+c.want+"<") {

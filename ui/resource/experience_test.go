@@ -23,7 +23,7 @@ func TestWorkspaceListUsesTheDeclaredReading(t *testing.T) {
 	row := map[string]any{"id": "1", "title": "Internal heading", "body": "Customer renewal", "rank": 2, "status": "open"}
 	v := resource.List(r, opts, []map[string]any{row}, 1, 1, "", true)
 	body := render(t, v.Body)
-	for _, want := range []string{"Entries", "Keep decisions together.", "New entry", "Customer renewal", "1 entry"} {
+	for _, want := range []string{"entries", "Keep decisions together.", "New entry", "Customer renewal", "1 entry"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("list lacks %q", want)
 		}

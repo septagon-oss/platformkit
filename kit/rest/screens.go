@@ -1,15 +1,10 @@
 package rest
 
-// screens.go registers the entity itself alongside its routes, so that the
-// screens of stage E4 are derived from the same Spec the API is.
-//
-// The five closures are the five routes without the HTTP: same transaction,
-// same errors, same events, same read-only fields. A screen calls them in
-// process rather than calling its own API over a socket, which would be a
-// second request, a second transaction and a second authorization of a caller
-// the first one already recognised.
+// Resource closures share the API transaction, error mapping and row projection.
+// Screen adapters call them in-process under the same authorization.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,14 +39,8 @@ func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T,
 	return row(e)
 }
 
-// resource is this Spec as httpx.Resource, for Mount to register.
-//
-// It carries the Spec's own answers — its two guard declarations and its
-// operation set — because the screens are generated from this value and not from
-// the Spec, and a door a shell draws behind which no route answers is a refusal
-// with a button on it. The closures of a verb this Spec did not mount refuse
-// rather than being nil, the way rest.Singleton's do: the generator calls all
-// five, and a nil closure is a panic where a sentence belongs.
+// resource projects a Spec's schema, guards and mounted operation set.
+// Withheld operations retain refusing closures for existing consumers.
 func (s Spec[T]) resource() httpx.Resource {
 	schema := s.Schema()
 	res := httpx.Resource{
@@ -76,7 +65,10 @@ func row(e any) (map[string]any, error) {
 		return nil, err
 	}
 	var m map[string]any
-	return m, json.Unmarshal(b, &m)
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.UseNumber()
+	err = decoder.Decode(&m)
+	return m, err
 }
 
 // decode builds an entity from a form's values, through the same decoder the
@@ -94,26 +86,11 @@ func decode[T crud.Entity](values map[string]any) (T, error) {
 	return e, json.Unmarshal(b, &e)
 }
 
-// The rest of this file is what a screen needs to turn a Resource into HTML and
-// a submitted form back into a write. It lives here rather than in the one
-// module that renders pages today because none of it is about the shell: it is
-// the schema read one more way, and a second HTML consumer — a public theme, a
-// customer's own admin — would otherwise write it again and disagree about what
-// a boolean looks like or which control a refusal belongs to.
-//
-// Nothing here imports an HTML library. These are strings and maps in, strings
-// and maps out; the components are the caller's business.
+// Form decoding and fault projection stay transport-neutral: strings and maps
+// in and out, with HTML composition owned by the caller.
 
-// conditional takes the row's write count out of the values a form posted, and gives it
-// back as the tag kit/rest's conditional doors compare against. The map it returns holds
-// the fields to write and nothing else, so the one merge behind both write doors keeps
-// refusing every name that is not a field — including this one, which belongs to the door
-// and not to the row.
-//
-// A form that carried nothing gives "" and an unconditional write. A form that carried
-// something no row's revision could be is refused by name: a condition nobody can read is
-// not a condition, and writing whatever arrived as though it had never been sent would be
-// the loss the tag exists to prevent.
+// conditional separates the form's observed revision from entity values.
+// Absent means unconditional; malformed revisions are refused before writing.
 func conditional(values map[string]any) (string, map[string]any, error) {
 	raw, sent := values[entity.RevisionCondition]
 	if !sent {
@@ -149,15 +126,8 @@ func Writable(values map[string]any, immutable []string) map[string]any {
 	return out
 }
 
-// FieldErrorsIn is FieldErrors for a screen that does not speak English. A
-// rich-text refusal carries its structured issues beside the problem, because
-// the English sentences are the contract the JSON API answers with and a form
-// redrawn in another language must not print them at a reader who asked in
-// theirs. text is that language's formatter — the same one that names the form's
-// own labels — and each issue's key is in its package's catalogue.
-//
-// Every other refusal is prose this package cannot take apart, so it comes back
-// from FieldErrors as it stands.
+// FieldErrorsIn localizes structured rich-text violations into field messages.
+// Other faults keep FieldErrors behavior; nil text preserves their source copy.
 func FieldErrorsIn(err error, fields []crud.Field, text func(key, fallback string) string) (map[string]string, string) {
 	var refused *richTextProblem
 	if text == nil || !errors.As(err, &refused) {
@@ -202,14 +172,8 @@ func invalid(field, why string) error {
 	return p
 }
 
-// FieldErrors reads a problem back into the fields it is about, so a form marks
-// the control rather than only shouting above it, and returns the whole message
-// as well. kit/problem's Errors carry "field: message"; a validation Detail that
-// names a field is matched too, because kit/crud's validation messages are prose.
-//
-// The Detail match is on the field's name as a word of its own. It used to be a
-// substring, so a message about "subtitle" marked "title" — the wrong control,
-// with the right message, which is the confusing half of both.
+// FieldErrors maps typed violations and actionable validation prose to known
+// fields, returning the overall detail separately. Field names match whole words.
 func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok {
