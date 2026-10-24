@@ -95,7 +95,15 @@ func (r Resource) primaryAction(collection bool) string {
 }
 
 func resolvedFormField(f entity.Field, p present.ResolvedField) forms.Field {
-	f.Widget, f.Doc = p.Control, p.Help
+	f.Doc = p.Help
+	// The control the resolver names is the one the form draws — except where
+	// its only reason is the column's storage type. A `text` column is not its
+	// author asking for a five-row box, and an email address was one. Every
+	// other answer stays as the resolver gave it, and ui/forms still reads the
+	// field's type for the input it draws.
+	if p.Control != "textarea" || f.Widget != "" {
+		f.Widget = p.Control
+	}
 	f.Enum = make([]string, 0, len(p.Options))
 	options := make([]components.SelectOption, 0, len(p.Options))
 	for _, option := range p.Options {

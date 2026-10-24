@@ -30,6 +30,13 @@ func listURL(at, sort string, filters map[string]string) string {
 func choices(r Resource, o Options, sort string) ([]components.ChoiceLink, []components.ChoiceLink) {
 	sorts, filters := []components.ChoiceLink{}, []components.ChoiceLink{}
 	for _, choice := range r.Resolved.List.Sorts {
+		// A sort chip is a column's affordance, so the page offers the order of
+		// a column it actually shows. The resolver answers what may be ordered;
+		// `hide:list` is the author saying this column is not on this screen.
+		// A row's own id is the one column ordered without being shown.
+		if choice.Field != "id" && !slices.Contains(r.Resolved.Layout.Columns, choice.Field) {
+			continue
+		}
 		sorts = append(sorts, components.ChoiceLink{Key: choice.Query, Label: choice.Label, Href: listURL(r.Screen, choice.Query, r.Selected), Selected: sort == choice.Query})
 	}
 	for _, filter := range r.Resolved.List.Filters {
