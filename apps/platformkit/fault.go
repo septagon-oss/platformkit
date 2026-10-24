@@ -221,7 +221,7 @@ func documentBuilder(gate *documentGate) func(context.Context, []httpx.Resource)
 		var text screens.Text = func(key, fallback string) string {
 			return selected.Formatter.Text(key, fallback)
 		}
-		document := screens.DescribeLanguage(ctx, resources, text)
+		document := screens.DescribeIn(ctx, resources, text, selected.Language)
 		// Where a record's picture lives, said once for the whole document rather
 		// than once per field that holds a file id. The address is the file
 		// module's — it mounts the door — and the document is the kernel's, so this
