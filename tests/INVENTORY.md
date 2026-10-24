@@ -7,9 +7,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 <!-- BEGIN GENERATED: scripts/inventory_figures.py scale -->
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 4214 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| test rows | 4215 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
 | files | 2251 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 3892 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| Go test functions | 3893 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 79 | filename prefix |
 | rows inside them | 123 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 109 / 1 / 115 / 97 | same walk |
@@ -21,7 +21,7 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 22 | push, first | asserts a golden or the published API set |
-| behaviour | 3595 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| behaviour | 3596 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 487 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
 | journey | 110 | nightly | `e2e/`: browser or device |
 <!-- END GENERATED -->
@@ -51,7 +51,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 <!-- BEGIN GENERATED: scripts/inventory_figures.py verdicts -->
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 2006 | 3828 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 2006 | 3829 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 91 | 170 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |

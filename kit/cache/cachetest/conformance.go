@@ -439,9 +439,9 @@ func Generations(t *testing.T) {
 
 	t.Run("a write stamped by no read is refused and writes nothing", func(t *testing.T) {
 		backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
-		c, err := cache.New("pkit", backend)
+		c, err := cache.NewFor("pkit", backend)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewFor: %v", err)
 		}
 		ctx := context.Background()
 		key := cache.Shared("host").Entry("acme.example")
@@ -464,9 +464,9 @@ func Generations(t *testing.T) {
 
 	t.Run("two concurrent moves are two moves and neither is lost", func(t *testing.T) {
 		backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
-		c, err := cache.New("pkit", backend)
+		c, err := cache.NewFor("pkit", backend)
 		if err != nil {
-			t.Fatalf("New: %v", err)
+			t.Fatalf("NewFor: %v", err)
 		}
 		ctx := context.Background()
 		var wg sync.WaitGroup
@@ -488,9 +488,9 @@ func Generations(t *testing.T) {
 
 func fillAcrossMove(t *testing.T) {
 	backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
-	c, err := cache.New("pkit", backend)
+	c, err := cache.NewFor("pkit", backend)
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("NewFor: %v", err)
 	}
 	reader, err := cache.NewFor("pkit", backend)
 	if err != nil {
