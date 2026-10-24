@@ -83,7 +83,15 @@ func entryWord(a addresses, o resource.Options, entry module.NavEntry) string {
 	if key, own := a.writtenHere(entry.Screen); own {
 		fallback = o.Text("admin."+key, "%s", entry.Label)
 	}
-	return o.Text("nav."+strings.ReplaceAll(strings.TrimPrefix(entry.Screen, httpx.AppRoot+"/"), "/", "."), "%s", fallback)
+	return o.Text("nav."+screenKey(entry.Screen), "%s", fallback)
+}
+
+// screenKey is the address part of a workspace copy key: the path a destination
+// serves, without the /app prefix, with its separators turned into dots. The shell
+// holds screens as absolute addresses, so a key built from the address as it stands
+// would carry an empty first segment and answer nothing.
+func screenKey(screen string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(screen, httpx.AppRoot+"/"), "/", ".")
 }
 
 // actionWord is a primary action's own words in the reader's language. An action is
@@ -92,5 +100,5 @@ func entryWord(a addresses, o resource.Options, entry module.NavEntry) string {
 // declared label answers whenever nobody catalogued that action. Which catalogue
 // answers is the product's, because the declaration is the product's copy.
 func actionWord(o resource.Options, entry module.NavEntry) string {
-	return o.Text("action."+strings.ReplaceAll(entry.Screen, "/", "."), "%s", entry.Label)
+	return o.Text("action."+screenKey(entry.Screen), "%s", entry.Label)
 }
