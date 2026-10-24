@@ -21,7 +21,7 @@ var Migrations = db.MigrationSource{
 	Owner:  "user",
 	Files:  db.Sub(schema, "migrations"),
 	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25}}},
-	// 000075 and 000076 are deliberately absent from that list: they are files this
+	// 000076 and 000077 are deliberately absent from that list: they are files this
 	// release ships new, not history the foundation applied, and an adoption is a
 	// claim about the old ledger. The reference app's upgrade fixture builds its old
 	// installation out of every version up to the highest adopted one, so naming them

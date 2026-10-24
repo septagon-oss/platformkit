@@ -30,7 +30,7 @@ import (
 // now holds by the row it gets back. The counted door is AccountLanguageVersion —
 // the one a form drawn from a read has to reach, and see it for why a second writer
 // of this field is ordinary rather than hypothetical. The counter itself and what
-// made it worth adding are modules/user/migrations/000076_user_language_revision.up.sql.
+// made it worth adding are modules/user/migrations/000077_user_language_revision.up.sql.
 type AccountLanguage interface {
 	Preferred(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (locale string, err error)
 	Choose(ctx context.Context, tx db.Tx[db.Tenant], tag string) error
