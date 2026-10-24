@@ -69,15 +69,22 @@ line_record="${APIDIFF_RECORD:-$root/scripts/baselines/public-api-v2.0.0-candida
 compat='{"ran": false, "reason": "no readable release-line record, or no python3 to compare the surface with"}'
 if [ -r "$line_record" ] && command -v python3 >/dev/null; then
 	set +e
-	compat_words=$(python3 "$root/scripts/check_public_api.py" --line-record "$line_record" HEAD 2>&1)
+	python3 "$root/scripts/check_public_api.py" --line-record "$line_record" HEAD \
+		>"$work/compat.out" 2>"$work/compat.err"
 	compat_code=$?
 	set -e
-	compat=$(printf '%s\n' "$compat_words" | jq -R -s --argjson code "$compat_code" \
+	compat_words=$(cat "$work/compat.out" "$work/compat.err")
+	# The comparison prints a JSON report; its own `result` line is the sentence for the
+	# receipt, and where the output is not that report, its last line is.
+	compat_verdict=$(jq -r '.result // empty' "$work/compat.out" 2>/dev/null || true)
+	[ -n "$compat_verdict" ] ||
+		compat_verdict=$(printf '%s\n' "$compat_words" | grep -v '^[[:space:]]*$' | tail -1)
+	compat=$(jq -n --argjson code "$compat_code" \
 		--arg frozen "$(jq -r '.frozen.commit // ""' "$line_record")" \
 		--arg command "python3 scripts/check_public_api.py --line-record ${line_record#"$root"/} HEAD" \
+		--arg verdict "${compat_verdict:-no output}" \
 		'{ran: true, exit: $code, command: $command,
-		  frozen_commit: (if $frozen == "" then null else $frozen end),
-		  verdict: (split("\n") | map(select(length > 0)) | last // "no output")}')
+		  frozen_commit: (if $frozen == "" then null else $frozen end), verdict: $verdict}')
 	[ "$compat_code" -eq 0 ] ||
 		die 1 "the exported surface moved against the line's frozen revision, so this release has no client compatibility to record: $(printf '%s\n' "$compat_words" | tail -3 | tr '\n' ' ')"
 	note "contract: $(jq -r '.verdict' <<<"$compat")"

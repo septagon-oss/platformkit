@@ -771,8 +771,10 @@ if [ "$code" -eq 0 ] && [ -n "${REHEARSE_RECEIPT:-}" ]; then
 		--argjson lines "$(count_of grep -c '' "$before_facts")" \
 		--argjson reads "$(count_of grep -c '^other/' "$work/after-facts.tsv")" \
 		--argjson foreign "$(count_of awk -F'\t' '$1 ~ /^other\// { s += $3 } END { print s + 0 }' "$work/after-facts.tsv")" \
-		--argjson ledger "$(count_of wc -l "$work/after-ledger.tsv")" \
-		'{facts_lines: $lines, boundary_reads: $reads, foreign_rows_visible: $foreign, applied_rows_retained: $ledger}')
+		--argjson ledger "$(count_of awk "END{print NR}" "$work/after-ledger.tsv")" \
+		--argjson pending "$(count_of awk -F'\t' '$1 == "outbox.pending" { print $2; exit }' "$work/after-facts.tsv")" \
+		'{facts_lines: $lines, boundary_reads: $reads, foreign_rows_visible: $foreign,
+		  applied_rows_retained: $ledger, pending_outbox_rows: $pending}')
 	mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
 	jq -n --arg base_ref "$ref" \
 		--arg base_commit "$(git rev-parse --verify --quiet "${ref}^{commit}" || true)" \
