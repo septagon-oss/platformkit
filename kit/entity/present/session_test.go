@@ -27,15 +27,22 @@ func TestGuidedPolicyDistinguishesAbsentDeniedAndAllowedCommands(t *testing.T) {
 	}
 }
 
+// sessionWords is a screen author's share of the contract: the key each label is
+// translated under, beside the English it falls back to.
+var sessionWords = map[string]string{
+	"screens.session.step": "Step {current} of {total}",
+	"screens.session.set":  "Set {current} of {total}",
+}
+
 func TestGuidedPolicyTranslationsValidateSlotsAndStayRequestLocal(t *testing.T) {
 	var work sync.WaitGroup
 	for i := range 20 {
 		work.Go(func() {
-			in := present.Input{Hints: entity.EntryHints{Session: true}, Text: func(key, fallback string) string {
+			in := present.Input{Hints: entity.EntryHints{Session: true}, SessionWords: sessionWords, Text: func(key, fallback string) string {
 				switch key {
-				case "present.session.step":
+				case "screens.session.step":
 					return "{total} · {current}"
-				case "present.session.set":
+				case "screens.session.set":
 					return "{missing}"
 				}
 				return fallback
@@ -48,7 +55,7 @@ func TestGuidedPolicyTranslationsValidateSlotsAndStayRequestLocal(t *testing.T) 
 		})
 	}
 	work.Wait()
-	if plain := present.Resolve(present.Input{Hints: entity.EntryHints{Session: true}}).Session; plain.Labels["step"] != "Step {current} of {total}" {
+	if plain := present.Resolve(present.Input{Hints: entity.EntryHints{Session: true}, SessionWords: sessionWords}).Session; plain.Labels["step"] != "Step {current} of {total}" {
 		t.Fatal("translated response changed registration")
 	}
 }

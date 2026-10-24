@@ -101,6 +101,8 @@ type Step struct {
 }
 
 type StepperProps struct {
+	// Segmented presents compact step links with saved completion cues.
+	Segmented bool `json:"segmented,omitzero"`
 	ComponentProps
 	Label          string       `json:"label"`
 	State          ContentState `json:"state,omitzero"`
@@ -182,9 +184,17 @@ func StepperWithSlots(p StepperProps, slots StepperSlots) g.Node {
 	body := []g.Node{stateBody(p.State, slots.StateSlots),
 		h.Progress(g.Attr("value", itoa(completed)), h.Max(itoa(len(p.Steps))), g.Attr("aria-label", p.ProgressText)),
 		Text(TextProps{Content: p.ProgressText, Size: "sm"}),
-		h.Details(h.Open(), h.Summary(h.Class(clDataDisclosure.Compile()), g.Text(p.Label)), h.Nav(g.Attr("aria-label", p.Label), h.Ol(h.Class(clDataList.Compile()), g.Group(items)))),
+		stepperNavigation(p, items),
 		g.Group(slots.ErrorSummary), h.FieldSet(g.If(p.FormID != "", g.Attr("form", p.FormID)), g.If(p.Disabled || p.Busy, h.Disabled()), g.Group(slots.Body)),
 		Flex(FlexProps{Wrap: true, Gap: "3"}, g.Group(slots.Back), g.Group(slots.Continue), g.Group(slots.SaveExit), g.Group(slots.Cancel)),
 		h.P(h.Role("status"), g.Attr("aria-live", "polite"), g.Attr("aria-busy", boolText(p.Busy)), g.Text(p.SaveStatusText))}
 	return sharedSection(p.ComponentProps, "stepper", p.Label, body...)
+}
+
+func stepperNavigation(p StepperProps, items []g.Node) g.Node {
+	list := h.Nav(g.Attr("aria-label", p.Label), h.Ol(h.Class(clDataList.Compile()), g.If(p.Segmented, g.Attr("data-stepper-segmented", "")), g.Group(items)))
+	if p.Segmented {
+		return list
+	}
+	return h.Details(h.Open(), h.Summary(h.Class(clDataDisclosure.Compile()), g.Text(p.Label)), list)
 }

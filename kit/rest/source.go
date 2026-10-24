@@ -18,6 +18,10 @@ type ReadSource[T crud.Entity] struct {
 }
 
 func (s Spec[T]) get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	if s.Session != nil {
+		var zero T
+		return zero, crud.ErrInvalid
+	}
 	if s.Source != nil {
 		return s.Source.Get(ctx, tx, id)
 	}
@@ -25,6 +29,9 @@ func (s Spec[T]) get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T,
 }
 
 func (s Spec[T]) list(ctx context.Context, tx db.Tx[db.Tenant], q crud.Query) ([]T, int64, error) {
+	if s.Session != nil {
+		return nil, 0, crud.ErrInvalid
+	}
 	if s.Source != nil {
 		return s.Source.List(ctx, tx, q)
 	}
@@ -32,6 +39,9 @@ func (s Spec[T]) list(ctx context.Context, tx db.Tx[db.Tenant], q crud.Query) ([
 }
 
 func (s Spec[T]) count(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error) {
+	if s.Session != nil {
+		return 0, crud.ErrInvalid
+	}
 	if s.Source != nil {
 		_, total, err := s.Source.List(ctx, tx, crud.Query{Limit: 1})
 		return total, err

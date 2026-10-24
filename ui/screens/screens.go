@@ -73,11 +73,11 @@ type (
 // module that wants pages for a resource the generator would leave bare writes
 // them, the way modules/admin writes its own.
 func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
-	// at is where the screens are: /app/<module>/<entity>, composed by the kernel
-	// when the resource was registered. Every link is built from it. rel is the
-	// same address before the prefix, which is the only form a router accepts —
-	// the module wrote it, and it is the reason this shell never has to know
-	// where the workspace is mounted.
+	if res.Guided != nil {
+		mountGuided(router, s, o, res)
+		return
+	}
+	// Use the composed address for links and the relative address for routes.
 	at, rel := res.Screen, res.Path
 	if at == "" && !res.Singleton {
 		// No address to link from, so nothing to mount. kit/rest composes this

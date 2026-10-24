@@ -137,6 +137,7 @@ var Hooks = []string{
 	"data-step",
 	"data-step-key",
 	"data-step-state",
+	"data-stepper-segmented",
 	"data-tabs-active-classes",
 	"data-tabs-active-tab-value",
 	"data-tabs-contract",

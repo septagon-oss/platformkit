@@ -80,7 +80,11 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 func CommandResult[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(context.Context, db.Tx[db.Tenant], uuid.UUID, I) (Response[O], error), opts CommandOptions,
 ) {
-	registerCommand(surfaces, spec, verb, summary, description, events, run, opts, entity.FieldsOf(reflect.TypeFor[O]()), true, func(out Response[O]) httpx.CommandReply {
+	output := []entity.Field(nil)
+	if spec.Session == nil {
+		output = entity.FieldsOf(reflect.TypeFor[O]())
+	}
+	registerCommand(surfaces, spec, verb, summary, description, events, run, opts, output, true, func(out Response[O]) httpx.CommandReply {
 		return httpx.CommandReply{Result: out.Result, UndoToken: out.UndoToken}
 	})
 }
@@ -199,6 +203,16 @@ func jsonNameOf(sf reflect.StructField) string {
 type commandInput[I any] struct {
 	ID   uuid.UUID `path:"id" format:"uuid" doc:"The row's id"`
 	Body *I
+}
+
+// sessionRoute is a guided command's JSON route input. The body arrives as bytes
+// as well as the decoded arguments, because the closed session contract refuses an
+// unknown, repeated or missing member that a struct decode would accept silently.
+// A guided command always carries arguments, so its body is required.
+type sessionRoute[I any] struct {
+	RawBody []byte
+	ID      uuid.UUID `path:"id" format:"uuid" doc:"The session's id"`
+	Body    *I
 }
 
 // collectionInput is the same without the id, for a command whose path has no
@@ -344,6 +358,17 @@ func mountCommand[I any, T crud.Entity, O any](
 	if opts.Collection {
 		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (O, error) {
 			return answer(ctx, tx, uuid.Nil, in.Body)
+		}, responseOptions)
+		return
+	}
+	if spec.Session != nil {
+		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *sessionRoute[I]) (O, error) {
+			closed, err := sessionJSON[I](in.RawBody)
+			if err != nil {
+				var zero O
+				return zero, err
+			}
+			return answer(ctx, tx, in.ID, &closed)
 		}, responseOptions)
 		return
 	}

@@ -34,6 +34,16 @@ import (
 // how they get a rule in @layer components — so composedClasses reads those off
 // the composition instead of off this list.
 var renderedHooks = map[string]string{
+	"data-guided-skip":          "ui/resource/guided_rest.go",
+	"data-guided-add":           "ui/resource/guided_rest.go",
+	"data-guided-seconds":       "ui/resource/guided_rest.go",
+	"data-guided-rest":          "ui/resource/guided_rest.go",
+	"data-guided-start":         "ui/resource/guided.go",
+	"data-guided-target":        "ui/resource/guided.go",
+	"data-guided-heading":       "ui/resource/guided.go",
+	"data-guided-status":        "ui/resource/guided.go",
+	"data-guided-timers":        "ui/resource/guided.go",
+	"data-guided":               "ui/resource/guided.go",
 	"data-confirm":              "ui/resource/resource.go",
 	"data-confirm-label":        "ui/resource/resource.go",
 	"data-gallery":              "ui/export/storybook.go",

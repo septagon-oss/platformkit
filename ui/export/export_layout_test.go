@@ -227,7 +227,15 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// leaf-by-leaf count: the document before it exists only outside the merge. The
 	// digest below is this merged tree's own measurement, printed by the refusal and
 	// copied from it.
-	if legacy.SHA256 != "a76f10dda799497ceed8f725bb98e94e96dfd91680b8e444feec0f6fd2efb316" {
+	//
+	// The guided session moves it again, in two named ways. Measured by exporting this
+	// tree and its merge base and walking both documents leaf by leaf: 99,996 leaves
+	// become 100,028. The 32 added leaves are one `segmented` schema property beside
+	// each of the 32 Stepper captures that now declares it; of the 2 changed, one is
+	// /sha256 and the other /css, whose component layer gains the rules that space a
+	// session page and its timer list. No example, schema, notice, theme, icon or font
+	// policy moves, and no leaf is removed.
+	if legacy.SHA256 != "3e47e22a77916626fab4be447b3cb55d487e8433179cb09a92fe98a0341eba60" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

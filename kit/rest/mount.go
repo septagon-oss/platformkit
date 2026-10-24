@@ -18,6 +18,10 @@ import (
 // operator grants; generated screens stay in the workspace. Invalid Specs panic
 // before mounting. Request failures use Fault.
 func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
+	if s.Session != nil {
+		s.mountSession(surfaces)
+		return
+	}
 	s.check()
 	schema := s.Schema()
 	read, write := s.readRouter(surfaces), s.writeRouter(surfaces)

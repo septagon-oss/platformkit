@@ -81,6 +81,11 @@ type Pictures struct {
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
+	// ReadContract identifies the nested session values instead of scalar fields.
+	ReadContract *struct {
+		Kind    string `json:"kind"`
+		Version int    `json:"version"`
+	} `json:"readContract,omitempty"`
 	entity.Schema
 	// Presentation is this resource as its author said it reads — the words, the
 	// icon, the group, which field names a row and which block each field belongs
@@ -295,6 +300,14 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present, r.Commands), Screen: r.Screen,
 		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
 		Operations: r.OperationWords()}
+	if r.Guided != nil {
+		e.ReadContract = &struct {
+			Kind    string `json:"kind"`
+			Version int    `json:"version"`
+		}{"guided-session", 1}
+		e.Screen += "/{id}"
+		e.Writable = command
+	}
 	if writable {
 		e.WritePath = r.WritePath
 	}
@@ -317,11 +330,57 @@ func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 		commands = append(commands, present.CommandInput{Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
 	}
 	resolved := present.Resolve(present.Input{
+		SessionCommands: r.GuidedCommands, SessionWords: sessionWords,
 		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
 		CommandsOnly: r.CommandsOnly, Operations: r.OperationWords(), Commands: commands,
 		Language: language, Text: policyText(text),
 	})
 	return &resolved
+}
+
+// sessionWords is the vocabulary a guided screen says: each key the catalogue
+// translates it under, beside the English it falls back to. The words are written
+// here because this package mounts the screens that say them, and
+// ui/resource.Catalogues carries a translation for every key in this list.
+var sessionWords = map[string]string{
+	"screens.session.step":                   "Step {current} of {total}",
+	"screens.session.set":                    "Set {current} of {total}",
+	"screens.session.completed_step":         "Step {current} of {total}, completed",
+	"screens.session.start_timer":            "Start \u201c{name}\u201d {duration}",
+	"screens.session.running_timer":          "{name}: {duration} remaining",
+	"screens.session.timer_ended":            "{name} timer ended",
+	"screens.session.timers":                 "Timers",
+	"screens.session.cancel_timer":           "Cancel {name} timer",
+	"screens.session.restart_timer":          "Start {name} again",
+	"screens.session.done_set":               "Done set",
+	"screens.session.next_set":               "Next set",
+	"screens.session.next_step":              "Next step",
+	"screens.session.target_repetitions":     "Repetitions",
+	"screens.session.target_duration":        "Duration",
+	"screens.session.previous_step":          "Previous step",
+	"screens.session.rest":                   "Rest",
+	"screens.session.rest_ended":             "Rest ended",
+	"screens.session.rest_added":             "Added 15 seconds",
+	"screens.session.up_next":                "Up next",
+	"screens.session.add_15":                 "+15 s",
+	"screens.session.skip":                   "Skip rest",
+	"screens.session.continue":               "Continue",
+	"screens.session.finish":                 "Finish session",
+	"screens.session.finish_partial":         "Finish with {completed} of {total} sets",
+	"screens.session.completed":              "Completed {completed} of {total} sets",
+	"screens.session.end":                    "End of session",
+	"screens.session.nothing_recorded":       "Nothing recorded",
+	"screens.session.navigation_only":        "Next does not record progress.",
+	"screens.session.completion_unavailable": "Set completion is unavailable.",
+	"screens.session.finish_unavailable":     "Finish is unavailable.",
+	"screens.session.retry":                  "Retry",
+	"screens.session.reload":                 "Reload",
+	"screens.session.no_script":              "Live countdown and sound need JavaScript.",
+	"screens.session.storage_unavailable":    "Timers will reset if you reload.",
+	"screens.session.wake_unavailable":       "Your screen may sleep.",
+	"screens.session.enable_sound":           "Enable sound",
+	"screens.session.exit":                   "Exit session",
+	"screens.session.keyboard":               "Arrow keys change steps. Space starts a timer or skips rest.",
 }
 
 // policyKeys maps the words the policy adds to the screens.* copy keys that

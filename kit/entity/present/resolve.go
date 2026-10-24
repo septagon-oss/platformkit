@@ -13,6 +13,11 @@ import (
 // holds it for one request. Resolve reads it and writes none of it, so a shared
 // registration may be resolved concurrently in several languages.
 type Input struct {
+	// SessionCommands names declared completion and finish capabilities, and
+	// SessionWords the screen's vocabulary: each catalogue key beside the English
+	// it falls back to. Both are read only when Hints.Session selects the contract.
+	SessionCommands [2]bool
+	SessionWords    map[string]string
 	// Schema and Hints are the registration's, with declared words already
 	// translated by the caller.
 	Schema entity.Schema
@@ -49,6 +54,7 @@ type CommandInput struct {
 func Resolve(in Input) Resolved {
 	r := Resolved{
 		PolicyVersion: PolicyVersion,
+		Session:       sessionPolicy(in),
 		Language:      cmp.Or(in.Language, "en"),
 		Identity:      identity(in),
 		Fields:        []ResolvedField{},

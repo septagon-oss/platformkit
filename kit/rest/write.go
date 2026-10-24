@@ -22,6 +22,10 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if s.Session != nil {
+		var zero T
+		return zero, crud.ErrInvalid
+	}
 	if s.Create != nil {
 		return s.Create(ctx, tx, e)
 	}
@@ -77,6 +81,10 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // Responses, hooks and events therefore use the snapshot that this transaction
 // replaces, including after contention.
 func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any, ifMatch string) (T, error) {
+	if s.Session != nil {
+		var zero T
+		return zero, crud.ErrInvalid
+	}
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
 		return e, err
@@ -169,6 +177,10 @@ func reportDiff(before any, e any, values map[string]any) (func(), error) {
 }
 
 func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, ifMatch string) (T, error) {
+	if s.Session != nil {
+		var zero T
+		return zero, crud.ErrInvalid
+	}
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
 		return e, err
@@ -254,6 +266,10 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // This Spec's Gate stands here all the same, because "may these fields be written
 // directly" does not ask who is asking.
 func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
+	if s.Session != nil {
+		var zero T
+		return zero, crud.ErrInvalid
+	}
 	return s.updateRow(ctx, tx, id, crud.Fields[T](), values, "")
 }
 

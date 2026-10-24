@@ -10,7 +10,9 @@ const PolicyVersion = 1
 // Resolved is one entry's presentation policy for one request's language. It
 // holds no record values and no viewer clock: those stay rendering.
 type Resolved struct {
-	PolicyVersion int `json:"policyVersion"`
+	// Session is present only for the typed guided-session contract.
+	Session       *ResolvedSession `json:"session,omitempty"`
+	PolicyVersion int              `json:"policyVersion"`
 	// Language is the tag the strings were resolved for after English fallback.
 	Language string           `json:"language"`
 	Identity ResolvedIdentity `json:"identity"`
