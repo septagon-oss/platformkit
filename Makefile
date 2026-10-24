@@ -763,6 +763,14 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# answered the ceiling question only when it had no numbers to give would leave this red and that
 	# host's log silent. Two fixture trees, one copied recipe, nothing started.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_guard_readable_cgroup_test.py
+	# scripts/ci_browser_recent_load_test.py holds the admission boundary of that same `wait` at its
+	# load file: five shapes read in turn — a quiet host, a host at exactly one task per core, and the
+	# three where the one-minute term, the five-minute term, or both sit above the core count — with a
+	# free share required exactly where both recent windows fit and `starting anyway` everywhere else,
+	# printing the bytes it read. A host whose recent windows fit is admitted whatever its fifteen-
+	# minute term says, which is the difference between asking what a host is doing and asking what it
+	# did. Five reads of a fixture load file, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_recent_load_test.py
 	# scripts/ci_sampler_output_lifetime_test.py asks the sampler wrapped around a suite the one question
 	# the suite's own verdict cannot answer: when the watched suite finishes, does the sampler let go of
 	# its output? The guard sleeps between samples, and a sleep holds the write end of the suite's output

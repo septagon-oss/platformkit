@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keep the design lock above the published source-map-js, DOMPurify and Zod advisories.
+# Keep the design lock above the published source-map-js, DOMPurify, Zod and Undici advisories.
 # The audit threshold and its place between install and conformance stay enforced.
 # Mutated copies of the lock exercise the same comparison as the real lock;
 # a removed package is safe, but a present vulnerable version is refused.
@@ -61,6 +61,15 @@ ADVISORIES = (
         "severity": "high",
         "parent": "@ai-sdk/provider-utils",
     },
+    {
+        # npm reports one range for all three ids, so this edge stands for each of them.
+        "package": "undici",
+        "since": (8, 0, 0),
+        "upto": (8, 12, 1),
+        "ids": ("GHSA-4qv8-2p9j-2685", "GHSA-f72v-6w45-q472", "GHSA-xjj6-f33q-929c"),
+        "severity": "high",
+        "parent": "unifont",
+    },
 )
 
 # The three commands of the gate, in the order the design job runs them. The audit may stand behind
@@ -73,8 +82,8 @@ COMMANDS = re.compile(r"^\s*(?:bash\s+\S*scripts/ci_npm_audit\.sh\s+)?(npm (?:ci
 
 
 def version(text):
-    """(3, 4, 15) from "3.4.15". No suffix handling: every range below is a stable one and no
-    version this lock holds carries one."""
+    """(3, 4, 15) from "3.4.15". No suffix handling: every advisory below reports a stable range,
+    and no version this lock holds carries one."""
     parts = re.match(r"(\d+)\.(\d+)\.(\d+)", text)
     if not parts:
         sys.exit(f"FAIL: cannot read the version {text!r} as major.minor.patch")
