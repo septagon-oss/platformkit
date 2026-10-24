@@ -223,6 +223,16 @@ for the reasoning and the cases beside it. `kit/db`'s `phase=data` window refuse
 same act against a table keyed by anything other than the tenant, which is why this is a
 drain its owner owns in a job rather than a migration.
 
+The count the move refuses over is a column, and a column can still be on its way in: the
+runner applies nothing of an owner behind a `phase=data` file until that file's drain
+finishes, so an installation upgrading through a release that ships a backfill and an
+expansion together runs this release's code over the ledger as it was before the
+expansion. This step is the one that meets that state, because kit/app holds every
+subscription and every job — that drain tick among them — until the move returns. So the
+ledger is read for the column before it is read for the count: absent, nothing has ever
+raised a count, the answer is zero by the shape of the write and the rename goes ahead;
+present, the refusal above stands.
+
 ## Limits
 
 Delivery is at least once. Independent sinks must provide their own durable

@@ -484,14 +484,46 @@ func unscopedRemains(tx db.Tx[db.System], app appname.Name) (bool, error) {
 // count has inserted its row in the same transaction, and that INSERT takes this move's
 // durable key and its tenant key (migrations/000058) for as long as the delivery runs;
 // an effect coming back only ever lowers a count, and lowering one after this reading
-// costs a move a run it repeats, never a row it lost.
+// costs a move a run it repeats, never a row it lost. A ledger that does not count owed
+// effects owes none: see ledgerCountsEffects.
 func claimsOwing(tx db.Tx[db.System], app appname.Name) (int64, error) {
+	counting, err := ledgerCountsEffects(tx)
+	if err != nil {
+		return 0, err
+	}
+	if !counting {
+		return 0, nil
+	}
 	var owing int64
 	if err := tx.DB().Raw(`SELECT count(*) FROM `+handled+` WHERE `+unscoped+` AND `+ownTenant+` AND effects_owed > 0`,
 		string(app)).Scan(&owing).Error; err != nil {
 		return 0, fmt.Errorf("events: move the delivery ledger: ask what app %s's claims still owe: %w", app, err)
 	}
 	return owing, nil
+}
+
+// ledgerCountsEffects reports whether this installation's delivery ledger carries the
+// owed-effect count column.
+//
+// The column is this release's own (migrations/000075), and the runner applies nothing of
+// an owner behind a phase=data file until that file's drain finishes, so an installation
+// upgrading through a release that ships both runs this code over the ledger as it was
+// before the column — and this move is the step that meets that state, because kit/app
+// holds every subscription and every job, that drain among them, until the move returns.
+// Absent, nothing has ever raised a count, so the answer is zero by the shape of the
+// write and the rename goes ahead; present, the count is asked and a claim that owes does
+// not change hands. kit/events/README.md states the window beside the move itself.
+func ledgerCountsEffects(tx db.Tx[db.System]) (bool, error) {
+	var columns int64
+	// to_regclass resolves the bare name through this session's search_path, which is the
+	// relation the count above would have read; a catalog row for a different table named
+	// the same in some other schema is not this answer.
+	if err := tx.DB().Raw(`SELECT count(*) FROM pg_attribute
+			WHERE attrelid = to_regclass(?) AND attname = 'effects_owed' AND attnum > 0 AND NOT attisdropped`,
+		handled).Scan(&columns).Error; err != nil {
+		return false, fmt.Errorf("events: move the delivery ledger: ask whether the ledger counts owed effects: %w", err)
+	}
+	return columns > 0, nil
 }
 
 // holdDurable takes the move's lock over one durable's rows, refusing rather than
