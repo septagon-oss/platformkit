@@ -34,11 +34,20 @@ with tempfile.TemporaryDirectory(prefix="platformkit-advisory-rollback-") as dir
     check(0)
     print("ok   the advisory guard accepts the current lock")
     path = fixture / "tools/designexport/openpencil/package-lock.json"
-    lock = json.loads(path.read_text())
+    pristine = path.read_text()
+
+    lock = json.loads(pristine)
     lock["packages"]["node_modules/dompurify"]["version"] = "3.4.16"
     path.write_text(json.dumps(lock))
     refused = check(1)
     for advisory in ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"):
         assert any(line.startswith("FAIL:") and advisory in line for line in refused), refused
         print(f"ok   the advisory guard refuses DOMPurify 3.4.16 and names {advisory}")
+
+    lock = json.loads(pristine)
+    lock["packages"]["node_modules/zod"]["version"] = "4.6.5"
+    path.write_text(json.dumps(lock))
+    refused = check(1)
+    assert any(line.startswith("FAIL:") and "GHSA-mrhx-c7xc-m3w5" in line for line in refused), refused
+    print("ok   the advisory guard refuses Zod 4.6.5 and names GHSA-mrhx-c7xc-m3w5")
 PY

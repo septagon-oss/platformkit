@@ -1,8 +1,11 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strconv"
@@ -10,10 +13,24 @@ import (
 	"unicode"
 )
 
+// wireDocument decodes one JSON document, keeping every number as the literal the
+// document wrote (json.Number) rather than as a float64: a bound the gate compares is a
+// contract's exact figure, and 9007199254740993 and 9007199254740992 are the same
+// float64. A decoder is more accepting than json.Unmarshal at the edges — it takes a
+// second value after the first — so the bytes after the document are read and refused.
 func wireDocument(body []byte) (map[string]any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
 	var doc map[string]any
-	if err := json.Unmarshal(body, &doc); err != nil {
+	if err := decoder.Decode(&doc); err != nil {
 		return nil, fmt.Errorf("not a JSON object: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, fmt.Errorf("trailing content after the document")
+		}
+		return nil, fmt.Errorf("trailing content after the document: %w", err)
 	}
 	if doc == nil {
 		return nil, fmt.Errorf("empty document")
