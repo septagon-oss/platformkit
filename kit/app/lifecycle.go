@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -166,7 +167,7 @@ func (a *App) Declarations() error {
 	// pass records the standard and every later one is judged against it; see
 	// registrationsAgree.
 	for pass := 1; pass <= 3; pass++ {
-		dry := cache.Memory(segment)
+		dry := cache.MemoryFor(appname.Name(segment))
 		_, _, err := a.composeRoutes(dry)
 		// Each recorder store is released as soon as its recorder has answered:
 		// nothing serves the API either pass returns, and a belief carried from the

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -88,7 +89,7 @@ const defaultCacheApp = "pkit"
 // checked here, before any store is built, because the one error these
 // constructors answer for a name is this one, and a boot that panics on its own
 // configuration is a worse log than a boot that names the key to fix — and
-// cache.Memory answers that name with a panic, which is the reason Declarations
+// cache.MemoryFor answers that name with a panic, which is the reason Declarations
 // asks for the segment the same way rather than handing a store straight to
 // httpx.
 func (a *App) cacheSegment() (string, error) {
@@ -117,7 +118,7 @@ func (a *App) cache(ctx context.Context) (cache.Cache, error) {
 	}
 	if build == nil {
 		a.log.InfoContext(ctx, "cache: in-process store; forgetting a value reaches this process only")
-		return cache.Memory(segment), nil
+		return cache.MemoryFor(appname.Name(segment)), nil
 	}
 	store, err := build(ctx, a.cfg.Cache)
 	if err != nil {

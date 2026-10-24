@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -25,7 +26,7 @@ func (a *App) prepareRuntime(ctx context.Context) (*httpx.API, http.Handler, cac
 		a.giveBackDeclared() // no Runtime on this side either
 		return nil, nil, nil, beforeEffects(err)
 	}
-	build := cache.Memory(segment)
+	build := cache.MemoryFor(appname.Name(segment))
 	api, handler, err := a.buildAPI(ctx, build)
 	if err != nil {
 		_ = build.Close() // a composition that failed a gate is never mounted

@@ -336,7 +336,7 @@ func (a *App) routeOptions(store cache.Cache) httpx.Options {
 		// here, because the routes say it and the kernel records it; boot prints
 		// the list below.
 		Installation: a.opts.Installation.Host,
-		WriteLimiter: limit.Postgres(a.held.read),
+		WriteLimiter: limit.PostgresFor("", a.held.read),
 		// The memory beside the counter: the same connection the limiter is counted
 		// on, the same detached write, the same reason — a retried write arrives at
 		// whichever replica the load balancer chose, so the record of the first one

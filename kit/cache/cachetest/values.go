@@ -15,9 +15,9 @@ import (
 // resolution that fails open on an error then fails open on every request.
 func miss(t *testing.T, store Store) {
 	c := fresh(t, store)
-	val, found, _, err := c.Get(context.Background(), cache.Shared("host").Entry("nobody.example"))
-	if err != nil || found || val != nil {
-		t.Fatalf("Get of an absent key = %q, found=%v, err=%v; want nothing, false, no error", val, found, err)
+	entry, err := cache.GetEntry(t.Context(), c, cache.Shared("host").Entry("nobody.example"))
+	if err != nil || entry.Found || entry.Value != nil {
+		t.Fatalf("Get of an absent key = %+v, err=%v; want nothing, false, no error", entry, err)
 	}
 }
 
@@ -31,12 +31,12 @@ func valueBytes(t *testing.T, store Store) {
 	if err := fill(t, c, key, want, time.Minute); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	got, found, _, err := c.Get(context.Background(), key)
-	if err != nil || !found {
-		t.Fatalf("Get: found=%v err=%v", found, err)
+	entry, err := cache.GetEntry(t.Context(), c, key)
+	if err != nil || !entry.Found {
+		t.Fatalf("Get: found=%v err=%v", entry.Found, err)
 	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("Get = % x; want % x", got, want)
+	if !bytes.Equal(entry.Value, want) {
+		t.Errorf("Get = % x; want % x", entry.Value, want)
 	}
 }
 
