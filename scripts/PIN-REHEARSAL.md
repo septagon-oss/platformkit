@@ -55,36 +55,43 @@ The script has no `--skip`, and `make check` has no variable that drops
 
 ## The matrix: every installation the release promises
 
-One receipt says one revision was rehearsed. A release is not published from one
-revision: installations sit at the oldest tag of the line, at its later patches, and
-at the revision whose `audit/000048` bytes are already applied. Which those are is a
-policy question — `docs/COMPATIBILITY.md` and `RELEASE.md` answer it — and
-`scripts/testdata/rehearse/supported-sources.json` is the same answer at the
-resolution a gate needs: the exact commit each name is, the obligation it discharges,
-and the revisions refused with a reason.
+One receipt says one revision was rehearsed; a release is not published from one.
+Installations sit at the oldest tag of the line and at its later patches, and which
+those are is a policy question that `docs/COMPATIBILITY.md` and `RELEASE.md` answer.
+`scripts/testdata/rehearse/supported-sources.json` is the same answer at the resolution
+a gate needs: the commit each name is, the obligation it discharges, the revisions
+refused with a reason, the fixture files the cases must seed, and the applied migration
+bytes an installation already holds and compares whole.
 
-`scripts/supported_sources.sh` is its only reader. It checks what a record can get
-wrong silently: that every ref resolves here to the commit beside it, that every
-required obligation is discharged exactly once, that no proof build is called
-supported (`docs/COMPATIBILITY.md` gives it no claim to make), and that no source is
-refused by being left out. `--check-source REF` asks the question for one revision and
-touches no database.
+`scripts/supported_sources.sh` is its only reader, and checks what a record gets wrong
+silently: every ref resolves here to the commit beside it, every required obligation is
+discharged once, no proof build is called supported (`docs/COMPATIBILITY.md` gives it no
+claim), the files owed hash to what is owed, and no source is refused by being left out.
 
-`./scripts/rehearse_migrations.sh --supported` then runs the rehearsal once per
-supported source — its own copy, its own seed, its own drain, its own budgets — and
-writes one `platformkit.rehearsal.v2` receipt with a case per source plus each refused
-source's refusal, which it exercises rather than assumes. It refuses `--base-ref`,
-`--dump` and `--seed` beside it: a receipt for one case certifies one case. Each case
-also retains the ledger rows and the seeded facts *before* the candidate connects and
-requires them after, so "the data survived" is a comparison against a snapshot the
-upgrade cannot rewrite.
+`./scripts/rehearse_migrations.sh --supported` runs the same step once per supported
+source, in `scripts/rehearse_supported_matrix.sh`, and writes one
+`platformkit.rehearsal.v2` receipt: a case per source, each refused source's refusal
+(exercised rather than assumed), and the exported-surface comparison's verdict beside
+the data. It refuses `--base-ref`, `--dump` and `--seed` beside it: a receipt for one
+case certifies one case.
 
-`./scripts/check_pin_rehearsal.sh --strict` reads the matrix, and reads the record for
-itself: a missing case, a repeated case, a drifted revision, another support record or
-a single-revision receipt is refused even when every case inside passed. `REHEARSE_ARGS=--supported
+An empty schema is not evidence that data survived. Each case seeds
+`scripts/testdata/rehearse/seed.sql` for volume and `populated.sql` beside it for a
+second tenant, page text, file records and queued events, then retains the ledger and
+`scripts/rehearse_facts.sh`'s facts *before* the candidate connects and requires the
+same list after: per-tenant digests of body text, file hash and storage key, outbox
+payload and task state, the pending queue, the tables that still force their policy,
+and how many rows of every other tenant each tenant's own session sees, read as the
+application role — the owner role answers that last question with "everything".
+`FACTS CHANGED`, `TENANT LEAK` or `AUTHORITY LOST` is exit 1.
+
+`./scripts/check_pin_rehearsal.sh --strict` reads the matrix and reads the record for
+itself: a missing case, a repeated case, a drifted revision, another support record, a
+case that seeded a fixture the record does not owe, a matrix that recorded no
+exported-surface comparison, or a single-revision receipt is refused even when every
+case inside passed. `REHEARSE_ARGS=--supported
 REHEARSE_RECEIPT=$PWD/.artifacts/rehearsal.json make check-rehearse` is the release
-line's form; the default `make rehearse` and `make check-rehearse` stay the
-single-source diagnostic they were.
+form; the default stays the single-source diagnostic it was.
 
 ## What this repository owes and what the consumer owes
 

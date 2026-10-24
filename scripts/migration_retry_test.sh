@@ -76,9 +76,10 @@ grep -q 'CREATE TABLE platformkit_command_effect' "$root/$file" ||
 tree="$work/tree"
 mkdir -p "$tree"
 git -C "$root" archive HEAD | tar -x -C "$tree" || { echo "retry: FAIL — this tree could not be exported" >&2; exit 1; }
-cp "$root/$file" "$work/$file.orig"
+cp "$root/$file" "$work/original.sql"
 
-write_config() { # <file> <app url> — the migrate command opens no application connection, but the loader requires the key
+write_config() { # <file> <app url> — the same declaration the rehearsal hands its candidate, so this
+# case refuses and applies for the migration's own reasons and not for a missing key.
 	cat >"$1" <<YAML
 server:
   addr: ":0"
@@ -91,17 +92,16 @@ nats:
 log:
   level: "info"
 YAML
+	cat "$root/scripts/testdata/rehearse/candidate.yaml" >>"$1"
 }
 build() { # <output> — the exported tree carries no .git, so Go's stamp step is asked to skip
 	(cd "$tree" && go build -buildvcs=false -o "$1" ./apps/platformkit) ||
 		{ echo "retry: FAIL — the exported tree does not build" >&2; exit 1; }
 }
+# This file runs without `set -e`, because its first act is to ask for a run that fails:
+# a helper that toggled errexit would end the case at the refusal it is looking for.
 migrate() { # <binary> <log>: 0 when the run said it applied everything pending
-	set +e
 	"$1" migrate --config "$work/run.yaml" >"$2" 2>&1
-	local code=$?
-	set -e
-	return "$code"
 }
 
 psql_admin() { psql "$db_admin_url" -v ON_ERROR_STOP=1 -qtA -c "$1"; }
@@ -142,7 +142,7 @@ ledger_rows() { psql_admin "SELECT owner || '/' || version || '|' || name || '|'
 ledger_rows >"$work/ledger-before.txt"
 
 # The retry: the file's own bytes, a binary rebuilt from them, the same database.
-cp "$work/$file.orig" "$tree/$file"
+cp "$work/original.sql" "$tree/$file"
 build "$work/fixed"
 if ! migrate "$work/fixed" "$work/fixed.log"; then
 	tail -20 "$work/fixed.log" >&2
@@ -156,8 +156,21 @@ check "the table it creates exists" "1" "$(built_table)"
 ledger_rows >"$work/ledger-after.txt"
 rewritten=$(comm -23 "$work/ledger-before.txt" "$work/ledger-after.txt" | head -3)
 check "no applied row was rewritten or lost by the retry" "" "$rewritten"
-check "the retry added exactly one row, its own" "1" \
-	"$(( $(grep -c '' <"$work/ledger-after.txt") - $(grep -c '' <"$work/ledger-before.txt") ))"
+# A retried run applies the file that failed *and* every file still behind it — the run
+# stopped where it stopped — so the claim is not a row count. It is that no row arrived
+# twice, and that a third run of the same binary finds nothing left to do.
+check "no (owner, version) arrived twice" "0" \
+	"$(psql_admin "SELECT count(*) FROM (SELECT owner, version FROM schema_migrations GROUP BY owner, version HAVING count(*) > 1) AS doubled")"
+if migrate "$work/fixed" "$work/third.log"; then
+	echo "retry: ok — the same run again ended without a refusal"
+else
+	tail -10 "$work/third.log" >&2
+	echo "retry: FAIL — the run after the retry did not converge" >&2
+	fails=$((fails + 1))
+fi
+ledger_rows >"$work/ledger-third.txt"
+check "and it applied nothing: the ledger it left is the ledger it read" "" \
+	"$(comm -3 "$work/ledger-after.txt" "$work/ledger-third.txt" | head -3)"
 
 if [ "$fails" -gt 0 ]; then
 	echo "retry: failed: $fails check(s)" >&2
