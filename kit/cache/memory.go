@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 // maxTracked bounds the map. An attacker who tries a fresh invented key every
@@ -26,20 +28,35 @@ import (
 // shape, because the threat is the same one.
 const maxTracked = 10_000
 
-// Memory returns the store of one process, named for the application it serves.
+// Memory returns a fresh in-process cache. Empty or invalid names panic with a
+// Slug error; Close releases the independent backend.
+//
+// Deprecated: Use MemoryFor with an appname.Name. MemoryFor also accepts the zero name.
 func Memory(app string) Cache {
-	return MemoryNamed(app, MemoryBackend())
+	if app == "" {
+		_, err := Slug(app)
+		panic(err)
+	}
+	return MemoryFor(appname.Name(app))
 }
 
-// MemoryNamed is Memory over a store someone already holds — the shape a test
-// uses to give two replicas one store, and the shape a composition uses to put a
-// counter or a decorator in front of it without copying this package.
+// MemoryNamed returns a cache over backend, panicking with a Slug error for an
+// empty or invalid app. Close releases the supplied backend.
+//
+// Deprecated: Use NewFor with an appname.Name and the same backend, handling its error.
 func MemoryNamed(app string, backend Backend) Cache {
 	c, err := New(app, backend)
-	// The only error New answers is an application name that is not a slug,
-	// which is a composition bug and is a panic here for the same reason
-	// httpx.New panics on a missing option: nothing can be served until it is
-	// fixed, and a value that cannot work is not worth threading an error for.
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
+// MemoryFor returns a fresh in-process cache under app, with an empty key segment
+// for the zero name. Invalid nonempty names panic with NewFor's validation error.
+// Each call owns an independent backend, released by Close.
+func MemoryFor(app appname.Name) Cache {
+	c, err := NewFor(app, MemoryBackend())
 	if err != nil {
 		panic(err)
 	}

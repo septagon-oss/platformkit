@@ -661,7 +661,7 @@ func negotiateLang(ctx context.Context, languages *tenancy.Languages) string {
 		return ""
 	}
 	speaking := languages.Preferred()
-	for _, name := range []string{httpx.CookieName(CookieNameLanguage, true), CookieNameLanguage} {
+	for _, name := range []string{httpx.CookieNameFor("", CookieNameLanguage, true), CookieNameLanguage} {
 		if c, err := req.Cookie(name); err == nil {
 			if tag, ok := matchLanguage(c.Value, speaking); ok {
 				return tag
