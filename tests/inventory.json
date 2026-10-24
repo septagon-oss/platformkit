@@ -23004,6 +23004,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/cookie_name_legacy_equivalence_test.go",
+   "id": "kit/httpx/cookie_name_legacy_equivalence_test.go#TestTheZeroApplicationCookieNameIsTheLegacyCookieName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheZeroApplicationCookieNameIsTheLegacyCookieName",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/cookie_names_test.go",
    "id": "kit/httpx/cookie_names_test.go#TestCookieNamesKeepTheirApplicationAndHostPrefixes",
    "kind": "go",
@@ -83178,7 +83197,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2251,
+  "files": 2252,
   "forge_runs": [
    408,
    413,
@@ -83212,7 +83231,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3596,
+   "behaviour": 3597,
    "composition": 487,
    "contract": 22,
    "journey": 110
@@ -83231,9 +83250,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4215,
+  "rows": 4216,
   "tiers": {
-   "merge": 2593,
+   "merge": 2594,
    "nightly": 110,
    "push": 1512
   },
@@ -83241,13 +83260,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2006,
+   "keep": 2007,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3829,
+   "keep": 3830,
    "keep-rewrite": 170,
    "merge": 216
   }
