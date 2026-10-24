@@ -49,7 +49,7 @@ func TestTestAugmentationPreservesProduction(t *testing.T) {
 	records := testRecords(p)
 	records = append(records, records...)
 	g := normalizedFixture(t, records)
-	got := decide(g, nil).refused
+	got := decide(g, nil, nil).refused
 	if len(got) != 1 || got[0].rule != "test-helper-in-production" || got[0].context != "production" {
 		t.Fatalf("refusals = %+v", got)
 	}
@@ -61,7 +61,7 @@ func TestTestAugmentationPreservesProduction(t *testing.T) {
 		t.Fatal(report)
 	}
 	p.Imports = nil
-	if got := decide(normalizedFixture(t, testRecords(p)), nil).refused; len(got) != 0 {
+	if got := decide(normalizedFixture(t, testRecords(p)), nil, nil).refused; len(got) != 0 {
 		t.Fatalf("actual tests refused: %+v", got)
 	}
 }
@@ -74,7 +74,7 @@ func TestRebuiltDependencyRetainsProductionProvenance(t *testing.T) {
 	rebuilt := q
 	rebuilt.ForTest, rebuilt.ImportPath = p.ImportPath, q.ImportPath+" ["+p.ImportPath+".test]"
 	records := append(testRecords(p), q, rebuilt)
-	got := decide(normalizedFixture(t, records), nil).refused
+	got := decide(normalizedFixture(t, records), nil, nil).refused
 	if len(got) != 1 || got[0].from != q.ImportPath || got[0].context != "production" {
 		t.Fatalf("refusals = %+v", got)
 	}
@@ -95,7 +95,7 @@ func TestOrdinaryTestSuffixesGrantNothing(t *testing.T) {
 		if suffix == ".test" {
 			baseRecords = baseRecords[:len(baseRecords)-1]
 		}
-		got := decide(normalizedFixture(t, append(baseRecords, p)), nil).refused
+		got := decide(normalizedFixture(t, append(baseRecords, p)), nil, nil).refused
 		if len(got) != 1 || got[0].from != p.ImportPath || got[0].rule != "test-helper-in-production" {
 			t.Fatalf("%s: %+v", suffix, got)
 		}

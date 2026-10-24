@@ -52,8 +52,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, goCommand
 		fmt.Fprintln(stderr, "imports:", err)
 		return 2
 	}
-	decision := decide(g, grants)
-	if _, err := io.WriteString(stderr, notices(grants, decision.used)+diagnostics(decision.refused)); err != nil {
+	baseline, err := readBaseline(root, g)
+	if err != nil {
+		fmt.Fprintln(stderr, "imports:", err)
+		return 2
+	}
+	decision := decide(g, grants, baseline)
+	if _, err := io.WriteString(stderr, notices(grants, decision.used)+baselineNotices(baseline, decision.carried)+diagnostics(decision.refused)); err != nil {
 		return 2
 	}
 	if *measure {
@@ -68,7 +73,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, goCommand
 	if len(decision.refused) > 0 {
 		return 1
 	}
-	if _, err := fmt.Fprintln(stdout, "imports: direct production and test imports satisfy the module boundaries"); err != nil {
+	accepted := "imports: direct production and test imports satisfy the module boundaries"
+	if len(decision.carried) > 0 {
+		accepted += "; the contract baseline rows above carry every production contract dependency the strict rule refuses"
+	}
+	if _, err := fmt.Fprintln(stdout, accepted); err != nil {
 		return 2
 	}
 	return 0

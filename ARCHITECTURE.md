@@ -313,7 +313,10 @@ constructor. Application composition is the place that connects them.
 [scripts/check_imports.sh](scripts/check_imports.sh) checks Go's direct production
 and test imports. Production contracts have an exact dependency policy, and test
 suites composing foreign constructors declare their targets and reason in
-`scripts/imports-integration.txt`. The [import gate](tools/importgate/README.md)
+`scripts/imports-integration.txt`. A contract dependency the published surface
+already carries is recorded per edge, with the frozen exported name that keeps it,
+in `scripts/imports-contract-baseline.txt`; a row whose import has gone is refused,
+so that list only shrinks. The [import gate](tools/importgate/README.md)
 documents provenance, refusals, build context and the per-pair edge report.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.

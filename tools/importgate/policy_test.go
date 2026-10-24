@@ -46,7 +46,7 @@ func TestDirectImportRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := product + "/" + tc.source
 			e := edge{source, tc.target, source, tc.context, tc.source + "@external"}
-			got := decide(fixtureGraph(e), nil).refused
+			got := decide(fixtureGraph(e), nil, nil).refused
 			if tc.rule == "" && len(got) != 0 || tc.rule != "" && (len(got) != 1 || got[0].rule != tc.rule) {
 				t.Fatalf("refusals = %+v, want %q", got, tc.rule)
 			}
@@ -82,7 +82,7 @@ func TestContractPurity(t *testing.T) {
 	source := product + "/modules/a/contracts"
 	for _, context := range []string{"production", "internal-test", "external-test"} {
 		g.edges = []edge{{source, "html/template", source, context, "modules/a/contracts@internal"}}
-		if got := decide(g, nil).refused; (len(got) != 0) != (context == "production") {
+		if got := decide(g, nil, nil).refused; (len(got) != 0) != (context == "production") {
 			t.Errorf("%s: %+v", context, got)
 		}
 	}
@@ -97,10 +97,10 @@ func TestIntegrationGrantsAreExact(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := maps.Clone(grants["modules/a/internal@external"].targets)
-	if got := decide(g, grants).refused; len(got) != 0 {
+	if got := decide(g, grants, nil).refused; len(got) != 0 {
 		t.Fatal(got)
 	}
-	notice := notices(grants, decide(g, grants).used)
+	notice := notices(grants, decide(g, grants, nil).used)
 	if strings.Count(notice, "imports: integration") != 1 || !strings.Contains(notice, "used ["+target+"]") || !strings.Contains(notice, "unused in this build context ["+product+"/modules/c]") || !strings.Contains(notice, "Composes two real migrations.") {
 		t.Fatal(notice)
 	}
@@ -115,7 +115,7 @@ func TestIntegrationGrantsAreExact(t *testing.T) {
 		{"external-test", "modules/a/internal@external", product + "/modules/d", "undeclared-integration"},
 	} {
 		g.edges = []edge{{source, change.target, source, change.context, change.suite}}
-		if got := decide(g, grants).refused; len(got) != 1 || got[0].rule != change.want {
+		if got := decide(g, grants, nil).refused; len(got) != 1 || got[0].rule != change.want {
 			t.Errorf("%+v: %+v", change, got)
 		}
 	}

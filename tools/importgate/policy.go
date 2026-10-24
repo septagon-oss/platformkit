@@ -12,7 +12,7 @@ const foundation = "github.com/septagon-oss/platformkit"
 
 type refusal struct {
 	edge
-	rule string
+	rule, detail string
 }
 
 type grantTarget struct{ suite, target string }
@@ -20,6 +20,7 @@ type grantTarget struct{ suite, target string }
 type decision struct {
 	refused []refusal
 	used    map[grantTarget]bool
+	carried map[baselineKey]bool
 }
 
 var remedies = map[string]string{
@@ -30,6 +31,7 @@ var remedies = map[string]string{
 	"undeclared-integration":    "use contracts or declare this test suite's exact constructor targets with a reason",
 	"contract-adapter":          "move execution, rendering or fixtures to their owning implementation or test layer",
 	"contract-external":         "move the dependency to implementation or separately review a pure value dependency",
+	"contract-baseline-unused":  "remove this row; no production contract source imports it, so the frozen type no longer carries it",
 }
 
 func (g *graph) owner(name string) (owner, rest string, unknown bool) {
@@ -55,13 +57,18 @@ func helper(rest string) bool {
 	return ok && strings.HasSuffix(child, "test")
 }
 
-func decide(g *graph, grants map[string]*grant) decision {
+// decide reports every direct import that crosses a boundary. A production
+// contract dependency the purity rule refuses is admitted only while a committed
+// baseline row names that exact pair, and a row that names no such import is
+// itself refused, so a repository's contract baseline can only shrink.
+func decide(g *graph, grants map[string]*grant, baseline map[baselineKey]*baselineRow) decision {
 	refused := map[refusal]bool{}
 	used := map[grantTarget]bool{}
+	carried := map[baselineKey]bool{}
 	for _, e := range g.edges {
 		from, sourceRest, _ := g.owner(e.ownerPath)
 		to, targetRest, unknown := g.owner(e.to)
-		add := func(rule string) { refused[refusal{e, rule}] = true }
+		add := func(rule string) { refused[refusal{e, rule, ""}] = true }
 		if unknown {
 			add("undeclared-module-root")
 		}
@@ -88,15 +95,29 @@ func decide(g *graph, grants map[string]*grant) decision {
 		}
 		if e.context == "production" && contract(sourceRest) && !helper(sourceRest) {
 			if rule := g.purity(e.to); rule != "" {
-				add(rule)
+				key := baselineKey{strings.TrimPrefix(e.from, g.self+"/"), e.to}
+				if baseline[key] == nil {
+					add(rule)
+				} else {
+					carried[key] = true
+				}
 			}
 		}
+	}
+	for key, row := range baseline {
+		if carried[key] {
+			continue
+		}
+		// The row outlived its import: the frozen type moved out, or the row names
+		// a dependency the rule never refused. Either way it is no longer a fact.
+		pkg := g.self + "/" + key.dir
+		refused[refusal{edge{pkg, key.target, pkg, "baseline", ""}, "contract-baseline-unused", row.reason}] = true
 	}
 	result := slices.Collect(maps.Keys(refused))
 	slices.SortFunc(result, func(a, b refusal) int {
 		return cmp.Or(cmp.Compare(a.from, b.from), cmp.Compare(a.to, b.to), cmp.Compare(a.context, b.context), cmp.Compare(a.rule, b.rule))
 	})
-	return decision{result, used}
+	return decision{result, used, carried}
 }
 
 func (g *graph) purity(target string) string {
@@ -135,11 +156,14 @@ func (g *graph) purity(target string) string {
 func diagnostics(refused []refusal) string {
 	var text strings.Builder
 	for _, r := range refused {
-		prefix := ""
+		prefix, detail := "", ""
 		if r.rule == "foreign-internal" && strings.Contains(r.ownerPath, "/apps/") {
 			prefix = "apps/ reaches into: "
 		}
-		fmt.Fprintf(&text, "OUT OF BOUNDS [%s] %s%s -> %s (%s): %s\n", r.rule, prefix, r.from, r.to, r.context, remedies[r.rule])
+		if r.detail != "" {
+			detail = "; row reason: " + r.detail
+		}
+		fmt.Fprintf(&text, "OUT OF BOUNDS [%s] %s%s -> %s (%s): %s%s\n", r.rule, prefix, r.from, r.to, r.context, remedies[r.rule], detail)
 	}
 	return text.String()
 }

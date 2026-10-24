@@ -36,6 +36,19 @@ and unknown external dependencies are refused. `net/http` and `database/sql/driv
 retain their standard vocabulary roles. This is a direct dependency policy;
 permitted kernel packages can have implementation dependencies of their own.
 
+What a released surface already published stays usable until a release can drop it.
+Such an edge is recorded in the **checked repository's**
+`scripts/imports-contract-baseline.txt`, one row per edge: the contracts package
+directory, the exact dependency, and the exported name at the release line's frozen
+commit that carries it. A row admits that one production contract import and
+nothing else — an unrowed contract dependency, a foreign `internal` tree and a
+test-helper import are refused beside it. A row whose import has gone is refused as
+well, so the list can only shrink as each edge moves out. Every row is announced
+once with the state the current graph gives it and its reason. A missing file
+admits nothing, so a repository that never published such an edge keeps the rule in
+full, and the accepted run says which dependencies the baseline rather than the rule
+carries.
+
 Go's `TestImports` and `XTestImports` identify test contributions, checked against
 their compiled variants. Inherited production edges stay production. External
 test packages retain their tested module owner. Rebuilt dependencies retain their
