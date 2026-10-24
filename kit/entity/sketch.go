@@ -18,6 +18,25 @@ type SketchStroke []SketchPoint
 // explicitly empty. Assignment aliases slices; callers own synchronization.
 type Sketch []SketchStroke
 
+// Strokes returns a deep copy of validated [x, y, elapsed milliseconds] tuples,
+// preserving unset versus empty. Invalid values return nil and ErrInvalidSketch.
+func (s Sketch) Strokes() ([][][3]int64, error) {
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, nil
+	}
+	strokes := make([][][3]int64, len(s))
+	for i, stroke := range s {
+		strokes[i] = make([][3]int64, len(stroke))
+		for j, point := range stroke {
+			strokes[i][j] = point
+		}
+	}
+	return strokes, nil
+}
+
 const (
 	TypeSketch            FieldType = "sketch"
 	SketchMaxStrokes                = 400

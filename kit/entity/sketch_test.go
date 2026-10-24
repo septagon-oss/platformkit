@@ -38,16 +38,30 @@ func TestSketchRoundTripAndLimits(t *testing.T) {
 			err := c.value.Validate()
 			raw, marshalErr := json.Marshal(c.value)
 			sqlValue, sqlErr := c.value.Value()
+			tuples, tuplesErr := c.value.Strokes()
 			if c.reason != "" {
-				for _, got := range []error{err, marshalErr, sqlErr} {
+				for _, got := range []error{err, marshalErr, sqlErr, tuplesErr} {
 					if !errors.Is(got, entity.ErrInvalidSketch) || !strings.Contains(got.Error(), c.reason) {
 						t.Fatalf("want %q: %v", c.reason, got)
 					}
 				}
+				if tuples != nil {
+					t.Fatal("invalid drawing returned partial strokes")
+				}
 				return
 			}
-			if err != nil || marshalErr != nil || sqlErr != nil {
-				t.Fatalf("%v %v %v", err, marshalErr, sqlErr)
+			if err != nil || marshalErr != nil || sqlErr != nil || tuplesErr != nil {
+				t.Fatalf("%v %v %v %v", err, marshalErr, sqlErr, tuplesErr)
+			}
+			if encoded, err := json.Marshal(tuples); err != nil || string(encoded) != string(raw) {
+				t.Fatalf("strokes changed the drawing: %s, %v", encoded, err)
+			}
+			if len(tuples) > 0 {
+				first := c.value[0][0]
+				tuples[0][0][0] ^= 1
+				if c.value[0][0] != first {
+					t.Fatal("returned strokes alias the drawing")
+				}
 			}
 			var decoded, scanned entity.Sketch
 			if err := json.Unmarshal(raw, &decoded); err != nil {

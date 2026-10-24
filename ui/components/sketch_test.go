@@ -29,6 +29,9 @@ func TestSketchSVGKeepsGeometryAndAccessibleName(t *testing.T) {
 			t.Fatal(out)
 		}
 	}
+	if out := renderMedia(t, components.Sketch(components.SketchProps{Label: "Drawing"})); !strings.Contains(out, "No drawing.") || !strings.Contains(out, "<svg") {
+		t.Fatal(out)
+	}
 	for _, p := range []components.SketchProps{{Value: entity.Sketch{{}}, Label: "Drawing"}, {Value: value}} {
 		out := renderMedia(t, components.Sketch(p))
 		if !strings.Contains(out, "Drawing unavailable.") || strings.Contains(out, "<svg") {

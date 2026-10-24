@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
-	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -13,9 +12,7 @@ import (
 
 func sketchControl(p ControlProps) g.Node {
 	f := p.Field.Definition
-	f.Presentation.Label = cmp.Or(p.Field.Label, f.Presentation.Label, f.Name)
-	policy := present.Resolve(present.Input{Schema: entity.Schema{Fields: []entity.Field{f}}})
-	label := policy.Fields[0].Label
+	label := cmp.Or(p.Field.Label, f.Presentation.Label, f.Name)
 	word := func(key, fallback string) string {
 		if p.Text != nil {
 			return p.Text("forms.sketch."+key, fallback)

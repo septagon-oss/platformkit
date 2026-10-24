@@ -111,6 +111,9 @@ them. Missing JavaScript/canvas preserves the saved drawing and explains the
 limitation. Read-only fields show the shared `components.Sketch` reader. Its
 required label is the accessible SVG name; layout supplies its display size.
 Generated list thumbnails and record drawings use the same validated geometry.
+The reader accepts `components.SketchValue`, implemented by `entity.Sketch`.
+`Control` uses its supplied field label, then the declared label or field name;
+generated screens supply the localized label through the existing form adapter.
 
 **Reused** — field namespaces, native action buttons, shared design tokens, the
 forms message catalogues and document asset lifecycle.

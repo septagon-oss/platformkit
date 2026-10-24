@@ -155,6 +155,9 @@ and values beyond the limits are refused with `ErrInvalidSketch`. JSON and SQL
 preserve stroke order, all integers, unset `null` and explicit empty `[]`.
 `Scan` and `UnmarshalJSON` replace their receiver only on success. Assignment
 aliases slices; copy them before independent editing or concurrent mutation.
+`Sketch.Strokes` validates and returns a deep copy as primitive integer tuples,
+preserving unset versus empty and returning no strokes for an invalid value.
+It satisfies `components.SketchValue` without making components import entity.
 
 `Sketch.Validate` is the common decision for the codec and owning commands.
 `ValidateSketchFields` also checks containing fields marked required. CRUD checks
