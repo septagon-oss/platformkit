@@ -8,12 +8,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui/document"
 )
@@ -59,6 +59,13 @@ type Granter struct{ Permission, Label string }
 // Route is what one page is: its operation id, method, path, summary, and the
 // statuses it may answer with beyond the kernel's defaults.
 type Route struct {
+	// View binds this route to a declared screen; Response defaults to input.
+	View     screen.ViewRef
+	Response string
+	// Exception classifies redirect, protocol, export or preview responses.
+	Exception, Reason string
+	// Targets checks composed form addresses against their operation identities.
+	Targets []screen.Target
 	// MintsCredential prevents storing this page's credential-bearing response.
 	MintsCredential           bool
 	ID, Method, Path, Summary string
@@ -108,23 +115,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
 	}
-	op := huma.Operation{
-		OperationID: rt.ID, Method: rt.Method, Path: rt.Path, Summary: rt.Summary,
-		Tags: []string{s.Tag}, Errors: rt.Errors,
-	}
-	if rt.StreamsBody {
-		key, streamed := httpx.StreamedBody()
-		op.Extensions = map[string]any{key: streamed}
-	}
-	if rt.MintsCredential {
-		if op.Extensions == nil {
-			op.Extensions = map[string]any{}
-		}
-		op.Extensions[httpx.CredentialExtension] = true
-	}
-	if s.Chrome.SignIn != "" {
-		httpx.SignIn(&op, s.Chrome.SignIn)
-	}
+	op := pageOperation(r, s, rt)
 	httpx.HTML(r, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
 		r := read(ctx, s.Chrome)
 		if s.Messages != nil {
@@ -165,6 +156,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
+		attachScreenView(rt, err, &v)
 		if r.Locale != nil {
 			if v.Language == "" {
 				v.Language = r.Locale.Language

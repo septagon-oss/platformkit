@@ -34,6 +34,7 @@ import (
 // how they get a rule in @layer components — so composedClasses reads those off
 // the composition instead of off this list.
 var renderedHooks = map[string]string{
+	"data-screen-view":          "ui/resource/screens.go",
 	"data-confirm":              "ui/resource/resource.go",
 	"data-confirm-label":        "ui/resource/resource.go",
 	"data-gallery":              "ui/export/storybook.go",

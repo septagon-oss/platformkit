@@ -128,7 +128,8 @@ plus build, vet, formatting, budgets, imports, version and tenant-setting checks
 the limit counters and the router under the race detector. CI runs `check` and
 `check-race`, so the detector is not something a contributor has to remember; it
 is a separate goal because -race roughly doubles the suite.
-`make e2e` adds browser journeys. Both pass before pushing; `make check`
+`make check` includes the focused `make check-screen-render` browser contract.
+Install the browser prerequisites below before running it. `make e2e` adds the full browser journeys. Both pass before pushing; `make check`
 passes before committing.
 
 ### Which tests run where (decision 0088)

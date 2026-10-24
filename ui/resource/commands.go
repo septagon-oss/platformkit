@@ -26,6 +26,8 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
@@ -41,6 +43,8 @@ import (
 // rendered dimmed or disabled: the door is not there, because the route behind it is
 // not reachable by them either.
 type Command struct {
+	ScreenOwner, Entity string
+	Repeated            bool
 	// Bindings fills hidden arguments from the displayed row, never a fresh read.
 	Bindings    map[string]string
 	Verb        string
@@ -112,16 +116,7 @@ func commandFormsIn(o Options, words Words, commands []Command, item string, col
 // only a read of this row in this language can supply. That is the whole test: it
 // is a fact the command declared about its own arguments, and not a verb this
 // package has learned to recognise.
-func carriesRevisions(c Command) bool {
-	for _, f := range c.Fields {
-		for _, k := range f.Keys {
-			if k.From == entity.KeyFromRevision {
-				return true
-			}
-		}
-	}
-	return false
-}
+func carriesRevisions(c Command) bool { return present.RepeatedFields(c.Fields) }
 
 // commandFormFor is the control, and one row's standing in one language: one control
 // per argument, through the same Control the edit form uses, so a command that takes
@@ -191,7 +186,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 		}
 		if len(f.Keys) > 0 {
 			for _, k := range f.Keys {
-				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale))
+				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale, c.fieldAnchor(f.Name, k.Name)))
 			}
 			continue
 		}
@@ -200,7 +195,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			f.Widget, value = "hidden", locale.Locale
 		}
 		controls = append(controls, forms.Control(forms.ControlProps{
-			Field: formField(arguments, f), ID: id, Value: value,
+			Field: c.formField(arguments, f), ID: id, Value: value,
 		}))
 	}
 	// Outline, so the screen's one filled action stays its toolbar's — Edit on a
@@ -208,9 +203,10 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	// buttons above the fold of a record with several commands, and the design
 	// floor allows one. Outline has no fill in either theme.
 	controls = append(controls, components.Button(components.ButtonProps{
-		Label: button, Type: "submit", Variant: "outline", Size: "md",
+		ComponentProps: components.ComponentProps{Attrs: c.submitAttrs()},
+		Label:          button, Type: "submit", Variant: "outline", Size: "md",
 	}))
-	return components.Form(components.FormProps{Action: c.Action(item), Label: label}, controls...)
+	return components.Form(components.FormProps{ComponentProps: components.ComponentProps{Attrs: c.viewAttrs()}, Action: c.Action(item), Label: label}, controls...)
 }
 
 // mapKeyControl is one key of a map-valued argument: a control of the key's own
@@ -223,7 +219,11 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 // what they did not mean to change, and the command writes every field the body
 // names: an unchanged box reposted without its revision would be a 409 on six
 // fields of which one was edited. An empty box is a field left alone.
-func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState) g.Node {
+func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState, anchors ...screen.AnchorRef) g.Node {
+	var anchor screen.AnchorRef
+	if len(anchors) != 0 {
+		anchor = anchors[0]
+	}
 	key := entity.Field{
 		Name:   f.Name + "[" + k.Name + "]",
 		Type:   f.Elem,
@@ -235,7 +235,7 @@ func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.Loc
 		value = strconv.FormatInt(locale.Revisions[k.Name], 10)
 	}
 	return forms.Control(forms.ControlProps{
-		Field: forms.Field{Definition: key, Label: k.Label},
+		Field: forms.Field{Definition: key, Label: k.Label, Anchor: anchor},
 		ID:    id, Value: value,
 	})
 }

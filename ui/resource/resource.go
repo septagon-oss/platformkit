@@ -39,8 +39,10 @@ import (
 // httpx.Resource carries the same two beside its guarded closures; ui/screens
 // hands the renderers this half.
 type Resource struct {
-	Schema    entity.Schema
-	Immutable []string
+	// ScreenOwner enables composed screen references; empty keeps standalone rendering.
+	ScreenOwner string
+	Schema      entity.Schema
+	Immutable   []string
 	// API is the resource's own read address as the kernel composed it — the path
 	// its JSON routes answer at — empty for a screen rendered without a kernel
 	// behind it. A renderer builds an autosave target from it and from nothing
@@ -175,8 +177,8 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	// The New button is drawn for a caller who may write *and* a resource that
 	// offers a create: the two questions are different, and the second is
 	// answered by the mounted routes rather than by anybody's permissions.
-	if writable && r.offers("create") {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new"})}
+	if hasControl(r.resolvedView("list", writable), "action.create") {
+		actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("list", "action.create")}, Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new"})}
 	}
 	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
@@ -193,7 +195,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		// Generated CRUD does not gain selected-row writes from a UI control.
 		Footer: commandForms(o, o.Words(r.Schema), r.Commands, at, true),
 	})}
-	return document.View{Title: title, Body: body}
+	return document.View{Title: title, Body: r.viewBody("list", body)}
 }
 
 // Detail is one row: every field, in schema order, and the write affordances
@@ -220,8 +222,8 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	named := r.rowName(row, readable(r.Schema.Fields))
 	var actions []g.Node
 	if writable {
-		if r.offers("update") {
-			actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
+		if hasControl(r.resolvedView("detail", writable), "action.edit") {
+			actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("detail", "action.edit")}, Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
 		}
 		// A singleton is not created and not removed, whatever Create and Delete
 		// answer when they are asked. kit/rest makes those two refuse rather than
@@ -229,8 +231,8 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		// closure and wrong for a door: a refusal is a sentence about a mistake
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
-		if !r.Singleton && r.offers("delete") {
-			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
+		if hasControl(r.resolvedView("detail", writable), "action.delete") {
+			actions = append(actions, deleteForm(o, item, r.Schema.Entity, r.anchor("detail", "action.delete")))
 		}
 	}
 	body := []g.Node{
@@ -243,7 +245,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	// row, and a command is what they may do to it once they have read it.
 	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
-	return document.View{Title: named, Body: body}
+	return document.View{Title: named, Body: r.viewBody("detail", body)}
 }
 
 // offeredCommands is the commands to draw a form for: every one this caller may
@@ -358,21 +360,23 @@ const statusUnprocessableEntity = 422
 // the refused POST that swaps errors back in is answered at the address the form
 // was drawn from, so the swap still finds its target.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	// The form asks for every field its author did not keep off every screen:
-	// `hidden` is the one visibility off this screen too, because a control for a
-	// field no screen may name is a question nobody may answer, and `detail` stays
-	// on it — a required field a form cannot ask for is a record nobody can
-	// create. See readable. The one field added after this loop is the edit form's
-	// own write condition, below, so the capacity holds room for it.
-	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
+	kind := "edit"
+	if create {
+		kind = "create"
+	}
+	resolved := r.resolvedView(kind, true)
+	fields := make([]forms.Field, 0, len(resolved.Controls)+1)
 	words := o.Words(r.Schema)
-	// A render carrying a refusal line is the form redrawn over a write that was
-	// refused, with the person's own words in its controls.
-	refused := detail != ""
-	for _, field := range readable(r.Schema.Fields) {
-		f := formField(words, field)
+	for _, control := range resolved.Controls {
+		if control.Name != "field" {
+			continue
+		}
+		f := formField(words, controlField(r.Schema, control))
+		if ref := r.ref(kind, ""); ref != "" {
+			f.Anchor, _ = ref.Anchor("field", control.Path...)
+		}
 		if f.Definition.Widget == "richtext" {
-			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
+			f.Editor = richtextEditor(r, row, create, f.Definition.Name, detail != "")
 		}
 		fields = append(fields, f)
 	}
@@ -380,16 +384,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	for name, value := range row {
 		values[name] = display.Text(value)
 	}
-	// An edit carries the row's write count back as a hidden value, so the write it
-	// posts can be refused against a row that moved since the person read it. It is a
-	// hidden value and not a control for two reasons that are one: nobody may type the
-	// number of a row's writes (kit/rest refuses a body that names the field), and a
-	// form whose hidden machinery is drawn as a control is a form that invites people to
-	// break its own safety. A create quotes nothing: there is no row to have read.
-	//
-	// The value is the number as the row has it, which is also what a refused write gives
-	// back — the person who is told their deadline is invalid resubmits against the
-	// revision they were already quoting, not against one they never saw.
+	// Carry the read revision so a concurrent change refuses the submitted edit.
 	if condition, quoted := revisionCondition(r, row, create); quoted {
 		fields = append(fields, forms.Field{Definition: entity.Field{
 			Name: entity.RevisionCondition, Type: entity.TypeString, Widget: "hidden",
@@ -399,8 +394,8 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	}
 	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
 		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
-		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
+		View:      r.ref(kind, ""),
 		Action:    action, CancelURL: r.Screen, Title: title,
 		Text: func(key, fallback string) string {
 			if o.Locale == nil {
@@ -757,15 +752,20 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 
 // deleteForm is the destructive action: a real form, so it works without
 // JavaScript, carrying the attribute confirm.js opens the dialog on.
-func deleteForm(o Options, item, entity string) g.Node {
+func deleteForm(o Options, item, entity string, anchors ...map[string]string) g.Node {
+	attrs := map[string]string{}
+	for _, values := range anchors {
+		for name, value := range values {
+			attrs[name] = value
+		}
+	}
 	remove := o.Text("screens.delete", "Delete")
+	attrs["data-confirm"] = o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity)
+	attrs["data-confirm-label"] = remove
 	return components.Form(components.FormProps{Action: item + "/delete", Label: o.Text("screens.delete_this", "Delete this %s", entity)},
 		components.Button(components.ButtonProps{
-			ComponentProps: components.ComponentProps{Attrs: map[string]string{
-				"data-confirm":       o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity),
-				"data-confirm-label": remove,
-			}},
-			Label: remove, Type: "submit", Tone: "danger", Size: "md",
+			ComponentProps: components.ComponentProps{Attrs: attrs},
+			Label:          remove, Type: "submit", Tone: "danger", Size: "md",
 		}))
 }
 

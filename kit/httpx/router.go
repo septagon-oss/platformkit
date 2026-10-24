@@ -16,9 +16,10 @@ import (
 // two; a Go method cannot take type parameters, so the doors are functions
 // taking the router.
 type Router struct {
-	surface Surface
-	module  string
-	api     *API
+	screenOwner string
+	surface     Surface
+	module      string
+	api         *API
 	// atRoot says this router came from Home and therefore mounts at the
 	// surface's own root rather than beneath the module's segment.
 	atRoot bool
@@ -66,7 +67,7 @@ func (r *Router) ForModule(module string) *Router {
 	if !known {
 		panic(fmt.Sprintf("httpx: %s router asked for module %q, which this composition never registered; a route lives in a module that exists", r.surface, module))
 	}
-	return &Router{surface: r.surface, module: module, api: r.api}
+	return &Router{surface: r.surface, module: module, screenOwner: r.screenOwner, api: r.api}
 }
 
 // Known reports whether the composition registered a module of that name. The
@@ -92,7 +93,7 @@ func (r *Router) Known(module string) bool {
 // routes. The claim is about who answers the visitor at the root of the site or
 // the workspace, which is one address and can have one owner.
 func (r *Router) Home() (*Router, bool) {
-	home := &Router{surface: r.surface, module: r.module, api: r.api, atRoot: true}
+	home := &Router{surface: r.surface, module: r.module, screenOwner: r.screenOwner, api: r.api, atRoot: true}
 	if r.surface == SurfaceOps {
 		// The control plane has no root to serve: its own address is a 404 at
 		// every host but the installation's, and a page is refused there

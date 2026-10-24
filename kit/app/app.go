@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/appname"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"log/slog"
 	"net/http"
 	"os"
@@ -258,7 +259,9 @@ type App struct {
 	// registrations left it, and nil exactly when no registration of this composition
 	// has run yet. registeredRoutes and registrationsAgree are its whole life: the
 	// first registration writes it and each of the other three is judged against it.
-	declaredRoutes []string
+	declaredRoutes  []string
+	declaredScreens []byte
+	screenInventory screen.Inventory
 
 	// declared is every event these manifests promise, with the payload type each
 	// one named, and declaredRelease is this composition's receipt for putting them
@@ -879,13 +882,7 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	if a.opts.App.Named() {
 		mountLedgerOps(api, a.opts.App)
 	}
-	// One check, and the reason there is one is that /ready answers a question a
-	// probe can act on: is this instance's database reachable. Modules used to
-	// be able to contribute their own and none ever did in three repositories,
-	// so the list was this line and a loop over nothing. The probe asks the held
-	// connection rather than one captured here, because this line runs in a boot
-	// that has not opened its pool yet and /ready is only ever asked of a boot
-	// that has.
+	// Readiness reads the held connection, which is opened only after these gates.
 	mountOperations(api, a.opts.Clock)
 	health.Register(api, []health.Check{health.DatabaseCheckThrough(a.held.read)}, a.reports...)
 
@@ -901,6 +898,9 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 		return nil, nil, err
 	}
 	if err := validateEvents(api, a.mods); err != nil {
+		return nil, nil, err
+	}
+	if err := a.validateScreens(api); err != nil {
 		return nil, nil, err
 	}
 	return api, router, nil

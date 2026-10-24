@@ -3,6 +3,7 @@ package components
 // checkbox.go renders the checkbox, its label and the error it announces.
 
 import (
+	"maps"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -50,6 +51,65 @@ func Checkbox(p CheckboxProps) g.Node {
 		root = append(root, g.Attr("hidden"))
 	}
 
+	// The visible label owns the anchor; the native input is visually hidden.
+	if anchor := p.Attrs["data-screen-anchor"]; anchor != "" {
+		root = append(root, g.Attr("data-screen-anchor", anchor))
+	}
+
+	indicatorClass := clCheckboxIndicator.Merge(clCheckboxIndicatorIdle)
+	if p.Checked || p.Indeterminate {
+		indicatorClass = clCheckboxIndicator.Merge(clCheckboxIndicatorActive)
+	}
+	checkmark := []g.Node{
+		h.Class(clCheckboxCheckmark.Compile()),
+		g.Attr("viewBox", "0 0 20 20"),
+		g.Attr("fill", "currentColor"),
+		g.Attr("data-checkbox-checkmark", "true"),
+		g.El("path",
+			g.Attr("fill-rule", "evenodd"),
+			g.Attr("clip-rule", "evenodd"),
+			g.Attr("d", "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"),
+		),
+	}
+	if !p.Checked || p.Indeterminate {
+		checkmark = append(checkmark, g.Attr("hidden"))
+	}
+	bar := []g.Node{
+		h.Class(clCheckboxBar.Compile()),
+		g.Attr("data-checkbox-bar", "true"),
+	}
+	if !p.Indeterminate {
+		bar = append(bar, g.Attr("hidden"))
+	}
+	root = append(root,
+		checkboxInput(p, id),
+		h.Span(
+			h.Class(indicatorClass.Compile()),
+			g.Attr("data-checkbox-box", "true"),
+			g.Attr("data-state", state),
+			g.Attr("aria-hidden", "true"),
+			g.El("svg", checkmark...),
+			h.Span(bar...),
+		),
+	)
+	if p.Label != "" {
+		root = append(root, h.Span(h.Class(clCheckboxLabel.Compile()), g.Text(p.Label)))
+	}
+	control := h.Label(root...)
+	if p.HelpText == "" && p.Error == "" {
+		return control
+	}
+	field := []g.Node{h.Class(clFieldWrap.Compile()), control}
+	if p.Error != "" {
+		field = append(field, h.P(h.ID(id+"-error"), h.Class(clFieldErr.Compile()), h.Role("alert"), g.Text(p.Error)))
+	}
+	if p.HelpText != "" {
+		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
+	}
+	return h.Div(field...)
+}
+
+func checkboxInput(p CheckboxProps, id string) g.Node {
 	box := []g.Node{
 		h.Class(clCheckboxInput.Compile()), h.Type("checkbox"),
 		g.Attr("data-checkbox-input", "true"),
@@ -60,7 +120,9 @@ func Checkbox(p CheckboxProps) g.Node {
 	if p.Name != "" {
 		box = append(box, h.Name(p.Name))
 	}
-	box = append(box, attrPairs(p.Attrs)...)
+	attrs := maps.Clone(p.Attrs)
+	delete(attrs, "data-screen-anchor")
+	box = append(box, attrPairs(attrs)...)
 	if p.Value != "" {
 		box = append(box, h.Value(p.Value))
 	}
@@ -95,55 +157,5 @@ func Checkbox(p CheckboxProps) g.Node {
 		box = append(box, g.Attr("aria-describedby", strings.Join(describedBy, " ")))
 	}
 
-	indicatorClass := clCheckboxIndicator.Merge(clCheckboxIndicatorIdle)
-	if p.Checked || p.Indeterminate {
-		indicatorClass = clCheckboxIndicator.Merge(clCheckboxIndicatorActive)
-	}
-	checkmark := []g.Node{
-		h.Class(clCheckboxCheckmark.Compile()),
-		g.Attr("viewBox", "0 0 20 20"),
-		g.Attr("fill", "currentColor"),
-		g.Attr("data-checkbox-checkmark", "true"),
-		g.El("path",
-			g.Attr("fill-rule", "evenodd"),
-			g.Attr("clip-rule", "evenodd"),
-			g.Attr("d", "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"),
-		),
-	}
-	if !p.Checked || p.Indeterminate {
-		checkmark = append(checkmark, g.Attr("hidden"))
-	}
-	bar := []g.Node{
-		h.Class(clCheckboxBar.Compile()),
-		g.Attr("data-checkbox-bar", "true"),
-	}
-	if !p.Indeterminate {
-		bar = append(bar, g.Attr("hidden"))
-	}
-	root = append(root,
-		h.Input(box...),
-		h.Span(
-			h.Class(indicatorClass.Compile()),
-			g.Attr("data-checkbox-box", "true"),
-			g.Attr("data-state", state),
-			g.Attr("aria-hidden", "true"),
-			g.El("svg", checkmark...),
-			h.Span(bar...),
-		),
-	)
-	if p.Label != "" {
-		root = append(root, h.Span(h.Class(clCheckboxLabel.Compile()), g.Text(p.Label)))
-	}
-	control := h.Label(root...)
-	if p.HelpText == "" && p.Error == "" {
-		return control
-	}
-	field := []g.Node{h.Class(clFieldWrap.Compile()), control}
-	if p.Error != "" {
-		field = append(field, h.P(h.ID(id+"-error"), h.Class(clFieldErr.Compile()), h.Role("alert"), g.Text(p.Error)))
-	}
-	if p.HelpText != "" {
-		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
-	}
-	return h.Div(field...)
+	return h.Input(box...)
 }

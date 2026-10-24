@@ -200,6 +200,330 @@
     "trendField": "createdAt"
   },
   "resolved": {
+    "views": [
+      {
+        "kind": "list",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "action.create",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "action.edit",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          },
+          {
+            "name": "action.delete",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "create",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "title"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "description"
+            ],
+            "control": "textarea",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "status"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "priority"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "dueAt"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "slaDeadline"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "action.submit",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          },
+          {
+            "name": "action.cancel",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "edit",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "title"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "description"
+            ],
+            "control": "textarea",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "status"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "priority"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "assigneeId"
+            ],
+            "control": "entity-picker",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "dueAt"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "slaDeadline"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "slaBreached"
+            ],
+            "control": "checkbox",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "resolvedAt"
+            ],
+            "control": "datetime",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "resolution"
+            ],
+            "control": "textarea",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "action.submit",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          },
+          {
+            "name": "action.cancel",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "assign",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "assigneeId"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "command",
+            "path": [
+              "assign"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "resolve",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "resolution"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "command",
+            "path": [
+              "resolve"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      }
+    ],
     "policyVersion": 1,
     "language": "en",
     "identity": {

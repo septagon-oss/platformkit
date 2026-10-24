@@ -220,9 +220,9 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// offer what the other did not mount. The address is the public door as the
 		// surface composes it — see pinnedRegisterAPI.
 		pkit.Put[admincontracts.Signin](w, admincontracts.Signin{
-			Address: pinnedSignInAPI,
+			Address: pinnedSignInAPI, OperationID: "auth-login",
 			Registration: &admincontracts.Registration{
-				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI,
+				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI, OperationID: "auth-register",
 			},
 		})
 		// Where a stored picture's bytes are fetched from. The workspace catalogue

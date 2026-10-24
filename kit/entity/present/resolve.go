@@ -36,11 +36,15 @@ type Input struct {
 
 // CommandInput is one command the caller may call.
 type CommandInput struct {
-	Verb      string
-	Summary   string
-	Undo      string
-	HasResult bool
-	Hints     entity.CommandHints
+	Fields     []entity.Field
+	Bindings   map[string]string
+	Collection bool
+	Repeated   bool
+	Verb       string
+	Summary    string
+	Undo       string
+	HasResult  bool
+	Hints      entity.CommandHints
 }
 
 // Resolve decides the presentation of one entry. It never fails: a hint that
@@ -49,6 +53,7 @@ type CommandInput struct {
 func Resolve(in Input) Resolved {
 	r := Resolved{
 		PolicyVersion: PolicyVersion,
+		Views:         views(in),
 		Language:      cmp.Or(in.Language, "en"),
 		Identity:      identity(in),
 		Fields:        []ResolvedField{},

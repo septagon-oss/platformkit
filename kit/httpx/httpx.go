@@ -8,6 +8,7 @@ package httpx
 import (
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -29,6 +30,7 @@ import (
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
+	screenViews []screen.View
 	// moved is this composition's own migration rows (API.Alias), asked after the
 	// kernel's table in aliases.go.
 	moved []struct{ from, to string }

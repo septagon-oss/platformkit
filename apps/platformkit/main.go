@@ -47,12 +47,14 @@ func main() {
 		err = seedCommand(args)
 	case "migrate":
 		err = migrate(args)
+	case "screens":
+		err = screenCommand(args)
 	case "composition":
 		err = writeComposition(args)
 	case "repair-roles":
 		err = repairRoles(args)
 	default:
-		err = fmt.Errorf("%q is not a command; there are seven: run, bootstrap, start, seed, migrate, composition and repair-roles", command)
+		err = fmt.Errorf("%q is not a command; there are eight: run, bootstrap, start, seed, migrate, composition, screens and repair-roles", command)
 	}
 	if err != nil {
 		// The error goes to stderr rather than through the logger, because the

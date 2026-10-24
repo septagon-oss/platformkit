@@ -16,6 +16,7 @@
 package screens
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -52,7 +53,9 @@ type Options = resource.Options
 // A field the renderers read has to be delivered here, and
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
-	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
+	r.Schema.Module = cmp.Or(r.Schema.Module, r.Module)
+	r.Schema.Entity = cmp.Or(r.Schema.Entity, r.Entity)
+	return resource.Resource{ScreenOwner: r.Module, Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
 		Screen: r.Screen, Operations: screenOperations(r), Present: r.Present, API: r.Path}
 }
 
@@ -123,19 +126,7 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 		if c.Present.System {
 			continue
 		}
-		label := c.Present.Label
-		if label == "" {
-			// The Summary is the label because nothing else was ever offered:
-			// the button word and the API document's own sentence have always
-			// been one string here, and an author who wants them to differ now
-			// has somewhere to say so.
-			label = c.Summary
-		}
-		out = append(out, resource.Command{
-			Bindings: c.Bindings,
-			Verb:     c.Verb, Label: label, Description: c.Description,
-			Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,
-		})
+		out = append(out, describedCommand(r, c, at))
 	}
 	return out
 }

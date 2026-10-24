@@ -38,6 +38,8 @@ type PrimaryAction module.NavEntry
 // speak of; Registration nil is the password door alone, which is what the
 // empty field always meant.
 type Signin struct {
+	// OperationID must name Address's mounted operation; empty values panic in Views.
+	OperationID string
 	// Address is where the sign-in form posts.
 	Address string
 	// Registration is the sign-up form the sign-in page links, or nil for the
@@ -48,6 +50,8 @@ type Signin struct {
 // Registration is the sign-up form a composition offers, and which of the two
 // forms the door takes.
 type Registration struct {
+	// OperationID must name Address's mounted operation; empty values panic in Views.
+	OperationID string
 	// Kind is which form the shell renders. KindEmail asks for an address alone
 	// and the tenant then invites the person; KindPassword takes a password and
 	// its confirmation and the account waits for the mailbox link.

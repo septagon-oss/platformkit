@@ -61,6 +61,10 @@ Email delivery likewise requires an SMTP configuration.
 [Architecture](ARCHITECTURE.md) explains composition, tenant isolation,
 authorization and migrations in more detail.
 
+Composed pages publish typed [screen contracts](kit/screen/README.md): generated
+views share resolved controls with their renderers, and custom pages declare
+immutable views and anchors in their module contracts.
+
 ### Compose it in sentences
 
 `pkit` is the composition layer above the kernel: one application, named, with
