@@ -35,7 +35,9 @@ ADVISORIES = (
         "parent": "jspdf",
     },
     {
-        # npm prints this one as `<4.6.6`, which for stable releases is `<=4.6.5`.
+        # A peer dependency rather than a nested one: `@ai-sdk/provider-utils` declares
+        # `zod ^3.25.76 || ^4.1.8`, so `npm ci` installs it at the top of the tree and
+        # `--omit=dev` audits it, because omitting dev-dependencies does not omit a peer.
         "package": "zod",
         "since": None,
         "upto": (4, 6, 5),
