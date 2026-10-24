@@ -7,9 +7,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 <!-- BEGIN GENERATED: scripts/inventory_figures.py scale -->
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 4207 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 2248 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 3884 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 4216 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 2254 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 3893 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 79 | filename prefix |
 | rows inside them | 123 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 109 / 1 / 116 / 97 | same walk |
@@ -21,8 +21,8 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 22 | push, first | asserts a golden or the published API set |
-| behaviour | 3587 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
-| composition | 488 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
+| behaviour | 3594 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| composition | 490 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
 | journey | 110 | nightly | `e2e/`: browser or device |
 <!-- END GENERATED -->
 
@@ -51,7 +51,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 <!-- BEGIN GENERATED: scripts/inventory_figures.py verdicts -->
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 2003 | 3821 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 2009 | 3830 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 91 | 170 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (72) |
 | `merge` | 154 | 216 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -122,10 +122,10 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 <!-- BEGIN GENERATED: scripts/inventory_figures.py area-verdicts -->
 | area | files | keep-rewrite | merge | delete |
 |---|---|---|---|---|
-| kit | 633 | 69 | 139 | 0 |
-| modules | 613 | 35 | 36 | 0 |
-| apps | 302 | 24 | 28 | 0 |
-| ui | 241 | 22 | 5 | 0 |
+| kit | 634 | 69 | 139 | 0 |
+| modules | 614 | 35 | 36 | 0 |
+| apps | 304 | 24 | 28 | 0 |
+| ui | 243 | 22 | 5 | 0 |
 | tools | 111 | 1 | 0 | 0 |
 | e2e | 110 | 5 | 0 | 0 |
 | design | 15 | 9 | 0 | 0 |

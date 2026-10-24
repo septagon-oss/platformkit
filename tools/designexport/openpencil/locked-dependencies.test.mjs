@@ -2,16 +2,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-// The three dependencies the audit gate has pointed at, each reached through a package this adapter
-// does not depend on directly: @open-pencil/core → jspdf → dompurify@^3.3.1, whose lock carried
-// 3.4.14, and unifont → css-tree → source-map-js@^1.2.1, whose lock carried 1.2.1. The third is
-// not a dependency at all but a peer: @ai-sdk/provider-utils asks for zod ^3.25.76 || ^4.1.8, npm
-// installs one on its own, and that range allows the releases the memory-exhaustion advisory
-// reports, so the version that lands is the feed's choice rather than anybody's. Each parent still
-// accepts the vulnerable range, so the override in package.json is what keeps `npm ci` out of it,
-// and this check is what keeps that override from drifting quietly: the lock has to resolve each
-// name to the reviewed release named here, and to the very release package.json overrides it to.
-const reviewed = { dompurify: '3.4.17', 'source-map-js': '1.2.2', zod: '4.6.7' }
+// The four dependencies the audit gate has pointed at, three of them reached through a package this
+// adapter does not depend on directly: @open-pencil/core → jspdf → dompurify@^3.3.1 (3.4.14),
+// unifont → css-tree → source-map-js@^1.2.1 (1.2.1) and unifont → undici@^8.0.0 (8.10.2). The
+// fourth is no dependency at all but the peer @ai-sdk/provider-utils asks for at
+// ^3.25.76 || ^4.1.8, which npm installs on its own behalf, so the release that lands is the
+// advisory feed's choice rather than anybody's. Every parent still accepts the vulnerable range, so
+// the override in package.json is what keeps `npm ci` out of it and this check is what keeps that
+// override honest: the lock must resolve each name to the reviewed release named here.
+const reviewed = { dompurify: '3.4.17', 'source-map-js': '1.2.2', undici: '8.12.3', zod: '4.6.7' }
 
 const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 const lock = JSON.parse(readFileSync(new URL('./package-lock.json', import.meta.url), 'utf8'))
