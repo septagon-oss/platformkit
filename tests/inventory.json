@@ -38113,6 +38113,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/wire/pattern_escapes_preserve_diagnostics_test.go",
+   "id": "kit/wire/pattern_escapes_preserve_diagnostics_test.go#TestPatternEscapesPreserveTheShapeDiagnostic",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestPatternEscapesPreserveTheShapeDiagnostic",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/wire/pattern_words_are_not_an_enum_segment_test.go",
    "id": "kit/wire/pattern_words_are_not_an_enum_segment_test.go#TestPatternWordsAreNotReadAsAnEnumSegment",
    "kind": "go",
@@ -83216,7 +83235,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2254,
+  "files": 2255,
   "forge_runs": [
    408,
    413,
@@ -83250,7 +83269,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3598,
+   "behaviour": 3599,
    "composition": 487,
    "contract": 22,
    "journey": 110
@@ -83269,23 +83288,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4217,
+  "rows": 4218,
   "tiers": {
    "merge": 2590,
    "nightly": 110,
-   "push": 1517
+   "push": 1518
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2009,
+   "keep": 2010,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3831,
+   "keep": 3832,
    "keep-rewrite": 170,
    "merge": 216
   }
