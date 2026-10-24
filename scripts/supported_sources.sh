@@ -107,9 +107,26 @@ while IFS= read -r name; do
 	refuse "$name is listed as refused with no reason; a source is refused by being named and explained, never by being left out"
 done < <(jq -r '.refused[] | select((.reason // "") == "") | .ref' "$record")
 
+# The bytes an installation already holds applied. The runner compares a migration whole,
+# so a release that rewrites an applied file — a comment is enough — is refused by every
+# ledger that file landed in. The record names those bytes, and they are checked here, on
+# the tree the release is built from: a supported source whose files no longer hash to
+# what the field owes is a source whose history this release rejects.
+nbytes=$(jq -r 'if (.applied_bytes | type) == "array" then (.applied_bytes | length) else 0 end' "$record")
+[ "$nbytes" -gt 0 ] ||
+	refuse "$record names no applied migration bytes; a supported installation has migrations applied, and the exact bytes it holds are the first thing an upgrade must keep"
+while IFS=$'\t' read -r path want; do
+	[ -n "$path" ] || continue
+	[ -r "$root/$path" ] ||
+		refuse "$record owes the applied bytes at $path, which this tree does not hold"
+	have=$(sha256sum "$root/$path" | cut -d' ' -f1)
+	[ "$have" = "$want" ] ||
+		refuse "$path is $have here, and $record owes $want: the release rewrites a migration that installations already have applied"
+done < <(jq -r '.applied_bytes[] | [.path, .sha256 // ""] | @tsv' "$record")
+
 case "$verb" in
 verify)
-	echo "supported-sources: $record — line $target, $nsources supported source(s), $nrefused refused, roles $(jq -r '.required_roles | join(",")' "$record")"
+	echo "supported-sources: $record — line $target, $nsources supported source(s), $nrefused refused, roles $(jq -r '.required_roles | join(",")' "$record"), $nbytes applied migration byte obligation(s)"
 	;;
 positives)
 	jq -r '.sources[] | [.ref, .commit, ((.roles // []) | join(","))] | @tsv' "$record"

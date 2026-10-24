@@ -122,6 +122,8 @@ jq -e . "$receipt" >/dev/null 2>&1 || die 2 "$receipt is not JSON the rehearsal 
 record_kind=$(jq -r '.record // "platformkit.rehearsal.v1"' "$receipt")
 if [ "$record_kind" = "platformkit.rehearsal.v2" ]; then
 	[ -r "$reader" ] || die 2 "the support record's reader at $reader is not readable, so no case of this matrix can be checked"
+	"$reader" verify >/dev/null ||
+		{ echo "pin-rehearsal: the support record does not answer for this release: $("$reader" verify 2>&1 | head -1)"; exit 1; }
 	jq -e '.exit == 0' "$receipt" >/dev/null ||
 		{ echo "pin-rehearsal: the matrix receipt records exit $(jq -r '.exit' "$receipt"); the step writes one only where every case passed."; exit 1; }
 	[ "$(jq -r '.target_commit // empty' "$receipt")" = "$want" ] ||

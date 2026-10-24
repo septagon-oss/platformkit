@@ -349,19 +349,24 @@ if [ "$supported" = 1 ]; then
 		fi
 		note "refused $refused_ref as the record requires: $(printf '%s' "$refusal" | head -1)"
 		jq -n --arg ref "$refused_ref" --arg commit "$refused_commit" --arg reason "$refused_reason" \
-			'{ref: $ref, commit: (if $commit == "" then null else $commit end), reason: $reason, refused_with: $refused_code}' \
-			>"$work/refusal-$m.json"
+			--argjson refused_with "$refused_code" \
+			'{ref: $ref, commit: (if $commit == "" then null else $commit end), reason: $reason,
+			  refused_with: $refused_with}' >"$work/refusal-$m.json"
 	done <"$work/refused.tsv"
 
 	if [ -n "${REHEARSE_RECEIPT:-}" ]; then
 		mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
+		# --slurpfile reads one file; the cases are one file each, so they are slurped
+		# with -s into a JSON array and handed over as that array.
+		cases_json=$(jq -s '.' "$work"/result-*.json 2>/dev/null || echo '[]')
+		refusals_json=$(jq -s '.' "$work"/refusal-*.json 2>/dev/null || echo '[]')
 		jq -n --arg target_commit "$candidate" --arg target_line "$target_line" \
 			--arg record "$record_file" --arg record_digest "$record_digest" \
-			--slurpfile results "$work"/result-*.json --slurpfile refusals "$work"/refusal-*.json \
+			--argjson results "$cases_json" --argjson refusals "$refusals_json" \
 			'{record: "platformkit.rehearsal.v2", target_commit: $target_commit,
 			  target_line: $target_line,
 			  support_record: {file: $record, sha256: $record_digest},
-			  sources: ($results | flatten), refused: ($refusals | flatten),
+			  sources: $results, refused: $refusals,
 			  tool: "scripts/rehearse_migrations.sh", mode: "supported", exit: 0}' \
 			>"$REHEARSE_RECEIPT.tmp" || die 2 "the matrix receipt could not be written to $REHEARSE_RECEIPT.tmp"
 		mv -f "$REHEARSE_RECEIPT.tmp" "$REHEARSE_RECEIPT" ||

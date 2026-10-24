@@ -38,7 +38,7 @@ run() { # $1 = expected exit, $2 = label, then the command
 # --- the record -------------------------------------------------------------------
 run 0 "the shipped record answers" "$reader" verify
 rows=$("$reader" positives | grep -c '')
-roles=$("$reader" verify | sed -n 's/.*roles //p' | tr ',' '\n' | sort | paste -sd,)
+roles=$(jq -r '.required_roles[]' "$shipped" | sort | paste -sd,)
 discharged=$("$reader" positives | cut -f3 | tr ',' '\n' | sort -u | paste -sd,)
 if [ "$rows" != "$(jq -r '.required_roles | length' "$shipped")" ] || [ "$roles" != "$discharged" ]; then
 	echo "FAIL  every required role is discharged by exactly one supported source: $rows row(s), roles [$roles] against [$discharged]"
@@ -54,6 +54,9 @@ mutate '.sources[0].commit = "0000000000000000000000000000000000000000"' drifted
 mutate '.sources[0].roles = []' undischarged.json
 mutate '.sources[0].roles += ["every_release_ever"]' invented-role.json
 mutate '.refused[0].reason = ""' reasonless.json
+mutate '.applied_bytes[0].sha256 = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"' rewritten-bytes.json
+mutate '.applied_bytes[0].path = "modules/audit/migrations/000099_that_was_never_applied.up.sql"' absent-bytes.json
+mutate 'del(.applied_bytes)' no-bytes.json
 mutate '.required_roles = []' no-roles.json
 mutate '.record = "platformkit.supported-sources.v0"' other-kind.json
 
@@ -63,6 +66,9 @@ run 1 "a ref that is not the commit beside it" "$reader" --record "$work/drifted
 run 1 "an obligation no source discharges" "$reader" --record "$work/undischarged.json" verify
 run 1 "a role the release never required" "$reader" --record "$work/invented-role.json" verify
 run 1 "a refused source with no reason" "$reader" --record "$work/reasonless.json" verify
+run 1 "an applied migration this release rewrote" "$reader" --record "$work/rewritten-bytes.json" verify
+run 1 "an applied migration this tree does not hold" "$reader" --record "$work/absent-bytes.json" verify
+run 1 "a record that owes no applied bytes" "$reader" --record "$work/no-bytes.json" verify
 run 1 "a record that requires nothing" "$reader" --record "$work/no-roles.json" verify
 run 1 "a record of a kind this reader does not read" "$reader" --record "$work/other-kind.json" verify
 run 2 "no record at all" "$reader" --record "$work/not-here.json" verify
@@ -80,7 +86,8 @@ printf 'module example.com/consumer\n\ngo 1.25\n\nrequire github.com/septagon-os
 target=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 digest=$(sha256sum "$shipped" | cut -d' ' -f1)
 matrix() {
-	jq -n --arg t "$target" --arg digest "$digest" --slurpfile s <("$reader" positives |
+	jq -n --arg t "$target" --arg digest "$digest" --slurpfile r <("$reader" refused | cut -f1,2,3 |
+		jq -R -r 'split("\t") | select(length > 0) | {ref: .[0], commit: .[1]}') --slurpfile s <("$reader" positives |
 		jq -R -r 'split("\t") | {ref: .[0], commit: .[1], roles: (.[2] | split(","))}') '
 		{record: "platformkit.rehearsal.v2", target_commit: $t, target_line: "v2.0.0",
 		 support_record: {file: "scripts/testdata/rehearse/supported-sources.json", sha256: $digest},
@@ -88,11 +95,7 @@ matrix() {
 		   base_commit: .commit, candidate_commit: $t, exit: 0,
 		   files: [{owner: "audit", version: "48", name: "000048_audit_history_append_only.up.sql",
 		            phase: "expand", seconds: 0.002}]}}],
-		 refused: [{ref: "v1.0.0", commit: "48975fe4367296f4b7fa9be7a50eab9b71500fa0",
-		            reason: "excluded upgrade path", refused_with: 1},
-		           {ref: "v1.1.2-proof.20261018.b8f82e073f67",
-		            commit: "b8f82e073f67a2fcee0f05a9c5bb26ad0ea9a6e3",
-		            reason: "no compatibility claim", refused_with: 1}],
+		 refused: [$r[] | {ref, commit: (if . == "" then null else . end), reason: "refused by the record", refused_with: 1}],
 		 tool: "scripts/rehearse_migrations.sh", mode: "supported", exit: 0}' >"$work/$1"
 }
 matrix good.json
