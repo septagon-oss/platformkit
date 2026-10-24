@@ -469,44 +469,46 @@ layer.
 
 ### Authorization: OPA
 
-**Where it lives.** `kit/tenancy` owns the port — `Policy`
-(`kit/tenancy/policy.go:14`) deciding over a `PolicyResource` (`:36`) and a
-`PolicyRequest` (`:43`) — and `RequirePolicy` (`:90`) is the boundary a service
-calls. The adapter sits beside it: `kit/tenancy/providers/opa` builds a policy
-from Rego source (`New`, `kit/tenancy/providers/opa/opa.go:45`) and answers
-(`Decide`, `:74`).
+**Where it lives.** [kit/tenancy](kit/tenancy/policy.go) owns `Policy`, `PolicyRequest` and `RequirePolicy`; [Task](modules/task/README.md) is the consumer.
 
-**Builds on.** Open Policy Agent embedded as a library,
-`github.com/open-policy-agent/opa` v1.21.0 (Apache-2.0): a composition writes its
-rules in Rego and they run in process, with no policy server to deploy, reach or
-keep in step (`kit/tenancy/providers/opa/opa.go:3-5`). Input is
-`input.tenant.id`, `input.actor.kind`, `input.resource.*` (`:13`).
-`kit/tenancy/providers/topaz` implements the same port over
-`github.com/aserto-dev/go-authorizer` v0.24.1 (Apache-2.0) for a deployment whose
-relations are served elsewhere.
+**Builds on.** Embedded OPA uses `github.com/open-policy-agent/opa` v1.21.0;
+Topaz uses `github.com/aserto-dev/go-authorizer` v0.24.1 (both Apache-2.0).
 
-**How the tenant crosses it.** Twice, both load-bearing:
-`PolicyRequest.Validate` refuses a request whose resource carries another
-tenant's id as an invalid request rather than a denial
-(`kit/tenancy/policy.go:65`), and row-level security answers afterwards anyway —
-a policy refines the database's constraint and never replaces it
-(`docs/adr/0003-tenancy-by-postgres.md:1`).
+**How the tenant crosses it.** [The service](modules/task/internal/service.go) locks under [RLS](docs/adr/0003-tenancy-by-postgres.md)
+in `db.Tx[db.Tenant]`; `RequirePolicy` then validates tenant equality and explicit actor identity.
 
-**How it is traced and audited.** `kit/tenancy` starts no span of its own, so a
-decision is seen inside the operation span the transport opened
-(`kit/httpx/traced.go:86`) and in the refusal counter (`:140`, classed by
-`RefusalClass`, `kit/telemetry/telemetry.go:212`), and reaches the trail through
-the owning module's event. Each decision carries `sha256:` of the policy source
-(`kit/tenancy/providers/opa/opa.go:19-20`), so the rules that answered are
-nameable afterwards.
+**How it is traced and audited.** Decisions run within [the HTTP span](kit/httpx/traced.go);
+[the refusal hook](kit/httpx/authorize.go) records authenticated denials as `security.denied`.
+OPA hashes its source; Topaz Revision is configuration, not server freshness.
+Refusal silence concerns task domain effects; audit and receipts have separate paths.
 
-**How an app extends it.** It implements `tenancy.Policy`, and composition names
-which one: `var taskPolicy = opa.MustNew(…)` at `apps/platformkit/product.go:220`,
-put for the task module to take at `:109`, with the rules in the application's own
-`apps/platformkit/policy/task.rego:1`. A denial (`ErrPolicyDenied`,
-`kit/tenancy/policy.go:61`) belongs to the caller; a nil provider, a failing one,
-or an answer that is not `{"allow": bool}` is an outage and never a permissive
-default (`ErrPolicyUnavailable`, `:62`, refused by `RequirePolicy`).
+**How an app extends it.** [The product](apps/platformkit/product.go) provides `tenancy.Policy` through pkit;
+[task.Module](modules/task/provider.go) consumes it optionally. [cloud.profile](pkit/cloud.go) does not select policy.
+Deliberate absence retains route grants; configured failure never becomes that absence.
+
+#### Policy substitution boundary
+
+The consumer is `POST /api/v1/task/tasks/{id}/resolve`, with `assign` beside it.
+HTTP checks account and `task:update` in the request transaction; task locks and asks policy before domain checks/retries.
+`task:assign`/`task:resolve` are policy actions. Direct service callers own current account/grant checks.
+
+| Dimension | Supported boundary | Evidence and limits |
+|---|---|---|
+| Inputs | [Task facts](modules/task/internal/policy.go): transaction tenant ID/slug, principal user ID, action, locked resource kind/ID/tenant and status/priority/assignee_id; assignment adds requested_assignee_id. | OPA receives tenant/actor/action/resource directly; Topaz nests them under input.resource, adds tenant.operator/resource.tenant_id and sends MANUAL identity (NONE for public). OPA omits those two extra fields; Task uses user actors/string attributes only. |
+| Decisions | RequirePolicy rejects invalid facts before evaluation and discards any decision accompanying an error. Denial is 403 POLICY_DENIED; invalid facts/provider failure are sanitized 503 POLICY_UNAVAILABLE. | Denial is distinct from outage; a fresh call evaluates current policy and resource facts. A command refused by policy returns no task and changes no task state or domain event. |
+| OPA | [The adapter](kit/tenancy/providers/opa/opa.go) evaluates compiled rules per call, with caller context, no default timeout or decision cache; undefined denies, malformed/conflicting results fail. | [Library tests](kit/tenancy/providers/opa/opa_test.go) and [reference HTTP journey](apps/platformkit/object_scope_test.go) exist. Direct Decide validation parity with Topaz remains unverified; the consumer uses RequirePolicy. |
+| Topaz | [The adapter](kit/tenancy/providers/topaz/topaz.go) requires one correctly named boolean decision; RPC/encoding errors or missing/duplicate/wrong decisions fail. No local decision cache; timeout defaults to two seconds, with earlier caller deadlines honored. | [Real client/protobuf tests](kit/tenancy/providers/topaz/topaz_test.go) use a disposable gRPC protocol double, not a Topaz service certification. Application owns connection/close, deployment and directory synchronization. Server caches/freshness remain unverified. |
+| Local ports | Task Service.Assign/Resolve/CheckSLA, Creator.Create, Writer.Save, LockedReader.TaskForUpdate and Reader.TaskByID share the caller's local tenant transaction; the plain reader has no write lock. Mutations/outbox commit together. | [Contracts](modules/task/contracts/task.go) support local SQL participation, not a remote clone of db.Tx. Row locks serialize task commands; no expected-revision argument exists. Remote allow and concurrent grant/directory revocation are not atomic with local commit. |
+| Fresh retries / cancellation | A fresh invocation reloads locked facts and evaluates again before returning an idempotent result. Cancelled or expired evaluation refuses without task effects; OPA checks context before and after evaluation. | [Common consumer cases](modules/task/contracts/tasktest/policy_conformance.go), [scope probes](modules/task/provider_scope_test.go), [cancellation](modules/task/provider_cancellation_test.go) and [SQL boundaries](modules/task/provider_transaction_test.go) exercise both adapters. Cancellation racing COMMIT can leave an uncertain outcome; it does not prove rollback. |
+| Cached answers | [HTTP recovery](kit/httpx/operation_receipt.go) can bypass the task handler; route grants still run. | Task declares no [RecheckingReplay](kit/httpx/auth.go) policy hook. The [reference-app characterization](apps/platformkit/policy_recovery_test.go) confirms cached replies bypass policy revocation for both adapters, while revoked route grants refuse them. This is an unsupported authority guarantee, not a safe retry claim. |
+| Other substitutions | The task row/outbox are local effects; external policy is a bounded remote decision. | Other providers, arbitrary attribute types, remote transaction services and deployed directory behavior remain unverified. |
+
+The [common suite](modules/task/provider_consumer_test.go) runs the same cases against the existing fake, SQL service and mounted HTTP commands.
+It uses real embedded OPA and the official Topaz client over a disposable gRPC protocol double; no Topaz process is certified.
+The fake carries the service's trusted attributes and shares [domain.Resolve](modules/task/domain/resolve.go), but proves no RLS/rollback. Compare adapters under equal rules:
+the [Topaz example](modules/auth/policies/README.md) allows self-claim; the reference rule allows reassignment/unassigned resolution.
+`Choose` selects whole modules. The reference fixture supplies its policy through the same product declarations at construction,
+retaining the product's other provisions; it adds no cloud-profile policy selector or runtime reload.
 
 ### Authentication: sessions, TOTP, and WebAuthn
 
