@@ -762,6 +762,14 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# answered the ceiling question only when it had no numbers to give would leave this red and that
 	# host's log silent. Two fixture trees, one copied recipe, nothing started.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_guard_readable_cgroup_test.py
+	# scripts/ci_browser_recent_load_test.py holds the admission boundary of that same `wait` at its
+	# load file: five shapes read in turn — a quiet host, a host at exactly one task per core, and the
+	# three where the one-minute term, the five-minute term, or both sit above the core count — with a
+	# free share required exactly where both recent windows fit and `starting anyway` everywhere else,
+	# printing the bytes it read. A host whose recent windows fit is admitted whatever its fifteen-
+	# minute term says, which is the difference between asking what a host is doing and asking what it
+	# did. Five reads of a fixture load file, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_browser_recent_load_test.py
 	# scripts/ci_sampler_output_lifetime_test.py asks the sampler wrapped around a suite the one question
 	# the suite's own verdict cannot answer: when the watched suite finishes, does the sampler let go of
 	# its output? The guard sleeps between samples, and a sleep holds the write end of the suite's output
@@ -906,12 +914,12 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# prose about them, with the committed text kept as the accepted shape. Substitution is on raw text
 	# and the guard does the parsing, so this line needs no parser of its own.
 	bash scripts/ci_container_sweep_age_guard_test.sh
-	# The one `make check` line that reads an npm lock. It asks that each package its own ADVISORIES table
-	# names (source-map-js and dompurify, which the design job's audit refused at `0bfae63`, and zod,
-	# which the collection-memory advisory reported at 4.6.5) is locked above the ranges those reports
-	# name, and that the gate that named them is still a step in the job that reads this lock, at that
-	# level and in that directory. It reads no feed and installs nothing: the feed moved under the
-	# runner, so the lock is the only half of this a tree can answer.
+	# The one `make check` line that reads an npm lock. It asks that the four packages the design job's
+	# `npm audit --omit=dev --audit-level=high` refused — source-map-js and dompurify at `0bfae63`, zod at
+	# `badcf51f`, and undici at the range npm reports for three ids — are locked above the ranges those
+	# reports name, and that the gate that named them is still a step in the job that reads this lock, at
+	# that level and in that directory. It reads no feed and installs nothing: the feed moved under the
+	# runner every time, so the lock is the only half of this a tree can answer.
 	bash scripts/openpencil_lock_above_advisory_test.sh
 	# The Go half of that line. `govulncheck` is this repository's only Go security gate, it runs in the
 	# check job *after* `make check` and it needs the network, so nothing in the local aggregate can see the

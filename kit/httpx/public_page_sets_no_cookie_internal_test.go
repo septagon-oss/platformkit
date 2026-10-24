@@ -1,4 +1,8 @@
+//go:build !race
+
 package httpx
+
+// Built where its rig is: public_page_allocations_internal_test.go, not under -race.
 
 import (
 	"net/http"

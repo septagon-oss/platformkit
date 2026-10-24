@@ -773,9 +773,9 @@ jobs:
       # peer range allows, and the 4.6.1 that had landed sat inside a range the feed published later.
       # The cure is the same shape again, an override at 4.6.7, the first release above that range.
       # The feed refused a fourth name the same way, `undici`, which this adapter reaches only through
-      # `unifont`'s `^8.0.0` and whose lock node is 8.12.3; that floor is held by the reviewed-release
-      # test `npm test` runs rather than by the offline guard below.
-      # `make check` now holds those three floors itself — scripts/openpencil_lock_above_advisory_test_
+      # `unifont`'s `^8.0.0` and whose lock node is 8.12.3. The reviewed-release test `npm test` runs
+      # holds all four names, and so does the offline guard below now that its table names undici too.
+      # `make check` now holds those four floors itself — scripts/openpencil_lock_above_advisory_test_
       # sh reads this lock and this step, and refuses a version that falls back into a published range
       # or a step that stops auditing — so the number is known at the pull request rather than twelve
       # minutes into a runner. The level is not a thing to negotiate: at `critical` the finding above
