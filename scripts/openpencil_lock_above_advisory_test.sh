@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keep the design lock above the published source-map-js and DOMPurify advisories.
+# Keep the design lock above the published dependency advisories.
 # The audit threshold and its place between install and conformance stay enforced.
 # Mutated copies of the lock exercise the same comparison as the real lock;
 # a removed package is safe, but a present vulnerable version is refused.
@@ -34,6 +34,22 @@ ADVISORIES = (
         "severity": "critical",
         "parent": "jspdf",
     },
+    {
+        "package": "undici",
+        "since": (8, 0, 0),
+        "upto": (8, 12, 1),
+        "ids": ("GHSA-4qv8-2p9j-2685", "GHSA-f72v-6w45-q472", "GHSA-xjj6-f33q-929c"),
+        "severity": "high",
+        "parent": "unifont",
+    },
+    {
+        "package": "zod",
+        "since": None,
+        "upto": (4, 6, 5),
+        "ids": ("GHSA-mrhx-c7xc-m3w5",),
+        "severity": "high",
+        "parent": "@ai-sdk/provider-utils",
+    },
 )
 
 # The three commands of the gate, in the order the design job runs them. The audit may stand behind
@@ -46,7 +62,7 @@ COMMANDS = re.compile(r"^\s*(?:bash\s+\S*scripts/ci_npm_audit\.sh\s+)?(npm (?:ci
 
 
 def version(text):
-    """(3, 4, 15) from "3.4.15". No suffix handling: npm reports both advisories on stable ranges
+    """(3, 4, 15) from "3.4.15". No suffix handling: npm reports these advisories on stable ranges
     and no version this lock holds carries one."""
     parts = re.match(r"(\d+)\.(\d+)\.(\d+)", text)
     if not parts:
