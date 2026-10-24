@@ -89,28 +89,17 @@ func seedCommand(args []string) error {
 		if _, ok := trace.From(ctx); !ok {
 			ctx = trace.With(ctx, trace.New())
 		}
-		tenants, err := c.tenants.List(ctx, system)
+		target, err := seedTenant(ctx, c.tenantList, system, *slug)
 		if err != nil {
 			return err
-		}
-		var target *tenancy.Tenant
-		for _, t := range tenants {
-			if t.Slug == *slug {
-				found := t.Tenancy()
-				target = &found
-				break
-			}
-		}
-		if target == nil {
-			return fmt.Errorf("seed: no tenant %s in this installation", *slug)
 		}
 		// The operator is proven in the installation tenant's own scope, in this
 		// same transaction, before the target tenant is entered.
 		if err := seedOperator(ctx, c, system, cfg); err != nil {
 			return err
 		}
-		return db.InTenant(ctx, system, *target, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			ctx, err = seedActor(ctx, c.users, tx, *as)
+		return db.InTenant(ctx, system, target, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			ctx, err = seedActor(ctx, c.addresses, tx, *as)
 			if err != nil {
 				return err
 			}
@@ -139,6 +128,19 @@ func seedCommand(args []string) error {
 	return nil
 }
 
+func seedTenant(ctx context.Context, tenants tenantcontracts.Lister, tx db.Tx[db.System], slug string) (tenancy.Tenant, error) {
+	all, err := tenants.List(ctx, tx)
+	if err != nil {
+		return tenancy.Tenant{}, err
+	}
+	for _, tenant := range all {
+		if tenant.Slug == slug {
+			return tenant.Tenancy(), nil
+		}
+	}
+	return tenancy.Tenant{}, fmt.Errorf("seed: no tenant %s in this installation", slug)
+}
+
 // seedOperator asks the installation tenant's own user and role services three
 // questions: is the person behind the credential who they say they are, can that
 // person still sign in, and does that person hold tenant:manage where the
@@ -159,12 +161,12 @@ func seedOperator(ctx context.Context, c composition, system db.Tx[db.System], c
 	if cfg.Server.InstallationHost == "" {
 		return errors.New("seed: server.installation_host names no tenant to authenticate an operator against")
 	}
-	installation, err := c.tenants.ByHost(ctx, system, cfg.Server.InstallationHost)
+	installation, err := c.hostLookup.ByHost(ctx, system, cfg.Server.InstallationHost)
 	if err != nil {
 		return fmt.Errorf("seed: no installation tenant at %s to authenticate an operator at: %w", cfg.Server.InstallationHost, err)
 	}
 	return db.InTenant(ctx, system, installation, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		person, err := c.users.ByEmail(ctx, tx, cfg.Seed.OperatorEmail)
+		person, err := c.addresses.ByEmail(ctx, tx, cfg.Seed.OperatorEmail)
 		if err != nil {
 			return fmt.Errorf("seed: the operator %s is not a person of the installation tenant: %w", cfg.Seed.OperatorEmail, err)
 		}
@@ -181,11 +183,11 @@ func seedOperator(ctx context.Context, c composition, system db.Tx[db.System], c
 		if !person.CanSignIn() {
 			return fmt.Errorf("seed: %s is not an active person of the installation tenant, so this run names no operator", cfg.Seed.OperatorEmail)
 		}
-		held, err := c.auth.Permissions(ctx, tx, []string(person.Roles))
+		held, err := c.permissions.Permissions(ctx, tx, []string(person.Roles))
 		if err != nil {
 			return err
 		}
-		if !authcontracts.Grants(held, tenancy.Grant{Permission: tenantcontracts.PermissionTenantManage}) {
+		if !authcontracts.Grants(held, tenancy.Grant{Permission: tenantcontracts.PermissionTenantManage, Operator: true}) {
 			return fmt.Errorf("seed: %s holds no %s at the installation tenant, so this run names no operator",
 				cfg.Seed.OperatorEmail, tenantcontracts.PermissionTenantManage)
 		}

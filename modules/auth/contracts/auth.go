@@ -324,6 +324,7 @@ const (
 // Every command takes the caller's transaction rather than opening one, so the
 // session row and the event that describes it commit together — with one
 // deliberate exception, described on Login.
+// Deprecated: use the focused capability interfaces in this package.
 type Service interface {
 	// Precheck is what the limiter says about an attempt on this address from
 	// this one, before the request's transaction has been opened. It reads the
@@ -539,22 +540,9 @@ type Service interface {
 	Purge(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
 }
 
-// Grants reports whether a set of permissions satisfies a grant. It is a
-// function rather than a method so that the rule is written once and is the
-// same rule in the authorizer, in a test and in a screen.
-//
-// The rule has two halves. An ordinary permission is granted by the wildcard or
-// by naming it. An operator permission is granted only by naming it, and that
-// exception is the point: Wildcard means "everything in this tenant", and the
-// control plane is not in this tenant — it is every tenant. A customer's
-// administrator holds the wildcard by construction (auth.SeedRoles), so letting it
-// answer for an operator permission would hand every customer the installation.
-func Grants(held []string, g tenancy.Grant) bool {
-	if g.Operator {
-		return slices.Contains(held, g.Permission)
-	}
-	return slices.Contains(held, Wildcard) || slices.Contains(held, g.Permission)
-}
+// Grants reports whether held permissions satisfy the grant.
+// Deprecated: use Match.
+func Grants(held []string, g tenancy.Grant) bool { return Match(held, g) }
 
 // Auth is the whole capability main is wired with: the lifecycle in Service,
 // plus the two hooks the kernel takes.
@@ -565,6 +553,7 @@ func Grants(held []string, g tenancy.Grant) bool {
 // where kit/httpx put them. Permissions is the query underneath it, which takes
 // its arguments, so a test can ask what a role grants without building a
 // request.
+// Deprecated: use the focused capabilities and kernel authentication ports.
 type Auth interface {
 	Service
 

@@ -21,7 +21,7 @@ func TestDeactivatingSomebodyWhoNeverAdministeredDoesNotRefuseForFindingNoAdmini
 	s := twoAdministrators(t, cfg, compose(cfg))
 	catalogue := []tenancy.Grant{{Permission: authcontracts.PermissionPasskeySignIn}}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := s.c.auth.SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
+		_, err := s.c.testAuth().SetRole(ctx, tx, "door", []string{authcontracts.PermissionPasskeySignIn}, catalogue)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestDeactivatingSomebodyWhoNeverAdministeredDoesNotRefuseForFindingNoAdmini
 		t.Fatalf("fixture has administering holders: %v", got)
 	}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		u, err := s.c.users.Deactivate(ctx, tx, s.bob.ID)
+		u, err := s.c.testUsers().Deactivate(ctx, tx, s.bob.ID)
 		if err == nil && (u == nil || u.Status != usercontracts.StatusInactive) {
 			t.Errorf("deactivation returned %v, want the row inactive", u)
 		}
@@ -43,7 +43,7 @@ func TestDeactivatingSomebodyWhoNeverAdministeredDoesNotRefuseForFindingNoAdmini
 		t.Fatalf("deactivating a non-administrator in a tenant already without administrators: %v", err)
 	}
 	if err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		u, err := s.c.users.Get(ctx, tx, s.bob.ID)
+		u, err := s.c.testUsers().Get(ctx, tx, s.bob.ID)
 		if err != nil {
 			return err
 		}

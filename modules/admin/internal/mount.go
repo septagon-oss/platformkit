@@ -71,7 +71,7 @@ const chromeTextSize = "sm"
 type Shell struct {
 	Nav       []module.NavEntry
 	Authorize httpx.Authorizer
-	Tenants   tenantcontracts.Service
+	Tenants   tenantcontracts.Lister
 	// Roles is the auth module's role administration, for the screen that
 	// module's nav entry names. Nil mounts no screen, and then Mount reports
 	// the entry as unserved, which is what it is.

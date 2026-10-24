@@ -30,8 +30,10 @@ import (
 // methods it already holds: auth's list of this tenant's role names and auth's
 // union of what a set of roles grants.
 var scimProvisioning = pkit.NewModule("scim", wireScim,
-	pkit.Needs[usercontracts.Service](),
-	pkit.Needs[authcontracts.Auth](),
+	pkit.Needs[usercontracts.Provisioning](),
+	pkit.Needs[usercontracts.Lookup](),
+	pkit.Needs[authcontracts.RoleReader](),
+	pkit.Needs[authcontracts.PermissionReader](),
 	pkit.Provides[scimcontracts.Service](),
 	// The person's copy and the person's erasure reach this door's rows too: the
 	// identifier a provisioning client sent may be the person's own address, and
@@ -40,15 +42,14 @@ var scimProvisioning = pkit.NewModule("scim", wireScim,
 )
 
 func wireScim(w *pkit.Wiring) (module.Module, error) {
-	auth := pkit.Get[authcontracts.Auth](w)
 	svc, manifest := scim.New(scim.Deps{
-		Users: pkit.Get[usercontracts.Service](w),
-		Roles: roleNames{auth: auth},
+		Provisioning: pkit.Get[usercontracts.Provisioning](w),
+		Roles:        roleNames{auth: pkit.Get[authcontracts.RoleReader](w)},
 		// The same two tables, asked a different question: this one is about the
 		// caller rather than about a name.
 		Authority: holderGrants{
-			users: pkit.Get[usercontracts.Service](w),
-			auth:  auth,
+			users: pkit.Get[usercontracts.Lookup](w),
+			auth:  pkit.Get[authcontracts.PermissionReader](w),
 		},
 	})
 	pkit.Put[scimcontracts.Service](w, svc)
@@ -65,7 +66,7 @@ func wireScim(w *pkit.Wiring) (module.Module, error) {
 // An error is returned, not swallowed as "no such role": the write is refused on
 // an outage, and a mapping that silently bound to nothing is the failure this
 // adapter exists to make impossible.
-type roleNames struct{ auth authcontracts.Auth }
+type roleNames struct{ auth authcontracts.RoleReader }
 
 func (d roleNames) HasRole(ctx context.Context, tx db.Tx[db.Tenant], name string) (bool, error) {
 	roles, err := d.auth.Roles(ctx, tx)
@@ -107,8 +108,8 @@ func (d roleNames) HasRole(ctx context.Context, tx db.Tx[db.Tenant], name string
 // error as "this write cannot be decided" and refuses, and laundering a denial into
 // one would make an outage read as a policy.
 type holderGrants struct {
-	users usercontracts.Service
-	auth  authcontracts.Auth
+	users usercontracts.Lookup
+	auth  authcontracts.PermissionReader
 }
 
 func (g holderGrants) Holds(ctx context.Context, tx db.Tx[db.Tenant], permission string) (bool, error) {

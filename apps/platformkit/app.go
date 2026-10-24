@@ -59,29 +59,27 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
-// composition is the application answered with no effects: every module it is
-// made of, and the values main itself has to hold — the tenant service, because
-// the kernel resolves every host through it; the auth service, because the kernel
-// asks it who is calling and what they may do; the user service, because
-// bootstrap creates the first administrator; the notification service, because the
-// modules that raise notices are wired against it; and the mailer, so that a test
-// can read what would have been sent.
-//
-// Every one of those is a composition's *output* now, read off the plan the
-// sentence resolved to, which is what `pkit.Value` is for. There is no second
-// place a service is handed over: the same values the resolver put, seen from
-// outside it.
+// composition holds the resolved modules and the capabilities used by app commands.
+// Every output comes from pkit.Value; module construction has one declared path.
 type composition struct {
-	modules []module.Module
-	options app.Options
-	planned *pkit.Planned
-	tenants tenantcontracts.Service
-	users   usercontracts.Service
-	auth    authcontracts.Auth
-	notify  notificationcontracts.Service
-	mail    notificationcontracts.Mailer
-	files   filecontracts.Service
-	plans   httpx.Entitler
+	modules      []module.Module
+	options      app.Options
+	planned      *pkit.Planned
+	tenantList   tenantcontracts.Lister
+	hostLookup   tenantcontracts.HostLookup
+	oidcSettings tenantcontracts.OIDCReader
+	samlSettings tenantcontracts.SAMLReader
+	bootstrap    tenantcontracts.Bootstrapper
+	locale       tenantcontracts.LocaleSetter
+	provisioner  usercontracts.SystemProvisioner
+	addresses    usercontracts.AddressLookup
+	seedUsers    usercontracts.SeedWriter
+	permissions  authcontracts.PermissionReader
+	roleRepair   authcontracts.RoleRepairer
+	notify       notificationcontracts.Service
+	mail         notificationcontracts.Mailer
+	files        filecontracts.Service
+	plans        httpx.Entitler
 	// contents, sites, tasks and files are the four owners a seeded record is
 	// written through: this application's seed runs each resource's own write core
 	// rather than a second spelling of it, so it reads the same values its routes
@@ -202,8 +200,12 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	}
 	c := composition{
 		planned: p, modules: p.Modules(), options: p.Options(), messages: served,
-		tenants: value[tenantcontracts.Service](p), users: value[usercontracts.Service](p),
-		auth: value[authcontracts.Auth](p), notify: value[notificationcontracts.Service](p),
+		tenantList: value[tenantcontracts.Lister](p), hostLookup: value[tenantcontracts.HostLookup](p),
+		oidcSettings: value[tenantcontracts.OIDCReader](p), samlSettings: value[tenantcontracts.SAMLReader](p),
+		bootstrap: value[tenantcontracts.Bootstrapper](p), locale: value[tenantcontracts.LocaleSetter](p),
+		provisioner: value[usercontracts.SystemProvisioner](p), addresses: value[usercontracts.AddressLookup](p),
+		seedUsers: value[usercontracts.SeedWriter](p), permissions: value[authcontracts.PermissionReader](p),
+		roleRepair: value[authcontracts.RoleRepairer](p), notify: value[notificationcontracts.Service](p),
 		mail: value[notificationcontracts.Mailer](p), files: value[filecontracts.Service](p),
 		plans:    value[httpx.Entitler](p),
 		tasks:    value[taskcontracts.Service](p),
@@ -223,7 +225,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	// resolved and not written as a constant: a composition that took auth out
 	// would otherwise keep advertising a door it stopped mounting, which is the
 	// same lie the ask above is built to avoid.
-	c.passwordDoor = c.auth != nil
+	c.passwordDoor = value[pkit.Authenticator](p) != nil
 	*shell = faultShell(c.messages, c.granter)
 	// The seed's tenant-creation hook, filled from the plan the sentence resolved
 	// to. It is another of the values this file fills after the resolution, beside
@@ -235,8 +237,8 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	// See seeding's comment in seed.go. Until this line the hook has no owners, and
 	// it says so rather than writing a half-filled tenant's content.
 	*provision = seedProvisioner{
-		users: c.users, contents: c.contents, sites: c.sites, tasks: c.tasks,
-		files: c.files, auth: c.auth, demoPassword: cfg.Demo.Password,
+		users: c.seedUsers, contents: c.contents, sites: c.sites, tasks: c.tasks,
+		files: c.files, auth: c.permissions, demoPassword: cfg.Demo.Password,
 	}
 	// The roles hook's catalogue, filled from the same resolved plan for the same
 	// reason seeding gives: the hook is contributed while the sentence is written
@@ -276,6 +278,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg, grants),
+			auth.Grants,
 			user.Module,
 			tenant.Module,
 			notification.Module,

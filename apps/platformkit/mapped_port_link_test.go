@@ -46,13 +46,13 @@ func TestAMappedInstallationMailsThePortItIsPublishedAt(t *testing.T) {
 	// The host record's half of the declaration; a kernel that only reads the
 	// configured address may refuse it, and that is not this case's question.
 	_ = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		all, err := c.tenants.List(ctx, tx)
+		all, err := c.testTenants().List(ctx, tx)
 		if err != nil {
 			return err
 		}
 		for _, one := range all {
 			if one.Slug == "acme" {
-				_, err = c.tenants.AddHost(ctx, tx, one.ID, public, true)
+				_, err = c.testTenants().AddHost(ctx, tx, one.ID, public, true)
 			}
 		}
 		return err

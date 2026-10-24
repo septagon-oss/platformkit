@@ -84,11 +84,11 @@ func repairRoles(args []string) error {
 		verb = "removed"
 	}
 	var found int
-	err = jobs.PerTenant(ctx, conn, tenantcontracts.Active{Service: c.tenants},
+	err = jobs.PerTenant(ctx, conn, tenantcontracts.ActiveTenants{Tenants: c.tenantList},
 		func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
 			var lines []string
 			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				stale, err := auth.RepairSeededRoles(ctx, tx, c.auth, declared, initialRoles, *remove)
+				stale, err := auth.RepairSeededRolesWith(ctx, tx, c.roleRepair, declared, initialRoles, *remove)
 				if err != nil {
 					return err
 				}

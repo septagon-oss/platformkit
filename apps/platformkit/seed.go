@@ -69,11 +69,11 @@ func seedService(c composition, demoPassword string) (*seed.Service, error) {
 		Writers: []seed.Writer{
 			&contentSeeder{svc: c.contents},
 			&siteSeeder{sites: c.sites},
-			&userSeeder{users: c.users, demoPassword: demoPassword},
+			&userSeeder{users: c.seedUsers, demoPassword: demoPassword},
 			&taskSeeder{svc: c.tasks},
 			&fileSeeder{svc: c.files},
 		},
-		Authorize: seedGrants{auth: c.auth},
+		Authorize: seedGrants{auth: c.permissions},
 	})
 }
 
@@ -120,12 +120,12 @@ func seeding(provision *seedProvisioner) *pkit.Module {
 // composeReference from the plan it resolved; see seeding for why no module can
 // declare them as its needs.
 type seedProvisioner struct {
-	users        usercontracts.Service
+	users        usercontracts.SeedWriter
 	contents     contentcontracts.Service
 	sites        sitecontracts.Service
 	tasks        taskcontracts.Service
 	files        filecontracts.Service
-	auth         authcontracts.Auth
+	auth         authcontracts.PermissionReader
 	demoPassword string
 }
 
@@ -190,7 +190,9 @@ func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System
 // could seed anything. What provisioning a brand-new tenant needs instead — a
 // permit minted by the create transaction itself — is named in
 // kit/seed/README.md's Limits and is not composed here.
-type seedGrants struct{ auth authcontracts.Auth }
+type seedGrants struct {
+	auth authcontracts.PermissionReader
+}
 
 func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resource, _ seed.Action) error {
 	// The one run with nobody to ask is the tenant's own creation, and the
@@ -250,7 +252,7 @@ func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resou
 // session whose user is not active, on the side of the run that names who the
 // writes belong to rather than the side that proves who is standing at the
 // terminal (see seedOperator).
-func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Tenant], email string) (context.Context, error) {
+func seedActor(ctx context.Context, users usercontracts.AddressLookup, tx db.Tx[db.Tenant], email string) (context.Context, error) {
 	person, err := users.ByEmail(ctx, tx, email)
 	if err != nil {
 		return ctx, fmt.Errorf("seed: this run writes as %s, who is not a person of this tenant: %w", email, err)
@@ -533,7 +535,7 @@ func (w *siteSeeder) write(ctx context.Context, tx db.Tx[db.Tenant], slug string
 // then on. Passwords are never in a seed file — the loader refuses a field named
 // for one — and never in a plan line, which prints keys and addresses only.
 type userSeeder struct {
-	users usercontracts.Service
+	users usercontracts.SeedWriter
 	// demoPassword is config's Demo.Password: the one password a demonstration's
 	// people sign in with. It is the deployment's answer to a record that asks for
 	// a credential, and an empty one asks the run to mint one per person and hand

@@ -25,25 +25,25 @@ func TestSeedRerunPreservesAPersonsOwnPassword(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		created, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "demo", Name: "Demo", Host: "demo.localhost", Demo: true,
 		})
 		if err != nil {
 			return err
 		}
-		if _, err := c.users.Provision(ctx, system, created.ID, "root@demo.localhost", "Root",
+		if _, err := c.testUsers().Provision(ctx, system, created.ID, "root@demo.localhost", "Root",
 			adminPass, []string{authcontracts.RoleAdmin}); err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, created.Tenancy(), func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			person, err := c.users.ByEmail(ctx, tx, "marta@example.test")
+			person, err := c.testUsers().ByEmail(ctx, tx, "marta@example.test")
 			if err != nil {
 				return err
 			}
 			if !person.CheckPassword(demoPassword) {
 				return errors.New("the initial demo credential was not applied; cannot test preservation")
 			}
-			return c.users.SetPassword(ctx, tx, person.ID, personalPassword)
+			return c.testUsers().SetPassword(ctx, tx, person.ID, personalPassword)
 		})
 	}); err != nil {
 		t.Fatal(err)
@@ -53,12 +53,12 @@ func TestSeedRerunPreservesAPersonsOwnPassword(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, "demo.localhost")
+		tenant, err := c.testTenants().ByHost(ctx, system, "demo.localhost")
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			person, err := c.users.ByEmail(ctx, tx, "marta@example.test")
+			person, err := c.testUsers().ByEmail(ctx, tx, "marta@example.test")
 			if err != nil {
 				return err
 			}
