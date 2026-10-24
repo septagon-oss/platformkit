@@ -87,6 +87,9 @@ func TestMountedListUsesTheResolvedQueryAndCommands(t *testing.T) {
 	if query.Sort != "-title" || query.Offset != 50 || !reflect.DeepEqual(query.Filter, map[string]any{"status": "open", "pinned": false}) {
 		t.Fatalf("query=%+v", query)
 	}
+	if body := out.Body.String(); !strings.Contains(body, "filter=status%3Aopen") || !strings.Contains(body, "filter=pinned%3Afalse") {
+		t.Error("the page's own sort and pager links lost the selected filters")
+	}
 	doc := webDOM(t, page.View{Body: []g.Node{g.Raw(out.Body.String())}})
 	forms := webFind(doc, func(n *html.Node) bool { return n.Data == "form" && strings.HasSuffix(webAttr(n, "action"), "/act") })
 	if len(forms) != 1 || webAttr(forms[0], "aria-label") != "Resolved action" {

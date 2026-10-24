@@ -49,6 +49,14 @@ type Resource struct {
 	// History contains the versions already read under the record's guard.
 	// Nil hides the panel; Carries avoids duplicating its restore command.
 	History *HistoryPanel
+	// Selected holds the equality selections this page is showing, field to
+	// value, each one already validated and applied to the read by the caller.
+	// The list's sort, facet and pager links carry them, so turning the page or
+	// changing the order keeps the filter a person came to narrow. What a page
+	// may offer stays in Resolved.List.Filters: this names what was chosen, not
+	// what is offered, and ui/screens fills it in from the request's query.
+	// A render only reads it.
+	Selected map[string]string
 }
 
 // PerPage is a screenful, and the page the list renders and links. kit/crud's
@@ -59,13 +67,8 @@ const PerPage = 50
 
 // Options is what a shell decides about its generated screens.
 type Options struct {
-	// Clock is sampled once per render. Nil keeps relative values absolute offline.
-	Clock func() time.Time
 	// Location is the viewer zone; nil renders UTC before browser enhancement.
 	Location *time.Location
-	// Filters holds the validated equality selections used by navigation links.
-	Filters map[string]string
-	now     *time.Time
 	// Workspace is the address the breadcrumb's first entry links to: the
 	// workspace's own root. It is not a prefix the renderer composes paths
 	// from — a screen is mounted at an address the kernel derived, and the
@@ -94,6 +97,15 @@ type Options struct {
 	// no verdict — a design export, a shell drawing the writer's own line — and draws
 	// what it drew before this field existed.
 	Refusal *Refusal
+	// Rendered is the instant this render measures relative values against,
+	// sampled once by whoever drew the request. Its zero value names no instant,
+	// and a relative value then keeps the absolute text an offline render or a
+	// design export has always drawn. The instant arrives as a value rather than
+	// a function to call because Options is a frozen comparable surface: a func
+	// or map field here would stop `a == b` from compiling for whoever holds
+	// two. It also says who owns the sample: the request takes it once, so no
+	// two values on one page are measured against two different nows.
+	Rendered time.Time
 }
 
 // Refusal is one verdict as a form shows it: what the refusal page calls it, and how
@@ -118,7 +130,7 @@ func (o Options) Text(key, fallback string, args ...any) string {
 // Rows and total must describe the same scoped read; writable permits only
 // mounted write operations. Invalid supported policy returns a render error.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
-	r, o = r.policy(o), o.snapshot()
+	r = r.policy(o)
 	if err := r.validatePolicy(); err != nil {
 		return document.View{Body: []g.Node{invalid(err)}}
 	}
@@ -141,7 +153,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	}
 	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
-		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: listURL(at, sort, o.Filters),
+		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: listURL(at, sort, r.Selected),
 		NavigationLabel:  o.Text("screens.pagination", "Pagination"),
 		PreviousLabel:    o.Text("screens.previous", "Previous page"),
 		NextLabel:        o.Text("screens.next", "Next page"),
@@ -168,7 +180,7 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 // besides its own.
 func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string,
 	locales []entity.LocaleState) document.View {
-	r, o = r.policy(o), o.snapshot()
+	r = r.policy(o)
 	if err := r.validatePolicy(); err != nil {
 		return document.View{Body: []g.Node{invalid(err)}}
 	}
@@ -231,7 +243,7 @@ func (r Resource) offeredCommands() []Command {
 // Nonempty detail marks a refused write and returns status 422; errs names
 // individual controls. Invalid supported policy returns an HTML render error.
 func Form(r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) document.View {
-	r, o = r.policy(o), o.snapshot()
+	r = r.policy(o)
 	if err := r.validatePolicy(); err != nil {
 		return document.View{Body: []g.Node{invalid(err)}}
 	}
@@ -303,7 +315,7 @@ const statusUnprocessableEntity = 422
 // id names the example; action scopes control identities across instances and
 // refusal swaps. Inputs are synthetic values, not persistence operations.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	r, o = r.policy(o), o.snapshot()
+	r = r.policy(o)
 	if err := r.validatePolicy(); err != nil {
 		return examples.Example{Node: invalid(err)}
 	}

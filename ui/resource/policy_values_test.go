@@ -65,10 +65,9 @@ func TestResolvedTimesUseOneClockAndTheViewerZone(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 3, 8, 7, 1, 0, 0, time.UTC)
-	calls := 0
 	o := opts
 	o.Location = zone
-	o.Clock = func() time.Time { calls++; return now }
+	o.Rendered = now
 	r := note()
 	r.Schema.Fields = []entity.Field{{Name: "title", Type: entity.TypeString}, {Name: "date", Type: entity.TypeTime, Presentation: entity.FieldHints{Format: "date"}}, {Name: "absolute", Type: entity.TypeTime}, {Name: "relative", Type: entity.TypeTime, Presentation: entity.FieldHints{Format: "relative"}}}
 	row := map[string]any{"id": "1", "title": "Clock", "date": "2026-03-08T00:30:00Z", "absolute": "2026-03-08T06:59:59Z", "relative": "2026-03-08T07:02:59Z"}
@@ -77,9 +76,6 @@ func TestResolvedTimesUseOneClockAndTheViewerZone(t *testing.T) {
 		if !strings.Contains(markup, want) {
 			t.Errorf("missing %s", want)
 		}
-	}
-	if calls != 1 {
-		t.Errorf("clock sampled %d times", calls)
 	}
 	field := present.ResolvedField{Name: "v", Reading: present.ResolvedReading{Time: &present.ResolvedTime{Kind: "instant", Relative: true}}}
 	for _, c := range []struct {

@@ -287,13 +287,17 @@ func words(o Options, req page.Request) func(key, fallback string) string {
 	}
 }
 
-// localized is the shell's options with this request's language. Options is a
-// small value, so each render carries its own copy rather than the shell
-// holding one language for everybody.
+// localized is the shell's options with this request's language and the instant
+// its renders measure relative values against. Options is a small value, so each
+// render carries its own copy rather than the shell holding one language for
+// everybody, and the request samples the instant once rather than the renderer
+// asking a clock per value: two values on one page measured against two nows
+// would be two requests dressed as one. A shell that holds a Clock names the
+// instant itself; this fallback is for the shells that hold none.
 func localized(o Options, req page.Request) Options {
 	o.Locale = req.Locale
-	if o.Clock == nil {
-		o.Clock = time.Now
+	if o.Rendered.IsZero() {
+		o.Rendered = time.Now().UTC()
 	}
 	return o
 }

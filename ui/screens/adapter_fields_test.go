@@ -75,7 +75,8 @@ var callerScoped = map[string]string{
 	// A version series is read per request, behind the record's read guard, so it
 	// has the same shape as Commands: two registered resources cannot be compared
 	// without the caller whose series one of them holds.
-	"History": "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
+	"History":  "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
+	"Selected": "TestMountedListUsesTheResolvedQueryAndCommands",
 }
 
 // shapesFor is one field in both its shapes, beside the screen that has to notice

@@ -54,7 +54,7 @@ func TestParallelRendersKeepTheirLanguageCommandsAndEnvironment(t *testing.T) {
 					}
 					o := opts
 					o.Location, _ = time.LoadLocation(zone)
-					o.Clock = func() time.Time { return time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC) }
+					o.Rendered = time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 					word := "Yes"
 					if language == "pt-PT" {
 						word = "Sim"

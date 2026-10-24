@@ -51,8 +51,8 @@ JSON numbers exactly. Integer and money readings reject fractional, overflowing
 or already-approximate unsafe values. Money requires the row's declared currency
 and scale 0..3; no currency or precision is inferred.
 
-`Options.Clock` is sampled once per render. Nil keeps relative values absolute
-for offline rendering; the request adapter supplies its clock by default.
+`Options.Rendered` is the instant the request sampled once, so one page cannot
+measure two values against two nows; its zero value keeps them absolute.
 `Location` selects server timezone, with UTC as the offline fallback. Without an
 explicit location, the browser applies its own timezone. Dates stay dates;
 absolute instants stay absolute. Relative units truncate signed differences to

@@ -22,13 +22,6 @@ type reading struct {
 
 func invalid(err error) g.Node { return g.NodeFunc(func(io.Writer) error { return err }) }
 
-func (o Options) snapshot() Options {
-	if o.now == nil && o.Clock != nil {
-		o.now = new(o.Clock())
-	}
-	return o
-}
-
 func value(f present.ResolvedField, row map[string]any, o Options) reading {
 	raw := row[f.Name]
 	text := scalarText(raw)
@@ -138,8 +131,8 @@ func timeValue(f present.ResolvedField, at time.Time, o Options) reading {
 	}
 	if rule.Kind == "date" {
 		text = local.Format("2006-01-02")
-	} else if rule.Relative && o.now != nil {
-		unit, n := present.Ago(at, *o.now)
+	} else if rule.Relative && !o.Rendered.IsZero() {
+		unit, n := present.Ago(at, o.Rendered)
 		attrs["data-time-unit"], attrs["data-time-count"] = unit, strconv.Itoa(n)
 		text = relativeWords(o, unit, n)
 	}
@@ -178,7 +171,7 @@ func relativeWords(o Options, unit string, n int) string {
 // Value renders a resolved field against its row, including sibling currency and
 // the explicit environment. Invalid numeric inputs return an HTML render error.
 func Value(f present.ResolvedField, row map[string]any, o Options) g.Node {
-	read := value(f, row, o.snapshot())
+	read := value(f, row, o)
 	if read.node != nil {
 		return read.node
 	}

@@ -30,11 +30,11 @@ func listURL(at, sort string, filters map[string]string) string {
 func choices(r Resource, o Options, sort string) ([]components.ChoiceLink, []components.ChoiceLink) {
 	sorts, filters := []components.ChoiceLink{}, []components.ChoiceLink{}
 	for _, choice := range r.Resolved.List.Sorts {
-		sorts = append(sorts, components.ChoiceLink{Key: choice.Query, Label: choice.Label, Href: listURL(r.Screen, choice.Query, o.Filters), Selected: sort == choice.Query})
+		sorts = append(sorts, components.ChoiceLink{Key: choice.Query, Label: choice.Label, Href: listURL(r.Screen, choice.Query, r.Selected), Selected: sort == choice.Query})
 	}
 	for _, filter := range r.Resolved.List.Filters {
 		for _, choice := range filter.Values {
-			selection := maps.Clone(o.Filters)
+			selection := maps.Clone(r.Selected)
 			if selection == nil {
 				selection = map[string]string{}
 			}
@@ -75,7 +75,7 @@ func sortSlots(r Resource, o Options, sort string) components.TableSlots {
 					chosen = choices[(i+1)%len(choices)]
 				}
 			}
-			return listURL(r.Screen, chosen.Query, o.Filters)
+			return listURL(r.Screen, chosen.Query, r.Selected)
 		},
 		SortState: func(c components.TableColumn) string {
 			for _, choice := range fieldSorts(r.Resolved, c.Key) {

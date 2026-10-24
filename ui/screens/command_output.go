@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -98,10 +97,6 @@ func outputFields(res httpx.Resource, c httpx.Command, row map[string]any, o Opt
 	schema := entity.Schema{Fields: fields}
 	policy := present.Resolve(present.Input{Schema: schema, Text: resource.PolicyText(func(key, fallback string) string { return o.Text(key, fallback, []any{}...) })})
 	items, nodes := []components.DetailItem{}, []g.Node{}
-	if o.Clock != nil {
-		now := o.Clock()
-		o.Clock = func() time.Time { return now }
-	}
 	for _, field := range policy.Fields {
 		if !field.OnRecord {
 			continue

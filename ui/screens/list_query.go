@@ -32,7 +32,7 @@ func mountList(router *httpx.Router, shell page.Shell, o Options, res httpx.Reso
 			if err != nil {
 				return page.View{}, err
 			}
-			o.Filters = filters
+			v.Selected = filters
 			return resource.List(v, o, rows, total, max(in.Page, 1), query.Sort, res.Writable(ctx)), nil
 		})
 }
