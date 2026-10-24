@@ -22,6 +22,12 @@ const REPORTED_RELEASES = [
     resolved: 'https://registry.npmjs.org/zod/-/zod-4.6.5.tgz',
     integrity: 'sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==',
   },
+  {
+    name: 'undici',
+    version: '8.12.1',
+    resolved: 'https://registry.npmjs.org/undici/-/undici-8.12.1.tgz',
+    integrity: 'sha512-usz3OVQBeh1LxNn0DzU0voLXMgn5CU/WUdpBsY6Ti5afNao+vTkmn4H/NxoXolc10cOqe2+YIG0Hspq2rsl64w==',
+  },
 ]
 
 test('the dependency pin refuses a reported release even when its override and lock agree', t => {

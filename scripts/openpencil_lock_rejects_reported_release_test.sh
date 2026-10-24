@@ -39,6 +39,7 @@ with tempfile.TemporaryDirectory(prefix="platformkit-advisory-rollback-") as dir
     for package, release, ids in (
         ("dompurify", "3.4.16", ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f")),
         ("zod", "4.6.5", ("GHSA-mrhx-c7xc-m3w5",)),
+        ("undici", "8.12.1", ("GHSA-4qv8-2p9j-2685", "GHSA-f72v-6w45-q472", "GHSA-xjj6-f33q-929c")),
     ):
         shutil.copyfile(root / "tools/designexport/openpencil/package-lock.json", path)
         lock = json.loads(path.read_text())

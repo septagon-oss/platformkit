@@ -2,16 +2,17 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-// The three transitive dependencies the audit gate pointed at, each reached through
+// The four transitive dependencies the audit gate pointed at, each reached through
 // a package this adapter does not depend on directly: @open-pencil/core → jspdf →
 // dompurify@^3.3.1, whose lock carried 3.4.14, and unifont → css-tree →
 // source-map-js@^1.2.1, whose lock carried 1.2.1, and @ai-sdk/provider-utils,
-// whose peer range `^3.25.76 || ^4.1.8` resolved zod to 4.6.1. All three parents
+// whose peer range `^3.25.76 || ^4.1.8` resolved zod to 4.6.1, and unifont →
+// undici@^8.0.0, whose lock carried 8.10.2. All four parents
 // still accept the vulnerable range, so the override in package.json is what keeps
 // `npm ci` out of it, and this check is what keeps that override from drifting
 // quietly: the lock has to resolve each name to the reviewed release named here,
 // and to the very release package.json overrides it to.
-const reviewed = { dompurify: '3.4.17', 'source-map-js': '1.2.2', zod: '4.6.7' }
+const reviewed = { dompurify: '3.4.17', 'source-map-js': '1.2.2', undici: '8.12.3', zod: '4.6.7' }
 
 const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 const lock = JSON.parse(readFileSync(new URL('./package-lock.json', import.meta.url), 'utf8'))
