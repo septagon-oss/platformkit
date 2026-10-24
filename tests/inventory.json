@@ -13633,6 +13633,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/db/a_closed_transaction_runs_its_effect_once_test.go",
+   "id": "kit/db/a_closed_transaction_runs_its_effect_once_test.go#TestAClosedTransactionRunsItsEffectOnceHoweverOftenItIsClosed",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAClosedTransactionRunsItsEffectOnceHoweverOftenItIsClosed",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/db/a_rolled_back_transaction_is_never_committed_by_a_later_keep_test.go",
    "id": "kit/db/a_rolled_back_transaction_is_never_committed_by_a_later_keep_test.go#TestARolledBackTransactionIsNotCommittedByALaterKeep",
    "kind": "go",
@@ -83292,7 +83311,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2256,
+  "files": 2257,
   "forge_runs": [
    408,
    413,
@@ -83326,7 +83345,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3602,
+   "behaviour": 3603,
    "composition": 487,
    "contract": 22,
    "journey": 110
@@ -83345,9 +83364,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4221,
+  "rows": 4222,
   "tiers": {
-   "merge": 2606,
+   "merge": 2607,
    "nightly": 110,
    "push": 1505
   },
@@ -83355,13 +83374,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2011,
+   "keep": 2012,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3835,
+   "keep": 3836,
    "keep-rewrite": 170,
    "merge": 216
   }
