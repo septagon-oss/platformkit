@@ -170,7 +170,7 @@ seed: config.yaml ## Seed one tenant from this tree's seed files; SEED_TENANT=<s
 	@test -n '$(SEED_TENANT)' -a -n '$(SEED_AS)' || { echo 'usage: make seed SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]' >&2; exit 2; }
 	cd apps/platformkit && go run . seed --config ../../config.yaml --tenant '$(SEED_TENANT)' --as '$(SEED_AS)' $(if $(DEMO),--demo,) $(if $(DRY),--dry-run,)
 
-.PHONY: check-screen-render check-screen-generated
+.PHONY: check-screen-render
 check-screen-render: ## Validate screen anchor geometry and permission projection
 	./scripts/e2e.sh screen-anchors.spec.ts
 
@@ -243,7 +243,6 @@ check-complexity: ## Require exact complexity ceilings and reviewed budget trans
 generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
 	go run ./apps/platformkit screens -config apps/platformkit/testdata/composition.yaml
-	go run ./tools/screenrefs
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
 
 # The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
@@ -251,12 +250,7 @@ generate: ## Rewrite every generated file and section from its inputs, offline
 # staged passes and unrelated work is not judged. A writer whose output carries neither marker sits
 # outside this diff: marking what a writer writes is part of writing it, and the whole-tree form,
 # `make generate && git diff --exit-code`, is what catches a marker that was never added.
-check-screen-generated: ## Refuse missing or stale screen artifacts and references without writing
-	go run ./apps/platformkit screens -config apps/platformkit/testdata/composition.yaml
-	go run ./tools/screenrefs -check
-
-check-generated: check-screen-generated ## Fail when a generated file or section differs from what `make generate` writes
-	$(MAKE) generate
+check-generated: generate ## Fail when a generated file or section differs from what `make generate` writes
 	git diff --exit-code -- $$(git ls-files | git check-attr --stdin linguist-generated | awk -F': ' '$$3 == "true" { print $$1 }') tests/INVENTORY.md
 
 check-packages: ## Fail when the app links too many first-party packages

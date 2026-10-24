@@ -232,16 +232,3 @@ remembers one process, and nothing in the tree held a port across processes. **M
 claim itself, an empty file per port locked until the case ends and never unlinked, named by
 `portClaimPath` and witnessed by `TestAPortTakenWhileBootingIsNotTheCasesPort`. A claim is advisory,
 so the serving wait stays the proof of which application is behind an address.
-
-
-## Published screens
-
-**Reused** — the reference composition and its dry route registration supply
-all generic and custom screen declarations. **Added** — the `screens` command
-exports that mounted contract, because the per-person resource catalogue cannot
-publish all custom views. **Made reusable** — other applications can export the
-same immutable contract through `pkit.App.Screens`.
-
-See the [screen contract](../../kit/screen/README.md) for grammar, compatibility,
-explicit artifact updates and generated Go references. The command checks both
-development and production composition without opening the development stack.
