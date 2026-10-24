@@ -21,6 +21,7 @@
         "admincontracts.Signin",
         "admincontracts.Pictures",
         "admincontracts.Locale",
+        "admincontracts.PrimaryAction",
         "tenantcontracts.Languages",
         "authcontracts.ConfirmationChrome",
         "webhookcontracts.Catalogue"
@@ -812,6 +813,10 @@
         {
           "contract": "admincontracts.Storybook",
           "from": ""
+        },
+        {
+          "contract": "admincontracts.PrimaryAction",
+          "from": "product"
         }
       ],
       "after": [
