@@ -158,7 +158,7 @@ func (f *Fake) Assign(ctx context.Context, _ db.Tx[db.Tenant], id, assignee uuid
 	return f.command(ctx, porttest.Command[contracts.Task]{
 		Row: id,
 		Decide: func(task contracts.Task) error {
-			if err := f.authorize(ctx, task, "task:assign"); err != nil {
+			if err := f.authorize(ctx, task, "task:assign", assignee); err != nil {
 				return err
 			}
 			if task.Status == contracts.StatusResolved || task.Status == contracts.StatusClosed {
@@ -189,7 +189,7 @@ func (f *Fake) Resolve(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, re
 	return f.command(ctx, porttest.Command[contracts.Task]{
 		Row: id,
 		Decide: func(task contracts.Task) error {
-			if err := f.authorize(ctx, task, "task:resolve"); err != nil {
+			if err := f.authorize(ctx, task, "task:resolve", uuid.Nil); err != nil {
 				return err
 			}
 			proposed, err := domain.Resolve(task.Status, task.Resolution, resolution)
@@ -225,19 +225,9 @@ func (f *Fake) CheckSLA(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	})
 }
 
-// authorize is internal.Service.authorize read against the fake's context rather
-// than the transaction's: the same tenancy.RequirePolicy call, the same actor,
-// action and resource, the same sentinel, and inside Decide, which is where
-// porttest.Do puts a command's rules — after the row was loaded and before
-// anything was written — so the fake refuses a caller where the real service does.
-//
-// Two differences, both stated. The attributes internal sends describe the task
-// to a policy that reads them; tasktest.Policy reads the actor and nothing else,
-// and a fact nothing reads is not written here. And Stranger is refused before
-// the policy is asked, whoever holds the fake: the port's Denied case needs a
-// caller with no grant, and a world that had to install a policy to be refused
-// one would be a world with an opinion about grants it may not have.
-func (f *Fake) authorize(ctx context.Context, task contracts.Task, action string) error {
+// authorize sends the same locked-row facts as the SQL service. Stranger remains
+// the fixture's caller without a grant, independent of the configured policy.
+func (f *Fake) authorize(ctx context.Context, task contracts.Task, action string, assignee uuid.UUID) error {
 	if porttest.Actor(ctx) == Stranger {
 		return tenancy.ErrPolicyDenied
 	}
@@ -249,12 +239,19 @@ func (f *Fake) authorize(ctx context.Context, task contracts.Task, action string
 		return tenancy.ErrPolicyDenied
 	}
 	tenant, _ := tenancy.FromContext(ctx) // porttest.Do refused a context naming no tenant already
+	attributes := map[string]any{"status": task.Status, "priority": task.Priority, "assignee_id": ""}
+	if task.AssigneeID != nil {
+		attributes["assignee_id"] = task.AssigneeID.String()
+	}
+	if assignee != uuid.Nil {
+		attributes["requested_assignee_id"] = assignee.String()
+	}
 	_, err := tenancy.RequirePolicy(ctx, f.Policy, tenancy.PolicyRequest{
 		Tenant: tenant,
 		Actor:  tenancy.PolicyActor{Kind: tenancy.PolicyUser, ID: principal.UserID.String()},
 		Action: action,
 		Resource: tenancy.PolicyResource{
-			TenantID: task.TenantID, Kind: "task", ID: task.ID.String(),
+			TenantID: task.TenantID, Kind: "task", ID: task.ID.String(), Attributes: attributes,
 		},
 	})
 	return err
