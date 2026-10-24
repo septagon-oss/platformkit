@@ -53,7 +53,10 @@ func (f Field) SketchFault() string {
 		}
 		return ""
 	}
-	if f.Widget != "" && f.Widget != "sketch" || f.Present != "" && f.Present != "sketch" ||
+	// A drawing is read as a drawing because of its type, so it carries no control
+	// name beyond `sketch` and no read name at all; `present:` names a reading the
+	// type does not already give, and for this type it cannot.
+	if f.Widget != "" && f.Widget != "sketch" || f.Present != "" ||
 		len(f.Enum) > 0 || f.Default != "" || f.MaxLength != 0 || f.Display || f.Elem != "" ||
 		f.Presentation.Format != "" || f.Presentation.Money != nil || f.Presentation.Reference != nil {
 		return fmt.Sprintf("sketch field %q cannot carry scalar hints, defaults or a different presentation", f.Name)

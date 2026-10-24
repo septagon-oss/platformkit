@@ -241,10 +241,16 @@ type Field struct {
 // now mean the control instead of being ignored next to it, which is why a
 // string holding a timestamp or a "true" draws the same control its
 // time.Time and bool neighbours do.
+//
+// `sketch` is a control name rather than a read name: a person draws into it, and
+// ui/forms says what that control is. How a stored drawing is *read* needs no
+// name of its own, because the field's type already says it — a `sketch` in
+// Presentations would be that type spelled a second time, which the rule in that
+// list's own comment refuses.
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "richtext", "time", "url", "week", "sketch",
+	"textarea", "richtext", "sketch", "time", "url", "week",
 }
 
 // Presentations is every name `ui:"present:…"` may carry, and it is the read-axis
@@ -266,7 +272,7 @@ var Widgets = []string{
 // A name a mounted Spec claims and no screen renders refuses to mount, and the
 // shape a picture name may sit on is refused too — see ui/resource's own test
 // that names a composition per name here, and kit/rest's picture gate.
-var Presentations = []string{"person", "image", "images", "avatar", "sketch"}
+var Presentations = []string{"person", "image", "images", "avatar"}
 
 // PicturesAre reports whether the named presentation reads a file id, which is
 // the one fact about the name that a mount gate can check without importing what

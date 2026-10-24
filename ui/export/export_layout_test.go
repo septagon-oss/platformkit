@@ -227,7 +227,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// leaf-by-leaf count: the document before it exists only outside the merge. The
 	// digest below is this merged tree's own measurement, printed by the refusal and
 	// copied from it.
-	if legacy.SHA256 != "a76f10dda799497ceed8f725bb98e94e96dfd91680b8e444feec0f6fd2efb316" {
+	// The drawing adds its own markup to the served stylesheet and its own
+	// attribution line to the notices, and nothing else. Exported against the tree
+	// before it and walked leaf by leaf: 99,996 leaves, none added and none removed,
+	// three changed. /css gains the drawing's rules — the square an SVG fills, the
+	// board a person draws into and the sizes a row and a record read it at — and no
+	// rule moves or disappears. /notices gains the attribution paragraph, which the
+	// test above requires to match NOTICE byte for byte. Only /sha256 follows.
+	if legacy.SHA256 != "c5a3cbf25cb862366360cc0f12ccfd3b579668a19f08c7bb4d0bfb423a9eb1ba" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

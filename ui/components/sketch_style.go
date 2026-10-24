@@ -2,23 +2,29 @@ package components
 
 import (
 	"github.com/septagon-oss/platformkit/ui/css"
-	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-// SketchStyle supplies the shared drawing geometry, tokens and focus treatment.
+// SketchStyle carries the component's own geometry: a drawing is one SVG that
+// must fill the box it is painted in at the square its strokes are stored
+// against, so every reader and preview scales identically without copying
+// geometry into product markup.
+//
+// Only `[data-component="sketch"]` is addressed here. The board a person draws
+// into, the controls under it and the size a screen reads a saved drawing at are
+// markup ui/forms and ui/resource render, and ui/sketch_style.go carries their
+// rules: this package exports the vocabulary its own markup emits, and styling a
+// hook it never renders would claim it.
 func SketchStyle() *css.Sheet {
+	v := func(name string) css.Value { return css.VarRef(name, "") }
+	lit := css.Literal
 	s := css.NewSheet()
-	lit, token := css.Literal, func(n string) css.Value { return css.VarRef(n, "") }
-	s.Select(`[data-component="sketch"] svg, [data-sketch] canvas`, css.Decl("display", lit("block")), css.Decl("width", lit("100%")), css.Decl("aspect-ratio", lit("1")), css.Decl("overflow", lit("hidden")))
-	s.Select(`[data-component="sketch"], [data-sketch]`, css.Decl("color", token("pk-color-text-primary")), css.Decl("min-width", lit("0")))
-	s.Select(`[data-sketch]`, css.Decl("border", lit("0")), css.Decl("padding", lit("0")), css.Decl("margin", lit("0")))
-	s.Select(`[data-sketch] canvas`, css.Decl("touch-action", lit("none")), css.Decl("background", token("pk-color-surface-primary")), css.Decl("border-radius", lit(style.RadiusLG.Value())), css.Decl("outline-offset", lit(style.S1.Value())))
-	s.Select(`[data-sketch] canvas:focus-visible`, css.Decl("outline", lit("2px solid currentColor")))
-	s.Select(`[data-sketch] [hidden]`, css.Decl("display", lit("none !important")))
-	s.Select(`[data-sketch-actions]`, css.Decl("display", lit("flex")), css.Decl("gap", lit(style.S2.Value())), css.Decl("flex-wrap", lit("wrap")), css.Decl("margin-top", lit(style.S2.Value())))
-	s.Select(`[data-sketch-actions] button`, css.Decl("min-height", lit(style.S12.Value())))
-	s.Select(`[data-sketch] p`, css.Decl("font-size", lit(style.TextSM.Value())), css.Decl("margin-block", lit(style.S2.Value())))
-	s.Select(`[data-sketch-size="thumbnail"]`, css.Decl("width", lit(style.S16.Value())))
-	s.Select(`[data-sketch-size="full"]`, css.Decl("max-width", lit(style.SFull.Value())))
+	s.Select(`[data-component="sketch"] svg`,
+		css.Decl("display", lit("block")),
+		css.Decl("width", lit("100%")),
+		css.Decl("aspect-ratio", lit("1")),
+		css.Decl("overflow", lit("hidden")))
+	s.Select(`[data-component="sketch"]`,
+		css.Decl("color", v("pk-color-text-primary")),
+		css.Decl("min-width", lit("0")))
 	return s
 }

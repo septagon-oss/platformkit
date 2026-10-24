@@ -51,7 +51,7 @@ import (
 // it illustrates is the same information twice, and a list of thirty rows is thirty
 // repetitions of it.
 func compose(f entity.Field, row components.TableRow, primary bool, at string, o Options, name string, words Words) g.Node {
-	if f.Type == entity.TypeSketch || f.Present == "sketch" {
+	if f.Type == entity.TypeSketch {
 		return sketchReading(row.Cells[f.Name], words.FieldLabel(f), "thumbnail", words.text)
 	}
 	if f.Present == "" {

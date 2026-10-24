@@ -739,6 +739,7 @@ func componentState() *css.Sheet {
 	// inside its editing surface: what an author formats is dressed the way the
 	// reader will see it.
 	s.Merge(richTextChrome())
+	s.Merge(sketchChrome())
 	s.Merge(components.ProseStyleFor(`[data-richtext-surface] [contenteditable="true"]`))
 	v := func(name string) css.Value { return css.VarRef(name, "") }
 	// Component layout utilities must respect Hidden. Keep the override scoped

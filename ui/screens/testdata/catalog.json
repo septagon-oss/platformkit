@@ -57,10 +57,7 @@
         },
         {
           "name": "drawing",
-          "type": "sketch",
-          "presentation": {
-            "label": "Drawing"
-          }
+          "type": "sketch"
         }
       ],
       "resolved": {
@@ -583,10 +580,7 @@
           "fields": [
             {
               "name": "drawing",
-              "type": "sketch",
-              "presentation": {
-                "label": "Drawing"
-              }
+              "type": "sketch"
             },
             {
               "name": "at",

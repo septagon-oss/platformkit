@@ -20,11 +20,11 @@ import (
 // its shape the way it is told an entity's.
 type sketchNote struct {
 	Note
-	Drawing entity.Sketch `json:"drawing" required:"false" ui:"label:Drawing"`
+	Drawing entity.Sketch `json:"drawing"`
 }
 
 type publishBody struct {
-	Drawing entity.Sketch `json:"drawing" required:"false" ui:"label:Drawing"`
+	Drawing entity.Sketch `json:"drawing"`
 	At      string        `json:"at,omitempty" doc:"When it goes out; now if left empty"`
 }
 

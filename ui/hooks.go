@@ -35,8 +35,17 @@ import (
 // the composition instead of off this list.
 var renderedHooks = map[string]string{
 	"data-sketch":               "ui/forms/sketch.go",
+	"data-sketch-action":        "ui/forms/sketch.go",
 	"data-sketch-actions":       "ui/forms/sketch.go",
-	"data-sketch-size":          "ui/components/sketch.go",
+	"data-sketch-coordinate":    "ui/forms/sketch.go",
+	"data-sketch-fallback":      "ui/forms/sketch.go",
+	"data-sketch-milliseconds":  "ui/forms/sketch.go",
+	"data-sketch-points":        "ui/forms/sketch.go",
+	"data-sketch-preview":       "ui/forms/sketch.go",
+	"data-sketch-status":        "ui/forms/sketch.go",
+	"data-sketch-strokes":       "ui/forms/sketch.go",
+	"data-sketch-value":         "ui/forms/sketch.go",
+	"data-sketch-size":          "ui/resource/sketch.go",
 	"data-confirm":              "ui/resource/resource.go",
 	"data-confirm-label":        "ui/resource/resource.go",
 	"data-gallery":              "ui/export/storybook.go",

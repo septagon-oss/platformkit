@@ -16,9 +16,14 @@ func TestSketchResourcePreservesReadingAndRefusedDraft(t *testing.T) {
 		Fields: []entity.Field{{Name: "id", Type: entity.TypeUUID, ReadOnly: true}, {Name: "title", Type: entity.TypeString}, {Name: "drawing", Type: entity.TypeSketch}},
 	}}
 	row := map[string]any{"id": "1", "title": "Kept", "drawing": entity.Sketch{{{1, 2, 0}, {900, 800, 9007199254740991}}}}
-	for _, body := range []string{render(t, resource.List(r, opts, []map[string]any{row}, 1, 1, "", false).Body), render(t, resource.Detail(r, opts, row, false).Body)} {
-		if !strings.Contains(body, `points="1,2 900,800"`) || !strings.Contains(body, `aria-label="Drawing"`) {
-			t.Fatal(body)
+	// A row reads the drawing at a swatch and the record at the width a person can
+	// make a line out of; the geometry they are drawn from is the same SVG.
+	for _, want := range []struct{ body, size string }{
+		{render(t, resource.List(r, opts, []map[string]any{row}, 1, 1, "", false).Body), `data-sketch-size="thumbnail"`},
+		{render(t, resource.Detail(r, opts, row, false).Body), `data-sketch-size="full"`},
+	} {
+		if !strings.Contains(want.body, `points="1,2 900,800"`) || !strings.Contains(want.body, `aria-label="Drawing"`) || !strings.Contains(want.body, want.size) {
+			t.Fatal(want.body)
 		}
 	}
 	for _, raw := range []string{`[[[1,2,0],[900,800,9007199254740991]]]`, `[[[1.0,2,0]]]`, ""} {
