@@ -393,7 +393,7 @@
       {
         "name": "body",
         "label": "Body",
-        "help": "The content itself, in Markdown",
+        "help": "The content itself in Markdown",
         "section": "",
         "onList": false,
         "onRecord": true,
@@ -443,7 +443,7 @@
       {
         "name": "kind",
         "label": "Type",
-        "help": "page or post",
+        "help": "Page or post",
         "section": "",
         "onList": true,
         "onRecord": true,

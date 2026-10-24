@@ -367,8 +367,8 @@
       },
       {
         "name": "title",
-        "label": "Title",
-        "help": "Headline",
+        "label": "Título",
+        "help": "O que uma lista e um cabeçalho mostram",
         "section": "",
         "onList": true,
         "onRecord": true,
@@ -392,8 +392,8 @@
       },
       {
         "name": "body",
-        "label": "Body",
-        "help": "The content itself, in Markdown",
+        "label": "Corpo",
+        "help": "O conteúdo em si, em Markdown",
         "section": "",
         "onList": false,
         "onRecord": true,
@@ -443,7 +443,7 @@
       {
         "name": "kind",
         "label": "Tipo",
-        "help": "page or post",
+        "help": "Página ou publicação",
         "section": "",
         "onList": true,
         "onRecord": true,
@@ -465,13 +465,13 @@
         "options": [
           {
             "value": "page",
-            "label": "Page",
+            "label": "Página",
             "tone": "neutral",
             "done": false
           },
           {
             "value": "post",
-            "label": "Post",
+            "label": "Publicação",
             "tone": "neutral",
             "done": false
           }
@@ -480,8 +480,8 @@
       },
       {
         "name": "status",
-        "label": "Status",
-        "help": "Lifecycle state",
+        "label": "Estado",
+        "help": "Estado do ciclo de vida",
         "section": "",
         "onList": true,
         "onRecord": true,
@@ -503,19 +503,19 @@
         "options": [
           {
             "value": "draft",
-            "label": "Draft",
+            "label": "Rascunho",
             "tone": "neutral",
             "done": false
           },
           {
             "value": "published",
-            "label": "Published",
+            "label": "Publicado",
             "tone": "success",
             "done": false
           },
           {
             "value": "archived",
-            "label": "Archived",
+            "label": "Arquivado",
             "tone": "neutral",
             "done": false
           }
@@ -525,7 +525,7 @@
       {
         "name": "publishedAt",
         "label": "Publicada",
-        "help": "When this was published",
+        "help": "Momento em que foi publicado",
         "section": "",
         "onList": true,
         "onRecord": true,
@@ -552,8 +552,8 @@
       },
       {
         "name": "author",
-        "label": "Author",
-        "help": "The user who created this",
+        "label": "Autor",
+        "help": "O utilizador que criou este conteúdo",
         "section": "",
         "onList": false,
         "onRecord": true,
@@ -608,13 +608,13 @@
       "sorts": [
         {
           "query": "title",
-          "label": "Title",
+          "label": "Título",
           "field": "title",
           "desc": false
         },
         {
           "query": "-title",
-          "label": "Title",
+          "label": "Título",
           "field": "title",
           "desc": true
         },
@@ -651,13 +651,13 @@
           "values": [
             {
               "value": "page",
-              "label": "Page",
+              "label": "Página",
               "tone": "neutral",
               "done": false
             },
             {
               "value": "post",
-              "label": "Post",
+              "label": "Publicação",
               "tone": "neutral",
               "done": false
             }
@@ -665,24 +665,24 @@
         },
         {
           "field": "status",
-          "label": "Status",
+          "label": "Estado",
           "kind": "enum",
           "values": [
             {
               "value": "draft",
-              "label": "Draft",
+              "label": "Rascunho",
               "tone": "neutral",
               "done": false
             },
             {
               "value": "published",
-              "label": "Published",
+              "label": "Publicado",
               "tone": "success",
               "done": false
             },
             {
               "value": "archived",
-              "label": "Archived",
+              "label": "Arquivado",
               "tone": "neutral",
               "done": false
             }
