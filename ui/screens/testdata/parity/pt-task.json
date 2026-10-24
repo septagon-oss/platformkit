@@ -1,0 +1,106 @@
+{
+ "name": "pt-task",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:32a96d60eab88f2dc7bca6d613a0295337b4e84647a20ff2100d98adcc8ada04",
+  "expectedHash": "sha256:4dc0d9ea27c322c8f48da553d1bc2062f467784e0815cc5e79281ed00c20aa31"
+ },
+ "input": {
+  "language": "pt-PT",
+  "schema": {
+   "module": "m",
+   "entity": "task",
+   "path": "/api/v1/m/task",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "required": true
+    },
+    {
+     "name": "done",
+     "type": "bool"
+    },
+    {
+     "name": "createdAt",
+     "type": "time",
+     "readOnly": true
+    }
+   ]
+  },
+  "hints": {
+   "Singular": "tarefa",
+   "Plural": "tarefas"
+  },
+  "rows": [
+   {
+    "id": "t1",
+    "title": "Escrever",
+    "done": true
+   }
+  ],
+  "translations": {
+   "present.true": "Sim",
+   "present.false": "Não",
+   "present.missing": "—",
+   "present.emptyTitle": "(sem título)"
+  }
+ },
+ "expected": {
+  "resolved": {
+   "language": "pt-PT",
+   "identity": {
+    "singular": "tarefa",
+    "plural": "tarefas"
+   },
+   "titles": {
+    "emptyTitle": "(sem título)"
+   },
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "title"
+    },
+    {
+     "name": "done",
+     "reading": {
+      "true": "Sim",
+      "false": "Não"
+     }
+    },
+    {
+     "name": "createdAt"
+    }
+   ],
+   "list": {
+    "filters": [
+     {
+      "field": "done",
+      "values": [
+       {
+        "label": "Sim"
+       },
+       {
+        "label": "Não"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "rows": {
+   "t1": {
+    "listTitle": "Escrever",
+    "recordTitle": "Escrever"
+   }
+  }
+ }
+}
