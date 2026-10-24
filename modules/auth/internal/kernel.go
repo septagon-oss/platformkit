@@ -130,7 +130,7 @@ func ClientOf(r *http.Request) contracts.Client {
 // Secure is on unless the application is reached at a local name, because a
 // browser refuses a Secure cookie over http://localhost and a development
 // machine that cannot sign in is a development machine nobody uses. The name
-// follows from it: httpx.CookieName adds the __Host- prefix when the cookie
+// follows from it: httpx.CookieNameFor adds the __Host- prefix when the cookie
 // will be Secure, which is what stops a page served at one customer's host
 // setting a session cookie the browser then attaches at another's. Every tenant
 // is reached at its own host, often as siblings under one domain, so that is
@@ -178,11 +178,11 @@ func (c Cookies) Forget(base string) http.Cookie { return c.set(base, "", -1) }
 
 // Name is what a cookie this policy sets is called, so a handler reading one
 // back spells it the way it was written.
-func (c Cookies) Name(base string) string { return httpx.CookieName(base, c.secure) }
+func (c Cookies) Name(base string) string { return httpx.CookieNameFor("", base, c.secure) }
 
 func (c Cookies) set(base, value string, maxAge int) http.Cookie {
 	return http.Cookie{
-		Name: httpx.CookieName(base, c.secure), Value: value, Path: "/", MaxAge: maxAge,
+		Name: httpx.CookieNameFor("", base, c.secure), Value: value, Path: "/", MaxAge: maxAge,
 		HttpOnly: true, Secure: c.secure, SameSite: http.SameSiteLaxMode,
 	}
 }

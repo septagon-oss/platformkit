@@ -714,7 +714,7 @@ const defaultCacheApp = "pkit"
 // checked here, before any store is built, because the one error these
 // constructors answer for a name is this one, and a boot that panics on its own
 // configuration is a worse log than a boot that names the key to fix — and
-// cache.Memory answers that name with a panic, which is the reason Declarations
+// cache.MemoryFor answers that name with a panic, which is the reason Declarations
 // asks for the segment the same way rather than handing a store straight to
 // httpx.
 func (a *App) cacheSegment() (string, error) {
@@ -743,7 +743,7 @@ func (a *App) cache(ctx context.Context) (cache.Cache, error) {
 	}
 	if build == nil {
 		a.log.InfoContext(ctx, "cache: in-process store; forgetting a value reaches this process only")
-		return cache.Memory(segment), nil
+		return cache.MemoryFor(appname.Name(segment)), nil
 	}
 	store, err := build(ctx, a.cfg.Cache)
 	if err != nil {
@@ -823,7 +823,7 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 		// here, because the routes say it and the kernel records it; boot prints
 		// the list below.
 		Installation: a.opts.Installation.Host,
-		WriteLimiter: limit.Postgres(a.held.read),
+		WriteLimiter: limit.PostgresFor("", a.held.read),
 		// The memory beside the counter: the same connection the limiter is counted
 		// on, the same detached write, the same reason — a retried write arrives at
 		// whichever replica the load balancer chose, so the record of the first one
