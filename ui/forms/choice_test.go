@@ -12,7 +12,7 @@ import (
 func choiceField(t *testing.T, appearance, cardinality string) forms.Field {
 	t.Helper()
 	c := &entity.ChoiceSet{Cardinality: cardinality, Empty: entity.ChoiceEmpty{Mode: "allow"}, Options: []entity.ChoiceOption{{ID: "round", Label: "Round", Picture: &entity.ChoicePicture{Kind: "colour", Value: "#112233"}}, {ID: "square", Label: "Square", Picture: &entity.ChoicePicture{Kind: "colour", Value: "#AABBCC"}}}}
-	f := entity.Field{Name: "shapes", Type: entity.TypeString, Widget: appearance, Present: appearance, Choices: c}
+	f := entity.Field{Name: "shapes", Type: entity.TypeString, Widget: appearance, Choices: c}
 	if cardinality == "many" {
 		f.Type, f.Elem = entity.TypeList, entity.TypeString
 	}

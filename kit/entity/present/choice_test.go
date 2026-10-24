@@ -11,7 +11,7 @@ import (
 func TestChoicePolicyResolvesBothAxesAndCommandInputs(t *testing.T) {
 	c := &entity.ChoiceSet{Cardinality: "many", Empty: entity.ChoiceEmpty{Mode: "allow"}, Options: []entity.ChoiceOption{{ID: "round", Label: "Round"}, {ID: "square", Label: "Square"}}, SearchThreshold: 1}
 	for _, hint := range []string{"", "tiles", "chips", "figure", "swatch"} {
-		f := entity.Field{Name: "shapes", Type: entity.TypeList, Elem: entity.TypeString, Choices: c, Widget: hint, Present: hint}
+		f := entity.Field{Name: "shapes", Type: entity.TypeList, Elem: entity.TypeString, Choices: c, Widget: hint}
 		in := present.Input{Schema: entity.Schema{Fields: []entity.Field{f}}, Commands: []present.CommandInput{{Verb: "pick", Fields: []entity.Field{f}}}}
 		resolved := present.Resolve(in)
 		field := resolved.Fields[0]
@@ -19,7 +19,7 @@ func TestChoicePolicyResolvesBothAxesAndCommandInputs(t *testing.T) {
 		if want == "" {
 			want = "chips"
 		}
-		if field.Control != want || field.Kind != want || !field.Choice.SearchEnabled || field.Options[0].Value != "round" {
+		if field.Control != want || field.Kind != "choice" || !field.Choice.SearchEnabled || field.Options[0].Value != "round" {
 			t.Fatalf("policy: %+v", field)
 		}
 		arg := resolved.Commands[0].Fields[0]

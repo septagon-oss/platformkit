@@ -210,11 +210,7 @@ func ChoiceRead(r present.ResolvedField, ids []string, files, composed string, t
 	if len(items) == 0 {
 		items = append(items, g.Text(r.Reading.Missing))
 	}
-	var figure g.Node
-	if r.Kind == "figure" {
-		figure = choiceFigure(r, ids)
-	}
-	return h.Div(g.Attr("data-choice-read", r.Kind), figure, h.Div(g.Group(items)))
+	return h.Div(g.Attr("data-choice-read", r.Kind), choiceFigure(r, ids), h.Div(g.Group(items)))
 }
 
 func choiceOrderValue(r present.ResolvedField, ids []string) string {
