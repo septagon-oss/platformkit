@@ -40,6 +40,18 @@
       "reason": "not a release, and its own ledger cannot be built on: it applied auth/000035 at a position the numbering later moved, so the runner refuses it as an earlier insertion ('precedes applied version 47; append a new version'); the bytes it shipped are still owed, and applied_bytes is where they are owed"
     }
   ],
+  "fixtures": [
+    {
+      "path": "scripts/testdata/rehearse/seed.sql",
+      "sha256": "0c00bb48a0eb2ae5e80f15897c904e50d4a070ca25e08054fe25d1321399565f",
+      "why": "the volume every duration is measured against, written in the shape every supported source's own schema already holds"
+    },
+    {
+      "path": "scripts/testdata/rehearse/populated.sql",
+      "sha256": "70f1dc5be057afb8c0fa8cb48340bbfd3375b84eda2c4edfbe4c4789103d7385",
+      "why": "the second tenant, the page text, the file records and the queued events the upgrade has to carry"
+    }
+  ],
   "applied_bytes": [
     {
       "path": "modules/audit/migrations/000048_audit_history_append_only.up.sql",

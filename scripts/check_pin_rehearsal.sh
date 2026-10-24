@@ -133,6 +133,7 @@ if [ "$record_kind" = "platformkit.rehearsal.v2" ]; then
 	required=$(mktemp)
 	"$reader" positives >"$required" ||
 		{ echo "pin-rehearsal: the support record will not say which sources this release must upgrade from: $("$reader" positives 2>&1 | head -1)"; exit 1; }
+	fixtures_in_record=$("$reader" fixtures | sort)
 	while IFS=$'\t' read -r src_ref src_commit src_roles; do
 		[ -n "$src_ref" ] || continue
 		hits=$(jq -r --arg ref "$src_ref" --arg commit "$src_commit" \
@@ -155,11 +156,28 @@ EOF
 			{ echo "pin-rehearsal: the case for $src_ref records exit $case_status; a case that did not pass is not a supported upgrade."; exit 1; }
 		[ "$case_files" -gt 0 ] ||
 			{ echo "pin-rehearsal: the case for $src_ref applied no file, which against a supported installation means the copy was not the installation."; exit 1; }
+		# The data half: a case that seeded something other than the fixtures the release
+		# owes rehearsed a database no installation holds, however green its DDL came out.
+		fixtures_in_case=$(jq -r --arg ref "$src_ref" --arg commit "$src_commit" \
+			'(.sources[] | select(.ref == $ref and .commit == $commit) | .rehearsal.fixtures // [])[]
+			  | [.path, .sha256 // ""] | @tsv' "$receipt" | sort)
+		[ "$fixtures_in_case" = "$fixtures_in_record" ] || {
+			echo "pin-rehearsal: the case for $src_ref seeded [$(printf '%s' "$fixtures_in_case" | tr '\n' ' ')], and the record owes [$(printf '%s' "$fixtures_in_record" | tr '\n' ' ')]; a fixture replaced by whatever the current tree holds is not the installation this promise is about."
+			exit 1
+		}
 	done <"$required"
 	cases=$(jq -r '.sources | length' "$receipt")
 	needed=$(grep -c '' <"$required")
 	[ "$cases" = "$needed" ] ||
 		{ echo "pin-rehearsal: the matrix holds $cases case(s) and the support record requires $needed; a repeated case cannot discharge a missing one."; exit 1; }
+	# The two halves of one release note, kept together: the data survived, and the surface a
+	# pinned consumer compiles against did not move. A matrix that measured only the first is
+	# a third of the answer, which is why the omission refuses here rather than being noted
+	# afterwards in prose nobody runs.
+	[ "$(jq -r '.compatibility.ran // false' "$receipt")" = "true" ] ||
+		{ echo "pin-rehearsal: the matrix recorded no exported-surface comparison; the data promise and the client promise are one release, and scripts/rehearse_supported_matrix.sh runs the comparison whose verdict it records here."; exit 1; }
+	[ "$(jq -r '.compatibility.exit // 1' "$receipt")" = "0" ] ||
+		{ echo "pin-rehearsal: the matrix records the exported-surface comparison exiting $(jq -r '.compatibility.exit // "nothing"' "$receipt"): $(jq -r '.compatibility.verdict // "no verdict recorded"' "$receipt")"; exit 1; }
 	refused_in_receipt=$(jq -r '.refused[].ref' "$receipt" | sort)
 	refused_in_record=$("$reader" refused | cut -f1 | sort)
 	[ "$refused_in_receipt" = "$refused_in_record" ] ||

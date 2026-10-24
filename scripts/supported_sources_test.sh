@@ -57,6 +57,9 @@ mutate '.refused[0].reason = ""' reasonless.json
 mutate '.applied_bytes[0].sha256 = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"' rewritten-bytes.json
 mutate '.applied_bytes[0].path = "modules/audit/migrations/000099_that_was_never_applied.up.sql"' absent-bytes.json
 mutate 'del(.applied_bytes)' no-bytes.json
+mutate '.fixtures[0].sha256 = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"' rewritten-fixture.json
+mutate '.fixtures[0].path = "scripts/testdata/rehearse/current-schema.sql"' absent-fixture.json
+mutate 'del(.fixtures)' no-fixtures.json
 mutate '.required_roles = []' no-roles.json
 mutate '.record = "platformkit.supported-sources.v0"' other-kind.json
 
@@ -69,6 +72,9 @@ run 1 "a refused source with no reason" "$reader" --record "$work/reasonless.jso
 run 1 "an applied migration this release rewrote" "$reader" --record "$work/rewritten-bytes.json" verify
 run 1 "an applied migration this tree does not hold" "$reader" --record "$work/absent-bytes.json" verify
 run 1 "a record that owes no applied bytes" "$reader" --record "$work/no-bytes.json" verify
+run 1 "a rehearsal fixture this release rewrote" "$reader" --record "$work/rewritten-fixture.json" verify
+run 1 "a rehearsal fixture this tree does not hold" "$reader" --record "$work/absent-fixture.json" verify
+run 1 "a record that owes no fixture" "$reader" --record "$work/no-fixtures.json" verify
 run 1 "a record that requires nothing" "$reader" --record "$work/no-roles.json" verify
 run 1 "a record of a kind this reader does not read" "$reader" --record "$work/other-kind.json" verify
 run 2 "no record at all" "$reader" --record "$work/not-here.json" verify
@@ -86,13 +92,20 @@ printf 'module example.com/consumer\n\ngo 1.25\n\nrequire github.com/septagon-os
 target=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 digest=$(sha256sum "$shipped" | cut -d' ' -f1)
 matrix() {
-	jq -n --arg t "$target" --arg digest "$digest" --slurpfile r <("$reader" refused | cut -f1,2,3 |
+	jq -n --arg t "$target" --arg digest "$digest" \
+		 --argjson fixtures "$("$reader" fixtures | jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {path: .[0], sha256: .[1]})')" \
+		 --slurpfile r <("$reader" refused | cut -f1,2,3 |
 		jq -R -r 'split("\t") | select(length > 0) | {ref: .[0], commit: .[1]}') --slurpfile s <("$reader" positives |
 		jq -R -r 'split("\t") | {ref: .[0], commit: .[1], roles: (.[2] | split(","))}') '
 		{record: "platformkit.rehearsal.v2", target_commit: $t, target_line: "v2.0.0",
 		 support_record: {file: "scripts/testdata/rehearse/supported-sources.json", sha256: $digest},
+		 compatibility: {ran: true, exit: 0, command: "python3 scripts/check_public_api.py --line-record scripts/baselines/public-api-v2.0.0-candidate.json HEAD", frozen_commit: "45fbddf52d8432b576deaeba4e74d99c41ed3c97", verdict: "no exported incompatibility"},
+		 fixtures: $fixtures,
 		 sources: [$s[] | {ref, commit, roles, rehearsal: {
 		   base_commit: .commit, candidate_commit: $t, exit: 0,
+		   fixtures: $fixtures,
+		   data: {fact_lines: 12, boundary_reads: 6, foreign_rows_visible: 0,
+		          pending_outbox_rows: 90, applied_rows_after: 90},
 		   files: [{owner: "audit", version: "48", name: "000048_audit_history_append_only.up.sql",
 		            phase: "expand", seconds: 0.002}]}}],
 		 refused: [$r[] | {ref, commit: (if . == "" then null else . end), reason: "refused by the record", refused_with: 1}],
@@ -124,6 +137,9 @@ jq '.target_commit = "cccccccccccccccccccccccccccccccccccccccc"' "$work/good.jso
 jq '.support_record.sha256 = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"' "$work/good.json" >"$work/wrong-record.json"
 jq 'del(.refused[0])' "$work/good.json" >"$work/quiet-omission.json"
 jq '.sources[2].rehearsal.files = []' "$work/good.json" >"$work/empty-case.json"
+jq '.sources[0].rehearsal.fixtures = [{path: "scripts/testdata/rehearse/seed.sql", sha256: "0000000000000000000000000000000000000000000000000000000000000000"}]' \
+	"$work/good.json" >"$work/swapped-fixture.json"
+jq 'del(.sources[1].rehearsal.fixtures)' "$work/good.json" >"$work/nothing-seeded.json"
 jq -n '{base_ref: "v1.1.0", candidate_commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         files: [{owner: "audit", version: "48", name: "x", phase: "expand", seconds: 0.1}],
         max_lock_ms: 0, exit: 0}' >"$work/legacy.json"
@@ -134,6 +150,12 @@ checkcase 1 "a matrix taken into another revision" "$work/wrong-target.json"
 checkcase 1 "a matrix that names another support record" "$work/wrong-record.json"
 checkcase 1 "a refused source left out quietly" "$work/quiet-omission.json"
 checkcase 1 "a case that applied nothing" "$work/empty-case.json"
+checkcase 1 "a case that seeded a fixture the record does not owe" "$work/swapped-fixture.json"
+checkcase 1 "a case that named nothing it seeded" "$work/nothing-seeded.json"
+jq '.compatibility.ran = false' "$work/good.json" >"$work/no-api-check.json"
+jq '.compatibility.exit = 1' "$work/good.json" >"$work/api-moved.json"
+checkcase 1 "a matrix that recorded no exported-surface comparison" "$work/no-api-check.json"
+checkcase 1 "a matrix whose exported surface moved" "$work/api-moved.json"
 checkcase 1 "a single-revision receipt in release mode" "$work/legacy.json"
 
 if [ "$fails" -gt 0 ]; then echo "supported-sources: $fails case(s) failed"; exit 1; fi

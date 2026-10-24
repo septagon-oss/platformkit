@@ -7,15 +7,13 @@
 #	                              [--max-lock-ms N] [--keep]
 #	scripts/rehearse_migrations.sh --check-source REF
 #
-# `--supported` is the mode a release is certified by: it runs the rehearsal once per
-# supported source in scripts/testdata/rehearse/supported-sources.json — the oldest
-# installation, the revision whose audit/000048 bytes are already applied in the field,
-# and a later installed patch of the line — and writes one receipt that says each one
-# ran, against which commit, and what it cost. It asks scripts/supported_sources.sh
-# which sources are required and never reads that list out of its own receipt, and it
-# runs each refused source past the support record so a refusal is something that
-# happened rather than something that was left out. `--check-source REF` asks the same
-# question about one revision and touches no database.
+# `--supported` is the mode a release is certified by, and it is
+# scripts/rehearse_supported_matrix.sh: this step once per supported source in
+# scripts/testdata/rehearse/supported-sources.json, into one aggregated receipt. Each
+# case is this file with that revision as its --base-ref, so the copy, the fixtures,
+# the drain, the watcher and both budgets are the ones a single case measures and the
+# mode carries no second implementation of them. `--check-source REF` asks the support
+# record about one revision and touches no database.
 #
 # ADR 0011 and migrations/README.md make this the step a release requires: the
 # runner refuses a shape of statement, a `lock_timeout` bounds a wait, and neither
@@ -128,6 +126,8 @@ usage() { echo "usage: rehearse_migrations.sh (--dump FILE | --base-ref REF | --
 dump="${REHEARSE_DUMP:-}"
 ref="${REHEARSE_BASE_REF:-}"
 seed="${REHEARSE_SEED-$root/scripts/testdata/rehearse/seed.sql}"
+populated="${REHEARSE_POPULATED-$root/scripts/testdata/rehearse/populated.sql}"
+declaration="${REHEARSE_DECLARATION-$root/scripts/testdata/rehearse/candidate.yaml}"
 supported=0
 check_source=""
 seed_given=0
@@ -177,6 +177,12 @@ fi
 [[ "$max_file" =~ ^[0-9]+$ ]] || die 2 "--max-file-seconds is $max_file, which is not a number of seconds"
 [[ "$max_lock" =~ ^[0-9]+$ ]] || die 2 "--max-lock-ms is $max_lock, which is not a number of milliseconds"
 if [ -n "$seed" ] && [ ! -r "$seed" ]; then die 2 "no seed file readable at $seed (pass --seed '' to seed nothing)"; fi
+if [ -n "$populated" ] && [ ! -r "$populated" ]; then
+	die 2 "no populated fi
+if [ ! -r "$declaration" ]; then
+	die 2 "no candidate declaration readable at $declaration: the release under test would boot with no hosts named and place nothing"
+fixture readable at $populated (pass REHEARSE_POPULATED='' to seed volume only)"
+fi
 
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:-}"
 if [ -z "$admin_url" ]; then
@@ -295,87 +301,13 @@ finish() {
 }
 trap finish EXIT
 
-# --supported: the matrix, run by the step that measures one case. Each case is this
-# script itself with that case's revision as its --base-ref, so the copy, the seed, the
-# drain, the lock watcher and both budgets are the ones a diagnostic run already uses;
-# what the mode adds is the obligation to have run them for *every* source the release
-# promises and a receipt that names each one. The list of cases comes from
-# scripts/supported_sources.sh, never from anything the run itself writes, and each
-# refused source is asked for its refusal here so that a refusal is an event that
-# happened rather than a source that was quietly left out.
+# The matrix is this step run once per supported source, and nothing else: the copy, the
+# fixtures, the drain, the lock watcher and both budgets are the ones a single case
+# already measures, so the mode adds no second implementation of them to keep honest.
+# What it adds is the obligation that every source the release promises was run, and that
+# each refused source was refused out loud.
 if [ "$supported" = 1 ]; then
-	reader=("$root/scripts/supported_sources.sh")
-	"${reader[@]}" verify >/dev/null || die $? "the supported-source record does not answer as it stands, so nothing about it can be certified"
-	"${reader[@]}" positives >"$work/positives.tsv" || die $? "the supported-source record named no case this run could take"
-	"${reader[@]}" refused >"$work/refused.tsv" || die $? "the supported-source record's refusals could not be read"
-	candidate=$(git rev-parse HEAD)
-	record_file="$root/scripts/testdata/rehearse/supported-sources.json"
-	record_digest=$(sha256sum "$record_file" | cut -d' ' -f1)
-	target_line=$(jq -r '.target_line' "$record_file")
-	n=0
-	while IFS=$'	' read -r case_ref case_commit case_roles; do
-		[ -n "$case_ref" ] || continue
-		n=$((n + 1))
-		case_receipt="$work/case-$n.json"
-		note "case $n: $case_ref (${case_commit:0:12}), discharging ${case_roles:-no named role}"
-		set +e
-		REHEARSE_RECEIPT="$case_receipt" "$0" --base-ref "$case_commit" \
-			--max-file-seconds "$max_file" --max-lock-ms "$max_lock"
-		case_code=$?
-		set -e
-		[ "$case_code" -eq 0 ] || die "$case_code" "case $case_ref did not pass; the matrix certifies nothing while one of its sources is unmeasured"
-		[ -r "$case_receipt" ] || die 2 "case $case_ref exited 0 and left no receipt at $case_receipt"
-		jq -e --arg c "$case_commit" --arg t "$candidate" \
-			'.base_commit == $c and .candidate_commit == $t' "$case_receipt" >/dev/null ||
-			die 1 "case $case_ref's receipt names a base or a candidate other than ${case_commit:0:12} into ${candidate:0:12}"
-		jq -n --arg ref "$case_ref" --arg commit "$case_commit" --arg roles "$case_roles" \
-			--slurpfile rehearsal "$case_receipt" \
-			'{ref: $ref, commit: $commit, roles: ($roles | split(",")), rehearsal: $rehearsal[0]}' \
-			>"$work/result-$n.json"
-	done <"$work/positives.tsv"
-	[ "$n" -gt 0 ] || die 2 "the record named no supported source to run; a matrix with no case is not a pass"
-
-	m=0
-	while IFS=$'	' read -r refused_ref refused_commit refused_reason; do
-		[ -n "$refused_ref" ] || continue
-		m=$((m + 1))
-		set +e
-		refusal=$("$0" --check-source "$refused_ref" 2>&1)
-		refused_code=$?
-		set -e
-		if [ "$refused_code" -eq 0 ]; then
-			echo "REFUSAL DID NOT REFUSE $refused_ref: the support record answered that it is supported"
-			die 1 "a source the release does not support was accepted; the refusal is the promise's other half"
-		fi
-		note "refused $refused_ref as the record requires: $(printf '%s' "$refusal" | head -1)"
-		jq -n --arg ref "$refused_ref" --arg commit "$refused_commit" --arg reason "$refused_reason" \
-			--argjson refused_with "$refused_code" \
-			'{ref: $ref, commit: (if $commit == "" then null else $commit end), reason: $reason,
-			  refused_with: $refused_with}' >"$work/refusal-$m.json"
-	done <"$work/refused.tsv"
-
-	if [ -n "${REHEARSE_RECEIPT:-}" ]; then
-		mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
-		# --slurpfile reads one file; the cases are one file each, so they are slurped
-		# with -s into a JSON array and handed over as that array.
-		cases_json=$(jq -s '.' "$work"/result-*.json 2>/dev/null || echo '[]')
-		refusals_json=$(jq -s '.' "$work"/refusal-*.json 2>/dev/null || echo '[]')
-		jq -n --arg target_commit "$candidate" --arg target_line "$target_line" \
-			--arg record "$record_file" --arg record_digest "$record_digest" \
-			--argjson results "$cases_json" --argjson refusals "$refusals_json" \
-			'{record: "platformkit.rehearsal.v2", target_commit: $target_commit,
-			  target_line: $target_line,
-			  support_record: {file: $record, sha256: $record_digest},
-			  sources: $results, refused: $refusals,
-			  tool: "scripts/rehearse_migrations.sh", mode: "supported", exit: 0}' \
-			>"$REHEARSE_RECEIPT.tmp" || die 2 "the matrix receipt could not be written to $REHEARSE_RECEIPT.tmp"
-		mv -f "$REHEARSE_RECEIPT.tmp" "$REHEARSE_RECEIPT" ||
-			die 2 "the matrix receipt could not be moved into place at $REHEARSE_RECEIPT"
-		note "receipt: $REHEARSE_RECEIPT — $n supported source(s) upgraded into ${candidate:0:12}, $m refusal(s) exercised"
-	else
-		note "$n supported source(s) upgraded into ${candidate:0:12}, $m refusal(s) exercised; no REHEARSE_RECEIPT was named"
-	fi
-	exit 0
+	exec "$root/scripts/rehearse_supported_matrix.sh"
 fi
 
 # The role and grant bootstrap file, applied in two halves. `CREATE ROLE` is
@@ -515,6 +447,15 @@ if [ -n "$seed" ]; then
 	psql_as "$run" -f "$seed" >/dev/null
 	note "seeded $seed into $run"
 fi
+# The second fixture is the one the promise is about: a second tenant, page text, file
+# records and queued events, so the upgrade is measured against an installation and not
+# against a schema. It lands on the copy at the *base* revision's shape, which is what
+# makes it evidence — SQL this tree wrote and that revision never had would fail here,
+# loudly, rather than rehearsing a database no installation holds.
+if [ -n "$populated" ]; then
+	psql_as "$run" -f "$populated" >/dev/null
+	note "populated $populated into $run"
+fi
 
 # The ledger the candidate inherits, read before it connects. The number that says whether this
 # step measured anything at all (`N file(s) applied`) sits in the same report as the legitimate
@@ -543,24 +484,30 @@ fi
 ledger_snapshot() { # $1 = database, $2 = file
 	psql_as "$1" -F $'\t' -c "SELECT owner || '/' || version, name, checksum, coalesce(applied_at::text,'') FROM schema_migrations ORDER BY 1" >"$2"
 }
-data_snapshot() { # $1 = database
-	psql_as "$1" -tA -c "
-		SELECT (SELECT count(*) FROM tenants) || '/' ||
-			coalesce((SELECT md5(string_agg(id::text, ',' ORDER BY id)) FROM tenants), '-') || '/' ||
-			(SELECT count(*) FROM users WHERE email LIKE 'rehearse%@rehearse.localhost') || '/' ||
-			coalesce((SELECT md5(string_agg(id::text || ':' || email || ':' || display_name || ':' || status, ',' ORDER BY id))
-				FROM users WHERE email LIKE 'rehearse%@rehearse.localhost'), '-') || '/' ||
-			(SELECT count(*) FROM audit_events WHERE name = 'task.created') || '/' ||
-			coalesce((SELECT md5(string_agg(event_id::text || '=' || octet_length(payload::text)::text, ',' ORDER BY event_id))
-				FROM audit_events WHERE name = 'task.created'), '-')"
+# The facts scripts/rehearse_facts.sh answers for the copy, taken once, here. It reads
+# the per-tenant row digests, the pending outbox, the RLS state and — through the
+# application role — what each tenant's own session may see of every other tenant's
+# rows. Every one of those numbers has to be the same number after the candidate wrote.
+facts() { # $1 = file
+	"$root/scripts/rehearse_facts.sh" --admin-url "$admin_url" --database "$run" \
+		--app-url "${PLATFORMKIT_TEST_DATABASE_URL:-}" >"$1" 2>"$work/facts.err"
 }
 before_ledger="$work/before-ledger.tsv"
-before_data=""
+before_facts="$work/before-facts.tsv"
+unreadable_facts=0
 if ledger_snapshot "$run" "$before_ledger" 2>"$work/snapshot.err"; then
-	before_data=$(data_snapshot "$run" 2>/dev/null || true)
-	note "retained before the candidate connects: $(grep -c '' <"$before_ledger") ledger row(s), data ${before_data:-unreadable}"
+	note "retained before the candidate connects: $(grep -c '' <"$before_ledger") ledger row(s)"
 else
 	note "nothing retained before the candidate: $(head -1 "$work/snapshot.err") — the copy holds no ledger to compare against"
+fi
+if facts "$before_facts"; then
+	note "facts retained before the candidate: $(grep -c '' <"$before_facts") line(s), $(grep -c '^other/' <"$before_facts") of them tenant-boundary reads"
+else
+	# Not yet a finding about the release: a copy this step cannot read is a rehearsal that
+	# did not happen, which is exit 2 and never a pass. The sentence that says why is
+	# printed now, because it is the one an operator has to act on.
+	echo "FACTS UNREADABLE before the candidate ran: $(head -1 "$work/facts.err")"
+	unreadable_facts=1
 fi
 
 # The watcher: one session, one query, sampled every SAMPLE_MS milliseconds, and
@@ -587,30 +534,10 @@ watch_started=$(now_ms)
 psql "$run_url" -At -o "$waits" -f "$watch_sql" >/dev/null 2>&1 &
 watcher=$!
 
-write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
-  # The declaration this release asks an installation for, written the way an
-  # operator writes it: hosts and no nats.app, which is what this step has always
-  # handed the candidate, and the shape of a deployment that has not taken a slug.
-  # Read what that does to the one tenant the copy holds rather than assuming it.
-  # The migrate command of apps/platformkit always declares a slug, here the empty
-  # one, so 000043 stamps each row with the empty slug rather than leaving a NULL,
-  # and the empty-slug placement 000060 then finds nothing it may write and refuses
-  # nothing: a boot that named no app asserts nothing about whose anybody is, and a
-  # tenant left app-less belongs to nobody in particular. The guard, and its reason,
-  # are on that file. What this step measures is that upgrade: the release applies
-  # over an app-less database of the previous release size. An operator who names
-  # nats.app and app.hosts gets the placement, and a tenant its declaration cannot
-  # account for gets the sentence 000059 puts there, which names the tenant and
-  # writes nothing.
-  hosts:
-    - "rehearse.localhost"
-# The composition of this release names webhook.Module, and that module refuses to
-# be composed without the key wrapping an endpoint signing secret, so the candidate
-# needs the line. The base revision above is given none: that loader has never heard
-# of the key, and kit/config refuses a key it does not know. Thirty-two bytes of
-# this run, which no receiver anywhere verifies a delivery against.
-webhook:
-  secret_key: "0123456789abcdef0123456789abcdef"'
+# The declaration the candidate boots with — the hosts it serves and the key its
+# composition needs — is data, so it sits beside the fixtures the copy is seeded from
+# rather than inside the run: scripts/testdata/rehearse/candidate.yaml.
+write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" "$(cat "$declaration")"
 set +e
 "$work/platformkit" migrate --drain --config "$work/run.yaml" >"$work/run.log" 2>&1
 code=$?
@@ -640,7 +567,8 @@ jq -R -r 'fromjson? // empty
 	| [.owner, (.version|tostring), .name, (.phase // "drain"), (.duration_ms|tostring)] | @tsv' \
 	"$work/run.log" >"$work/files.tsv"
 
-findings=0
+findings=$unreadable_facts
+if [ "$unreadable_facts" -gt 0 ] && [ "$code" -eq 0 ]; then code=2; fi
 total=0
 longest_ms=0
 longest="-"
@@ -713,9 +641,10 @@ fi
 # copy started with must still be there with the same name, checksum and application time
 # — an applied migration that changed its bytes, lost its row or restamped its time is the
 # immutable refusal kit/db makes, and an upgrade that rewrote history is not an upgrade.
-# The seed's rows must carry the same digest, which is the sentence "the data survived"
-# turned into something a run can fail. Both sides are the files this step wrote itself:
-# the ledger list before the candidate connected, and the same query afterwards.
+# The fixtures' rows must digest to what they digested before, which is the sentence "the
+# data survived" turned into something a run can fail, and every tenant-boundary read must
+# still see nothing of its neighbours. Both sides are files this step wrote itself: one
+# before the candidate connected, one after it stopped.
 if [ -s "$before_ledger" ]; then
 	if ! ledger_snapshot "$run" "$work/after-ledger.tsv" 2>"$work/after.err"; then
 		echo "LEDGER UNREADABLE after the candidate ran: $(head -1 "$work/after.err")"
@@ -729,14 +658,50 @@ if [ -s "$before_ledger" ]; then
 			findings=$((findings + 1))
 			[ "$code" -ne 0 ] || code=1
 		fi
-		after_data=$(data_snapshot "$run" 2>/dev/null || true)
-		if [ -n "$before_data" ] && [ "$after_data" != "$before_data" ]; then
-			echo "DATA CHANGED the seeded rows the copy started with: $before_data became ${after_data:-unreadable}"
+	fi
+fi
+if [ -s "$before_facts" ]; then
+	if ! facts "$work/after-facts.tsv"; then
+		echo "FACTS UNREADABLE after the candidate ran: $(head -1 "$work/facts.err")"
+		findings=$((findings + 1))
+		[ "$code" -ne 0 ] || code=1
+	else
+		# A line that was there before and is not now, or says something else, is the finding.
+		# Two lines are allowed to move. `ledger` grows because the release applied files — the
+		# rows it must not lose are checked row by row above — and `rls` grows because a release
+		# that adds a tenant table adds a forced policy. A number that falls is the finding, and
+		# for the authority line that is the only direction worth reading.
+		changed=$(awk -F'\t' '
+			NR == FNR { before[$1] = $0; next }
+			{ after[$1] = $0 }
+			END {
+				for (k in before) {
+					if (!(k in after)) print "gone\t" before[k]
+					else if (after[k] != before[k] && k != "rls" && k != "ledger") { print "was\t" before[k]; print "now\t" after[k] }
+				}
+				for (k in after) if (!(k in before)) print "added\t" after[k]
+			}' "$before_facts" "$work/after-facts.tsv" | head -8)
+		if [ -n "$changed" ]; then
+			echo "FACTS CHANGED the copy started with, one line each (was before, now after):"
+			printf '%s\n' "$changed" | sed 's/^/  /'
 			findings=$((findings + 1))
 			[ "$code" -ne 0 ] || code=1
-		elif [ -n "$before_data" ]; then
-			note "data and ledger retained: $(grep -c '' <"$before_ledger") applied row(s), seeded facts $after_data"
 		fi
+		lost_rls=$(awk -F'\t' '$1 == "rls" { print $2; exit }' "$before_facts")
+		now_rls=$(awk -F'\t' '$1 == "rls" { print $2; exit }' "$work/after-facts.tsv")
+		if [ -n "$lost_rls" ] && [ "$now_rls" != "$lost_rls" ] && [ "$now_rls" -lt "$lost_rls" ]; then
+			echo "AUTHORITY LOST $lost_rls tenant table(s) forced row-level security before the upgrade and $now_rls do after"
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		fi
+		leaks=$(awk -F'\t' '$1 ~ /^other\//' "$work/after-facts.tsv" |
+			awk -F'\t' '$3 != "0" { printf "%s sees %s row(s) of another tenant ", $1, $3; seen = 1 } END { if (seen) print "" }')
+		if [ -n "$leaks" ]; then
+			echo "TENANT LEAK after the upgrade: $leaks"
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		fi
+		[ -n "$changed" ] || note "facts retained: $(grep -c '' <"$before_facts") line(s) unchanged, $(grep -c '^other/' <"$work/after-facts.tsv") boundary read(s) all seeing one tenant"
 	fi
 fi
 
@@ -763,6 +728,16 @@ else
 	note "failed: $findings finding(s); exit $code"
 fi
 
+# count_of runs one counting command and answers a number for it: a receipt field that is
+# not a number refuses the write of the whole receipt, and the difference between "no facts
+# were taken" and "the count could not be taken" is not worth a broken artefact.
+count_of() {
+	local value
+	value=$("$@" 2>/dev/null) || value=""
+	[[ "$value" =~ ^[0-9]+$ ]] || value=0
+	printf '%s' "$value"
+}
+
 # The receipt. A consumer that pins this module owes the rehearsal — its own
 # migrations run against its own data on this module's upgrade — and the one
 # fact it can hand its CI is that *this revision* was rehearsed. So the step
@@ -778,17 +753,40 @@ if [ "$code" -eq 0 ] && [ -n "${REHEARSE_RECEIPT:-}" ]; then
 		| {owner: .owner, version: (.version | tostring), name: .name,
 		   phase: (.phase // "drain"), seconds: (.duration_ms / 1000)}' \
 		"$work/run.log" | jq -s .)
+	# The fixtures this case actually seeded, by digest, and the data half of what it
+	# measured. The support record owes the same fixture bytes (scripts/supported_sources.sh
+	# checks them against this tree every time it is read) and
+	# scripts/check_pin_rehearsal.sh --strict refuses a case whose seeded files or retained
+	# facts are not the ones the record and this run say: a fixture replaced by whatever SQL
+	# the current tree holds rehearses a database no installation has.
+	fixtures_json=$(printf '%s\n' "$seed" "$populated" |
+		while IFS= read -r f; do
+			[ -n "$f" ] && [ -r "$f" ] || continue
+			printf '%s\t%s\n' "${f#"$root"/}" "$(sha256sum "$f" | cut -d' ' -f1)"
+		done |
+		jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {path: .[0], sha256: .[1]})')
+	[ "$(jq -r 'length' <<<"$fixtures_json")" -gt 0 ] ||
+		die 2 "this case seeded no fixture it could name: a receipt with no fixture digest cannot be checked against the support record"
+	data_json=$(jq -n \
+		--argjson lines "$(count_of grep -c '' "$before_facts")" \
+		--argjson reads "$(count_of grep -c '^other/' "$work/after-facts.tsv")" \
+		--argjson foreign "$(count_of awk -F'\t' '$1 ~ /^other\// { s += $3 } END { print s + 0 }' "$work/after-facts.tsv")" \
+		--argjson ledger "$(count_of wc -l "$work/after-ledger.tsv")" \
+		'{facts_lines: $lines, boundary_reads: $reads, foreign_rows_visible: $foreign, applied_rows_retained: $ledger}')
 	mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
 	jq -n --arg base_ref "$ref" \
 		--arg base_commit "$(git rev-parse --verify --quiet "${ref}^{commit}" || true)" \
 		--arg candidate_commit "$(git rev-parse HEAD)" \
 		--arg seed "$seed" \
+		--argjson fixtures "$fixtures_json" \
+		--argjson data "$data_json" \
 		--argjson files "$files" \
 		--argjson max_lock_ms "$lock_ms" \
 		--argjson samples "$samples" \
 		'{base_ref: (if $base_ref == "" then null else $base_ref end),
 		  base_commit: (if $base_commit == "" then null else $base_commit end),
-		  candidate_commit: $candidate_commit, seed: $seed, files: $files,
+		  candidate_commit: $candidate_commit, seed: $seed, fixtures: $fixtures,
+		  data: $data, files: $files,
 		  max_lock_ms: $max_lock_ms, lock_samples: $samples,
 		  tool: "scripts/rehearse_migrations.sh", exit: 0}' >"$REHEARSE_RECEIPT" ||
 		die 2 "the receipt could not be written to $REHEARSE_RECEIPT"

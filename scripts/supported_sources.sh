@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The one reader of the supported-source record.
 #
-#	supported_sources.sh [--record FILE] (verify | positives | refused | verdict REF)
+#	supported_sources.sh [--record FILE] (verify | positives | refused | fixtures | verdict REF)
 #
 # scripts/testdata/rehearse/supported-sources.json says which installations this
 # release promises to upgrade: the exact revision each name is, which obligation it
@@ -34,7 +34,7 @@ ref=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--record) [ $# -ge 2 ] || { echo "supported-sources: --record wants a file" >&2; exit 2; }; record="$2"; shift 2 ;;
-	verify | positives | refused | verdict) verb="$1"; shift ;;
+	verify | positives | refused | fixtures | verdict) verb="$1"; shift ;;
 	-h | --help) sed -n '2,26p' "$0"; exit 0 ;;
 	*)
 		[ -n "$verb" ] || { echo "supported-sources: unknown argument $1" >&2; exit 2; }
@@ -107,32 +107,48 @@ while IFS= read -r name; do
 	refuse "$name is listed as refused with no reason; a source is refused by being named and explained, never by being left out"
 done < <(jq -r '.refused[] | select((.reason // "") == "") | .ref' "$record")
 
-# The bytes an installation already holds applied. The runner compares a migration whole,
-# so a release that rewrites an applied file — a comment is enough — is refused by every
-# ledger that file landed in. The record names those bytes, and they are checked here, on
-# the tree the release is built from: a supported source whose files no longer hash to
-# what the field owes is a source whose history this release rejects.
-nbytes=$(jq -r 'if (.applied_bytes | type) == "array" then (.applied_bytes | length) else 0 end' "$record")
-[ "$nbytes" -gt 0 ] ||
-	refuse "$record names no applied migration bytes; a supported installation has migrations applied, and the exact bytes it holds are the first thing an upgrade must keep"
-while IFS=$'\t' read -r path want; do
-	[ -n "$path" ] || continue
-	[ -r "$root/$path" ] ||
-		refuse "$record owes the applied bytes at $path, which this tree does not hold"
-	have=$(sha256sum "$root/$path" | cut -d' ' -f1)
-	[ "$have" = "$want" ] ||
-		refuse "$path is $have here, and $record owes $want: the release rewrites a migration that installations already have applied"
-done < <(jq -r '.applied_bytes[] | [.path, .sha256 // ""] | @tsv' "$record")
+# The bytes an installation already holds applied, and the SQL the rehearsal seeds its
+# copies from. Both are named by digest for the same reason: the runner compares a
+# migration whole, so a release that rewrites an applied file — a comment is enough —
+# is refused by every ledger that file landed in; and a rehearsal whose fixture is
+# whatever SQL the current tree happens to hold is measuring a database no installation
+# has. Each field is checked here, against the tree the release is built from.
+require_digests() { # $1 = record field, $2 = what a missing entry costs the release
+	local field="$1" missing="$2" path want have n
+	n=$(jq -r --arg f "$field" 'if ((.[$f] | type) == "array") then (.[$f] | length) else 0 end' "$record")
+	[ "$n" -gt 0 ] || refuse "$record names no $field; $missing"
+	while IFS=$'\t' read -r path want; do
+		[ -n "$path" ] || continue
+		[ -r "$root/$path" ] ||
+			refuse "$record owes the bytes at $path, which this tree does not hold"
+		have=$(sha256sum "$root/$path" | cut -d' ' -f1)
+		[ "$have" = "$want" ] ||
+			refuse "$path is $have here, and $record owes $want: the release rewrites bytes an installation already holds or a fixture the matrix did not run"
+	done < <(jq -r --arg f "$field" '.[$f][] | [.path, .sha256 // ""] | @tsv' "$record")
+	# Set rather than echoed: a caller that read the count out of a command substitution
+	# would run `refuse` in a subshell, where its exit stops nothing.
+	digests_count=$n
+}
+
+require_digests applied_bytes \
+	"a supported installation has migrations applied, and the exact bytes it holds are the first thing an upgrade must keep"
+nbytes=$digests_count
+require_digests fixtures \
+	"a rehearsal that seeds whatever its fixture happens to say now certifies a database nobody is running"
+nfixtures=$digests_count
 
 case "$verb" in
 verify)
-	echo "supported-sources: $record — line $target, $nsources supported source(s), $nrefused refused, roles $(jq -r '.required_roles | join(",")' "$record"), $nbytes applied migration byte obligation(s)"
+	echo "supported-sources: $record — line $target, $nsources supported source(s), $nrefused refused, roles $(jq -r '.required_roles | join(",")' "$record"), $nbytes applied migration byte obligation(s), $nfixtures fixture obligation(s)"
 	;;
 positives)
 	jq -r '.sources[] | [.ref, .commit, ((.roles // []) | join(","))] | @tsv' "$record"
 	;;
 refused)
 	jq -r '.refused[] | [.ref, .commit // "", .reason] | @tsv' "$record"
+	;;
+fixtures)
+	jq -r '.fixtures[] | [.path, .sha256 // ""] | @tsv' "$record"
 	;;
 verdict)
 	line=$(jq -r --arg ref "$ref" '(.sources[] | select(.ref == $ref) | "supported	" + .commit + "	" + ((.roles // []) | join(","))) // empty' "$record")
