@@ -169,6 +169,12 @@ func writeConfig(t *testing.T, migrateURL, appURL string) (string, config.Config
 		// wraps an endpoint's signing secret. The fixture's own thirty-two bytes.
 		"webhook:\n  secret_key: \"" + webhookKey + "\"\n" +
 		"auth:\n  oidc:\n    issuer: \"\"\n    client_id: \"\"\n    client_secret: \"\"\n    redirect_path: \"\"\n"
+	// A case that asked for the installation with a mail host gets one, pointed at
+	// the relay on loopback; every other case gets the recording carrier it always
+	// got, which is what a deployment that names no host actually runs.
+	if relay, ok := mailing.Load(t); ok {
+		body += mailSection(relay.(*smtpRelay))
+	}
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
 	}

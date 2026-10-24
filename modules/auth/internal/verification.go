@@ -178,7 +178,8 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return s.recordMail(ctx, tx, contracts.MailVerification, current.Email,
 			notification.MailFailed, err.Error(), token, string(contracts.Hash(token)))
 	}
-	return s.recordMail(ctx, tx, contracts.MailVerification, current.Email, notification.MailSent, "")
+	outcome, reason := s.deliveredOutcome()
+	return s.recordMail(ctx, tx, contracts.MailVerification, current.Email, outcome, reason)
 
 }
 

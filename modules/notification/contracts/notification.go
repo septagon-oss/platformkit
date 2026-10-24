@@ -184,6 +184,11 @@ type Message struct {
 // deployment both use; a second production sender would be a second thing to
 // keep working for no capability the first does not have.
 //
+// A composition holds a Mailer in every case, so "there is a mailer" answers
+// nothing about whether a message will reach anybody: the deployment that named
+// no host holds the mailbox, which keeps the message and dials nowhere. The
+// caller that must not promise a person an email asks MailDelivery.
+//
 // It is exported rather than internal to this module because it has a second
 // consumer, and the exception is worth naming. Everything this application
 // mails goes out of the worker below, which reads a notification row back and
@@ -197,6 +202,35 @@ type Message struct {
 type Mailer interface {
 	Send(ctx context.Context, m Message) error
 }
+
+// MailDelivery is the second reading of the sender a composition was given: not
+// how a message leaves, but whether it leaves at all. It exists because every
+// composition holds a Mailer — the SMTP carrier where the deployment named a
+// host, the recording mailbox where it did not — so a caller that acted as
+// though "there is a mailer" meant "a mail will go out" accepted sign-ups it
+// could never mail.
+//
+// It is a separate interface rather than a second method on Mailer because a
+// method added to an exported interface is a break to anything outside this
+// repository that implements Mailer, which the frozen public line refuses; a
+// name absent from the frozen record is reported only as added. The carrier
+// answers it rather than a flag sitting beside the carrier, because the carrier
+// is the only thing that knows: SMTP dials, the mailbox files.
+type MailDelivery interface {
+	// Available reports whether this composition's sender attempts the messages it
+	// is handed. False is the deployment saying "no mail host is configured": a
+	// caller that would have to promise a person an email refuses, writes nothing
+	// and publishes nothing.
+	Available() bool
+}
+
+// MailDeliveryFunc is a MailDelivery answered by a function, the way
+// site.PaletteFunc is a palette answered by one — the shape a test or a
+// composition uses to say which installation it is standing in.
+type MailDeliveryFunc func() bool
+
+// Available answers the interface.
+func (f MailDeliveryFunc) Available() bool { return f() }
 
 // Service is what a caller does with notifications. Every command takes the
 // caller's transaction rather than opening one, so the row and the events it

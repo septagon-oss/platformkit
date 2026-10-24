@@ -9,6 +9,21 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
+// deliveredOutcome says what to record about a message the carrier took.
+//
+// The carrier answers about itself: one that files the message instead of
+// dialling took it, so the honest row is `suppressed` and not `sent`. The
+// deployment that wired a recording carrier deliberately keeps its record and its
+// working link; only the ledger's claim about the world changes. A send the
+// transport refused is a failure whichever installation it happened in, and each
+// caller records that on its own branch, with whatever it has to undo.
+func (s *Service) deliveredOutcome() (outcome, reason string) {
+	if !s.mail.deliversAccountMail() {
+		return notificationcontracts.MailSuppressed, "no mail transport is wired"
+	}
+	return notificationcontracts.MailSent, ""
+}
+
 // recordMail leaves the record of one mail this module sent itself, and — when it
 // did not go — says so in the trail beside it. Both happen in the caller's
 // transaction, so the record and its event commit with the step they describe or

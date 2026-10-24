@@ -43,6 +43,11 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.Provisioner](),
 	pkit.Needs[authcontracts.Notifier](),
 	pkit.Needs[authcontracts.Mailer](),
+	// Whether that sender delivers. Needed rather than Optional with a default of
+	// "yes": a composition that composes auth and forgets notification is a defect
+	// in the composition, and the plan refuses it at boot rather than booting a
+	// server that refuses every sign-up forever.
+	pkit.Needs[authcontracts.MailDelivery](),
 	pkit.Needs[authcontracts.Hosts](),
 	pkit.Needs[authcontracts.MailLedger](),
 	pkit.Needs[authcontracts.OIDCProviders](),
@@ -75,7 +80,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// without it becoming a row first: a set-password link belongs in the
 		// mail and in nothing else.
 		Mailer: pkit.Get[authcontracts.Mailer](w),
-		Hosts:  pkit.Get[authcontracts.Hosts](w),
+		// The same carrier's own answer, so that "a mailer is wired" cannot be read
+		// as "a mail will go out".
+		MailDelivery: pkit.Get[authcontracts.MailDelivery](w),
+		Hosts:        pkit.Get[authcontracts.Hosts](w),
 		// The same service Notify is resolved from, under the ledger's own key:
 		// the record of the two mails this module sends itself, so that a send
 		// leaves a row before the mail can be read back at the delivery door.

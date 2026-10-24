@@ -98,8 +98,9 @@ func mountRecorded(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration boo
 		registrar = users
 	}
 	deps := auth.Deps{
-		Users: users, Notify: notices, Mailer: mailbox, Hosts: authtest.Host(host),
-		OIDC: oidc, PublicHost: host, Registration: registrar,
+		Users: users, Notify: notices, Mailer: mailbox, MailDelivery: mailbox,
+		Hosts: authtest.Host(host),
+		OIDC:  oidc, PublicHost: host, Registration: registrar,
 	}
 	for _, change := range configure {
 		change(&deps)

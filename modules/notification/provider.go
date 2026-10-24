@@ -1,6 +1,8 @@
 package notification
 
 import (
+	"fmt"
+
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
@@ -52,6 +54,11 @@ var Module = pkit.NewModule("notification", wire,
 	// shorter name.
 	pkit.Provides[authcontracts.Notifier](),
 	pkit.Provides[contracts.Mailer](),
+	// Whether that sender delivers anything, which is the same object's second
+	// reading and not a second value: a composition may not hold a Mailer and a
+	// delivery answer that contradict each other, because the two questions are
+	// asked of the one sender.
+	pkit.Provides[contracts.MailDelivery](),
 	// The ledger of the mails a module sends without a notice behind it. auth
 	// names this same type `authcontracts.MailLedger` — an alias, not a second
 	// interface — so one Put answers both spellings, and the module that records
@@ -95,6 +102,14 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	} else {
 		mailer = NewMailbox()
 	}
+	// The carrier answers for itself, and one object is put twice — the way site
+	// puts its settings service under Service and LockedReader. A carrier that
+	// answers nothing is a defect in this build and refuses the boot that would
+	// otherwise let a deployment mail nobody and believe otherwise.
+	delivery, ok := mailer.(contracts.MailDelivery)
+	if !ok {
+		return module.Module{}, fmt.Errorf("notification: the mail carrier %T does not answer whether it delivers", mailer)
+	}
 	svc, manifest := New(Deps{
 		Recipients: pkit.Get[contracts.RecipientLookup](w),
 		// Nil when this composition hands in no chrome, which is the module's
@@ -113,6 +128,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put[authcontracts.Notifier](w, svc)
 	pkit.Put[contracts.MailLedger](w, svc)
 	pkit.Put[contracts.Mailer](w, mailer)
+	pkit.Put[contracts.MailDelivery](w, delivery)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

@@ -207,7 +207,7 @@ func TestEmailVerificationCannotCrossTenantHosts(t *testing.T) {
 	router, _, _ := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup)
 	_, token := verificationSignup(t, conn, router, "tenant@example.com")
 	seed(t, conn, globex)
-	deps := auth.Deps{Users: realUsers(), Mailer: mailbox, Hosts: authtest.Host(host), PublicHost: host}
+	deps := auth.Deps{Users: realUsers(), Mailer: mailbox, MailDelivery: mailbox, Hosts: authtest.Host(host), PublicHost: host}
 	emailSignup(&deps)
 	svc, mod := auth.New(deps)
 	api, tenants := httpx.New(httpx.Options{
@@ -427,6 +427,11 @@ type verificationFailingMailer struct {
 	box   authtest.Mailbox
 }
 
+// Available says this transport dials: the case is about what it did with the
+// message — echoed it back in an error, or took it — and not about whether a mail
+// host exists at all, which these cases assume.
+func (*verificationFailingMailer) Available() bool { return true }
+
 func (m *verificationFailingMailer) Send(ctx context.Context, message notification.Message) error {
 	m.token = authtest.TokenIn(message.Body)
 	if m.fail {
@@ -440,7 +445,9 @@ func TestVerificationDeliveryFailureRetainsTheRegistrationWithoutPersistingSecre
 	// trail among them, so the audit module's schema is composed as well.
 	admin, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations, audit.Migrations)
 	mailer := &verificationFailingMailer{fail: true}
-	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup, func(d *auth.Deps) { d.Mailer = mailer })
+	router, _, auths := mountConfigured(t, conn, auth.OIDC{}, false, emailSignup, func(d *auth.Deps) {
+		d.Mailer = mailer
+	})
 	if res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "delivery@example.com", nil)); res.Code != http.StatusAccepted {
 		t.Fatalf("signup=%d", res.Code)
 	}

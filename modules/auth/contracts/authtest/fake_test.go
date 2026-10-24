@@ -27,6 +27,7 @@ func TestFakeConforms(t *testing.T) {
 		run(authtest.Fixture{
 			Ctx: ctx, Tx: tx, Service: fake, Published: fake.Published,
 			Role: fake.Grant, Sent: notices.Sent, Mailed: box.Sent, Sessions: fake.SessionsOf,
+			Delivering: func(delivers bool) { box.Undeliverable = !delivers },
 			User: func(email, password string, roles ...string) uuid.UUID {
 				u, err := users.Invite(ctx, tx, email, "")
 				if err != nil {

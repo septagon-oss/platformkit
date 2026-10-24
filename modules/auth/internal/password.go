@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -55,7 +57,18 @@ func (s *Service) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userI
 // The cost of that honesty is unchanged and worth restating: a person who
 // mistypes their own address is told nothing, and the mail that does not arrive
 // is the message.
+//
+// A composition whose sender does not deliver refuses here rather than
+// publishing the request: the acknowledgment this route answers with promises a
+// mail, and an outbox row nobody can discharge is a promise kept in a table and
+// broken in the world. The refusal is the same one the sign-up doors give, it is
+// the same for every address, and the caller's transaction is rolled back with
+// nothing written — the event lives in that transaction, so a refused request
+// publishes nothing and leaves no token.
 func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
+	if !s.mail.deliversAccountMail() {
+		return problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
+	}
 	r, _ := httpx.RequestFrom(ctx)
 	return events.Publish(ctx, tx, contracts.EventResetRequested, contracts.ResetRequested{
 		Email: contracts.EmailKey(email), At: db.Now(), Served: httpx.ServedAuthority(r),
@@ -302,7 +315,8 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 			return err
 		}
 	}
-	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, notificationcontracts.MailSent, "")
+	outcome, reason := s.deliveredOutcome()
+	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, outcome, reason)
 }
 
 // mailMessage renders the one message this module writes. page is the link
