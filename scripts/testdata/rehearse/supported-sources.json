@@ -1,0 +1,37 @@
+{
+  "record": "platformkit.supported-sources.v1",
+  "target_line": "v2.0.0",
+  "required_roles": ["oldest_supported", "shipped_000048", "later_installed_supported"],
+  "sources": [
+    {
+      "ref": "v1.1.0",
+      "commit": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
+      "roles": ["oldest_supported"],
+      "why": "RELEASE.md names v1.1.0 as the stable contract the line is measured from, and it is the oldest revision this promise reaches back to."
+    },
+    {
+      "ref": "5ac6c060783ebc9587d4b9c23c030f371b4d7e9d",
+      "commit": "5ac6c060783ebc9587d4b9c23c030f371b4d7e9d",
+      "roles": ["shipped_000048"],
+      "why": "The revision whose audit/000048 and audit/000049 bytes are the ones already applied in the field, so the upgrade runs from that tree and its applied checksums stay the ones the runner must keep accepting."
+    },
+    {
+      "ref": "v1.1.1",
+      "commit": "13d2691a2db9bc38c18828e81994ae57e699c84a",
+      "roles": ["later_installed_supported"],
+      "why": "A patch of the stable contract, which docs/COMPATIBILITY.md puts inside the line, so an installation that took it is an installation this release has to take too."
+    }
+  ],
+  "refused": [
+    {
+      "ref": "v1.0.0",
+      "commit": "48975fe4367296f4b7fa9be7a50eab9b71500fa0",
+      "reason": "RELEASE.md excludes v1.0.0 -> v1.1.0 as an upgrade path, so the line this release upgrades from does not reach it."
+    },
+    {
+      "ref": "v1.1.2-proof.20261018.b8f82e073f67",
+      "commit": "b8f82e073f67a2fcee0f05a9c5bb26ad0ea9a6e3",
+      "reason": "docs/COMPATIBILITY.md gives a proof build no compatibility claim, and two audit files applied in it carry checksums the restored ledger does not, so its applied history cannot be upgraded by this release; the consumer pinned there moves by its own pin bump."
+    }
+  ]
+}

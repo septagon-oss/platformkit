@@ -53,6 +53,39 @@ check that cannot resolve the pin exits 2 saying what it needed.
 The script has no `--skip`, and `make check` has no variable that drops
 `check-rehearse`. A gate with a flag that turns it off is a note.
 
+## The matrix: every installation the release promises
+
+One receipt says one revision was rehearsed. A release is not published from one
+revision: installations sit at the oldest tag of the line, at its later patches, and
+at the revision whose `audit/000048` bytes are already applied. Which those are is a
+policy question — `docs/COMPATIBILITY.md` and `RELEASE.md` answer it — and
+`scripts/testdata/rehearse/supported-sources.json` is the same answer at the
+resolution a gate needs: the exact commit each name is, the obligation it discharges,
+and the revisions refused with a reason.
+
+`scripts/supported_sources.sh` is its only reader. It checks what a record can get
+wrong silently: that every ref resolves here to the commit beside it, that every
+required obligation is discharged exactly once, that no proof build is called
+supported (`docs/COMPATIBILITY.md` gives it no claim to make), and that no source is
+refused by being left out. `--check-source REF` asks the question for one revision and
+touches no database.
+
+`./scripts/rehearse_migrations.sh --supported` then runs the rehearsal once per
+supported source — its own copy, its own seed, its own drain, its own budgets — and
+writes one `platformkit.rehearsal.v2` receipt with a case per source plus each refused
+source's refusal, which it exercises rather than assumes. It refuses `--base-ref`,
+`--dump` and `--seed` beside it: a receipt for one case certifies one case. Each case
+also retains the ledger rows and the seeded facts *before* the candidate connects and
+requires them after, so "the data survived" is a comparison against a snapshot the
+upgrade cannot rewrite.
+
+`./scripts/check_pin_rehearsal.sh --strict` reads the matrix, and reads the record for
+itself: a missing case, a repeated case, a drifted revision, another support record or
+a single-revision receipt is refused even when every case inside passed. `REHEARSE_ARGS=--supported
+REHEARSE_RECEIPT=$PWD/.artifacts/rehearsal.json make check-rehearse` is the release
+line's form; the default `make rehearse` and `make check-rehearse` stay the
+single-source diagnostic they were.
+
 ## What this repository owes and what the consumer owes
 
 Here: the rehearsal runs in `make check` (`check-rehearse`) and in CI, the receipt

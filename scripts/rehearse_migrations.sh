@@ -2,9 +2,20 @@
 # The rehearsal: apply this tree's pending migrations to a *copy* of a
 # production-shaped database, and report what each one cost.
 #
-#	scripts/rehearse_migrations.sh (--dump FILE | --base-ref REF)
+#	scripts/rehearse_migrations.sh (--dump FILE | --base-ref REF | --supported)
 #	                              [--seed FILE] [--max-file-seconds N]
 #	                              [--max-lock-ms N] [--keep]
+#	scripts/rehearse_migrations.sh --check-source REF
+#
+# `--supported` is the mode a release is certified by: it runs the rehearsal once per
+# supported source in scripts/testdata/rehearse/supported-sources.json — the oldest
+# installation, the revision whose audit/000048 bytes are already applied in the field,
+# and a later installed patch of the line — and writes one receipt that says each one
+# ran, against which commit, and what it cost. It asks scripts/supported_sources.sh
+# which sources are required and never reads that list out of its own receipt, and it
+# runs each refused source past the support record so a refusal is something that
+# happened rather than something that was left out. `--check-source REF` asks the same
+# question about one revision and touches no database.
 #
 # ADR 0011 and migrations/README.md make this the step a release requires: the
 # runner refuses a shape of statement, a `lock_timeout` bounds a wait, and neither
@@ -112,19 +123,25 @@ prefix="platformkit_rehearse_"
 
 die() { local code="$1"; shift; echo "rehearse: $*" >&2; exit "$code"; }
 note() { echo "rehearse: $*"; }
-usage() { echo "usage: rehearse_migrations.sh (--dump FILE | --base-ref REF) [--seed FILE] [--max-file-seconds N] [--max-lock-ms N] [--keep]"; }
+usage() { echo "usage: rehearse_migrations.sh (--dump FILE | --base-ref REF | --supported) [--seed FILE] [--max-file-seconds N] [--max-lock-ms N] [--keep]; or --check-source REF"; }
 
 dump="${REHEARSE_DUMP:-}"
 ref="${REHEARSE_BASE_REF:-}"
 seed="${REHEARSE_SEED-$root/scripts/testdata/rehearse/seed.sql}"
+supported=0
+check_source=""
+seed_given=0
+subset_given=""
 max_file="${REHEARSE_MAX_FILE_SECONDS:-30}"
 max_lock="${REHEARSE_MAX_LOCK_MS:-5000}"
 keep=0
 while [ $# -gt 0 ]; do
 	case "$1" in
-	--dump) [ $# -ge 2 ] || die 2 "--dump wants a file"; dump="$2"; shift 2 ;;
-	--base-ref) [ $# -ge 2 ] || die 2 "--base-ref wants a revision"; ref="$2"; shift 2 ;;
-	--seed) [ $# -ge 2 ] || die 2 "--seed wants a file (or the empty string for none)"; seed="$2"; shift 2 ;;
+	--dump) [ $# -ge 2 ] || die 2 "--dump wants a file"; dump="$2"; subset_given="--dump"; shift 2 ;;
+	--base-ref) [ $# -ge 2 ] || die 2 "--base-ref wants a revision"; ref="$2"; subset_given="--base-ref"; shift 2 ;;
+	--seed) [ $# -ge 2 ] || die 2 "--seed wants a file (or the empty string for none)"; seed="$2"; seed_given=1; shift 2 ;;
+	--supported) supported=1; shift ;;
+	--check-source) [ $# -ge 2 ] || die 2 "--check-source wants a revision"; check_source="$2"; shift 2 ;;
 	--max-file-seconds) [ $# -ge 2 ] || die 2 "--max-file-seconds wants a number"; max_file="$2"; shift 2 ;;
 	--max-lock-ms) [ $# -ge 2 ] || die 2 "--max-lock-ms wants a number"; max_lock="$2"; shift 2 ;;
 	--keep) keep=1; shift ;;
@@ -135,7 +152,23 @@ done
 
 # Argument refusals come first, so they are answerable on a machine with no
 # database and no client tools — which is also what makes them testable.
-[ -n "$dump" ] || [ -n "$ref" ] || die 2 "say where the copy comes from: --dump FILE or --base-ref REF"
+# The support record answers this before any database is involved: a revision that is
+# not supported gets the record's refusal, and a revision that is named by no one gets
+# the sentence that says so. Both are exit 1, because the refusal is the answer.
+if [ -n "$check_source" ]; then
+	"$root/scripts/supported_sources.sh" verdict "$check_source"
+	exit $?
+fi
+
+if [ "$supported" = 1 ]; then
+	[ "$#" -eq 0 ] || die 2 "supported mode takes no per-case arguments; $1 would rehearse a subset"
+	[ -z "$subset_given" ] || die 2 "supported mode is certified by the whole matrix; $subset_given names one case and a receipt for one case certifies nothing"
+	[ "$seed_given" -eq 0 ] || die 2 "supported mode seeds every case from scripts/testdata/rehearse/seed.sql; --seed replaces the data the promise is about"
+	[ "$keep" -eq 0 ] || die 2 "supported mode drops each case's copies itself; --keep would leave one pair per supported source behind"
+fi
+
+[ -n "$dump" ] || [ -n "$ref" ] || [ "$supported" = 1 ] ||
+	die 2 "say where the copy comes from: --dump FILE, --base-ref REF, or --supported for every source the release promises"
 [ -z "$dump" ] || [ -z "$ref" ] || die 2 "--dump and --base-ref are alternatives; the copy is either an operator's dump or the previous release's own migration"
 if [ -n "$dump" ] && [ ! -r "$dump" ]; then die 2 "no dump readable at $dump"; fi
 if [ -n "$ref" ] && ! git rev-parse --verify --quiet "${ref}^{commit}" >/dev/null; then
@@ -261,6 +294,84 @@ finish() {
 	exit "$code"
 }
 trap finish EXIT
+
+# --supported: the matrix, run by the step that measures one case. Each case is this
+# script itself with that case's revision as its --base-ref, so the copy, the seed, the
+# drain, the lock watcher and both budgets are the ones a diagnostic run already uses;
+# what the mode adds is the obligation to have run them for *every* source the release
+# promises and a receipt that names each one. The list of cases comes from
+# scripts/supported_sources.sh, never from anything the run itself writes, and each
+# refused source is asked for its refusal here so that a refusal is an event that
+# happened rather than a source that was quietly left out.
+if [ "$supported" = 1 ]; then
+	reader=("$root/scripts/supported_sources.sh")
+	"${reader[@]}" verify >/dev/null || die $? "the supported-source record does not answer as it stands, so nothing about it can be certified"
+	"${reader[@]}" positives >"$work/positives.tsv" || die $? "the supported-source record named no case this run could take"
+	"${reader[@]}" refused >"$work/refused.tsv" || die $? "the supported-source record's refusals could not be read"
+	candidate=$(git rev-parse HEAD)
+	record_file="$root/scripts/testdata/rehearse/supported-sources.json"
+	record_digest=$(sha256sum "$record_file" | cut -d' ' -f1)
+	target_line=$(jq -r '.target_line' "$record_file")
+	n=0
+	while IFS=$'	' read -r case_ref case_commit case_roles; do
+		[ -n "$case_ref" ] || continue
+		n=$((n + 1))
+		case_receipt="$work/case-$n.json"
+		note "case $n: $case_ref (${case_commit:0:12}), discharging ${case_roles:-no named role}"
+		set +e
+		REHEARSE_RECEIPT="$case_receipt" "$0" --base-ref "$case_commit" \
+			--max-file-seconds "$max_file" --max-lock-ms "$max_lock"
+		case_code=$?
+		set -e
+		[ "$case_code" -eq 0 ] || die "$case_code" "case $case_ref did not pass; the matrix certifies nothing while one of its sources is unmeasured"
+		[ -r "$case_receipt" ] || die 2 "case $case_ref exited 0 and left no receipt at $case_receipt"
+		jq -e --arg c "$case_commit" --arg t "$candidate" \
+			'.base_commit == $c and .candidate_commit == $t' "$case_receipt" >/dev/null ||
+			die 1 "case $case_ref's receipt names a base or a candidate other than ${case_commit:0:12} into ${candidate:0:12}"
+		jq -n --arg ref "$case_ref" --arg commit "$case_commit" --arg roles "$case_roles" \
+			--slurpfile rehearsal "$case_receipt" \
+			'{ref: $ref, commit: $commit, roles: ($roles | split(",")), rehearsal: $rehearsal[0]}' \
+			>"$work/result-$n.json"
+	done <"$work/positives.tsv"
+	[ "$n" -gt 0 ] || die 2 "the record named no supported source to run; a matrix with no case is not a pass"
+
+	m=0
+	while IFS=$'	' read -r refused_ref refused_commit refused_reason; do
+		[ -n "$refused_ref" ] || continue
+		m=$((m + 1))
+		set +e
+		refusal=$("$0" --check-source "$refused_ref" 2>&1)
+		refused_code=$?
+		set -e
+		if [ "$refused_code" -eq 0 ]; then
+			echo "REFUSAL DID NOT REFUSE $refused_ref: the support record answered that it is supported"
+			die 1 "a source the release does not support was accepted; the refusal is the promise's other half"
+		fi
+		note "refused $refused_ref as the record requires: $(printf '%s' "$refusal" | head -1)"
+		jq -n --arg ref "$refused_ref" --arg commit "$refused_commit" --arg reason "$refused_reason" \
+			'{ref: $ref, commit: (if $commit == "" then null else $commit end), reason: $reason, refused_with: $refused_code}' \
+			>"$work/refusal-$m.json"
+	done <"$work/refused.tsv"
+
+	if [ -n "${REHEARSE_RECEIPT:-}" ]; then
+		mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
+		jq -n --arg target_commit "$candidate" --arg target_line "$target_line" \
+			--arg record "$record_file" --arg record_digest "$record_digest" \
+			--slurpfile results "$work"/result-*.json --slurpfile refusals "$work"/refusal-*.json \
+			'{record: "platformkit.rehearsal.v2", target_commit: $target_commit,
+			  target_line: $target_line,
+			  support_record: {file: $record, sha256: $record_digest},
+			  sources: ($results | flatten), refused: ($refusals | flatten),
+			  tool: "scripts/rehearse_migrations.sh", mode: "supported", exit: 0}' \
+			>"$REHEARSE_RECEIPT.tmp" || die 2 "the matrix receipt could not be written to $REHEARSE_RECEIPT.tmp"
+		mv -f "$REHEARSE_RECEIPT.tmp" "$REHEARSE_RECEIPT" ||
+			die 2 "the matrix receipt could not be moved into place at $REHEARSE_RECEIPT"
+		note "receipt: $REHEARSE_RECEIPT — $n supported source(s) upgraded into ${candidate:0:12}, $m refusal(s) exercised"
+	else
+		note "$n supported source(s) upgraded into ${candidate:0:12}, $m refusal(s) exercised; no REHEARSE_RECEIPT was named"
+	fi
+	exit 0
+fi
 
 # The role and grant bootstrap file, applied in two halves. `CREATE ROLE` is
 # cluster-wide and fails the second time (start.go checks pg_roles for the same
@@ -413,6 +524,40 @@ else
 	note "ledger the copy starts from: $ledger"
 fi
 
+# What the copy holds before the candidate connects is the evidence the upgrade is
+# measured against, so it is written down here, once, and never retaken. Two facts:
+# the applied ledger row by row, and one digest of the rows the seed wrote. The
+# comparison happens after the candidate has run; a step that re-took its own "before"
+# afterwards could only ever compare a database with itself.
+#
+# The data digest is scoped to the seeded rows by the marker the seed itself writes
+# (`rehearse…@rehearse.localhost`, `task.created`), so a target that legitimately adds
+# rows of its own is not reported as having lost data, while a changed body, a changed
+# email or a dropped row changes the number. Rows the seed did not write are not this
+# assertion's, and no target is asked to leave them alone.
+ledger_snapshot() { # $1 = database, $2 = file
+	psql_as "$1" -F $'\t' -c "SELECT owner || '/' || version, name, checksum, coalesce(applied_at::text,'') FROM schema_migrations ORDER BY 1" >"$2"
+}
+data_snapshot() { # $1 = database
+	psql_as "$1" -tA -c "
+		SELECT (SELECT count(*) FROM tenants) || '/' ||
+			coalesce((SELECT md5(string_agg(id::text, ',' ORDER BY id)) FROM tenants), '-') || '/' ||
+			(SELECT count(*) FROM users WHERE email LIKE 'rehearse%@rehearse.localhost') || '/' ||
+			coalesce((SELECT md5(string_agg(id::text || ':' || email || ':' || display_name || ':' || status, ',' ORDER BY id))
+				FROM users WHERE email LIKE 'rehearse%@rehearse.localhost'), '-') || '/' ||
+			(SELECT count(*) FROM audit_events WHERE name = 'task.created') || '/' ||
+			coalesce((SELECT md5(string_agg(event_id::text || '=' || octet_length(payload::text)::text, ',' ORDER BY event_id))
+				FROM audit_events WHERE name = 'task.created'), '-')"
+}
+before_ledger="$work/before-ledger.tsv"
+before_data=""
+if ledger_snapshot "$run" "$before_ledger" 2>"$work/snapshot.err"; then
+	before_data=$(data_snapshot "$run" 2>/dev/null || true)
+	note "retained before the candidate connects: $(grep -c '' <"$before_ledger") ledger row(s), data ${before_data:-unreadable}"
+else
+	note "nothing retained before the candidate: $(head -1 "$work/snapshot.err") — the copy holds no ledger to compare against"
+fi
+
 # The watcher: one session, one query, sampled every SAMPLE_MS milliseconds, and
 # only this run's session carries the application name it filters on — which is also
 # why the query excludes its own pid: the watcher's session carries that name as
@@ -557,6 +702,37 @@ fi
 if [ -n "$unfinished" ]; then
 	echo "DRAIN UNFINISHED $unfinished"
 	findings=$((findings + 1))
+fi
+
+# The retained facts, read again now that the candidate has written. Every ledger row the
+# copy started with must still be there with the same name, checksum and application time
+# — an applied migration that changed its bytes, lost its row or restamped its time is the
+# immutable refusal kit/db makes, and an upgrade that rewrote history is not an upgrade.
+# The seed's rows must carry the same digest, which is the sentence "the data survived"
+# turned into something a run can fail. Both sides are the files this step wrote itself:
+# the ledger list before the candidate connected, and the same query afterwards.
+if [ -s "$before_ledger" ]; then
+	if ! ledger_snapshot "$run" "$work/after-ledger.tsv" 2>"$work/after.err"; then
+		echo "LEDGER UNREADABLE after the candidate ran: $(head -1 "$work/after.err")"
+		findings=$((findings + 1))
+		[ "$code" -ne 0 ] || code=1
+	else
+		lost=$(comm -23 <(cut -f1,2,3,4 "$before_ledger" | sort) <(cut -f1,2,3,4 "$work/after-ledger.tsv" | sort) |
+			head -3)
+		if [ -n "$lost" ]; then
+			echo "LEDGER LOST applied rows the copy started from: $(printf '%s' "$lost" | tr '\n' ' ')"
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		fi
+		after_data=$(data_snapshot "$run" 2>/dev/null || true)
+		if [ -n "$before_data" ] && [ "$after_data" != "$before_data" ]; then
+			echo "DATA CHANGED the seeded rows the copy started with: $before_data became ${after_data:-unreadable}"
+			findings=$((findings + 1))
+			[ "$code" -ne 0 ] || code=1
+		elif [ -n "$before_data" ]; then
+			note "data and ledger retained: $(grep -c '' <"$before_ledger") applied row(s), seeded facts $after_data"
+		fi
+	fi
 fi
 
 applied=$(wc -l <"$work/files.tsv")
