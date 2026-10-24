@@ -72,6 +72,9 @@ func (p *Policy) Revision() string { return p.revision }
 
 // Decide evaluates one request.
 func (p *Policy) Decide(ctx context.Context, r tenancy.PolicyRequest) (tenancy.PolicyDecision, error) {
+	if err := ctx.Err(); err != nil {
+		return tenancy.PolicyDecision{}, fmt.Errorf("%w: opa: %w", tenancy.ErrPolicyUnavailable, err)
+	}
 	attributes := r.Resource.Attributes
 	if attributes == nil {
 		attributes = map[string]any{}
@@ -85,6 +88,9 @@ func (p *Policy) Decide(ctx context.Context, r tenancy.PolicyRequest) (tenancy.P
 		},
 	}
 	results, err := p.query.Eval(ctx, rego.EvalInput(input))
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
 		return tenancy.PolicyDecision{}, fmt.Errorf("%w: opa: %v", tenancy.ErrPolicyUnavailable, err)
 	}
