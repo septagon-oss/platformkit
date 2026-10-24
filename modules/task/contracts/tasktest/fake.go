@@ -3,6 +3,8 @@ package tasktest
 import (
 	"context"
 	"fmt"
+	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -49,13 +51,17 @@ type Fake struct {
 func NewFake() *Fake {
 	return &Fake{
 		Fake: porttest.NewFake(db.Now(), []string{
-			contracts.EventAssigned, contracts.EventResolved, contracts.EventSLABreached,
+			contracts.EventCreated, contracts.EventAssigned, contracts.EventResolved, contracts.EventSLABreached,
 		}),
 		tasks: porttest.NewStore(func(task contracts.Task) uuid.UUID { return task.ID }),
 	}
 }
 
-var _ contracts.Service = (*Fake)(nil)
+var (
+	_ contracts.Service = (*Fake)(nil)
+	_ contracts.Creator = (*Fake)(nil)
+	_ contracts.Reader  = (*Fake)(nil)
+)
 
 // Put stores a task for the tenant on the context, giving it an id if it has
 // none, and returns the id. It is the fake's stand-in for the create route, and
@@ -79,6 +85,82 @@ func (f *Fake) Put(ctx context.Context, task *contracts.Task) uuid.UUID {
 // it to say what "a refused command wrote nothing" means.
 func (f *Fake) Task(ctx context.Context, id uuid.UUID) (contracts.Task, error) {
 	return f.tasks.Get(ctx, id)
+}
+
+// Create mirrors the Creator the module's service will implement. Every refusal
+// is decided before the store is touched, so a refused create writes nothing and
+// says nothing. Like the commands it ignores the transaction, which is why the
+// rollback cases of CreatorSuite are the real service's alone.
+func (f *Fake) Create(ctx context.Context, _ db.Tx[db.Tenant], in contracts.CreateTask) (*contracts.Task, error) {
+	task := contracts.Task{
+		Title: in.Title, Description: in.Description, Status: in.Status, Priority: in.Priority,
+		DueAt: utc(in.DueAt), SLADeadline: utc(in.SLADeadline), Source: in.Source, SourceRef: in.SourceRef,
+		Revision: 1,
+	}
+	if err := refuseCreate(in, task); err != nil {
+		return nil, err
+	}
+	if err := task.Validate(ctx); err != nil {
+		return nil, fmt.Errorf("%w: %w", crud.ErrInvalid, err)
+	}
+	says := []string{contracts.EventCreated}
+	if in.AssigneeID != nil {
+		task.AssigneeID = in.AssigneeID
+		if task.Status == contracts.StatusOpen {
+			task.Status = contracts.StatusAcknowledged
+		}
+		says = append(says, contracts.EventAssigned)
+	}
+	if task.IsOverdue(f.Clock.Now()) {
+		task.SLABreached, task.Revision = true, task.Revision+1
+		says = append(says, contracts.EventSLABreached)
+	}
+	task.ID = uuid.New()
+	task.ID = porttest.Seed(ctx, f.Fake, f.tasks, task)
+	for _, name := range says {
+		if err := f.Events.Emit(name); err != nil {
+			return nil, err
+		}
+	}
+	stored, err := f.tasks.Get(ctx, task.ID)
+	return &stored, err
+}
+
+// refuseCreate is the part of Create's input check that Task.Validate cannot make:
+// the column widths of source and sourceRef, an assignee that is nobody, and a
+// time that is no instant. All are correctable.
+func refuseCreate(in contracts.CreateTask, task contracts.Task) error {
+	switch {
+	case utf8.RuneCountInString(in.Source) > 40:
+		return fmt.Errorf("%w: source must have at most 40 characters", crud.ErrInvalid)
+	case utf8.RuneCountInString(in.SourceRef) > 120:
+		return fmt.Errorf("%w: sourceRef must have at most 120 characters", crud.ErrInvalid)
+	case in.AssigneeID != nil && *in.AssigneeID == uuid.Nil:
+		return fmt.Errorf("%w: a task is assigned to somebody", crud.ErrInvalid)
+	case task.DueAt != nil && task.DueAt.IsZero(), task.SLADeadline != nil && task.SLADeadline.IsZero():
+		return fmt.Errorf("%w: a time that is unsaid is nil, not the zero instant", crud.ErrInvalid)
+	}
+	return nil
+}
+
+func utc(at *time.Time) *time.Time {
+	if at == nil {
+		return nil
+	}
+	u := at.UTC()
+	return &u
+}
+
+// Count is how many tasks the fake holds for the tenant on the context.
+func (f *Fake) Count(ctx context.Context) int { return len(f.tasks.All(ctx)) }
+
+// TaskByID is contracts.Reader over the fake's store.
+func (f *Fake) TaskByID(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Task, error) {
+	task, err := f.tasks.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
 }
 
 // Assign mirrors internal.Service.Assign.

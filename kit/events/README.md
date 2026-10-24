@@ -353,3 +353,18 @@ effect would be left naming a row the move deleted, the scoped twin would read a
 nothing, and the debt would have been paid by moving it. The run after the effect comes
 back moves the row, and the refusal is `ErrLedgerMoveContended`, which is the sentence
 for "ask again".
+
+## Composition of delivery steps
+
+**Reused** — `Consume`, `MoveLedger`, `relayBatch`, `Schema.check` and the existing
+claim, transport and telemetry helpers retain delivery behavior. **Added** —
+private subscription, claim/handler, ledger publication, relay-row and JSON-shape
+steps expose the ordering previously nested in long functions. **Made reusable** —
+named internal steps operating on the caller's existing transaction and context.
+
+[Subscription delivery](consume.go) validates and subscribes in order, then checks
+tenant placement before claiming and handling. [Ledger movement](ledger.go)
+locks tenants and durables before renaming both ledgers and publishing records.
+[Relay](relay.go) reads locked rows, settles lag, publishes envelopes and stamps
+only after publication. [Schema validation](schema.go) preserves null handling
+and open projections. These steps add no transaction or transport boundary.

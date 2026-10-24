@@ -57,7 +57,7 @@ The script has no `--skip`, and `make check` has no variable that drops
 
 Here: the rehearsal runs in `make check` (`check-rehearse`) and in CI, the receipt
 is written, this script exists and is tested here, and the public-API comparison
-runs as `check-apidiff` against the reviewed baseline in
-`scripts/baselines/`. Wiring the pin check into a client's own pipeline is that
+runs as `check-apidiff` against the release line's frozen surface, named by the
+line record under `scripts/baselines/`. Wiring the pin check into a client's own pipeline is that
 client's change, exactly as `scripts/check_imports.sh` is called from a consumer's
 CI rather than from this repository's.

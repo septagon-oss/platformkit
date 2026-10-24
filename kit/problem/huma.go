@@ -3,8 +3,11 @@ package problem
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
 // HumaError is the hook that makes huma speak problem details. Assign it once,
@@ -33,6 +36,9 @@ func HumaError(status int, message string, errs ...error) huma.StatusError {
 				}
 				// Values can contain a password or an entire credential-bearing body.
 				p.Errors = append(p.Errors, text)
+				p.Violations = append(p.Violations, fault.Violation{
+					Location: strings.TrimPrefix(detail.Location, "body."), Code: "schema", Message: detail.Message,
+				})
 				continue
 			}
 			if err != nil {

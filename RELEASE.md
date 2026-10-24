@@ -37,12 +37,13 @@ on committed revisions and resolve its report before release. Review aliases,
 function/interface changes, wire, behavioral and database compatibility with real
 consumers; a type report alone cannot establish compatibility.
 
-A line that comes to carry breaking changes somebody will not revert may record
-them with `--baseline` and `--write-baseline` rather than leaving the report
-permanently red; v1.1.0 needed that file and retired it, and carries no accepted
-break from itself. A baseline that cannot go stale is a list of excuses, and
-publishing the next stable release ends it: measure against the new tag rather
-than carrying a list forward
+An accepted-break list no longer stands in for a release line. `make check-apidiff`
+compares the tree with the one revision the line record freezes and passes no list, so a
+break somebody wrote down is refused exactly like one nobody did. The 116 exported changes
+that list had accumulated after v1.1.0 are why the next release is a major;
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) owns the rule, the freeze and what moving it
+takes, and [docs/compatibility/v3.0.0.md](docs/compatibility/v3.0.0.md) lists what the major
+after that owes.
 
 When the source migration is authorized, update imports, package guards and
 proofs together, then foundation, catalog and clients in dependency order.
