@@ -1,3 +1,5 @@
+//go:build !race
+
 package httpx
 
 // public_page_allocations_internal_test.go is this kernel's only allocation guard,
@@ -11,6 +13,9 @@ package httpx
 // a time and each one is cheap alone. The ceiling is what this revision costs, and
 // a commit that raises it names the feature on this request that needs the extra
 // allocations.
+//
+// The file is not built under -race: the detector instruments every allocation site,
+// so the count there (163 at fabf73c) is not the one a deployment pays.
 
 import (
 	"context"
