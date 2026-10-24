@@ -119,11 +119,17 @@ promise a mail-less installation cannot keep is refused by both implementations 
 
 Which doors ask it: sign-up at `POST /api/v1/public/auth/register` (both the email-confirmation
 mode and the invitation mode), `POST /api/v1/public/auth/resend-verification`, and the
-forgotten-password request, refused by `Service.Forget` before it publishes. What is
-deliberately left alone: approval sign-up, which commits a pending account and promises an
-operator's decision rather than a mail; the redeem doors, which consume a credential somebody
-was already sent; and the mails raised inside a transaction, which still reach the carrier and
-are recorded `suppressed` where nothing delivers.
+forgotten-password request. The last is refused by `Service.Forget` itself, before it
+publishes: the acknowledgment that route answers with promises a mail, and an outbox row no
+installation can discharge is a promise kept in a table and broken in the world. The refusal
+rolls the caller's transaction back and publishes nothing — the event lives in that
+transaction, so a refused request leaves no token and no ledger row either. It is asked inside
+the command rather than on the route because the route is mounted against the frozen
+`contracts.Service`, which every installation's own wiring already answers.
+What is deliberately left alone: approval sign-up, which commits a pending account and promises
+an operator's decision rather than a mail; the redeem doors, which consume a credential
+somebody was already sent; and the mails raised inside a transaction, which still reach the
+carrier and are recorded `suppressed` where nothing delivers.
 
 ## Authorization
 

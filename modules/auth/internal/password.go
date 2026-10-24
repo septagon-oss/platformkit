@@ -58,13 +58,7 @@ func (s *Service) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userI
 // mistypes their own address is told nothing, and the mail that does not arrive
 // is the message.
 //
-// A composition whose sender does not deliver refuses here rather than
-// publishing the request: the acknowledgment this route answers with promises a
-// mail, and an outbox row nobody can discharge is a promise kept in a table and
-// broken in the world. The refusal is the same one the sign-up doors give, it is
-// the same for every address, and the caller's transaction is rolled back with
-// nothing written — the event lives in that transaction, so a refused request
-// publishes nothing and leaves no token.
+// A composition that cannot deliver is refused with 503 and writes nothing.
 func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
 	if !s.mail.deliversAccountMail() {
 		return problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
