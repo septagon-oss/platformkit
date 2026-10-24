@@ -1,0 +1,58 @@
+{
+ "name": "singleton-update-surface",
+ "provenance": {
+  "author": "OpenAI Codex",
+  "date": "2026-10-23",
+  "inputHash": "sha256:d0e9a9ae3fceb6a7da0c7420bc32948458eeaa882efb1fd37e41f3919adc8399",
+  "expectedHash": "sha256:218e6d8ab9685441db440cfc2100f774c630aaa90b77a8b0d88cd55419ef6b82"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "settings",
+   "path": "/api/v1/m/settings",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "required": true
+    },
+    {
+     "name": "enabled",
+     "type": "bool"
+    },
+    {
+     "name": "createdAt",
+     "type": "time",
+     "readOnly": true
+    }
+   ]
+  },
+  "hints": {},
+  "singleton": true,
+  "rows": []
+ },
+ "expected": {
+  "resolved": {
+   "layout": {
+    "columns": [],
+    "create": [],
+    "update": [
+     "title",
+     "enabled"
+    ]
+   },
+   "list": {
+    "defaultSort": "",
+    "sorts": [],
+    "filters": []
+   }
+  }
+ }
+}

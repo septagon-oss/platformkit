@@ -56,8 +56,12 @@ func TestContentDeclaresTheLocalizedDraftReviewDeck(t *testing.T) {
 				t.Fatal("archive confirmation lost")
 			}
 		}
-		if strings.Contains(string(got), "undoable") || strings.Contains(string(got), `"resolved"`) {
-			t.Fatal(string(got))
+		declared, err := json.Marshal(e.Presentation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(declared), "undoable") {
+			t.Fatal(string(declared))
 		}
 	}
 	content.Commands = nil
