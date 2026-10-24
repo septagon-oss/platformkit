@@ -1,0 +1,122 @@
+{
+ "name": "deck-directions",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:7de45d4788f49fbbc5884dbc6653d2afd74e9bffad70235a78eef1b44852bcac",
+  "expectedHash": "sha256:b804b5c17e8dc6a19e251120d21151a72d458df1e1306abc524f61555e5d6d71"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "createdAt",
+     "type": "time",
+     "readOnly": true
+    }
+   ]
+  },
+  "hints": {
+   "Sortable": [
+    "createdAt"
+   ],
+   "Deck": {
+    "Undoable": true,
+    "Order": "createdAt",
+    "Directions": {
+     "right": {
+      "Command": "publish",
+      "Label": "Publish",
+      "Tone": "success",
+      "Icon": "document"
+     },
+     "left": {
+      "Command": "archive",
+      "Label": "Archive",
+      "Tone": "warning",
+      "Icon": "folder"
+     },
+     "down": {
+      "Skip": true
+     }
+    }
+   }
+  },
+  "rows": [],
+  "commands": [
+   {
+    "Verb": "publish",
+    "Summary": "Publish it",
+    "Undo": "unpublish",
+    "HasResult": true,
+    "Hints": {
+     "Primary": true
+    }
+   },
+   {
+    "Verb": "unpublish",
+    "Summary": "",
+    "Undo": "",
+    "HasResult": false,
+    "Hints": {
+     "System": true
+    }
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "deck": {
+    "undoable": false,
+    "queue": [],
+    "order": "createdAt",
+    "directions": {
+     "right": {
+      "command": "publish",
+      "undo": ""
+     },
+     "down": {
+      "skip": true
+     }
+    }
+   },
+   "commands": [
+    {
+     "verb": "publish",
+     "label": "Publish it",
+     "visible": true,
+     "primary": true
+    },
+    {
+     "verb": "unpublish",
+     "label": "Unpublish",
+     "visible": false,
+     "system": true
+    }
+   ],
+   "list": {
+    "sorts": [
+     {
+      "query": "createdAt"
+     },
+     {
+      "query": "-createdAt"
+     }
+    ]
+   }
+  }
+ }
+}
