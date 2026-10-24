@@ -18,9 +18,9 @@ func formHintsFault(r httpx.Resource) string {
 		return ""
 	}
 	policy := present.Resolve(present.Input{Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable,
-		Operations: r.OperationWords(), Singleton: r.Singleton, InputOnly: r.Input != nil})
+		Operations: r.OperationWords(), Singleton: r.Singleton, InputOnly: r.InputRun != nil})
 	inputNames := []string{}
-	if r.Input != nil {
+	if r.InputRun != nil {
 		for _, f := range r.Schema.Fields {
 			if !entity.ServerOwned(f) && (!f.Presentation.Hidden() || (f.Required && f.Default == "")) {
 				inputNames = append(inputNames, f.Name)
@@ -33,9 +33,9 @@ func formHintsFault(r httpx.Resource) string {
 		fields    []string
 		available bool
 	}{
-		{"create", h.Create, policy.Layout.Create, r.Input == nil && !r.Singleton && r.Offers(httpx.CRUDCreate)},
-		{"update", h.Update, policy.Layout.Update, r.Input == nil && r.Offers(httpx.CRUDUpdate) && (!r.Singleton || r.Write != "")},
-		{"input", h.Input, inputNames, r.Input != nil},
+		{"create", h.Create, policy.Layout.Create, r.InputRun == nil && !r.Singleton && r.Offers(httpx.CRUDCreate)},
+		{"update", h.Update, policy.Layout.Update, r.InputRun == nil && r.Offers(httpx.CRUDUpdate) && (!r.Singleton || r.Write != "")},
+		{"input", h.Input, inputNames, r.InputRun != nil},
 	} {
 		if form.hint == nil {
 			continue

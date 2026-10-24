@@ -43,7 +43,7 @@ func TestReadFormUsesTypedInputWithoutStorageIdentity(t *testing.T) {
 	s.Mount(api.Surfaces("query"))
 	resources := api.Resources()
 	r := resources[len(resources)-1]
-	if r.Input == nil || r.Offers(httpx.CRUDCreate) || r.Offers(httpx.CRUDList) || r.Screen != "/app/query/queries" {
+	if r.InputRun == nil || r.Offers(httpx.CRUDCreate) || r.Offers(httpx.CRUDList) || r.Screen != "/app/query/queries" {
 		t.Fatalf("query registration: %+v", r)
 	}
 	code, body := call(t, router, http.MethodPost, "/api/v1/query/queries", `{"title":"Notebook"}`)

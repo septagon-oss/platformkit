@@ -125,7 +125,7 @@ func formStepRequest(ctx context.Context, req page.Request, o Options, r httpx.R
 		if err == nil && final {
 			if mode == "input" {
 				var result any
-				result, err = r.Input.Run(ctx, values)
+				result, err = r.InputRun(ctx, values)
 				if err == nil {
 					return readInputResult(r, o, result)
 				}

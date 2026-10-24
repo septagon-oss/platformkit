@@ -73,7 +73,7 @@ type (
 // module that wants pages for a resource the generator would leave bare writes
 // them, the way modules/admin writes its own.
 func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
-	if res.Input != nil {
+	if res.InputRun != nil {
 		mountReadInput(router, s, o, res)
 		return
 	}

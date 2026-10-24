@@ -47,8 +47,6 @@ import (
 // is a field name from Schema, and a value is whatever the entity's own JSON
 // says it is. There is no second serialization; it is encoding/json, once.
 type Resource struct {
-	// Input is an authorized typed read with generated inputs and no CRUD routes.
-	Input *ReadInput
 	// Module and Entity name it; Path is the collection path as the module
 	// wrote it, relative to itself ("/tasks"), which is what a generated screen
 	// mounts and links from. The composed addresses are Schema.Path — the API's
@@ -133,6 +131,14 @@ type Resource struct {
 	// See rest.Singleton.
 	Singleton bool
 
+	// InputRun answers a typed query whose inputs are the generated form and
+	// whose result has no CRUD routes: the three fields below are what its pages
+	// are built from, and Registration guards the closure with Read, as it guards
+	// every other read. A resource that names none of them is an ordinary CRUD
+	// resource, which is nearly every one.
+	InputRun    func(ctx context.Context, values map[string]any) (any, error) `json:"-"`
+	InputOutput []entity.Field
+	InputList   bool
 	// Count reads the total without a page. Registration guards it with Read
 	// and supplies a List-based fallback for resources with custom loading.
 	Count func(ctx context.Context) (int64, error)
@@ -335,7 +341,7 @@ func (r Resource) WriteAuth() Auth {
 // not ask would be a page that reads past the permission whenever whoever wrote
 // it forgot to. Now forgetting is not available.
 func (a *API) RegisterResource(r Resource) {
-	r = a.guardReadInput(a.guard(r))
+	r = a.guard(r)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.resources = append(a.resources, r)
@@ -436,6 +442,23 @@ func (a *API) guard(r Resource) Resource {
 			}
 			return remove(ctx, id)
 		}
+	}
+	return r
+}
+
+// guardInput wraps a typed query's closure in the read guard its resource
+// declares: the generated pages answer with it, and a page whose closure did
+// not ask would read past the permission the API's own route stands behind.
+func (a *API) guardInput(r Resource) Resource {
+	if r.InputRun == nil {
+		return r
+	}
+	input, read := r.InputRun, r.ReadAuth()
+	r.InputRun = func(ctx context.Context, values map[string]any) (any, error) {
+		if err := a.mayDeclare(ctx, read); err != nil {
+			return nil, err
+		}
+		return input(ctx, values)
 	}
 	return r
 }

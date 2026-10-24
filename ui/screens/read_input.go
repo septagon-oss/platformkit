@@ -47,7 +47,7 @@ func mountReadInput(router *httpx.Router, shell page.Shell, o Options, r httpx.R
 				values, err := rest.CommandValues(in.RawBody, r.Schema.Fields)
 				var result any
 				if err == nil {
-					result, err = r.Input.Run(ctx, values)
+					result, err = r.InputRun(ctx, values)
 				}
 				if err != nil {
 					return page.View{}, err
@@ -71,7 +71,7 @@ func readInputResult(r httpx.Resource, o Options, result any) (page.View, error)
 	d := json.NewDecoder(bytes.NewReader(encoded))
 	d.UseNumber()
 	var rows []map[string]any
-	if r.Input.OutputList {
+	if r.InputList {
 		err = d.Decode(&rows)
 	} else {
 		var row map[string]any
@@ -84,7 +84,7 @@ func readInputResult(r httpx.Resource, o Options, result any) (page.View, error)
 	title := entryName(r, o)
 	nodes := []g.Node{components.Heading(components.HeadingProps{Level: 1, Text: title})}
 	for _, row := range rows {
-		nodes = append(nodes, outputDetails(r.Input.Output, row))
+		nodes = append(nodes, outputDetails(r.InputOutput, row))
 	}
 	nodes = append(nodes, components.Link(components.LinkProps{Href: r.Screen, Label: o.Text("screens.continue", "Continue")}))
 	return page.View{Title: title, Sensitive: true, Body: []g.Node{components.Stack(components.StackProps{Gap: "6"}, nodes...)}}, nil

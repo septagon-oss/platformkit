@@ -145,7 +145,7 @@ func (s Spec[T]) mountReadForm(surfaces httpx.Surfaces) {
 	r := httpx.Resource{Module: s.Module, Entity: s.Entity, Path: s.Path, Schema: s.Schema(),
 		Read: s.Read, ReadBy: s.ReadAuth, Present: s.Present, Screen: surfaces.App.PagePath(s.Path)}
 	r.Schema.Path = surfaces.App.Prefix() + s.Path
-	r.Input = &httpx.ReadInput{Output: s.input.output, OutputList: s.input.list, Path: r.Schema.Path, Run: s.input.run}
+	r.InputRun, r.InputOutput, r.InputList = s.input.run, s.input.output, s.input.list
 	if bad := formHintsFault(r); bad != "" {
 		panic("rest: ReadForm: " + bad)
 	}

@@ -307,8 +307,8 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 			Presentation: commandDeviations(c.Present),
 		})
 	}
-	if r.Input != nil {
-		e.Input = &InputEntry{Fields: r.Schema.Fields, Output: r.Input.Output, OutputList: r.Input.OutputList, Path: r.Input.Path}
+	if r.InputRun != nil {
+		e.Input = &InputEntry{Fields: r.Schema.Fields, Output: r.InputOutput, OutputList: r.InputList, Path: r.Schema.Path}
 	}
 	e.Resolved = resolve(r, text, language)
 	return e
@@ -322,7 +322,7 @@ func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 	}
 	resolved := present.Resolve(present.Input{
 		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
-		CommandsOnly: r.CommandsOnly, InputOnly: r.Input != nil, Operations: r.OperationWords(), Commands: commands,
+		CommandsOnly: r.CommandsOnly, InputOnly: r.InputRun != nil, Operations: r.OperationWords(), Commands: commands,
 		Language: language, Text: policyText(text),
 	})
 	return &resolved
