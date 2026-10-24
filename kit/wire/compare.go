@@ -40,29 +40,52 @@ func compareOperations(oldOps, updated wireRoutes, allowances []AuthorizationAll
 	}
 }
 
-func compareShapes(oldDoc, newDoc map[string]any, oldOps wireRoutes, add func(rule, path, member, message string)) {
-	// Associate shape records with their operation without parsing diagnostic text.
+// shapeIndex answers two questions of a shape record key, both by the operation the record
+// names rather than by parsing diagnostic text: which address a verdict should carry, and
+// whether the golden document announces that operation at all.
+type shapeIndex struct {
+	doc       map[string]any
+	addresses map[string]string
+}
+
+func newShapeIndex(oldDoc map[string]any, oldOps wireRoutes) shapeIndex {
 	addresses := map[string]string{}
 	for _, op := range oldOps {
 		addresses[op.operationID] = op.key
 	}
-	shapePath := func(key string) string {
-		if path, ok := addresses[wireOperationOf(key)]; ok {
-			return path
-		}
-		return asyncStructuralPath(oldDoc, key)
+	return shapeIndex{doc: oldDoc, addresses: addresses}
+}
+
+// path names the route of the operation a shape record is read from, or the async structural
+// address of the key when no announced operation matches it.
+func (s shapeIndex) path(key string) string {
+	if path, ok := s.addresses[wireOperationOf(key)]; ok {
+		return path
 	}
-	oldShapes, newShapes := wireShapes(oldDoc), wireShapes(newDoc)
+	return asyncStructuralPath(s.doc, key)
+}
+
+// announces reports whether the golden document carries an operation the shape record names.
+func (s shapeIndex) announces(key string) bool {
+	_, ok := s.addresses[wireOperationOf(key)]
+	return ok
+}
+
+// compareShapes states every difference between two documents' shape records: a record that
+// vanished or changed is B3, an enum that moved is B5, and a member a request newly requires
+// that an older client never sends is B4. A record neither walk read is no difference; the
+// caller reports the read that stopped instead.
+func compareShapes(shapes shapeIndex, oldShapes, newShapes map[string]string, add func(rule, path, member, message string)) {
 	for _, key := range sortedKeys(oldShapes) {
 		fresh, ok := newShapes[key]
 		switch {
 		case !ok:
-			add("B3", shapePath(key), key, fmt.Sprintf("B3 (breaking): %s is gone", key))
+			add("B3", shapes.path(key), key, fmt.Sprintf("B3 (breaking): %s is gone", key))
 		default:
 			if problem := enumMove(key, oldShapes[key], fresh); problem != "" {
-				add("B5", shapePath(key), key, problem)
+				add("B5", shapes.path(key), key, problem)
 			} else if fresh != oldShapes[key] {
-				add("B3", shapePath(key), key, fmt.Sprintf("B3 (breaking): %s changed from %q to %q", key, oldShapes[key], fresh))
+				add("B3", shapes.path(key), key, fmt.Sprintf("B3 (breaking): %s changed from %q to %q", key, oldShapes[key], fresh))
 			}
 		}
 	}
@@ -70,9 +93,9 @@ func compareShapes(oldDoc, newDoc map[string]any, oldOps wireRoutes, add func(ru
 		if _, old := oldShapes[key]; old {
 			continue
 		}
-		if _, announced := addresses[wireOperationOf(key)]; !announced || !strings.Contains(key, " request ") || !strings.Contains(key, " requires ") {
+		if !shapes.announces(key) || !strings.Contains(key, " request ") || !strings.Contains(key, " requires ") {
 			continue
 		}
-		add("B4", shapePath(key), key, fmt.Sprintf("B4 (breaking): %s is asked for and an older client never sends it", key))
+		add("B4", shapes.path(key), key, fmt.Sprintf("B4 (breaking): %s is asked for and an older client never sends it", key))
 	}
 }
