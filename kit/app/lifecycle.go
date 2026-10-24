@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -181,7 +182,7 @@ func (a *App) Declarations() error {
 	// pass records the standard and every later one is judged against it; see
 	// registrationsAgree.
 	for pass := 1; pass <= 3; pass++ {
-		dry := cache.Memory(segment)
+		dry := cache.MemoryFor(appname.Name(segment))
 		_, _, err := a.composeRoutes(dry)
 		// Each recorder store is released as soon as its recorder has answered:
 		// nothing serves the API either pass returns, and a belief carried from the
@@ -265,7 +266,7 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 		a.giveBackDeclared() // no Runtime on this side either
 		return nil, beforeEffects(err)
 	}
-	build := cache.Memory(segment)
+	build := cache.MemoryFor(appname.Name(segment))
 	api, handler, err := a.buildAPI(ctx, build)
 	if err != nil {
 		_ = build.Close() // a composition that failed a gate is never mounted

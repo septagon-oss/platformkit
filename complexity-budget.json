@@ -2,8 +2,8 @@
   "funcs_over_100": 61,
   "cc_over_30": 41,
   "files_over_800": 19,
-  "long_comment_blocks": 524,
-  "history_comment_lines": 81,
+  "long_comment_blocks": 523,
+  "history_comment_lines": 80,
   "stutters": 24,
-  "httpx_exports": 114
+  "httpx_exports": 112
 }
