@@ -575,7 +575,7 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant, o resource.Optio
 		body = append(body, components.Stack(components.StackProps{Gap: "3"},
 			components.FormSentence(components.FormSentenceProps{Text: workspacePurpose(p.at, item, p.resources, o)}),
 			components.Flex(components.FlexProps{Direction: "row"},
-				components.Button(components.ButtonProps{Label: item.Label, Href: entry.Screen, Variant: "primary"}))))
+				components.Button(components.ButtonProps{Label: actionWord(o, entry), Href: entry.Screen, Variant: "primary"}))))
 	}
 	body = append(body, components.FormSentence(components.FormSentenceProps{Text: description}))
 	if t.Operator {

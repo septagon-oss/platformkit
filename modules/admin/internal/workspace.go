@@ -85,3 +85,12 @@ func entryWord(a addresses, o resource.Options, entry module.NavEntry) string {
 	}
 	return o.Text("nav."+strings.ReplaceAll(strings.TrimPrefix(entry.Screen, httpx.AppRoot+"/"), "/", "."), "%s", fallback)
 }
+
+// actionWord is a primary action's own words in the reader's language. An action is
+// not a destination: its label is copy the composition wrote when it declared the
+// action, so the catalogue is asked under the screen the action leads to and the
+// declared label answers whenever nobody catalogued that action. Which catalogue
+// answers is the product's, because the declaration is the product's copy.
+func actionWord(o resource.Options, entry module.NavEntry) string {
+	return o.Text("action."+strings.ReplaceAll(entry.Screen, "/", "."), "%s", entry.Label)
+}

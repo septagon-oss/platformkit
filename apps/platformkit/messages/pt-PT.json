@@ -1,4 +1,14 @@
 {
+  "action.task.tasks": {
+    "references": [
+      "apps/platformkit/product.go",
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Ir para as tarefas",
+    "plural": {
+      "": "Ir para as tarefas"
+    }
+  },
   "app.back.workspace": {
     "references": [
       "apps/platformkit/fault.go"
