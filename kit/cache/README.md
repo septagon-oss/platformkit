@@ -38,6 +38,45 @@ in any store: `modules/auth`'s own kernel says a permission cache is a window in
 a revoked grant still works. The read path for those is the transaction under
 row-level security. [docs/cache.md](../../docs/cache.md) holds the table.
 
+## Application names and reads
+
+Use `MemoryFor(appname.Name)` for a fresh in-process cache, or
+`NewFor(appname.Name, Backend)` for a backend you already own. The zero name
+means a single app and retains an empty first segment in each physical key:
+`:33333333-3333-4333-8333-333333333333:host/example.com`. A named app retains its
+prefix, for example `pkit:33333333-3333-4333-8333-333333333333:host/example.com`.
+Generation keys use the same prefix and end in `host#`. The runtime's configured
+fallback remains `pkit`; adopting these APIs does not migrate existing keys.
+
+For a new shared application identity, use [appname.Parse](../appname/appname.go).
+Cache constructors retain [Slug](appname.go)'s older grammar for nonempty names,
+including digit-first names such as `1legacy`, supplied as `appname.Name("1legacy")`.
+That exception preserves existing cache namespaces; it does not make such names
+valid cross-package identities. Using appname's key builder for them would discard
+their app token. Unifying the grammars requires a separate data migration decision.
+
+The string constructors remain supported as deprecated delegates:
+
+| Existing API | Migration |
+| --- | --- |
+| `Memory(app)` | Use `MemoryFor(appname.Name(app))`. Both own a fresh backend and panic on invalid nonempty names. Only the new API accepts an empty name. |
+| `New(app, backend)` | Use `NewFor(appname.Name(app), backend)` and handle its error. Only the new API accepts an empty name. |
+| `MemoryNamed(app, backend)` | Use `NewFor(appname.Name(app), backend)` with the **same backend**, handling the returned error or explicitly retaining a composition-time panic. |
+
+Construction performs no backend I/O. A refused construction neither calls nor
+closes the supplied backend. Successful handles retain the existing ownership:
+`Close` releases that backend, including when another handle shares it. There is
+no reference counting; pass a non-nil backend and manage its lifetime accordingly.
+
+`GetEntry(ctx, c, key)` wraps one `Cache.Get` in `Entry{Value, Found, Generation}`.
+Use `Found` to distinguish a hit, including empty bytes, from a miss; stale bytes
+may accompany a miss. Pass the miss's `Generation` to the fill's `Set` so a `Move`
+during the load still invalidates that fill. Errors pass through unchanged, with
+no retry, byte copy or stronger lifetime guarantee than the supplied cache. Do not
+use an erroneous answer as a successful read. The original `Cache.Get` method and
+interface remain supported without deprecation. The executable
+[example](example_test.go) shows a miss, its stamped fill and a hit.
+
 ## Limits
 
 - **The store may never evict a generation counter.** A counter is written with no TTL
