@@ -243,12 +243,8 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 			table: "password_tokens", kind: contracts.MailSetPassword,
 			person: user.ID, address: user.Email, token: token,
 			digest: contracts.Hash(token), was: was,
-			msg: mailMessage(user.Email, title, body, link, token),
-			notice: notificationcontracts.Notice{
-				Recipient: user.ID, Title: title,
-				Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
-				Link: s.mail.SetPasswordPage,
-			},
+			msg:    mailMessage(user.Email, title, body, link, token),
+			notice: setPasswordNotice(user.ID, title, body, s.mail.SetPasswordPage),
 		})
 	})
 }
@@ -374,7 +370,27 @@ func (s *Service) rotate(ctx context.Context, tx db.Tx[db.Tenant], user *usercon
 		// and an answer, not a rollback.
 		return s.refuseSetPassword(ctx, tx, user.Email, err, token)
 	}
-	return s.commitDelivered(ctx, tx, user.ID, token, at)
+	if err := s.commitDelivered(ctx, tx, user.ID, token, at); err != nil {
+		return err
+	}
+	if s.notify == nil {
+		return nil
+	}
+	// The transport took the replacement, so the notice one accepted mail is owed is
+	// raised here rather than across a commit: this offer raised no send that waits.
+	_, err := s.notify.Notify(ctx, tx, setPasswordNotice(user.ID, title, body, s.mail.SetPasswordPage))
+	return err
+}
+
+// setPasswordNotice is the in-app notice one accepted set-password mail is owed. It
+// carries a path and nothing else: the notification module refuses an absolute link,
+// and the credential travels in the mail, never in the notice.
+func setPasswordNotice(userID uuid.UUID, title, body, page string) notificationcontracts.Notice {
+	return notificationcontracts.Notice{
+		Recipient: userID, Title: title,
+		Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
+		Link: page,
+	}
 }
 
 // commitDelivered writes a credential whose email the transport already took, in
@@ -392,9 +408,21 @@ func (s *Service) commitDelivered(ctx context.Context, tx db.Tx[db.Tenant], user
 	if _, pooled := httpx.ConnFrom(ctx); !pooled {
 		return s.writeOffer(tx, userID, token, at, true)
 	}
-	return s.writeCredential(ctx, "commit", "set-password", func(ahead db.Tx[db.Tenant]) error {
+	err := s.writeCredential(ctx, "commit", "set-password", func(ahead db.Tx[db.Tenant]) error {
+		if err := ahead.DB().Exec(writeGrace).Error; err != nil {
+			return err
+		}
 		return s.writeOffer(ahead, userID, token, at, true)
 	})
+	if err == nil || !isBlockedByOwnWrite(err) {
+		return err
+	}
+	// The row this rotation would replace is still an uncommitted mint of the very
+	// transaction asking: its own write would wait behind that transaction, and nobody
+	// has ever been mailed from a row nobody committed. So the credential goes in beside
+	// the send instead, where the two stand or fall together — the other shape this
+	// module's one rule already has.
+	return s.writeOffer(tx, userID, token, at, true)
 }
 
 // writeOffer writes this attempt's one pending set-password row, marked delivered

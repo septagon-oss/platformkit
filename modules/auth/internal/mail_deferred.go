@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -46,10 +47,38 @@ type linkMail struct {
 // ladder, and the retry mints a fresh link. Outside a delivery nobody retries, so the
 // refusal is recorded and swallowed as it was before the send moved.
 func (s *Service) mailAfterCommit(ctx context.Context, m linkMail) error {
+	gone, err := s.linkSuperseded(ctx, m)
+	if err != nil {
+		return err
+	}
+	if gone {
+		// A later offer replaced this row between its commit and this send — one
+		// transaction can mint both, because the send waits for that commit. The link the
+		// table holds is the one its recipient is being sent; mailing this one would put a
+		// dead credential in an envelope and record a delivery nobody was owed.
+		return nil
+	}
 	if err := s.mail.Mailer.Send(ctx, m.msg); err != nil {
 		return s.undelivered(ctx, m, err)
 	}
 	return s.delivered(ctx, m)
+}
+
+// linkSuperseded asks whether the credential table still holds the row this attempt
+// wrote. It reads on the pool, after the commit that made the row spendable, so a row a
+// newer offer has replaced answers no. A caller with no pool cannot be told either way:
+// the row it wrote stood or fell with its own transaction, so that one sends.
+func (s *Service) linkSuperseded(ctx context.Context, m linkMail) (bool, error) {
+	var held bool
+	err := s.detached(ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM "+m.table+
+			" WHERE tenant_id = ? AND user_id = ? AND token_hash = ?)",
+			db.TenantOf(tx).ID, m.person, m.digest).Row().Scan(&held)
+	})
+	if errors.Is(err, errNoConnection) {
+		return false, nil
+	}
+	return !held, err
 }
 
 // delivered leaves the three marks one accepted send is owed — the row's own record
@@ -153,6 +182,19 @@ func (s *Service) undelivered(ctx context.Context, m linkMail, failure error) er
 			notificationcontracts.RedactMailReason(failure.Error(), m.token, string(m.digest)))
 	}
 	return nil
+}
+
+// writeGrace is how long a credential write waits for a row another transaction holds
+// before this module concludes that the transaction holding it is the one asking. The
+// write is its own, so waiting longer would be a delivery parked behind itself.
+const writeGrace = "SET LOCAL lock_timeout = '500ms'"
+
+// isBlockedByOwnWrite is Postgres refusing to wait for a row lock (55P03) inside that
+// grace. The only writer that can hold a person's credential row against the transaction
+// asking for it is that transaction itself, still holding a mint it has not committed.
+func isBlockedByOwnWrite(err error) bool {
+	pg, isPostgres := errors.AsType[*pgconn.PgError](err)
+	return isPostgres && pg.Code == "55P03"
 }
 
 // errNoConnection says this work was handed no connection to record its outcome on.
