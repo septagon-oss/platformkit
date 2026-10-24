@@ -33,7 +33,9 @@ type AuthorizationAllowance struct {
 }
 
 // Compare reports all breaks, sorted by message, with no authorization allowances.
-// Invalid documents refuse as B3 even when their bytes are equal.
+// Invalid documents refuse as B3 even when their bytes are equal, and a comparison that
+// could not read both documents to their end refuses as B7 for the same reason: an empty
+// result states that the pair was read in full and nothing moved.
 func Compare(golden, current []byte) []Break {
 	return CompareWithAllowances(golden, current, nil)
 }
@@ -111,7 +113,8 @@ func CompareWithAllowances(golden, current []byte, allowances []AuthorizationAll
 		}
 		return asyncStructuralPath(oldDoc, key)
 	}
-	oldShapes, newShapes := wireShapes(oldDoc), wireShapes(newDoc)
+	oldRead, newRead := wireShapes(oldDoc), wireShapes(newDoc)
+	oldShapes, newShapes := oldRead.shapes, newRead.shapes
 	for _, key := range sortedKeys(oldShapes) {
 		fresh, ok := newShapes[key]
 		switch {
@@ -134,7 +137,28 @@ func CompareWithAllowances(golden, current []byte, allowances []AuthorizationAll
 		}
 		add("B4", shapePath(key), key, fmt.Sprintf("B4 (breaking): %s is asked for and an older client never sends it", key))
 	}
+	problems = append(problems, incompleteReads(oldRead, newRead, shapePath)...)
 	return finish()
+}
+
+// incompleteReads states, beside every comparison verdict, the addresses an analysis gave up
+// on. A walk that ran out of a bound read neither side to the end, so it compared nothing
+// about the shapes below where it stopped, and the empty result that would otherwise follow
+// is the answer every caller reads as certified — a golden gate that saw one would rewrite
+// the baseline from a document nobody had finished reading. That is why this verdict arrives
+// in the same list rather than beside it. No allowance reaches it: a reviewed pair of
+// declarations cannot cover an address that has no record on either side.
+func incompleteReads(oldRead, newRead wireAnalysis, shapePath func(string) string) []Break {
+	var problems []Break
+	for _, side := range []struct {
+		name string
+		read wireAnalysis
+	}{{"golden", oldRead}, {"current", newRead}} {
+		for _, stop := range side.read.stops {
+			problems = append(problems, Break{"B7", shapePath(stop.key), stop.key, stop.refusal(side.name)})
+		}
+	}
+	return problems
 }
 
 func authorizationsWiden(from, to string, allowances []AuthorizationAllowance) bool {
@@ -148,7 +172,7 @@ func wireOperations(doc map[string]any) wireRoutes {
 	return openAPIOperations(doc)
 }
 
-func wireShapes(doc map[string]any) map[string]string {
+func wireShapes(doc map[string]any) wireAnalysis {
 	if _, ok := doc["asyncapi"]; ok {
 		return asyncAPIShapes(doc)
 	}
