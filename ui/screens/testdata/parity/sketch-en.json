@@ -1,0 +1,70 @@
+{
+ "name": "sketch-en",
+ "provenance": {
+  "author": "Codex",
+  "date": "2026-10-24",
+  "inputHash": "sha256:5f58870f57912d340cef4f124668012007ac23be212b064a3665083746b22c73",
+  "expectedHash": "sha256:e1aff38f2b40eab1594f24d025d6522aabcdd2e5ffbe06bf928340d03af0fa83"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/notes",
+   "fields": [
+    {
+     "name": "drawing",
+     "type": "sketch",
+     "presentation": {
+      "label": "Drawing"
+     }
+    }
+   ]
+  },
+  "hints": {},
+  "rows": [
+   {
+    "id": "r1",
+    "drawing": [
+     [
+      [
+       1,
+       2,
+       0
+      ]
+     ]
+    ]
+   }
+  ]
+ },
+ "expected": {
+  "resolved": {
+   "fields": [
+    {
+     "name": "drawing",
+     "label": "Drawing",
+     "control": "sketch",
+     "kind": "sketch"
+    }
+   ],
+   "titles": {
+    "listCandidates": [],
+    "recordCandidates": []
+   },
+   "list": {
+    "sorts": [],
+    "filters": []
+   }
+  },
+  "rows": {
+   "r1": {
+    "listTitle": "r1",
+    "recordTitle": "r1",
+    "cells": {
+     "drawing": "—"
+    }
+   }
+  }
+ }
+}

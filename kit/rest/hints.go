@@ -179,6 +179,9 @@ func namedFieldFault(key, field, name string, fields []crud.Field, allowHidden b
 // no entry of its own.
 func fieldHintFault(name string, fields []crud.Field, p entity.EntryHints) string {
 	for _, f := range fields {
+		if bad := f.SketchFault(); bad != "" {
+			return bad
+		}
 		h := f.Presentation
 		if bad := hintWordsFault(f); bad != "" {
 			return bad

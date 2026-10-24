@@ -193,7 +193,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		// Generated CRUD does not gain selected-row writes from a UI control.
 		Footer: commandForms(o, o.Words(r.Schema), r.Commands, at, true),
 	})}
-	return document.View{Title: title, Body: body}
+	return document.View{Title: title, Modules: sketchCommandModules(r), Body: body}
 }
 
 // Detail is one row: every field, in schema order, and the write affordances
@@ -243,7 +243,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	// row, and a command is what they may do to it once they have read it.
 	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
-	return document.View{Title: named, Body: body}
+	return document.View{Title: named, Modules: sketchCommandModules(r), Body: body}
 }
 
 // offeredCommands is the commands to draw a form for: every one this caller may
@@ -276,7 +276,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 	if detail != "" {
 		status = statusUnprocessableEntity
 	}
-	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
+	return document.View{Title: title, Status: status, Modules: formModules(r), Body: []g.Node{
 		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
@@ -368,17 +368,17 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	words := o.Words(r.Schema)
 	// A render carrying a refusal line is the form redrawn over a write that was
 	// refused, with the person's own words in its controls.
-	refused := detail != ""
+	refused := detail != "" || len(errs) > 0
 	for _, field := range readable(r.Schema.Fields) {
 		f := formField(words, field)
-		if f.Definition.Widget == "richtext" {
+		if f.Definition.Widget == "richtext" || f.Definition.Type == entity.TypeSketch {
 			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
 		}
 		fields = append(fields, f)
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
-		values[name] = display.Text(value)
+		values[name] = formValueString(r.Schema.Fields, name, value)
 	}
 	// An edit carries the row's write count back as a hidden value, so the write it
 	// posts can be refused against a row that moved since the person read it. It is a
@@ -526,7 +526,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		cells := map[string]any{}
 		for _, f := range shown {
 			text := words.Value(f, row[f.Name])
-			cells[f.Name] = text
+			cells[f.Name] = drawingCell(f, row[f.Name], text)
 			if f.Type != entity.TypeTime {
 				continue
 			}
@@ -599,7 +599,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 				if named, ok := named[row.ID]; ok {
 					name = named
 				}
-				if node := compose(f, row, c.Primary, at, o, name); node != nil {
+				if node := compose(f, row, c.Primary, at, o, name, words); node != nil {
 					return node
 				}
 			}
@@ -712,11 +712,7 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 	list := func(items []components.DetailItem) g.Node {
 		return components.DetailListWithSlots(components.DetailListProps{Items: items}, components.DetailListSlots{
 			Value: func(item components.DetailItem) g.Node {
-				when, ok := instantsByLabel[item.Label]
-				if !ok {
-					return nil
-				}
-				return timeElement(when)
+				return detailValue(r.Schema.Fields, words, row, instantsByLabel, item)
 			},
 		})
 	}
@@ -827,7 +823,7 @@ func direction(sort string) string {
 // clickable; when it names none, every field that is not a list is, which is what
 // every resource drawn before the declaration existed gets.
 func (r Resource) sortable(f entity.Field) bool {
-	if f.Type == entity.TypeList || f.Type == entity.TypePicture {
+	if f.Type == entity.TypeList || f.Type == entity.TypePicture || f.Type == entity.TypeSketch {
 		return false
 	}
 	if len(r.Present.Sortable) == 0 {
@@ -855,8 +851,10 @@ func known(fields []entity.Field) entity.Field {
 	if c := candidates(fields); len(c) > 0 {
 		return c[0]
 	}
-	if len(fields) > 0 {
-		return fields[0]
+	for _, f := range fields {
+		if f.Type != entity.TypeSketch {
+			return f
+		}
 	}
 	return entity.Field{Name: "id"}
 }

@@ -244,7 +244,7 @@ type Field struct {
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "richtext", "time", "url", "week",
+	"textarea", "richtext", "time", "url", "week", "sketch",
 }
 
 // Presentations is every name `ui:"present:…"` may carry, and it is the read-axis
@@ -266,7 +266,7 @@ var Widgets = []string{
 // A name a mounted Spec claims and no screen renders refuses to mount, and the
 // shape a picture name may sit on is refused too — see ui/resource's own test
 // that names a composition per name here, and kit/rest's picture gate.
-var Presentations = []string{"person", "image", "images", "avatar"}
+var Presentations = []string{"person", "image", "images", "avatar", "sketch"}
 
 // PicturesAre reports whether the named presentation reads a file id, which is
 // the one fact about the name that a mount gate can check without importing what
@@ -396,7 +396,7 @@ func derive(t reflect.Type) []Field {
 			Type:     kind,
 			Elem:     elem,
 			Required: has(sf.Tag.Get("validate"), "required"),
-			ReadOnly: declaredBy(t, sf) == baseType || (kind == TypePicture && sf.Tag.Get("readOnly") == "true"),
+			ReadOnly: declaredBy(t, sf) == baseType || ((kind == TypePicture || kind == TypeSketch) && sf.Tag.Get("readOnly") == "true"),
 			Default:  sf.Tag.Get("default"),
 			Doc:      sf.Tag.Get("doc"),
 			Index:    sf.Index,
@@ -520,6 +520,9 @@ func fieldType(sf reflect.StructField) (kind, elem FieldType, ok bool) {
 	t := sf.Type
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
+	}
+	if t == reflect.TypeFor[Sketch]() {
+		return TypeSketch, "", true
 	}
 	// A slice is a list of whatever it holds, and []byte is not one of those: a
 	// blob is a single value, and rendering it as a list of small numbers is

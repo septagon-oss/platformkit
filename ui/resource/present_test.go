@@ -42,6 +42,14 @@ func listOut(t *testing.T, fields []entity.Field, row map[string]any) string {
 // kit/entity without composing one there fails this test and not a person's page.
 func TestEveryPresentationNameInTheVocabularyComposesSomething(t *testing.T) {
 	for _, name := range entity.Presentations {
+		if name == "sketch" {
+			fields := []entity.Field{{Name: "title", Type: entity.TypeString}, {Name: "drawing", Type: entity.TypeSketch, Present: name}}
+			out := listOut(t, fields, map[string]any{"id": "1", "title": "ada", "drawing": entity.Sketch{{{1, 2, 0}}}})
+			if !strings.Contains(out, `<circle`) || !strings.Contains(out, `aria-label="Drawing"`) || !strings.Contains(out, "ada") {
+				t.Fatal(out)
+			}
+			continue
+		}
 		fields := []entity.Field{
 			{Name: "title", Type: entity.TypeString, Present: name},
 			{Name: "id", Type: entity.TypeString},

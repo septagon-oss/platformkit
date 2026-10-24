@@ -25,6 +25,9 @@ import (
 // like a decision.
 func presentationFault(fields []crud.Field) string {
 	for _, f := range fields {
+		if bad := f.SketchFault(); bad != "" {
+			return bad
+		}
 		if !entity.ValidPresentation(f.Present) {
 			return fmt.Sprintf("field %q names presentation %q, which no screen renders", f.Name, f.Present)
 		}

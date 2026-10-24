@@ -734,7 +734,7 @@ func base() *css.Sheet {
 // component's markup asks for is still the last word about that class.
 func componentState() *css.Sheet {
 	s := css.NewSheet()
-	s.Merge(components.ProseStyle())
+	s.Merge(components.ProseStyle()).Merge(components.SketchStyle())
 	// The rich text field's chrome, and the published page's own prose rules
 	// inside its editing surface: what an author formats is dressed the way the
 	// reader will see it.

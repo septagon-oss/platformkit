@@ -22,6 +22,10 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	if err := validateSketchInput(e); err != nil {
+		var zero T
+		return zero, err
+	}
 	if s.Create != nil {
 		return s.Create(ctx, tx, e)
 	}
@@ -231,18 +235,16 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
 }
 
-// CreateRow, UpdateRow and DeleteRow are this resource's write orchestration at
-// the door an in-process caller stands at. The JSON routes and the generated
-// screens go through the same three bodies; a seed writer, or any composition-time
-// caller that is not a person's request, stands here. The reason they are
-// exported and not copied is that the three things a write must never skip are
-// inside those bodies — the row lock, the tenant recheck a DELETE cannot get from
-// row-level security alone, and the event that announces the change — and a
-// second spelling of them in an application is a spelling that can drift.
-// Authorization is not one of them: a route asks httpx, a seed run asks its
-// Authorizer, and neither answer belongs in this file.
+// CreateRow runs this resource's create orchestration in the supplied tenant
+// transaction, including validation, hooks and outbox publication. The caller
+// must authorize the operation. Failure returns a zero row.
 func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
-	return s.createRow(ctx, tx, e)
+	row, err := s.createRow(ctx, tx, e)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return row, nil
 }
 
 // UpdateRow patches the columns `values` names, of this Spec's own schema, and
@@ -254,7 +256,12 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // This Spec's Gate stands here all the same, because "may these fields be written
 // directly" does not ask who is asking.
 func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
-	return s.updateRow(ctx, tx, id, crud.Fields[T](), values, "")
+	row, err := s.updateRow(ctx, tx, id, crud.Fields[T](), values, "")
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return row, nil
 }
 
 func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {

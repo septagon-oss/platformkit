@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -93,6 +94,7 @@ func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 	if s.OperatorWrite {
 		write = surfaces.Ops
 	}
+	read.AnnotateSchema(reflect.TypeFor[T](), func(schema *huma.Schema) { annotateSketchFields(schema, crud.Fields[T]()) })
 	res := s.resource()
 	res.Screen = surfaces.App.PagePath(s.Path)
 	res.Schema.Path = read.Prefix() + s.Path
@@ -124,7 +126,7 @@ func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 			"The whole of it: a PUT replaces what is there. Saving what is already stored publishes nothing.", events),
 			auth.WriteAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *bodyInput[T]) (T, error) {
 				crud.Reset(in.Body) // the four fields the server owns, whatever a body said
-				return s.Save(ctx, tx, in.Body)
+				return s.save(ctx, tx, in.Body)
 			}, OperationOptions{})
 	}
 
@@ -228,7 +230,7 @@ func (s Singleton[T]) resource() httpx.Resource {
 				if _, err := merge(current, crud.Fields[T](), nil, values); err != nil {
 					return current, err
 				}
-				return s.Save(ctx, tx, current)
+				return s.save(ctx, tx, current)
 			})
 		},
 	}
@@ -255,6 +257,9 @@ func (s Singleton[T]) check() {
 		strings.HasPrefix(s.Path, "/api/v1") || strings.HasPrefix(s.Path, "/app") ||
 		strings.HasPrefix(s.Path, "/ops") || strings.HasPrefix(s.Path, "/public"):
 		bad = fmt.Sprintf("Path %q must be relative to the module — %q", s.Path, "/"+strings.TrimPrefix(strings.TrimPrefix(s.Path, "/api/v1/"+s.Module), "/"))
+	}
+	if bad == "" {
+		bad = sketchDeclarationFault(reflect.TypeFor[T](), crud.Fields[T]())
 	}
 	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())

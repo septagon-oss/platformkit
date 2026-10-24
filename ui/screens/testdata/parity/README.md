@@ -42,3 +42,8 @@ another language reads the same files.
   file. Re-review, then rewrite the hashes with the reviewer's name.
 - `expected` is written by hand and reviewed; it is never produced by running the
   resolver. A fixture update is a review.
+
+`sketch-en` and `sketch-pt-pt` pin the sketch control/kind and localized label.
+Their plain-text cell is a dash; SVG geometry is checked in the component suite.
+The catalogue golden's reflected drawing fields land before the phone parser and
+its fixture/provenance refresh. An older parser rejecting `sketch` is incompatible.

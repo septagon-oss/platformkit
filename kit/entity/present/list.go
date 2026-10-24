@@ -34,7 +34,7 @@ func sortable(in Input) []string {
 	n := newNames(in.Schema.Fields, func(entity.Field) bool { return true })
 	if in.Hints.Sortable == nil {
 		n.keep = func(f entity.Field) bool {
-			return f.Type != entity.TypeList && f.Type != entity.TypeMap && f.Type != entity.TypePicture
+			return f.Type != entity.TypeList && f.Type != entity.TypeMap && f.Type != entity.TypePicture && f.Type != entity.TypeSketch
 		}
 		for _, f := range in.Schema.Fields {
 			n.add(f.Name)

@@ -466,3 +466,9 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Sketch pointer/canvas mechanics in ui/assets/js/sketch.js are adapted from
+platformkit-frontend-kit assets/js/controllers/core/signature_modal_controller.js,
+revision 02a2a499fbd2d4763d4ceada90d869a75f10c704, under Apache License 2.0.
+The implementation stores stroke tuples, adds keyboard input and bounded history,
+and redraws geometry instead of retaining PNG snapshots. See LICENSE for terms.

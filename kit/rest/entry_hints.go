@@ -9,6 +9,9 @@ import (
 )
 
 func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) string {
+	if bad := p.SketchFault(fields); bad != "" {
+		return bad
+	}
 	if bad := entryLayoutFault(p); bad != "" {
 		return bad
 	}

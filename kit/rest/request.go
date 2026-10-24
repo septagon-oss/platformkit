@@ -92,9 +92,9 @@ type bodyInput[T any] struct {
 	RawBody []byte
 }
 
-type patchInput struct {
+type patchInput[T any] struct {
 	ID   uuid.UUID      `path:"id" format:"uuid" doc:"The row's id"`
-	Body map[string]any `doc:"The writable fields to change"`
+	Body patchValues[T] `doc:"The writable fields to change"`
 	// IfMatch is the ETag the caller read, if it quoted one. Absent means "write
 	// whatever is there", which stays allowed: the tag is how a client that read the row
 	// says so, and every client that never read one — the documents this repository

@@ -62,7 +62,7 @@ func first(list []string) string {
 // entity marks as its display, the declared primary field, then every other
 // writable text field in schema order.
 func candidates(fields []entity.Field, primary string, keep func(entity.Field) bool) []string {
-	n := newNames(fields, keep)
+	n := newNames(fields, func(f entity.Field) bool { return f.Type != entity.TypeSketch && keep(f) })
 	for _, f := range fields {
 		if f.Display {
 			n.add(f.Name)

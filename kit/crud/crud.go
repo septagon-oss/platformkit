@@ -327,6 +327,9 @@ func isNil[T Entity](e T) bool {
 }
 
 func validate(ctx context.Context, e any) error {
+	if err := entity.ValidateSketchFields(e); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
 	v, ok := e.(Validator)
 	if !ok {
 		return nil
@@ -382,6 +385,8 @@ func comparable(fields []Field, name, what string) (Field, error) {
 	switch {
 	case !ok:
 		return Field{}, fmt.Errorf("%w: there is no field %q to %s on", ErrInvalid, name, what)
+	case f.Type == entity.TypeSketch:
+		return Field{}, fmt.Errorf("%w: %s is a sketch and cannot be used to %s", ErrInvalid, name, what)
 	case f.Type == entity.TypePicture:
 		return Field{}, fmt.Errorf("%w: %s is a derived picture, which is not something to %s on", ErrInvalid, name, what)
 	case f.Type == TypeList:
@@ -403,6 +408,8 @@ func comparable(fields []Field, name, what string) (Field, error) {
 func Classify(err error) error {
 	pg, isPostgres := errors.AsType[*pgconn.PgError](err)
 	switch {
+	case errors.Is(err, entity.ErrInvalidSketch):
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return ErrNotFound
 	case isPostgres && pg.Code == "23505":

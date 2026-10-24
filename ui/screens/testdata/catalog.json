@@ -54,6 +54,13 @@
           "name": "tags",
           "type": "list",
           "elem": "string"
+        },
+        {
+          "name": "drawing",
+          "type": "sketch",
+          "presentation": {
+            "label": "Drawing"
+          }
         }
       ],
       "resolved": {
@@ -91,7 +98,8 @@
             "status",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ],
           "overview": [],
           "information": [
@@ -101,7 +109,8 @@
             "status",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ],
           "sections": [],
           "create": [
@@ -109,14 +118,16 @@
             "body",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ],
           "update": [
             "title",
             "body",
             "rank",
             "pinned",
-            "tags"
+            "tags",
+            "drawing"
           ]
         },
         "fields": [
@@ -363,6 +374,31 @@
             },
             "options": [],
             "reference": null
+          },
+          {
+            "name": "drawing",
+            "label": "Drawing",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "sketch",
+            "kind": "sketch",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
           }
         ],
         "list": {
@@ -545,6 +581,13 @@
           "summary": "Publish a note",
           "description": "Makes the note visible. Publishing a published note changes nothing.",
           "fields": [
+            {
+              "name": "drawing",
+              "type": "sketch",
+              "presentation": {
+                "label": "Drawing"
+              }
+            },
             {
               "name": "at",
               "type": "string",
