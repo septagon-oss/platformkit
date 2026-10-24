@@ -24,7 +24,7 @@ func TestFakeConforms(t *testing.T) {
 		ctx, tx := t.Context(), db.Tx[db.Tenant]{}
 		fake.Grant(contracts.RoleAdmin, contracts.Wildcard)
 		fake.Grant(contracts.RoleMember)
-		run(authtest.Fixture{
+		f := authtest.Fixture{
 			Ctx: ctx, Tx: tx, Service: fake, Published: fake.Published,
 			Role: fake.Grant, Sent: notices.Sent, Mailed: box.Sent, Sessions: fake.SessionsOf,
 			User: func(email, password string, roles ...string) uuid.UUID {
@@ -44,7 +44,16 @@ func TestFakeConforms(t *testing.T) {
 				}
 				return u.ID
 			},
-		})
+		}
+		// Nothing waits for a commit the fake does not have: it hands the message
+		// to the mail server as the call runs, so settling this fixture is running
+		// the step on it. The step settles no further.
+		settled := f
+		settled.Settle = func(func(authtest.Fixture)) {
+			t.Error("a settle step settled again, and the fake commits nothing between its steps")
+		}
+		f.Settle = func(step func(authtest.Fixture)) { step(settled) }
+		run(f)
 	})
 }
 

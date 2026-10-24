@@ -117,31 +117,31 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 	return s.offer(ctx, tx, user, inviteSubject, inviteBody)
 }
 
-// offer mints the token, sends the mail, and puts the credential back if the
-// transport refused it.
+// offer mints the token, registers the mail on the commit that makes it spendable,
+// and leaves the refusal where the transport can act on it.
 //
 // # Where the row sits, relative to the mail
 //
-// The row is written before the message is handed over, and a refused send puts it
-// back rather than letting the attempt roll back — the attempt commits now, because
-// the record of the refusal is written in the same transaction and a record that
-// rolled back with the failure is a failure nobody can see.
+// The row commits first and the message leaves after it, never the other way round.
+// A mailbox that already shows a link with no committed row behind it is a link that
+// does not work yet — apps/platformkit's four-eyes journey redeems the token the
+// moment the mail appears — and a transaction that rolls back after handing the link
+// over leaves a mail this application had forgotten minting.
 //
-// Both halves of that are load-bearing. A mailbox that already shows a link with no
-// row behind it is a link that does not work yet: apps/platformkit's four-eyes
-// journey redeems the token the moment the mail appears. And a committed failure may
-// not hold a live credential nobody was sent — which is what the restore is for, and
-// it leaves recent() counting the link that actually left, so the person can ask
-// again at once instead of being answered by a cap they were never mailed under. And
-// because the upsert replaces whatever row this attempt found, a refused resend would
-// otherwise destroy the link the person was sent five minutes ago — which is why the
-// restore writes the old hash, timestamp and expiry back rather than only deleting.
+// What that trade buys is stated where it is made: a transport that refuses the
+// message after the commit leaves a row whose send never happened, and nothing here
+// can un-commit. The row goes back the way the attempt found it and the refusal is
+// recorded, so a committed failure holds no live credential nobody was sent — and
+// because the withdraw removes the row this attempt minted, the cap is left counting
+// the link that really left, so the person can ask again at once rather than being
+// held behind a cap they were never mailed under. Inside a delivery the refusal is
+// returned as well, so the claim is released and the ladder tries again.
+// See mailAfterCommit.
 //
-// The transport is the last thing before the commit that a successful attempt makes:
-// one statement, the record of the send, runs after it. That is deliberate. A mail the
-// person can already read in their mailbox is a link they may use at once, and every
-// statement this transaction still owes is a moment in which that link answers "those
-// credentials are not right".
+// The record of one outcome commits in the transaction of that outcome — the mint
+// before the send, the record after it — which is the one thing the arrangement
+// before this gave up: a record that rolled back with the failure it described was a
+// failure nobody could see.
 //
 // # Where the secret is, and where it is not
 //
@@ -185,8 +185,8 @@ func passwordLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 	return nil
 }
 
-// pendingLink is the credential row as one attempt found it, so that the attempt
-// can put it back. The zero value means there was none.
+// pendingLink is the credential row as one attempt found it, so that the attempt can
+// put it back. The zero value means there was none.
 type pendingLink struct {
 	hash    contracts.Digest
 	created time.Time
@@ -213,28 +213,6 @@ func pendingLinkOf(tx db.Tx[db.Tenant], table string, id uuid.UUID) (pendingLink
 	return out, nil
 }
 
-// restoreLink puts a person's credential row back the way this attempt found it.
-// Two wrongs are refused here: leaving a live token that nobody was sent, and
-// deleting the link that person was sent five minutes ago because a mail server
-// refused them a second one.
-func restoreLink(tx db.Tx[db.Tenant], table string, id uuid.UUID, was pendingLink) error {
-	if !was.there {
-		err := tx.DB().Exec("DELETE FROM "+table+" WHERE tenant_id = ? AND user_id = ?",
-			db.TenantOf(tx).ID, id).Error
-		if err != nil {
-			return fmt.Errorf("auth: withdraw the link nobody was sent: %w", err)
-		}
-		return nil
-	}
-	err := tx.DB().Exec("UPDATE "+table+" SET token_hash = ?, created_at = ?, expires_at = ?"+
-		" WHERE tenant_id = ? AND user_id = ?",
-		was.hash, was.created, was.expires, db.TenantOf(tx).ID, id).Error
-	if err != nil {
-		return fmt.Errorf("auth: restore the link this attempt replaced: %w", err)
-	}
-	return nil
-}
-
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if s.mail.Mailer == nil {
 		// A composition with no mailer writes no token either: a link nobody is
@@ -259,11 +237,12 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		return err
 	}
 	token, at := secret(), db.Now()
+	digest := contracts.Hash(token)
 	err = tx.DB().Exec(
 		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,"+
 			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
-		contracts.Hash(token), db.TenantOf(tx).ID, user.ID, at, at.Add(contracts.TokenLifetime)).Error
+		digest, db.TenantOf(tx).ID, user.ID, at, at.Add(contracts.TokenLifetime)).Error
 	if err != nil {
 		return fmt.Errorf("auth: issue a password token: %w", err)
 	}
@@ -271,38 +250,23 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if err != nil {
 		return err
 	}
-	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base+s.mail.SetPasswordPage, token)); err != nil {
-		// The row goes back the way it came, and the attempt is acknowledged rather
-		// than retried: the record of a refused mail is written in this transaction,
-		// so this transaction has to commit for the record to exist (SPECIFY §3). A
-		// committed failure may not hold a credential nobody was sent — which is what
-		// the restore is for, and it also leaves the cap counting the link that was
-		// really sent rather than this one, so the person can ask again at once.
-		if err := restoreLink(tx, "password_tokens", user.ID, was); err != nil {
-			return err
-		}
-		// And no notice is raised beside it: the in-app copy says "the link is in
-		// the email this raised", and a committed sentence that promises a mail the
-		// transport refused is the same lie the record exists to make impossible.
-		// Before this branch's acknowledged failure the notice rolled back with the
-		// attempt; raising it after the send is what keeps that promise now.
-		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
-			notificationcontracts.MailFailed, err.Error(), token, string(contracts.Hash(token)))
-	}
-	if s.notify != nil {
-		// Only now, and only because the transport took the message: a path, and one
-		// with no query on it, because the notification module refuses an absolute
-		// link and this one is not a credential at all.
-		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
-			Recipient: user.ID, Title: title,
-			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
-			Link: s.mail.SetPasswordPage,
+	link := base + s.mail.SetPasswordPage
+	// The notice is described here and raised on the other side of the commit, with
+	// the send: its copy tells the person the link is in their email, and nothing
+	// raises it until the transport has taken the message.
+	notice := notificationcontracts.Notice{Recipient: user.ID, Title: title,
+		Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
+		Link: s.mail.SetPasswordPage}
+	// What waits for the commit is the send and its outcome. Everything the message
+	// needs — the recipient, the tenant's host, the row, the previous link — was read
+	// above, in the transaction that made the token spendable.
+	return events.Defer(ctx, func(ctx context.Context) error {
+		return s.mailAfterCommit(ctx, linkMail{
+			table: "password_tokens", kind: contracts.MailSetPassword, person: user.ID, address: user.Email,
+			token: token, digest: digest, msg: mailMessage(user.Email, title, body, link, token),
+			notice: notice, was: was,
 		})
-		if err != nil {
-			return err
-		}
-	}
-	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, notificationcontracts.MailSent, "")
+	})
 }
 
 // mailMessage renders the one message this module writes. page is the link
@@ -352,12 +316,18 @@ func (s *Service) baseURL(ctx context.Context, tx db.Tx[db.Tenant]) (string, err
 
 // recent reports whether this person was sent a link inside ResetInterval.
 //
-// It is the cap on outstanding notices per recipient, and it is read off the
-// token row rather than counted anywhere else because the token table is
-// already one row per person: asking again replaces the link, so the only thing
-// left to bound is how many mails and how many notices that produces. Without
-// it, a public route plus a known address is somebody else's inbox filled by a
-// stranger, one mail per request.
+// It is the cap on outstanding notices per recipient, and it is read off the token
+// row rather than counted anywhere else because the token table is already one row per
+// person: asking again replaces the link, so the only thing left to bound is how many
+// mails and how many notices that produces. Without it, a public route plus a known
+// address is somebody else's inbox filled by a stranger, one mail per request.
+//
+// The column it reads is created_at — the mint, not a later stamp — because the cap
+// has to bind for a link whose mail is still on its way: the send left the transaction
+// that minted it, so a stamp written after the commit could not tell the work still
+// inside that transaction that this person was just mailed. What keeps a refused send
+// from capping the next ask is a write, not a read: restoreUnmailed withdraws the row
+// that attempt minted, so the cap is left counting the link that really left.
 func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 	var n int64
 	err := tx.DB().Table("password_tokens").
