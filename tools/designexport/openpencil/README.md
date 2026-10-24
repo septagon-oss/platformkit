@@ -942,23 +942,22 @@ These checks exclude binary and streaming-event readers. This does not clear the
 upstream lock audit or establish complete browser dependency reachability.
 
 Transitive dependencies are held by override where the package that selects
-them still allows the vulnerable range: `dompurify@3.4.17`,
-reached through `jspdf`'s `^3.3.1` and the first release above the DOM XSS
-advisories that reach through it —
+them still allows the vulnerable range. `dompurify@3.4.17` satisfies
+`jspdf`'s `^3.3.1` and fixes the DOM XSS advisories
 [split-template](https://github.com/advisories/GHSA-cg2g-xh64-v4q7),
 [in-place-hook](https://github.com/advisories/GHSA-mrv2-3pqr-j5jr) and
-[SMIL-attribute](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f), which
-report 3.4.16 and stop there, and the two they follow,
-[node-removing](https://github.com/advisories/GHSA-p98j-92pf-mc4p) and
-[rawtext-root](https://github.com/advisories/GHSA-6688-9rhm-gjv2), which
-stopped at 3.4.15 — and `source-map-js@1.2.2`, reached through `css-tree`'s
-`^1.2.1` and the release the
+[SMIL-attribute](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f).
+`source-map-js@1.2.2` satisfies `css-tree`'s `^1.2.1` and fixes the
 [event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
-advisory describes. `zod@4.6.6` satisfies `@ai-sdk/provider-utils@4.0.33`'s
+advisory. `zod@4.6.6` satisfies `@ai-sdk/provider-utils@4.0.33`'s
 `^3.25.76 || ^4.1.8` peer range and fixes the
 [collection-validation memory exhaustion](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
-advisory affecting versions below 4.6.6. `locked-dependencies.test.mjs` requires
-the lock to resolve all three names to exactly these releases, so regenerating
+advisory affecting versions below 4.6.6. `undici@8.12.2` satisfies `unifont@0.7.5`'s
+`^8.0.0` range, reached through `@open-pencil/core@0.14.0`, and fixes
+[EventSource memory exhaustion](https://github.com/advisories/GHSA-4qv8-2p9j-2685),
+[integrity-token case handling](https://github.com/advisories/GHSA-f72v-6w45-q472) and
+[content-encoding denial of service](https://github.com/advisories/GHSA-xjj6-f33q-929c).
+`locked-dependencies.test.mjs` requires exactly these four releases, so regenerating
 the lock cannot silently restore an affected version. Refresh these overrides
 when new advisories affect their pinned versions.
 
