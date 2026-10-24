@@ -105,7 +105,9 @@ func hinted() httpx.Resource {
 // resource answers with, byte for byte.
 func TestEveryHintSerialisesToTheFrozenJSON(t *testing.T) {
 	t.Parallel()
-	got, err := json.MarshalIndent(screens.Describe1(hinted(), true), "", "  ")
+	entry := screens.Describe1(hinted(), true)
+	entry.Resolved = nil // the declared half only; the resolved half has its own fixtures
+	got, err := json.MarshalIndent(entry, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
