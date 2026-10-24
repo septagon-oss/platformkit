@@ -81,6 +81,11 @@ var (
 // carries them is a 401 and kit/httpx does not commit a 401. That is exactly
 // why the harness reads the outbox rather than a slice — the two kinds of write
 // are indistinguishable there, which is what the suite is entitled to assume.
+//
+// A case that reads what the service mailed cannot read it inside that
+// transaction: the send waits for the commit. Such a case settles — the
+// harness then commits what the case wrote, runs the step in a transaction of
+// its own over it, and rolls that back in turn.
 func TestServiceConforms(t *testing.T) {
 	authtest.RunService(t, func(t *testing.T, run func(authtest.Fixture)) {
 		_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
@@ -91,8 +96,11 @@ func TestServiceConforms(t *testing.T) {
 		seed(t, conn, acme)
 
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
-		err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			run(authtest.Fixture{
+		// fixture is one case's handle on the transaction it is running in. The
+		// harness opens a fresh one for a settle step, and every closure below
+		// reads the database of whichever handle it was built with.
+		fixture := func(ctx context.Context, tx db.Tx[db.Tenant]) authtest.Fixture {
+			return authtest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
 				Sent:      notices.Sent,
@@ -128,11 +136,45 @@ func TestServiceConforms(t *testing.T) {
 					}
 					return u.ID
 				},
-			})
-			return errRollback
+			}
+		}
+
+		// The steps the case asked to run after its commit, in the order it asked.
+		var steps []func(authtest.Fixture)
+		err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			f := fixture(ctx, tx)
+			f.Settle = func(step func(authtest.Fixture)) { steps = append(steps, step) }
+			run(f)
+			// A case that asked to read what its commit mailed is a case that
+			// asked for a commit. Every other case is rolled back as it was.
+			if len(steps) == 0 {
+				return errRollback
+			}
+			return nil
 		})
-		if !errors.Is(err, errRollback) {
-			t.Fatalf("the case's transaction: %v", err)
+		if len(steps) == 0 {
+			if !errors.Is(err, errRollback) {
+				t.Fatalf("the case's transaction: %v", err)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("the case's commit: %v", err)
+		}
+		for _, step := range steps {
+			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				f := fixture(ctx, tx)
+				var again func(authtest.Fixture)
+				f.Settle = func(step func(authtest.Fixture)) { again = step }
+				step(f)
+				if again != nil {
+					return errors.New("a settle step settled again, and a step's own work is rolled back")
+				}
+				return errRollback
+			})
+			if !errors.Is(err, errRollback) {
+				t.Fatalf("the case's settle step: %v", err)
+			}
 		}
 	})
 }
