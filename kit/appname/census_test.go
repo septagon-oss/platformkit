@@ -72,6 +72,7 @@ var census = []rule{
 		literal: regexp.MustCompile(`"__Host-[a-z0-9]`),
 		allow: []allowed{
 			{"kit/appname/appname.go", 3, "owner"},
+			{"kit/httpx/cookie_names_test.go", 1, "exempt: the complete expected cookie name for an empty base is the host prefix itself; this is a byte assertion, not a runtime name builder"},
 		},
 	},
 	{

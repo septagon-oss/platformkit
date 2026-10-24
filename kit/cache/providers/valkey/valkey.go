@@ -36,6 +36,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 )
@@ -69,7 +70,10 @@ func New(cfg config.Cache) (cache.Cache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return cache.New(cfg.App, &backend{client: redis.NewClient(opts)})
+	if _, err := cache.Slug(cfg.App); err != nil {
+		return nil, err
+	}
+	return cache.NewFor(appname.Name(cfg.App), &backend{client: redis.NewClient(opts)})
 }
 
 // Connect is New plus the boot probe: one PING inside connectBudget, so a
@@ -87,7 +91,11 @@ func Connect(ctx context.Context, cfg config.Cache) (cache.Cache, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("cache: the store at %s did not answer within %s: %w", describe(cfg.URL), connectBudget, scrub(cfg.URL, err))
 	}
-	return cache.New(cfg.App, &backend{client: client})
+	if _, err := cache.Slug(cfg.App); err != nil {
+		_ = client.Close()
+		return nil, err
+	}
+	return cache.NewFor(appname.Name(cfg.App), &backend{client: client})
 }
 
 // parseURL is the one place an address becomes a client configuration — and, for

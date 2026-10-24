@@ -1,7 +1,20 @@
 package httpx
 
-// Idempotency-Key binds a POST/PATCH body to one result. kit/idempotency stores
-// claims across replicas; this adapter owns HTTP admission, replay and finalization.
+// idempotency.go keeps a caller's promise that a write is one write.
+//
+// The caller says it with `Idempotency-Key` (draft-ietf-httpapi-idempotency-key-header),
+// and this is where the kernel does something with it: remember the attempt, hand
+// a retry the answer the first attempt got, and refuse the two requests that would
+// make the promise false — the same key carrying a different body, and the same key
+// while the first attempt is still running.
+//
+// The memory itself is kit/idempotency, and the reason it is not a map in this
+// package is the reason kit/limit's counters are not one either: a retry arrives at
+// whichever replica the load balancer chose, minutes later, after a deploy that
+// emptied every map in the fleet. What stays here is everything HTTP-shaped about
+// the deal — which requests are keyed, what the header may contain, what each
+// disposition answers with, and where an answer becomes a remembered one.
+
 import (
 	"bytes"
 	"context"
@@ -29,12 +42,25 @@ import (
 const IdempotencyKeyHeader = "Idempotency-Key"
 
 const (
-	// Keyed uploads use the ordinary body ceiling so the complete body can be
-	// hashed before admission, even on a route that otherwise streams uploads.
+	// maxKeyedBody is the largest body a keyed request may carry. It is
+	// MaxBodyBytes rather than a second number: that is the ceiling every schema'd
+	// body already has, so a keyed write of that shape is bounded exactly as an
+	// unkeyed one. It bites on one route only — the one that reads its own request,
+	// which takes Options.MaxUpload of it without a key — and that is the deal the
+	// header is: a promise about a write costs the memory that keeps the promise, and
+	// the alternative to refusing a body this guard cannot digest is running the write
+	// twice on the caller's own account. The document says so wherever the header is
+	// declared (keyDescription).
 	maxKeyedBody = MaxBodyBytes
 
-	// Larger answers leave a spent record: losing replay bytes must not let a
-	// retry execute the write again. Streaming/file answers need no stored body.
+	// maxRecordedAnswer is the largest answer the memory can hold. Past it the
+	// write is remembered as spent rather than replayable, which is the safe
+	// direction: losing an answer costs a caller a 409 on its retry, and forgetting
+	// a record so a retry can run again costs them the second write the header
+	// exists to prevent. A quarter of a megabyte is past every document this API
+	// answers with and below the 2 MiB a held response may already reach
+	// (buffer.go's maxBuffer), so what it selects for is a streamed or file-shaped
+	// answer, which is not a body to keep in a row.
 	maxRecordedAnswer = 256 << 10
 
 	// maxKeyLength bounds the header's value. The key is a primary-key column, so
@@ -43,8 +69,14 @@ const (
 	maxKeyLength = operation.MaxTokenLength
 )
 
-// keyedMethod selects POST/PATCH; PUT/DELETE already promise HTTP idempotence
-// without retaining a keyed copy of their bodies.
+// keyedMethod reports whether a verb is one a key is promised on.
+//
+// This is deliberately not unsafeMethod. That predicate is "not one of the four
+// safe methods", which makes PUT and DELETE keyed writes, and the draft says the
+// opposite (draft-ietf-httpapi-idempotency-key-header §1, following RFC 9110):
+// OPTIONS, HEAD, GET, PUT and DELETE are already idempotent in the protocol, and
+// POST and PATCH are not. A key on a retried PUT buys nothing the verb does not
+// already promise, and a record of its body is a body kept for nothing.
 func keyedMethod(method string) bool {
 	return method == http.MethodPost || method == http.MethodPatch
 }
@@ -86,23 +118,9 @@ func validKey(v string) bool {
 // UUID, which is what the draft recommends for exactly this reason.
 const keyRule = "an idempotency key is 1 to 128 characters of the RFC 9110 token set (a UUID is the usual choice)"
 
-// addressOf is the path half of the request identity: the address as it arrived on
-// the wire, not a decoding of it.
-//
-// The distinction is not cosmetic. `PATCH /records/a%2Fb/c` and
-// `PATCH /records/a/b%2Fc` decode to one path, /records/a/b/c, and route to two
-// resources — chi matches on RawPath when the request carries one, and huma then
-// unescapes each captured parameter on its own, so the first binds group `a/b` and id
-// `c` and the second binds group `a` and id `b/c`. A digest over the decoding cannot
-// tell the two writes apart, and the harm of that is the harm of the missing path
-// below: one caller's retry answered with the other resource's answer, its own write
-// suppressed and nothing on the wire saying so. Digesting the sent bytes is also the
-// direction that fails safe — two spellings of one address (`%2F` and `%2f`) are two
-// records, which costs a caller a 422 on a retry rather than an answer for a different
-// resource. URL.EscapedPath is Go's own verdict on which spelling a request sent:
-// it answers RawPath when that is a faithful encoding of Path and the re-escaped Path
-// otherwise, so a request that carries no escapes digests the same string it always
-// did, and `%20` names one address however the space reached it.
+// addressOf preserves the escaped path used for routing and request identity.
+// Decoded paths can collapse distinct captured resources; differing escaped
+// spellings safely produce different fingerprints.
 func addressOf(r *http.Request) string { return r.URL.EscapedPath() }
 
 // fingerprint is what the request was, digested. Every field here is one a caller
@@ -131,22 +149,9 @@ func fingerprint(method, route, path, rawQuery, contentType string, body []byte)
 	return sum
 }
 
-// idempotency remembers the keyed writes of this API's surfaces.
-//
-// It runs last in the huma chain, after a.bodies, and that place is the point four
-// times over. It reads a body, and a.bodies is where reading a body became safe —
-// the ceiling it applied is the reason a read here cannot be a request that never
-// ends, and the keyed ceiling this guard digests under (maxKeyedBody) is the one the
-// document declares, rather than a second bound this package would have to invent and
-// keep in step. It needs the caller, whom a.authenticate put on the context and
-// a.authorize has just checked, so a replay re-presents the caller's grants and tenant
-// scope before it answers anything and a caller who has lost the permission since the
-// first attempt is refused by the guard above rather than served a stored answer. It
-// must not sit above a.transaction, which may replace the response with a 500 when the
-// commit fails: a guard above it would remember an answer the buffer then threw away.
-// And the answer it remembers is finalised below it, in respond, which is the one place
-// that knows what the client was finally given — so what gets written down is the
-// answer, not a draft of one.
+// idempotency admits keyed writes after authentication, authorization and bounded
+// body handling. Replays recheck current grants. It stays inside the request
+// transaction; respond records the final answer after commit or rollback.
 func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	if a.opts.Operations != nil {
 		a.operationAdmission(ctx, next)
@@ -176,68 +181,17 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	key := strings.Trim(raw, `"`)
 
 	r, _ := humachi.Unwrap(ctx)
-	// Every keyed request, including the one route that reads its own body. Reading
-	// it here is what makes the promise: the digest is the whole of how a retry is
-	// known to be the same write, and a guard that stepped around a class of route
-	// would be a header that lies on that route — the caller sends the promise, the
-	// document declares it, and the write runs twice.
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxKeyedBody+1))
-	if err != nil {
-		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: the keyed request body could not be read",
-			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
-		a.refuse(ctx, http.StatusBadRequest, CodeIdempotencyKey+": the request body could not be read")
+	body, ok := a.keyedBody(ctx, r)
+	if !ok {
 		return
-	}
-	if len(body) > maxKeyedBody {
-		a.refuse(ctx, http.StatusRequestEntityTooLarge, CodeIdempotencyTooLarge+": a keyed write is remembered up to "+strconv.Itoa(maxKeyedBody)+" bytes")
-		return
-	}
-	// Before next, so the handler decodes the bytes this guard digested rather than
-	// an exhausted reader: the replacement reaches huma through the same request it
-	// reads a schema'd body from (humachi's BodyReader is this *http.Request's Body),
-	// and a re-read of the same reader is what would make the retry a different body.
-	//
-	// Both requests that may read it are replaced, and they are not always the same
-	// one. Every WithContext between here and the handler copies the request, which
-	// copies the Body *field*: a reader set on one of them is invisible to the others,
-	// and this package keeps two — the one huma decodes a schema'd body from, and the
-	// one a.carry put on the context for the route that reads its own (bodies.go is
-	// written against that one). A guard that replaced only the first would leave a
-	// streamed handler reading the exhausted reader: an empty upload, digested as a
-	// write, remembered as one, and never delivered.
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	if carried, ok := RequestFrom(ctx.Context()); ok && carried != nil && carried != r {
-		carried.Body = io.NopCloser(bytes.NewReader(body))
 	}
 
-	t, _ := tenancy.FromContext(ctx.Context())
-	var caller uuid.UUID
-	if p, ok := tenancy.PrincipalFrom(ctx.Context()); ok {
-		caller = p.UserID
-		// A key-only command acts on the key, so its holder's other keys are
-		// different callers even when their request bytes are identical.
-		if auth, _ := declarationOf(ctx.Operation()); auth.kind == kindBearerKey {
-			caller = p.TokenID
-		}
-	}
-	scope := idempotency.Scope{
-		Tenant: t.ID,
-		Caller: caller,
-		Method: ctx.Method(),
-		Route:  routeOf(ctx),
-		Key:    key,
-		Fingerprint: fingerprint(ctx.Method(), routeOf(ctx), addressOf(r),
-			r.URL.RawQuery, r.Header.Get("Content-Type"), body),
-	}
+	scope := keyedScope(ctx, r, key, body)
 
 	v, err := store.Claim(context.WithoutCancel(ctx.Context()), scope, time.Now().UTC())
 	if err != nil {
-		// An outage is never an allowance. A key whose record cannot be read is a
-		// promise that cannot be kept, and running the write anyway is the duplicate
-		// the caller asked not to make — which is the opposite of how the public
-		// write limit fails, and for access.go's stated reason: a limit that cannot
-		// be counted lets traffic through, and a memory that cannot be written
-		// repeats a write.
+		// Fail closed when the claim cannot be read; otherwise a retry could
+		// repeat work the store already recorded.
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the idempotency record could not be read; the write is refused",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 		a.refuse(ctx, http.StatusServiceUnavailable, CodeIdempotencyUnavailable+": this write could not be remembered, so it was not made")
@@ -246,16 +200,8 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 
 	switch v.Kind {
 	case idempotency.First:
-		// Before the handler, on the store, and before the note: this is the mark that
-		// says an attempt got as far as the write, and a write it committed may still
-		// be there when its answer is nowhere to be found. Put it on first, because
-		// the fact has to be durable before the thing it records can happen, and put
-		// it on failing closed, because a record that cannot be marked is a promise
-		// this attempt cannot keep and the write has to wait for it.
-		//
-		// An attempt that never gets past this line leaves no mark, which is what
-		// keeps the abandoned claim takeable: the store being down is never a reason a
-		// caller can never retry a write that demonstrably never ran.
+		// Persist Begin before noteClaim or the handler. An unbegun claim stays
+		// retryable when storage fails, and no write runs without its durable mark.
 		if err := store.Begin(context.WithoutCancel(ctx.Context()), scope, v.Claim, time.Now().UTC()); err != nil {
 			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the keyed write could not be marked as begun; the write is refused",
 				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
@@ -283,10 +229,10 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	}
 }
 
-// replay rechecks current authority and representation before sending stored bytes.
-// Content-Type and keptHeaders travel with the answer; cookies never do. Cache/Vary
-// and X-Request-ID belong to this exchange, while a stored problem retains its
-// original request identity. Recorded limits retain their decision and age their wait.
+// replay returns the stored answer with Content-Type and keptHeaders, restating
+// rate-limit countdowns for this attempt. Cookies and exchange-specific cache
+// headers are excluded. The request ID names this retry even when the stored
+// problem body names the original request.
 func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	if auth, ok := declarationOf(ctx.Operation()); ok && auth.replay != nil {
 		tx, present := TxFrom(ctx.Context())
@@ -304,6 +250,8 @@ func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 			return
 		}
 	}
+	// The answer is remembered as the bytes one representation produced. A retry
+	// that asks for a different one is refused rather than served the old spelling.
 	if !a.replayRepresentation(ctx, stored.ContentType, stored.Status) {
 		return
 	}
@@ -311,13 +259,31 @@ func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	if stored.ContentType != "" {
 		w.Header().Set("Content-Type", stored.ContentType)
 	}
-	// Replace current guard headers with the recorded decision, including redirects.
+	// The kept headers go on before the status line, as every header does: a 303
+	// replayed without its Location is a status with nothing to act on, and the
+	// retry of a form that worked would arrive somewhere it could not go.
+	//
+	// Set and not added: a guard above this one may have stated one of these names for
+	// this exchange already — the public write limit states its policy line on every
+	// reply it applies to — and an answer remembered under its ceilings is stated once,
+	// as it was decided, rather than twice under two readings of one ceiling.
 	for _, h := range stored.Headers {
 		w.Header().Set(h.Name, h.Value)
 	}
-	// Restate the original ceiling with the remaining wait, not this retry's counter.
+	// The ceilings the write was refused under go on the replay too, with the one
+	// number that ages worked out again, and they are the whole of the line: the guard
+	// above this one spends its own counter on the way down to the memory, and that
+	// reading belongs to the exchange asking again, not to the answer it is being given
+	// (sayRecorded). The policy line is already on its way: the answer kept it among its
+	// own headers just above. The reading is the one the deciding counter gave, and the
+	// wait is what is left of the window that refusal landed in. A replay that said
+	// nothing let respond.go's floor stand in — a minute for a window of an hour — which
+	// is a guess where the answer had a number.
 	sayRecorded(w.Header(), stored.Limits, stored.Status == http.StatusTooManyRequests, time.Now().UTC())
-	// The writer sends the answer; Huma's status also governs transaction completion.
+	// Both places, as declared does: the writer holds the answer, and the huma
+	// context holds the verdict the transaction middleware commits or rolls back on.
+	// A replay runs no handler and writes nothing either way, and committing the
+	// transaction that read the record is what keeps it a transaction.
 	ctx.SetStatus(stored.Status)
 	w.WriteHeader(stored.Status)
 	if _, err := w.Write(stored.Body); err != nil {
@@ -409,31 +375,9 @@ func markEffect(ctx context.Context, p *db.Pending) error {
 	return n.store.Mark(ctx, tx, n.scope, n.claim)
 }
 
-// keptHeaders are the response headers an answer is not the same answer without.
-//
-// Three of them. `Location` is the 303 a browser follows and `HX-Redirect` is the
-// same instruction as htmx reads it (html.go's Redirect chooses between them by the
-// request in front of it), so a keyed form post that answered by sending the caller
-// to the page its write finished at still sends them there on the retry: both are
-// navigation, and a redirect without its destination is a status with nowhere to go.
-// The third is `RateLimit-Policy`, kept because it is the one limit field that never
-// ages — a name, a quota and a window are the same on every answer under them, which
-// is the property draft-ietf-httpapi-ratelimit-headers asks that field to keep — and
-// because the bytes the deciding answer stated are the only complete account of the
-// ceilings that answer named: a door may name a ceiling it did not spend, and the
-// readings kept beside an answer name none of it. Its two counting siblings are absent
-// from this list and present on a replay all the same, because a countdown is restated
-// rather than repeated (sayRecorded).
-//
-// Every other header is deliberately absent:
-// `Set-Cookie` is a credential minted for one exchange, and a remembered one would
-// be a live session key sitting in a row for a day and a dead one the moment the
-// session behind it was revoked — which is why a route whose answer is a credential
-// declares that it takes no key at all (CredentialExtension) rather than promising a
-// replay that cannot sign anybody in. `Cache-Control` and `Vary` describe this
-// exchange rather than the answer. `Content-Type` has its own field because it is the one the row is read into. A
-// header not on this list is a header a replay answers without, which is the trade
-// the memory makes on purpose: keep what the answer does, not how it was carried.
+// keptHeaders preserves redirect destinations and the fixed rate-limit policy.
+// Countdowns are restated separately; Content-Type has its own stored field.
+// Cookies and exchange-specific cache headers must never be replayed.
 var keptHeaders = []string{"Location", "HX-Redirect", RateLimitPolicyHeader, OperationIDHeader, OperationLocationHeader}
 
 // keepHeaders reads the headers worth keeping out of the response the caller was
@@ -460,23 +404,10 @@ func keepHeaders(h http.Header) []idempotency.Header {
 // for this, so the bound protects a connection and a worker, not a response.
 const completeBudget = 5 * time.Second
 
-// complete writes down the answer this request finally gave.
-//
-// It runs after the response is final, which is the ordering that keeps a recorded
-// 200 from being a committed 500 — the lie buffer.go exists to prevent, pointed the
-// other way. Every status the caller was actually given is written down, a 5xx with
-// the rest: the caller who retried a 500 gets the same 500 back rather than a second
-// attempt at a write whose outcome nobody knows, and the answer they were given is a
-// fact this process can still state. What is never written down is an answer that
-// was not given — a panic this deep that reset the buffer, or a response that never
-// reached the caller — and the claim of a request that ended that way stays open
-// until its lease runs out, so the retry is refused 409 while the kernel cannot say
-// whether the work happened and allowed once, honestly, it can.
-//
-// It runs on the claim's own context (§ claimNote.ctx), detached, so neither a client
-// that hung up nor the transaction that closed underneath this defer can un-remember
-// an answer the caller received — and the caller who retries is precisely the caller
-// this row is for.
+// complete records the final delivered response, including 5xx, after transaction
+// finalisation. Undelivered answers leave their claim unresolved until its lease
+// expires. Recording uses the claim's detached context so client cancellation
+// cannot erase an answer already sent.
 func (a *API) complete(ctx context.Context, n *claimNote, status int, header http.Header, body []byte, held bool, counted []measured) {
 	if n == nil || n.store == nil || n.claim == uuid.Nil {
 		return
@@ -607,4 +538,54 @@ func declareKey(op *huma.Operation) {
 		Required:    false,
 		Schema:      &huma.Schema{Type: huma.TypeString},
 	})
+}
+
+func (a *API) keyedBody(ctx huma.Context, r *http.Request) ([]byte, bool) {
+	// Every keyed request, including the one route that reads its own body. Reading
+	// it here is what makes the promise: the digest is the whole of how a retry is
+	// known to be the same write, and a guard that stepped around a class of route
+	// would be a header that lies on that route — the caller sends the promise, the
+	// document declares it, and the write runs twice.
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxKeyedBody+1))
+	if err != nil {
+		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: the keyed request body could not be read",
+			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
+		a.refuse(ctx, http.StatusBadRequest, CodeIdempotencyKey+": the request body could not be read")
+		return nil, false
+	}
+	if len(body) > maxKeyedBody {
+		a.refuse(ctx, http.StatusRequestEntityTooLarge, CodeIdempotencyTooLarge+": a keyed write is remembered up to "+strconv.Itoa(maxKeyedBody)+" bytes")
+		return nil, false
+	}
+	// Restore both Huma's request and the carried request before the handler.
+	// WithContext copies the Body field, so either reader may need replacement.
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if carried, ok := RequestFrom(ctx.Context()); ok && carried != nil && carried != r {
+		carried.Body = io.NopCloser(bytes.NewReader(body))
+	}
+
+	return body, true
+}
+
+func keyedScope(ctx huma.Context, r *http.Request, key string, body []byte) idempotency.Scope {
+	t, _ := tenancy.FromContext(ctx.Context())
+	var caller uuid.UUID
+	if p, ok := tenancy.PrincipalFrom(ctx.Context()); ok {
+		caller = p.UserID
+		// A key-only command acts on the key, so its holder's other keys are
+		// different callers even when their request bytes are identical.
+		if auth, _ := declarationOf(ctx.Operation()); auth.kind == kindBearerKey {
+			caller = p.TokenID
+		}
+	}
+	return idempotency.Scope{
+		Tenant: t.ID,
+		Caller: caller,
+		Method: ctx.Method(),
+		Route:  routeOf(ctx),
+		Key:    key,
+		Fingerprint: fingerprint(ctx.Method(), routeOf(ctx), addressOf(r),
+			r.URL.RawQuery, r.Header.Get("Content-Type"), body),
+	}
+
 }

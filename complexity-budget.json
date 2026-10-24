@@ -1,9 +1,9 @@
 {
-  "funcs_over_100": 78,
-  "cc_over_30": 50,
-  "files_over_800": 25,
-  "long_comment_blocks": 591,
-  "history_comment_lines": 84,
-  "stutters": 24,
-  "httpx_exports": 111
+  "cc_over_30": 41,
+  "files_over_800": 19,
+  "funcs_over_100": 61,
+  "history_comment_lines": 79,
+  "httpx_exports": 112,
+  "long_comment_blocks": 523,
+  "stutters": 24
 }
