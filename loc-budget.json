@@ -27,7 +27,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-      "max": 57595
+      "max": 57627
     },
     {
       "name": "ui",
@@ -142,7 +142,7 @@
         ".test.mjs",
         ".test.ts"
       ],
-      "max": 22962
+      "max": 22996
     },
     {
       "name": "markdown",
