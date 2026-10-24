@@ -60,15 +60,15 @@ var kinds = map[entity.FieldType]string{
 	entity.TypeUUID: "text", entity.TypeList: "list", entity.TypeMap: "map", entity.TypePicture: "picture",
 }
 
-// kind is how a read draws the field: the declared presentation, else the
-// declared format, else the word for the type.
+// kind is how a read draws the field: the declared presentation, else the word
+// for a choice's selection, else the declared format, else the word for the type.
 func kind(f entity.Field) string {
 	h := f.Presentation
 	switch {
 	case f.Present != "":
 		return f.Present
 	case f.Choices != nil:
-		return "chips"
+		return "choice"
 	case h.Format != "" && entity.ValidFormat(h.Format):
 		return h.Format
 	case h.Money != nil:

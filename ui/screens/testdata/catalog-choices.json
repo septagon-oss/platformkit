@@ -50,8 +50,7 @@
           "name": "shapes",
           "type": "list",
           "elem": "string",
-          "widget": "tiles",
-          "present": "tiles"
+          "widget": "tiles"
         }
       ],
       "resolved": {
@@ -127,7 +126,7 @@
               "update": true
             },
             "control": "tiles",
-            "kind": "tiles",
+            "kind": "choice",
             "reading": {
               "format": "",
               "missing": "—",
@@ -217,7 +216,7 @@
                   "update": false
                 },
                 "control": "tiles",
-                "kind": "tiles",
+                "kind": "choice",
                 "reading": {
                   "format": "",
                   "missing": "—",
@@ -335,8 +334,7 @@
               "name": "shapes",
               "type": "list",
               "elem": "string",
-              "widget": "tiles",
-              "present": "tiles"
+              "widget": "tiles"
             }
           ]
         }
@@ -391,8 +389,7 @@
           "name": "shapes",
           "type": "list",
           "elem": "string",
-          "widget": "chips",
-          "present": "chips"
+          "widget": "chips"
         }
       ],
       "resolved": {
@@ -468,7 +465,7 @@
               "update": true
             },
             "control": "chips",
-            "kind": "chips",
+            "kind": "choice",
             "reading": {
               "format": "",
               "missing": "—",
@@ -558,7 +555,7 @@
                   "update": false
                 },
                 "control": "chips",
-                "kind": "chips",
+                "kind": "choice",
                 "reading": {
                   "format": "",
                   "missing": "—",
@@ -676,8 +673,7 @@
               "name": "shapes",
               "type": "list",
               "elem": "string",
-              "widget": "chips",
-              "present": "chips"
+              "widget": "chips"
             }
           ]
         }
@@ -732,8 +728,7 @@
           "name": "shapes",
           "type": "list",
           "elem": "string",
-          "widget": "swatch",
-          "present": "swatch"
+          "widget": "swatch"
         }
       ],
       "resolved": {
@@ -809,7 +804,7 @@
               "update": true
             },
             "control": "swatch",
-            "kind": "swatch",
+            "kind": "choice",
             "reading": {
               "format": "",
               "missing": "—",
@@ -899,7 +894,7 @@
                   "update": false
                 },
                 "control": "swatch",
-                "kind": "swatch",
+                "kind": "choice",
                 "reading": {
                   "format": "",
                   "missing": "—",
@@ -1017,8 +1012,7 @@
               "name": "shapes",
               "type": "list",
               "elem": "string",
-              "widget": "swatch",
-              "present": "swatch"
+              "widget": "swatch"
             }
           ]
         }
@@ -1074,7 +1068,6 @@
           "type": "list",
           "elem": "string",
           "widget": "figure",
-          "present": "figure",
           "presentation": {
             "figure": {
               "digest": "2e78ad95bfc0fdb920c7f9ac05e595edfef0d9729991244b65e4078ba6e99e51",
@@ -1167,7 +1160,7 @@
               "update": true
             },
             "control": "figure",
-            "kind": "figure",
+            "kind": "choice",
             "reading": {
               "format": "",
               "missing": "—",
@@ -1264,7 +1257,7 @@
                   "update": false
                 },
                 "control": "figure",
-                "kind": "figure",
+                "kind": "choice",
                 "reading": {
                   "format": "",
                   "missing": "—",
@@ -1383,7 +1376,6 @@
               "type": "list",
               "elem": "string",
               "widget": "figure",
-              "present": "figure",
               "presentation": {
                 "figure": {
                   "digest": "2e78ad95bfc0fdb920c7f9ac05e595edfef0d9729991244b65e4078ba6e99e51",

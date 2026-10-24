@@ -3,8 +3,8 @@
   "provenance": {
     "author": "Codex; independent literal contract expectations",
     "date": "2026-10-24",
-    "inputHash": "sha256:bb065d3d59c09090f1769b0a925fd4a3bc99bc996a9ef2f12982b54fc4c57ffd",
-    "expectedHash": "sha256:27f7c0035d519e1b3ac47cf87e6db69e77107ccce645a72d36017c139006485a"
+    "inputHash": "sha256:30322d1fdd3d47c53f47dcafd6eb22fe2a31bcd171c9cf37784d8b9ee03b824a",
+    "expectedHash": "sha256:9969f2af4ec3a99eb21fc6fa643bf51ffe9e9860c3956f2c19024df304da30ab"
   },
   "input": {
     "language": "en",
@@ -17,7 +17,6 @@
           "type": "list",
           "elem": "string",
           "widget": "tiles",
-          "present": "chips",
           "choices": {
             "cardinality": "many",
             "options": [
@@ -62,7 +61,6 @@
             "type": "list",
             "elem": "string",
             "widget": "tiles",
-            "present": "chips",
             "choices": {
               "cardinality": "many",
               "options": [
@@ -107,7 +105,7 @@
         {
           "name": "shapes",
           "control": "tiles",
-          "kind": "chips",
+          "kind": "choice",
           "choice": {
             "cardinality": "many",
             "empty": {
@@ -162,7 +160,7 @@
             {
               "name": "shapes",
               "control": "tiles",
-              "kind": "chips",
+              "kind": "choice",
               "choice": {
                 "cardinality": "many",
                 "empty": {

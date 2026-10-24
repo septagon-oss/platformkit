@@ -78,8 +78,11 @@ func ValidateChoices(f Field) error {
 	if (c.Cardinality == "one" && f.Type != TypeString) || (c.Cardinality == "many" && (f.Type != TypeList || f.Elem != TypeString)) {
 		return choiceError("cardinality", "One choice is a string; many choices are a string list.")
 	}
-	if (f.Widget != "" && !ChoiceAppearance(f.Widget)) || (f.Present != "" && !ChoiceAppearance(f.Present)) {
-		return choiceError("appearance", "A choice uses tiles, chips, figure or swatch.")
+	if f.Widget != "" && !ChoiceAppearance(f.Widget) {
+		return choiceError("widget", "A choice is answered with tiles, chips, figure or swatch.")
+	}
+	if f.Present != "" {
+		return choiceError("present", "A choice reads back as its selected options; its appearance names the control.")
 	}
 	if len(f.Enum)+len(h.EnumLabels)+len(h.EnumTones)+len(h.DoneValues) > 0 || h.Reference != nil || h.Money != nil || h.Format != "" {
 		return choiceError("choices", "Choices cannot also declare enum, reference, money, format or status semantics.")
@@ -123,7 +126,7 @@ func choiceArtwork(f Field) error {
 			continue
 		}
 		ids = append(ids, o.ID)
-		if (f.Widget == "swatch" || f.Present == "swatch") && (o.Picture == nil || o.Picture.Kind != "colour") {
+		if f.Widget == "swatch" && (o.Picture == nil || o.Picture.Kind != "colour") {
 			return choiceError("picture", "Every ordinary swatch needs a colour picture.")
 		}
 	}

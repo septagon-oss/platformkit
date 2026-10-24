@@ -242,6 +242,12 @@ type Field struct {
 // now mean the control instead of being ignored next to it, which is why a
 // string holding a timestamp or a "true" draws the same control its
 // time.Time and bool neighbours do.
+//
+// Four more name the control a finite choice is answered with — `tiles`, `chips`,
+// `figure` and `swatch`. They belong to this axis and not to the read axis below:
+// each draws a set of inputs a person operates, and what a chosen answer reads
+// back as is the selection itself, which the resolved policy draws from the same
+// declaration. A choice therefore names its appearance once, in `ui:"widget:…"`.
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
@@ -264,10 +270,16 @@ var Widgets = []string{
 // "derive it from the type", and an enum value, a timestamp and a boolean each
 // have a reading that needs no name.
 //
+// No control name belongs here, and kit/rest tests that the two vocabularies share
+// nothing but `text`: the read axis says how a stored value is read, and a name
+// that is also a form control lets a screen invent a fake control for a read rather
+// than answer the question of what the value means. This is why a choice declares
+// its appearance as a widget and keeps this axis empty — see ValidateChoices.
+//
 // A name a mounted Spec claims and no screen renders refuses to mount, and the
 // shape a picture name may sit on is refused too — see ui/resource's own test
 // that names a composition per name here, and kit/rest's picture gate.
-var Presentations = []string{"person", "image", "images", "avatar", "tiles", "chips", "figure", "swatch"}
+var Presentations = []string{"person", "image", "images", "avatar"}
 
 // PicturesAre reports whether the named presentation reads a file id, which is
 // the one fact about the name that a mount gate can check without importing what

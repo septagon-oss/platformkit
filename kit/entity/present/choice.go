@@ -36,7 +36,7 @@ func resolveChoice(f entity.Field, r *ResolvedField) {
 		}
 		r.Options = append(r.Options, ResolvedOption{Value: o.ID, Label: o.Label, Tone: "neutral", Picture: o.Picture, Group: group, NoPreference: o.ID == c.NoPreference})
 	}
-	if (r.Control == "figure" || r.Kind == "figure") && f.Presentation.Figure != nil {
+	if r.Control == "figure" && f.Presentation.Figure != nil {
 		r.Figure = new(*f.Presentation.Figure)
 	}
 }
