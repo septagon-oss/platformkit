@@ -47,6 +47,8 @@ import (
 // is a field name from Schema, and a value is whatever the entity's own JSON
 // says it is. There is no second serialization; it is encoding/json, once.
 type Resource struct {
+	// Input is an authorized typed read with generated inputs and no CRUD routes.
+	Input *ReadInput
 	// Module and Entity name it; Path is the collection path as the module
 	// wrote it, relative to itself ("/tasks"), which is what a generated screen
 	// mounts and links from. The composed addresses are Schema.Path — the API's
@@ -333,7 +335,7 @@ func (r Resource) WriteAuth() Auth {
 // not ask would be a page that reads past the permission whenever whoever wrote
 // it forgot to. Now forgetting is not available.
 func (a *API) RegisterResource(r Resource) {
-	r = a.guard(r)
+	r = a.guardReadInput(a.guard(r))
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.resources = append(a.resources, r)

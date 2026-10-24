@@ -44,21 +44,6 @@ func (formDirectory) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bo
 // formServer mounts the generated note screens; refuse is what the next create answers.
 func formServer(t *testing.T, refuse *error) http.Handler {
 	t.Helper()
-	_, conn := dbtest.Schema(t)
-	api, router := httpx.New(httpx.Options{
-		Cache: cache.Memory("pkit"), PublicHost: formHost, Tenants: formDirectory{}, Authorize: formDirectory{},
-		Conn: conn, Log: slog.New(slog.DiscardHandler),
-		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
-			return tenancy.Principal{UserID: uuid.MustParse("22222222-2222-4222-8222-222222222222")}, true, nil
-		},
-	})
-	shell := page.Shell{
-		Chrome: page.Chrome{Brand: "Demo", SignIn: "/admin/login", Stylesheet: ui.Compose(design.Default()), Assets: "/admin/assets"},
-		Frame: func(_ context.Context, _ page.Request, body []g.Node) g.Node {
-			return h.Div(h.Class("pkit-shell"), g.Group(body))
-		},
-		Back: "/admin", BackLabel: "Back to the workspace",
-	}
 	res := resource()
 	res.Operations = []httpx.CRUD{httpx.CRUDList, httpx.CRUDCreate}
 	res.List = func(context.Context, crud.Query) ([]map[string]any, int64, error) { return nil, 0, nil }
@@ -68,6 +53,20 @@ func formServer(t *testing.T, refuse *error) http.Handler {
 		}
 		return map[string]any{"id": uuid.NewString()}, nil
 	}
+	return formResourceServer(t, res)
+}
+
+func formResourceServer(t *testing.T, res httpx.Resource) http.Handler {
+	t.Helper()
+	_, conn := dbtest.Schema(t)
+	api, router := httpx.New(httpx.Options{
+		Cache: cache.Memory("pkit"), PublicHost: formHost, Tenants: formDirectory{}, Authorize: formDirectory{},
+		Conn: conn, Log: slog.New(slog.DiscardHandler),
+		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
+			return tenancy.Principal{UserID: uuid.MustParse("22222222-2222-4222-8222-222222222222")}, true, nil
+		},
+	})
+	shell := formShell()
 	screens.Mount(api.Surfaces("note").App, shell, opts, res)
 	return router
 }
@@ -107,5 +106,15 @@ func TestAFormRefusedByThePlanIsAQuietNoticeInWords(t *testing.T) {
 		if strings.Contains(body, reject) {
 			t.Errorf("a plan-refused form says %q", reject)
 		}
+	}
+}
+
+func formShell() page.Shell {
+	return page.Shell{
+		Chrome: page.Chrome{Brand: "Demo", SignIn: "/admin/login", Stylesheet: ui.Compose(design.Default()), Assets: "/admin/assets"},
+		Frame: func(_ context.Context, _ page.Request, body []g.Node) g.Node {
+			return h.Main(h.ID("main-content"), g.Group(body))
+		},
+		Back: "/admin", BackLabel: "Back to the workspace",
 	}
 }

@@ -81,6 +81,7 @@ type Pictures struct {
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
+	Input *InputEntry `json:"input,omitempty"`
 	entity.Schema
 	// Presentation is this resource as its author said it reads — the words, the
 	// icon, the group, which field names a row and which block each field belongs
@@ -306,6 +307,9 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 			Presentation: commandDeviations(c.Present),
 		})
 	}
+	if r.Input != nil {
+		e.Input = &InputEntry{Fields: r.Schema.Fields, Output: r.Input.Output, OutputList: r.Input.OutputList, Path: r.Input.Path}
+	}
 	e.Resolved = resolve(r, text, language)
 	return e
 }
@@ -318,7 +322,7 @@ func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 	}
 	resolved := present.Resolve(present.Input{
 		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
-		CommandsOnly: r.CommandsOnly, Operations: r.OperationWords(), Commands: commands,
+		CommandsOnly: r.CommandsOnly, InputOnly: r.Input != nil, Operations: r.OperationWords(), Commands: commands,
 		Language: language, Text: policyText(text),
 	})
 	return &resolved
@@ -327,7 +331,8 @@ func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 // policyKeys maps the words the policy adds to the screens.* copy keys that
 // every locale carries, so the policy and the generated screens share one list.
 var policyKeys = map[string]string{
-	"present.missing": "screens.missing", "present.true": "screens.true",
+	"present.form.details": "forms.step.details",
+	"present.missing":      "screens.missing", "present.true": "screens.true",
 	"present.false": "screens.false", "present.emptyTitle": "screens.empty_title",
 }
 

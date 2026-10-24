@@ -34,6 +34,13 @@ import (
 // how they get a rule in @layer components — so composedClasses reads those off
 // the composition instead of off this list.
 var renderedHooks = map[string]string{
+	"data-form-steps":           "ui/forms/steps.go",
+	"data-step-heading":         "ui/forms/steps.go",
+	"data-step-errors":          "ui/forms/steps.go",
+	"data-answer-field":         "ui/forms/steps.go",
+	"data-answer-template":      "ui/forms/steps.go",
+	"data-answer-empty":         "ui/forms/steps.go",
+	"data-answer-labels":        "ui/forms/steps.go",
 	"data-confirm":              "ui/resource/resource.go",
 	"data-confirm-label":        "ui/resource/resource.go",
 	"data-gallery":              "ui/export/storybook.go",

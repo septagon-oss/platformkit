@@ -126,6 +126,7 @@ func layout(in Input, t ResolvedTitles) ResolvedLayout {
 	}
 	l.Create = form(in, "create", func(f entity.Field) bool { return editableCreate(in, f) })
 	l.Update = form(in, "update", func(f entity.Field) bool { return editableUpdate(in, f) })
+	l.Forms = forms(in, l)
 	return l
 }
 

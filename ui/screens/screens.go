@@ -73,11 +73,10 @@ type (
 // module that wants pages for a resource the generator would leave bare writes
 // them, the way modules/admin writes its own.
 func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
-	// at is where the screens are: /app/<module>/<entity>, composed by the kernel
-	// when the resource was registered. Every link is built from it. rel is the
-	// same address before the prefix, which is the only form a router accepts —
-	// the module wrote it, and it is the reason this shell never has to know
-	// where the workspace is mounted.
+	if res.Input != nil {
+		mountReadInput(router, s, o, res)
+		return
+	}
 	at, rel := res.Screen, res.Path
 	if at == "" && !res.Singleton {
 		// No address to link from, so nothing to mount. kit/rest composes this
@@ -86,6 +85,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	}
 	id := "screen-" + res.Module + "-" + res.Entity + "-"
 	read, write := res.ReadAuth(), res.WriteAuth()
+	mountFormSteps(router, s, o, res)
 	if res.Singleton {
 		mountSingleton(router, s, o, res, at, rel, id, read, write)
 		return
@@ -104,7 +104,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if writeAvailable(res, httpx.CRUDCreate) {
+	if writeAvailable(res, httpx.CRUDCreate) && !stepped(res, "create") {
 		page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
 			func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 				o := localized(o, req)
@@ -112,7 +112,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if writeAvailable(res, httpx.CRUDCreate) {
+	if writeAvailable(res, httpx.CRUDCreate) && !stepped(res, "create") {
 		page.Serve(router, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
 			func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
 				// Immutable is refused here rather than dropped: this form does not
@@ -148,7 +148,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if writeAvailable(res, httpx.CRUDUpdate) {
+	if writeAvailable(res, httpx.CRUDUpdate) && !stepped(res, "update") {
 		page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form",
 			Subject: subject(res, o, at, true)}, write,
 			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
@@ -161,7 +161,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			})
 	}
 
-	if writeAvailable(res, httpx.CRUDUpdate) {
+	if writeAvailable(res, httpx.CRUDUpdate) && !stepped(res, "update") {
 		page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
 			func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
 				item := at + "/" + in.ID.String()
@@ -308,7 +308,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
 		})
 
-	if !writeAvailable(res, httpx.CRUDUpdate) {
+	if !writeAvailable(res, httpx.CRUDUpdate) || stepped(res, "update") {
 		return
 	}
 

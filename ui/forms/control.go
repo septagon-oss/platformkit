@@ -19,6 +19,7 @@ type ControlProps struct {
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
+	AutoFocus        bool
 	Text             func(key, fallback string) string
 }
 
@@ -58,65 +59,30 @@ func Control(p ControlProps) g.Node {
 		return p.Text(key, fallback)
 	}
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
+	props := components.ComponentProps{ID: p.ID, Attrs: map[string]string{}}
+	if p.AutoFocus {
+		props.Attrs["autofocus"] = "autofocus"
+	}
 	base := components.InputProps{
-		ComponentProps: components.ComponentProps{ID: p.ID},
+		ComponentProps: props,
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
 		HelpText: hint(cmp.Or(p.Field.Help, f.Doc), immutableNote(p.Immutable)),
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {
 	case len(f.Enum) > 0 || f.Widget == "select":
-		options := slices.Clone(p.Field.Options)
-		if options == nil {
-			options = make([]components.SelectOption, 0, len(f.Enum))
-			for _, value := range f.Enum {
-				options = append(options, components.SelectOption{Label: value, Value: value})
-			}
-		}
-		placeholder := ""
-		if f.Default == "" {
-			placeholder = "Choose a " + strings.ToLower(label)
-		}
-		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
-			Name:           name, Label: label, Value: p.Value, Error: p.Error,
-			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText, FullWidth: true,
-		}, components.Select).Node
+		return selectControl(p, props, base)
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+			ComponentProps: disabledControl(props, p.Immutable),
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
 		}, components.Textarea).Node
 	case f.Widget == "richtext":
-		area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
-			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
-			Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
-			MaxLength: f.MaxLength, CharacterLimitOnly: true,
-		}, components.Textarea).Node
-		// Replace this native disclosure when the shared disclosure lands.
-		help := h.Details(
-			h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
-			h.Ul(
-				h.Li(g.Text(word("forms.richtext.paragraphs", "Paragraphs: leave a blank line; a hard break ends with \\."))),
-				h.Li(g.Text(word("forms.richtext.headings", "Headings: ## through ####."))),
-				h.Li(g.Text(word("forms.richtext.marks", "Bold **text**, italic *text*, strike ~~text~~, inline `code`."))),
-				h.Li(g.Text(word("forms.richtext.links", "Links: [label](https://example.com) or [label](/page)."))),
-				h.Li(g.Text(word("forms.richtext.lists", "Lists: - item, 1. item or - [ ] task; up to three levels."))),
-				h.Li(g.Text(word("forms.richtext.blocks", "Quote: > text; code: ```language; rule: ---."))),
-				h.Li(g.Text(word("forms.richtext.tables", "Tables: | heading | with a | --- | separator."))),
-				h.Li(g.Text(word("forms.richtext.images", "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."))),
-			),
-		)
-		// The editor's chrome is drawn beside the textarea rather than instead of
-		// it: with no JavaScript the field is the plain textarea above with the
-		// guidance below it, and the submitted value is the same either way.
-		return richtextChrome(p, area, help)
+		return richtextControl(p, props, base, word)
 	case f.Widget == "checkbox" || f.Type == entity.TypeBool:
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+			ComponentProps: disabledControl(props, p.Immutable),
 			Name:           name, Label: label, Value: "true", Checked: p.Value == "true",
 			Required: f.Required, Error: p.Error, HelpText: base.HelpText,
 		}, components.Checkbox).Node
@@ -147,4 +113,58 @@ func Control(p ControlProps) g.Node {
 		base.Value = base.Value[:16]
 	}
 	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
+}
+
+func disabledControl(props components.ComponentProps, disabled bool) components.ComponentProps {
+	props.Disabled = disabled
+	return props
+}
+
+func richtextControl(p ControlProps, props components.ComponentProps, base components.InputProps, word func(string, string) string) g.Node {
+	f := p.Field.Definition
+	label, name := base.Label, base.Name
+	area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
+		ComponentProps: disabledControl(props, p.Immutable),
+		Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
+		Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
+		MaxLength: f.MaxLength, CharacterLimitOnly: true,
+	}, components.Textarea).Node
+	// Replace this native disclosure when the shared disclosure lands.
+	help := h.Details(
+		h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
+		h.Ul(
+			h.Li(g.Text(word("forms.richtext.paragraphs", "Paragraphs: leave a blank line; a hard break ends with \\."))),
+			h.Li(g.Text(word("forms.richtext.headings", "Headings: ## through ####."))),
+			h.Li(g.Text(word("forms.richtext.marks", "Bold **text**, italic *text*, strike ~~text~~, inline `code`."))),
+			h.Li(g.Text(word("forms.richtext.links", "Links: [label](https://example.com) or [label](/page)."))),
+			h.Li(g.Text(word("forms.richtext.lists", "Lists: - item, 1. item or - [ ] task; up to three levels."))),
+			h.Li(g.Text(word("forms.richtext.blocks", "Quote: > text; code: ```language; rule: ---."))),
+			h.Li(g.Text(word("forms.richtext.tables", "Tables: | heading | with a | --- | separator."))),
+			h.Li(g.Text(word("forms.richtext.images", "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."))),
+		),
+	)
+	// The textarea remains the submitted control when enhancement is unavailable.
+	return richtextChrome(p, area, help)
+}
+
+func selectControl(p ControlProps, props components.ComponentProps, base components.InputProps) g.Node {
+	f := p.Field.Definition
+	label, name := base.Label, base.Name
+	options := slices.Clone(p.Field.Options)
+	if options == nil {
+		options = make([]components.SelectOption, 0, len(f.Enum))
+		for _, value := range f.Enum {
+			options = append(options, components.SelectOption{Label: value, Value: value})
+		}
+	}
+	placeholder := ""
+	if f.Default == "" {
+		placeholder = "Choose a " + strings.ToLower(label)
+	}
+	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
+		ComponentProps: disabledControl(props, p.Immutable),
+		Name:           name, Label: label, Value: p.Value, Error: p.Error,
+		Required: f.Required, Options: options, Placeholder: placeholder,
+		HelpText: base.HelpText, FullWidth: true,
+	}, components.Select).Node
 }

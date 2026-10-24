@@ -117,6 +117,7 @@ func (w Words) say(aspect, declared string) string {
 // always copied so callers may safely narrow them to authorized commands.
 func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 	out := p
+	out.Forms = w.forms(p.Forms)
 	out.Deck = p.Deck.Clone()
 	if out.Deck != nil {
 		for key, d := range out.Deck.Directions {

@@ -10,6 +10,7 @@ package rest
 // the first one already recognised.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,10 @@ import (
 // answered applies the shared transaction, error mapping and row projection
 // for collection and singleton screen operations.
 func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T, error)) (map[string]any, error) {
+	return answeredRow(ctx, run, false)
+}
+
+func answeredRow[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T, error), exact bool) (map[string]any, error) {
 	tx, err := transaction(ctx)
 	if err != nil {
 		return nil, err
@@ -41,7 +46,7 @@ func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T,
 	if err != nil {
 		return nil, Fault(err)
 	}
-	return row(e)
+	return row(e, exact)
 }
 
 // resource is this Spec as httpx.Resource, for Mount to register.
@@ -70,13 +75,17 @@ func (s Spec[T]) resource() httpx.Resource {
 // row is the entity as a screen reads it. It is the entity's own JSON, so a
 // column shows what the API would have sent and json:"-" hides a field from
 // both at once.
-func row(e any) (map[string]any, error) {
+func row(e any, exact bool) (map[string]any, error) {
 	b, err := json.Marshal(e)
 	if err != nil {
 		return nil, err
 	}
 	var m map[string]any
-	return m, json.Unmarshal(b, &m)
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	if exact {
+		decoder.UseNumber()
+	}
+	return m, decoder.Decode(&m)
 }
 
 // decode builds an entity from a form's values, through the same decoder the
@@ -338,7 +347,7 @@ func (s Spec[T]) resourceReads(res *httpx.Resource) {
 		}
 		rows := make([]map[string]any, 0, len(items))
 		for _, item := range items {
-			r, err := row(item)
+			r, err := row(item, false)
 			if err != nil {
 				return nil, 0, err
 			}
@@ -347,7 +356,7 @@ func (s Spec[T]) resourceReads(res *httpx.Resource) {
 		return rows, total, nil
 	}
 	res.Get = func(ctx context.Context, id uuid.UUID) (map[string]any, error) {
-		return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.get(ctx, tx, id) })
+		return answeredRow(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.get(ctx, tx, id) }, steppedUpdate(s.Present))
 	}
 }
 

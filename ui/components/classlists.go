@@ -1,11 +1,6 @@
 package components
 
-// classlists.go declares every tw ClassList the renderers compose. This is
-// the load-bearing inversion of the usual CSS workflow: the stylesheet is
-// derived FROM these declarations via tw/emission.For(ClassLists()...), so a
-// class that no component declares is never emitted, and a declared class is
-// always backed by a rule. TestRenderedClassesAreDeclared closes the loop
-// from the other side.
+// Component class lists feed stylesheet emission, so every rendered class has a rule.
 
 import (
 	"maps"
@@ -653,10 +648,14 @@ var (
 	clTableStackSort = style.New().Display(style.DisplayFlex).FlexWrap().
 				Breakpoint(style.BreakpointSM, func(c style.ClassList) style.ClassList { return c.Display(style.DisplayHidden) })
 
-	clDataList    = style.New().SpaceY(style.S4).MinWidth(style.S0).TextColor(style.FgPrimary)
-	clDataCount   = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
-	clDataHeading = style.New().Display(style.DisplayFlex).FlexWrap().Gap(style.S3).Items(style.ItemsCenter).
-			FontSize(style.TextSM).FontWeight(style.FontSemibold).PaddingY(style.S3)
+	clStepSegments        = style.New().Display(style.DisplayFlex).Gap(style.S2)
+	clStepSegment         = style.New().Flex1().BorderTop(style.Border2).BorderColor(style.BorderPrimary).PaddingTop(style.S2)
+	clStepSegmentComplete = style.New().Flex1().BorderTop(style.Border2).BorderColor(style.BorderBrand).PaddingTop(style.S2)
+	clStepSegmentActive   = clStepSegmentComplete.FontWeight(style.FontSemibold)
+	clDataList            = style.New().SpaceY(style.S4).MinWidth(style.S0).TextColor(style.FgPrimary)
+	clDataCount           = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
+	clDataHeading         = style.New().Display(style.DisplayFlex).FlexWrap().Gap(style.S3).Items(style.ItemsCenter).
+				FontSize(style.TextSM).FontWeight(style.FontSemibold).PaddingY(style.S3)
 	clDataDisclosure = style.New().FontSize(style.TextSM).FontWeight(style.FontSemibold).
 				PaddingY(style.S3).Merge(clFocusRing).MinHeight(style.S11).Cursor(style.CursorPointer)
 
@@ -957,9 +956,7 @@ func ShellClassLists() []style.ClassList {
 		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions, clFormSentence,
 		clConfirmDialog, clConfirmTitle, clConfirmMessage,
 		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
-		// A person, as read by the generated list: ui/resource composes a cell out of
-		// these whenever a field says `ui:"present:person"`, so they are on every page
-		// of an application that has people in it, not on the gallery alone.
+		// Person cells use the same avatar styles on generated lists and galleries.
 		clAvatar, clAvatarInitials, clAvatarLink, clAvatarLabel,
 		clBadgeBase, clBadgeDot, clBadgeCount, clBadgeRemove,
 		clAlertBase, clAlertRegular, clAlertCompact, clAlertBordered,
@@ -977,6 +974,7 @@ func ShellClassLists() []style.ClassList {
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowLink, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
+		clStepSegments, clStepSegment, clStepSegmentComplete, clStepSegmentActive,
 		clTableStacked, clTableStack, clTableStackItem, clTableStackValue, clTableStackSort, clTableStackSortRow,
 		// Generated lists compose DataList, including its empty and loading states.
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,

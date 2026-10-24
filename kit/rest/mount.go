@@ -18,6 +18,10 @@ import (
 // operator grants; generated screens stay in the workspace. Invalid Specs panic
 // before mounting. Request failures use Fault.
 func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
+	if s.input != nil {
+		s.mountReadForm(surfaces)
+		return
+	}
 	s.check()
 	schema := s.Schema()
 	read, write := s.readRouter(surfaces), s.writeRouter(surfaces)
@@ -112,7 +116,7 @@ func (s Spec[T]) writeRouter(surfaces httpx.Surfaces) *httpx.Router {
 // existed means — which is stated once, on httpx.Resource.Offers, and read here
 // through the value that carries it to the screens.
 func (s Spec[T]) offers(c httpx.CRUD) bool {
-	return httpx.Resource{Operations: s.Operations}.Offers(c)
+	return s.input == nil && httpx.Resource{Operations: s.Operations}.Offers(c)
 }
 
 // offersWrite reports whether this Spec mounts at least one of the three writes.

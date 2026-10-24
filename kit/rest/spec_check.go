@@ -57,6 +57,9 @@ func (s Spec[T]) check() {
 	if bad == "" {
 		bad = conditionFault(crud.Fields[T]())
 	}
+	if bad == "" {
+		bad = formHintsFault(httpx.Resource{Schema: s.Schema(), Present: s.Present, Immutable: s.Immutable, Operations: s.Operations})
+	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
 	}

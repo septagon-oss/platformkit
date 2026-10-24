@@ -8,7 +8,6 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/google/uuid"
-	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -37,17 +36,8 @@ func commandOutput(res httpx.Resource, c httpx.Command, ctx context.Context, id 
 	if err := decoder.Decode(&row); err != nil {
 		return page.View{}, err
 	}
-	items := []components.DetailItem{}
-	for _, field := range c.Output {
-		if field.Presentation.Hidden() {
-			continue
-		}
-		if value, ok := row[field.Name]; ok {
-			items = append(items, components.DetailItem{Label: display.FieldLabel(field), Value: display.Display(field, value)})
-		}
-	}
 	nodes := []g.Node{components.Heading(components.HeadingProps{Level: 1, Text: c.Summary}),
-		components.FormSentence(components.FormSentenceProps{Text: o.Text("screens.command_saved", "Your change has been saved.")}), components.DetailList(components.DetailListProps{Items: items})}
+		components.FormSentence(components.FormSentenceProps{Text: o.Text("screens.command_saved", "Your change has been saved.")}), outputDetails(c.Output, row)}
 	if out.UndoToken != "" {
 		for _, undo := range res.CommandsFor(ctx) {
 			if undo.Verb != c.Undo || undo.Present.System {

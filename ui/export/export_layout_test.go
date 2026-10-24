@@ -225,9 +225,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// stylesheet, and both land on this branch's shell, whose sidebar names the
 	// workspace and whose generated forms carry their own measure. A merge claims no
 	// leaf-by-leaf count: the document before it exists only outside the merge. The
-	// digest below is this merged tree's own measurement, printed by the refusal and
-	// copied from it.
-	if legacy.SHA256 != "a76f10dda799497ceed8f725bb98e94e96dfd91680b8e444feec0f6fd2efb316" {
+	// digest below is this tree's own measurement, printed by the refusal: the stepper
+	// gains one optional property, so 32 schema leaves and one CSS rule are added.
+	if legacy.SHA256 != "399acbaaa2ffcedb5241ec95bd5b40acbb85c9733c4f345a834b9ae1d9159dd3" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
