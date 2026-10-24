@@ -27549,6 +27549,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/internal/exampletest/every_declared_example_is_executed_by_name_test.go",
+   "id": "kit/internal/exampletest/every_declared_example_is_executed_by_name_test.go#TestEveryDeclaredExampleIsExecutedByName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryDeclaredExampleIsExecutedByName",
+   "needs_db": false,
+   "pkg": "kit/internal/exampletest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/internal/exampletest/every_example_has_output_test.go",
    "id": "kit/internal/exampletest/every_example_has_output_test.go#TestEveryListedPackageExecutesAtLeastOneExampleWithOutput",
    "kind": "go",
@@ -85001,7 +85020,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2303,
+  "files": 2304,
   "forge_runs": [
    408,
    413,
@@ -85035,7 +85054,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3685,
+   "behaviour": 3686,
    "composition": 491,
    "contract": 24,
    "journey": 110
@@ -85054,23 +85073,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4310,
+  "rows": 4311,
   "tiers": {
    "merge": 2630,
    "nightly": 110,
-   "push": 1570
+   "push": 1571
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2058,
+   "keep": 2059,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3924,
+   "keep": 3925,
    "keep-rewrite": 170,
    "merge": 216
   }
