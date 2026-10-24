@@ -1,0 +1,68 @@
+{
+ "name": "malformed-hint",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:2208aedbc6da31c3be4a40796ea4d0d4693687e8df9eb3b1665508058aef6978",
+  "expectedHash": "sha256:4f18ff137fb225a81c1314a34c308461c2c9e6ac9541ec7f6054534cd95091c4"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "status",
+     "type": "string",
+     "enum": [
+      "a"
+     ],
+     "presentation": {
+      "enumTones": {
+       "a": "nonsense"
+      },
+      "format": "nonsense"
+     }
+    }
+   ]
+  },
+  "hints": {
+   "Icon": "nonsense",
+   "Singular": "thing"
+  },
+  "rows": []
+ },
+ "expected": {
+  "resolved": {
+   "identity": {
+    "singular": "thing",
+    "plural": "things",
+    "icon": ""
+   },
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "status",
+     "reading": {
+      "format": ""
+     },
+     "options": [
+      {
+       "value": "a",
+       "tone": "neutral"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

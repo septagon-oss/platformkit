@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
+parts=(kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/inference kit/inference/providers/openai
@@ -150,6 +150,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         measurement = otel " go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/sdk/metric go.opentelemetry.io/otel/exporters/otlp/otlptrace go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc go.opentelemetry.io/otel/exporters/otlp/internal google.golang.org/grpc google.golang.org/protobuf github.com/cenkalti/backoff/v5 github.com/grpc-ecosystem/grpc-gateway/v2 golang.org/x/net golang.org/x/sys golang.org/x/text google.golang.org/genproto/googleapis/api google.golang.org/genproto/googleapis/rpc go.opentelemetry.io/proto/otlp"
         check("kit/entity", uuid)
         check("kit/entity/display", uuid " " p "kit/entity")
+        check("kit/entity/present", uuid " " p "kit/entity " p "kit/entity/display")
         check("kit/locale", "")
         # kit/fault declares the three refusal sentinels a value package wraps.
         # Its closure is the standard library and itself, or wrapping a refusal
@@ -191,7 +192,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("ui/document", p "kit/locale " presentation " " markup)
         check("ui/resource", uuid " " p "kit/entity " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
         check("ui/page", kernel " " presentation, web, "web")
-        check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
+        check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "kit/entity/present " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
         # The kernel runner selects a transport by name and builds none: neither
         # provider package is in its closure.
         #
