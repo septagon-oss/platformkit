@@ -104,6 +104,12 @@ while IFS=$'	' read -r case_ref case_commit case_roles; do
 	set -e
 	[ "$case_code" -eq 0 ] || die "$case_code" "case $case_ref did not pass; the matrix certifies nothing while one of its sources is unmeasured"
 	[ -r "$case_receipt" ] || die 2 "case $case_ref exited 0 and left no receipt at $case_receipt"
+	# A case that read no tenant boundary says nothing about boundaries, and the number is
+	# zero for two very different reasons: an application role the step could not reach, and
+	# an installation with no tenant in it. Either way the release cannot claim the promise
+	# this mode exists to make, so the case refuses rather than recording a bare zero.
+	jq -e '.data.boundary_reads // 0 | . >= 1' "$case_receipt" >/dev/null ||
+		die 1 "case $case_ref recorded no tenant-boundary read; the copy was read by no application role, or holds no tenant to read as, and either way the boundary survives nothing"
 	jq -e --arg c "$case_commit" --arg t "$candidate" \
 		'.base_commit == $c and .candidate_commit == $t' "$case_receipt" >/dev/null ||
 		die 1 "case $case_ref's receipt names a base or a candidate other than ${case_commit:0:12} into ${candidate:0:12}"
