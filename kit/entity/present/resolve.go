@@ -36,6 +36,7 @@ type Input struct {
 
 // CommandInput is one command the caller may call.
 type CommandInput struct {
+	Fields    []entity.Field
 	Verb      string
 	Summary   string
 	Undo      string
@@ -105,7 +106,8 @@ func commands(in Input) []ResolvedCommand {
 	for _, c := range in.Commands {
 		h := c.Hints
 		rc := ResolvedCommand{
-			Verb: c.Verb, Label: cmp.Or(h.Label, c.Summary, display.Humanize(c.Verb)),
+			Fields: commandFields(in, c),
+			Verb:   c.Verb, Label: cmp.Or(h.Label, c.Summary, display.Humanize(c.Verb)),
 			Visible: !h.System, System: h.System, Primary: h.Primary, Destructive: h.Destructive,
 			SuccessMessage: h.SuccessMessage,
 		}

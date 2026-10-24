@@ -174,7 +174,11 @@ func (s Spec[T]) mountCreate(write *httpx.Router) {
 				if err := refuseImmutable(in.RawBody, s.Immutable); err != nil {
 					return nil, Fault(err)
 				}
-				e, err := s.createRow(ctx, tx, in.Body)
+				candidate, err := s.choiceCreateBody(in.RawBody, in.Body)
+				if err != nil {
+					return nil, Fault(err)
+				}
+				e, err := s.createRow(ctx, tx, candidate)
 				if err != nil {
 					return nil, Fault(err)
 				}
@@ -225,7 +229,7 @@ func (s Spec[T]) mountUpdate(write *httpx.Router, schema crud.Schema) {
 						e, err := s.localePatch(ctx, tx, in.ID, in.Lang, in.Body, in.IfMatch)
 						return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, Fault(err)
 					}
-					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					e, err := s.updateChoiceRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
 					if err != nil {
 						return nil, Fault(err)
 					}
@@ -239,7 +243,7 @@ func (s Spec[T]) mountUpdate(write *httpx.Router, schema crud.Schema) {
 					if err != nil {
 						return nil, err
 					}
-					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					e, err := s.updateChoiceRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
 					if err != nil {
 						return nil, Fault(err)
 					}

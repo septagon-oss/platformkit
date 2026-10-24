@@ -193,6 +193,7 @@ type EntitySection struct {
 // What to type into, how to read and how much to show are three questions with
 // three answers, and 0085 keeps each meaning.
 type FieldHints struct {
+	Figure *ChoiceFigure `json:"figure,omitempty"`
 	// Label is what a header, a control and a term call this field. Absent, the
 	// reading is display.FieldLabel, which is Humanize(Name).
 	Label string `json:"label,omitempty"`

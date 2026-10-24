@@ -28,7 +28,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui/components"
-	"github.com/septagon-oss/platformkit/ui/components/examples"
+
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/document"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
@@ -39,6 +40,7 @@ import (
 // httpx.Resource carries the same two beside its guarded closures; ui/screens
 // hands the renderers this half.
 type Resource struct {
+	Resolved  *present.Resolved
 	Schema    entity.Schema
 	Immutable []string
 	// API is the resource's own read address as the kernel composed it — the path
@@ -237,7 +239,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		localeStrip(locales),
-		details(r, o.Words(r.Schema), row, rendered),
+		details(r, o, o.Words(r.Schema), row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
@@ -345,139 +347,6 @@ func richtextEditor(r Resource, row map[string]any, create bool, name string, su
 // refused form answers with. It is spelled here rather than read from net/http
 // because a renderer of values links no HTTP server.
 const statusUnprocessableEntity = 422
-
-// FormExample captures the same form body that Form serves, without its page
-// chrome. Supply an owner-local example ID and synthetic row/error inputs for
-// design export. Children retain Core's typed contracts and named slots; fields
-// use "field/" plus their schema name so actions and errors cannot shadow them.
-// Property edits produce presentation candidates, not schema or database writes.
-// Native editor support and interactive flow behavior require separate evidence.
-//
-// The form's DOM scope comes from action, not from id: two screens of one entity
-// (create and edit) post to different addresses and so own different scopes, and
-// the refused POST that swaps errors back in is answered at the address the form
-// was drawn from, so the swap still finds its target.
-func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	// The form asks for every field its author did not keep off every screen:
-	// `hidden` is the one visibility off this screen too, because a control for a
-	// field no screen may name is a question nobody may answer, and `detail` stays
-	// on it — a required field a form cannot ask for is a record nobody can
-	// create. See readable. The one field added after this loop is the edit form's
-	// own write condition, below, so the capacity holds room for it.
-	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
-	words := o.Words(r.Schema)
-	// A render carrying a refusal line is the form redrawn over a write that was
-	// refused, with the person's own words in its controls.
-	refused := detail != ""
-	for _, field := range readable(r.Schema.Fields) {
-		f := formField(words, field)
-		if f.Definition.Widget == "richtext" {
-			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
-		}
-		fields = append(fields, f)
-	}
-	values := make(map[string]string, len(row))
-	for name, value := range row {
-		values[name] = display.Text(value)
-	}
-	// An edit carries the row's write count back as a hidden value, so the write it
-	// posts can be refused against a row that moved since the person read it. It is a
-	// hidden value and not a control for two reasons that are one: nobody may type the
-	// number of a row's writes (kit/rest refuses a body that names the field), and a
-	// form whose hidden machinery is drawn as a control is a form that invites people to
-	// break its own safety. A create quotes nothing: there is no row to have read.
-	//
-	// The value is the number as the row has it, which is also what a refused write gives
-	// back — the person who is told their deadline is invalid resubmits against the
-	// revision they were already quoting, not against one they never saw.
-	if condition, quoted := revisionCondition(r, row, create); quoted {
-		fields = append(fields, forms.Field{Definition: entity.Field{
-			Name: entity.RevisionCondition, Type: entity.TypeString, Widget: "hidden",
-			Doc: "The revision this form was drawn from. The write is refused if the row has moved.",
-		}})
-		values[entity.RevisionCondition] = condition
-	}
-	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
-		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
-		// The address the form posts to is its DOM scope: see forms.Namespace.
-		Namespace: forms.Namespace(action),
-		Action:    action, CancelURL: r.Screen, Title: title,
-		Text: func(key, fallback string) string {
-			if o.Locale == nil {
-				return fallback
-			}
-			return o.Locale.Text(key, fallback)
-		},
-		// The verdict's own name and tone, from the caller that looked them up. A render
-		// that names none keeps "That could not be saved" and the fault tone it kept
-		// before either field existed.
-		FailureTitle: refusalHeading(o), DetailTone: refusalTone(o),
-	})
-}
-
-// refusalHeading and refusalTone are the two parts of the verdict a form draws, read
-// from a render that named none as the empty pair they were drawn from before.
-func refusalHeading(o Options) string {
-	if o.Refusal == nil {
-		return ""
-	}
-	return o.Refusal.Heading
-}
-
-func refusalTone(o Options) string {
-	if o.Refusal == nil {
-		return ""
-	}
-	return o.Refusal.Tone
-}
-
-// revisionCondition is the edit form's condition on the write: the row's own write count,
-// and whether this form may quote one at all. A resource whose entity keeps no count,
-// and a form that is not editing a row it read, quote nothing — and the door they post to
-// writes as plainly as it always did. A singleton is the second case by declaration: its
-// API is a PUT with no tag to quote (kit/rest carries If-Match on the patch and the delete
-// alone), so its screen carries a condition its route would not honour.
-func revisionCondition(r Resource, row map[string]any, create bool) (string, bool) {
-	if create || r.Singleton || row == nil {
-		return "", false
-	}
-	counts := false
-	for _, f := range r.Schema.Fields {
-		if f.Name == entity.RevisionField && f.Type == entity.TypeInt {
-			counts = true
-		}
-	}
-	if !counts {
-		// A row that arrived with a revision no field of this schema declares is not this
-		// renderer's to speak for; it quotes nothing, and the write is the plain one.
-		return "", false
-	}
-	if count, has := row[entity.RevisionField]; has {
-		return display.Text(count), true
-	}
-	if carried, has := row[entity.RevisionCondition]; has {
-		return display.Text(carried), true
-	}
-	return "", false
-}
-
-// Control adapts an entity field to the portable form control, preserving the
-// generated screens' existing labels, choices and name-derived DOM identity.
-func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(Words{}, f), Value: value, Error: fieldErr, Immutable: immutable})
-}
-
-// formField projects display words at the screen boundary. The portable form
-// owns controls; the value words keep their owner in kit/entity/display, and
-// `words` is what puts them in the request's language — the zero Words reads
-// each of them exactly as written.
-func formField(words Words, f entity.Field) forms.Field {
-	options := make([]components.SelectOption, 0, len(f.Enum))
-	for _, value := range f.Enum {
-		options = append(options, components.SelectOption{Label: words.EnumWord(f, value), Value: value})
-	}
-	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
-}
 
 // table is the list screen's rows: the field a row is known by first, as the
 // link into it, then every other field the schema does not hide.
@@ -672,7 +541,7 @@ func localeStrip(locales []entity.LocaleState) g.Node {
 // order, as a description list. `hide:list` hides nothing here — it is about a table
 // being readable, not about a field being secret — and `visibility:hidden` is the one
 // declaration that is off this screen too, which readable applies.
-func details(r Resource, words Words, row map[string]any, rendered map[string]string) g.Node {
+func details(r Resource, o Options, words Words, row map[string]any, rendered map[string]string) g.Node {
 	// One pass, in schema order: richtext becomes a prose section as it always
 	// did, and every other readable field becomes a term beside its value.
 	var prose []g.Node
@@ -686,6 +555,7 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 	// the term a person reads is the only identity an item has, and it is the same words the <dt>
 	// carries. Two fields labelled alike would be two <dt>s nobody could tell apart anyway.
 	instantsByLabel := map[string]components.TimeText{}
+	choicesByLabel := map[string]g.Node{}
 	for _, f := range readable(r.Schema.Fields) {
 		if f.Widget == "richtext" {
 			if html, ok := rendered[f.Name]; ok {
@@ -696,6 +566,9 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 			continue
 		}
 		label := words.FieldLabel(f)
+		if f.Choices != nil {
+			choicesByLabel[label] = r.choiceRead(o, f, row[f.Name])
+		}
 		value := words.Value(f, row[f.Name])
 		if f.Type == entity.TypeTime {
 			if when, ok := display.Instant(row[f.Name]); ok {
@@ -712,6 +585,9 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 	list := func(items []components.DetailItem) g.Node {
 		return components.DetailListWithSlots(components.DetailListProps{Items: items}, components.DetailListSlots{
 			Value: func(item components.DetailItem) g.Node {
+				if choice := choicesByLabel[item.Label]; choice != nil {
+					return choice
+				}
 				when, ok := instantsByLabel[item.Label]
 				if !ok {
 					return nil

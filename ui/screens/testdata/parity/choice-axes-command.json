@@ -1,0 +1,223 @@
+{
+  "name": "choice-axes-command",
+  "provenance": {
+    "author": "Codex; independent literal contract expectations",
+    "date": "2026-10-24",
+    "inputHash": "sha256:bb065d3d59c09090f1769b0a925fd4a3bc99bc996a9ef2f12982b54fc4c57ffd",
+    "expectedHash": "sha256:27f7c0035d519e1b3ac47cf87e6db69e77107ccce645a72d36017c139006485a"
+  },
+  "input": {
+    "language": "en",
+    "schema": {
+      "module": "fixture",
+      "entity": "selection",
+      "fields": [
+        {
+          "name": "shapes",
+          "type": "list",
+          "elem": "string",
+          "widget": "tiles",
+          "present": "chips",
+          "choices": {
+            "cardinality": "many",
+            "options": [
+              {
+                "id": "round",
+                "label": "Round"
+              },
+              {
+                "id": "square",
+                "label": "Square",
+                "group": {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              },
+              {
+                "id": "none",
+                "label": "No preference"
+              }
+            ],
+            "empty": {
+              "mode": "refuse",
+              "message": "Keep a shape."
+            },
+            "maximum": {
+              "count": 1,
+              "behaviour": "replace-oldest",
+              "message": ""
+            },
+            "noPreference": "none",
+            "searchThreshold": 2
+          }
+        }
+      ]
+    },
+    "commands": [
+      {
+        "verb": "choose",
+        "fields": [
+          {
+            "name": "shapes",
+            "type": "list",
+            "elem": "string",
+            "widget": "tiles",
+            "present": "chips",
+            "choices": {
+              "cardinality": "many",
+              "options": [
+                {
+                  "id": "round",
+                  "label": "Round"
+                },
+                {
+                  "id": "square",
+                  "label": "Square",
+                  "group": {
+                    "key": "corners",
+                    "label": "Corners"
+                  }
+                },
+                {
+                  "id": "none",
+                  "label": "No preference"
+                }
+              ],
+              "empty": {
+                "mode": "refuse",
+                "message": "Keep a shape."
+              },
+              "maximum": {
+                "count": 1,
+                "behaviour": "replace-oldest",
+                "message": ""
+              },
+              "noPreference": "none",
+              "searchThreshold": 2
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "resolved": {
+      "policyVersion": 1,
+      "fields": [
+        {
+          "name": "shapes",
+          "control": "tiles",
+          "kind": "chips",
+          "choice": {
+            "cardinality": "many",
+            "empty": {
+              "mode": "refuse",
+              "message": "Keep a shape."
+            },
+            "maximum": {
+              "count": 1,
+              "behaviour": "replace-oldest",
+              "message": ""
+            },
+            "noPreference": "none",
+            "searchThreshold": 2,
+            "searchEnabled": true,
+            "groups": [
+              {
+                "key": "corners",
+                "label": "Corners"
+              }
+            ]
+          },
+          "figure": null,
+          "options": [
+            {
+              "value": "round",
+              "label": "Round",
+              "picture": null,
+              "group": "",
+              "noPreference": false
+            },
+            {
+              "value": "square",
+              "label": "Square",
+              "picture": null,
+              "group": "corners",
+              "noPreference": false
+            },
+            {
+              "value": "none",
+              "label": "No preference",
+              "picture": null,
+              "group": "",
+              "noPreference": true
+            }
+          ]
+        }
+      ],
+      "commands": [
+        {
+          "verb": "choose",
+          "fields": [
+            {
+              "name": "shapes",
+              "control": "tiles",
+              "kind": "chips",
+              "choice": {
+                "cardinality": "many",
+                "empty": {
+                  "mode": "refuse",
+                  "message": "Keep a shape."
+                },
+                "maximum": {
+                  "count": 1,
+                  "behaviour": "replace-oldest",
+                  "message": ""
+                },
+                "noPreference": "none",
+                "searchThreshold": 2,
+                "searchEnabled": true,
+                "groups": [
+                  {
+                    "key": "corners",
+                    "label": "Corners"
+                  }
+                ]
+              },
+              "figure": null,
+              "options": [
+                {
+                  "value": "round",
+                  "label": "Round",
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false
+                },
+                {
+                  "value": "square",
+                  "label": "Square",
+                  "picture": null,
+                  "group": "corners",
+                  "noPreference": false
+                },
+                {
+                  "value": "none",
+                  "label": "No preference",
+                  "picture": null,
+                  "group": "",
+                  "noPreference": true
+                }
+              ],
+              "editable": {
+                "create": true,
+                "update": false
+              },
+              "onList": false,
+              "onRecord": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

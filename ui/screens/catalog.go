@@ -33,7 +33,7 @@ type Text = resource.Text
 // refuses to do to it — additive, optional, never a change of meaning — and moves
 // for a listed resource losing a verb, whose button that build drew and whose
 // address now answers nothing. A verb hidden by a new entry strands nobody.
-const CatalogVersion = 3
+const CatalogVersion = 4
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell
@@ -314,7 +314,7 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 	commands := make([]present.CommandInput, 0, len(r.Commands))
 	for _, c := range r.Commands {
-		commands = append(commands, present.CommandInput{Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
+		commands = append(commands, present.CommandInput{Fields: c.Fields, Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
 	}
 	resolved := present.Resolve(present.Input{
 		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,

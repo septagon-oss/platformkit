@@ -46,10 +46,22 @@ func TestEveryPresentationNameInTheVocabularyComposesSomething(t *testing.T) {
 			{Name: "title", Type: entity.TypeString, Present: name},
 			{Name: "id", Type: entity.TypeString},
 		}
+		if entity.ChoiceAppearance(name) {
+			fields[0].Choices = &entity.ChoiceSet{Cardinality: "one", Empty: entity.ChoiceEmpty{Mode: "allow"}, Options: []entity.ChoiceOption{{ID: "ada", Label: "ada", Picture: &entity.ChoicePicture{Kind: "colour", Value: "#112233"}}}}
+			if name == "figure" {
+				figure, err := entity.CompileChoiceFigure("fixture", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle data-choice="ada" r="8" cx="10" cy="10"/></svg>`, []string{"ada"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				fields[0].Presentation.Figure = &figure
+			}
+		}
 		row := map[string]any{"title": "ada", "id": "1"}
 		plainFields := slices.Clone(fields)
 		for i := range plainFields {
 			plainFields[i].Present = ""
+			plainFields[i].Choices = nil
+			plainFields[i].Presentation.Figure = nil
 		}
 		plain := listOut(t, plainFields, row)
 		composed := listOut(t, fields, row)

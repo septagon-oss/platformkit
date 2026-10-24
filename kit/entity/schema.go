@@ -133,6 +133,7 @@ const (
 
 // Field is one column, as the API and a screen see it.
 type Field struct {
+	Choices *ChoiceSet `json:"choices,omitempty"`
 	// Name is the JSON name, which is the only name a caller ever uses.
 	Name string `json:"name"`
 	// Column is the storage column used by the CRUD adapter. It comes from
@@ -244,7 +245,7 @@ type Field struct {
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "richtext", "time", "url", "week",
+	"textarea", "richtext", "time", "url", "week", "tiles", "chips", "figure", "swatch",
 }
 
 // Presentations is every name `ui:"present:…"` may carry, and it is the read-axis
@@ -266,7 +267,7 @@ var Widgets = []string{
 // A name a mounted Spec claims and no screen renders refuses to mount, and the
 // shape a picture name may sit on is refused too — see ui/resource's own test
 // that names a composition per name here, and kit/rest's picture gate.
-var Presentations = []string{"person", "image", "images", "avatar"}
+var Presentations = []string{"person", "image", "images", "avatar", "tiles", "chips", "figure", "swatch"}
 
 // PicturesAre reports whether the named presentation reads a file id, which is
 // the one fact about the name that a mount gate can check without importing what
@@ -338,6 +339,12 @@ func FieldsOf(t reflect.Type) []Field {
 func copyFields(fields []Field) []Field {
 	out := slices.Clone(fields)
 	for i := range out {
+		if out[i].Choices != nil {
+			out[i].Choices = out[i].Choices.Clone()
+		}
+		if out[i].Presentation.Figure != nil {
+			out[i].Presentation.Figure = new(*out[i].Presentation.Figure)
+		}
 		out[i].Enum = slices.Clone(out[i].Enum)
 		out[i].Index = slices.Clone(out[i].Index)
 		// The two hint maps are the new way to break the promise Fields makes

@@ -23,6 +23,7 @@ func fields(in Input) []ResolvedField {
 		if h.Reference != nil {
 			rf.Reference = &ResolvedReference{Resource: h.Reference.Resource}
 		}
+		resolveChoice(f, &rf)
 		out = append(out, rf)
 	}
 	return out
@@ -33,6 +34,8 @@ func control(f entity.Field) string {
 		return f.Widget
 	}
 	switch {
+	case f.Choices != nil:
+		return "chips"
 	case len(f.Enum) > 0:
 		return "select"
 	case f.Type == entity.TypeText:
@@ -64,6 +67,8 @@ func kind(f entity.Field) string {
 	switch {
 	case f.Present != "":
 		return f.Present
+	case f.Choices != nil:
+		return "chips"
 	case h.Format != "" && entity.ValidFormat(h.Format):
 		return h.Format
 	case h.Money != nil:
