@@ -39,20 +39,45 @@ func enumMove(key, before, after string) string {
 // wireEnumTokens reads the enum segment of a shape signature back as the member tokens it
 // spells. The segment is one part of the signature: it starts at `enum=` and ends at the
 // first space outside a quoted member, so a keyword that follows it is never read as a
-// member and a member that holds a space is never read as two.
+// member and a member that holds a space is never read as two. Every part it steps over is
+// stepped over whole — see wirePartEnd — so a value quoted to hold a space of its own, a
+// pattern of `x enum=p`, cannot hand the scan an enum segment no shape declares.
 func wireEnumTokens(signature string) ([]string, bool) {
 	rest := signature
 	for rest != "" {
 		if spelled, found := strings.CutPrefix(rest, "enum="); found {
 			return wireSegmentTokens(spelled), true
 		}
-		end := wireTokenEnd(rest, " ")
+		end := wirePartEnd(rest)
 		if end >= len(rest) {
 			break
 		}
 		rest = rest[end+1:]
 	}
 	return nil, false
+}
+
+// wirePartEnd is where the `key=value` part at the start of text ends: the first space no
+// quoted value covers. A part whose value holds a space is the one the writer quotes, so a
+// space inside a quote separates nothing, and because a quoted value escapes its own
+// backslashes, `\"` is content rather than the close of a value.
+func wirePartEnd(text string) int {
+	quoted := false
+	for i := 0; i < len(text); i++ {
+		switch text[i] {
+		case '\\':
+			if quoted {
+				i++
+			}
+		case '"':
+			quoted = !quoted
+		case ' ':
+			if !quoted {
+				return i
+			}
+		}
+	}
+	return len(text)
 }
 
 // wireSegmentTokens reads the tokens of one enum segment: `|` continues the segment, and a
