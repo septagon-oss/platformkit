@@ -772,6 +772,9 @@ jobs:
       # zod at all — npm installs the peer `@ai-sdk/provider-utils` asks for, at the newest release the
       # peer range allows, and the 4.6.1 that had landed sat inside a range the feed published later.
       # The cure is the same shape again, an override at 4.6.7, the first release above that range.
+      # The feed refused a fourth name the same way, `undici`, which this adapter reaches only through
+      # `unifont`'s `^8.0.0` and whose lock node is 8.12.3; that floor is held by the reviewed-release
+      # test `npm test` runs rather than by the offline guard below.
       # `make check` now holds those three floors itself — scripts/openpencil_lock_above_advisory_test_
       # sh reads this lock and this step, and refuses a version that falls back into a published range
       # or a step that stops auditing — so the number is known at the pull request rather than twelve
