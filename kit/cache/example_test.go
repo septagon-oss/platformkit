@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/internal/exampletest"
 )
@@ -51,6 +52,29 @@ func ExampleCache_readThrough() {
 	// loads: 1
 }
 
+func ExampleGetEntry() {
+	c := cache.MemoryFor(appname.Name(""))
+	defer c.Close()
+	ctx := context.Background()
+	key := cache.Shared("host").Entry("example.com")
+	entry, err := cache.GetEntry(ctx, c, key)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("found:", entry.Found)
+	if err := c.Set(ctx, key, []byte("resolved"), time.Minute, entry.Generation); err != nil {
+		panic(err)
+	}
+	entry, err = cache.GetEntry(ctx, c, key)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("found:", entry.Found, "value:", string(entry.Value))
+	// Output:
+	// found: false
+	// found: true value: resolved
+}
+
 func TestDocumentedExamplesExecute(t *testing.T) {
-	exampletest.Execute(t, "ExampleCache_readThrough")
+	exampletest.Execute(t, "ExampleCache_readThrough", "ExampleGetEntry")
 }

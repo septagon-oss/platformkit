@@ -172,7 +172,7 @@ var ErrBusy = errors.New("limit: the counter was still busy with this key, and t
 //
 // What it hands back is the pool itself, not a connection: a count is written in
 // a transaction of its own, detached from whatever request asked for it. Read it
-// from a held handle (`kit/app` composes `limit.Postgres(a.held.read)`) rather
+// from a held handle (`kit/app` composes `limit.PostgresFor("", a.held.read)`) rather
 // than from a request context: `httpx.ConnFrom` answers nothing until the
 // middleware that opens the request's transaction has run, and the public write
 // limit counts ahead of it, so a composition built that way would find no pool on
@@ -180,14 +180,24 @@ var ErrBusy = errors.New("limit: the counter was still busy with this key, and t
 // admit all of them.
 type Connections func(context.Context) (*db.Conn, bool)
 
-// Postgres returns the limiter every replica shares.
-func Postgres(conns Connections) Limiter { return postgres{conns: conns, attempt: queueRun} }
+// Postgres returns the shared limiter with unnamed application buckets.
+// Connections are acquired on operations, never during construction.
+//
+// Deprecated: Use PostgresFor with the zero appname.Name and the same Connections.
+func Postgres(conns Connections) Limiter { return PostgresFor("", conns) }
 
-// PostgresOf is Postgres for a deployment that names its app: every bucket key
-// begins with the slug, so two apps that count the same-named bucket of the same
-// tenant id spend one another's allowance. With no slug set the key is the one the
-// counters in the field already hold.
+// PostgresOf returns the shared limiter under app, acquiring conns on operations.
+//
+// Deprecated: Use PostgresFor with the same app and Connections.
 func PostgresOf(app appname.Name, conns Connections) Limiter {
+	return PostgresFor(app, conns)
+}
+
+// PostgresFor returns the limiter every replica shares, with app naming its
+// buckets. The zero name preserves unnamed buckets. Names are formed by
+// appname.RateLimitKey without additional validation. Construction opens nothing;
+// operations ask conns for a caller-owned pool and report ErrNoConnection if absent.
+func PostgresFor(app appname.Name, conns Connections) Limiter {
 	return postgres{conns: conns, app: app, attempt: queueRun}
 }
 
