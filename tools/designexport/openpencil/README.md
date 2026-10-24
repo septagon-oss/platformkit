@@ -949,10 +949,10 @@ them still allows the vulnerable range. `dompurify@3.4.17` satisfies
 [SMIL-attribute](https://github.com/advisories/GHSA-c6gr-qvv4-5v3f).
 `source-map-js@1.2.2` satisfies `css-tree`'s `^1.2.1` and fixes the
 [event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
-advisory. `zod@4.6.6` satisfies `@ai-sdk/provider-utils@4.0.33`'s
+advisory. `zod@4.6.7` satisfies `@ai-sdk/provider-utils@4.0.33`'s
 `^3.25.76 || ^4.1.8` peer range and fixes the
 [collection-validation memory exhaustion](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
-advisory affecting versions below 4.6.6. `undici@8.12.2` satisfies `unifont@0.7.5`'s
+advisory affecting versions below 4.6.6. `undici@8.12.3` satisfies `unifont@0.7.5`'s
 `^8.0.0` range, reached through `@open-pencil/core@0.14.0`, and fixes
 [EventSource memory exhaustion](https://github.com/advisories/GHSA-4qv8-2p9j-2685),
 [integrity-token case handling](https://github.com/advisories/GHSA-f72v-6w45-q472) and

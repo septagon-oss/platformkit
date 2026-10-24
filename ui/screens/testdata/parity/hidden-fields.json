@@ -1,0 +1,105 @@
+{
+ "name": "hidden-fields",
+ "provenance": {
+  "author": "João Rufino",
+  "date": "2026-10-23",
+  "inputHash": "sha256:742cefda6306cf0f233e95a7b1c1ee2f2301410ae99e1e8d26ac794ce44f7942",
+  "expectedHash": "sha256:28f2882d27b213a47779cba5fa64cb581bd489294900cf57a69d8bfe69a29e5f"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string"
+    },
+    {
+     "name": "secret",
+     "type": "string",
+     "presentation": {
+      "visibility": "hidden"
+     }
+    },
+    {
+     "name": "notes",
+     "type": "text",
+     "presentation": {
+      "visibility": "detail"
+     }
+    },
+    {
+     "name": "code",
+     "type": "string",
+     "required": true,
+     "presentation": {
+      "visibility": "hidden"
+     }
+    }
+   ]
+  },
+  "hints": {},
+  "rows": []
+ },
+ "expected": {
+  "resolved": {
+   "titles": {
+    "listCandidates": [
+     "title"
+    ],
+    "recordCandidates": [
+     "title",
+     "notes"
+    ]
+   },
+   "fields": [
+    {
+     "name": "id"
+    },
+    {
+     "name": "title",
+     "onList": true,
+     "onRecord": true
+    },
+    {
+     "name": "secret",
+     "onList": false,
+     "onRecord": false
+    },
+    {
+     "name": "notes",
+     "onList": false,
+     "onRecord": true,
+     "control": "textarea",
+     "kind": "longtext"
+    },
+    {
+     "name": "code",
+     "onList": false,
+     "onRecord": false
+    }
+   ],
+   "layout": {
+    "columns": [
+     "title"
+    ],
+    "information": [
+     "notes"
+    ],
+    "create": [
+     "title",
+     "notes",
+     "code"
+    ]
+   }
+  }
+ }
+}
