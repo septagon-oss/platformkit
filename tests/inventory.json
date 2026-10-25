@@ -34362,6 +34362,44 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/sketch_ceiling_test.go",
+   "id": "kit/rest/sketch_ceiling_test.go#TestADrawingAtTheDeclaredCeilingSurvivesEveryDoor",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestADrawingAtTheDeclaredCeilingSurvivesEveryDoor",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/sketch_ceiling_test.go",
+   "id": "kit/rest/sketch_ceiling_test.go#TestARequiredSketchRefusesEveryBodyWithoutADrawing",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARequiredSketchRefusesEveryBodyWithoutADrawing",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/sketch_declaration_test.go",
    "id": "kit/rest/sketch_declaration_test.go#TestSketchDeclarationsRejectScalarHints",
    "kind": "go",
@@ -34386,6 +34424,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestSketchPatchKeepsOrdinaryNumberHandling",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/sketch_form_write_test.go",
+   "id": "kit/rest/sketch_form_write_test.go#TestAFormWriteKeepsTheDrawingAndRefusesLimitsWithoutEffects",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAFormWriteKeepsTheDrawingAndRefusesLimitsWithoutEffects",
    "needs_db": true,
    "pkg": "kit/rest",
    "round_named": false,
@@ -83395,7 +83452,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2258,
+  "files": 2260,
   "forge_runs": [
    408,
    413,
@@ -83429,7 +83486,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3605,
+   "behaviour": 3608,
    "composition": 489,
    "contract": 22,
    "journey": 110
@@ -83448,9 +83505,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4226,
+  "rows": 4229,
   "tiers": {
-   "merge": 2601,
+   "merge": 2604,
    "nightly": 110,
    "push": 1515
   },
@@ -83458,13 +83515,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2013,
+   "keep": 2015,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3840,
+   "keep": 3843,
    "keep-rewrite": 170,
    "merge": 216
   }
