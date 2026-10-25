@@ -138,7 +138,11 @@ func timeValue(f present.ResolvedField, at time.Time, o Options) reading {
 	}
 	return reading{text: text, tone: "neutral", node: components.Time(components.TimeProps{
 		ComponentProps: components.ComponentProps{Attrs: attrs},
-		Instant:        components.TimeText{AtUTC: at, Text: text}, Title: local.Format(time.RFC3339Nano),
+		// The title is the moment with the zone it is stated in, at the second a
+		// person can read; the sub-second instant a machine reads is `datetime`.
+		// Fractional digits in a title are digits nobody compares, and the title
+		// is what stands when no browser says the moment again.
+		Instant: components.TimeText{AtUTC: at, Text: text}, Title: local.Format(time.RFC3339),
 	})}
 }
 

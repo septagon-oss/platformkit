@@ -111,7 +111,7 @@ func TestSupportedPolicyWinsWholeAndAnUnknownVersionFallsBackWhole(t *testing.T)
 	r.Present = entity.EntryHints{Plural: "WRONG", PrimaryField: "title", Sortable: []string{"title"}}
 	row := map[string]any{"id": "one", "title": "Wrong title", "body": "Resolved title", "pinned": false}
 	html := render(t, resource.List(r, opts, []map[string]any{row}, 1, 1, "", false).Body)
-	if !strings.Contains(html, "resolved rows") || !strings.Contains(html, ">Resolved title<") || strings.Contains(html, "sort=") || strings.Contains(html, "WRONG") {
+	if !strings.Contains(html, "Resolved rows") || !strings.Contains(html, ">Resolved title<") || strings.Contains(html, "sort=") || strings.Contains(html, "WRONG") {
 		t.Fatal(html)
 	}
 	if out := render(t, resource.Detail(r, opts, row, false).Body); strings.Contains(out, "<dt") {

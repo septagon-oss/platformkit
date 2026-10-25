@@ -60,7 +60,7 @@ func TestListLeadsWithTheKnownFieldAndHidesWhatTheSchemaHides(t *testing.T) {
 	t.Parallel()
 	rows := []map[string]any{{"id": "1", "title": "Buy milk", "body": "Two litres", "status": "open", "rank": 2.0, "pinned": true, "tags": []any{"a", "b"}}}
 	v := resource.List(note(), opts, rows, 1, 1, "", true)
-	if v.Title != "notes" || v.Status != 0 {
+	if v.Title != "Notes" || v.Status != 0 {
 		t.Fatalf("view = %+v", v)
 	}
 	out := render(t, v.Body)

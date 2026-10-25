@@ -27,7 +27,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 		status = statusUnprocessableEntity
 	}
 	return document.View{Title: title, Language: r.Resolved.Language, Status: status, Modules: richtextModules(r), Body: []g.Node{
-		breadcrumb(o, r.Resolved.Identity.Plural, at, title),
+		breadcrumb(o, r.collectionName(), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}

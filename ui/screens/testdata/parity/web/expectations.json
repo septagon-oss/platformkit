@@ -3,7 +3,7 @@
   "basis": "Accepted SPECIFY sections 3-6; literal HTML expectations",
   "cases": {
     "absent-hints": {
-      "heading": "notes",
+      "heading": "Notes",
       "columns": [
         "Title",
         "Created at"
@@ -62,7 +62,7 @@
       "sourceExpectedHash": "sha256:789ed1bae1a0f6e3ee3a72b275ac04dd012958b55be73938e48abc53b7e4d524"
     },
     "en-task": {
-      "heading": "tasks",
+      "heading": "Tasks",
       "columns": [
         "Title",
         "Done",
@@ -115,7 +115,7 @@
       ]
     },
     "malformed-hint": {
-      "heading": "things",
+      "heading": "Things",
       "columns": [
         "Status"
       ],
@@ -164,7 +164,7 @@
       ]
     },
     "plural-mass-noun": {
-      "heading": "content",
+      "heading": "Content",
       "columns": [
         "Title"
       ],
@@ -177,7 +177,7 @@
       ]
     },
     "pt-task": {
-      "heading": "tarefas",
+      "heading": "Tarefas",
       "columns": [
         "Title",
         "Done",

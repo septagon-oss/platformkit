@@ -5,7 +5,9 @@ package resource
 
 import (
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	g "maragu.dev/gomponents"
 
@@ -140,6 +142,25 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 		Items: []components.BreadcrumbItem{
 			{Label: o.Home, Href: o.Workspace}, {Label: collection, Href: at}, {Label: here},
 		}})
+}
+
+// collectionName is the resource's plural as a label rather than as a noun in a
+// sentence: the word the policy holds, exactly as its author wrote it, with the
+// letter a reader starts a line with. A list's heading, the name of its table
+// region and a breadcrumb's collection entry each stand alone, so each begins a
+// sentence; the count keeps the bare noun, because "3 notes" sits inside a
+// sentence and starts none. Nothing is re-spelled here: no pluralising, no
+// re-segmenting of a word an author chose — the first letter only.
+func (r Resource) collectionName() string { return startSentence(r.Resolved.Identity.Plural) }
+
+// startSentence puts the page's own capital on the first letter of a word that
+// begins a line. The rest of the word is the author's, letter for letter.
+func startSentence(word string) string {
+	first, size := utf8.DecodeRuneInString(word)
+	if first == utf8.RuneError && size <= 1 {
+		return word
+	}
+	return strings.ToUpper(string(first)) + word[size:]
 }
 
 // offers reports whether this resource mounted the route for a verb. An empty

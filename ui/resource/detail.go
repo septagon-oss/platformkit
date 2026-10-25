@@ -52,7 +52,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		}
 	}
 	body := []g.Node{
-		breadcrumb(o, r.Resolved.Identity.Plural, at, named),
+		breadcrumb(o, r.collectionName(), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		localeStrip(locales),
 		details(r, o, row, rendered),

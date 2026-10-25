@@ -25,7 +25,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	}
 	at := r.Screen
 	reading := r.Resolved.Identity
-	title := reading.Plural
+	title := r.collectionName()
 	if sort == "" {
 		sort = r.Resolved.List.DefaultSort
 	}
