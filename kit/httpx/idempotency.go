@@ -250,6 +250,11 @@ func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 			return
 		}
 	}
+	// The answer is remembered as the bytes one representation produced. A retry
+	// that asks for a different one is refused rather than served the old spelling.
+	if !a.replayRepresentation(ctx, stored.ContentType, stored.Status) {
+		return
+	}
 	r, w := humachi.Unwrap(ctx)
 	if stored.ContentType != "" {
 		w.Header().Set("Content-Type", stored.ContentType)
