@@ -283,7 +283,11 @@ func (s *Service) Unsave(ctx context.Context, tx db.Tx[db.Tenant], in contracts.
 	return events.Publish(ctx, tx, contracts.EventUnsaved, contracts.Changed{ID: id.String(), Revision: current.Revision})
 }
 
-// own reads one row of this person's, or nothing at all.
+// own reads one row of this person's. A nil row with no error is the copy not
+// being there — never saved, already removed, or somebody else's, which reads the
+// same by design. A failed read is not absence and keeps its error: the absence is
+// an immutable answer a caller may cache, and a database that did not answer is
+// neither.
 func (s *Service) own(tx db.Tx[db.Tenant], person uuid.UUID, id uuid.UUID) (*row, error) {
 	found, err := crud.Get[*row](tx, id)
 	if errors.Is(err, crud.ErrNotFound) || (err == nil && found.PersonID != person) {
@@ -320,7 +324,10 @@ func (s *Service) Get(ctx context.Context, tx db.Tx[db.Tenant], raw string) (con
 		return contracts.View{}, err
 	}
 	found, err := s.own(tx, person, id)
-	if err != nil || found == nil {
+	if err != nil {
+		return contracts.View{}, err
+	}
+	if found == nil {
 		return contracts.View{}, contracts.ErrNotFound
 	}
 	return s.view(ctx, tx, found.item())
@@ -335,7 +342,10 @@ func (s *Service) Find(ctx context.Context, tx db.Tx[db.Tenant], ref contracts.R
 		return contracts.View{}, err
 	}
 	found, err := s.prior(tx, person, ref)
-	if err != nil || found == nil {
+	if err != nil {
+		return contracts.View{}, err
+	}
+	if found == nil {
 		return contracts.View{}, contracts.ErrNotFound
 	}
 	return s.view(ctx, tx, found.item())
@@ -393,7 +403,10 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], raw string) (st
 		return "", err
 	}
 	found, err := s.own(tx, person, id)
-	if err != nil || found == nil {
+	if err != nil {
+		return "", err
+	}
+	if found == nil {
 		return "", contracts.ErrNotFound
 	}
 	source, err := s.source(found.item().Source)
