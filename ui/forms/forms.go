@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
@@ -22,8 +23,10 @@ import (
 // words explicitly; they do not change the definition's names or enum values.
 // Empty labels use the field name, and absent options use the declared enum text.
 type Field struct {
-	Definition entity.Field
-	Label      string
+	Resolved                      *present.ResolvedField
+	PictureSource, ComposedSource string
+	Definition                    entity.Field
+	Label                         string
 	// Help is the line under the control: what resource.Words.FieldHelp answers for
 	// the field — the author's declared `help:` when they wrote one, in the
 	// request's language, the field's Doc when they did not. Empty falls back to
@@ -80,12 +83,13 @@ type Editor struct {
 // A missing value uses the declared default only on create; an explicit empty
 // value remains empty. ReadOnly fields are omitted, as are immutable create fields.
 type Model struct {
-	Fields    []Field
-	Values    map[string]string
-	Errors    map[string]string
-	Immutable []string
-	Detail    string
-	Create    bool
+	ChoiceValues map[string][]string
+	Fields       []Field
+	Values       map[string]string
+	Errors       map[string]string
+	Immutable    []string
+	Detail       string
+	Create       bool
 }
 
 // Options supplies presentation and command addresses. Namespace is a DOM scope,
@@ -161,6 +165,9 @@ func Example(id string, model Model, options Options) (examples.Example, error) 
 	}
 	seen := make(map[string]bool, len(model.Fields))
 	for _, field := range model.Fields {
+		if err := validateChoiceField(field); err != nil {
+			return examples.Example{}, err
+		}
 		name := field.Definition.Name
 		// The name is in the error because it is the thing to fix: one field with no
 		// name has no label to write, and two of one name draw two controls the
@@ -232,8 +239,8 @@ func example(id string, model Model, options Options) examples.Example {
 		body = append(body, Control(ControlProps{Field: field,
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
-			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
-			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Text: options.Text}))
+			ID:           options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
+			ChoiceValues: choiceModelValues(model, f), Value: value, Error: model.Errors[f.Name], Immutable: immutable, Text: options.Text}))
 	}
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{

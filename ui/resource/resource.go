@@ -21,6 +21,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui/components"
 )
@@ -31,6 +32,7 @@ import (
 // httpx.Resource carries the same two beside its guarded closures; ui/screens
 // hands the renderers this half.
 type Resource struct {
+	Resolved  *present.Resolved
 	Schema    entity.Schema
 	Immutable []string
 	// API is the resource's own read address as the kernel composed it — the path

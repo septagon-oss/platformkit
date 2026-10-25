@@ -52,6 +52,8 @@ type UsesInput struct {
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
 type Spec[T crud.Entity] struct {
+	// Choices supplies finite field declarations copied into this Spec schema.
+	Choices *entity.ChoiceFields
 	// Source replaces storage reads with a service's scope and projection.
 	// Nil keeps ordinary CRUD. See ReadSource for required callbacks and limits.
 	Source *ReadSource[T]
@@ -231,5 +233,5 @@ func (s Spec[T]) Declared() []events.Declared {
 // Schema describes the entity to anything that did not compile against it: the
 // generated screens of stage E4, and the list operation's own documentation.
 func (s Spec[T]) Schema() crud.Schema {
-	return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: crud.Fields[T]()}
+	return crud.Schema{Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: s.choiceFields()}
 }

@@ -138,3 +138,77 @@ A deck is a list-reading suggestion, not a command precondition, reservation or
 security boundary. Tenant transactions, authorization and lifecycle rules
 remain authoritative on the existing command routes. Client card rendering,
 gestures, confirmation, pagination and local session order are separate work.
+
+## Choices
+
+A field's `Choices *ChoiceSet` declares semantics independently of `Widget` and
+`Present`. Both appearance axes accept `tiles`, `chips`, `figure`, and `swatch`;
+absent hints resolve to chips through `present.Resolve`. One choice is a string
+(empty is `""`); many choices are an ordered, non-null string array. JSON null,
+unknown IDs and duplicate IDs refuse without partial answers.
+
+Compose `rest.Spec.Choices` or `rest.CommandOptions.Choices` with
+`&entity.ChoiceFields{Fields: []entity.ChoiceField{...}}`. Each entry names an
+existing field and supplies `Choices` and an optional compiled `Figure`.
+`WithChoices` returns detached metadata and validates the whole overlay, including
+defaults, Go shape, reserved names and conflicting enum/reference/status hints.
+A standalone form passes the same resolved field through `forms.Field.Resolved`
+and typed values through `forms.Model.ChoiceValues`.
+
+`ChoiceSet` requires cardinality `one` or `many`, 1–256 options, and an explicit
+empty policy. IDs match `[a-z][a-z0-9_-]{0,31}`; labels and group labels have at
+most 160 Unicode characters without controls. `Empty` is `allow` with no message
+or `refuse` with a sentence of at most 512 characters. A required struct tag
+cannot contradict allowed empty. Search is enabled strictly above
+`SearchThreshold`; zero means 12. Groups keep first appearance order, after
+ungrouped options, with the exclusive option last.
+
+An option picture is tagged `file` (canonical nonzero UUID), `composed`
+(`entity.Picture` reference), or `colour` (`#RRGGBB`, canonicalized to uppercase).
+Swatches require a colour on every ordinary option. An optional `NoPreference`
+names an undecorated option that clears the others. `Maximum`, for many only,
+uses a count within the ordinary options and behaviour `refuse` with a sentence,
+or `replace-oldest` without one. Replacement retains the last N submitted IDs;
+all IDs are validated before discarding any.
+
+`Answer` validates a new selection. `Change(current, next)` also permits an
+already-empty stored answer to remain empty, while refusing removal of its last
+selection when required. `Apply` executes `pick`, `remove`, or `clear`; selecting
+an existing member does not move its position. All results are detached and an
+error returns no answer. These functions own no tenant or persistence rules.
+
+Editable generated resources require a revision field. Their HTTP and form
+updates require the observed revision, lock the current row, recheck tenant and
+revision even for unchanged answers, then validate and write with the existing
+outbox transaction. In-process helpers still require their caller to authorize
+and provide its expected revision. Native forms submit repeated names, a presence
+marker, and an optional JSON order marker. Presence without values clears; absence
+leaves a patch untouched. New native selections append in display order; enhanced
+forms retain interaction order. Native No preference clears other selections on
+submit; JSON mixed exclusive/ordinary answers refuse.
+
+A figure is a compiled value, not markup this package parses. `ChoiceFigure` is a
+port: the picture owner's `CompileFigure` compiles the drawing against all ordinary
+option IDs, and composition hands the result to `WithChoices`. Read-only figures
+highlight selections without inputs. Editable figures have equivalent native
+choices, keyboard focus movement and a selected-picture/count summary. Search,
+interactive toggles and summary updates enhance an ordinary radio/checkbox form;
+without JavaScript its summary is explicitly the last rendered selection.
+
+### Composition
+
+**Reused** — entity metadata, `present.Resolve`, REST row locks/revisions/outbox,
+OptionChips, Media, and `ui.choice-figure`.
+**Added** — finite ordered choice semantics and four presentation hints because
+enums do not express pictures, groups, maxima, exclusivity or figure mappings.
+**Made reusable** — detached choice policy, pure answer decisions, native form
+transport, and a figure port shared by web and native shells.
+
+### Limits
+
+Products own names, artwork, storage and grants; no domain vocabulary is built in.
+The catalogue document carries explicit choice and figure metadata, and a command's
+resolved fields, at the version it already publishes: nothing an older shell could
+misread was added to it, which is why its number did not move. Native rendering and
+catalogue-version negotiation belong to the native shell. Unknown stored IDs remain visible for native correction rather than being
+silently discarded or enhanced into a valid-looking selection.

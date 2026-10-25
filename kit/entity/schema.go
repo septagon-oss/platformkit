@@ -132,6 +132,7 @@ const (
 
 // Field is one column, as the API and a screen see it.
 type Field struct {
+	Choices *ChoiceSet `json:"choices,omitempty"`
 	// Name is the JSON name, which is the only name a caller ever uses.
 	Name string `json:"name"`
 	// Column is the storage column used by the CRUD adapter. It comes from
@@ -215,15 +216,20 @@ type Field struct {
 // Widgets lists the accepted ui:widget names rendered by ui/forms.
 // kit/rest refuses names outside this vocabulary. datetime and checkbox also
 // allow string-backed fields to select the controls their typed equivalents use.
+// tiles, chips, figure and swatch are the four appearances a finite choice draws:
+// each is a set of inputs a person operates, so the appearance is a widget and not
+// a read name, and a choice names it once, in `ui:"widget:…"`.
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "richtext", "time", "url", "week",
+	"textarea", "richtext", "time", "url", "week", "tiles", "chips", "figure", "swatch",
 }
 
 // Presentations lists the ui:present names rendered by ui/resource.
 // An empty name derives presentation from the field type. kit/rest refuses
-// unknown names and incompatible picture shapes at mount.
+// unknown names and incompatible picture shapes at mount, and refuses a control
+// name here: a finite choice declares its appearance as a widget and keeps this
+// read axis empty, which ValidateChoices checks.
 var Presentations = []string{"person", "image", "images", "avatar"}
 
 // PicturesAre reports whether the named presentation reads a file id, which is
@@ -296,6 +302,9 @@ func FieldsOf(t reflect.Type) []Field {
 func copyFields(fields []Field) []Field {
 	out := slices.Clone(fields)
 	for i := range out {
+		if out[i].Choices != nil {
+			out[i].Choices = out[i].Choices.Clone()
+		}
 		out[i].Enum = slices.Clone(out[i].Enum)
 		out[i].Index = slices.Clone(out[i].Index)
 		// The two hint maps are the new way to break the promise Fields makes

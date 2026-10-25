@@ -460,5 +460,71 @@
       "ui/forms/richtext.go"
     ],
     "translation": "Merge by hand"
+  },
+  "forms.choice.order": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "New choices in this form are applied in list order; the oldest are replaced."
+  },
+  "forms.choice.exclusive": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "No preference clears the other choices on submit. Uncheck it to choose others."
+  },
+  "forms.choice.search": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Search choices"
+  },
+  "forms.choice.find": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Use your browser’s find function to find a choice."
+  },
+  "forms.choice.unavailable": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Unavailable choice"
+  },
+  "forms.choice.clear": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Clear selection"
+  },
+  "forms.choice.selected": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "selected"
+  },
+  "forms.choice.rendered": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Last rendered selection"
+  },
+  "forms.choice.removed": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "Removed"
+  },
+  "forms.choice.matches": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "matching choices"
+  },
+  "forms.choice.noResults": {
+    "references": [
+      "ui/forms/choice.go"
+    ],
+    "translation": "No matching choices"
   }
 }
