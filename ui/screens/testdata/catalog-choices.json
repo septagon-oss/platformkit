@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 4,
+  "catalogVersion": 3,
   "resources": [
     {
       "module": "note",

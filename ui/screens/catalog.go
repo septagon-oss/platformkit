@@ -33,7 +33,7 @@ type Text = resource.Text
 // refuses to do to it — additive, optional, never a change of meaning — and moves
 // for a listed resource losing a verb, whose button that build drew and whose
 // address now answers nothing. A verb hidden by a new entry strands nobody.
-const CatalogVersion = 4
+const CatalogVersion = 3
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell
