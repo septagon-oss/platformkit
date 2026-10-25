@@ -67,8 +67,11 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if stamp == nil {
 		return module.Module{}, fmt.Errorf("%w: saved names no clock to stamp a capture with", contracts.ErrInvalid)
 	}
-	svc := internal.NewService(pkit.Get[contracts.Access](w), savables)
-	svc.Clock = stamp
+	// The three ports this module cannot make for itself are described once, here,
+	// and read out of that description rather than gathered twice.
+	deps := Deps{Access: pkit.Get[contracts.Access](w), Savables: savables, Clock: stamp}
+	svc := internal.NewService(deps.Access, deps.Savables)
+	svc.Clock = deps.Clock
 	pkit.Put[contracts.Service](w, svc)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest(), nil
