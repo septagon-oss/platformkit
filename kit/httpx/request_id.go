@@ -35,25 +35,19 @@ func requestIDFrom(ctx context.Context) string {
 	return r.ID
 }
 
-// requestID gives every request an id: the caller's, when they sent one worth
-// keeping, so a trace that starts at a proxy stays one trace; otherwise a fresh
-// UUID. It is echoed in the response header, so a caller who sent none can
-// still quote it.
+// requestID gives every request an id: the caller's, when they sent one worth keeping, so a
+// trace that starts at a proxy stays one trace; otherwise a fresh UUID. It is echoed in the
+// response header, so a caller who sent none can still quote it.
 //
-// It opens the distributed tracing context in the same breath, because the two
-// identify one thing and a request that had one and not the other would be a
-// log line no event could be joined to. Three sources, in this order: a caller's
-// own traceparent wins — that is what makes a trace cross a boundary; failing
-// that the trace id is the request id when the request id is hex, so the three
-// identifiers of one call (X-Request-ID, the log's request_id, the event's
-// traceparent) are one string; failing that — a proxy's opaque handle, which
-// `givenID` accepts and W3C cannot use — this process opens a trace of its own,
-// because a request that was accepted, answered and wrote an event has to leave
-// a trace whatever the caller chose to call it by. Its trace then joins to the
-// log line and the event through the request id, which all three carry, rather
-// than by being the same string as it. kit/trace refuses a header it cannot
-// parse rather than trusting it; refusing an id it cannot use is the same
-// judgement, and is not a reason to write an event that names no trace.
+// It opens the distributed tracing context in the same breath, because the two identify one
+// thing and a request that had one and not the other would be a log line no event could be
+// joined to. Three sources, in this order: a caller's own traceparent, which is what makes a
+// trace cross a boundary; failing that, the request id when it is hex, so X-Request-ID, the
+// log's request_id and the event's traceparent are one string; failing that — a proxy's
+// opaque handle, which `givenID` accepts and W3C cannot use — this process opens a trace of
+// its own, which joins to the log line and the event through the request id all three carry.
+// kit/trace refuses a header it cannot parse rather than trusting it; the same judgement, and
+// no reason to write an event that names no trace.
 func (a *API) requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := givenID(r.Header.Get(RequestIDHeader))
@@ -79,22 +73,14 @@ func (a *API) requestID(next http.Handler) http.Handler {
 			me.Trace = tc
 		}
 		w.Header().Set(RequestIDHeader, id)
-		// kit/request is the id's one owner: the line below is what every reader
-		// of this call — the problem body's instance, the log line, the outbox row
-		// and through it the audit trail — reads it from. Two more things happen to
-		// the id here, because a request is answered by more than the process that
-		// received it: it goes in the baggage, so a span opened below — in kit/db,
-		// in a job the request started — can name the request that caused it
-		// without the id being an argument through four signatures; and it goes on
-		// the span the router already opened, which is stamped here rather than
-		// carried, so a log line and a trace can be joined by quoting the string the
-		// caller saw in the response header.
-		//
-		// The baggage and the span attribute ride beside kit/trace rather than
-		// instead of it: that package carries a caller's W3C trace context to the
-		// outbox row and the envelope in a process that installed no provider, and
-		// this is the baggage and the span attribute, which it does not hold.
-		// kit/events writes both channels onto one row.
+		// kit/request is the id's one owner: every reader of this call — the problem body's
+		// instance, the log line, the outbox row and through it the audit trail — reads it from
+		// there. Two more things happen to the id here, because a request is answered by more
+		// than the process that received it: it goes in the baggage, so a span opened below can
+		// name the request that caused it without the id being an argument through four
+		// signatures, and on the span the router already opened, so a log line and a trace can
+		// be joined by quoting the string the caller saw in the response header. Both ride
+		// beside kit/trace rather than instead of it, and kit/events writes both onto one row.
 		ctx = request.With(ctx, me)
 		ctx = telemetry.WithRequestID(ctx, id)
 		spanAttr(ctx, telemetry.AttrRequestID, id)
