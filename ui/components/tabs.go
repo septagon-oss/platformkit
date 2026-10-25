@@ -121,64 +121,9 @@ func TabsWithSlots(p TabsProps, slots TabsSlots) g.Node {
 		isActive := tab.ID == active && !disabled
 		panelID := rootID + "-panel-" + tab.ID
 		tabID := rootID + "-tab-" + tab.ID
-		stateClass := style.inactive
-		if isActive {
-			stateClass = style.active
-		}
-		buttonClass := strings.TrimSpace(style.button + " " + stateClass)
-		if disabled {
-			buttonClass += " " + clTabsDisabled.Compile()
-		}
-		button := []g.Node{
-			h.Class(buttonClass), h.Type("button"), h.Role("tab"), h.ID(tabID),
-			g.Attr("aria-controls", panelID),
-			g.Attr("aria-selected", boolText(isActive)),
-			g.Attr("aria-disabled", boolText(disabled)),
-			g.Attr("tabindex", activeTabIndex(isActive)),
-			g.Attr("data-tabs-tab", tab.ID),
-			g.Attr("data-tabs-active-classes", style.active),
-			g.Attr("data-tabs-inactive-classes", style.inactive),
-			g.Attr("data-action", "click->tabs#activate"),
-		}
-		if disabled {
-			button = append(button, h.Disabled())
-		}
-		if tab.Icon != "" {
-			button = append(button, h.Span(h.Class(clTabsIcon.Compile()), glyph(tab.Icon)))
-		}
-		button = append(button, h.Span(g.Text(tab.Label)))
-		if tab.Badge != "" {
-			button = append(button, h.Span(h.Class(clTabsBadge.Compile()), g.Text(tab.Badge)))
-		}
-		tabList = append(tabList, h.Button(button...))
+		tabList = append(tabList, tabSlotButton(tab, style, panelID, tabID, disabled, isActive))
 
-		panel := []g.Node{
-			h.Class(clTabsPanel.Compile()), h.ID(panelID), h.Role("tabpanel"),
-			g.Attr("aria-labelledby", tabID),
-			g.Attr("aria-hidden", boolText(!isActive)),
-			g.Attr("data-tabs-panel", tab.ID),
-			g.Attr("data-state", tabState(isActive)),
-		}
-		if !isActive {
-			panel = append(panel, g.Attr("hidden"))
-		}
-		hxGet := tab.HxGet
-		if hxGet == "" {
-			hxGet = p.HxGet
-		}
-		if hxGet != "" {
-			panel = append(panel,
-				g.Attr("data-tabs-lazy", "true"),
-				g.Attr("hx-get", hxGet),
-				g.Attr("hx-trigger", "tabs:activate once"),
-				g.Attr("hx-swap", "innerHTML"),
-				h.Div(h.Class(clTabsLazy.Compile()),
-					h.Span(h.Class(clTabsLazyLabel.Compile()), g.Text(fallbackText(p.LoadingLabel, "Loading...")))),
-			)
-		} else {
-			panel = append(panel, tab.Content...)
-		}
-		panels = append(panels, h.Div(panel...))
+		panels = append(panels, tabSlotPanel(p, tab, panelID, tabID, isActive))
 	}
 
 	rootProps := p.ComponentProps
@@ -266,4 +211,68 @@ func tabState(active bool) string {
 		return "active"
 	}
 	return "inactive"
+}
+
+func tabSlotButton(tab TabSlot, style tabsStyle, panelID, tabID string, disabled, isActive bool) g.Node {
+	stateClass := style.inactive
+	if isActive {
+		stateClass = style.active
+	}
+	buttonClass := strings.TrimSpace(style.button + " " + stateClass)
+	if disabled {
+		buttonClass += " " + clTabsDisabled.Compile()
+	}
+	button := []g.Node{
+		h.Class(buttonClass), h.Type("button"), h.Role("tab"), h.ID(tabID),
+		g.Attr("aria-controls", panelID),
+		g.Attr("aria-selected", boolText(isActive)),
+		g.Attr("aria-disabled", boolText(disabled)),
+		g.Attr("tabindex", activeTabIndex(isActive)),
+		g.Attr("data-tabs-tab", tab.ID),
+		g.Attr("data-tabs-active-classes", style.active),
+		g.Attr("data-tabs-inactive-classes", style.inactive),
+		g.Attr("data-action", "click->tabs#activate"),
+	}
+	if disabled {
+		button = append(button, h.Disabled())
+	}
+	if tab.Icon != "" {
+		button = append(button, h.Span(h.Class(clTabsIcon.Compile()), glyph(tab.Icon)))
+	}
+	button = append(button, h.Span(g.Text(tab.Label)))
+	if tab.Badge != "" {
+		button = append(button, h.Span(h.Class(clTabsBadge.Compile()), g.Text(tab.Badge)))
+	}
+	return h.Button(button...)
+
+}
+
+func tabSlotPanel(p TabsProps, tab TabSlot, panelID, tabID string, isActive bool) g.Node {
+	panel := []g.Node{
+		h.Class(clTabsPanel.Compile()), h.ID(panelID), h.Role("tabpanel"),
+		g.Attr("aria-labelledby", tabID),
+		g.Attr("aria-hidden", boolText(!isActive)),
+		g.Attr("data-tabs-panel", tab.ID),
+		g.Attr("data-state", tabState(isActive)),
+	}
+	if !isActive {
+		panel = append(panel, g.Attr("hidden"))
+	}
+	hxGet := tab.HxGet
+	if hxGet == "" {
+		hxGet = p.HxGet
+	}
+	if hxGet != "" {
+		panel = append(panel,
+			g.Attr("data-tabs-lazy", "true"),
+			g.Attr("hx-get", hxGet),
+			g.Attr("hx-trigger", "tabs:activate once"),
+			g.Attr("hx-swap", "innerHTML"),
+			h.Div(h.Class(clTabsLazy.Compile()),
+				h.Span(h.Class(clTabsLazyLabel.Compile()), g.Text(fallbackText(p.LoadingLabel, "Loading...")))),
+		)
+	} else {
+		panel = append(panel, tab.Content...)
+	}
+	return h.Div(panel...)
 }
