@@ -694,7 +694,7 @@ owned `baggage` carrying the publisher's request id, because the specification f
 those two members and says nothing about correlation (`:63-70`; the column is
 `migrations/000041_outbox_baggage.up.sql:42`). Spans: the relay's batch
 ([relay batches](kit/events/relay.go)), `<event> publish` and `<event> deliver`
-(`kit/events/trace.go:143`, `:178`). The trail *is* this stream: `SubscribeAll`
+(`kit/events/trace.go:109`, `:134`). The trail *is* this stream: `SubscribeAll`
 (`modules/audit/module.go:93`) turns every declared event into a row.
 
 **How an app extends it.** Declare in the manifest — `Declared` and
@@ -825,7 +825,7 @@ the attribute names (`:94-97`), `WithRequestID` and `RequestID` (`:136`, `:153`)
 `Instruments` (`kit/telemetry/instruments.go:34`). `kit/trace` carries the
 context — `Context` (`kit/trace/trace.go:59`), `Parent` (`:70`), `Parse` (`:100`) —
 with the header names written once (`:27-31`). `kit/app` installs the one
-`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:325`, `:326`).
+`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:302`, `:303`).
 
 **Builds on.** `go.opentelemetry.io/otel` v1.46.0 (Apache-2.0) and its OTLP/gRPC
 exporters; W3C Trace Context, which `kit/trace` implements rather than wraps. The
@@ -841,7 +841,7 @@ process serves many tenants, as `## Follow a request` says.
 
 **How it is traced and audited.** This pillar *is* the trace: the transport span
 (`kit/httpx/traced.go:50`), named after the operation id (`:86`), the transaction
-span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:143`, `:178`),
+span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:109`, `:134`),
 the relay batch ([relay batches](kit/events/relay.go)), and the job run with one span per
 tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
 verbatim and indexes the trace out of it, as the audit section below explains.
@@ -938,8 +938,8 @@ flaky spec is a bug report, not a retry.
 and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Catalog`
 (`:31`), `Entry` with the operation ids an app calls (`:42`, `:77`) — at
 `/api/v1/app/resources` ([surface addresses](kit/httpx/surfaces.go)); `kit/app` renders the event
-half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:48`, `CoveredEvents`
-`:161`), pinned by the golden files in `apps/platformkit/testdata/`.
+half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:41`, `CoveredEvents`
+`:164`), pinned by the golden files in `apps/platformkit/testdata/`.
 `apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
 that `kit/wire` owns and lists (`kit/wire/README.md:28-35`) over the whole
 authorization declaration an operation emits, kind, permission and plan feature
@@ -957,7 +957,7 @@ dependency. Screens are derived from schemas rather than authored
 the tenant's own address, so a shell never names a tenant
 ([surface addresses](kit/httpx/surfaces.go)), and every operation inside it carries the tenant
 through the request's transaction like any other call. `CoveredEvents`
-(`kit/app/asyncapi.go:161`) counts the declared events the document names, which
+(`kit/app/asyncapi.go:167`) counts the declared events the document names, which
 is the claim that a shell sees no event nobody declared.
 
 **How it is traced and audited.** Nothing new: the events a shell may see are the
