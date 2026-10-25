@@ -173,7 +173,7 @@ func (p GuidedPage) stepAction() []g.Node {
 		}
 		return []g.Node{p.form("complete-set", p.word(label), map[string]string{"stepId": step.ID.String(), "setId": step.Sets[p.Set].String()})}
 	}
-	if p.Policy.Complete.Declared {
+	if p.Policy.Complete.Declared && !p.Policy.Complete.Callable {
 		return []g.Node{guidedText(p.word("completion_unavailable")), p.link("reload", p.Base, "primary")}
 	}
 	next, label := p.nextURL(), "next_step"
