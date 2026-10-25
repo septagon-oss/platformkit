@@ -5745,6 +5745,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/resolved_members_a_reader_may_find_absent_test.go",
+   "id": "apps/platformkit/resolved_members_a_reader_may_find_absent_test.go#TestTheServedResolvedPolicyAnswersTheServedDocument",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheServedResolvedPolicyAnswersTheServedDocument",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/resolved_singleton_surfaces_test.go",
    "id": "apps/platformkit/resolved_singleton_surfaces_test.go#TestResolvedSingletonOffersOnlyItsRecordAndUpdateSurfaces",
    "kind": "go",
@@ -85534,7 +85553,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2325,
+  "files": 2326,
   "forge_runs": [
    408,
    413,
@@ -85569,7 +85588,7 @@
   ],
   "layers": {
    "behaviour": 3712,
-   "composition": 492,
+   "composition": 493,
    "contract": 24,
    "journey": 110
   },
@@ -85587,9 +85606,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4338,
+  "rows": 4339,
   "tiers": {
-   "merge": 2652,
+   "merge": 2653,
    "nightly": 110,
    "push": 1576
   },
@@ -85597,13 +85616,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2080,
+   "keep": 2081,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3952,
+   "keep": 3953,
    "keep-rewrite": 170,
    "merge": 216
   }
