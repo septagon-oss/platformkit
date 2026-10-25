@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -233,7 +232,10 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 // they can ask for again.
 //
 // The row's own write count goes with the panel as the condition every restore
-// below quotes, because the page that read the row is the page that can say so.
+// below quotes, as the text the edit form quotes it in: the same count reaches a
+// page as a float64 or, where its form answers as steps, as a json.Number, and a
+// panel naming one type would quote nothing to the other, leaving its restores to
+// write over a row the person standing there never read.
 func historyPanel(r httpx.Resource, ctx context.Context, o Options, at string, row map[string]any) *resource.HistoryPanel {
 	if r.History == nil || r.History.Versions == nil {
 		return nil
@@ -256,9 +258,7 @@ func historyPanel(r httpx.Resource, ctx context.Context, o Options, at string, r
 		// declared none.
 		Asking: r.History.Asks,
 	}
-	if revision, numbered := row[entity.RevisionField].(float64); numbered {
-		out.Condition = strconv.FormatInt(int64(revision), 10)
-	}
+	out.Condition = rest.Text(row[entity.RevisionField])
 	// What each version held, indexed by its number, because the comparison one
 	// version offers is against the one before it and the series arrives newest
 	// first. A number missing from the index is a version retention released, or the

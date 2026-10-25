@@ -74493,6 +74493,44 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/history_revision_condition_stepped_test.go",
+   "id": "ui/screens/history_revision_condition_stepped_test.go#TestAFlatRecordPageQuotesItsRevisionToEveryRestore",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAFlatRecordPageQuotesItsRevisionToEveryRestore",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/history_revision_condition_stepped_test.go",
+   "id": "ui/screens/history_revision_condition_stepped_test.go#TestASteppedRecordPageQuotesItsRevisionToEveryRestore",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASteppedRecordPageQuotesItsRevisionToEveryRestore",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/locale_test.go",
    "id": "ui/screens/locale_test.go#TestScreensReadTheirLabelsThroughTheRequestLocale",
    "kind": "go",
@@ -83643,7 +83681,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2264,
+  "files": 2265,
   "forge_runs": [
    408,
    413,
@@ -83677,7 +83715,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3617,
+   "behaviour": 3619,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -83696,9 +83734,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4239,
+  "rows": 4241,
   "tiers": {
-   "merge": 2618,
+   "merge": 2620,
    "nightly": 111,
    "push": 1510
   },
@@ -83706,13 +83744,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2019,
+   "keep": 2020,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3853,
+   "keep": 3855,
    "keep-rewrite": 170,
    "merge": 216
   }
