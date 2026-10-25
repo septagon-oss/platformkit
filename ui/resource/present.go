@@ -51,6 +51,13 @@ import (
 // it illustrates is the same information twice, and a list of thirty rows is thirty
 // repetitions of it.
 func compose(f entity.Field, row components.TableRow, primary bool, at string, o Options, name string) g.Node {
+	if f.Choices != nil {
+		node := (Resource{Schema: entity.Schema{Fields: []entity.Field{f}}}).choiceRead(o, f, row.Cells[f.Name])
+		if primary {
+			return h.A(h.Href(at+"/"+row.ID), node)
+		}
+		return node
+	}
 	if f.Present == "" {
 		return nil
 	}
