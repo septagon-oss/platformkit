@@ -23,7 +23,10 @@ import (
 // which is slow on purpose, and is what makes the fake honest here rather than
 // fast.
 type Fake struct {
-	mu sync.Mutex
+	invitationClock     contracts.Clock
+	invitationTiming    contracts.InvitationTiming
+	invitationAuthority contracts.InvitationAuthority
+	mu                  sync.Mutex
 	// administering is this fake's whole role system: the names it treats as
 	// granting the permission that can grant every other one back. The real
 	// service asks the application through contracts.Administration; a fake
@@ -97,6 +100,9 @@ func (f *Fake) Delete(_ context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
+	if u.Invitation.Phase == contracts.InvitationPending {
+		return crud.ErrConflict
+	}
 	if err := f.floor(u, nil); err != nil {
 		return err
 	}
@@ -117,7 +123,7 @@ func (f *Fake) Published() []string {
 }
 
 // Invite mirrors internal.Service.Invite.
-func (f *Fake) Invite(_ context.Context, _ db.Tx[db.Tenant], email, displayName string) (*contracts.User, error) {
+func (f *Fake) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*contracts.User, error) {
 	u := &contracts.User{Email: email, DisplayName: displayName, Status: contracts.StatusInvited}
 	if err := u.Validate(context.Background()); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
@@ -130,6 +136,14 @@ func (f *Fake) Invite(_ context.Context, _ db.Tx[db.Tenant], email, displayName 
 		}
 	}
 	u.ID, u.CreatedAt, u.UpdatedAt = uuid.New(), db.Now(), db.Now()
+	u.TenantID = invitationTenant(ctx, tx)
+	if f.invitationTiming.Lifetime > 0 {
+		h, err := contracts.BeginInvitation(u, f.invitationTiming, f.invitationNow(), uuid.New(), false)
+		if err != nil {
+			return nil, err
+		}
+		u.Invitation = h
+	}
 	f.users[u.ID] = *u
 	f.published = append(f.published, contracts.EventInvited)
 	return f.get(u.ID)
@@ -142,6 +156,9 @@ func (f *Fake) SetPassword(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, 
 	u, err := f.get(id)
 	if err != nil {
 		return err
+	}
+	if u.Invitation.Phase != "" && u.Invitation.Phase != contracts.InvitationAccepted {
+		return f.acceptInvitationPassword(u, contracts.InvitationMutation{Action: contracts.InvitationDirectPassword, ExpectedRevision: u.Invitation.Revision}, password, f.invitationNow())
 	}
 	if u.Status != contracts.StatusInvited && u.Status != contracts.StatusActive {
 		return fmt.Errorf("%w: only invited or active users can be given a password", crud.ErrConflict)
@@ -164,6 +181,9 @@ func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, rol
 	if err != nil {
 		return nil, err
 	}
+	if u.Invitation.Phase == contracts.InvitationRevoked {
+		return nil, crud.ErrConflict
+	}
 	want := Normalise(roles)
 	if slices.Equal([]string(u.Roles), want) {
 		return u, nil
@@ -173,6 +193,19 @@ func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, rol
 	// a caller this fake has been told may not promote anybody.
 	if added := addedAdministering([]string(u.Roles), want, f.administering); len(added) > 0 && !f.mayGrant {
 		return nil, contracts.RefuseUngrantable(added[0])
+	}
+	if u.Invitation.Phase == contracts.InvitationPending {
+		next, changed, err := contracts.DecideInvitation(u, contracts.InvitationMutation{Action: contracts.InvitationRoles, ExpectedRevision: u.Invitation.Revision, Roles: want}, f.invitationTiming, f.invitationNow())
+		if err != nil {
+			return nil, err
+		}
+		if err := f.invitationFloor(u, next); err != nil {
+			return nil, err
+		}
+		if changed {
+			f.storeInvitation(u, next, contracts.InvitationRoles, f.invitationNow())
+		}
+		return f.get(id)
 	}
 	after := *u
 	after.Roles = want
@@ -196,6 +229,9 @@ func (f *Fake) Deactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	if err != nil {
 		return nil, err
 	}
+	if u.Invitation.Phase == contracts.InvitationPending {
+		return nil, crud.ErrConflict
+	}
 	if u.Status == contracts.StatusInactive {
 		return u, nil
 	}
@@ -218,6 +254,9 @@ func (f *Fake) Reactivate(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	u, err := f.get(id)
 	if err != nil {
 		return nil, err
+	}
+	if u.Invitation.Phase == contracts.InvitationRevoked {
+		return nil, crud.ErrConflict
 	}
 	if u.Status == contracts.StatusActive {
 		return u, nil
@@ -248,6 +287,7 @@ func (f *Fake) Retained(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*c
 		return nil, crud.ErrNotFound
 	}
 	stored.Roles = slices.Clone(stored.Roles)
+	stored.Invitation = stored.Invitation.Clone()
 	return &stored, nil
 }
 
@@ -331,6 +371,13 @@ func (f *Fake) Provision(_ context.Context, _ db.Tx[db.System], tenantID uuid.UU
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if password == "" && f.invitationTiming.Lifetime > 0 {
+		h, err := contracts.BeginInvitation(u, f.invitationTiming, f.invitationNow(), uuid.New(), false)
+		if err != nil {
+			return nil, err
+		}
+		u.Invitation = h
+	}
 	f.users[u.ID] = *u
 	f.published = append(f.published, contracts.EventInvited)
 	return f.get(u.ID)
@@ -404,6 +451,7 @@ func (f *Fake) get(id uuid.UUID) (*contracts.User, error) {
 		return nil, crud.ErrNotFound
 	}
 	stored.Roles = slices.Clone(stored.Roles)
+	stored.Invitation = stored.Invitation.Clone()
 	return &stored, nil
 }
 

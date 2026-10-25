@@ -26,6 +26,9 @@ import (
 // job and an event handler at once; the one field is the question this module
 // cannot answer for itself.
 type Service struct {
+	clock               contracts.Clock
+	invitationTiming    contracts.InvitationTiming
+	invitationAuthority contracts.InvitationAuthority
 	// administering answers which of this tenant's roles can change a role
 	// again. That answer is the auth module's table and this module must not
 	// read it, so the application supplies it. See contracts.Administration
@@ -62,6 +65,9 @@ var _ contracts.Service = (*Service)(nil)
 // outbox row restores onto its own context. An invitation asked by nothing at all —
 // the bootstrap, a replay — carries nothing, as it always did.
 func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*contracts.User, error) {
+	if s.invitationTiming.Lifetime > 0 {
+		return s.createManagedInvitation(ctx, tx, contracts.InvitationIntent{Email: email, DisplayName: displayName})
+	}
 	u := &contracts.User{Email: email, DisplayName: displayName, Status: contracts.StatusInvited}
 	if err := crud.Create(ctx, tx, u); err != nil {
 		return nil, err
@@ -81,6 +87,9 @@ func (s *Service) SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 	u, err := lockedUser(tx, id)
 	if err != nil {
 		return err
+	}
+	if u.Invitation.Phase != "" && u.Invitation.Phase != contracts.InvitationAccepted {
+		return s.acceptInvitationPassword(ctx, tx, u, contracts.InvitationMutation{Action: contracts.InvitationDirectPassword, ExpectedRevision: u.Invitation.Revision}, password, s.invitationNow())
 	}
 	if u.Status != contracts.StatusInvited && u.Status != contracts.StatusActive {
 		return fmt.Errorf("%w: only invited or active users can be given a password", crud.ErrConflict)
@@ -115,6 +124,9 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
+	if u.Invitation.Phase == contracts.InvitationRevoked {
+		return nil, crud.ErrConflict
+	}
 	want := contracts.CanonicalRoles(roles)
 	was := slices.Clone([]string(u.Roles))
 	if slices.Equal(was, want) {
@@ -143,6 +155,9 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	}
 	after := *u
 	after.Roles = want
+	if u.Invitation.Phase == contracts.InvitationPending {
+		return s.setManagedRoles(ctx, tx, u, want)
+	}
 	if err := s.floor(ctx, tx, attemptRoles, u, &after); err != nil {
 		return nil, err
 	}
@@ -253,6 +268,9 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	if err != nil {
 		return nil, err
 	}
+	if u.Invitation.Phase == contracts.InvitationPending {
+		return nil, fmt.Errorf("%w: revoke the invitation with its expected revision", crud.ErrConflict)
+	}
 	if u.Status == contracts.StatusInactive {
 		return u, nil
 	}
@@ -285,6 +303,9 @@ func (s *Service) Reactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	u, err := lockedUser(tx, id)
 	if err != nil {
 		return nil, err
+	}
+	if u.Invitation.Phase == contracts.InvitationRevoked {
+		return nil, crud.ErrConflict
 	}
 	if u.Status == contracts.StatusActive {
 		return u, nil
@@ -350,6 +371,9 @@ func (s *Service) ByEmail(_ context.Context, tx db.Tx[db.Tenant], email string) 
 func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID uuid.UUID,
 	email, displayName, password string, roles []string,
 ) (*contracts.User, error) {
+	if password == "" && s.invitationTiming.Lifetime > 0 {
+		return s.provisionWaitingInvitation(ctx, tx, tenantID, email, displayName, roles)
+	}
 	status, hash := contracts.StatusInvited, ""
 	if password != "" {
 		var err error

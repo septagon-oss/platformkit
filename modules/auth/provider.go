@@ -48,6 +48,12 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.OIDCProviders](),
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Needs[usercontracts.Granting](),
+	pkit.Optional[usercontracts.Clock](),
+	pkit.Optional[usercontracts.InvitationAuthority](),
+	pkit.Optional[usercontracts.InvitationReader](),
+	pkit.Optional[authcontracts.InvitationUsers](),
+	pkit.Provides[authcontracts.InvitationLinks](),
+	pkit.Provides[authcontracts.InvitationReadings](),
 	// Optional, not Needed: with no tenant module there is no tenant whose IdP could
 	// be resolved and no installation-level default to fall back to, so auth mounts
 	// no SAML leg at all rather than three doors that answer 404 for everybody.
@@ -68,8 +74,11 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		return module.Module{}, fmt.Errorf("auth: composes no usercontracts.Granting, which is the door a roles write hands out an administering role through: compose the user module's, or one of your own")
 	}
 	deps := Deps{
-		Users:  pkit.Get[authcontracts.Users](w),
-		Notify: pkit.Get[authcontracts.Notifier](w),
+		Clock:            pkit.Get[usercontracts.Clock](w),
+		InvitationUsers:  pkit.Get[authcontracts.InvitationUsers](w),
+		InvitationReader: pkit.Get[usercontracts.InvitationReader](w),
+		Users:            pkit.Get[authcontracts.Users](w),
+		Notify:           pkit.Get[authcontracts.Notifier](w),
 		// The same sender and the same host lookup the notification module
 		// takes, handed to the one module that has to put a secret in a message
 		// without it becoming a row first: a set-password link belongs in the
@@ -144,7 +153,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	// transaction — the same question every route is asked, one line earlier and
 	// about a different act.
 	fillGranting(granting, svc)
+	fillInvitationAuthority(pkit.Get[usercontracts.InvitationAuthority](w), svc.(*internal.Service))
 	pkit.Put(w, svc)
+	pkit.Put[authcontracts.InvitationLinks](w, svc.(*internal.Service))
+	pkit.Put[authcontracts.InvitationReadings](w, svc.(*internal.Service))
 	pkit.Put[httpx.Authorizer](w, svc)
 	pkit.Put[pkit.Authenticator](w, svc.Authenticate)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
@@ -236,4 +248,10 @@ func door(name string, mode func(usercontracts.Service) authcontracts.Registrati
 		pkit.Needs[usercontracts.Service](),
 		pkit.Provides[authcontracts.RegistrationMode](),
 	)
+}
+
+func fillInvitationAuthority(authority usercontracts.InvitationAuthority, svc *internal.Service) {
+	if holder, ok := authority.(*usercontracts.InvitationAuthorityFunc); ok && holder != nil {
+		holder.Ask = svc.InspectInvitationAuthority
+	}
 }

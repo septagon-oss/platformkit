@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -227,6 +228,12 @@ func countingRoles(u *contracts.User, administering []string) []string {
 // transaction, so returning an error rolls the delete back and the caller gets
 // a 422 naming the rule.
 func (s *Service) RefuseLastAdministrator(ctx context.Context, tx db.Tx[db.Tenant], u *contracts.User) error {
+	if u.Invitation.Phase == contracts.InvitationPending {
+		return fmt.Errorf("%w: revoke the invitation before removing it", crud.ErrConflict)
+	}
+	if u.Invitation.Phase != "" {
+		return s.invitationFloor(ctx, tx, u, nil)
+	}
 	return s.floor(ctx, tx, attemptDelete, u, nil)
 }
 

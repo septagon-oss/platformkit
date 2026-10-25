@@ -42,6 +42,7 @@ import (
 var Module = pkit.NewModule("subject", wire,
 	pkit.Needs[[]personaldata.Part](),
 	pkit.Needs[usercontracts.Service](),
+	pkit.Optional[usercontracts.InvitationRetention](),
 	pkit.Needs[filecontracts.Service](),
 	pkit.Needs[notificationcontracts.Service](),
 	pkit.Needs[jobs.TenantLister](),
@@ -50,15 +51,16 @@ var Module = pkit.NewModule("subject", wire,
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	deps := Deps{
-		Parts:   pkit.All[personaldata.Part](w),
-		People:  pkit.Get[usercontracts.Service](w),
-		Bundles: bundles{files: pkit.Get[filecontracts.Service](w)},
-		Notes:   notices{service: pkit.Get[notificationcontracts.Service](w)},
-		Tenants: pkit.Get[jobs.TenantLister](w),
-		Files:   pkit.Get[filecontracts.Service](w),
+		InvitationRetention: pkit.Get[usercontracts.InvitationRetention](w),
+		Parts:               pkit.All[personaldata.Part](w),
+		People:              pkit.Get[usercontracts.Service](w),
+		Bundles:             bundles{files: pkit.Get[filecontracts.Service](w)},
+		Notes:               notices{service: pkit.Get[notificationcontracts.Service](w)},
+		Tenants:             pkit.Get[jobs.TenantLister](w),
+		Files:               pkit.Get[filecontracts.Service](w),
 	}
 	deps.Service = internal.NewService(internal.Deps{
-		Parts: deps.Parts, People: deps.People,
+		Parts: deps.Parts, People: deps.People, InvitationRetention: deps.InvitationRetention,
 		Bundles: deps.Bundles, Notes: deps.Notes,
 	})
 	pkit.Put[subjectcontracts.Service](w, deps.Service)

@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/septagon-oss/platformkit/kit/appname"
 	"log/slog"
 	"net/http"
 	"os"
@@ -29,6 +28,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -1320,7 +1320,7 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 	if err := a.moveLedger(ctx, conn); err != nil {
 		return err
 	}
-	if err := events.Consume(ctx, conn, transport, subs); err != nil {
+	if err := events.Consume(httpx.WithConn(ctx, conn), conn, transport, subs); err != nil {
 		return err
 	}
 	a.log.InfoContext(ctx, "app: working", "jobs", len(scheduled), "subscriptions", len(subs))

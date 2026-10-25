@@ -60,10 +60,13 @@ type Delivery struct {
 
 // Service is signing in and what a role may do.
 type Service struct {
-	users   contracts.Users
-	notify  contracts.Notifier
-	mail    Delivery
-	limiter *contracts.Limiter
+	invitationClock  usercontracts.Clock
+	invitationUsers  contracts.InvitationUsers
+	invitationReader usercontracts.InvitationReader
+	users            contracts.Users
+	notify           contracts.Notifier
+	mail             Delivery
+	limiter          *contracts.Limiter
 
 	// catalogue is every permission the application defines, handed over by the
 	// kernel when this module's routes are registered. The hourly sweep reads

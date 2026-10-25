@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -74,6 +75,15 @@ func (f *Fake) ConfirmAddress(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUI
 	}
 	if u.Status != contracts.StatusInvited && u.Status != contracts.StatusUnverified {
 		return nil, fmt.Errorf("%w: only an invited or unverified account is confirmed by an identity provider", crud.ErrConflict)
+	}
+	if u.Invitation.Phase != "" {
+		at := f.invitationNow()
+		next, _, err := contracts.DecideInvitation(u, contracts.InvitationMutation{Action: contracts.InvitationIdentityProvider}, f.invitationTiming, at)
+		if err != nil {
+			return nil, err
+		}
+		f.storeInvitation(u, next, contracts.InvitationIdentityProvider, at)
+		u = next
 	}
 	u.Status, u.UpdatedAt = contracts.StatusActive, db.Now()
 	f.users[id] = *u

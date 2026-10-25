@@ -48,8 +48,10 @@ func (r route) String() string { return r.surface + " " + r.method + " " + r.pat
 
 // wholeSurface is every operation the auth module answers with, in the
 // composition that has everything: a registration policy and an installation
-// issuer. 31 rows, and one of each of the module's six route groups.
+// issuer. 33 rows, and one of each of the module's six route groups.
 var wholeSurface = []route{
+	{"app", "GET", "/api/v1/auth/invitations", "permission user:read"},
+	{"app", "GET", "/api/v1/auth/invitations/{id}", "permission user:read"},
 	// handler.go — signing in and out, the caller's own identity, sessions and
 	// password, and the two roles routes.
 	{"app", "POST", "/api/v1/auth/login", "public"},

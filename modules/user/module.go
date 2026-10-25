@@ -1,10 +1,7 @@
 // Package user is the module manifest: the people in a tenant.
 //
-// It is the exemplar's shape with one entity, one Spec and explicit lifecycle
-// commands. A user belongs to a tenant by carrying its id, which row-level
-// security matches on, so there is nothing for this module to ask the tenant
-// module for; its one dependency is Deps.Administration, and that is a question
-// about roles rather than about users.
+// One entity and its lifecycle commands run inside tenant transactions. Role
+// policy and invitation authority come from declared composition companions.
 package user
 
 import (
@@ -23,14 +20,13 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user/internal"
 )
 
-// Deps is what this module cannot make for itself, and it is one thing.
-//
-// It used to be empty, and the day it needed something was the day the floor
-// under a tenant's last administrator was written: whether somebody can still
-// administer their tenant depends on what the roles they hold grant, and what a
-// role grants is the auth module's table. This module reads no other module's
-// rows, so the application answers instead.
+// Deps supplies required Administration and Granting policies. Managed invitations
+// also require positive InvitationTiming and InvitationAuthority; a nil Clock
+// uses UTC microsecond time. These inputs are fixed before requests begin.
 type Deps struct {
+	Clock               contracts.Clock
+	InvitationTiming    contracts.InvitationTiming
+	InvitationAuthority contracts.InvitationAuthority
 	// Administration answers which of a tenant's roles grant the permission
 	// that can grant every other one back. Wire
 	// &contracts.AdministrationFunc{Ask: auth.AdministeringRoles}, or the
@@ -157,8 +153,12 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	// that works. Whether the fill happened is pinned by pkit's late-bound-holder
 	// case, not by this line.
 	svc := internal.NewService(deps.Administration, deps.Granting)
+	svc.ConfigureInvitations(deps.Clock, deps.InvitationTiming, deps.InvitationAuthority)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate
+	if deps.InvitationTiming.Lifetime > 0 {
+		mounted.Create, mounted.AfterCreate = svc.CreatePerson, nil
+	}
 	// The third door, and the one that is not a lifecycle command: DELETE
 	// {id} soft-deletes the row, which hides it from ByEmail and from every
 	// other read, so deleting the sole administrator locks the tenant out
@@ -174,9 +174,10 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		// The person is the row itself: the id stays and the values go, which is
 		// what an erasure that keeps the audit trail has to mean (ADR 0020).
 		PersonalData: personaldata.Implements(personaldata.Table{
-			Name:   "users",
-			Person: "id",
-			Text:   []string{"email", "display_name", "handle"},
+			Name:      "users",
+			Person:    "id",
+			Text:      []string{"email", "display_name", "handle", "invitation_recipient"},
+			NotPerson: []string{"invitation_delivery_id"},
 		}),
 		Permissions: permissions,
 		Declared: []events.Declared{
@@ -187,6 +188,9 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[*contracts.User](contracts.EventUpdated),
 			events.Declare[*contracts.User](contracts.EventDeleted),
 			events.Declare[contracts.Invited](contracts.EventInvited),
+			events.Declare[contracts.InvitationTransition](contracts.EventInvitationResent),
+			events.Declare[contracts.InvitationTransition](contracts.EventInvitationRevoked),
+			events.Declare[contracts.InvitationTransition](contracts.EventInvitationAccepted),
 			events.Declare[contracts.PasswordSet](contracts.EventPasswordSet),
 			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
 			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
@@ -204,6 +208,9 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(s httpx.Surfaces) {
+			if holder, ok := deps.InvitationAuthority.(*contracts.InvitationAuthorityFunc); ok && (holder == nil || holder.Ask == nil) {
+				panic("user: invitation authority holder was not filled")
+			}
 			mounted.Mount(s)
 			internal.RegisterRoutes(s, mounted, svc)
 		},

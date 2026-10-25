@@ -65,6 +65,8 @@ var webhookCatalogue = emittedEvents{
 	usercontracts.EventInvited, usercontracts.EventPasswordSet, usercontracts.EventRolesSet,
 	usercontracts.EventHandleSet, usercontracts.EventDeactivated,
 	usercontracts.EventAdministrationRefused,
+	// Who may enter changed: a link replaced, the person walked in, or withdrawn.
+	usercontracts.EventInvitationResent, usercontracts.EventInvitationAccepted, usercontracts.EventInvitationRevoked,
 	usercontracts.EventRegistrationPending, usercontracts.EventRegistrationApproved,
 	usercontracts.EventRegistrationUnverified, usercontracts.EventEmailVerified,
 	// The return an administrator's own command drives: a suspended person is an

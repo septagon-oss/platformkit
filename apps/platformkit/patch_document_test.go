@@ -187,6 +187,18 @@ func TestEveryComposedPatchDocumentsExactlyTheKeysItWrites(t *testing.T) {
 			}
 			rowID := createdRowID(t, body, fixture.idFrom)
 			at := path + "/" + rowID
+			// The generated PATCH is a member's surface. While an invitation waits, the
+			// module refuses a metadata write that would move the address its own link
+			// is bound to, and withdrawal is an owner command carrying the revision the
+			// invitation was last read at. Withdrawing it here leaves the row the generic
+			// PATCH was written for, so this case measures that surface and not the
+			// invitation's refusal, which has its own cases.
+			if id == "user-user-update" {
+				code, refusal := do(t, cfg, admin, http.MethodPost, acmeHost, invitePath+"/"+rowID+"/revoke", `{"expectedRevision":1}`)
+				if code != http.StatusOK {
+					t.Fatalf("withdraw the seeded invitation = %d %s", code, refusal)
+				}
+			}
 			read := func() map[string]any {
 				t.Helper()
 				code, body := do(t, cfg, admin, http.MethodGet, acmeHost, res.Schema.Path+"/"+rowID, "")

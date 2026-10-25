@@ -51,8 +51,9 @@ type userPart struct {
 }
 
 type userRow struct {
-	ID    uuid.UUID `json:"id"`
-	Email string    `json:"email"`
+	Invitation *contracts.InvitationSnapshot `json:"invitation,omitempty" gorm:"-"`
+	ID         uuid.UUID                     `json:"id"`
+	Email      string                        `json:"email"`
 	// The column is display_name; the field is what the person's own copy calls it.
 	// Without the column name here, gorm maps Name to a column called "name", finds no
 	// such column in the select, and leaves the field empty: an Article 15 copy of a
@@ -67,7 +68,7 @@ type userRow struct {
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
 }
 
-func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
+func (p personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	s personaldata.Subject) (json.RawMessage, error) {
 	var rows []userRow
 	// No deleted_at filter: a soft-deleted person still has a row, and "what do you
@@ -78,6 +79,16 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 		Where("id = ?", s.ID).Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("user: export %s: %w", s.ID, err)
+	}
+	if len(rows) > 0 {
+		var u contracts.User
+		if err := tx.DB().Where("id = ?", s.ID).Take(&u).Error; err != nil {
+			return nil, err
+		}
+		if u.Invitation.Phase != "" {
+			rows[0].Invitation = contracts.ReadInvitation(&u, contracts.InvitationAccess{}, contracts.InvitationTiming{}, p.users.invitationNow())
+			rows[0].Invitation.NextResendAt = nil
+		}
 	}
 	return json.Marshal(userPart{Users: rows})
 }
@@ -91,24 +102,18 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 // A row that is not there is an answer and not a failure — an erasure of nothing is a
 // receipt of zero, so the redelivery of an erasure does not fail the second time.
 func (p personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
-	var before *contracts.User
-	err := tx.DB().WithContext(ctx).Raw(
-		"SELECT id, tenant_id, created_at, updated_at, deleted_at, email, display_name, status, "+
-			"roles, password_hash, handle FROM users WHERE id = ? FOR UPDATE", s.ID).Scan(&before).Error
-	if errors.Is(err, crud.ErrNotFound) || (err == nil && before == nil) {
+	_, err := p.users.LockForErasure(ctx, tx, s.ID)
+	if errors.Is(err, crud.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("user: lock %s: %w", s.ID, err)
-	}
-	if err := p.users.RefuseLastAdministrator(ctx, tx, before); err != nil {
 		return err
 	}
 	res := tx.DB().WithContext(ctx).Exec(
 		`UPDATE users
-		    SET email = ?, display_name = '', handle = NULL, password_hash = NULL,
+		    SET email = ?, invitation_recipient = CASE WHEN invitation_phase IS NOT NULL THEN ? ELSE NULL END, display_name = '', handle = NULL, password_hash = NULL,
 		        roles = '{}'::text[], updated_at = ?
-		  WHERE id = ?`, s.ErasedEmail(), db.Now(), s.ID)
+		  WHERE id = ?`, s.ErasedEmail(), s.ErasedEmail(), p.users.invitationNow(), s.ID)
 	if res.Error != nil {
 		return fmt.Errorf("user: erase %s: %w", s.ID, res.Error)
 	}

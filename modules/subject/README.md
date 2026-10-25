@@ -45,6 +45,19 @@ The reference application composes it between `change.Module` and `admin.Module`
 (`apps/platformkit/app.go`), which is what turns the eight contributions into a
 command rather than a manifest claim.
 
+`pkit.Optional[usercontracts.InvitationRetention]()` lets erasure lock the retained
+person before any credential contributor runs: pending or expired invitations must
+first be revoked, an accepted or revoked history survives identity scrubbing, and a
+managed invitation with no retention companion refuses erasure. The user owner owns
+that policy in [Recoverable invitations](../user/README.md#recoverable-invitations).
+
+**Reused** — user `InvitationRetention`, the existing personal-data contributions
+and the caller's tenant transaction keep one erasure boundary.
+**Added** — the declared optional companion and an early owner lock, because the
+alphabetical contributor walk alone could lock credentials before the person.
+**Made reusable** — the retained-person lock contract can precede any operation that
+composes several owners of one person's data.
+
 ## The two operations
 
 `Export(ctx, tx, subject)` is a read. It answers with `manifest.json` and one

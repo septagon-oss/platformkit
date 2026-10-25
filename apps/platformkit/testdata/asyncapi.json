@@ -4528,6 +4528,153 @@
       "summary": "Every tenant's delivery of user.handle_set.",
       "title": "user.handle_set"
     },
+    "user.invitation_accepted": {
+      "address": "platformkit.*.user.invitation_accepted",
+      "description": "Published at platformkit.{tenantId}.user.invitation_accepted; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "user.invitation_accepted": {
+          "contentType": "application/json",
+          "name": "user.invitation_accepted",
+          "payload": {
+            "properties": {
+              "acceptedVia": {
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "deliveryId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "served": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "generation",
+              "revision",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "user — user.invitation_accepted",
+          "title": "user.invitation_accepted"
+        }
+      },
+      "summary": "Every tenant's delivery of user.invitation_accepted.",
+      "title": "user.invitation_accepted"
+    },
+    "user.invitation_resent": {
+      "address": "platformkit.*.user.invitation_resent",
+      "description": "Published at platformkit.{tenantId}.user.invitation_resent; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "user.invitation_resent": {
+          "contentType": "application/json",
+          "name": "user.invitation_resent",
+          "payload": {
+            "properties": {
+              "acceptedVia": {
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "deliveryId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "served": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "generation",
+              "revision",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "user — user.invitation_resent",
+          "title": "user.invitation_resent"
+        }
+      },
+      "summary": "Every tenant's delivery of user.invitation_resent.",
+      "title": "user.invitation_resent"
+    },
+    "user.invitation_revoked": {
+      "address": "platformkit.*.user.invitation_revoked",
+      "description": "Published at platformkit.{tenantId}.user.invitation_revoked; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "user.invitation_revoked": {
+          "contentType": "application/json",
+          "name": "user.invitation_revoked",
+          "payload": {
+            "properties": {
+              "acceptedVia": {
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "deliveryId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "served": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "generation",
+              "revision",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "user — user.invitation_revoked",
+          "title": "user.invitation_revoked"
+        }
+      },
+      "summary": "Every tenant's delivery of user.invitation_revoked.",
+      "title": "user.invitation_revoked"
+    },
     "user.invited": {
       "address": "platformkit.*.user.invited",
       "description": "Published at platformkit.{tenantId}.user.invited; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -4541,8 +4688,18 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "deliveryId": {
+                "format": "uuid",
+                "type": "string"
+              },
               "email": {
                 "type": "string"
+              },
+              "generation": {
+                "type": "integer"
+              },
+              "revision": {
+                "type": "integer"
               },
               "served": {
                 "type": "string"
@@ -7014,6 +7171,57 @@
         }
       ],
       "summary": "The user module publishes user.handle_set.",
+      "tags": [
+        {
+          "name": "user"
+        }
+      ]
+    },
+    "user.invitation_accepted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/user.invitation_accepted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/user.invitation_accepted/messages/user.invitation_accepted"
+        }
+      ],
+      "summary": "The user module publishes user.invitation_accepted.",
+      "tags": [
+        {
+          "name": "user"
+        }
+      ]
+    },
+    "user.invitation_resent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/user.invitation_resent"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/user.invitation_resent/messages/user.invitation_resent"
+        }
+      ],
+      "summary": "The user module publishes user.invitation_resent.",
+      "tags": [
+        {
+          "name": "user"
+        }
+      ]
+    },
+    "user.invitation_revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/user.invitation_revoked"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/user.invitation_revoked/messages/user.invitation_revoked"
+        }
+      ],
+      "summary": "The user module publishes user.invitation_revoked.",
       "tags": [
         {
           "name": "user"

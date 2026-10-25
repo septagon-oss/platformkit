@@ -9,6 +9,8 @@
       "provides": [
         "usercontracts.Administration",
         "usercontracts.Granting",
+        "usercontracts.InvitationAuthority",
+        "usercontracts.InvitationTiming",
         "filecontracts.Storage",
         "secrets.Secrets",
         "secrets.Keys",
@@ -63,6 +65,10 @@
     {
       "name": "user",
       "provides": [
+        "usercontracts.InvitationCommands",
+        "usercontracts.InvitationReader",
+        "usercontracts.InvitationRetention",
+        "authcontracts.InvitationUsers",
         "usercontracts.Service",
         "authcontracts.Users",
         "authcontracts.Provisioner",
@@ -76,6 +82,20 @@
         },
         {
           "contract": "usercontracts.Granting",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "usercontracts.Clock",
+          "from": ""
+        },
+        {
+          "contract": "usercontracts.InvitationTiming",
+          "from": "product"
+        },
+        {
+          "contract": "usercontracts.InvitationAuthority",
           "from": "product"
         }
       ],
@@ -360,6 +380,8 @@
     {
       "name": "auth",
       "provides": [
+        "authcontracts.InvitationLinks",
+        "authcontracts.InvitationReadings",
         "authcontracts.Auth",
         "httpx.Authorizer",
         "pkit.Authenticator"
@@ -403,6 +425,22 @@
         }
       ],
       "uses": [
+        {
+          "contract": "usercontracts.Clock",
+          "from": ""
+        },
+        {
+          "contract": "usercontracts.InvitationAuthority",
+          "from": "product"
+        },
+        {
+          "contract": "usercontracts.InvitationReader",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.InvitationUsers",
+          "from": "user"
+        },
         {
           "contract": "authcontracts.SAMLProviders",
           "from": "tenant"
@@ -739,6 +777,12 @@
         {
           "contract": "jobs.TenantLister",
           "from": "tenant"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "usercontracts.InvitationRetention",
+          "from": "user"
         }
       ],
       "takes": [

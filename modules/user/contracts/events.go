@@ -36,10 +36,13 @@ const (
 // the fact is that somebody can now be in this tenant, and Status says whether
 // they still have to be given a way in.
 type Invited struct {
-	UserID uuid.UUID `json:"userId"`
-	Email  string    `json:"email"`
-	Status string    `json:"status"`
-	At     time.Time `json:"at"`
+	Generation int64      `json:"generation,omitempty"`
+	Revision   int64      `json:"revision,omitempty"`
+	DeliveryID *uuid.UUID `json:"deliveryId,omitempty"`
+	UserID     uuid.UUID  `json:"userId"`
+	Email      string     `json:"email"`
+	Status     string     `json:"status"`
+	At         time.Time  `json:"at"`
 	// Served is the address the call that invited this person was answered at,
 	// port included, and "" when no call asked for the invitation. The subscriber
 	// that mails the set-password link builds it from this: a link built from the

@@ -5,11 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	subjectcontracts "github.com/septagon-oss/platformkit/modules/subject/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -27,6 +30,10 @@ func TestErasureHandlesDistinctProvisioningIdentifiersThatContainTheSameAddress(
 	if !ok || provisioning == nil {
 		t.Fatal("the composition hands out no scimcontracts.Service")
 	}
+	invitations, ok := pkit.Value[usercontracts.InvitationCommands](plan)
+	if !ok || invitations == nil {
+		t.Fatal("the composition hands out no usercontracts.InvitationCommands")
+	}
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -42,6 +49,7 @@ func TestErasureHandlesDistinctProvisioningIdentifiersThatContainTheSameAddress(
 	}
 	in := tenancy.WithTenant(t.Context(), tenant)
 	var person, colleague *scimcontracts.UserResource
+	var acting uuid.UUID
 	var before int64
 	if err := db.Run(in, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var err error
@@ -59,9 +67,32 @@ func TestErasureHandlesDistinctProvisioningIdentifiersThatContainTheSameAddress(
 		if err != nil {
 			return err
 		}
-		return tx.DB().Table("platformkit_outbox").Count(&before).Error
+		if err := tx.DB().Table("platformkit_outbox").Count(&before).Error; err != nil {
+			return err
+		}
+		// The withdrawal below is asked for by the tenant's own administrator, because
+		// that command answers for the caller who asks it and not for the transaction.
+		var ids []uuid.UUID
+		if err := tx.DB().Table("users").Where("email = ? AND deleted_at IS NULL", adminEmail).Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+		if len(ids) != 1 {
+			t.Fatalf("%s names %d people, want the one who may withdraw an invitation", adminEmail, len(ids))
+		}
+		acting = ids[0]
+		return nil
 	}); err != nil {
 		t.Fatalf("provision two distinct identifiers through the module's commands: %v", err)
+	}
+	// The withdrawal comes first: a link this tenant has not taken up is withdrawn by
+	// its own command at the revision it was last read at, because a generic erasure of
+	// a live invitation is the correctable conflict the module names, and an erasure is
+	// not a way to skip that withdrawal.
+	if err := db.Run(tenancy.WithPrincipal(in, tenancy.Principal{UserID: acting}), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		_, err := invitations.RevokeInvitation(ctx, tx, person.ID, 1)
+		return err
+	}); err != nil {
+		t.Fatalf("withdraw the provisioned person's invitation: %v", err)
 	}
 
 	var receipt *subjectcontracts.Erasure

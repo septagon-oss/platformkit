@@ -700,3 +700,53 @@ answers `crud.ErrNotFound`, where `RevokeToken` answers success —
 * Uses are not audited, and `last_used_at` is the record a person reads; the
   trail keeps the two facts that mean something about a key, that it was made and
   that it was stopped.
+
+## Invitation credentials and readings
+
+The [user owner](../user/README.md#recoverable-invitations) commits each invitation
+and replacement generation. Auth consumes that exact generation through
+`InvitationLinks`, rechecks the locked person, then takes the existing password
+advisory lock before reading or changing `password_tokens`. Password redemption
+uses the same order and one decision instant after the locks. Generation, expiry,
+recipient binding and terminal state must all agree before password, membership,
+sessions and outbox events commit. Ordinary active-account recovery retains its
+existing behavior; old invited tokens have generation zero.
+
+A managed handoff first reserves its delivery identity in notification's existing
+ledger using a detached, bounded two-second tenant transaction. No confirmed
+reservation means no send. The worker then mints the token and invokes the existing
+mailer. A reported failure removes that generation's token and records only
+`transport_error`. A successful return records transport acceptance. Neither
+means that an inbox received the message. If the outer transaction rolls back
+after sending, the reservation survives as unknown and the token is unusable.
+Redelivery of that generation never sends again; an explicit authorized resend
+requests a new generation after the same cooldown.
+
+`GET /api/v1/auth/invitations` and `/{id}` require current `user:read` authority
+and return `Cache-Control: no-store`. Lists accept `limit` (default 25, maximum
+100), `offset`, and pending/expired/accepted/revoked `state`. Each snapshot includes
+recipient, assigned/permitted roles, lifecycle, revision, decision time and advisory
+capabilities. It excludes tokens, hashes, delivery identities and provider errors.
+A failed ledger read returns 503 with no partial page.
+
+| Field | Meanings |
+| --- | --- |
+| `request` | `queued` while a recorded generation is pending; `ended` after expiry or a terminal transition; `unrecorded` for adopted legacy history. |
+| `observation` | `unobserved` before a claim; `unknown` for a claim without a committed terminal result; `transport_accepted`, `reported_failed`, or `suppressed` for recorded observations. |
+| `failureCode` | A stable transport/worker/suppression code, never the provider's error text. |
+
+A reading correlates the delivery identity in the returned user snapshot, so a
+concurrent resend cannot attach an older attempt to the newer generation. Public
+recovery keeps its neutral acknowledgment and existing limiter. Its worker uses
+the original event timestamp, so duplicate or superseded requests do not rotate
+credentials later merely because delivery was delayed.
+
+### Composition of invitation handling
+
+**Reused** — `Users`, `password_tokens`, `Mailer`, `MailLedger`, the existing
+password lock, limiter and event subscriptions remain the credential and delivery
+owners.
+**Added** — companion invitation ports and a generation column because the old
+password token alone could not fence a committed revoke or replacement.
+**Made reusable** — generation fencing and fake/SQL link conformance, plus a
+redacted lifecycle/delivery reading for the People interface.

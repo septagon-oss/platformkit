@@ -28,10 +28,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"github.com/septagon-oss/platformkit/kit/events"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // A user is invited before password setup, pending while awaiting approval,
@@ -81,6 +81,7 @@ var roleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // and the tenant column row-level security matches on.
 type User struct {
 	crud.Base
+	Invitation InvitationHistory `json:"-" gorm:"embedded;embeddedPrefix:invitation_"`
 
 	// Email identifies the person within the tenant. It is stored as it was
 	// given and compared without case, which is what the unique index in
@@ -192,6 +193,9 @@ func CanonicalRoles(roles []string) Roles {
 // must not disagree about that.
 func (u *User) Validate(context.Context) error {
 	u.Email = CanonicalEmail(u.Email)
+	if u.Invitation.Phase == InvitationPending && u.Email != u.Invitation.Recipient {
+		return fmt.Errorf("a pending invitation recipient cannot change")
+	}
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
 	at := strings.IndexByte(u.Email, '@')
 	switch {

@@ -93,6 +93,9 @@ func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string
 		// The address is answered exactly as an address nobody has is.
 		return nil
 	}
+	if user.Invitation.Phase != "" && user.Status == usercontracts.StatusInvited {
+		return s.requestInvitationRecovery(ctx, tx, user.ID)
+	}
 	return s.offer(ctx, tx, user, resetSubject, resetBody)
 }
 
@@ -113,6 +116,18 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 	}
 	if err != nil || user.Status != usercontracts.StatusInvited {
 		return err
+	}
+	if user.Invitation.Phase != "" {
+		if s.invitationUsers == nil {
+			return usercontracts.ErrInvitationUnavailable
+		}
+		if user.Invitation.Generation == 0 {
+			return s.offerLegacyInvitation(ctx, tx, user.ID)
+		}
+		if user.Invitation.DeliveryID == nil {
+			return usercontracts.ErrInvitationUnavailable
+		}
+		return s.OfferInvitation(ctx, tx, user.ID, user.Invitation.Generation, *user.Invitation.DeliveryID)
 	}
 	return s.offer(ctx, tx, user, inviteSubject, inviteBody)
 }
@@ -262,7 +277,7 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	err = tx.DB().Exec(
 		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,"+
-			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
+			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at, invitation_generation = 0",
 		contracts.Hash(token), db.TenantOf(tx).ID, user.ID, at, at.Add(contracts.TokenLifetime)).Error
 	if err != nil {
 		return fmt.Errorf("auth: issue a password token: %w", err)
@@ -404,24 +419,8 @@ func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, passwor
 	if token == "" {
 		return nil, contracts.ErrCredentials
 	}
-	// The lookup is by the hash of what was presented, which is a primary-key
-	// probe on a value an attacker cannot steer: the token is 256 bits of
-	// crypto/rand, so there is no prefix to walk and nothing a timing
-	// difference on the index would narrow. What the hash buys is the other
-	// thing — a copy of this table is not a set of live links.
-	var userID uuid.UUID
-	err := tx.DB().Raw(
-		"DELETE FROM password_tokens WHERE token_hash = ? AND expires_at > now() RETURNING user_id",
-		contracts.Hash(token)).Row().Scan(&userID)
-	switch {
-	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
-		// An unknown token, a spent one and an expired one are one answer, for
-		// the reason Login's three refusals are one answer.
-		return nil, contracts.ErrCredentials
-	case err != nil:
-		return nil, fmt.Errorf("auth: consume a password token: %w", err)
-	}
-	if err := s.users.SetPassword(ctx, tx, userID, password); err != nil {
+	userID, err := s.consumePassword(ctx, tx, token, password)
+	if err != nil {
 		return nil, err
 	}
 	if err := s.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {

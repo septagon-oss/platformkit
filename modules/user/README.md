@@ -202,3 +202,67 @@ rather than a pattern to invent. The composition cases in
 they are unexported functions in `package main` test files, importable by nobody,
 and `appoint` writes a `users` row in a system transaction, which is a state the
 operator's route reaches and a command's route does not.
+
+## Recoverable invitations
+
+The reference composition enables `InvitationCommands`, `InvitationReader` and
+`InvitationRetention` beside the existing `Service`; `InvitationTiming` comes from
+`auth/contracts.TokenLifetime` and `ResetInterval` and `Clock` supplies UTC decision
+time, so a composition without those companions cannot operate managed invitations.
+Existing service interfaces are unchanged.
+
+A new invitation stores the canonical recipient, assigned roles, revision 1,
+generation 1, expiry and a delivery identity on the existing user, which stays
+`invited` until admission commits; the user, roles and the `user.invited` outbox row
+commit together. Generic collection creation uses the same owner decision, and
+generic PATCH still reaches no metadata, role or status field.
+
+| Operation | Authoritative result |
+| --- | --- |
+| `POST /api/v1/user/invitations` | 201, pending user and queued mail intent; `Location` names the authorized reading. |
+| `POST /api/v1/user/invitations/{id}/resend` | 202; requires `expectedRevision`, advances revision and generation, and replaces expiry and delivery identity. Old links are unusable immediately at commit. |
+| `POST /api/v1/user/invitations/{id}/revoke` | 200; requires `expectedRevision`, records revoked and makes the person inactive. A current-revision repeat is unchanged. |
+| Existing roles / set-password / deactivate commands | Waiting invitations require `expectedRevision` (query parameter for the existing empty-body deactivate door, JSON member for roles/password). Role edits advance revision without requesting mail; password admission records its provenance; deactivate delegates to revoke. |
+| `GET /api/v1/auth/invitations[/{id}]` | Authorized redacted lifecycle and delivery reading; see [auth](../auth/README.md#invitation-credentials-and-readings). |
+
+Expiry is a reading at `asOf`, including equality with the deadline, and moves no
+revision; an expired invitation can still be resent or revoked, while acceptance and
+revocation are terminal. A stale revision returns 409 with no row and a missing or
+nonpositive one returns 422; a resend inside the existing five-minute bound returns
+429 with `Retry-After` and does not extend that bound; a backward or unavailable
+clock refuses the decision. `Idempotency-Key` uses the kernel's receipt: a retry
+recovers the original response, a changed body returns 422, and a new key bypasses
+neither revision, email uniqueness nor cooldown.
+
+Commands lock the person before the tenant administration advisory lock, then read
+the actor's current active status and grants: every role name must exist, only added
+roles need grant authority, and every added grant must fit the actor's own credential,
+with a scoped bearer credential locked and rechecked. The existing last-administrator
+decision still protects the last appointment. A refused command publishes nothing.
+
+Existing invited rows are adopted in bounded migration batches as generation 0 with a
+one-hour compatibility deadline and no invented send, and a live legacy token keeps
+its expiry; a remaining row adopts under an authorized command, and reads answer 503
+`invitation_history_initializing` until history exists. Pending and expired
+invitations are revoked before deletion or erasure, which locks the retained person
+before any credential contributor and scrubs the recipient around the terminal
+history.
+
+### Limits
+
+This module defines lifecycle and grant boundaries; the product defines roles,
+registration policy and presentation. It does not claim inbox delivery or create
+a separate invitation store. Trusted registration, provisioning and identity
+provider adapters retain their existing ports; managed admission still uses the
+same lifecycle decision. Active-member password recovery remains auth's concern.
+
+## Composition
+
+**Reused** — `rest.Spec`, user `Service`, `CheckedAdministration`, `crud.GetForUpdate`,
+tenant transactions, auth password tokens, notification direct-mail records and
+the transactional outbox carry the lifecycle.
+**Added** — invitation metadata and companion commands/readings because a user
+status and a password token could not express revocation, revisions or delivery
+uncertainty together.
+**Made reusable** — pure invitation decisions and `usertest.RunInvitations`, plus
+`authtest.RunInvitationLinks`, exercise the same cases against fake and SQL owners.

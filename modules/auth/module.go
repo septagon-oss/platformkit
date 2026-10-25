@@ -7,14 +7,12 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
-	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/locale"
@@ -73,6 +71,9 @@ type OIDC = internal.OIDC
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
+	Clock            usercontracts.Clock
+	InvitationUsers  contracts.InvitationUsers
+	InvitationReader usercontracts.InvitationReader
 	// Users is how a password login finds the person an address belongs to,
 	// and how a password that has been earned is stored. It is narrower than
 	// the user module's own Service: a consumer depends on the capability it
@@ -282,6 +283,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
 		AccountRequests: deps.AccountRequests,
 	})
+	svc.ConfigureInvitations(deps.Clock, deps.InvitationUsers, deps.InvitationReader)
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
 		Name:       "auth",
@@ -333,25 +335,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		// not look the address up at all: a public route that took longer for
 		// an address somebody has is an account enumeration oracle with a
 		// stopwatch, so the lookup happens here, where nobody is timing it.
-		Subscriptions: []events.Subscription{{
-			Module: "auth", Name: usercontracts.EventInvited,
-			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
-				var invited usercontracts.Invited
-				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
-					return fmt.Errorf("auth: read the invitation: %w", err)
-				}
-				return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
-			},
-		}, {
-			Module: "auth", Name: contracts.EventResetRequested,
-			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
-				var asked contracts.ResetRequested
-				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
-					return fmt.Errorf("auth: read the reset request: %w", err)
-				}
-				return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
-			},
-		}},
+		Subscriptions: internal.InvitationSubscriptions(svc),
 		Routes: func(s httpx.Surfaces) {
 			// The catalogue, taken at the one moment the kernel has it and this
 			// module is being wired. The hourly sweep reads it back to say which
@@ -363,6 +347,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			// the secret, and it is hashed rather than sealed because it is
 			// never read back.
 			internal.RegisterTokenRoutes(s, svc)
+			internal.RegisterInvitationReadings(s, svc)
 			// The factor key is the gate, and it is a deployment's setting
 			// rather than a fact about which other modules were composed: a
 			// composition with the key mounts the routes, one without it does

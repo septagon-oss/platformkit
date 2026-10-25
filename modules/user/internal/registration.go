@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm/clause"
+
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
-	"gorm.io/gorm/clause"
 )
 
 func (s *Service) RegisterPending(ctx context.Context, tx db.Tx[db.Tenant], in contracts.PendingRegistration) (*contracts.User, error) {
@@ -112,6 +113,17 @@ func (s *Service) ConfirmAddress(ctx context.Context, tx db.Tx[db.Tenant], id uu
 	if u.Status != contracts.StatusInvited && u.Status != contracts.StatusUnverified {
 		return nil, fmt.Errorf("%w: only an invited or unverified account is confirmed by an identity provider", crud.ErrConflict)
 	}
+	if u.Invitation.Phase != "" {
+		at := s.invitationNow()
+		next, _, err := contracts.DecideInvitation(u, contracts.InvitationMutation{Action: contracts.InvitationIdentityProvider}, s.invitationTiming, at)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.saveInvitation(ctx, tx, u, next, contracts.InvitationIdentityProvider, at); err != nil {
+			return nil, err
+		}
+		u = next
+	}
 	u.Status = contracts.StatusActive
 	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {
 		return nil, err
@@ -153,9 +165,5 @@ func (s *Service) ApproveRegistration(ctx context.Context, tx db.Tx[db.Tenant], 
 // Status decisions and their writes share a row lock. In particular a password
 // change cannot read active, wait for deactivation, then write active back.
 func lockedUser(tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
-	var u contracts.User
-	if err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND deleted_at IS NULL", id).Take(&u).Error; err != nil {
-		return nil, crud.Classify(err)
-	}
-	return &u, nil
+	return crud.GetForUpdate[*contracts.User](tx, id)
 }

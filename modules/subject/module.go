@@ -35,6 +35,7 @@ import (
 // Deps is what this module cannot make for itself: a struct rather than a parameter
 // list, so adding one is a named field at every call site. Every module follows this.
 type Deps struct {
+	InvitationRetention usercontracts.InvitationRetention
 	// Service is the commands, for a composition that built them for its own reasons and
 	// hands the same value to its other modules; nil builds one from the fields below. It
 	// has to be the value this package built, because the worker job calls the walk beside
@@ -113,7 +114,7 @@ func NewWith(deps Deps) module.Module {
 	svc := deps.Service
 	if svc == nil {
 		svc = internal.NewService(internal.Deps{
-			Parts: deps.Parts, People: deps.People, Now: deps.Now,
+			Parts: deps.Parts, People: deps.People, Now: deps.Now, InvitationRetention: deps.InvitationRetention,
 			Bundles: deps.Bundles, Notes: deps.Notes,
 		})
 	}

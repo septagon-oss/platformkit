@@ -134,8 +134,12 @@ func publisherIn(t *testing.T, cfg config.Config, as *http.Client, email string)
 	if code != http.StatusCreated {
 		t.Fatalf("invite %s = %d %s, want 201", email, code, body)
 	}
-	code, body = do(t, cfg, as, http.MethodPost, acmeHost, usersPath+"/"+field(t, body, "id")+"/set-password",
-		`{"password":"`+publisherPass+`"}`)
+	id := field(t, body, "id")
+	// The door asks which invitation revision the caller saw, so that a write made from
+	// an out-of-date screen is refused rather than accepted. The create above answered
+	// with an invitation at revision one, which is what a screen would carry here.
+	code, body = do(t, cfg, as, http.MethodPost, acmeHost, usersPath+"/"+id+"/set-password",
+		`{"password":"`+publisherPass+`","expectedRevision":1}`)
 	if code != http.StatusOK {
 		t.Fatalf("set-password for %s = %d %s, want 200", email, code, body)
 	}

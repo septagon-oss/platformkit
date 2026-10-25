@@ -35,6 +35,11 @@ var resetPage = httpx.Workspace("/auth/reset")
 // session from another tenant is invisible" is a claim only the real service
 // can be held to, and the real service's tests hold it.
 type Fake struct {
+	invitationClock  usercontracts.Clock
+	invitationUsers  contracts.InvitationUsers
+	invitationLedger notificationcontracts.MailLedger
+	invitationTokens map[string]invitationCredential
+
 	// Users is where the fake finds people. It is exported so that a consumer
 	// invites somebody through the same interface the real module takes.
 	Users contracts.Users
@@ -256,6 +261,12 @@ func (f *Fake) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) e
 	case user.Status != usercontracts.StatusInvited && user.Status != usercontracts.StatusActive:
 		return nil
 	}
+	if user.Invitation.Phase == usercontracts.InvitationPending {
+		if f.invitationUsers == nil {
+			return usercontracts.ErrInvitationUnavailable
+		}
+		return f.invitationUsers.RequestInvitationLink(ctx, tx, user.ID, contracts.InvitationSource{ID: uuid.New(), At: f.invitationNow(), Kind: contracts.InvitationRecoveryRequest})
+	}
 	return f.offer(ctx, tx, user)
 }
 
@@ -267,6 +278,12 @@ func (f *Fake) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID)
 	}
 	if err != nil || user.Status != usercontracts.StatusInvited {
 		return err
+	}
+	if user.Invitation.Phase != "" {
+		if user.Invitation.DeliveryID == nil {
+			return nil
+		}
+		return f.OfferInvitation(ctx, tx, userID, user.Invitation.Generation, *user.Invitation.DeliveryID)
 	}
 	return f.offer(ctx, tx, user)
 }
@@ -317,14 +334,17 @@ func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password s
 	from contracts.Client) (*contracts.Session, error) {
 	f.mu.Lock()
 	userID, ok := f.tokens[token]
-	delete(f.tokens, token)
 	f.mu.Unlock()
 	if !ok {
 		return nil, contracts.ErrCredentials
 	}
-	if err := f.Users.SetPassword(ctx, tx, userID, password); err != nil {
+	if err := f.resetPassword(ctx, tx, userID, token, password); err != nil {
 		return nil, err
 	}
+	f.mu.Lock()
+	delete(f.tokens, token)
+	delete(f.invitationTokens, token)
+	f.mu.Unlock()
 	if err := f.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
 		return nil, err
 	}

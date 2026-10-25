@@ -41,9 +41,10 @@ import (
 // "which requests exist", and the request rows are a door's business — the door
 // this module has no opinion about yet.
 type service struct {
-	parts  []personaldata.Part
-	people usercontracts.Service
-	now    func() time.Time
+	invitationRetention usercontracts.InvitationRetention
+	parts               []personaldata.Part
+	people              usercontracts.Service
+	now                 func() time.Time
 
 	// bundles and notifier are the two ports the door needs and the two commands do not:
 	// a bundle has to go somewhere and a person has to be told. A composition that wires
@@ -55,6 +56,7 @@ type service struct {
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
+	InvitationRetention usercontracts.InvitationRetention
 	// Parts are the contributions every owner of a person's rows handed over.
 	Parts []personaldata.Part
 	// People is the one read across the boundary: the address and the name.
@@ -95,7 +97,7 @@ func NewService(d Deps) contracts.Service {
 		}
 		seen[p.Module] = true
 	}
-	return &service{parts: own, people: people, now: now, bundles: d.Bundles, notifier: d.Notes}
+	return &service{invitationRetention: d.InvitationRetention, parts: own, people: people, now: now, bundles: d.Bundles, notifier: d.Notes}
 }
 
 // person reads the strings the contributors must stop finding, and is the reason
@@ -217,7 +219,7 @@ func (s *service) Erase(ctx context.Context, tx db.Tx[db.Tenant], in contracts.E
 			return nil, err
 		}
 	}
-	sj, err := s.person(ctx, tx, in.Subject)
+	sj, err := s.lockErasurePerson(ctx, tx, in.Subject)
 	if err != nil {
 		return nil, err
 	}

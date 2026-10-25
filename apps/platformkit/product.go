@@ -95,6 +95,8 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
+		pkit.Provides[usercontracts.InvitationAuthority](),
+		pkit.Provides[usercontracts.InvitationTiming](),
 		pkit.Provides[filecontracts.Storage](),
 		// The door to the deployment's secrets, opened once here: which store it is
 		// — the environment, a mounted directory, an OpenBao — is secrets.adapter's
@@ -143,13 +145,11 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// auth.AdministeringRoles is what makes "the last person who can still
 		// administer this tenant" answerable at all: the user module owns who
 		// holds a role, the auth module owns what a role grants, and neither reads
-		// the other's rows. This is where the two meet, and the only line in this
-		// application that decides administration is made of roles.
+		// the other's rows; the invitation doors meet here for the same reason.
 		pkit.Put[usercontracts.Administration](w, &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles})
-		// The empty holder. user reads it and auth fills its Ask — the one edge in
-		// this application that is late-bound rather than built, and product puts
-		// it precisely because it needs nobody and so is built first.
 		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
+		pkit.Put[usercontracts.InvitationAuthority](w, &usercontracts.InvitationAuthorityFunc{})
+		pkit.Put(w, usercontracts.InvitationTiming{Lifetime: authcontracts.TokenLifetime, ResendInterval: authcontracts.ResetInterval})
 		pkit.Put[filecontracts.Storage](w, store)
 		// The secret store, opened once and put under both halves of the port;
 		// `store` above is the object store, and the why sits with the Provides.
