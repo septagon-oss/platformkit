@@ -538,5 +538,23 @@
       "ui/forms/forms.go"
     ],
     "translation": "Fields to correct"
+  },
+  "forms.form.cancel": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Cancel"
+  },
+  "forms.form.submit": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "Save"
+  },
+  "forms.form.failureTitle": {
+    "references": [
+      "ui/forms/forms.go"
+    ],
+    "translation": "That could not be saved"
   }
 }

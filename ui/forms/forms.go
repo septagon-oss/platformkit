@@ -224,7 +224,9 @@ func example(id string, model Model, options Options) examples.Example {
 	body := []g.Node{}
 	if model.Detail != "" {
 		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
-			components.AlertProps{Tone: cmp.Or(options.DetailTone, "danger"), Title: cmp.Or(options.FailureTitle, "That could not be saved"), Message: model.Detail, Bordered: true},
+			components.AlertProps{Tone: cmp.Or(options.DetailTone, "danger"),
+				Title:   cmp.Or(options.FailureTitle, word("forms.form.failureTitle", "That could not be saved")),
+				Message: model.Detail, Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node)
 		var links []g.Node
 		richtextError := false
@@ -263,9 +265,11 @@ func example(id string, model Model, options Options) examples.Example {
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.CancelLabel, "Cancel"), Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				components.ButtonProps{Label: cmp.Or(options.CancelLabel, word("forms.form.cancel", "Cancel")),
+					Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.SubmitLabel, "Save"), Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				components.ButtonProps{Label: cmp.Or(options.SubmitLabel, word("forms.form.submit", "Save")),
+					Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 		}, components.FormActions).Node)
 	// A file control submits a body a urlencoded form cannot carry, and the
 	// encoding belongs to the form rather than to whoever composed it: one
