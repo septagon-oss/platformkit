@@ -257,9 +257,9 @@ func (s Spec[T]) clearFileUses(ctx context.Context, tx db.Tx[db.Tenant], e T) er
 // find it: the moment a sweep exists that releases a file nobody reads, a
 // resource left on this port is a resource whose images that sweep is entitled
 // to delete out from under a published page. Mount logs it once, naming the
-// module and the entity, and the day the sweep lands is the day this default
-// becomes the mount-time refusal SPECIFY.md §4.4 asked for — which is why this
-// is a named type and not a nil check.
+// module and the entity, and the day the sweep lands is the day mounting a
+// resource on this port becomes a refusal rather than a logged default — which
+// is why this is a named type and not a nil check.
 type RecordNoUses struct{}
 
 func (RecordNoUses) SetUses(ctx context.Context, tx db.Tx[db.Tenant], in UsesInput) error {
