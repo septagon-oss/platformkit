@@ -154,24 +154,26 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return err
 	}
 	if recent {
-		// A link this person was sent a moment ago still stands, so no second one
-		// leaves — and a person who asked still hands one message to the transport,
-		// for the reason the branch above gives: the sentence is the one the flow
-		// says on every branch, about this request no link was sent, which is true
-		// even while an earlier one is on its way.
-		//
-		// A delivery of the sign-up event is nobody asking again. It is the outbox's
-		// retry of one account creation, and user.registration_unverified is raised
-		// once per account: every later ask arrives as an explicit resend. So a
-		// delivery of it that finds its own link already sent can only be that
-		// delivery arriving twice. The row which set this branch off is the record
-		// that the transport took the link for this creation: the mail went, and a
-		// second message would tell the person holding it that no link was sent, and
-		// record a request the door has already read. The retry owes nothing.
-		if asked == askedAtSignUp {
-			return nil
-		}
-		return s.noVerificationLink(ctx, tx, email)
+		// A link this person was sent a moment ago still stands, so no second one leaves.
+		return s.answerNoLink(ctx, tx, asked, email)
+	}
+	// A link of this person's that is with the transport right now is the link this
+	// person is being sent, here exactly as at the reset offer. The send leaves on the
+	// commit of the transaction that minted it, so while it is in the air the row it
+	// describes stands unmarked, the cooldown above counts no send and answers "nobody
+	// was mailed", and a mint over that row would leave the person two messages of which
+	// the single-pending write keeps one credential: the first envelope, the one already
+	// open in front of them, leads to the row the table threw away. The ask is the mail
+	// slot's, and it is asked without waiting: the message inside a taken slot is still
+	// leaving, and an offer that waited on it would be a delivery parked behind a mail
+	// server, holding this transaction's row lock and its connection with it.
+	open, err := mailSlotOpen(tx, "verification_tokens", id)
+	if err != nil {
+		return err
+	}
+	if !open {
+		// Somebody is carrying this person's link at this moment, so this ask sends none.
+		return s.answerNoLink(ctx, tx, asked, email)
 	}
 	base, err := s.baseURL(ctx, tx)
 	if err != nil {
@@ -184,20 +186,44 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return err
 	}
 	token, at := secret(), db.Now()
-	digest := contracts.Hash(token)
 	if err := s.writeVerification(tx, id, current.Email, token, at); err != nil {
 		return err
 	}
-	// The confirmation link is a credential of the same kind as a reset link, so it
-	// leaves the same way: on the commit that makes the row spendable, never after a
-	// rollback, with the marks of its outcome in a transaction of their own. What a
-	// refused send costs is stated in mailAfterCommit.
+	return s.sendConfirmationLink(ctx, id, current.Email, base, token, was)
+}
+
+// answerNoLink is what a confirmation offer that sends no link answers with, whether a
+// link this person was just sent still stands or one of theirs is with the transport now.
+//
+// The public delivery door behind an ask reads its answer out of the record this call
+// caused, so a person at the resend form still hands one message to the transport — the
+// sentence that says no link was sent, which is true even while an earlier one is away.
+//
+// A delivery of the sign-up event is nobody asking again: it is the outbox's retry of one
+// account creation, and that event is raised once per account, every later ask arriving
+// as an explicit resend. The link already leaving, or already in the mailbox, is the
+// answer its call caused; a sentence saying none was sent would contradict it and record
+// a request the door has read. The retry owes nothing.
+func (s *Service) answerNoLink(ctx context.Context, tx db.Tx[db.Tenant], asked asker, email string) error {
+	if asked == askedAtSignUp {
+		return nil
+	}
+	return s.noVerificationLink(ctx, tx, email)
+}
+
+// sendConfirmationLink hands this person's confirmation message to the transport on the
+// commit that makes its row spendable — never after a rollback — and records what the
+// transport answered, which is what a refused send costs (see mailAfterCommit). The
+// recipient, the tenant's host, the row and the previous link were all read inside the
+// transaction that minted the credential, so the hand-off carries the secret and the
+// digest that names this attempt's row, and nothing read back out of the table.
+func (s *Service) sendConfirmationLink(ctx context.Context, id uuid.UUID, address, base, token string, was pendingLink) error {
 	return events.Defer(ctx, func(ctx context.Context) error {
 		return s.mailAfterCommit(ctx, linkMail{
 			table: "verification_tokens", kind: contracts.MailVerification,
-			person: id, address: current.Email, token: token, digest: digest, was: was,
+			person: id, address: address, token: token, digest: contracts.Hash(token), was: was,
 			msg: notification.Message{
-				To: current.Email, Subject: "Verify your email address",
+				To: address, Subject: "Verify your email address",
 				Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
 					base + s.mail.ConfirmEmailPage + "?token=" + token +
 					"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
