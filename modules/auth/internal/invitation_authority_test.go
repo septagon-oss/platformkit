@@ -11,13 +11,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 func TestInvitationRoleAssignmentRechecksActorAndBearerAuthority(t *testing.T) {
 	f := invitationSQL(t)
 	f.clock.Advance(db.Now().Sub(f.clock.Now()))
-	u := sqlInvite(t, f)
+	u := authtest.InvitationPerson(t, f.InvitationFixture)
 	actor, _ := tenancy.PrincipalFrom(f.ctx)
 	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		roles := map[string][]string{"admin": {"*"}, "manager": {"user:manage", "user:read"}, "editor": {"content:read"}, "privileged": {"content:write"}}

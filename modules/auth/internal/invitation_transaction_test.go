@@ -16,36 +16,14 @@ import (
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
-func sqlInvite(t *testing.T, f invitationSQLFixture) *user.User {
-	t.Helper()
-	var u *user.User
-	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		var err error
-		u, err = f.Commands.CreateInvitation(ctx, tx, user.InvitationIntent{Email: "invite@example.com", Roles: []string{"editor"}})
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return u
-}
-func sqlOffer(t *testing.T, f invitationSQLFixture, u *user.User) string {
-	t.Helper()
-	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return f.Links.OfferInvitation(ctx, tx, u.ID, u.Invitation.Generation, *u.Invitation.DeliveryID)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return authtest.TokenIn(f.Mail.Sent()[0].Body)
-}
-
 // TestInvitationReadingProvesNoDelivery names the two halves the reading may
 // answer from its own row: the handoff this generation asked for, and no more
 // about the transport than "nothing was observed". The credential, the delivery
 // identity and any password never appear in it.
 func TestInvitationReadingProvesNoDelivery(t *testing.T) {
 	f := invitationSQL(t)
-	u := sqlInvite(t, f)
-	token := sqlOffer(t, f, u)
+	u := authtest.InvitationPerson(t, f.InvitationFixture)
+	token := authtest.InvitationOffer(t, f.InvitationFixture, u)
 	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		r, err := f.service.GetInvitationReading(ctx, tx, u.ID)
 		if err != nil {
@@ -96,8 +74,8 @@ func TestAcceptanceAndRevocationSerializeOnThePerson(t *testing.T) {
 	for _, acceptFirst := range []bool{false, true} {
 		t.Run(map[bool]string{false: "revoke holds the row", true: "acceptance holds the row"}[acceptFirst], func(t *testing.T) {
 			f := invitationSQL(t)
-			u := sqlInvite(t, f)
-			token := sqlOffer(t, f, u)
+			u := authtest.InvitationPerson(t, f.InvitationFixture)
+			token := authtest.InvitationOffer(t, f.InvitationFixture, u)
 			accept := func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 				_, err := f.Auth.Reset(ctx, tx, token, "a sufficiently strong password", nobody)
 				return err
@@ -169,8 +147,8 @@ func TestAcceptanceAndRevocationSerializeOnThePerson(t *testing.T) {
 }
 func TestForeignTenantCannotReadRevokeOrConsumeInvitation(t *testing.T) {
 	f := invitationSQL(t)
-	u := sqlInvite(t, f)
-	token := sqlOffer(t, f, u)
+	u := authtest.InvitationPerson(t, f.InvitationFixture)
+	token := authtest.InvitationOffer(t, f.InvitationFixture, u)
 	ctx := tenancy.WithTenant(f.ctx, globex)
 	if err := db.Run(ctx, f.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := f.Commands.RevokeInvitation(ctx, tx, u.ID, 1)

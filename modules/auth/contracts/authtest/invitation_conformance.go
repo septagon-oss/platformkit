@@ -51,7 +51,9 @@ func RunInvitationLinks(t *testing.T, h func(*testing.T, func(InvitationFixture)
 	}
 }
 
-func invitationPerson(t *testing.T, f InvitationFixture) *user.User {
+// InvitationPerson creates the person every invitation case begins with: an
+// address, the roles the invitation asks for, nothing decided yet.
+func InvitationPerson(t *testing.T, f InvitationFixture) *user.User {
 	t.Helper()
 	var u *user.User
 	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -63,7 +65,11 @@ func invitationPerson(t *testing.T, f InvitationFixture) *user.User {
 	}
 	return u
 }
-func invitationOffer(t *testing.T, f InvitationFixture, u *user.User) string {
+
+// InvitationOffer asks for one handoff of the person's current invitation
+// generation and answers with the credential its mailed link carries, or "" when
+// no handoff was recorded.
+func InvitationOffer(t *testing.T, f InvitationFixture, u *user.User) string {
 	t.Helper()
 	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		return f.Links.OfferInvitation(ctx, tx, u.ID, u.Invitation.Generation, *u.Invitation.DeliveryID)
@@ -95,8 +101,8 @@ func invitationSnapshot(t *testing.T, f InvitationFixture, u *user.User) *user.U
 	return got
 }
 func invitationReplacement(t *testing.T, f InvitationFixture) {
-	u := invitationPerson(t, f)
-	old := invitationOffer(t, f, u)
+	u := InvitationPerson(t, f)
+	old := InvitationOffer(t, f, u)
 	f.Advance(contracts.ResetInterval)
 	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, err := f.Commands.ResendInvitation(ctx, tx, u.ID, 1)
@@ -110,13 +116,13 @@ func invitationReplacement(t *testing.T, f InvitationFixture) {
 	if got := invitationSnapshot(t, f, u); got.Status != user.StatusInvited || got.Invitation.Generation != 2 {
 		t.Fatalf("after obsolete link: %+v", got)
 	}
-	invitationOffer(t, f, u)
+	InvitationOffer(t, f, u)
 	if len(f.Mail.Sent()) != 1 {
 		t.Fatal("obsolete worker sent mail")
 	}
 	current := invitationSnapshot(t, f, u)
-	fresh := invitationOffer(t, f, current)
-	invitationOffer(t, f, current)
+	fresh := InvitationOffer(t, f, current)
+	InvitationOffer(t, f, current)
 	if len(f.Mail.Sent()) != 2 {
 		t.Fatal("generation sent more than once")
 	}
@@ -132,8 +138,8 @@ func invitationReplacement(t *testing.T, f InvitationFixture) {
 	}
 }
 func invitationRevocation(t *testing.T, f InvitationFixture) {
-	u := invitationPerson(t, f)
-	token := invitationOffer(t, f, u)
+	u := InvitationPerson(t, f)
+	token := InvitationOffer(t, f, u)
 	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, err := f.Commands.RevokeInvitation(ctx, tx, u.ID, 1)
 		return err
@@ -143,7 +149,7 @@ func invitationRevocation(t *testing.T, f InvitationFixture) {
 	if err := invitationReset(f, token, "a sufficiently strong password"); !errors.Is(err, contracts.ErrCredentials) {
 		t.Fatalf("revoked link = %v", err)
 	}
-	invitationOffer(t, f, u)
+	InvitationOffer(t, f, u)
 	if len(f.Mail.Sent()) != 1 {
 		t.Fatal("revoked worker sent mail")
 	}
@@ -153,8 +159,8 @@ func invitationRevocation(t *testing.T, f InvitationFixture) {
 	}
 }
 func invitationExpiry(t *testing.T, f InvitationFixture) {
-	u := invitationPerson(t, f)
-	token := invitationOffer(t, f, u)
+	u := InvitationPerson(t, f)
+	token := InvitationOffer(t, f, u)
 	f.Advance(contracts.TokenLifetime)
 	if err := invitationReset(f, token, "a sufficiently strong password"); !errors.Is(err, contracts.ErrCredentials) {
 		t.Fatalf("expired link = %v", err)
@@ -165,14 +171,14 @@ func invitationExpiry(t *testing.T, f InvitationFixture) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fresh := invitationOffer(t, f, invitationSnapshot(t, f, u))
+	fresh := InvitationOffer(t, f, invitationSnapshot(t, f, u))
 	if err := invitationReset(f, fresh, "a sufficiently strong password"); err != nil {
 		t.Fatal(err)
 	}
 }
 func invitationWeakPassword(t *testing.T, f InvitationFixture) {
-	u := invitationPerson(t, f)
-	token := invitationOffer(t, f, u)
+	u := InvitationPerson(t, f)
+	token := InvitationOffer(t, f, u)
 	if err := invitationReset(f, token, "short"); !errors.Is(err, crud.ErrInvalid) {
 		t.Fatalf("weak password = %v", err)
 	}
@@ -184,10 +190,10 @@ func invitationWeakPassword(t *testing.T, f InvitationFixture) {
 	}
 }
 func invitationFailedHandoff(t *testing.T, f InvitationFixture) {
-	u := invitationPerson(t, f)
+	u := InvitationPerson(t, f)
 	f.Mail.Failure = errors.New("provider secret must not be recorded")
-	token := invitationOffer(t, f, u)
-	invitationOffer(t, f, u)
+	token := InvitationOffer(t, f, u)
+	InvitationOffer(t, f, u)
 	if len(f.Mail.Sent()) != 2 {
 		t.Fatalf("a refused handoff caused %d attempts", len(f.Mail.Sent()))
 	}

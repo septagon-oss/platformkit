@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -67,8 +68,8 @@ func TestLegacyInvitationRetainsItsLiveCredentialWithoutInventingDelivery(t *tes
 }
 func TestInvitationExpiryIsCheckedAfterWaitingForThePerson(t *testing.T) {
 	f := invitationSQL(t)
-	u := sqlInvite(t, f)
-	token := sqlOffer(t, f, u)
+	u := authtest.InvitationPerson(t, f.InvitationFixture)
+	token := authtest.InvitationOffer(t, f.InvitationFixture, u)
 	locked, release := make(chan struct{}), make(chan struct{})
 	held, done := make(chan error, 1), make(chan error, 1)
 	go func() {
@@ -103,7 +104,7 @@ func TestInvitationExpiryIsCheckedAfterWaitingForThePerson(t *testing.T) {
 }
 func TestInvitationBackwardClockRefusesWithoutAHandoff(t *testing.T) {
 	f := invitationSQL(t)
-	u := sqlInvite(t, f)
+	u := authtest.InvitationPerson(t, f.InvitationFixture)
 	f.Advance(-time.Second)
 	if err := f.Step(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		return f.Links.OfferInvitation(ctx, tx, u.ID, 1, *u.Invitation.DeliveryID)
