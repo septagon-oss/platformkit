@@ -1,4 +1,10 @@
-// checkplurals refuses English plural suffix construction in Go and catalogues.
+// Command checkplurals refuses English plural construction: a letter appended to a word, or
+// a format that pluralises by one, in Go source and in the catalogues under a messages/
+// directory. A page asks the reader's own plural rule how a plural reads; it never spells
+// one. kit/entity/display/display.go is read by no rule here: its exported Plural helper
+// sits on the frozen release line, which fixes the letter it appends, and
+// docs/COMPATIBILITY.md names who may move a frozen name. The exemption is one path, not a
+// directory, so a sibling of the frozen helper stays refused.
 package main
 
 import (
@@ -8,26 +14,21 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 )
 
-// frozenEnglish names the one file whose plural construction this check does not read.
-// kit/entity/display.Plural is exported on the release line, which freezes that English
-// set-name helper as it was written; docs/COMPATIBILITY.md names who may move a frozen
-// name. Stopping the helper from appending a letter is what the plural rule wants and
-// what the frozen line refuses, so the helper keeps its letter and this check says out
-// loud where it stopped reading. The exemption is one path — not a package, not a
-// directory: this package's test plants the same sentence in a sibling file and
-// requires the refusal.
-var frozenEnglish = map[string]struct{}{"kit/entity/display/display.go": {}}
+// pluralVerb is the suffix that pluralises a verb: "%ss" as a Go format writes it and
+// "%[1]ss" as a gotext catalogue numbers its forms. One suffix, refused in both spellings.
+var pluralVerb = regexp.MustCompile(`%(?:\[\d+\])?ss`)
 
-// frozenPaths is frozenEnglish's keys in one order, for the line the check prints.
-func frozenPaths() []string { return slices.Sorted(maps.Keys(frozenEnglish)) }
+// frozenEnglish names the exempt paths, matched against the path under the root being walked,
+// so a copy of the tree in a temporary directory is exempt exactly as this one is.
+var frozenEnglish = []string{"kit/entity/display/display.go"}
 
 func main() {
 	problems, err := scan(".")
@@ -41,10 +42,12 @@ func main() {
 	if len(problems) > 0 {
 		os.Exit(1)
 	}
-	fmt.Println("plural source check: clean;", len(frozenEnglish), "frozen English file read no plural rule:",
-		strings.Join(frozenPaths(), " "))
+	fmt.Println("plural source check: clean;", len(frozenEnglish), "frozen English file read no plural rule:", strings.Join(frozenEnglish, " "))
 }
 
+// scan returns every plural construction under root. Go source is read as the compiler reads
+// it, so the rule refuses code and never a comment about the rule, and a Go test file is left
+// unread, being where a planted refusal lives. A JSON file is read only under messages/.
 func scan(root string) ([]string, error) {
 	var problems []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -52,34 +55,36 @@ func scan(root string) ([]string, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == "node_modules" {
+			if name := entry.Name(); name == ".git" || name == "node_modules" {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			// The exemption is a path in this repository, so it is matched on the path
-			// under the directory being walked: the same file is exempt whether the walk
-			// starts at "." or at a copy of the tree in a temporary directory.
-			if rel, err := filepath.Rel(root, path); err == nil {
-				if _, frozen := frozenEnglish[filepath.ToSlash(rel)]; frozen {
-					return nil
-				}
-			}
-			found, err := scanGo(path)
-			problems = append(problems, found...)
-			return err
-		}
-		if strings.HasSuffix(path, ".json") && strings.Contains(filepath.ToSlash(path), "/messages/") {
-			found, err := scanJSON(path)
-			problems = append(problems, found...)
-			return err
-		}
-		return nil
+		found, err := scanFile(root, path)
+		problems = append(problems, found...)
+		return err
 	})
 	return problems, err
 }
 
+// scanFile reads one file, or nothing when the plural rule has no view of it.
+func scanFile(root, path string) ([]string, error) {
+	slash := filepath.ToSlash(path)
+	switch {
+	case strings.HasSuffix(slash, ".go") && !strings.HasSuffix(slash, "_test.go"):
+		rel, err := filepath.Rel(root, path)
+		if err == nil && slices.Contains(frozenEnglish, filepath.ToSlash(rel)) {
+			return nil, nil
+		}
+		return scanGo(path)
+	case strings.HasSuffix(slash, ".json") && strings.Contains(slash, "/messages/"):
+		return scanJSON(path)
+	}
+	return nil, nil
+}
+
+// scanGo reports a suffix a concatenation appends, a suffix a compound assignment appends,
+// and a format pluralised by one, each at the node that writes it.
 func scanGo(path string) ([]string, error) {
 	set := token.NewFileSet()
 	file, err := parser.ParseFile(set, path, nil, 0)
@@ -94,22 +99,19 @@ func scanGo(path string) ([]string, error) {
 		switch n := node.(type) {
 		case *ast.BinaryExpr:
 			if n.Op == token.ADD && (literal(n.X) == "s" || literal(n.Y) == "s") {
-				report(n.Pos(), `plural suffix concatenation`)
+				report(n.Pos(), "plural suffix concatenation")
 			}
 		case *ast.AssignStmt:
 			if n.Tok == token.ADD_ASSIGN {
 				for _, rhs := range n.Rhs {
 					if literal(rhs) == "s" {
-						report(n.Pos(), `plural suffix assignment`)
+						report(n.Pos(), "plural suffix assignment")
 					}
 				}
 			}
 		case *ast.BasicLit:
-			if n.Kind == token.STRING {
-				value, err := strconv.Unquote(n.Value)
-				if err == nil && pluralSuffixFormat(value) {
-					report(n.Pos(), `plural format suffix`)
-				}
+			if pluralVerb.MatchString(literal(n)) {
+				report(n.Pos(), "plural format suffix")
 			}
 		}
 		return true
@@ -117,80 +119,44 @@ func scanGo(path string) ([]string, error) {
 	return problems, nil
 }
 
-// pluralSuffixFormat refuses a noun pluralised by appending a letter to a verb: the
-// unnumbered verb a Go format writes ("%" then "ss" below), and the numbered verb a
-// gotext catalogue writes its forms with ("%[1]ss"). They are the same suffix; a
-// checker that read only the unnumbered spelling would let a translated catalogue
-// pluralise in English while Go source stayed clean. The verb is matched a byte at a
-// time rather than written whole beside the tail, because this checker walks its own
-// source and the joined literal is the finding it reports.
-func pluralSuffixFormat(value string) bool {
-	const tail = "ss"
-	for at := 0; at < len(value); at++ {
-		if value[at] != '%' {
-			continue
-		}
-		rest := value[at+1:]
-		if strings.HasPrefix(rest, tail) {
-			return true
-		}
-		end := strings.IndexByte(rest, ']')
-		if end <= 0 {
-			continue
-		}
-		if digits(rest[1:end]) && strings.HasPrefix(rest[end+1:], tail) {
-			return true
-		}
-	}
-	return false
-}
-
-// digits reports a non-empty run of decimal digits: the index a numbered verb names.
-func digits(value string) bool {
-	for i := 0; i < len(value); i++ {
-		if value[i] < '0' || value[i] > '9' {
-			return false
-		}
-	}
-	return value != ""
-}
-
+// literal answers the text of a string literal expression, and "" for anything else.
 func literal(expr ast.Expr) string {
-	value, ok := expr.(*ast.BasicLit)
-	if !ok || value.Kind != token.STRING {
+	lit, ok := expr.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
 		return ""
 	}
-	copy, _ := strconv.Unquote(value.Value)
-	return copy
+	value, _ := strconv.Unquote(lit.Value)
+	return value
 }
 
+// scanJSON reports a plural format in any string of a catalogue, wherever it sits in it.
 func scanJSON(path string) ([]string, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var value any
-	if err := json.Unmarshal(body, &value); err != nil {
+	var catalogue any
+	if err := json.Unmarshal(body, &catalogue); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	var problems []string
 	var visit func(any, string)
-	visit = func(value any, key string) {
-		switch typed := value.(type) {
+	visit = func(node any, key string) {
+		switch value := node.(type) {
 		case string:
-			if pluralSuffixFormat(typed) {
+			if pluralVerb.MatchString(value) {
 				problems = append(problems, fmt.Sprintf("%s: %s: plural format suffix", path, key))
 			}
 		case map[string]any:
-			for name, child := range typed {
+			for name, child := range value {
 				visit(child, key+"."+name)
 			}
 		case []any:
-			for index, child := range typed {
+			for index, child := range value {
 				visit(child, fmt.Sprintf("%s[%d]", key, index))
 			}
 		}
 	}
-	visit(value, "catalogue")
+	visit(catalogue, "catalogue")
 	return problems, nil
 }
