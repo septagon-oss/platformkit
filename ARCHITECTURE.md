@@ -310,7 +310,14 @@ database-free reader of manifests appeared.
 
 A consumer imports another module's `contracts/`, not its `internal/` or
 constructor. Application composition is the place that connects them.
-[scripts/check_imports.sh](scripts/check_imports.sh) checks this boundary.
+[scripts/check_imports.sh](scripts/check_imports.sh) checks Go's direct production
+and test imports. Production contracts have an exact dependency policy, and test
+suites composing foreign constructors declare their targets and reason in
+`scripts/imports-integration.txt`. A contract dependency the published surface
+already carries is recorded per edge, with the frozen exported name that keeps it,
+in `scripts/imports-contract-baseline.txt`; a row whose import has gone is refused,
+so that list only shrinks. The [import gate](tools/importgate/README.md)
+documents provenance, refusals, build context and the per-pair edge report.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.
 
@@ -361,7 +368,7 @@ Use [rest.Operation](kit/rest/operation.go) for typed service projections with
 custom paths or response bodies; it shares transaction and error handling with
 commands while the service keeps its domain authorization. Resource counts use
 one read guard; standard Specs issue a COUNT without loading entity rows.
-[kit/app](kit/app/app.go) defaults to an in-memory transport for the combined
+[kit/app](kit/app/dependencies.go) defaults to an in-memory transport for the combined
 `all` role and JetStream for separate `web` and `worker` roles, unless the
 application supplies a transport. The application also supplies the two
 constructors (`app.Transports`); the kernel selects by name and imports no
@@ -426,8 +433,8 @@ database, and a stylesheet adds none of it.
 one stylesheet per pair rather than recomposing per request
 (`design/design.go:165-166`); no span opens and no event publishes.
 
-**How an app extends it.** Hand `ui.Compose` (`ui/ui.go:440`) a `Pair` of its
-own, plus a `ui.Extra` (`ui/ui.go:103`) for rules. The reference product's own
+**How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
+own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
 line is `apps/platformkit/fault.go:110`: `ui.Compose(design.Default())`, the same
 pair the composition hands the shell at `apps/platformkit/app.go:167`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
@@ -438,8 +445,8 @@ a role.
 **Where it lives.** `ui/css` is the stylesheet's IR — `Sheet`
 (`ui/css/css.go:130`), `AddRule` (`ui/css/css.go:142`) — and `ui/style` compiles
 tokens into it (`ThemeVars`, `ui/style/theme.go:24`). Behaviour is controllers
-served as static files beside the API (`ui/ui.go:2`), mounted by `ui.Assets`
-(`ui/ui.go:529`) in `modules/web/internal/mount.go:78` and
+served as static files beside the API ([ui/assets.go](ui/assets.go)), mounted by `ui.Assets`
+([ui/assets.go](ui/assets.go)) in `modules/web/internal/mount.go:78` and
 `modules/admin/internal/mount.go:146`.
 
 **Builds on.** `maragu.dev/gomponents` v1.3.0 (MIT) for the DOM the controllers
@@ -599,7 +606,7 @@ matching and CLDR plural rules. Nothing here is a service.
 hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
-(`ui/page/serve.go:101`, `ui/page/locale.go:61`). Why a refusal may not answer in
+([ui/page/serve.go](ui/page/serve.go), `ui/page/locale.go:61`). Why a refusal may not answer in
 an undeclared language is the comment at `kit/httpx/tenant.go:281-289` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
@@ -670,7 +677,7 @@ wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
 one tenant's one event, watched from now on, claiming nothing, retrying nothing
 and holding no history — what a live connection is built on (`kit/stream`), and
 what an app opens for its own events by declaring `Streams`
-(`kit/module/module.go:96`).
+([Module.Streams](kit/module/module.go)).
 
 **Builds on.** CloudEvents 1.0 in structured content mode, hand-built: the
 envelope (`kit/events/transport/cloudevents.go:41`) is what crosses a broker, so
@@ -698,11 +705,12 @@ those two members and says nothing about correlation (`:63-70`; the column is
 (`modules/audit/module.go:93`) turns every declared event into a row.
 
 **How an app extends it.** Declare in the manifest — `Declared` and
-`Subscriptions` (`kit/module/module.go:87`, `:91`) — and write one transport line
+`Subscriptions` ([Module](kit/module/module.go)) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
 (`apps/platformkit/product.go:227`), in the function the application calls the one
 place it names an event provider (`:226`). `kit/app` selects by name and imports
-no provider (`kit/app/app.go:195-203`). An unknown `specversion` is refused rather
+no provider ([Transports.constructor](kit/app/app.go) and
+[App.transport](kit/app/dependencies.go)). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
 that is already handled is a no-op, so delivery is at-least-once and an external
 effect still needs its provider's idempotency contract.
@@ -803,14 +811,14 @@ caller cannot forge one, and every request warms the shared host index through
 no audit row, `kit/cache` imports no `kit/telemetry`, and the cache is never a
 second source of truth. `kit/cache/cachetest/conformance.go` is the suite both the
 in-process store and the Valkey adapter run, over two fixed tenants
-(`kit/cache/cachetest/conformance.go:29-34`) so a key that lets one customer reach
+([tenant fixtures](kit/cache/cachetest/conformance.go)) so a key that lets one customer reach
 another is reproducible from the failure message alone.
 
-**How an app extends it.** Add a field to `app.Caches` (`kit/app/app.go:173`,
-selected at `:448`); the reference composition names `valkey.Connect` and nothing
+**How an app extends it.** Add a field to [app.Caches](kit/app/app.go),
+selected by [validateDeployment](kit/app/construct.go); the reference composition names `valkey.Connect` and nothing
 else (`apps/platformkit/product.go:235`, in `caches()` at `:234`). A selected
 adapter with no constructor is refused before anything opens
-(`kit/app/app.go:185-192`). `noeviction` is a requirement and not politeness: the
+([Caches.constructor](kit/app/app.go)). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
 generation 0, and what `Move` closed reopens (`compose.yaml:99-103`) — a deployment
 fault, not a caller's.
@@ -851,10 +859,10 @@ the measured figures; this page quotes none.
 
 **How an app extends it.** A module never holds a provider. A deployment writes
 `telemetry.otlp_endpoint` and `telemetry.sample_ratio`
-(`kit/config/config.go:108-127`), whose zero value exports nothing
-(`kit/config/config.go:39-41`), and any package names attributes through
-`SpanAttrs`. An unreachable collector must not stop serving, so OpenTelemetry's
-own error handler keeps serving (`kit/config/config.go:105-107`).
+([config.Telemetry](kit/config/config.go)), whose empty endpoint exports
+nothing ([planTelemetry](kit/app/telemetry.go)); any package names attributes
+through `SpanAttrs`. An unreachable collector must not stop serving; the
+[telemetry plan](kit/app/telemetry.go) keeps export failures out of request handling.
 
 ### Audit
 
@@ -1427,7 +1435,7 @@ every deployment topology safe: shared storage, schema compatibility, migration
 ownership and provider behavior need environment-specific verification.
 
 `Run` takes the address it serves on, so one process holds one composition per
-address. [kit/app](kit/app/app.go) also exports `Start`: the same migration,
+address. [kit/app](kit/app/lifecycle.go) also exports `Start`: the same migration,
 connection and boot gates, handing back a `Runtime` — its `Handler`, whose surface
 is the whole API for `web` and `all` and the two probes for `worker`, its `Work`
 half and its release — for an application that owns a listener of its own. Which

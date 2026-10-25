@@ -115,6 +115,15 @@ return app.Run(ctx, deployment, app.All)
     written by `pkit.App.Describe` on the same drift discipline: a composition
     changed in either encoding and not described fails a check.
 
+Try the public APIs through the executable examples in [db](kit/db/example_test.go),
+[events](kit/events/example_test.go), [httpx](kit/httpx/example_test.go),
+[rest](kit/rest/example_test.go), [crud](kit/crud/example_test.go),
+[cache](kit/cache/example_test.go), [jobs](kit/jobs/example_test.go) and
+[tenancy](kit/tenancy/example_test.go), using the [test setup](CONTRIBUTING.md#verify-at-the-relevant-boundary).
+**Reused** — these examples compose the existing kernel APIs, RLS fixtures and memory adapters.
+**Added** — checked usage examples, a callback lifetime for database fixtures and an execution assertion fill the documentation gap without changing runtime APIs.
+**Made reusable** — `dbtest.WithSchema` supports examples without a test handle, and `exampletest.Execute` verifies that Go runs each documented example.
+
 ## Build a screen
 
 Start with the [entity and presentation map](ARCHITECTURE.md#entity-and-presentation-contracts)

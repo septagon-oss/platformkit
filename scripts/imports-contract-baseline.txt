@@ -1,0 +1,16 @@
+# Production contract imports the frozen public API keeps in place. One row per
+# edge: the contracts package's directory, the exact dependency it imports, and
+# the exported name at the release line's frozen commit that carries it. The gate
+# refuses a row whose import has gone, so this list only shrinks; moving an edge
+# out is the release that can break the surface, not this one. See
+# tools/importgate/README.md and docs/COMPATIBILITY.md.
+modules/admin/contracts github.com/septagon-oss/platformkit/ui/export Storybook returns export.Storybook, the resolved gallery composition.
+modules/admin/contracts github.com/septagon-oss/platformkit/ui/page Locale is called with page.Request, the shell's own request value.
+modules/auth/contracts github.com/lib/pq Permissions.Value and Permissions.Scan delegate to pq.StringArray for one text[] column.
+modules/billing/contracts github.com/lib/pq Features.Value and Features.Scan delegate to pq.StringArray for one text[] column.
+modules/file/contracts github.com/danielgtaylor/huma/v2 ContentResponse returns *huma.StreamResponse, the streaming body it hands the router.
+modules/history/contracts github.com/septagon-oss/platformkit/kit/httpx Events declares events.Declared for httpx.Restored under httpx.RestoredEvent.
+modules/site/contracts github.com/septagon-oss/platformkit/kit/httpx SiteSettings.Validate refuses a navigation path with httpx.LocalPath.
+modules/task/contracts github.com/septagon-oss/platformkit/modules/task/domain StatusOpen through StatusClosed are the domain constants this module publishes.
+modules/user/contracts github.com/lib/pq Roles.Value and Roles.Scan delegate to pq.StringArray for one text[] column.
+modules/webhook/contracts github.com/lib/pq EventNames.Value and EventNames.Scan delegate to pq.StringArray for one text[] column.

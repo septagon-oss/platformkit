@@ -108,35 +108,9 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
 	}
-	op := huma.Operation{
-		OperationID: rt.ID, Method: rt.Method, Path: rt.Path, Summary: rt.Summary,
-		Tags: []string{s.Tag}, Errors: rt.Errors,
-	}
-	if rt.StreamsBody {
-		key, streamed := httpx.StreamedBody()
-		op.Extensions = map[string]any{key: streamed}
-	}
-	if rt.MintsCredential {
-		if op.Extensions == nil {
-			op.Extensions = map[string]any{}
-		}
-		op.Extensions[httpx.CredentialExtension] = true
-	}
-	if s.Chrome.SignIn != "" {
-		httpx.SignIn(&op, s.Chrome.SignIn)
-	}
+	op := pageOperation(s, rt)
 	httpx.HTML(r, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
-		r := read(ctx, s.Chrome)
-		if s.Messages != nil {
-			var preferred, accepted string
-			if s.Locale != nil {
-				preferred = s.Locale(ctx, r)
-			}
-			if req, ok := httpx.RequestFrom(ctx); ok {
-				accepted = req.Header.Get("Accept-Language")
-			}
-			r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
-		}
+		r := readPageRequest(ctx, s)
 		v, err := handler(ctx, r, in)
 		if err != nil {
 			if to, ok := errors.AsType[httpx.SeeOther](err); ok {
@@ -155,26 +129,17 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			if httpx.WantsValue(asked) {
 				// The client named a JSON media type and refused markup, so the refusal of a
 				// page route is the same problem document every other refusal of this address
-				// would have been, written by the kernel's one encoder. The rule
-				// kit/httpx/fault.go states for a guard's refusal, applied to a handler's and
-				// asked of the same file rather than copied: a browser navigation names
-				// text/html and reaches the page below, an SDK names application/json and
-				// gets the body it parses, and a client that named nothing has no opinion to
-				// honour — so it gets the page this route exists to give.
+				// would have been, written by the kernel's one encoder — the rule
+				// kit/httpx/fault.go states for a guard's refusal, asked of the same file
+				// rather than copied. A client that named nothing has no opinion to honour and
+				// gets the page this route exists to give.
 				return nil, err
 			}
-			// The refusal of a handler is the same page the kernel's guards render
-			// (fault.go) and is worded the same way: through the locale this shell just
-			// negotiated, with the sentence this shell ships for that verdict. A person
-			// who was refused by a module is looking at the page all the same, and the
-			// copy they are shown is not the reason the language was bought for the shell
-			// that mounted them. `fault` claims a language only over a sentence it actually
-			// replaced, so a verdict no catalogue speaks stays English and says so.
-			//
-			// The reference is the request's own id, which is why a handler's refusal is
-			// quotable at all: the id middleware ran before this handler was reached, the
-			// response header answers with it, and the problem body the same refusal takes
-			// to a program carries it as its instance (kit/httpx's stampRequestID).
+			// Handler refusals use the same localized fault view as guard failures.
+			// Preserve sensitivity from the refused view. The reference is the request's own
+			// id, which is why a handler's refusal is quotable at all: the id middleware ran
+			// before this handler was reached, and the problem body the same refusal takes to
+			// a program carries it as its instance (kit/httpx's stampRequestID).
 			refused := fault(verdict{status: why.Status, detail: shown(why), key: why.Key,
 				reference: httpx.RequestID(ctx), loc: r.Locale, sub: rt.Subject,
 				back: s.Back, backLabel: s.BackLabel, path: r.Path,
@@ -189,75 +154,104 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 				r.Locale = new(SelectLocale(s.Messages, v.Language))
 			}
 		}
-		status := v.Status
-		if status == 0 {
-			status = http.StatusOK
-		}
-		// A live region re-reads its own address when the server tells it that its
-		// state moved, and the answer to that read is the region's contents and nothing
-		// else: htmx puts these bytes inside the element the region already is, so a
-		// document here would put a page inside a page and repeat the element holding the
-		// connection. The rows behind the two answers come from the same guarded read on
-		// the same route — the header changes the shape of an answer, none of its
-		// content — and a page that named no topic is answered as a whole document
-		// whatever the request carried, because nothing said it had a region to swap.
-		// A refusal of a region read is the same case and used not to be drawn that way:
-		// the refresh that found the row gone, the caller refused or the service down got
-		// a whole document dropped into the element showing the rows. The answer is a
-		// fragment now; htmx-config.js decides whether a refusal's fragment is swapped.
-		var out *httpx.Page
-		if regionRequested(ctx) && (len(v.Live) > 0 || status >= http.StatusBadRequest) {
-			out, err = RenderFragment(g.Group(v.Body), status)
-		} else {
-			region := v.Body
-			if len(v.Live) > 0 {
-				region = []g.Node{document.LiveRegion(streamConnect(v.Live), regionAddress(ctx, r), v.Live, v.Body)}
-			}
-			var body g.Node
-			if v.Bare {
-				body = Bare(region)
-			} else {
-				body = s.Frame(ctx, r, region)
-			}
-			out, err = Render(Document(s.Chrome, r, v, body), status)
-		}
+		out, err := renderPageView(ctx, s, r, v)
 		if err != nil {
 			return nil, err
 		}
-		if s.Messages != nil {
-			out.ContentLanguage, out.Vary = v.Language, "Accept-Language"
-			// A preference resolver may depend on the signed-in account, so the
-			// safe answer is that this response belongs to one person. On the
-			// public surface there is no account to read — the chain parses no
-			// session there at all — so the language can only have come from the
-			// request's own Accept-Language, and what Vary says is the truth:
-			// the cache must key on the language, and the page is still
-			// cacheable. That is the one reason the public face can be cached at
-			// all once a shell is translated.
-			if httpx.SurfaceOf(ctx) != httpx.SurfacePublic {
-				out.CacheControl = "private, no-store"
-			}
-		}
-		applyPrivacy(out, v.Sensitive)
-		if v.RunsWASM {
-			// Read from the view that was actually rendered: a handler that refused
-			// answers with the kernel's fault page, which instantiates nothing, and a
-			// redirect returned above this line — so neither carries the token, and no
-			// branch here has to know that a refusal cleared the declaration.
-			httpx.AllowWASM(ctx)
-		}
-		if v.Revalidate && !v.Sensitive && httpx.SurfaceOf(ctx) == httpx.SurfacePublic {
-			// "Ask first" rather than "do not store": the copy may still be kept and
-			// revalidated, and the one thing that cannot happen is a cache answering a
-			// page it has not looked at since the owner published over it. The kernel
-			// filled the one-minute default ahead of this; a page that knows its own
-			// body moves replaces it.
-			out.CacheControl = "no-cache"
-		}
+		applyPageResponsePolicy(ctx, s, v, out)
 		return out, nil
 	})
 }
 
+func pageOperation(s Shell, rt Route) huma.Operation {
+	op := huma.Operation{
+		OperationID: rt.ID, Method: rt.Method, Path: rt.Path, Summary: rt.Summary,
+		Tags: []string{s.Tag}, Errors: rt.Errors,
+	}
+	if rt.StreamsBody {
+		key, streamed := httpx.StreamedBody()
+		op.Extensions = map[string]any{key: streamed}
+	}
+	if rt.MintsCredential {
+		if op.Extensions == nil {
+			op.Extensions = map[string]any{}
+		}
+		op.Extensions[httpx.CredentialExtension] = true
+	}
+	if s.Chrome.SignIn != "" {
+		httpx.SignIn(&op, s.Chrome.SignIn)
+	}
+	return op
+}
+
+func readPageRequest(ctx context.Context, s Shell) Request {
+	r := read(ctx, s.Chrome)
+	if s.Messages != nil {
+		var preferred, accepted string
+		if s.Locale != nil {
+			preferred = s.Locale(ctx, r)
+		}
+		if req, ok := httpx.RequestFrom(ctx); ok {
+			accepted = req.Header.Get("Accept-Language")
+		}
+		r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
+	}
+	return r
+}
+
+func renderPageView(ctx context.Context, s Shell, r Request, v View) (*httpx.Page, error) {
+	var err error
+	status := v.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	// Region refreshes return only their contents, including refusals;
+	// the guarded read and route remain the same as a full document.
+	var out *httpx.Page
+	if regionRequested(ctx) && (len(v.Live) > 0 || status >= http.StatusBadRequest) {
+		out, err = RenderFragment(g.Group(v.Body), status)
+	} else {
+		region := v.Body
+		if len(v.Live) > 0 {
+			region = []g.Node{document.LiveRegion(streamConnect(v.Live), regionAddress(ctx, r), v.Live, v.Body)}
+		}
+		var body g.Node
+		if v.Bare {
+			body = Bare(region)
+		} else {
+			body = s.Frame(ctx, r, region)
+		}
+		out, err = Render(Document(s.Chrome, r, v, body), status)
+	}
+	return out, err
+}
+
+func applyPageResponsePolicy(ctx context.Context, s Shell, v View, out *httpx.Page) {
+	if s.Messages != nil {
+		out.ContentLanguage, out.Vary = v.Language, "Accept-Language"
+		// Account preferences are private. Public language negotiation depends
+		// only on the request, so Vary is sufficient there.
+		if httpx.SurfaceOf(ctx) != httpx.SurfacePublic {
+			out.CacheControl = "private, no-store"
+		}
+	}
+	applyPrivacy(out, v.Sensitive)
+	if v.RunsWASM {
+		// Read from the view that was actually rendered: a handler that refused
+		// answers with the kernel's fault page, which instantiates nothing, and a
+		// redirect returned above this line — so neither carries the token, and no
+		// branch here has to know that a refusal cleared the declaration.
+		httpx.AllowWASM(ctx)
+	}
+	if v.Revalidate && !v.Sensitive && httpx.SurfaceOf(ctx) == httpx.SurfacePublic {
+		// "Ask first" rather than "do not store": the copy may still be kept and
+		// revalidated, and the one thing that cannot happen is a cache answering a
+		// page it has not looked at since the owner published over it. The kernel
+		// filled the one-minute default ahead of this; a page that knows its own
+		// body moves replaces it.
+		out.CacheControl = "no-cache"
+	}
+}
 func applyPrivacy(out *httpx.Page, sensitive bool) {
 	if sensitive {
 		out.CacheControl = "no-store"
@@ -331,12 +325,9 @@ func regionAddress(ctx context.Context, r Request) string {
 // refusal is a handler's error read as the verdict it is: its own problem, or the 500
 // standing in for anything else. The verdict is handed over whole rather than flattened to
 // a status and a sentence, because the two fields a person's page needs are precisely the
-// two the problem document does not carry (problem.Problem's Key and Diagnostic): a page
-// built from the status and the detail alone repeats a diagnostic the writer marked an
-// operator's, and loses the copy the writer ships for the reader. The same two fields are
-// what FaultHandler reads off the guard's refusal, and both doors read them through shown
-// and fault below, so the two shapes of one refusal cannot disagree about what a browser
-// may be shown.
+// two the problem document does not carry (problem.Problem's Key and Diagnostic), and both
+// doors read them through shown and fault below. So the two shapes of one refusal cannot
+// disagree about what a browser may be shown.
 func refusal(err error) *problem.Problem {
 	var p *problem.Problem
 	if errors.As(err, &p) {

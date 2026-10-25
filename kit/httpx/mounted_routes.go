@@ -19,11 +19,13 @@ import (
 func Register[I, O any](r *Router, op huma.Operation, auth Auth, handler func(context.Context, *I) (*O, error)) {
 	op.Path = r.compose(op.Path, false)
 	prepare(r, &op, auth, false)
-	huma.Register(r.api.api, op, func(ctx context.Context, in *I) (*O, error) {
+	api := newIntegerAPI[I, O](r.api)
+	huma.Register(api, op, func(ctx context.Context, in *I) (*O, error) {
 		out, err := handler(ctx, in)
 		noteCarried(ctx, err)
 		return out, err
 	})
+	api.documentIntegers()
 }
 
 // prepare is the shared half of the two doors: the panic for the zero Auth, the
