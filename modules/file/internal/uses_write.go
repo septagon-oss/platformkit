@@ -93,18 +93,9 @@ func (s *Service) OrderUses(ctx context.Context, tx db.Tx[db.Tenant], owner cont
 // in the use row, not in the file row.
 func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	wanted := contracts.CollapseRefs(refs)
-	var existing []contracts.FileUse
-	if err := tx.DB().WithContext(ctx).
-		Where("module = ? AND entity = ? AND record = ? AND field = ? AND locale = ?",
-			use.Module, use.Entity, use.Record, use.Field, use.Locale).
-		Order("file_id").Find(&existing).Error; err != nil {
-		return nil, fmt.Errorf("file: what %s/%s %s shows: %w", use.Module, use.Entity, use.Record, err)
-	}
-	seen := make(map[uuid.UUID]contracts.FileUse, len(existing))
-	from := make([]uuid.UUID, 0, len(existing))
-	for _, row := range existing {
-		seen[row.FileID] = row
-		from = append(from, row.FileID)
+	seen, from, err := s.shownUses(ctx, tx, use)
+	if err != nil {
+		return nil, err
 	}
 	add, remove := contracts.DiffUses(from, wanted)
 	// Which of the ended rows were asserting a public audience. A publish granted
@@ -139,28 +130,8 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	// dangling row is what the caller came here to remove: refusing at it would
 	// strand the record trying to stop existing, refused by a file it is giving
 	// up, and leave the ledger saying a file nobody has is still being read.
-	for _, id := range union(wanted, remove) {
-		// One ascending walk, one lock per file, taken before any of it is decided:
-		// FOR UPDATE where this rewrite ends a use and so decides whether the file
-		// has any left, FOR KEY SHARE where it only names the file. No lock is taken
-		// weak and upgraded later, which two rewrites of one file would deadlock;
-		// the order is SetShown's too, so a publish and an edit that share an image
-		// serialise on it rather than each reading a snapshot the other has written.
-		var (
-			found bool
-			err   error
-		)
-		if slices.Contains(remove, id) {
-			found, err = lockFileForUpdate(ctx, tx, id)
-		} else {
-			found, err = lockFileKeyShare(ctx, tx, id)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !found && slices.Contains(wanted, id) {
-			return nil, fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
-		}
+	if err := s.lockNamed(ctx, tx, wanted, remove); err != nil {
+		return nil, err
 	}
 	// Who may read each file this rewrite is about to change, asked before any of
 	// it is written. The audience a file ends up with is the answer to a question
@@ -178,38 +149,8 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		}
 		given = asked
 	}
-	for _, id := range remove {
-		// Hard, and for the reason the migration says out loud: this table is
-		// the answer to "what reads this file", and a row that outlived the body
-		// that stopped naming the file is that answer being wrong.
-		if err := crud.Delete[*contracts.FileUse](tx, seen[id].ID, false); err != nil {
-			return nil, err
-		}
-	}
-	for _, id := range add {
-		row := &contracts.FileUse{
-			FileID: id, Module: use.Module, Entity: use.Entity,
-			Record: use.Record, Field: use.Field, Locale: use.Locale,
-			Public: public,
-		}
-		if err := crud.Create(ctx, tx, row); err != nil {
-			return nil, err
-		}
-	}
-	if len(add) > 0 {
-		// Something shows these again, so their grace period is over. This is the
-		// other arm of the same stamp, and it is why an image can be moved from one
-		// body to another inside the grace period and survive: the write that starts
-		// the use is the write that ends the countdown.
-		//
-		// unused_since IS NOT NULL is in the WHERE because a countdown that was never
-		// started has nothing to stop, and an UPDATE locks every row whose predicate it
-		// weighs: written this way, the ordinary save — a picture uploaded a minute ago
-		// and named for the first time — writes and locks no file row at all.
-		if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
-			Where("id IN ? AND unused_since IS NOT NULL", add).Update("unused_since", nil).Error; err != nil {
-			return nil, fmt.Errorf("file: say %d images are shown again: %w", len(add), err)
-		}
+	if err := s.fileUseRows(ctx, tx, use, add, remove, seen, public); err != nil {
+		return nil, err
 	}
 	if len(remove) == 0 {
 		// Nothing ended, so no grace period started and no audience was taken back.
@@ -225,37 +166,9 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	// the release sweep will be handed when it exists; today it is what the
 	// caller that dropped the last reference learns, and the file keeps its
 	// bytes either way.
-	//
-	// Counted after every lock above is held, which is what makes the count
-	// trustworthy: a rewrite that ended another use of the same file was waiting
-	// on that lock and, having landed, its rows are gone from this statement's
-	// snapshot. Counting before the lock, or with a lock another rewrite can hold
-	// at the same time, is the two-both-decide-it-is-still-used answer.
-	var live []uuid.UUID
-	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
-		Where("file_id IN ?", remove).Distinct().Pluck("file_id", &live).Error; err != nil {
-		return nil, fmt.Errorf("file: whether %d files are still read: %w", len(remove), err)
-	}
-	// What ended and is not read by anything else. The order of the two answers
-	// is "what to write, what to end", so the second one is the list here.
-	_, unused := contracts.DiffUses(remove, live)
-	if len(unused) > 0 {
-		// The grace period starts now, durably, in the transaction that removed the
-		// last use row — the same one that wrote the body that stopped naming the
-		// picture, so an edit that rolls back moves no clock. The sweep measures its
-		// day from this instant; nothing else records when a file stopped being
-		// shown, and deleted_at belongs to a row that is not being deleted.
-		// width > 0 is in the WHERE because only a file the image pass measured is
-		// ever stamped — the ledger speaks about pictures, files_unused_since_measured
-		// CHECKs the stamp against the measurement, and a document upload that loses
-		// the last record that named it has no grace period to start. The list
-		// returned below is unchanged: it names whose last use ended, which is wider
-		// than what the sweep can act on, and the sweep's own predicate asks width > 0.
-		at := db.Now()
-		if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
-			Where("id IN ? AND deleted_at IS NULL AND width > 0", unused).Update("unused_since", &at).Error; err != nil {
-			return nil, fmt.Errorf("file: stamp when %d images stopped being shown: %w", len(unused), err)
-		}
+	unused, err := s.stopCounting(ctx, tx, remove)
+	if err != nil {
+		return nil, err
 	}
 	// The audience either side of this rewrite named may have moved: rows that
 	// asserted one went, rows that assert one arrived. Neither half of the answer is
@@ -266,6 +179,135 @@ func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	// are the same two reads of the ledger.
 	if err := s.settleAudience(ctx, tx, given, use); err != nil {
 		return nil, err
+	}
+	return unused, nil
+}
+
+// shownUses reads the ledger rows this record's field names today, as the map this
+// pass compares against and the ascending list the diff is made from.
+func (s *Service) shownUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use) (map[uuid.UUID]contracts.FileUse, []uuid.UUID, error) {
+	var existing []contracts.FileUse
+	if err := tx.DB().WithContext(ctx).
+		Where("module = ? AND entity = ? AND record = ? AND field = ? AND locale = ?",
+			use.Module, use.Entity, use.Record, use.Field, use.Locale).
+		Order("file_id").Find(&existing).Error; err != nil {
+		return nil, nil, fmt.Errorf("file: what %s/%s %s shows: %w", use.Module, use.Entity, use.Record, err)
+	}
+	seen := make(map[uuid.UUID]contracts.FileUse, len(existing))
+	from := make([]uuid.UUID, 0, len(existing))
+	for _, row := range existing {
+		seen[row.FileID] = row
+		from = append(from, row.FileID)
+	}
+	return seen, from, nil
+}
+
+// lockNamed takes one lock per file either side names, in one ascending walk, before
+// any of it is decided: FOR UPDATE where this rewrite ends a use and so decides
+// whether the file has any left, FOR KEY SHARE where it only names the file. No lock
+// is taken weak and upgraded later, which two rewrites of one file would deadlock,
+// and the order is SetShown's too, so a publish and an edit that share an image
+// serialise on it rather than each reading a snapshot the other has written.
+//
+// Every file the new set names has to exist. A file this rewrite only ends may
+// already be gone — the doors that let a file leave under a body still showing it are
+// erasure and the release sweep, each of which ends every use of what it removes
+// (README Limits) — and that dangling row is what the caller came here to remove:
+// refusing at it would strand the record trying to stop existing.
+func (s *Service) lockNamed(ctx context.Context, tx db.Tx[db.Tenant], wanted, remove []uuid.UUID) error {
+	for _, id := range union(wanted, remove) {
+		var (
+			found bool
+			err   error
+		)
+		if slices.Contains(remove, id) {
+			found, err = lockFileForUpdate(ctx, tx, id)
+		} else {
+			found, err = lockFileKeyShare(ctx, tx, id)
+		}
+		if err != nil {
+			return err
+		}
+		if !found && slices.Contains(wanted, id) {
+			return fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
+		}
+	}
+	return nil
+}
+
+// fileUseRows moves the ledger: every ended row deleted hard, because a row that
+// outlived the body that stopped naming the file is the answer to "what reads this
+// file" being wrong, and every begun row filed with the audience the record asserts.
+func (s *Service) fileUseRows(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, add, remove []uuid.UUID, seen map[uuid.UUID]contracts.FileUse, public bool) error {
+	for _, id := range remove {
+		if err := crud.Delete[*contracts.FileUse](tx, seen[id].ID, false); err != nil {
+			return err
+		}
+	}
+	for _, id := range add {
+		row := &contracts.FileUse{
+			FileID: id, Module: use.Module, Entity: use.Entity,
+			Record: use.Record, Field: use.Field, Locale: use.Locale,
+			Public: public,
+		}
+		if err := crud.Create(ctx, tx, row); err != nil {
+			return err
+		}
+	}
+	if len(add) == 0 {
+		return nil
+	}
+	// Something shows these again, so their grace period is over. This is the other
+	// arm of the same stamp, and it is why an image can be moved from one body to
+	// another inside the grace period and survive: the write that starts the use is
+	// the write that ends the countdown.
+	//
+	// unused_since IS NOT NULL is in the WHERE because a countdown that was never
+	// started has nothing to stop, and an UPDATE locks every row whose predicate it
+	// weighs: written this way, the ordinary save — a picture uploaded a minute ago
+	// and named for the first time — writes and locks no file row at all.
+	if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
+		Where("id IN ? AND unused_since IS NOT NULL", add).Update("unused_since", nil).Error; err != nil {
+		return fmt.Errorf("file: say %d images are shown again: %w", len(add), err)
+	}
+	return nil
+}
+
+// stopCounting answers which of these files nothing else reads any more, and starts
+// their grace period on the same answer.
+//
+// The count is taken after every lock the rewrite holds, which is what makes it
+// trustworthy: a rewrite that ended another use of the same file was waiting on that
+// lock and, having landed, its rows are gone from this statement's snapshot. Counting
+// before the lock, or with a lock another rewrite can hold at the same time, is the
+// two-both-decide-it-is-still-used answer.
+func (s *Service) stopCounting(ctx context.Context, tx db.Tx[db.Tenant], remove []uuid.UUID) ([]uuid.UUID, error) {
+	var live []uuid.UUID
+	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Where("file_id IN ?", remove).Distinct().Pluck("file_id", &live).Error; err != nil {
+		return nil, fmt.Errorf("file: whether %d files are still read: %w", len(remove), err)
+	}
+	// What ended and is not read by anything else. The order of the two answers
+	// is "what to write, what to end", so the second one is the list here.
+	_, unused := contracts.DiffUses(remove, live)
+	if len(unused) == 0 {
+		return unused, nil
+	}
+	// The grace period starts now, durably, in the transaction that removed the last
+	// use row — the same one that wrote the body that stopped naming the picture, so
+	// an edit that rolls back moves no clock. The sweep measures its day from this
+	// instant; nothing else records when a file stopped being shown, and deleted_at
+	// belongs to a row that is not being deleted.
+	//
+	// width > 0 is in the WHERE because only a file the image pass measured is ever
+	// stamped — the ledger speaks about pictures, files_unused_since_measured CHECKs
+	// the stamp against the measurement, and a document upload that loses the last
+	// record that named it has no grace period to start. The list returned is wider
+	// than what the sweep can act on, and the sweep's own predicate asks width > 0.
+	at := db.Now()
+	if err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
+		Where("id IN ? AND deleted_at IS NULL AND width > 0", unused).Update("unused_since", &at).Error; err != nil {
+		return nil, fmt.Errorf("file: stamp when %d images stopped being shown: %w", len(unused), err)
 	}
 	return unused, nil
 }
