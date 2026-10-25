@@ -23,6 +23,21 @@ explains the boundaries; this page maps the packages and the rules the gates enf
 | [ui/storybook](storybook/README.md) | The optional Storybook.js build (Node). | An `export.Export` snapshot. |
 | [ui/assets/js](assets/js/) | htmx and the browser controllers `ui.Controllers` lists. | — |
 
+## Composition
+
+**Reused** — `style.For`, component renderers and captures, `forms.Control`,
+`resource.List`/`FormExample`, `page.Serve` and `screens.Mount` remain the shared
+presentation path. **Added** — private rendering, validation and projection steps
+within those packages, because the existing owners already carry the capability.
+**Made reusable** — focused steps for controls, grouped tables, token projection
+and request rendering, with the same public contracts and output.
+
+Class compilation is organized by family; component Props and class-list
+inventories have separate source files. Resource [lists](resource/list.go),
+[details](resource/detail.go) and [forms](resource/form.go) share the existing
+[resource contract](resource/resource.go). The package boundaries above stay the
+same, so consumers keep their imports and constructors.
+
 ## Dependency rules
 
 [scripts/check_packages.sh](../scripts/check_packages.sh) runs in `make check`
@@ -83,6 +98,34 @@ review reads:
   now exported, documented and read by the gate instead of recopied into it,
   beside `components.ClassLists()`, which the class vocabulary is computed from
   rather than copied out of a rendered sheet.
+
+### Client-sheet admission
+
+[The admission check](client_sheet.go) reads emitted CSS, including keyframe
+stops, so a declaration cannot hide syntax in its property or value. It refuses
+consumer layers, block/comment delimiters, HTML style terminators, leading
+at-rules and unquoted semicolons in rule heads. CSS names are decoded before
+checking protected attributes, component-layer classes, `:root`, literal colours
+and `--pk-` declarations. Variable references remain available to client rules.
+Closed strings and URL arguments are masked for colour checks; spaces preserve
+token separation. An escaped `@` remains an identifier, not an at-rule token.
+
+The policy checks names, including class-attribute comparisons, wherever they
+occur in a selector. It does not implement selector reachability. Type and ID
+selectors can still reach kernel elements; the product owns the CSS it supplies.
+Named colour words also need author review. Violations panic at composition,
+before the refused sheet supplies bytes. `ComposeDesign` uses the same placement
+and fingerprinting while admitting proposals that need measurement.
+
+### Browser assets
+
+[Assets](assets.go) overlays computed stylesheets, consumer trees and embedded
+browser files in that order. `Controllers` remains declared in [ui.go](ui.go).
+Calendar/map engines, live-region SSE and the rich-text editor load only when
+needed. The editor bundle lives under `assets/richtext`, with its licenses and
+locked build under `tools/richtext-bundle`; a directory named `vendor` would be
+omitted from Go module archives and break consumers' embedded assets.
+Design snapshots and Storybook composition remain in [ui/export](export/README.md).
 
 ## The frame's floor
 

@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -262,8 +261,8 @@ func historyPanel(r httpx.Resource, ctx context.Context, o Options, at string, r
 		// declared none.
 		Asking: r.History.Asks,
 	}
-	if revision, numbered := row[entity.RevisionField].(float64); numbered {
-		out.Condition = strconv.FormatInt(int64(revision), 10)
+	if revision, numbered := row[entity.RevisionField]; numbered {
+		out.Condition = display.Text(revision)
 	}
 	// What each version held, indexed by its number, because the comparison one
 	// version offers is against the one before it and the series arrives newest

@@ -170,13 +170,19 @@ const (
 // narrows an OID into an int and is the key the suite's own lock lines contend. Read once
 // and kept on the runner: the lock has to be given back under the key it was taken under,
 // whatever the session's path holds by the time it is given back — and a file may set one.
+//
+// The OID comes from pg_namespace by name rather than from to_regnamespace(current_schema()):
+// that function parses its argument the way a statement parses an identifier, while
+// current_schema() answers an already-resolved name, so a legal name the grammar cannot hold
+// unquoted — one with a space or a capital — would name no namespace there and the run would
+// refuse a deployment whose schema exists.
 func (r *runner) compositionSchema(ctx context.Context) (int64, error) {
 	if r.schema != 0 {
 		return r.schema, nil
 	}
 	var schema int64
 	if err := r.conn.QueryRowContext(ctx,
-		"SELECT coalesce(to_regnamespace(current_schema()), 0)::oid::bigint").Scan(&schema); err != nil {
+		"SELECT coalesce((SELECT oid FROM pg_namespace WHERE nspname = current_schema()), 0)::oid::bigint").Scan(&schema); err != nil {
 		return 0, fmt.Errorf("db: migrate: reading the composition's namespace: %w", err)
 	}
 	if schema == 0 {
