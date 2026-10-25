@@ -957,7 +957,7 @@ dependency. Screens are derived from schemas rather than authored
 the tenant's own address, so a shell never names a tenant
 ([surface addresses](kit/httpx/surfaces.go)), and every operation inside it carries the tenant
 through the request's transaction like any other call. `CoveredEvents`
-(`kit/app/asyncapi.go:167`) counts the declared events the document names, which
+(`kit/app/asyncapi.go:169`) counts the declared events the document names, which
 is the claim that a shell sees no event nobody declared.
 
 **How it is traced and audited.** Nothing new: the events a shell may see are the
