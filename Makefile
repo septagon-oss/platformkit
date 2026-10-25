@@ -367,7 +367,7 @@ check-rehearse-supported: ## Certify this tree against every installation the re
 # migration leaves behind. `go tool gotestsum --packages='./...'` sees no shell script, so a
 # case nobody names in a recipe line is a case nothing runs, and a gate nobody runs is prose.
 #
-# Two of the four want the stack, and refuse without it rather than skipping: a gate that
+# Two of the five want the stack, and refuse without it rather than skipping: a gate that
 # passes because the machine had no database would certify the retry and the byte refusal
 # on a checkout where neither ran.
 check-support-record: ## Fail when the support record, its promise anchor, the applied bytes or the migration retry stop holding
@@ -375,6 +375,7 @@ check-support-record: ## Fail when the support record, its promise anchor, the a
 	bash scripts/a_narrowed_support_record_is_not_a_new_baseline_test.sh
 	bash scripts/migration_retry_test.sh
 	bash scripts/applied_bytes_refusal_test.sh
+	bash scripts/a_case_whose_evidence_denies_its_own_receipt_is_refused_test.sh
 
 # The line record names the revision the exported surface is frozen at: the published
 # tag once the owner cuts it, the frozen commit until then. No list of accepted breaks
