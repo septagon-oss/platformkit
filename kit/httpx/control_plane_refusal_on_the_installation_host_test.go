@@ -87,25 +87,41 @@ type controlPlaneAnswer struct {
 
 func controlPlaneAsk(t *testing.T, server, authority, path, accept, id string) controlPlaneAnswer {
 	t.Helper()
+	return controlPlaneSend(t, http.MethodGet, "", server, authority, path, accept, id)
+}
+
+// controlPlaneSend is one exchange with a real HTTP/1.1 server, asked at `authority` — the host
+// this composition serves, which is the only thing its tenant loader reads. A non-empty `body`
+// makes it a write, sent as a browser's form sends JSON, because the answer worth reading off a
+// server is the one a limit gives to a person at a form.
+func controlPlaneSend(t *testing.T, method, body, server, authority, path, accept, id string) controlPlaneAnswer {
+	t.Helper()
 	sent := time.Now()
-	req, err := http.NewRequest(http.MethodGet, server+path, nil)
+	var payload io.Reader
+	if body != "" {
+		payload = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, server+path, payload)
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
 	req.Host = authority
 	req.Header.Set("Accept", accept)
 	req.Header.Set(httpx.RequestIDHeader, id)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: "present"})
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(res.Body)
+	read, err := io.ReadAll(res.Body)
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
-	return controlPlaneAnswer{status: res.StatusCode, header: res.Header, body: string(body),
+	return controlPlaneAnswer{status: res.StatusCode, header: res.Header, body: string(read),
 		sentAt: sent, readAt: time.Now()}
 }
 
@@ -263,14 +279,16 @@ func TestThePublicWriteLimitSaysWhenToComeBackAtBothEndsOfTheRenderer(t *testing
 				fault = documentFault
 			}
 			api, router := guardKernel(t, guardSetup{allow: true, limiter: &window{allow: 0}}, fault)
-			asked := askFor(t, router, http.MethodPost, publicly(api, "/ask"), browserAccept)
-			if asked.Code != http.StatusTooManyRequests {
+			server := httptest.NewServer(router)
+			defer server.Close()
+			asked := controlPlaneSend(t, http.MethodPost, "{}", server.URL, host, publicly(api, "/ask"), browserAccept, "one-write-at-the-limit")
+			if asked.status != http.StatusTooManyRequests {
 				t.Fatalf("the limit refused %s = %d, want 429: the case says nothing unless it reached the refusal",
-					publicly(api, "/ask"), asked.Code)
+					publicly(api, "/ask"), asked.status)
 			}
-			if got := asked.Header().Get("Retry-After"); got == "" {
+			if got := asked.header.Get("Retry-After"); got == "" {
 				t.Errorf("the refusal carries no Retry-After when %s: the caller is told to stop and not when to come back (%s)",
-					shape.name, asked.Body.String())
+					shape.name, asked.body)
 			}
 		})
 	}
