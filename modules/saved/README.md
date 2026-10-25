@@ -273,6 +273,15 @@ the erasure in that same transaction. Export makes no writes or domain events.
 
 ## 8. Provider declaration and web contracts
 
+What this tree holds and what it specifies are not the same list, so the line is
+here rather than implied: the pkit declaration below is shipped in `module.go`
+(`Provides` Service, `Needs` Access and every Savable, `Contributes`
+personaldata.Part — export and erasure over the person's own copies), and every
+other row is owed: the `httpx.Saving` adapter, the `Opener`/`FileUses` edge, the
+`Clock` the SQL adapter stamps with, and everything from
+"### HTTP and generated-screen ownership" down. No application composes the
+module yet, so nothing here is reachable by a person.
+
 Implement one `New(Deps)` and one `provider.go` pkit declaration. The plan:
 
 | Declaration | Value/read owner |
@@ -464,8 +473,8 @@ undo history, quotas, recommendations, external save service or new provider SDK
 
 ## Proof obligations
 
-Run [RunService](contracts/savedtest/conformance.go) against the fake now and
-against the SQL adapter when it exists. It checks first-write events, duplicates,
+Run [RunService](contracts/savedtest/conformance.go) against the fake and against
+the SQL adapter over the real table. It checks first-write events, duplicates,
 source and saved revisions, zero-result refusals, owner-side private reads and
 removals, source deletion/revocation/outage, a source the composition dropped,
 an open's fresh destination, last removal, new identity, kind ordering, grant

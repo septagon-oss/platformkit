@@ -43,7 +43,10 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant], s personald
 // the source's title and values, so a scrub would leave behind a row naming a
 // person, a source key and a captured document, which is exactly what the request
 // asked to stop holding. The delete is unscoped for the reason Unsave removes
-// rather than hides — a soft-deleted copy stays addressable by its own id.
+// rather than hides — a soft-deleted copy stays addressable by its own id. The
+// release of a retained file's use arrives with the file ledger this composition
+// does not yet wire (README §8): a copy written today names a file and records no
+// use for it, so there is no use here to release.
 func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
 	return tx.DB().WithContext(ctx).Unscoped().Where("person_id = ?", s.ID).Delete(&row{}).Error
 }
