@@ -19,13 +19,12 @@ package httpx_test
 // kit/httpx/fault.go's own rule is the reason it should hold: "a second writer of problem
 // bodies in this package is a second answer to the question this file exists to ask once".
 //
-// The first half is held and pinned: TestTheControlPlaneIsNotFoundAtATenantHost in
-// kit/httpx/surfaces_test.go compares the host gate with a never-mounted address, headers
-// and body, and the gate was moved inside the headers middleware to make that true. That
-// fixture resolves the installation host to an *operator* tenant, so nothing it asks ever
-// reaches notHere. The second half — the road
-// the published table's row "a door only the operator may open, asked at another tenant"
-// describes — has never been compared to anything.
+// The first half is held and pinned: kit/httpx/control_plane_refusal_test.go compares the
+// host gate with a never-mounted address, headers and body, at both shapes, and the gate was
+// moved inside the headers middleware to make that true. That fixture resolves the
+// installation host to an *operator* tenant, so nothing it asks ever reaches notHere. The
+// second half — the road the published table's row "a door only the operator may open, asked
+// at another tenant" describes — has never been compared to anything.
 //
 // This case compares it, at the installation host, over a real HTTP/1.1 server, at both
 // document types and both ends of the renderer's opt-out. The page a browser is shown is
@@ -233,9 +232,9 @@ func controlPlaneSame(t *testing.T, a, b controlPlaneAnswer, asked, reference st
 }
 
 // TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobodyMounted holds
-// the half of the README's Ops paragraph kit/httpx/surfaces_test.go could not compare: it
-// refuses a tenant that is not the installation's *at the host the control plane is served
-// at*, but never sets that answer beside the answer of an address nobody mounted there.
+// the half of the README's Ops paragraph that kit/httpx/control_plane_refusal_test.go could
+// not reach: not the host gate, but the refusal of a tenant that is not the installation's
+// *at the host the control plane is served at*.
 func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobodyMounted(t *testing.T) {
 	const id = "one-request-id-for-both"
 	const nowhere = "/nothing-is-mounted-at-this-address"
