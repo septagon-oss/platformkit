@@ -32595,6 +32595,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/guided_step_ahead_reaches_the_next_step_test.go",
+   "id": "kit/rest/guided_step_ahead_reaches_the_next_step_test.go#TestGuidedStepAheadLeadsWhereThePersonMeantToGo",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestGuidedStepAheadLeadsWhereThePersonMeantToGo",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/guided_walk_between_steps_test.go",
    "id": "kit/rest/guided_walk_between_steps_test.go#TestGuidedStepAwayFromTheRecordedOneWalksOn",
    "kind": "go",
@@ -73163,6 +73182,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/guided_action_row_floor_test.go",
+   "id": "ui/resource/guided_action_row_floor_test.go#TestAGuidedStepScreenWritesNoBodyCopyBesideItsControls",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedStepScreenWritesNoBodyCopyBesideItsControls",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/help_language_test.go",
    "id": "ui/resource/help_language_test.go#TestAFormDrawsItsLabelAndItsHelpLineInOneLanguage",
    "kind": "go",
@@ -83338,7 +83376,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2257,
+  "files": 2259,
   "forge_runs": [
    408,
    413,
@@ -83372,7 +83410,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3602,
+   "behaviour": 3604,
    "composition": 489,
    "contract": 22,
    "journey": 110
@@ -83391,23 +83429,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4223,
+  "rows": 4225,
   "tiers": {
-   "merge": 2601,
+   "merge": 2602,
    "nightly": 110,
-   "push": 1512
+   "push": 1513
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2012,
+   "keep": 2014,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3837,
+   "keep": 3839,
    "keep-rewrite": 170,
    "merge": 216
   }
