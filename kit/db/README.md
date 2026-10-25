@@ -416,6 +416,7 @@ is `TryLock`'s session and its key, and the ladder above them is untouched. **Ad
 wants a budget *and* a declaration had to reach the door named after the least of its
 arguments, "held by another process" had only a false in a triple whose third slot is a
 failure, and a bare `bool` decided whether a delete was a hiding or an ending. **Made
-reusable** — one options struct every migration door takes, a named `Unlock` any lock
-caller can hand to a deferred path, and the old/new pair cases beside each door, which are
-the shape the next renaming of a kernel door composes rather than writes again.
+reusable** — one options struct every migration door takes and a named `Unlock` any lock
+caller can hand to a deferred path. The old/new pair case beside each door is the shape
+this branch leaves for the next renaming of one: a description to copy, not something a
+module can import.

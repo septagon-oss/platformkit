@@ -11,10 +11,11 @@ import (
 // MigrateOptions is what a migration or a drain run takes beyond its files: the
 // budgets its own patience allows and what the composition declares about itself.
 // The zero value is what Migrate and Backfill run on — the documented budgets and
-// no declaration. A negative duration in Budget refuses the run before it connects.
+// no declaration. A negative duration among Budget's two timeouts refuses the run
+// before it connects.
 type MigrateOptions struct {
 	// Budget is how long one file, and one batch of a drain, may wait. A nil
-	// field is the documented default.
+	// LockTimeout or StatementTimeout is the documented default.
 	Budget MigrationBudget
 	// Declaration is what this composition says about itself to the files it
 	// runs, as session state on the run's own connection. The zero value
