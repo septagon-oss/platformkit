@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-25T06:14:09Z",
+  "measured_utc": "2026-10-25T12:23:56Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -63,7 +63,7 @@
       "readable": 78
     },
     "GET /app/billing/plans/new": {
-      "wrapped": 38,
+      "wrapped": 40,
       "readable": 90
     },
     "GET /app/billing/plans/{id}": {
@@ -71,7 +71,7 @@
       "readable": 82
     },
     "GET /app/billing/plans/{id}/edit": {
-      "wrapped": 38,
+      "wrapped": 40,
       "readable": 90
     },
     "GET /app/change/proposals": {
@@ -83,15 +83,15 @@
       "readable": 90
     },
     "GET /app/content/contents/new": {
-      "wrapped": 111,
+      "wrapped": 113,
       "readable": 160
     },
     "GET /app/content/contents/{id}": {
-      "wrapped": 43,
+      "wrapped": 46,
       "readable": 130
     },
     "GET /app/content/contents/{id}/edit": {
-      "wrapped": 115,
+      "wrapped": 117,
       "readable": 175
     },
     "GET /app/file/files": {
@@ -107,7 +107,7 @@
       "readable": 78
     },
     "GET /app/site/settings/edit": {
-      "wrapped": 37,
+      "wrapped": 39,
       "readable": 88
     },
     "GET /app/task/tasks": {
@@ -115,7 +115,7 @@
       "readable": 84
     },
     "GET /app/task/tasks/new": {
-      "wrapped": 33,
+      "wrapped": 35,
       "readable": 95
     },
     "GET /app/task/tasks/{id}": {
@@ -123,7 +123,7 @@
       "readable": 94
     },
     "GET /app/task/tasks/{id}/edit": {
-      "wrapped": 41,
+      "wrapped": 43,
       "readable": 110
     },
     "GET /app/tenant/tenants": {
@@ -135,15 +135,15 @@
       "readable": 78
     },
     "GET /app/user/users/new": {
-      "wrapped": 32,
+      "wrapped": 34,
       "readable": 76
     },
     "GET /app/user/users/{id}": {
-      "wrapped": 41,
+      "wrapped": 42,
       "readable": 97
     },
     "GET /app/user/users/{id}/edit": {
-      "wrapped": 38,
+      "wrapped": 40,
       "readable": 92
     },
     "GET /app/webhook/deliveries": {
@@ -159,19 +159,19 @@
       "readable": 7
     },
     "POST /app/billing/plans": {
-      "wrapped": 38,
+      "wrapped": 41,
       "readable": 93
     },
     "POST /app/content/contents": {
-      "wrapped": 111,
+      "wrapped": 114,
       "readable": 163
     },
     "POST /app/task/tasks": {
-      "wrapped": 33,
+      "wrapped": 36,
       "readable": 98
     },
     "POST /app/user/users": {
-      "wrapped": 32,
+      "wrapped": 35,
       "readable": 79
     },
     "PUBLIC 404": {

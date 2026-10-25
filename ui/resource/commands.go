@@ -26,6 +26,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
@@ -132,6 +133,11 @@ func carriesRevisions(c Command) bool {
 // which one this form is for; then it is carried and the sentence beside the button
 // names it.
 func commandFormFor(o Options, words Words, c Command, item string, locale entity.LocaleState, row map[string]any) g.Node {
+	// What each argument's control says about itself is the screen's own copy, not
+	// the module's: the note under a list argument, the name a picker's absence
+	// gets, the placeholder of a select. The request that answered the button's
+	// words answers these too, through the same seam the edit form composes.
+	chrome := chromeFormatter(o.Locale)
 	// The form's accessible name is the sentence the module wrote for the API, and
 	// the button is the short verb phrase: a page with three command forms on it has
 	// to tell a reader what each one is for, and three buttons reading "Assign",
@@ -185,13 +191,13 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			hidden := f
 			hidden.Widget = "hidden"
 			controls = append(controls, forms.Control(forms.ControlProps{
-				Field: formField(arguments, hidden), ID: id, Value: display.Text(row[source]),
+				Field: formField(arguments, hidden), ID: id, Value: display.Text(row[source]), Format: chrome,
 			}))
 			continue
 		}
 		if len(f.Keys) > 0 {
 			for _, k := range f.Keys {
-				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale))
+				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale, chrome))
 			}
 			continue
 		}
@@ -200,7 +206,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			f.Widget, value = "hidden", locale.Locale
 		}
 		controls = append(controls, forms.Control(forms.ControlProps{
-			Field: formField(arguments, f), ID: id, Value: value,
+			Field: formField(arguments, f), ID: id, Value: value, Format: chrome,
 		}))
 	}
 	// Outline, so the screen's one filled action stays its toolbar's — Edit on a
@@ -223,7 +229,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 // what they did not mean to change, and the command writes every field the body
 // names: an unchanged box reposted without its revision would be a 409 on six
 // fields of which one was edited. An empty box is a field left alone.
-func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState) g.Node {
+func mapKeyControl(id string, f entity.Field, k entity.MapKey, state entity.LocaleState, chrome locale.Formatter) g.Node {
 	key := entity.Field{
 		Name:   f.Name + "[" + k.Name + "]",
 		Type:   f.Elem,
@@ -232,10 +238,10 @@ func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.Loc
 	}
 	value := ""
 	if k.From == entity.KeyFromRevision {
-		value = strconv.FormatInt(locale.Revisions[k.Name], 10)
+		value = strconv.FormatInt(state.Revisions[k.Name], 10)
 	}
 	return forms.Control(forms.ControlProps{
 		Field: forms.Field{Definition: key, Label: k.Label},
-		ID:    id, Value: value,
+		ID:    id, Value: value, Format: chrome,
 	})
 }
