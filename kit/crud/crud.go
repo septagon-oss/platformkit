@@ -32,9 +32,13 @@
 // context and ask it before they send a statement: a caller that has ended is
 // refused with an error wrapping its own cause, not with a row that is not there.
 // None of them rebinds the statement — [db.Tx] already hands each operation a handle
-// bound to that caller, so a second context would only replace the transaction's.
-// [Get], [Count], [List] and [Delete] are the same doors for a caller with nothing to
-// cancel, and are deprecated in favour of these.
+// bound to that caller, so a second context would only replace the transaction's, and
+// the handle each door sends comes from [begin], which takes the caller's context and
+// never hands it to a statement. [Get], [Count], [List] and [Delete] are the same doors
+// for a caller with nothing to cancel, and are deprecated in favour of these. [Create]
+// and [Update] ask nothing: their ctx reaches the entity's own Validate and nothing
+// else, so an ended caller still writes through them until their own task gives them a
+// guard.
 //
 // The [Get] example reads a row through an explicit tenant transaction.
 // The [List] example reads a page and total from a tenant-isolated PostgreSQL fixture.
@@ -130,13 +134,15 @@ func Get[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
 // ctx is the caller's own cancellation: it is checked before anything reaches the
 // database, and the ended caller is an error wrapping its cause, not an ErrNotFound
 // for a row that exists. It never rebinds the statement, which runs on the handle
-// the transaction gave the caller — the handle already carries the caller's deadline.
+// the transaction gave the caller — the handle already carries the caller's deadline,
+// and [begin] is the only place a door of this package gets one.
 func GetCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
-	if err := started(ctx); err != nil {
+	q, err := begin(ctx, tx)
+	if err != nil {
 		var zero T
 		return zero, err
 	}
-	return get[T](tx.DB(), id)
+	return get[T](q, id)
 }
 
 // GetForUpdate reads and locks one live row of this tenant until the caller's
@@ -168,11 +174,12 @@ func Count[T Entity](tx db.Tx[db.Tenant]) (int64, error) {
 // CountCtx returns the total live rows visible to this tenant without loading a
 // page. ctx is checked before the statement and rebinds nothing — see GetCtx.
 func CountCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant]) (int64, error) {
-	if err := started(ctx); err != nil {
+	q, err := begin(ctx, tx)
+	if err != nil {
 		return 0, err
 	}
 	var total int64
-	err := tx.DB().Model(blank[T]()).Where("deleted_at IS NULL").Count(&total).Error
+	err = q.Model(blank[T]()).Where("deleted_at IS NULL").Count(&total).Error
 	return total, Classify(err)
 }
 
@@ -202,7 +209,8 @@ func ListCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], q Query) ([]T, 
 	if err != nil {
 		return nil, 0, err
 	}
-	if err := started(ctx); err != nil {
+	stmt, err := begin(ctx, tx)
+	if err != nil {
 		return nil, 0, err
 	}
 	limit := q.Limit
@@ -215,7 +223,7 @@ func ListCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], q Query) ([]T, 
 	// from one reused handle: GORM carries clauses forward, and a Count that
 	// inherits a LIMIT counts the page instead of the table.
 	build := func() *gorm.DB {
-		g := tx.DB().Model(blank[T]()).Where("deleted_at IS NULL")
+		g := stmt.Model(blank[T]()).Where("deleted_at IS NULL")
 		for i, w := range where {
 			g = g.Where(w, args[i])
 		}
@@ -358,10 +366,11 @@ func Delete[T Entity](tx db.Tx[db.Tenant], id uuid.UUID, soft bool) error {
 // keeping it for anything that referenced it. No such row is ErrNotFound and writes
 // nothing. ctx is checked before the statement and rebinds nothing — see GetCtx.
 func SoftDelete[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
-	if err := started(ctx); err != nil {
+	q, err := begin(ctx, tx)
+	if err != nil {
 		return err
 	}
-	return stampDeletion[T](tx, id)
+	return stampDeletion[T](q, id)
 }
 
 // DeleteRow removes one live row of this tenant from the table. Reference to it from
@@ -370,25 +379,26 @@ func SoftDelete[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 // writes nothing. A caller whose resource may still be pointed at wants SoftDelete.
 // ctx is checked before the statement and rebinds nothing — see GetCtx.
 func DeleteRow[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
-	if err := started(ctx); err != nil {
+	q, err := begin(ctx, tx)
+	if err != nil {
 		return err
 	}
-	return eraseRow[T](tx, id)
+	return eraseRow[T](q, id)
 }
 
 // stampDeletion and eraseRow are the two statements the two doors above send, and
 // the only ones either answer comes from: a row that is not there, or not live, or
 // another tenant's, is refused by row-level security as zero rows affected.
-func stampDeletion[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) error {
-	res := tx.DB().Model(blank[T]()).
+func stampDeletion[T Entity](query *gorm.DB, id uuid.UUID) error {
+	res := query.Model(blank[T]()).
 		Where("id = ? AND deleted_at IS NULL", id).
 		Update("deleted_at", db.Now())
 	return deleted(res)
 }
 
-func eraseRow[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) error {
+func eraseRow[T Entity](query *gorm.DB, id uuid.UUID) error {
 	e := blank[T]()
-	res := tx.DB().Model(e).Where("id = ? AND deleted_at IS NULL", id).Delete(e)
+	res := query.Model(e).Where("id = ? AND deleted_at IS NULL", id).Delete(e)
 	return deleted(res)
 }
 
@@ -404,15 +414,19 @@ func deleted(res *gorm.DB) error {
 	return nil
 }
 
-// started answers a caller that has already ended, in the words that name it. It is
-// neither ErrNotFound — a row nobody waited for still exists — nor ErrInvalid, which
-// would tell the caller to correct a submission it never sent. A door asks before it
-// sends anything, so the guard is this call's and not the transaction's.
-func started(ctx context.Context) error {
-	if ctx.Err() == nil {
-		return nil
+// begin asks a caller that has already ended, in the words that name it, and hands
+// back the statement handle the transaction gave that caller. The two belong in one
+// call: the refusal is neither ErrNotFound — a row nobody waited for still exists —
+// nor ErrInvalid, which would tell the caller to correct a submission it never sent,
+// and the handle comes from the transaction rather than from this context, which the
+// query never sees. A door therefore takes the caller's ending as a question and the
+// transaction's scope as its scope; rebinding a statement to the caller would replace
+// the one scope that carries the tenant settings the row-level security reads.
+func begin(ctx context.Context, tx db.Tx[db.Tenant]) (*gorm.DB, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("crud: the caller ended before the statement: %w", context.Cause(ctx))
 	}
-	return fmt.Errorf("crud: the caller ended before the statement: %w", context.Cause(ctx))
+	return tx.DB(), nil
 }
 
 // Reset clears the metadata the server owns, whatever a caller sent for it.
