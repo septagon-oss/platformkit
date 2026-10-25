@@ -39,8 +39,9 @@ func TestAcceptedInvitationSurvivesDeliveryRollbackAndReplay(t *testing.T) {
 	if handle == nil {
 		t.Fatal("invitation subscriber is absent")
 	}
-	// The transport accepted the message, but a later operation prevents the
-	// event transaction from committing. Its next delivery uses the same id.
+	// The transport is asked only once the delivery's own work commits, so a later
+	// operation that prevents the event transaction from committing mails nobody
+	// and leaves no credential behind. Its next delivery uses the same id.
 	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if err := handle(ctx, tx, event); err != nil {
 			return err
@@ -50,12 +51,13 @@ func TestAcceptedInvitationSurvivesDeliveryRollbackAndReplay(t *testing.T) {
 	if !errors.Is(err, errRollback) {
 		t.Fatalf("delivery rollback = %v", err)
 	}
-	if got := len(mailbox.Sent()); got != 1 {
-		t.Fatalf("accepted messages = %d, want one", got)
+	if got := len(mailbox.Sent()); got != 0 {
+		t.Fatalf("messages mailed by a delivery that did not commit = %d, want none", got)
 	}
-	token := authtest.TokenIn(mailbox.Sent()[0].Body)
-	if token == "" {
-		t.Fatal("accepted message contains no credential")
+	var credentials int
+	row(t, admin, "SELECT count(*) FROM password_tokens").Scan(&credentials)
+	if credentials != 0 {
+		t.Errorf("a delivery that did not commit left %d credentials, want none", credentials)
 	}
 	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		return handle(ctx, tx, event)
@@ -64,6 +66,10 @@ func TestAcceptedInvitationSurvivesDeliveryRollbackAndReplay(t *testing.T) {
 	}
 	if got := len(mailbox.Sent()); got != 1 {
 		t.Errorf("replayed accepted delivery sent %d messages, want one", got)
+	}
+	token := authtest.TokenIn(mailbox.Sent()[0].Body)
+	if token == "" {
+		t.Fatal("the delivery that committed mailed no credential")
 	}
 	// A different tenant cannot consume the independently committed credential.
 	err = db.Run(deliveryContext(t.Context(), conn, globex), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
