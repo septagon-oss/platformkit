@@ -21,6 +21,7 @@
 #   a proof build called supported  docs/COMPATIBILITY.md gives it no claim to make
 #   an undischarged obligation     every required role is discharged exactly once
 #   a refusal with no reason       a source is refused by being named, never by being left out
+#   an obligation with no reason   every entry says why it is one, and the verdict quotes it
 #   a narrowed promise      every installation this repository published or already
 #                           promised is answered: supported, or refused with a reason
 #
@@ -43,7 +44,7 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--record) [ $# -ge 2 ] || { echo "supported-sources: --record wants a file" >&2; exit 2; }; record="$2"; shift 2 ;;
 	verify | positives | refused | fixtures | verdict) verb="$1"; shift ;;
-	-h | --help) sed -n '2,30p' "$0"; exit 0 ;;
+	-h | --help) sed -n '2,31p' "$0"; exit 0 ;;
 	*)
 		[ -n "$verb" ] || { echo "supported-sources: unknown argument $1" >&2; exit 2; }
 		[ -z "$ref" ] || { echo "supported-sources: unknown argument $1" >&2; exit 2; }
@@ -155,6 +156,14 @@ while IFS= read -r name; do
 done <<<"$floor"
 nanchored=$(printf '%s\n' "$floor" | grep -c '[^[:space:]]')
 
+# Every obligation states why it is one. A reason no reader reads is a field that only
+# looks like configuration, so the two are wired together here: an entry with no reason
+# beside it is refused, and the verdict for a supported source prints its reason out loud,
+# which is the sentence a release note quotes.
+while IFS= read -r name; do
+	refuse "$record lists $name as a supported source with no reason stated beside it; every obligation this file takes on says why, because a release note has to be able to quote it"
+done < <(jq -r '.sources[] | select((.why // "") == "") | .ref' "$record")
+
 # The bytes an installation already holds applied, and the SQL the rehearsal seeds its
 # copies from. Both are named by digest for the same reason: the runner compares a
 # migration whole, so a release that rewrites an applied file — a comment is enough —
@@ -165,14 +174,16 @@ require_digests() { # $1 = record field, $2 = what a missing entry costs the rel
 	local field="$1" missing="$2" path want have n
 	n=$(jq -r --arg f "$field" 'if ((.[$f] | type) == "array") then (.[$f] | length) else 0 end' "$record")
 	[ "$n" -gt 0 ] || refuse "$record names no $field; $missing"
-	while IFS=$'\t' read -r path want; do
+	while IFS=$'\t' read -r path want why; do
 		[ -n "$path" ] || continue
+		[ -n "$why" ] ||
+			refuse "$record owes $path with no reason stated beside it; an obligation nobody can explain is a preference, and this file is not where preferences get recorded"
 		[ -r "$root/$path" ] ||
 			refuse "$record owes the bytes at $path, which this tree does not hold"
 		have=$(sha256sum "$root/$path" | cut -d' ' -f1)
 		[ "$have" = "$want" ] ||
 			refuse "$path is $have here, and $record owes $want: the release rewrites bytes an installation already holds or a fixture the matrix did not run"
-	done < <(jq -r --arg f "$field" '.[$f][] | [.path, .sha256 // ""] | @tsv' "$record")
+	done < <(jq -r --arg f "$field" '.[$f][] | [.path, .sha256 // "", .why // ""] | @tsv' "$record")
 	# Set rather than echoed: a caller that read the count out of a command substitution
 	# would run `refuse` in a subshell, where its exit stops nothing.
 	digests_count=$n
@@ -199,10 +210,10 @@ fixtures)
 	jq -r '.fixtures[] | [.path, .sha256 // ""] | @tsv' "$record"
 	;;
 verdict)
-	line=$(jq -r --arg ref "$ref" '(.sources[] | select(.ref == $ref) | "supported	" + .commit + "	" + ((.roles // []) | join(","))) // empty' "$record")
+	line=$(jq -r --arg ref "$ref" '(.sources[] | select(.ref == $ref) | "supported	" + .commit + "	" + ((.roles // []) | join(",")) + "	" + (.why // "")) // empty' "$record")
 	if [ -n "$line" ]; then
-		IFS=$'\t' read -r _ commit roles <<<"$line"
-		echo "supported-sources: $ref (${commit:0:12}) is a supported source for $target, discharging ${roles:-no named role}"
+		IFS=$'\t' read -r _ commit roles why <<<"$line"
+		echo "supported-sources: $ref (${commit:0:12}) is a supported source for $target, discharging ${roles:-no named role} — ${why:-the record states no reason}"
 		exit 0
 	fi
 	reason=$(jq -r --arg ref "$ref" '(.refused[] | select(.ref == $ref) | .reason) // empty' "$record")

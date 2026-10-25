@@ -35,8 +35,8 @@ trap cleanup EXIT
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:-}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:-}"
 if [ -z "$admin_url" ] || [ -z "$app_url" ] || ! command -v psql >/dev/null; then
-	echo "applied-bytes: SKIPPED — needs PLATFORMKIT_TEST_ADMIN_URL, PLATFORMKIT_TEST_DATABASE_URL and psql; the refusal is unproven on this machine"
-	exit 0
+	echo "applied-bytes: refused — PLATFORMKIT_TEST_ADMIN_URL, PLATFORMKIT_TEST_DATABASE_URL and psql are what the refusal is measured with, and one of them is missing; a refusal nobody ran is not a pass, so this exits 2 rather than skipping"
+	exit 2
 fi
 
 psql_admin() { psql "$admin_url" -v ON_ERROR_STOP=1 -qtA -c "$1"; }

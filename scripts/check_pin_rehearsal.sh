@@ -131,6 +131,8 @@ if [ "$record_kind" = "platformkit.rehearsal.v2" ]; then
 	[ "$(jq -r '.support_record.sha256 // empty' "$receipt")" = "$(sha256sum "$record" | cut -d' ' -f1)" ] ||
 		{ echo "pin-rehearsal: the matrix names a support record other than the one this release ships at ${record#"$root"/}."; exit 1; }
 	required=$(mktemp)
+	carried=0
+	queued=0
 	"$reader" positives >"$required" ||
 		{ echo "pin-rehearsal: the support record will not say which sources this release must upgrade from: $("$reader" positives 2>&1 | head -1)"; exit 1; }
 	fixtures_in_record=$("$reader" fixtures | sort)
@@ -165,6 +167,31 @@ EOF
 			echo "pin-rehearsal: the case for $src_ref seeded [$(printf '%s' "$fixtures_in_case" | tr '\n' ' ')], and the record owes [$(printf '%s' "$fixtures_in_record" | tr '\n' ' ')]; a fixture replaced by whatever the current tree holds is not the installation this promise is about."
 			exit 1
 		}
+		# The data half, as obligations and not as numbers beside them. A case that read no
+		# tenant boundary says nothing about boundaries; a case that saw rows of a neighbour
+		# through its own application role measured a broken installation rather than a slow
+		# upgrade; and a case that arrived with an applied ledger and left with a different one
+		# is the refusal the runner exists to make. scripts/rehearse_migrations.sh refuses all
+		# three as it runs, and the release is certified here, where the receipt is read: a
+		# promise kept only by the step that wrote the artefact is that step's opinion.
+		data_evidence=$(jq -r --arg ref "$src_ref" --arg commit "$src_commit" '
+			(.sources[] | select(.ref == $ref and .commit == $commit) | .rehearsal.data) // {}
+			| [ (.boundary_reads // 0), (.foreign_rows_visible // -1),
+			    (.applied_rows_before // 0), (.applied_rows_retained // -1),
+			    (.facts_lines // 0), (.pending_outbox_rows // 0) ] | @tsv' "$receipt")
+		IFS=$'\t' read -r d_reads d_foreign d_before d_retained d_facts d_pending <<EOF
+$data_evidence
+EOF
+		[ "${d_reads:-0}" -ge 1 ] ||
+			{ echo "pin-rehearsal: the case for $src_ref recorded $d_reads tenant-boundary read(s); a case that read the copy as no application role says nothing about which rows that role may see."; exit 1; }
+		[ "${d_foreign:-1}" -eq 0 ] ||
+			{ echo "pin-rehearsal: the case for $src_ref recorded $d_foreign row(s) of another tenant visible to the application role; tenancy is the promise this upgrade carries, and a run that saw through it measured a broken installation, not an unsafe release."; exit 1; }
+		[ "${d_before:-0}" -ge 1 ] ||
+			{ echo "pin-rehearsal: the case for $src_ref arrived with $d_before applied ledger row(s); a database with no applied migration is a fresh install, and an upgrade is not measured on one."; exit 1; }
+		[ "${d_retained:-1}" = "${d_before:-0}" ] ||
+			{ echo "pin-rehearsal: the case for $src_ref retained $d_retained of the $d_before applied row(s) it arrived with; applied history is immutable on both sides of an upgrade."; exit 1; }
+		carried=$((carried + ${d_facts:-0}))
+		queued=$((queued + ${d_pending:-0}))
 	done <"$required"
 	cases=$(jq -r '.sources | length' "$receipt")
 	needed=$(grep -c '' <"$required")
@@ -178,11 +205,11 @@ EOF
 		{ echo "pin-rehearsal: the matrix recorded no exported-surface comparison; the data promise and the client promise are one release, and scripts/rehearse_supported_matrix.sh runs the comparison whose verdict it records here."; exit 1; }
 	[ "$(jq -r '.compatibility.exit // 1' "$receipt")" = "0" ] ||
 		{ echo "pin-rehearsal: the matrix records the exported-surface comparison exiting $(jq -r '.compatibility.exit // "nothing"' "$receipt"): $(jq -r '.compatibility.verdict // "no verdict recorded"' "$receipt")"; exit 1; }
-	refused_in_receipt=$(jq -r '.refused[].ref' "$receipt" | sort)
+	refused_in_receipt=$(jq -r '(.refused // [])[].ref' "$receipt" | sort)
 	refused_in_record=$("$reader" refused | cut -f1 | sort)
 	[ "$refused_in_receipt" = "$refused_in_record" ] ||
 		{ echo "pin-rehearsal: the matrix refuses [$(printf '%s' "$refused_in_receipt" | tr '\n' ' ')] and the record refuses [$(printf '%s' "$refused_in_record" | tr '\n' ' ')]; a refused source is named in both or in neither."; exit 1; }
-	echo "pin-rehearsal: ok — $version (${want:0:12}) upgraded from $(jq -r '.sources | length' "$receipt") supported source(s): $(jq -r '[.sources[].ref] | join(", ")' "$receipt"), with $(jq -r '.refused | length' "$receipt") refusal(s) exercised against the record."
+	echo "pin-rehearsal: ok — $version (${want:0:12}) upgraded from $(jq -r '.sources | length' "$receipt") supported source(s): $(jq -r '[.sources[].ref] | join(", ")' "$receipt"), with $(jq -r '(.refused // []) | length' "$receipt") refusal(s) exercised against the record, carrying $carried fact line(s) and $queued queued outbox row(s) across each upgrade."
 	exit 0
 fi
 if [ "$strict" = 1 ]; then

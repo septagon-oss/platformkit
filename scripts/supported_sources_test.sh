@@ -62,6 +62,14 @@ mutate '.fixtures[0].path = "scripts/testdata/rehearse/current-schema.sql"' abse
 mutate 'del(.fixtures)' no-fixtures.json
 mutate '.required_roles = []' no-roles.json
 mutate '.record = "platformkit.supported-sources.v0"' other-kind.json
+# The promise may widen, and it may narrow by a written refusal. It may not narrow by
+# deleting a case, and it may not state an obligation it never explains.
+mutate 'del(.sources[] | select(.ref == "v1.1.1")) | .required_roles = ["oldest_supported"] |
+	.refused += [{ref: "v1.1.1", commit: "13d2691a2db9bc38c18828e81994ae57e699c84a",
+	              reason: "docs/COMPATIBILITY.md would have to say so, and the owner has not said it"}]' \
+	refused-instead.json
+mutate 'del(.refused[] | select(.ref == "v1.0.0"))' unasked-tag.json
+mutate '.sources[0].why = ""' obligation-without-why.json
 
 run 1 "a proof build listed as supported" "$reader" --record "$work/proof-as-supported.json" verify
 run 1 "a ref that names no revision" "$reader" --record "$work/missing-rev.json" verify
@@ -77,6 +85,9 @@ run 1 "a rehearsal fixture this tree does not hold" "$reader" --record "$work/ab
 run 1 "a record that owes no fixture" "$reader" --record "$work/no-fixtures.json" verify
 run 1 "a record that requires nothing" "$reader" --record "$work/no-roles.json" verify
 run 1 "a record of a kind this reader does not read" "$reader" --record "$work/other-kind.json" verify
+run 0 "a promised revision that leaves the set by being refused with a reason" "$reader" --record "$work/refused-instead.json" verify
+run 1 "a published tag this record answers nothing for" "$reader" --record "$work/unasked-tag.json" verify
+run 1 "an obligation with no reason stated beside it" "$reader" --record "$work/obligation-without-why.json" verify
 run 2 "no record at all" "$reader" --record "$work/not-here.json" verify
 
 supported_ref=$(jq -r '.sources[0].ref' "$shipped")
@@ -104,8 +115,9 @@ matrix() {
 		 sources: [$s[] | {ref, commit, roles, rehearsal: {
 		   base_commit: .commit, candidate_commit: $t, exit: 0,
 		   fixtures: $fixtures,
-		   data: {fact_lines: 12, boundary_reads: 6, foreign_rows_visible: 0,
-		          pending_outbox_rows: 90, applied_rows_after: 90},
+		   data: {facts_lines: 12, boundary_reads: 6, foreign_rows_visible: 0,
+		          applied_rows_before: 24, applied_rows_after: 90, applied_rows_retained: 24,
+		          pending_outbox_rows: 90},
 		   files: [{owner: "audit", version: "48", name: "000048_audit_history_append_only.up.sql",
 		            phase: "expand", seconds: 0.002}]}}],
 		 refused: [$r[] | {ref, commit: (if . == "" then null else . end), reason: "refused by the record", refused_with: 1}],
@@ -156,6 +168,19 @@ jq '.compatibility.ran = false' "$work/good.json" >"$work/no-api-check.json"
 jq '.compatibility.exit = 1' "$work/good.json" >"$work/api-moved.json"
 checkcase 1 "a matrix that recorded no exported-surface comparison" "$work/no-api-check.json"
 checkcase 1 "a matrix whose exported surface moved" "$work/api-moved.json"
+# The data half is read here as an obligation and not as numbers beside one: a receipt whose
+# figures say no boundary was read, a neighbour was visible, or applied rows went missing
+# refuses the release with every case inside it green.
+jq '.sources[0].rehearsal.data.boundary_reads = 0' "$work/good.json" >"$work/no-boundary-read.json"
+jq '.sources[0].rehearsal.data.foreign_rows_visible = 40' "$work/good.json" >"$work/neighbour-visible.json"
+jq '.sources[0].rehearsal.data.applied_rows_before = 0' "$work/good.json" >"$work/no-starting-ledger.json"
+jq '.sources[1].rehearsal.data.applied_rows_retained = 12' "$work/good.json" >"$work/rows-not-retained.json"
+jq 'del(.refused)' "$work/good.json" >"$work/no-refused-key.json"
+checkcase 1 "a case that read no tenant boundary" "$work/no-boundary-read.json"
+checkcase 1 "a case whose application role saw another tenant's rows" "$work/neighbour-visible.json"
+checkcase 1 "a case that arrived with no applied migration" "$work/no-starting-ledger.json"
+checkcase 1 "a case that did not retain the applied rows it arrived with" "$work/rows-not-retained.json"
+checkcase 1 "a matrix with no refused list at all" "$work/no-refused-key.json"
 checkcase 1 "a single-revision receipt in release mode" "$work/legacy.json"
 
 if [ "$fails" -gt 0 ]; then echo "supported-sources: $fails case(s) failed"; exit 1; fi

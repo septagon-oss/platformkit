@@ -178,10 +178,34 @@ fi
 [[ "$max_lock" =~ ^[0-9]+$ ]] || die 2 "--max-lock-ms is $max_lock, which is not a number of milliseconds"
 if [ -n "$seed" ] && [ ! -r "$seed" ]; then die 2 "no seed file readable at $seed (pass --seed '' to seed nothing)"; fi
 if [ -n "$populated" ] && [ ! -r "$populated" ]; then
-	die 2 "no populated fi
+	die 2 "no populated fixture readable at $populated (pass REHEARSE_POPULATED='' to seed volume only)"
+fi
 if [ ! -r "$declaration" ]; then
 	die 2 "no candidate declaration readable at $declaration: the release under test would boot with no hosts named and place nothing"
-fixture readable at $populated (pass REHEARSE_POPULATED='' to seed volume only)"
+fi
+
+# The matrix is this step run once per supported source, and nothing else: the copy, the
+# fixtures, the drain, the lock watcher and both budgets are the ones a single case
+# already measures, so the mode adds no second implementation of them to keep honest.
+# What it adds is the obligation that every source the release promises was run, and that
+# each refused source was refused out loud.
+#
+# The hand-over is an exec, and it is here rather than further down because `exec` replaces
+# this shell and this shell owns the EXIT trap that removes $work: a mode that reached its
+# temp directory before the exec would leave one behind on every run. Every check a case
+# would make is made above this line or by the matrix itself, which names the same tools
+# and the same owner URL it refuses without.
+if [ "$supported" = 1 ]; then
+	# The two fixtures are part of the promise: scripts/supported_sources.sh owes them by
+	# digest and scripts/check_pin_rehearsal.sh --strict refuses a case that seeded anything
+	# else. An environment that swaps one out would make every case measure a database no
+	# installation holds, so the mode refuses the environment rather than noticing it in the
+	# receipt, downstream of the run that wasted the copy.
+	[ -z "${REHEARSE_SEED+set}" ] ||
+		die 2 "supported mode seeds the fixture the support record owes; REHEARSE_SEED replaces the data the promise is about"
+	[ -z "${REHEARSE_POPULATED+set}" ] ||
+		die 2 "supported mode seeds the fixture the support record owes; REHEARSE_POPULATED replaces the second tenant, the page text and the queued events the upgrade has to carry"
+	exec "$root/scripts/rehearse_supported_matrix.sh"
 fi
 
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:-}"
@@ -300,15 +324,6 @@ finish() {
 	exit "$code"
 }
 trap finish EXIT
-
-# The matrix is this step run once per supported source, and nothing else: the copy, the
-# fixtures, the drain, the lock watcher and both budgets are the ones a single case
-# already measures, so the mode adds no second implementation of them to keep honest.
-# What it adds is the obligation that every source the release promises was run, and that
-# each refused source was refused out loud.
-if [ "$supported" = 1 ]; then
-	exec "$root/scripts/rehearse_supported_matrix.sh"
-fi
 
 # The role and grant bootstrap file, applied in two halves. `CREATE ROLE` is
 # cluster-wide and fails the second time (start.go checks pg_roles for the same
@@ -495,8 +510,14 @@ facts() { # $1 = file
 before_ledger="$work/before-ledger.tsv"
 before_facts="$work/before-facts.tsv"
 unreadable_facts=0
+# Counted once, on each side of the candidate, so that the receipt can name the figures the
+# run actually measured: what the installation arrived with, what it left with, and how many
+# of the arrived rows are still there row for row.
+before_ledger_rows=0
+applied_retained=0
 if ledger_snapshot "$run" "$before_ledger" 2>"$work/snapshot.err"; then
-	note "retained before the candidate connects: $(grep -c '' <"$before_ledger") ledger row(s)"
+	before_ledger_rows=$(grep -c '' <"$before_ledger")
+	note "retained before the candidate connects: $before_ledger_rows ledger row(s)"
 else
 	note "nothing retained before the candidate: $(head -1 "$work/snapshot.err") — the copy holds no ledger to compare against"
 fi
@@ -651,8 +672,12 @@ if [ -s "$before_ledger" ]; then
 		findings=$((findings + 1))
 		[ "$code" -ne 0 ] || code=1
 	else
-		lost=$(comm -23 <(cut -f1,2,3,4 "$before_ledger" | sort) <(cut -f1,2,3,4 "$work/after-ledger.tsv" | sort) |
-			head -3)
+		lost_rows_file="$work/lost-rows.tsv"
+		comm -23 <(cut -f1,2,3,4 "$before_ledger" | sort) <(cut -f1,2,3,4 "$work/after-ledger.tsv" | sort) >"$lost_rows_file"
+		lost=$(head -3 "$lost_rows_file")
+		# Counted here, where the rows are being compared, so that the receipt can name the
+		# figure this fails on rather than a count of the after ledger called "retained".
+		applied_retained=$((before_ledger_rows - $(grep -c '' <"$lost_rows_file" || true)))
 		if [ -n "$lost" ]; then
 			echo "LEDGER LOST applied rows the copy started from: $(printf '%s' "$lost" | tr '\n' ' ')"
 			findings=$((findings + 1))
@@ -771,10 +796,13 @@ if [ "$code" -eq 0 ] && [ -n "${REHEARSE_RECEIPT:-}" ]; then
 		--argjson lines "$(count_of grep -c '' "$before_facts")" \
 		--argjson reads "$(count_of grep -c '^other/' "$work/after-facts.tsv")" \
 		--argjson foreign "$(count_of awk -F'\t' '$1 ~ /^other\// { s += $3 } END { print s + 0 }' "$work/after-facts.tsv")" \
-		--argjson ledger "$(count_of awk "END{print NR}" "$work/after-ledger.tsv")" \
+		--argjson before "$before_ledger_rows" \
+		--argjson after "$(count_of grep -c '' "$work/after-ledger.tsv")" \
+		--argjson retained "$applied_retained" \
 		--argjson pending "$(count_of awk -F'\t' '$1 == "outbox.pending" { print $2; exit }' "$work/after-facts.tsv")" \
 		'{facts_lines: $lines, boundary_reads: $reads, foreign_rows_visible: $foreign,
-		  applied_rows_retained: $ledger, pending_outbox_rows: $pending}')
+		  applied_rows_before: $before, applied_rows_after: $after, applied_rows_retained: $retained,
+		  pending_outbox_rows: $pending}')
 	mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
 	jq -n --arg base_ref "$ref" \
 		--arg base_commit "$(git rev-parse --verify --quiet "${ref}^{commit}" || true)" \

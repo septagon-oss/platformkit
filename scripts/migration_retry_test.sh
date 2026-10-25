@@ -38,8 +38,8 @@ trap cleanup EXIT
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:-}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:-}"
 if [ -z "$admin_url" ] || ! command -v psql >/dev/null || ! command -v go >/dev/null; then
-	echo "retry: SKIPPED — needs PLATFORMKIT_TEST_ADMIN_URL, psql and go; the retry is unproven on this machine"
-	exit 0
+	echo "retry: refused — PLATFORMKIT_TEST_ADMIN_URL, psql and go are what the retry is measured with, and one of them is missing; a retry nobody ran is not a pass, so this exits 2 rather than skipping"
+	exit 2
 fi
 
 with_database() {

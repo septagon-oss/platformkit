@@ -65,15 +65,23 @@ bytes an installation already holds and compares whole.
 
 `scripts/supported_sources.sh` is its only reader, and checks what a record gets wrong
 silently: every ref resolves here to the commit beside it, every required obligation is
-discharged once, no proof build is called supported (`docs/COMPATIBILITY.md` gives it no
-claim), the files owed hash to what is owed, and no source is refused by being left out.
+discharged once and states why it is one (the verdict quotes that reason), no proof build is
+called supported (`docs/COMPATIBILITY.md` gives it no claim), the files owed hash to what is
+owed, and no source is refused by being left out. It also refuses a record that answers
+*less* than this repository already did. The floor is not the record: it is the stable tags
+of the release line being broken from, plus every revision a committed revision of the
+record called supported. Each must be answered — supported, or refused with a reason.
+A release may widen the promise in this file as it likes; it narrows it only where a policy
+document refuses the revision, because a case deleted beside the obligation it discharged
+is self-consistent by construction and would otherwise be certified as the whole promise.
 
 `./scripts/rehearse_migrations.sh --supported` runs the same step once per supported
 source, in `scripts/rehearse_supported_matrix.sh`, and writes one
-`platformkit.rehearsal.v2` receipt: a case per source, each refused source's refusal
-(exercised rather than assumed), and the exported-surface comparison's verdict beside
-the data. It refuses `--base-ref`, `--dump` and `--seed` beside it: a receipt for one
-case certifies one case.
+`platformkit.rehearsal.v2` receipt: a case per source, each refused source's refusal as
+the record answered it (the record is asked, per source, and the answer and its exit code
+are what the receipt shows), and the exported-surface comparison's verdict beside the data.
+It refuses `--base-ref`, `--dump`, `--seed` and an environment that replaces either fixture
+beside it: a receipt for one case, or for one case's substitutes, certifies only that.
 
 An empty schema is not evidence that data survived. Each case seeds
 `scripts/testdata/rehearse/seed.sql` for volume and `populated.sql` beside it for a
@@ -89,7 +97,11 @@ application role — the owner role answers that last question with "everything"
 itself: a missing case, a repeated case, a drifted revision, another support record, a
 case that seeded a fixture the record does not owe, a matrix that recorded no
 exported-surface comparison, or a single-revision receipt is refused even when every
-case inside passed. `REHEARSE_ARGS=--supported
+case inside passed. The data figures are obligations at that read as well, and not a
+number beside each case: at least one tenant-boundary read, zero rows of another tenant
+visible to the application role, an applied ledger the case arrived with, and every one of
+those rows retained. The producer refuses the same shapes as it runs; the release is
+certified where the receipt is read, so the reading happens on both sides. `REHEARSE_ARGS=--supported
 REHEARSE_RECEIPT=$PWD/.artifacts/rehearsal.json make check-rehearse` is the release
 form; the default stays the single-source diagnostic it was.
 
