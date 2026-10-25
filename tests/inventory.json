@@ -74474,6 +74474,44 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/declared_affordance_test.go",
+   "id": "ui/resource/declared_affordance_test.go#TestTheListOffersNoSortChipForAColumnTheAuthorHid",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheListOffersNoSortChipForAColumnTheAuthorHid",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/resource/declared_affordance_test.go",
+   "id": "ui/resource/declared_affordance_test.go#TestATextColumnDrawsTheControlItsAuthorNamedAndNoOther",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestATextColumnDrawsTheControlItsAuthorNamedAndNoOther",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/display_label_test.go",
    "id": "ui/resource/display_label_test.go#TestARowIsCalledByTheFieldItsEntityMarks",
    "kind": "go",
@@ -85089,7 +85127,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2311,
+  "files": 2312,
   "forge_runs": [
    408,
    413,
@@ -85123,7 +85161,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3688,
+   "behaviour": 3690,
    "composition": 492,
    "contract": 24,
    "journey": 111
@@ -85142,23 +85180,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4315,
+  "rows": 4317,
   "tiers": {
    "merge": 2636,
    "nightly": 111,
-   "push": 1568
+   "push": 1570
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2066,
+   "keep": 2067,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3929,
+   "keep": 3931,
    "keep-rewrite": 170,
    "merge": 216
   }
