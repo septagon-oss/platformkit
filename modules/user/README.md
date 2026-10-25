@@ -74,8 +74,9 @@ back — that is what the 422 means — so nothing about it would survive anywhe
 and "somebody tried to lock this tenant out" is the line an administrator most
 wants to have kept. Each door therefore publishes one event outside the
 transaction it was refused in: `user.administration_refused` from
-`internal.Service.recordRefusal` (`SetRoles`, `Deactivate` and the delete hook
-name which door in the payload's `attempt`), and `auth.administration_refused`
+`internal.Service.recordRefusal` (`SetRoles`, `Deactivate`, and either door that
+ends a person's holding — the delete hook and the erasure, which share the attempt
+name `delete` — say which door in the payload), and `auth.administration_refused`
 from the same shape at `modules/auth/internal/roles.go` when `SetRole` is
 refused. Both copy this repository's one precedent for an event that has to
 outlive a rolled-back request — `modules/auth`'s `recordFailure` for a failed
@@ -140,7 +141,7 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/user`. Access is deci
 
 ### Duties the module enforces itself
 
-- The last-administrator rule. `Service.floor` in `modules/user/internal/administration.go` refuses a write that would leave the tenant with nobody who can sign in and administer it. It is called from `SetRoles` and `Deactivate` in `service.go`, and from `RefuseLastAdministrator`, which is `spec.AfterDelete` for the delete route. It takes a per-tenant advisory lock (`administrationLock`) and uses `contracts.CheckedAdministration` and `otherAdministrators`. A refusal rolls back the transaction, and `recordRefusal` publishes `user.administration_refused` in a detached transaction of its own so the attempt is still on the trail (see the section above).
+- The last-administrator rule. `Service.floor` in `modules/user/internal/administration.go` refuses a write that would leave the tenant with nobody who can sign in and administer it. It is called from `SetRoles` and `Deactivate` in `service.go`, and from `RefuseLastAdministrator`, which is `spec.AfterDelete` for the delete route. About a row that carries invitation history `invitationFloor` (`modules/user/internal/invitations.go`) asks the same rule and counts a delivered invitation as a way back: the invitation commands, the delete hook and `LockForErasure` — the erasure door's read of the retained person — all ask it. It takes a per-tenant advisory lock (`administrationLock`) and uses `contracts.CheckedAdministration` and `otherAdministrators`. A refusal rolls back the transaction, and `recordRefusal` publishes `user.administration_refused` in a detached transaction of its own so the attempt is still on the trail (see the section above).
 - `refuseLifecycleOnCreate` (`modules/user/module.go`) is the create hook that keeps roles and password registrations behind their own commands. `spec.Immutable` refuses `status`, `roles` and `handle` on PATCH.
 - `ApproveRegistration` (`modules/user/internal/registration.go`) requires a non-nil acting principal, takes the row lock, and only approves a pending registration that has a password. The acting user id is recorded in the event.
 

@@ -122,7 +122,8 @@ type Reactivated struct {
 type AdministrationRefused struct {
 	UserID uuid.UUID `json:"userId"`
 	// Attempt is which door refused: "roles" (Service.SetRoles), "status"
-	// (Service.Deactivate) or "delete" (the delete route's hook).
+	// (Service.Deactivate) or "delete" (a write that ends this person's holding —
+	// the delete route's hook, and the erasure that erases the row in place).
 	Attempt string    `json:"attempt" enums:"roles,status,delete" example:"roles"`
 	Roles   []string  `json:"roles"`
 	At      time.Time `json:"at"`

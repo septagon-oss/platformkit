@@ -227,17 +227,17 @@ func countingRoles(u *contracts.User, administering []string) []string {
 // transaction, so returning an error rolls the delete back and the caller gets a
 // 422 naming the rule.
 //
-// Every refusal it makes is recorded, whichever half of the floor decided it: the
-// trail row is the only thing a refused delete leaves, and the invitation half
-// writes none, because an invitation command that is refused writes nothing. So the
-// record is this door's own, written with the roles that half counted.
+// What the rule refuses is recorded, whichever half of the floor decided it: the
+// trail row is the only thing a refused delete leaves, and the invitation half writes
+// none of its own. A read that failed is not a refusal, so nothing is recorded for it
+// either — the line would name a grant nobody refused.
 func (s *Service) RefuseLastAdministrator(ctx context.Context, tx db.Tx[db.Tenant], u *contracts.User) error {
 	if u.Invitation.Phase == contracts.InvitationPending {
 		return fmt.Errorf("%w: revoke the invitation before removing it", crud.ErrConflict)
 	}
 	if u.Invitation.Phase != "" {
-		administering, err := s.invitationFloor(ctx, tx, u, nil)
-		if err != nil {
+		administering, refused, err := s.invitationFloor(ctx, tx, u, nil)
+		if refused {
 			s.recordRefusal(ctx, attemptDelete, u, administering)
 		}
 		return err

@@ -226,7 +226,7 @@ func (s *Service) changeInvitation(ctx context.Context, tx db.Tx[db.Tenant], id 
 	if !changed {
 		return next, access, at, nil
 	}
-	if _, err := s.invitationFloor(ctx, tx, u, next); err != nil {
+	if _, _, err := s.invitationFloor(ctx, tx, u, next); err != nil {
 		return nil, access, at, err
 	}
 	if err := s.saveInvitation(ctx, tx, u, next, intent.Action, at); err != nil {
@@ -252,26 +252,30 @@ func (s *Service) adoptInvitation(u *contracts.User, at time.Time) error {
 // still hold one — a delivered invitation is a way back a count of active people
 // alone cannot see. It writes nothing.
 //
-// It returns the roles it counted even where it refuses, because one of its callers
-// is the delete hook, which records what it refused and names those roles in the
-// record. An invitation command that is refused writes nothing and emits nothing, so
-// its own callers discard them.
-func (s *Service) invitationFloor(ctx context.Context, tx db.Tx[db.Tenant], before, after *contracts.User) ([]string, error) {
+// It answers the roles it counted and whether it was the rule that refused, because
+// the two doors that end a person's holding — the delete hook and the erasure — record
+// the refusal the way floor does, with those roles as the grant it would have taken.
+// A failed read is not a refusal and is answered as refused=false: recording one would
+// put a line on the trail about a refusal the rule never made, naming no grant.
+// Invitation commands are refused by a rule that writes nothing and emits nothing, so
+// their callers use neither answer.
+func (s *Service) invitationFloor(ctx context.Context, tx db.Tx[db.Tenant], before, after *contracts.User) (roles []string, refused bool, err error) {
 	if err := s.lockAdministration(ctx, tx); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	roles, err := s.administering.Administering(ctx, tx)
+	roles, err = s.administering.Administering(ctx, tx)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !before.Administers(roles) || after.Administers(roles) {
-		return roles, nil
+		return roles, false, nil
 	}
 	var others []*contracts.User
 	if err := tx.DB().Where("id <> ? AND deleted_at IS NULL AND status <> ?", before.ID, contracts.StatusInactive).Find(&others).Error; err != nil {
-		return roles, err
+		return roles, false, err
 	}
-	return roles, contracts.CheckInvitationAdministration(before, after, roles, others)
+	err = contracts.CheckInvitationAdministration(before, after, roles, others)
+	return roles, err != nil, err
 }
 
 func (s *Service) saveInvitation(ctx context.Context, tx db.Tx[db.Tenant], before, next *contracts.User, action string, at time.Time) error {
@@ -322,7 +326,7 @@ func (s *Service) setManagedRoles(ctx context.Context, tx db.Tx[db.Tenant], u *c
 	if !changed {
 		return next, nil
 	}
-	if _, err := s.invitationFloor(ctx, tx, u, next); err != nil {
+	if _, _, err := s.invitationFloor(ctx, tx, u, next); err != nil {
 		return nil, err
 	}
 	if err := s.saveInvitation(ctx, tx, u, next, contracts.InvitationRoles, at); err != nil {

@@ -83,7 +83,12 @@ func (s *Service) ListInvitations(ctx context.Context, tx db.Tx[db.Tenant], quer
 // so a generic erasure must not become a way to skip it. A row carrying no recorded
 // history has no revision to withdraw: a person seeded before the adoption file ran,
 // or by an owner that writes the row itself, is erased rather than held against a
-// credential that was never issued. It writes nothing.
+// credential that was never issued.
+//
+// It changes no row. The last-administrator rule it asks alongside is the one the delete
+// hook asks, and its refusal is recorded the same way and under the same attempt
+// (recordRefusal): erasing a person in place is what takes their last grant away, so a
+// door turned away for that reason leaves the trail row the other doors leave.
 func (s *Service) LockForErasure(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.User, error) {
 	var u contracts.User
 	if err := tx.DB().WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&u).Error; err != nil {
@@ -92,7 +97,11 @@ func (s *Service) LockForErasure(ctx context.Context, tx db.Tx[db.Tenant], id uu
 	if u.Invitation.Phase == contracts.InvitationPending {
 		return nil, fmt.Errorf("%w: revoke the invitation before erasure", crud.ErrConflict)
 	}
-	if _, err := s.invitationFloor(ctx, tx, &u, nil); err != nil {
+	administering, refused, err := s.invitationFloor(ctx, tx, &u, nil)
+	if refused {
+		s.recordRefusal(ctx, attemptDelete, &u, administering)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return &u, nil
