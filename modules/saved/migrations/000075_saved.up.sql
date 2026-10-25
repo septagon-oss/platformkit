@@ -23,8 +23,12 @@ CREATE TABLE saved_items (
 	locale         varchar(64) NOT NULL,
 	source_version varchar(128) NOT NULL,
 	-- The capture is kept as the bytes it arrived as, so no JSON number round
-	-- trips through a float on the way back out.
-	"values"       text NOT NULL,
+	-- trips through a float on the way back out. The name is the SQL keyword
+	-- spelled bare: Postgres reads it as this column in every position this
+	-- module and kit/personaldata put it in, and kit/personaldata reads only
+	-- bare names out of this file, which is what lets the module file it as
+	-- text an identifier may sit in and be refused if it then does not scrub it.
+	values         text NOT NULL,
 
 	-- A picture is either an immutable file or one composed image with the recipe
 	-- that produced it, never both and never half: a copy that displayed a file
@@ -39,8 +43,9 @@ CREATE TABLE saved_items (
 	captured_at    timestamptz NOT NULL
 );
 
--- One copy per person per source. The name is quoted because the SQL keyword is
--- the column's name; every reader that asks for it has to quote it too.
+-- One copy per person per source: the second save of one source is the same
+-- copy, and this index is what makes two first saves of it one row rather than
+-- one error.
 CREATE UNIQUE INDEX saved_items_person_source ON saved_items
 	(tenant_id, person_id, source_module, source_kind, source_key);
 -- The two reads the library page makes: everything this person saved, newest

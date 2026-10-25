@@ -99,12 +99,22 @@ func manifest() module.Module {
 		Migrations:  Migrations.Files,
 		Permissions: permissions,
 		Declared:    emitted,
-		// One copy per person per source, and the whole row goes when they ask to
-		// be forgotten: nothing here outlives the person's own hold on it, so no
-		// column is filed as text an identifier may sit in. picture_file_id names
-		// a file, which is a row of another owner and a fact about a thing.
+		// One copy per person per source. person_id is the keeper, whose own rows
+		// an erasure takes outright; title and values are the copy's words, and
+		// they arrive verbatim from another module's row, so they are the two text
+		// columns an identifier may sit in and the erasure scrubs them for whoever
+		// it names over every copy of its tenant, not only the subject's own.
+		// picture_file_id names a file, which is a row of another owner and a fact
+		// about a thing. No other column of this table holds prose: source_module
+		// and source_kind are refused unless they are slugs, locale is a language
+		// tag, source_version and source_key are the source's own address — which
+		// rewriting would take away, since the unique index that makes a second
+		// save the same copy reads them — and the composed-picture columns hold
+		// only the selections a declared template allows.
 		PersonalData: personaldata.Implements(personaldata.Table{
-			Name: "saved_items", Person: "person_id", NotPerson: []string{"picture_file_id"},
+			Name: "saved_items", Person: "person_id",
+			Text:      []string{"title", "values"},
+			NotPerson: []string{"picture_file_id"},
 		}),
 		// Written out so the absence is a decision: saved answers to no event and
 		// keeps no clock of its own, so it subscribes to nothing and sweeps nothing.

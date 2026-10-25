@@ -1,13 +1,13 @@
 # Saved — specification
 
-Status: the retained copy exists. [Contracts](contracts/saved.go), the
+Status: the module exists. [Contracts](contracts/saved.go), the
 [shared decisions](internal/decision.go), the
-[conformance suite](contracts/savedtest/conformance.go) both adapters answer and
-the SQL service over `saved_items` are written, and the suite runs against
-Postgres. What is not written yet is the composition half: no `module.go` or
-provider, no route, no picture delivery, no personal-data part, no heart and no
-grid. Those sections below are **intended behavior**, not a claim that those
-surfaces exist.
+[conformance suite](contracts/savedtest/conformance.go) both adapters answer, the
+SQL service over `saved_items` and the [declaration](module.go) — its provider,
+grants, events and personal-data part — are written, and the suite runs against
+Postgres. What is not written yet is the composition half: no route, no picture
+delivery, no heart and no grid. Those sections below are **intended behavior**,
+not a claim that those surfaces exist.
 
 Saved is an optional foundation capability. A person retains a source-authorized
 copy of anything identified by `(module, kind, key)`. Its first title, resolved
@@ -47,9 +47,9 @@ the bounded missing behavior, not permission to replace the foundation underneat
 | Authority adapter | **Composed from** the trace's Work Access pattern and existing user/auth contracts; the narrow locked-reader addition stays with those authority owners. Saved owns no membership or grant store. |
 | Command replay guard | **Composed from** the trace's [httpx.Auth](../../kit/httpx/auth.go) and existing operation recovery; extend that hook with retained-answer visibility, without another receipt store. |
 
-The trace resolves this foundation at `988e95c1ebf6d2ddc3a78cd514cc40a43f5bab90`,
-with no catalogue dependency. Catalogue and clients mirror observations do not
-prove that either consumes this version. The task's state report records those
+The trace resolves this foundation at `988e95c1ebf6d2ddc3a78cd514cc40a43f5bab90`
+with no catalogue dependency; a catalogue or clients mirror observation proves
+nothing about what consumes this version, and the task's state report records the
 pins and the old-shelf search revisions and results.
 
 ## 1. Entity fields
@@ -116,7 +116,7 @@ Availability is a **read observation**, not another saved state:
 
 Availability never causes deletion, refresh, an event or a grant. Unexpected
 errors/cancellation are **correctable** and abort with zero output; a partial page is
-never returned. A later successful source check may display `available` again.
+never returned.
 
 ## 4. Authorization
 
@@ -146,8 +146,7 @@ does not trust Principal.Roles captured before a wait. The adapter must hold
 authority stable through commit using the existing user/auth ownership locks.
 The inspected user/auth contracts lack a locked membership reader: expose that
 narrow contract in its owner as part of the adapter delivery, never query their
-internal tables from saved. This generic adapter is implementation work,
-not a product-specific security policy left to each product to invent.
+internal tables from saved.
 
 `Source.Capture` authorizes retaining the entire projection, including media;
 permission to view a source is not automatically permission to retain it. A source
@@ -181,8 +180,7 @@ is this person's, and the quoted revision before it deletes. It never substitute
 a new row with the same tuple for a now-absent old ID. Release uses,
 delete and emit in one transaction. Duplicate removals and removal of a foreign
 ID write nothing and publish nothing. If Source or file callbacks fail, return zero/error and
-the caller rolls back the entire transaction. An outbox insertion or commit
-failure is not a successful save.
+the caller rolls back the entire transaction.
 
 Lock order is authority → saved tuple → source-owned locks → ascending file IDs.
 Source callbacks may not call saved or take its tuple lock. An adapter whose
@@ -237,7 +235,6 @@ telemetry; the zero-effect guarantee concerns domain state and domain events.
 Keep a copy until its person removes it or a personal-data erasure removes it.
 No automatic TTL, legal hold or account-wide retention schedule is invented.
 Source deletion, access revocation and provider removal do not prune snapshots.
-Removal releases the saved field's uses but never directly deletes shared files.
 
 File pictures are immutable file IDs returned by an authorized source. SetUses
 uses owner `(saved, item, saved-ID, picture, captured-locale)` with `Public=false`.
@@ -251,7 +248,7 @@ Value. The shared decision calls Resolve/Compose and stores the exact inert SVG,
 digest and canonical value. Thus removing/replacing the original template or
 provider cannot change the saved image. The ordinary file upload's SVG refusal
 remains in force; this is the existing composed-image contract, served as an
-image, never inserted as HTML. No new XML parser or drawing system.
+image, never inserted as HTML.
 
 `GET /api/v1/saved/items/{id}/picture` rereads tenant, person and read grant before
 bytes or a conditional response; use `private, no-store`, no shared cache, no
@@ -260,25 +257,26 @@ Absent picture/foreign ID is 404 (**immutable** for that request). After Unsave,
 the old picture URL is 404. File-storage outage is 503 (**correctable**), not
 source unavailability or a reason to erase a copy.
 
-Contribute `personaldata.Part`: export this person's complete active copies,
-including source/version/time/locale/resolved values, plus retained image bytes
-through the existing bundle/file mechanisms. Ordinary JSON keeps SVG bytes out
-of the response; the exporter must explicitly include them or bundle them.
-Erase hard-deletes all that person's copies and releases uses in the orchestrator's
-tenant transaction. That privileged internal contribution is not an ordinary
-user-controlled person parameter. Existing audit/operation envelopes have their
-own retention; do not promise erasing another owner's records here.
-Erasure emits no per-item unsave event: the existing subject orchestrator records
-the erasure in that same transaction. Export makes no writes or domain events.
+Contribute `personaldata.Part` — privileged internal, never a caller's person
+parameter: export this person's complete active copies — source, version, time,
+locale and resolved values — but not the retained SVG bytes, which nothing
+bundles yet. Erasure is asked of the person a copy *names*, not only the one
+who kept it: the subject's own copies go outright, and across the tenant's
+remaining copies it scrubs `title` and `values`, the two columns `module.go`
+files as text an identifier may sit in. The copy survives — it is not the
+subject's to take — and loses the sentence about them. Uses release with the
+`FileUses` edge below; a file picture retained now files no use. Audit and
+operation envelopes keep their own retention; this takes nothing of theirs. An
+erasure emits no per-item unsave event; the subject orchestrator records it in
+that transaction, and export writes and emits nothing.
 
 ## 8. Provider declaration and web contracts
 
 What this tree holds and what it specifies are not the same list, so the line is
 here rather than implied: the pkit declaration below is shipped in `module.go`
 (`Provides` Service, `Needs` Access, `Clock` and every Savable, `Contributes`
-personaldata.Part — export and erasure over the person's own copies), and every
-other row is owed: the `httpx.Saving` adapter, the `Opener`/`FileUses` edge, and
-everything from
+personaldata.Part — §7's export and erasure), and every other row is owed: the
+`httpx.Saving` adapter, the `Opener`/`FileUses` edge, and everything from
 "### HTTP and generated-screen ownership" down. No application composes the
 module yet, so nothing here is reachable by a person.
 
@@ -317,12 +315,12 @@ padding; strings are unchanged. Source contributions hold callbacks; no callback
 principal, pressed state or storage service enters the serializable hint or pure
 presentation policy. A source uses the same Savable value for its contribution
 and conversion to EntryHints so words and identity have one declaration.
-Localize words through the existing entry-key/catalogue path.
-Fallbacks: “Save”, “Saved”, “Remove from saved”, “Saved items”. A list filtered to
-an exact module/kind pair takes its declaration's ListTitle; other lists use the
-generic title, even when kind names coincide across modules. Heart list links
-carry that pair explicitly. Missing-source
-copies use generic copy rather than retaining a stale translation catalogue.
+Localize words through the existing entry-key/catalogue path. Fallbacks: “Save”,
+“Saved”, “Remove from saved”, “Saved items”. A list filtered to an exact
+module/kind pair takes its declaration's ListTitle; other lists use the generic
+title, even when kind names coincide across modules. Heart list links carry that
+pair explicitly. Missing-source copies use generic copy rather than a stale
+translation catalogue.
 
 Extend `present.Resolve` with one optional resolved saving value and a narrow
 capability input from its adapter. Both web and catalogue consume its localized
@@ -458,7 +456,9 @@ to retain content/media, resolved specialist facts, language tags, accurate
 descriptions, live action rules and source/provider licensing. The module refuses
 malformed/oversized snapshots (**correctable**) but does not judge a recipe,
 exercise, outfit, medical claim, price or jurisdiction. Source projections must
-not put credentials or data the person may not retain into Values or titles.
+not put credentials or data the person may not retain into Values or titles. An
+erase finds an identifier where the source's own bytes spell it: not a person
+described rather than named, and not a name escaped into `\u0026` form.
 
 Products choose roles, wording, themes, supported locales, file retention classes,
 specialist source adapters and their versioned adoption. Catalogue household
