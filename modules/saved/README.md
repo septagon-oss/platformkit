@@ -259,16 +259,16 @@ source unavailability or a reason to erase a copy.
 
 Contribute `personaldata.Part` — privileged internal, never a caller's person
 parameter: export this person's complete active copies — source, version, time,
-locale and resolved values — but not the retained SVG bytes, which nothing
-bundles yet. Erasure is asked of the person a copy *names*, not only the one
-who kept it: the subject's own copies go outright, and across the tenant's
-remaining copies it scrubs `title` and `values`, the two columns `module.go`
-files as text an identifier may sit in. The copy survives — it is not the
-subject's to take — and loses the sentence about them. Uses release with the
-`FileUses` edge below; a file picture retained now files no use. Audit and
-operation envelopes keep their own retention; this takes nothing of theirs. An
-erasure emits no per-item unsave event; the subject orchestrator records it in
-that transaction, and export writes and emits nothing.
+locale and resolved values — not the retained SVG bytes, which nothing bundles yet.
+Erasure is asked of the person a copy *names*, not only the keeper: the subject's
+own copies go outright, and across the tenant's remaining copies it rewrites the two
+columns `module.go` files as text an identifier may sit in — `title` as prose,
+`values` as the document it is, rewritten inside the text its strings decode to, so
+what it leaves still parses. The copy survives — it is not the subject's to take —
+and loses the sentence about them. Uses release with the `FileUses` edge below; a
+file picture retained now files no use. Audit and operation envelopes keep their own
+retention; this takes nothing of theirs. An erasure emits no per-item unsave event;
+the orchestrator records it there, and export writes and emits nothing.
 
 ## 8. Provider declaration and web contracts
 

@@ -38,18 +38,19 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant], s personald
 	return json.Marshal(out)
 }
 
-// Erase answers for the subject twice, because one retained copy is two people's
-// thing at once. The copies the subject kept are theirs and go outright — a scrub
-// would leave a row naming a person, a source key and a captured document, which
-// is what they asked to stop holding — and unscoped, for the reason Unsave removes
-// rather than hides: a soft-deleted copy stays addressable by its own id. The
-// copies other people kept of a source that named the subject are not theirs to
-// lose, and the subject's name in them is not theirs to keep: a copy outlives its
-// source's own rewrites, so this scrub is the only statement that reaches those
-// words. Both run inside the tenant row-level security already bounded, so neither
-// names tenant_id, and neither says anything the keeper did not ask it to. The
-// scrub moves the row's own instant; the copy's revision stays at the one value the
-// table allows it, because no caller ever quoted a version of a snapshot's words.
+// Erase answers for the subject twice, because one retained copy is two people's thing at
+// once. The copies the subject kept are theirs and go outright — a scrub would leave a row
+// naming a person, a source key and a captured document, which is what they asked to stop
+// holding — and unscoped, for the reason Unsave removes rather than hides: a soft-deleted
+// copy stays addressable by its own id. The copies other people kept of a source that named
+// the subject are not theirs to lose, and the name in them is not theirs to keep: a copy
+// outlives its source's own rewrites, so this is the only statement that reaches those
+// words. A title is prose and takes the kit's match rule; a snapshot is a JSON document kept
+// as text and is rewritten as a document, inside the text its strings decode to, so the copy
+// it leaves still parses. Both run inside the tenant row-level security already bounded, so
+// neither names tenant_id, and neither says anything the keeper did not ask it to. A rewrite
+// moves the row's own instant; the copy's revision stays at the one value the table allows
+// it, because no caller ever quoted a version of a snapshot's words.
 func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
 	if err := tx.DB().WithContext(ctx).Unscoped().Where("person_id = ?", s.ID).Delete(&row{}).Error; err != nil {
 		return err
@@ -57,7 +58,9 @@ func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personalda
 	// The kit's own match rule, over every copy the tenant can see rather than the
 	// ones carrying the subject's id: the person a copy names is not the person who
 	// saved it.
-	_, err := personaldata.ScrubTouched(ctx, tx, s, "saved_items", "updated_at",
-		[]string{"title", "values"}, "")
-	return err
+	if _, err := personaldata.ScrubTouched(ctx, tx, s, "saved_items", "updated_at",
+		[]string{"title"}, ""); err != nil {
+		return err
+	}
+	return scrubSnapshots(ctx, tx, s)
 }
