@@ -151,6 +151,12 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
 		Action:    action, CancelURL: r.Screen, Title: title,
+		// The request's formatter answers the chrome, so a phrase with a value in it
+		// — a keystroke inside a toolbar name, a label inside a placeholder — is one
+		// translated sentence rather than two English halves joined in Go. The guard
+		// stays here because a nil locale in an interface is not nil to the code that
+		// asks it: a render with no composed locale composes no formatter instead.
+		Format: chromeFormatter(o.Locale),
 		Text: func(key, fallback string) string {
 			if o.Locale == nil {
 				return fallback

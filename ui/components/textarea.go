@@ -102,7 +102,7 @@ func textareaControlAttrs(p TextareaProps, id string, cl style.ClassList, rows i
 	if id != "" && p.ErrorMessage != "" {
 		describedBy = append(describedBy, id+"-error")
 	}
-	if id != "" && p.HelperText != "" {
+	if id != "" && hasHelp(p.HelperText, p.HelperNotes) {
 		describedBy = append(describedBy, id+"-helper")
 	}
 	area := []g.Node{
@@ -187,12 +187,12 @@ func textareaSupporting(p TextareaProps, id string) g.Node {
 		}
 		supporting = append(supporting, h.P(append(errorAttrs, g.Text(p.ErrorMessage))...))
 	}
-	if p.HelperText != "" {
+	if hasHelp(p.HelperText, p.HelperNotes) {
 		helperAttrs := []g.Node{h.Class(clHelp.Compile())}
 		if id != "" {
 			helperAttrs = append(helperAttrs, h.ID(id+"-helper"))
 		}
-		supporting = append(supporting, h.P(append(helperAttrs, g.Text(p.HelperText))...))
+		supporting = append(supporting, helpParagraph(p.HelperText, p.HelperNotes, helperAttrs...))
 	}
 	var supportingNode g.Node
 	if len(supporting) == 1 {

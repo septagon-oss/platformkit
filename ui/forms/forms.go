@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
@@ -102,8 +103,23 @@ type Options struct {
 	// and no alarm is owed. It says nothing where Model.Detail is empty, because no
 	// notice is drawn then.
 	DetailTone string
-	Text       func(key, fallback string) string
+	// Format answers this form's chrome in the request's language: a catalogue
+	// key, the readable source text to use when no catalogue holds it, and the
+	// values the phrase interpolates. It is the kernel's own formatter, not a
+	// signature this package invented, so the provider keeps ownership of
+	// interpolation, plural rules and regional number format. Nil — the default —
+	// answers every phrase with its source text.
+	Format locale.Formatter
+	// Text answers one phrase without arguments. Format answers it, and Format is
+	// asked with the phrase already formatted whenever both are composed.
+	//
+	// Deprecated: Text cannot carry a value inside a phrase, so anything drawn
+	// with it has to be assembled out of sentences in Go. Compose Format instead.
+	Text func(key, fallback string) string
 }
+
+// phrases is this form's chrome, asked of the formatter the render composed.
+func (o Options) phrases() phraser { return phrasesFor(o.Format, o.Text) }
 
 // ErrNamespace reports an unusable instance scope before any example is returned.
 var ErrNamespace = errors.New("forms: namespace must start with a letter and contain only letters, digits, underscores or hyphens")
@@ -197,6 +213,7 @@ func MustExample(id string, model Model, options Options) examples.Example {
 
 func example(id string, model Model, options Options) examples.Example {
 	formID := options.Namespace + "-form"
+	word := options.phrases()
 	body := []g.Node{}
 	if model.Detail != "" {
 		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
@@ -208,11 +225,12 @@ func example(id string, model Model, options Options) examples.Example {
 			if message := model.Errors[field.Definition.Name]; message != "" {
 				richtextError = richtextError || field.Definition.Widget == "richtext"
 				id := options.Namespace + "-field-" + hex.EncodeToString([]byte(field.Definition.Name))
-				links = append(links, h.Li(h.A(h.Href("#"+id), g.Text(cmp.Or(field.Label, field.Definition.Name)+": "+message))))
+				links = append(links, h.Li(h.A(h.Href("#"+id),
+					g.Text(word("forms.form.fieldError", "%[1]s: %[2]s", cmp.Or(field.Label, field.Definition.Name), message)))))
 			}
 		}
 		if len(links) > 0 && richtextError {
-			body = append(body, h.Nav(g.Attr("aria-label", "Fields to correct"), h.Ul(links...)))
+			body = append(body, h.Nav(g.Attr("aria-label", word("forms.form.fieldsToCorrect", "Fields to correct")), h.Ul(links...)))
 		}
 	}
 	for _, field := range model.Fields {
@@ -233,7 +251,7 @@ func example(id string, model Model, options Options) examples.Example {
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
 			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
-			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Text: options.Text}))
+			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Format: options.Format, Text: options.Text}))
 	}
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
@@ -292,21 +310,3 @@ func validNamespace(value string) bool {
 }
 
 func letter(c byte) bool { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') }
-
-// hint joins the field's documentation with notes about its chosen control.
-func hint(parts ...string) string {
-	kept := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
-			kept = append(kept, part)
-		}
-	}
-	return strings.Join(kept, " ")
-}
-
-func immutableNote(immutable bool) string {
-	if immutable {
-		return "Changed by a command of its own, not by this form."
-	}
-	return ""
-}

@@ -3,9 +3,9 @@ package forms
 import (
 	"cmp"
 	"slices"
-	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
@@ -19,8 +19,21 @@ type ControlProps struct {
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
-	Text             func(key, fallback string) string
+	// Format answers this control's chrome in the request's language. It is the
+	// kernel's own formatter, so the provider keeps ownership of interpolation,
+	// plural rules and regional number format. Nil — the default — answers every
+	// phrase with its source text.
+	Format locale.Formatter
+	// Text answers one phrase without arguments. Format does it, and Format is
+	// asked with the phrase already formatted whenever both are composed.
+	//
+	// Deprecated: Text cannot carry a value inside a phrase, which is what every
+	// piece of chrome a generated form draws needs. Compose Format instead.
+	Text func(key, fallback string) string
 }
+
+// phrases is this control's chrome, asked of the formatter the render composed.
+func (p ControlProps) phrases() phraser { return phrasesFor(p.Format, p.Text) }
 
 // widgetInputType names the <input> type each widget that draws an input asks
 // for. The rest of entity.Widgets draw a component (select, textarea), a
@@ -51,17 +64,28 @@ var widgetInputType = map[string]string{
 // Its capture retains "field/" plus the schema name and Core's Props contract.
 func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
-	word := func(key, fallback string) string {
-		if p.Text == nil {
-			return fallback
-		}
-		return p.Text(key, fallback)
-	}
+	word := p.phrases()
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
+	// A note says something about the control this package chose, not about the
+	// field, so it stands as its own sentence beside the field's own line instead of
+	// being joined onto it: two owners' sentences, one paragraph, neither assembled
+	// out of the other.
+	var notes []string
+	switch {
+	case f.Widget == "entity-picker":
+		notes = append(notes, word("forms.field.note.entityPicker",
+			"The identifier of the related record. There is no picker for it yet."))
+	case f.Type == entity.TypeList:
+		notes = append(notes, word("forms.field.note.list", "Comma separated."))
+	}
+	if p.Immutable {
+		notes = append(notes, word("forms.field.note.immutable",
+			"Changed by a command of its own, not by this form."))
+	}
 	base := components.InputProps{
 		ComponentProps: components.ComponentProps{ID: p.ID},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
-		HelpText: hint(cmp.Or(p.Field.Help, f.Doc), immutableNote(p.Immutable)),
+		HelpText: cmp.Or(p.Field.Help, f.Doc), HelpNotes: notes,
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {
@@ -75,26 +99,30 @@ func Control(p ControlProps) g.Node {
 		}
 		placeholder := ""
 		if f.Default == "" {
-			placeholder = "Choose a " + strings.ToLower(label)
+			// The label arrives as its author wrote it and the message owns the
+			// sentence around it: casing a translated label is a rule one language has
+			// and the next language cannot read back out of the result.
+			placeholder = word("forms.field.choose", "Choose a %[1]s", label)
 		}
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, Error: p.Error,
 			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText, FullWidth: true,
+			HelpText: base.HelpText, HelpNotes: base.HelpNotes, FullWidth: true,
 		}, components.Select).Node
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
+			HelperNotes: base.HelpNotes,
 		}, components.Textarea).Node
 	case f.Widget == "richtext":
 		area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
-			MaxLength: f.MaxLength, CharacterLimitOnly: true,
+			HelperNotes: base.HelpNotes, MaxLength: f.MaxLength, CharacterLimitOnly: true,
 		}, components.Textarea).Node
 		// Replace this native disclosure when the shared disclosure lands.
 		help := h.Details(
@@ -118,12 +146,8 @@ func Control(p ControlProps) g.Node {
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: "true", Checked: p.Value == "true",
-			Required: f.Required, Error: p.Error, HelpText: base.HelpText,
+			Required: f.Required, Error: p.Error, HelpText: base.HelpText, HelpNotes: base.HelpNotes,
 		}, components.Checkbox).Node
-	case f.Widget == "entity-picker":
-		base.HelpText = hint(base.HelpText, "The identifier of the related record. There is no picker for it yet.")
-	case f.Type == entity.TypeList:
-		base.HelpText = hint(base.HelpText, "Comma separated.")
 	}
 	// The input type is what the widget named, and only then what the Go type
 	// implies. A widget that names one wins over the type because that is what
