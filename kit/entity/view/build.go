@@ -25,6 +25,9 @@ func Build(in Input) (Page, error) {
 		Zone:        b.zone.String(),
 		Ref:         b.ref(in.State.Kind, row),
 		Title:       b.title(row),
+		// The two aggregates this page's kind does not show are written empty here, so a
+		// shell reads one shape for "none" wherever it looks.
+		Sections: []Section{}, Table: emptyTable(), Form: emptyForm(),
 	}
 	page.Breadcrumbs = namesOrNil(b.crumbs(page.Title))
 	page.Actions = namesOrNil(b.actions(row))
@@ -40,6 +43,20 @@ func Build(in Input) (Page, error) {
 		page.Form = b.form(row)
 	}
 	return page, nil
+}
+
+// emptyTable is the list a page whose kind shows none writes: every aggregate of a
+// table present and empty, and no window, because a page that shows no rows was asked
+// for none — Table.Window carries a limit only where a read happened.
+func emptyTable() Table {
+	return Table{Columns: []Column{}, Rows: []Row{},
+		Sorts: []present.ResolvedSortOption{}, Filters: []present.ResolvedFilter{}}
+}
+
+// emptyForm is the surface a page whose kind is not a form writes: no control, no
+// verdict, and revision 0 because no write is expected of this page.
+func emptyForm() Form {
+	return Form{Controls: []Control{}, Violations: []Violation{}}
 }
 
 // builder holds what every member of one Page needs: the input, and the reader that
@@ -219,12 +236,17 @@ func (b builder) fields(row map[string]any, names []string) []Field {
 // the write that carries it back is refused when the row has moved.
 func (b builder) form(row map[string]any) Form {
 	names := b.in.Policy.Layout.Update
+	expected := revisionOf(row)
 	if b.in.State.Form.Create {
 		names = b.in.Policy.Layout.Create
+		// A create page points at the collection: no row exists to write against, so the
+		// counter the row carries is no condition on this write and sending it back would
+		// be a page contradicting its own empty Ref.
+		expected = 0
 	}
 	return Form{
 		Create: b.in.State.Form.Create, Title: b.in.State.Form.Title, Detail: b.in.Data.Detail,
-		ExpectedRevision: revisionOf(row), Controls: namesOrNil(b.controls(names, row)),
+		ExpectedRevision: expected, Controls: namesOrNil(b.controls(names, row)),
 		Violations: namesOrNil(b.violations()),
 	}
 }

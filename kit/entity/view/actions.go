@@ -26,17 +26,20 @@ func (b builder) actions(row map[string]any) []Action {
 	target := Ref{Resource: b.in.Resource.Resource}
 	out := []Action{}
 	if b.in.State.Kind == KindList && b.door("create") {
-		out = append(out, Action{Kind: ActionCreate, Verb: "create", Scope: ScopeCollection, Target: target})
+		out = append(out, Action{Kind: ActionCreate, Verb: "create", Scope: ScopeCollection, Target: target,
+			Inputs: []Control{}})
 	}
 	if b.in.State.Kind == KindRecord && row != nil {
 		target.ID = idOf(row)
 		if b.door("update") {
-			out = append(out, Action{Kind: ActionUpdate, Verb: "update", Scope: ScopeRecord, Target: target})
+			out = append(out, Action{Kind: ActionUpdate, Verb: "update", Scope: ScopeRecord, Target: target,
+				Inputs: []Control{}})
 		}
 		// A delete costs something by the meaning of the verb, so it marks itself
 		// destructive; the words of its confirmation stay the shell's.
 		if b.door("delete") {
-			out = append(out, Action{Kind: ActionDelete, Verb: "delete", Scope: ScopeRecord, Target: target, Destructive: true})
+			out = append(out, Action{Kind: ActionDelete, Verb: "delete", Scope: ScopeRecord, Target: target,
+				Destructive: true, Inputs: []Control{}})
 		}
 	}
 	return append(out, b.commands(row)...)

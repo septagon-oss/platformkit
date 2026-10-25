@@ -254,10 +254,17 @@ func element(elem entity.FieldType, item any) any {
 // mapping is a map value as it stands: encoding/json writes its keys sorted, which
 // is the order the Page carries, so no sort happens here and no key is dropped.
 func mapping(raw any) map[string]any {
-	if m, ok := raw.(map[string]any); ok && m != nil {
-		return m
+	m, ok := raw.(map[string]any)
+	if !ok || m == nil {
+		return map[string]any{}
 	}
-	return map[string]any{}
+	// A Page is a value: the map it shows is a copy, so a shell that holds one never
+	// watches the caller's own write change it.
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // number is an integer: a JSON number while it fits a double exactly, and a canonical

@@ -194,8 +194,8 @@ func TestARecordPageShowsTheThreeBlocksInOrder(t *testing.T) {
 			t.Errorf("section %q is written with no fields", s.Key)
 		}
 	}
-	if len(page.Table.Columns) != 0 || page.Form.Controls != nil {
-		t.Error("a record page wrote the table or the form")
+	if len(page.Table.Columns) != 0 || len(page.Table.Rows) != 0 || len(page.Form.Controls) != 0 {
+		t.Error("a record page wrote rows or controls")
 	}
 	if page.Breadcrumbs[len(page.Breadcrumbs)-1].Ref.ID != "t1" {
 		t.Errorf("the last crumb does not name the record: %+v", page.Breadcrumbs)
@@ -391,6 +391,14 @@ func TestAFormDrawsTheLayoutsOwnControlsInOrder(t *testing.T) {
 	form := page.Form
 	if !form.Create || form.Title != "New task" || form.ExpectedRevision != 0 {
 		t.Fatalf("form %+v", form)
+	}
+	// A create page over a row still names no condition: the row it is drawn beside is
+	// not the row this write would create.
+	withRow := in
+	withRow.Data.Records = []map[string]any{{"id": "t1", "title": "Write", "revision": json.Number("7")}}
+	if page := build(t, withRow); page.Form.ExpectedRevision != 0 || page.Ref.ID != "" {
+		t.Errorf("a create page over a row carries revision %d and ref %+v, want none",
+			page.Form.ExpectedRevision, page.Ref)
 	}
 	if len(form.Controls) == 0 {
 		t.Fatal("a create form with no controls")

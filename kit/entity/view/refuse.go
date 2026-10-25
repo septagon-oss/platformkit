@@ -77,6 +77,10 @@ func refuseSurface(in Input) error {
 			return Refusal{Field: "window.limit", Got: strconv.Itoa(in.Data.Window.Limit),
 				Want: "the page size the read asked for: this package keeps no page size"}
 		}
+		if in.Data.Window.Offset < 0 {
+			return Refusal{Field: "window.offset", Got: strconv.Itoa(in.Data.Window.Offset),
+				Want: "rows skipped, which is never fewer than none"}
+		}
 		return refuseRoute(in, "list")
 	case KindForm:
 		if !in.State.Writable {

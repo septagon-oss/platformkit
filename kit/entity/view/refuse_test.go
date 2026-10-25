@@ -40,6 +40,7 @@ func TestARefusalNamesTheMemberItRefuses(t *testing.T) {
 		{"two languages on one page", func(in *view.Input) { in.State.Language = "pt-PT" }, "language"},
 		{"no instant to anchor a phrase", func(in *view.Input) { in.State.Now = zeroTime() }, "builtAt"},
 		{"no page size", func(in *view.Input) { in.Data.Window.Limit = 0 }, "window.limit"},
+		{"a window that starts before the first row", func(in *view.Input) { in.Data.Window.Offset = -50 }, "window.offset"},
 		{"a negative count with the count asked for", func(in *view.Input) { in.Data.Total = -1 }, "total"},
 		{"a resource named neither module/entity nor nothing", func(in *view.Input) { in.Resource.Resource = "task" }, "resource"},
 		{"a list the resource does not answer", func(in *view.Input) { in.Resource.Operations = []string{"read"} }, "operations"},

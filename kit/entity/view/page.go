@@ -78,10 +78,11 @@ type Crumb struct {
 // Window is the slice of a collection this page shows, as the read asked for it, and
 // is always written: a default the contract hides is one a second shell guesses
 // differently. Limit is the caller's own page size, never this package's, which keeps
-// none.
+// none, and it is 0 where the page's kind shows no table: no read happened there, so no
+// page size was asked for.
 type Window struct {
 	Offset int `json:"offset"` // rows skipped, >= 0
-	Limit  int `json:"limit"`  // rows asked for, > 0
+	Limit  int `json:"limit"`  // rows asked for, > 0 on a list page, 0 where no table shows
 }
 
 // Table is a list: its columns, rows and window, its counts, and the orders and
@@ -190,7 +191,8 @@ type Violation struct {
 // writer's own sentence and "" when the page shows none, a form with no verdict being a
 // blank form. ExpectedRevision is the row's own write counter (entity.RevisionField)
 // the page was drawn from, which a shell sends back as entity.RevisionCondition; 0
-// means the read carried none.
+// means the read carried none, which is what a create page always carries: it is about
+// a row that does not exist yet.
 type Form struct {
 	Create           bool        `json:"create"`
 	Title            string      `json:"title"`
@@ -207,7 +209,8 @@ type Form struct {
 // name. Target is what the action acts on — the collection for scope "collection",
 // this record for scope "record". Undo names the verb that undoes this one, "" when
 // nothing does: the policy carries neither that nor HasResult. Confirm is zero when
-// the command asks nothing first.
+// the command asks nothing first. Inputs is always written: [] for a CRUD door, which
+// asks for nothing, and the declared arguments for a command.
 type Action struct {
 	Kind        ActionKind `json:"kind"`
 	Verb        string     `json:"verb"`
