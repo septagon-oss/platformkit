@@ -183,9 +183,9 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			// The argument comes from the row the person is looking at, so the box is
 			// hidden and still carries this control's own identity.
 			hidden := f
-			hidden.Widget = "hidden"
+			hidden.Widget, hidden.Present, hidden.Choices, hidden.Presentation.Figure = "hidden", "", nil, nil
 			controls = append(controls, forms.Control(forms.ControlProps{
-				Field: formField(arguments, hidden), ID: id, Value: display.Text(row[source]),
+				Field: formField(arguments, hidden, o), ID: id, Value: display.Text(row[source]),
 			}))
 			continue
 		}
@@ -200,7 +200,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			f.Widget, value = "hidden", locale.Locale
 		}
 		controls = append(controls, forms.Control(forms.ControlProps{
-			Field: formField(arguments, f), ID: id, Value: value,
+			Field: formField(arguments, f, o), ID: id, Value: value, ChoiceValues: choiceDefault(f),
 		}))
 	}
 	// Outline, so the screen's one filled action stays its toolbar's — Edit on a

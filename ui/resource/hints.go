@@ -176,6 +176,23 @@ func (w Words) Fields(fields []entity.Field) []entity.Field {
 			}
 			f.Presentation.EnumLabels = words
 		}
+		if f.Choices != nil {
+			f.Choices = f.Choices.Clone()
+			prefix := "choice." + f.Name + "."
+			for i := range f.Choices.Options {
+				option := &f.Choices.Options[i]
+				option.Label = w.say(prefix+option.ID+".label", option.Label)
+				if option.Group != nil {
+					option.Group.Label = w.say(prefix+"group."+option.Group.Key+".label", option.Group.Label)
+				}
+			}
+			if f.Choices.Empty.Message != "" {
+				f.Choices.Empty.Message = w.say(prefix+"empty", f.Choices.Empty.Message)
+			}
+			if m := f.Choices.Maximum; m != nil && m.Message != "" {
+				m.Message = w.say(prefix+"maximum", m.Message)
+			}
+		}
 		out = append(out, f)
 	}
 	return out

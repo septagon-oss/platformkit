@@ -360,6 +360,10 @@ func (s Spec[T]) resourceWrites(res *httpx.Resource) {
 			if err != nil {
 				return e, err
 			}
+			e, err = s.choiceCreate(e, values)
+			if err != nil {
+				return e, err
+			}
 			return s.createRow(ctx, tx, e)
 		})
 	}
@@ -373,7 +377,7 @@ func (s Spec[T]) resourceWrites(res *httpx.Resource) {
 				var none T
 				return none, err
 			}
-			return s.updateRow(ctx, tx, id, schema.Fields, fields, quoted)
+			return s.updateChoiceRow(ctx, tx, id, schema.Fields, fields, quoted)
 		})
 	}
 	res.Delete = func(ctx context.Context, id uuid.UUID) error {
