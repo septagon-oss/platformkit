@@ -24,6 +24,9 @@ type recordingAdapter struct {
 func (r *recordingAdapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if r.builtin && op != nil {
 		declare(op, Public())
+		if op.Path == "/openapi.json" {
+			handler = r.api.integerDocumentation(handler)
+		}
 	}
 	// The document says what the middleware does, on the same operation both of them
 	// read: a POST or PATCH that can be replayed declares the header that makes it
@@ -63,6 +66,7 @@ func (a *API) Recorded() []*huma.Operation {
 // middleware denies the same operations, so this turns a 403 nobody notices
 // into a startup failure someone has to fix.
 func (a *API) ValidateDeclarations() error {
+	a.integerDocuments()
 	// Huma mounts a route of its own — /schemas/{schema}, which a problem
 	// document's $schema points at — and it was not mounted through a router, so
 	// nothing stamped its surface. The address is the answer, and it is the same
