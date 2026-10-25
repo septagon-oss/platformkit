@@ -8,6 +8,9 @@
 // setting, in Go or in SQL. scripts/check_gucs.sh keeps it that way, because
 // those settings are USERSET: any statement could rewrite them, so the barrier
 // is a grep and a re-read (see Run and RunSystem), not a database privilege.
+//
+// The [Run] example shows a tenant transaction against PostgreSQL.
+// The [RunSystem] example shows the separate system capability.
 package db
 
 import (
