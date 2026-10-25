@@ -20,7 +20,7 @@ func TestFakeConforms(t *testing.T) {
 		users := usertest.NewFake()
 		fake := authtest.NewFake(users)
 		notices, box := &authtest.Notices{}, &authtest.Mailbox{}
-		fake.Notify, fake.Mailer = notices, box
+		fake.Notify, fake.Mailer, fake.MailDelivery = notices, box, box
 		ctx, tx := t.Context(), db.Tx[db.Tenant]{}
 		fake.Grant(contracts.RoleAdmin, contracts.Wildcard)
 		fake.Grant(contracts.RoleMember)

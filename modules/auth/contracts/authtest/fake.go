@@ -53,6 +53,13 @@ type Fake struct {
 	// does.
 	Mailer contracts.Mailer
 
+	// MailDelivery is the carrier's own answer to whether it delivers, the same
+	// port internal.Delivery carries. The two fields are one object put twice in
+	// every real composition, which is what a fixture that wires one and not the
+	// other should read as: the fake asks this field and nothing else, so it and
+	// the real service can never answer the same Deps differently.
+	MailDelivery contracts.MailDelivery
+
 	mu       sync.Mutex
 	sessions map[uuid.UUID]contracts.Session
 	roles    map[string]contracts.Permissions
@@ -251,16 +258,17 @@ func (f *Fake) Forget(_ context.Context, _ db.Tx[db.Tenant], _ string) error {
 	return nil
 }
 
-// deliversAccountMail mirrors internal.Delivery.deliversAccountMail: the sender
-// must exist and must say it attempts what it is handed. A mailer that answers
-// nothing about itself is read as not delivering, the same way the real service
-// reads a port nobody wired.
+// deliversAccountMail mirrors internal.Delivery.deliversAccountMail field for
+// field: a sender must exist, and the MailDelivery port must exist and say it
+// attempts what it is handed. It asks the port rather than type-asserting the
+// sender, because the real service asks the port — a fake that asked the sender
+// would answer a hand-built Deps by one rule and be run against it by another,
+// which is the disagreement the conformance case exists to catch. A port nobody
+// wired reads as "nothing is delivered", the same fail-closed answer the real
+// service gives. The fake holds no contracts.Hosts: it builds its link from
+// resetPage, so the host half of the real predicate has no fake counterpart.
 func (f *Fake) deliversAccountMail() bool {
-	if f.Mailer == nil {
-		return false
-	}
-	delivery, ok := f.Mailer.(contracts.MailDelivery)
-	return ok && delivery.Available()
+	return f.Mailer != nil && f.MailDelivery != nil && f.MailDelivery.Available()
 }
 
 // Reissue mirrors internal.Service.Reissue: the lookup, in the worker.
