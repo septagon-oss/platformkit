@@ -74702,6 +74702,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/refused_stepped_save_is_answered_with_its_own_count_test.go",
+   "id": "ui/screens/refused_stepped_save_is_answered_with_its_own_count_test.go#TestARefusedSteppedSaveIsAnsweredWithTheCountItsRefusalNames",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedSteppedSaveIsAnsweredWithTheCountItsRefusalNames",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/resolved_isolation_test.go",
    "id": "ui/screens/resolved_isolation_test.go#TestResolvedBodiesDoNotShareStateAcrossLanguagesAndPermissionSets",
    "kind": "go",
@@ -83814,7 +83833,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2271,
+  "files": 2272,
   "forge_runs": [
    408,
    413,
@@ -83848,7 +83867,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3626,
+   "behaviour": 3627,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -83867,9 +83886,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4248,
+  "rows": 4249,
   "tiers": {
-   "merge": 2627,
+   "merge": 2628,
    "nightly": 111,
    "push": 1510
   },
@@ -83877,13 +83896,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2026,
+   "keep": 2027,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3862,
+   "keep": 3863,
    "keep-rewrite": 170,
    "merge": 216
   }
