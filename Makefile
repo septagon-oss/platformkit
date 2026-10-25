@@ -1085,6 +1085,13 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# pretending otherwise. Both files start nothing — no node, no browser, no database, no listener.
 	bash scripts/journey_check_recipe_test.sh
 	bash scripts/journey_check_recipe_wiring_test.sh
+	# scripts/both_roads_keep_an_unset_operation_set_apart_from_an_empty_one_test.sh asks the one
+	# question two packages answer from the same pair of facts: a resource that declared no operation
+	# set mounts all five verbs, because nothing was said, and one whose list named nothing mounts
+	# none. kit/entity/present turns that pair into views and ui/resource into controls, and no Go case
+	# reaches both roads, so this pin runs each and refuses the length reading on both — on a copy, by
+	# Go's build overlay, never this checkout. Four `go test` invocations of two small packages, 2 s.
+	bash scripts/both_roads_keep_an_unset_operation_set_apart_from_an_empty_one_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
