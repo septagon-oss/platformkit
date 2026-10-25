@@ -250,32 +250,7 @@ func NewPasskeyDoor() contracts.PasskeyDoor { return internal.NewPasskeyDoor() }
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
 func New(deps Deps) (contracts.Auth, module.Module) {
-	if deps.EmailRegistration != nil {
-		if deps.Registration != nil || deps.ApprovalRegistration != nil {
-			panic("auth: choose only one registration lifecycle")
-		}
-		policy, err := deps.EmailRegistration.Checked()
-		if err != nil {
-			panic(err)
-		}
-		deps.EmailRegistration = &policy
-	}
-	if deps.ApprovalRegistration != nil {
-		if deps.Registration != nil {
-			panic("auth: choose emailed password setup or approval-required registration")
-		}
-		policy, err := deps.ApprovalRegistration.Checked()
-		if err != nil {
-			panic(err)
-		}
-		deps.ApprovalRegistration = &policy
-	}
-	if err := deps.LinkPages.check(); err != nil {
-		panic(err)
-	}
-	if err := deps.AccountRequests.Check(); err != nil {
-		panic(fmt.Errorf("auth: Deps.AccountRequests: %w", err))
-	}
+	checkRegistrationPolicies(&deps)
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
@@ -353,68 +328,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			},
 		}},
 		Routes: func(s httpx.Surfaces) {
-			// The catalogue, taken at the one moment the kernel has it and this
-			// module is being wired. The hourly sweep reads it back to say which
-			// roles name a permission nothing defines any more.
-			svc.Declare(s.Permissions())
-			internal.RegisterRoutes(s, svc, cookies)
-			// A person's own keys, mounted always: unlike the factor routes
-			// there is no secret this needs from the deployment — the token is
-			// the secret, and it is hashed rather than sealed because it is
-			// never read back.
-			internal.RegisterTokenRoutes(s, svc)
-			// The factor key is the gate, and it is a deployment's setting
-			// rather than a fact about which other modules were composed: a
-			// composition with the key mounts the routes, one without it does
-			// not, and nothing here looks at a module list to decide.
-			// The factor routes are mounted whether or not the deployment set a
-			// key, and with none they answer 503 — the refusal the spec names,
-			// and the reason they are not mounted conditionally: an operation
-			// that exists only sometimes leaves its four events declared and
-			// unreachable, which the application's own catalogue check (every
-			// declared event has a channel) is right to call a lie. A deployment
-			// without a key is told the door is shut rather than being handed a
-			// 404 that says nothing about why.
-			svc.EnableFactors([]byte(deps.FactorKey))
-			internal.RegisterFactorRoutes(s, svc, cookies)
-			// The passkey half mounts always and unconditionally, and it is not
-			// gated on the factor key: a passkey writes no secret, so a deployment
-			// with no key has nothing it cannot do here. What gates the usernameless
-			// door is that tenant's own row in passkey_settings, read per request in
-			// the transaction the host resolved it in — a capability of the tenant,
-			// never a module list and never a deployment setting. With no row
-			// anywhere, which is every installation until somebody writes one, that
-			// door answers 403 with the reason and every other door behaves as it did
-			// before this file existed. The relying party's display name is the tenant's
-			// own row's Name, so Deps carries no installation-wide name for a platform
-			// prompt and nothing here is a fact about one customer.
-			internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
-			if deps.Registration != nil {
-				internal.RegisterRegistrationRoutes(s, svc)
-			}
-			if deps.ApprovalRegistration != nil {
-				internal.RegisterApprovalRegistrationRoutes(s, svc, *deps.ApprovalRegistration)
-			}
-			if deps.EmailRegistration != nil {
-				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
-			}
-			// The gate is "can any tenant here reach a provider", which is the
-			// installation's issuer or the port that resolves one per tenant —
-			// not the installation's issuer alone, which would refuse to mount
-			// the two legs for a deployment whose providers are all per-tenant.
-			if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
-				internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
-					internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
-			}
-			// The gate is the same shape as OIDC's and has one clause less: there is
-			// no installation-level SAML default to ask about, so "can any tenant here
-			// reach an IdP" is answered by the port alone. A composition with no
-			// tenant module — and so no provider to resolve — mounts no /saml/ route,
-			// rather than three doors that would answer 404 for everybody.
-			if deps.SAMLProviders != nil {
-				internal.RegisterSAMLRoutes(s, svc, deps.Users, deps.Provisioner,
-					internal.NewSAMLProvider(cookies, secure, deps.SAMLProviders))
-			}
+			mountAuthRoutes(s, deps, svc, cookies, secure)
 		},
 	}
 	if deps.Registration != nil {
@@ -424,6 +338,106 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		manifest.Subscriptions = append(manifest.Subscriptions, internal.VerificationSubscriptions(svc)...)
 	}
 	return svc, manifest
+}
+
+// checkRegistrationPolicies refuses a Deps that asked for two lifecycles for new
+// accounts and freezes the policy the composition chose, so the service reads one
+// value from here on. It panics: this is wiring, decided before anything serves.
+func checkRegistrationPolicies(deps *Deps) {
+	if deps.EmailRegistration != nil {
+		if deps.Registration != nil || deps.ApprovalRegistration != nil {
+			panic("auth: choose only one registration lifecycle")
+		}
+		policy, err := deps.EmailRegistration.Checked()
+		if err != nil {
+			panic(err)
+		}
+		deps.EmailRegistration = &policy
+	}
+	if deps.ApprovalRegistration != nil {
+		if deps.Registration != nil {
+			panic("auth: choose emailed password setup or approval-required registration")
+		}
+		policy, err := deps.ApprovalRegistration.Checked()
+		if err != nil {
+			panic(err)
+		}
+		deps.ApprovalRegistration = &policy
+	}
+	if err := deps.LinkPages.check(); err != nil {
+		panic(err)
+	}
+	if err := deps.AccountRequests.Check(); err != nil {
+		panic(fmt.Errorf("auth: Deps.AccountRequests: %w", err))
+	}
+}
+
+// mountAuthRoutes puts every auth door where it belongs: the caller's own sessions,
+// keys and factors on the workspace surface, the registration lifecycles the
+// composition chose, and each provider leg this deployment can reach an issuer for.
+func mountAuthRoutes(s httpx.Surfaces, deps Deps, svc *internal.Service, cookies internal.Cookies, secure bool) {
+	// The catalogue, taken at the one moment the kernel has it and this
+	// module is being wired. The hourly sweep reads it back to say which
+	// roles name a permission nothing defines any more.
+	svc.Declare(s.Permissions())
+	internal.RegisterRoutes(s, svc, cookies)
+	// A person's own keys, mounted always: unlike the factor routes
+	// there is no secret this needs from the deployment — the token is
+	// the secret, and it is hashed rather than sealed because it is
+	// never read back.
+	internal.RegisterTokenRoutes(s, svc)
+	// The factor key is the gate, and it is a deployment's setting
+	// rather than a fact about which other modules were composed: a
+	// composition with the key mounts the routes, one without it does
+	// not, and nothing here looks at a module list to decide.
+	// The factor routes are mounted whether or not the deployment set a
+	// key, and with none they answer 503 — the refusal the spec names,
+	// and the reason they are not mounted conditionally: an operation
+	// that exists only sometimes leaves its four events declared and
+	// unreachable, which the application's own catalogue check (every
+	// declared event has a channel) is right to call a lie. A deployment
+	// without a key is told the door is shut rather than being handed a
+	// 404 that says nothing about why.
+	svc.EnableFactors([]byte(deps.FactorKey))
+	internal.RegisterFactorRoutes(s, svc, cookies)
+	// The passkey half mounts always and unconditionally, and it is not
+	// gated on the factor key: a passkey writes no secret, so a deployment
+	// with no key has nothing it cannot do here. What gates the usernameless
+	// door is that tenant's own row in passkey_settings, read per request in
+	// the transaction the host resolved it in — a capability of the tenant,
+	// never a module list and never a deployment setting. With no row
+	// anywhere, which is every installation until somebody writes one, that
+	// door answers 403 with the reason and every other door behaves as it did
+	// before this file existed. The relying party's display name is the tenant's
+	// own row's Name, so Deps carries no installation-wide name for a platform
+	// prompt and nothing here is a fact about one customer.
+	internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
+	if deps.Registration != nil {
+		internal.RegisterRegistrationRoutes(s, svc)
+	}
+	if deps.ApprovalRegistration != nil {
+		internal.RegisterApprovalRegistrationRoutes(s, svc, *deps.ApprovalRegistration)
+	}
+	if deps.EmailRegistration != nil {
+		internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
+	}
+	// The gate is "can any tenant here reach a provider", which is the
+	// installation's issuer or the port that resolves one per tenant —
+	// not the installation's issuer alone, which would refuse to mount
+	// the two legs for a deployment whose providers are all per-tenant.
+	if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
+		internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
+			internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
+	}
+	// The gate is the same shape as OIDC's and has one clause less: there is
+	// no installation-level SAML default to ask about, so "can any tenant here
+	// reach an IdP" is answered by the port alone. A composition with no
+	// tenant module — and so no provider to resolve — mounts no /saml/ route,
+	// rather than three doors that would answer 404 for everybody.
+	if deps.SAMLProviders != nil {
+		internal.RegisterSAMLRoutes(s, svc, deps.Users, deps.Provisioner,
+			internal.NewSAMLProvider(cookies, secure, deps.SAMLProviders))
+	}
 }
 
 // permissions is what the manifest declares: two, guarding the two roles routes

@@ -169,30 +169,63 @@ func (s *Service) SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name 
 		return nil, false, err
 	}
 
-	var was contracts.Permissions
 	role := &contracts.Role{TenantID: tenant.ID, Name: name}
-	switch err := crud.Classify(tx.DB().Where("tenant_id = ? AND name = ?", tenant.ID, name).Take(role).Error); {
+	was, same, err := s.grantedBefore(ctx, tx, role, want)
+	if err != nil {
+		return nil, false, err
+	}
+	if same {
+		return role, false, nil
+	}
+	if err := s.checkAdministration(ctx, tx, name, was, want); err != nil {
+		return nil, false, err
+	}
+	at := db.Now()
+	role.Grants, role.UpdatedAt = want, at
+	if role.CreatedAt.IsZero() {
+		role.CreatedAt = at
+	}
+	err = tx.DB().Exec(
+		"INSERT INTO roles (tenant_id, name, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"+
+			" ON CONFLICT (tenant_id, name) DO UPDATE SET permissions = EXCLUDED.permissions, updated_at = EXCLUDED.updated_at",
+		tenant.ID, name, want, role.CreatedAt, at).Error
+	if err != nil {
+		return nil, false, fmt.Errorf("auth: write the role %s: %w", name, err)
+	}
+	if err := events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
+		Role: name, Was: was, Now: want, At: at,
+	}); err != nil {
+		// State and outbox row commit together or neither does, and a change
+		// that will not be committed changed nothing.
+		return nil, false, err
+	}
+	return role, true, nil
+}
+
+// grantedBefore reads what this role grants today into role, and says whether the
+// wanted list is that same list. A role nobody has yet is the ordinary case and reads
+// as not found; a read that did not happen is an error, never an empty answer, because
+// the guard below would otherwise conclude that nothing was leaving and write anyway.
+func (s *Service) grantedBefore(ctx context.Context, tx db.Tx[db.Tenant], role *contracts.Role, want contracts.Permissions) (contracts.Permissions, bool, error) {
+	var was contracts.Permissions
+	switch err := crud.Classify(tx.DB().Where("tenant_id = ? AND name = ?", role.TenantID, role.Name).Take(role).Error); {
 	case err == nil:
 		was = slices.Clone(role.Grants)
-		if slices.Equal([]string(was), []string(want)) {
-			// The same list again changes nothing and publishes nothing: a
-			// retried click must not appear twice in an audit of who was given
-			// what. That is also the whole answer to "what did you change": no.
-			return role, false, nil
-		}
+		// The same list again changes nothing and publishes nothing: a retried
+		// click must not appear twice in an audit of who was given what. That is
+		// also the whole answer to "what did you change": no.
+		return was, slices.Equal([]string(was), []string(want)), nil
 	case !errors.Is(err, crud.ErrNotFound):
-		// A role nobody has yet is the ordinary case and reads as not found.
-		// Anything else is a read that did not happen, and it used to be
-		// dropped here: was stayed empty, the check below concluded that
-		// nothing was leaving, and the write went ahead regardless. A guard
-		// whose precondition is a read nobody looked at is a guard that passes
-		// by accident.
-		return nil, false, fmt.Errorf("auth: read the role %q: %w", name, err)
+		return nil, false, fmt.Errorf("auth: read the role %q: %w", role.Name, err)
 	}
-	// The one write a tenant cannot undo from inside the product, which is one
-	// rule the user module owns and this module asks through the door above. The
-	// two reads are behind the rule's own gate rather than in front of it, so only
-	// a write that is taking role:manage away pays for them.
+	return was, false, nil
+}
+
+// checkAdministration asks the one write a tenant cannot undo from inside the product,
+// which is one rule the user module owns and this module asks through the door above.
+// The two reads are behind the rule's own gate rather than in front of it, so only a
+// write that is taking role:manage away pays for them.
+func (s *Service) checkAdministration(ctx context.Context, tx db.Tx[db.Tenant], name string, was, want contracts.Permissions) error {
 	if err := contracts.CheckedAdministration(name, was, want, func() ([]*contracts.Role, error) {
 		return s.Roles(ctx, tx)
 	}, func(names []string) ([]uuid.UUID, error) {
@@ -218,28 +251,9 @@ func (s *Service) SetRoleChanged(ctx context.Context, tx db.Tx[db.Tenant], name 
 			// a lockout attempt on the trail every time a query failed.
 			s.recordRefusal(ctx, name, was, want)
 		}
-		return nil, false, err
+		return err
 	}
-	at := db.Now()
-	role.Grants, role.UpdatedAt = want, at
-	if role.CreatedAt.IsZero() {
-		role.CreatedAt = at
-	}
-	err = tx.DB().Exec(
-		"INSERT INTO roles (tenant_id, name, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"+
-			" ON CONFLICT (tenant_id, name) DO UPDATE SET permissions = EXCLUDED.permissions, updated_at = EXCLUDED.updated_at",
-		tenant.ID, name, want, role.CreatedAt, at).Error
-	if err != nil {
-		return nil, false, fmt.Errorf("auth: write the role %s: %w", name, err)
-	}
-	if err := events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
-		Role: name, Was: was, Now: want, At: at,
-	}); err != nil {
-		// State and outbox row commit together or neither does, and a change
-		// that will not be committed changed nothing.
-		return nil, false, err
-	}
-	return role, true, nil
+	return nil
 }
 
 // recordRefusal puts a write the last-administrator rule stopped on the trail,

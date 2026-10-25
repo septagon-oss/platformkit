@@ -208,6 +208,13 @@ func (p *Provider) oauth(cfg OIDC, provider *oidc.Provider, host string) *oauth2
 // and the boot gate counts what is mounted rather than what might have been.
 func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users contracts.Users, provisioner contracts.Provisioner, p *Provider) {
 	app := surfaces.App
+
+	p.registerAuthorizationRequest(app, svc)
+	p.registerCallback(app, svc, users, provisioner)
+}
+
+// registerAuthorizationRequest mounts the leg out: the redirect to this tenant's issuer with a state the callback will check.
+func (p *Provider) registerAuthorizationRequest(app *httpx.Router, svc contracts.Service) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-start",
 		Method:      http.MethodGet,
@@ -250,7 +257,10 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 			SetCookie: []http.Cookie{p.stash(state, nonce, verifier)},
 		}, nil
 	})
+}
 
+// registerCallback mounts the leg back: the code exchange, the identity it vouches for, and the session that follows.
+func (p *Provider) registerCallback(app *httpx.Router, svc contracts.Service, users contracts.Users, provisioner contracts.Provisioner) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-callback",
 		Method:      http.MethodGet,

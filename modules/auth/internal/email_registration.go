@@ -17,7 +17,17 @@ import (
 )
 
 func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, policy contracts.EmailRegistration) {
-	httpx.Register(surfaces.Public, huma.Operation{
+	public := surfaces.Public
+
+	registerSignUp(public, svc, policy)
+	registerVerificationResend(public, svc, policy)
+	registerEmailVerification(public, svc, policy)
+	registerMailDelivery(public, svc)
+}
+
+// registerSignUp mounts the public create of an account: password, confirmation and consent in, a verification mail out.
+func registerSignUp(public *httpx.Router, svc *Service, policy contracts.EmailRegistration) {
+	httpx.Register(public, huma.Operation{
 		OperationID: "auth-register", Method: http.MethodPost, Path: "/register",
 		Summary:     "Register with a password and email confirmation",
 		Description: "Accepts a password, matching confirmation and terms consent. New accounts await mailbox verification; existing accounts remain unchanged. Check your email after the neutral acknowledgment.",
@@ -63,8 +73,11 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		}
 		return done(), nil
 	})
+}
 
-	httpx.Register(surfaces.Public, huma.Operation{
+// registerVerificationResend mounts the asking-again for a link that was not followed, bounded by the same policy as the first send.
+func registerVerificationResend(public *httpx.Router, svc *Service, policy contracts.EmailRegistration) {
+	httpx.Register(public, huma.Operation{
 		OperationID: "auth-resend-verification", Method: http.MethodPost, Path: "/resend-verification",
 		Summary:     "Request another email verification link",
 		Description: "Queues a tenant-local request without revealing account existence, eligibility or recipient cooldown. A newly delivered link replaces the previous verification link.",
@@ -96,8 +109,11 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		}
 		return done(), nil
 	})
+}
 
-	httpx.Register(surfaces.Public, huma.Operation{
+// registerEmailVerification mounts the link itself: the token that turns an unverified account into one that can sign in.
+func registerEmailVerification(public *httpx.Router, svc *Service, policy contracts.EmailRegistration) {
+	httpx.Register(public, huma.Operation{
 		OperationID: "auth-verify-email", Method: http.MethodPost, Path: "/verify-email",
 		Summary:     "Confirm the registered email address",
 		Description: "Consumes the current unexpired verification token and activates its exact unverified account in one transaction. It preserves the registered password and roles and issues no session.",
@@ -123,7 +139,10 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		}
 		return done(), nil
 	})
+}
 
+// registerMailDelivery mounts the read of the delivery record, which answers the one question the acknowledgment cannot.
+func registerMailDelivery(public *httpx.Router, svc *Service) {
 	// The read of the delivery record, for the one question the acknowledgment
 	// cannot answer: "did the mail actually leave?" See contracts.MailLedger.
 	//
@@ -167,7 +186,7 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 	// own in front of it — contracts.MailDeliveryAsks, not the redemption budget,
 	// which the person needs for the link they are waiting for), RLS behind it, and
 	// a response that names no address, no kind and no reason.
-	httpx.Register(surfaces.Public, huma.Operation{
+	httpx.Register(public, huma.Operation{
 		OperationID: "auth-mail-delivery", Method: http.MethodPost, Path: "/mail-delivery",
 		Summary:     "Ask whether the mail this call asked for was refused",
 		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused that mail, pending otherwise — and names no address, no kind and no reason. Only this call's own delivery record is read, and only of the mails a call like this one always causes: an id whose mail went out, an id that left no record, an id whose flow sends no mail to an address nobody has, and an id from another tenant are answered identically, so the door cannot be walked for the addresses that have a record or an account.",

@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 // SAML is the service provider, built per request from the row the Host resolved.
@@ -334,6 +335,13 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc *Service, users contracts.U
 	p.acsPath = app.Path("/saml/callback")
 	p.metadataPath = app.Path("/saml/metadata")
 
+	p.registerRequest(app)
+	p.registerAssertion(app, svc, users, provisioner)
+	p.registerMetadata(app)
+}
+
+// registerRequest mounts the leg out: the deflated SAMLRequest this tenant's provider is redirected to, with the idP's response tracked by a cookie.
+func (p *SAML) registerRequest(app *httpx.Router) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-saml-start",
 		Method:      http.MethodGet,
@@ -381,7 +389,10 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc *Service, users contracts.U
 			SetCookie: []http.Cookie{p.rememberRequest(r, request.ID)},
 		}, nil
 	})
+}
 
+// registerAssertion mounts the assertion consumer: the parser, the signature check, the account it vouches for, and the session that follows.
+func (p *SAML) registerAssertion(app *httpx.Router, svc *Service, users contracts.Users, provisioner contracts.Provisioner) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-saml-callback",
 		Method:      http.MethodPost,
@@ -404,96 +415,13 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc *Service, users contracts.U
 		if err != nil {
 			return nil, err
 		}
-		// Ahead of the base64, the XML tree and the signature: what this bound buys
-		// is the right not to do that work, and a limit that ran afterwards would
-		// count the cost without refusing it. The tenant is resolved first because
-		// the counter is the tenant's — one address spent against acme does not draw
-		// down globex's — and the address is the peer's, never a header's.
-		if !svc.limiter.AssertionPresented(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests,
-				"too many assertions from this address; wait a minute and try again")
-		}
-		encoded := r.PostFormValue("SAMLResponse")
-		if encoded == "" {
-			return nil, problem.New(http.StatusForbidden, "that request carried no SAML response")
-		}
-		response, err := base64.StdEncoding.DecodeString(encoded)
+		assertion, err := p.presentedAssertion(ctx, r, tx, svc, cfg)
 		if err != nil {
-			return nil, problem.New(http.StatusForbidden, "that SAML response is not base64 XML")
+			return nil, err
 		}
-		idp, err := p.idpMetadata(ctx, cfg)
+		user, err := p.accountFor(ctx, tx, assertion, cfg, users, provisioner)
 		if err != nil {
-			return nil, rest.Fault(err)
-		}
-		sp := p.sp(cfg, idp, r.Host)
-		// ParseXMLResponse and not ParseXMLArtifactResponse: the former requires a
-		// signature on the assertion itself, the latter accepts a response-level one
-		// and lets an unsigned assertion through underneath it. The brief's rule —
-		// signed assertions are required — is this entry point, not a library default.
-		// The library's own signature rule is weaker than this module's, and the
-		// comment at `service_provider.go:1036` says so out loud: "since the request
-		// has a signature, none of the Assertions need one". An IdP that signs the
-		// Response envelope and not the assertion therefore verifies — which is the
-		// exact document the brief refuses. `SPECIFY.md` read that branch the other
-		// way, and the case that caught it is TestAnUnsignedSAMLAssertionIsRefused.
-		// So the rule is spelled here: the assertion carries its own signature, or
-		// nothing is parsed. Checking presence rather than re-verifying is sound
-		// because the Response's enveloped signature covers the whole document — an
-		// assertion signature stripped out of somebody else's Response invalidates
-		// that Response's own — and when the Response is unsigned the library
-		// verifies this signature itself.
-		switch shape := assertionsIn(response); {
-		case !shape.signed():
-			return nil, problem.New(http.StatusForbidden, "that assertion is not signed")
-		case !shape.boundToItsBearer():
-			return nil, problem.New(http.StatusForbidden,
-				"that assertion is not bound to whoever presents it, or names no window in which it is valid")
-		}
-		assertion, err := sp.ParseXMLResponse(response, p.tracked(r), sp.AcsURL)
-		if err != nil {
-			return nil, problem.New(http.StatusForbidden, "that assertion is not one this tenant may sign in with")
-		}
-		if assertion.ID == "" {
-			return nil, problem.New(http.StatusForbidden, "that assertion names no id, so it can never be spent")
-		}
-		// Spent here, in this transaction, and nowhere else: the claim and the
-		// session commit together, so a sign-in refused for a closed account leaves
-		// the assertion presentable and a sign-in that succeeds spends it exactly
-		// once. A second presentation of a spent assertion blocks on the unique index
-		// until the first transaction ends, and then refuses.
-		spent, err := spendAssertion(ctx, tx, assertion)
-		if err != nil {
-			return nil, rest.Fault(err)
-		}
-		if !spent {
-			return nil, problem.New(http.StatusForbidden, "that assertion has already been used")
-		}
-		email := addressIn(assertion, cfg.EmailAttribute)
-		if email == "" {
-			return nil, problem.New(http.StatusForbidden,
-				"that assertion carries no address in the attribute this tenant named")
-		}
-		user, err := users.ByEmail(ctx, tx, email)
-		if errors.Is(err, crud.ErrNotFound) {
-			// The tenant's registration mode, read from its own row a moment ago:
-			// the same three answers as OIDC, because what an address a provider
-			// vouched for means does not depend on which protocol did it.
-			if cfg.RegistrationMode() != contracts.RegistrationProvision || provisioner == nil {
-				return nil, problem.New(http.StatusForbidden, "there is no account here for that address")
-			}
-			id, made := provisioner.Provision(ctx, tx, email, email, cfg.Roles)
-			if made != nil {
-				return nil, rest.Fault(made)
-			}
-			if user, err = users.Get(ctx, tx, id); err != nil {
-				return nil, rest.Fault(err)
-			}
-		}
-		if err != nil {
-			return nil, rest.Fault(err)
-		}
-		if user, err = users.ConfirmAddress(ctx, tx, user.ID, email); err != nil {
-			return nil, refusedAtTheDoor(err)
+			return nil, err
 		}
 		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r), contracts.ViaSAML)
 		if err != nil {
@@ -507,7 +435,118 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc *Service, users contracts.U
 			},
 		}, nil
 	})
+}
 
+// presentedAssertion checks what the browser posted against this tenant's own
+// provider and spends the assertion: the budget in front of the parsing, the
+// document, the signature and audience rules it must satisfy, and the one-use
+// claim that makes a second presentation of it refuse.
+func (p *SAML) presentedAssertion(ctx context.Context, r *http.Request, tx db.Tx[db.Tenant], svc *Service, cfg contracts.SAMLProvider) (*saml.Assertion, error) {
+	// Ahead of the base64, the XML tree and the signature: what this bound buys
+	// is the right not to do that work, and a limit that ran afterwards would
+	// count the cost without refusing it. The tenant is resolved first because
+	// the counter is the tenant's — one address spent against acme does not draw
+	// down globex's — and the address is the peer's, never a header's.
+	if !svc.limiter.AssertionPresented(ctx, ClientOf(r).IP) {
+		return nil, problem.New(http.StatusTooManyRequests,
+			"too many assertions from this address; wait a minute and try again")
+	}
+	encoded := r.PostFormValue("SAMLResponse")
+	if encoded == "" {
+		return nil, problem.New(http.StatusForbidden, "that request carried no SAML response")
+	}
+	response, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, problem.New(http.StatusForbidden, "that SAML response is not base64 XML")
+	}
+	idp, err := p.idpMetadata(ctx, cfg)
+	if err != nil {
+		return nil, rest.Fault(err)
+	}
+	sp := p.sp(cfg, idp, r.Host)
+	// ParseXMLResponse and not ParseXMLArtifactResponse: the former requires a
+	// signature on the assertion itself, the latter accepts a response-level one
+	// and lets an unsigned assertion through underneath it. The brief's rule —
+	// signed assertions are required — is this entry point, not a library default.
+	// The library's own signature rule is weaker than this module's, and the
+	// comment at `service_provider.go:1036` says so out loud: "since the request
+	// has a signature, none of the Assertions need one". An IdP that signs the
+	// Response envelope and not the assertion therefore verifies — which is the
+	// exact document the brief refuses. `SPECIFY.md` read that branch the other
+	// way, and the case that caught it is TestAnUnsignedSAMLAssertionIsRefused.
+	// So the rule is spelled here: the assertion carries its own signature, or
+	// nothing is parsed. Checking presence rather than re-verifying is sound
+	// because the Response's enveloped signature covers the whole document — an
+	// assertion signature stripped out of somebody else's Response invalidates
+	// that Response's own — and when the Response is unsigned the library
+	// verifies this signature itself.
+	switch shape := assertionsIn(response); {
+	case !shape.signed():
+		return nil, problem.New(http.StatusForbidden, "that assertion is not signed")
+	case !shape.boundToItsBearer():
+		return nil, problem.New(http.StatusForbidden,
+			"that assertion is not bound to whoever presents it, or names no window in which it is valid")
+	}
+	assertion, err := sp.ParseXMLResponse(response, p.tracked(r), sp.AcsURL)
+	if err != nil {
+		return nil, problem.New(http.StatusForbidden, "that assertion is not one this tenant may sign in with")
+	}
+	if assertion.ID == "" {
+		return nil, problem.New(http.StatusForbidden, "that assertion names no id, so it can never be spent")
+	}
+	// Spent here, in this transaction, and nowhere else: the claim and the
+	// session commit together, so a sign-in refused for a closed account leaves
+	// the assertion presentable and a sign-in that succeeds spends it exactly
+	// once. A second presentation of a spent assertion blocks on the unique index
+	// until the first transaction ends, and then refuses.
+	spent, err := spendAssertion(ctx, tx, assertion)
+	if err != nil {
+		return nil, rest.Fault(err)
+	}
+	if !spent {
+		return nil, problem.New(http.StatusForbidden, "that assertion has already been used")
+	}
+	return assertion, nil
+}
+
+// accountFor is the person an accepted assertion signs in: the address it vouches
+// for, the account that already holds it, and — where the tenant said an address
+// it vouches for may open one — the account provisioned on the spot.
+func (p *SAML) accountFor(ctx context.Context, tx db.Tx[db.Tenant], assertion *saml.Assertion, cfg contracts.SAMLProvider, users contracts.Users, provisioner contracts.Provisioner) (*usercontracts.User, error) {
+	email := addressIn(assertion, cfg.EmailAttribute)
+	if email == "" {
+		return nil, problem.New(http.StatusForbidden,
+			"that assertion carries no address in the attribute this tenant named")
+	}
+	user, err := users.ByEmail(ctx, tx, email)
+	if errors.Is(err, crud.ErrNotFound) {
+		// The tenant's registration mode, read from its own row a moment ago:
+		// the same three answers as OIDC, because what an address a provider
+		// vouched for means does not depend on which protocol did it.
+		if cfg.RegistrationMode() != contracts.RegistrationProvision || provisioner == nil {
+			return nil, problem.New(http.StatusForbidden, "there is no account here for that address")
+		}
+		id, made := provisioner.Provision(ctx, tx, email, email, cfg.Roles)
+		if made != nil {
+			return nil, rest.Fault(made)
+		}
+		if user, err = users.Get(ctx, tx, id); err != nil {
+			return nil, rest.Fault(err)
+		}
+	}
+	if err != nil {
+		return nil, rest.Fault(err)
+	}
+	confirmed, err := users.ConfirmAddress(ctx, tx, user.ID, email)
+	if err != nil {
+		return nil, refusedAtTheDoor(err)
+	}
+	return confirmed, nil
+}
+
+// registerMetadata mounts this tenant's own metadata, which is what an IdP administrator configures against.
+
+func (p *SAML) registerMetadata(app *httpx.Router) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-saml-metadata",
 		Method:      http.MethodGet,
