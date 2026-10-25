@@ -129,7 +129,7 @@ function install(root) {
     }
     if (restValue) {
       const remaining = Math.max(0, Math.ceil((restValue.deadline-now())/1000));
-      rest.querySelector('p').textContent = clock(remaining);
+      rest.querySelector('[data-guided-value]').textContent = clock(remaining);
       if (!remaining && !restValue.notified) { restValue.notified = true; store(restKey,restValue); notice(words('rest_ended')); root.querySelector('[data-guided-skip]').textContent = words('continue'); }
     }
   }

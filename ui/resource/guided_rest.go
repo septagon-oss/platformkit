@@ -24,7 +24,7 @@ func (p GuidedPage) restBody(o Options) []g.Node {
 	}
 	add := p.restURL() + "?extra=" + strconv.Itoa(min(p.Extra+15, 86400-int(p.restSeconds())))
 	countdown := c.Stack(c.StackProps{Gap: "6"},
-		h.Div(g.Attr("data-guided-rest", deadline), g.Attr("data-guided-seconds", strconv.Itoa(int(seconds))), g.Attr("aria-live", "off"), c.Text(c.TextProps{Content: guidedDuration(seconds), Size: "5xl"})),
+		h.Div(g.Attr("data-guided-rest", deadline), g.Attr("data-guided-seconds", strconv.Itoa(int(seconds))), g.Attr("aria-live", "off"), c.Text(c.TextProps{Content: guidedDuration(seconds), Size: "5xl", Element: "span", ComponentProps: c.ComponentProps{Attrs: map[string]string{"data-guided-value": ""}}})),
 		g.If(deadline != "", h.NoScript(guidedText(time.UnixMilli(parseDeadline(deadline)).UTC().Format(time.RFC3339)))),
 		c.Flex(c.FlexProps{Wrap: true}, c.Button(c.ButtonProps{Label: p.word("add_15"), Href: add, Variant: "outline", Size: "lg", ComponentProps: c.ComponentProps{Attrs: map[string]string{"data-guided-add": ""}}}), c.Button(c.ButtonProps{Label: p.word("skip"), Href: p.nextURL(), Variant: "primary", Size: "lg", ComponentProps: c.ComponentProps{Attrs: map[string]string{"data-guided-skip": ""}}})))
 	return []g.Node{

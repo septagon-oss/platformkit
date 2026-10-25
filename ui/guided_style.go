@@ -4,7 +4,7 @@ import "github.com/septagon-oss/platformkit/ui/css"
 
 func guidedRules(s *css.Sheet) {
 	s.Select("[data-guided]", css.Decl("max-width", css.Literal("72rem")), css.Decl("margin-inline", css.Literal("auto")))
-	s.Select("[data-guided] p", css.Decl("white-space", css.Literal("pre-line")), css.Decl("overflow-wrap", css.Literal("anywhere")))
+	s.Select("[data-guided] p", css.Decl("max-inline-size", css.Literal("65ch")), css.Decl("white-space", css.Literal("pre-line")), css.Decl("overflow-wrap", css.Literal("anywhere")))
 	s.Select("[data-guided] fieldset", css.Decl("min-width", css.Literal("0")))
 	s.Select("[data-guided] img", css.Decl("max-height", css.Literal("24rem")), css.Decl("object-fit", css.Literal("contain")))
 	s.Select("[data-guided-target], [data-guided-rest]", css.Decl("font-variant-numeric", css.Literal("tabular-nums")))

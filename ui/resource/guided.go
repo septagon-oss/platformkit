@@ -146,7 +146,7 @@ func (p GuidedPage) stepBody(o Options) []g.Node {
 		if t.Kind == "seconds" {
 			value, unit = guidedDuration(t.Value), "target_duration"
 		}
-		content = append(content, h.Div(g.Attr("data-guided-target", ""), c.Text(c.TextProps{Content: value, Size: "5xl"}), guidedText(p.word(unit))))
+		content = append(content, h.Div(g.Attr("data-guided-target", ""), c.Text(c.TextProps{Content: value, Size: "5xl", Element: "span"}), guidedText(p.word(unit))))
 	}
 	if t := step.Timer; t != nil {
 		content = append(content, c.Button(c.ButtonProps{Label: p.word("start_timer", "{name}", t.Name, "{duration}", guidedDuration(t.Seconds)), Variant: "outline", Size: "lg", ComponentProps: c.ComponentProps{Attrs: map[string]string{"data-guided-start": ""}}}))

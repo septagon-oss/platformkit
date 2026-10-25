@@ -37,6 +37,7 @@ var renderedHooks = map[string]string{
 	"data-guided-skip":          "ui/resource/guided_rest.go",
 	"data-guided-add":           "ui/resource/guided_rest.go",
 	"data-guided-seconds":       "ui/resource/guided_rest.go",
+	"data-guided-value":         "ui/resource/guided_rest.go",
 	"data-guided-rest":          "ui/resource/guided_rest.go",
 	"data-guided-start":         "ui/resource/guided.go",
 	"data-guided-target":        "ui/resource/guided.go",
