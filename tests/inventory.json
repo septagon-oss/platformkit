@@ -10667,6 +10667,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/app/counter_attempt_that_reached_no_row_records_none_test.go",
+   "id": "kit/app/counter_attempt_that_reached_no_row_records_none_test.go#TestARefusedCounterAttemptRecordsNoRowThePurgeWouldCount",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedCounterAttemptRecordsNoRowThePurgeWouldCount",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/app/denial_test.go",
    "id": "kit/app/denial_test.go#TestTheDenialEventIsAKernelEventTheAuditTrailIsSubscribedTo",
    "kind": "go",
@@ -14626,10 +14645,10 @@
    "area": "kit",
    "evidence": "not-round-named",
    "file": "kit/db/composition_lock_namespace_test.go",
-   "id": "kit/db/composition_lock_namespace_test.go#TestTheCompositionLockIsOneNamespacesAndNotOneDatabases",
+   "id": "kit/db/composition_lock_namespace_test.go#TestTwoNamespacesOfOneDatabaseMigrateAtOnce",
    "kind": "go",
    "layer": "behaviour",
-   "name": "TestTheCompositionLockIsOneNamespacesAndNotOneDatabases",
+   "name": "TestTwoNamespacesOfOneDatabaseMigrateAtOnce",
    "needs_db": true,
    "pkg": "kit/db",
    "round_named": false,
@@ -14730,6 +14749,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/composition_lock_replicas_apply_once_test.go",
+   "id": "kit/db/composition_lock_replicas_apply_once_test.go#TestTwoReplicasOfOneNamespaceApplyAFileOnce",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoReplicasOfOneNamespaceApplyAFileOnce",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "merge",
    "unique_lines": null,
    "unique_reach": [],
@@ -82313,6 +82351,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/openpencil_zod_lock_refusals_test.sh",
+   "id": "scripts/openpencil_zod_lock_refusals_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "openpencil_zod_lock_refusals_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/package_install_refusal_guard_test.py",
    "id": "scripts/package_install_refusal_guard_test.py",
    "kind": "shell_pin",
@@ -84860,7 +84918,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2305,
+  "files": 2308,
   "forge_runs": [
    408,
    413,
@@ -84894,8 +84952,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3678,
-   "composition": 491,
+   "behaviour": 3680,
+   "composition": 492,
    "contract": 24,
    "journey": 110
   },
@@ -84913,23 +84971,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4303,
+  "rows": 4306,
   "tiers": {
-   "merge": 2632,
+   "merge": 2634,
    "nightly": 110,
-   "push": 1561
+   "push": 1562
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2060,
+   "keep": 2063,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3917,
+   "keep": 3920,
    "keep-rewrite": 170,
    "merge": 216
   }
