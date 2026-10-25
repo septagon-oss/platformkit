@@ -16765,6 +16765,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/migration_quoted_schema_test.go",
+   "id": "kit/db/migration_quoted_schema_test.go#TestAMigrationRunsInASchemaWhoseNameNeedsQuotes",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAMigrationRunsInASchemaWhoseNameNeedsQuotes",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 7,
    "evidence": "reaches nothing its sibling alter_actions_test.go does not reach",
    "file": "kit/db/name_rules_read_operation_quoting_test.go",
@@ -17298,6 +17317,25 @@
    "unique_reach": [],
    "unique_reach_kind": "symbols",
    "verdict": "merge"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/db/schema_path_first_existing_namespace_test.go",
+   "id": "kit/db/schema_path_first_existing_namespace_test.go#TestAMigrationResolvesToTheFirstExistingSchemaOfItsPath",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAMigrationResolvesToTheFirstExistingSchemaOfItsPath",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
   },
   {
    "area": "kit",
@@ -85287,7 +85325,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2318,
+  "files": 2320,
   "forge_runs": [
    408,
    413,
@@ -85321,7 +85359,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3697,
+   "behaviour": 3699,
    "composition": 493,
    "contract": 24,
    "journey": 111
@@ -85340,9 +85378,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4325,
+  "rows": 4327,
   "tiers": {
-   "merge": 2636,
+   "merge": 2638,
    "nightly": 111,
    "push": 1578
   },
@@ -85350,13 +85388,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2073,
+   "keep": 2075,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3939,
+   "keep": 3941,
    "keep-rewrite": 170,
    "merge": 216
   }
