@@ -56,7 +56,7 @@ const precisionPath = "/api/v1/precision/task"
 func precisionFixture(t *testing.T, fake bool) precisionWorld {
 	t.Helper()
 	actor := &precisionCaller{foreign: tenancy.Tenant{ID: uuid.New(), Slug: "foreign"}}
-	spec := rest.Spec[*precisionTask]{Module: "precision", Entity: "task", Path: "/task", Read: "task:read", Write: "task:write"}
+	spec := rest.Spec[*precisionTask]{Module: "precision", Entity: "task", Path: "/task", Read: "task:read", Write: "task:write", Name: rest.Name{One: "Task", Other: "Tasks"}}
 	if fake {
 		spec.Operations = []httpx.CRUD{httpx.CRUDDelete}
 	}
