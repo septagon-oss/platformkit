@@ -56,10 +56,19 @@ var unavailable = problem.New(http.StatusServiceUnavailable, "the database is no
 // cost the second review found: `Resources()` is filled in beside `rest.Command`'s
 // own mount, so a route mounted by hand was in the API and nowhere a generated
 // client looks — registration and rotation were doors a screen could not draw
-// and a device could not find. Both now record their own door, at the end, and
-// the comment there says why a derived screen must not perform either one.
+// and a device could not find. Both now record their own door, and the step that
+// does says why a derived screen must not perform either one.
 func RegisterRoutes(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint],
 	deliveries rest.Spec[*contracts.Delivery], svc *Service) {
+	registerSecretRoutes(s, endpoints, deliveries, svc)
+
+	registerEndpointCommands(s, endpoints, deliveries, svc)
+
+	recordSecretDoors(s, endpoints, deliveries, svc)
+}
+
+// registerSecretRoutes mounts the create and the rotate, the two routes whose answer is a signing secret in cleartext and so the two rest.Spec cannot generate.
+func registerSecretRoutes(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint], deliveries rest.Spec[*contracts.Delivery], svc *Service) {
 	write := httpx.Permission(contracts.PermissionWebhookUpdate)
 
 	// The create: the only place besides the rotate where the signing secret
@@ -115,6 +124,11 @@ func RegisterRoutes(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint],
 		}
 		return &rest.Item[*contracts.Issued]{Body: issued}, nil
 	})
+}
+
+// registerEndpointCommands mounts the replay and the three commands that answer with the endpoint: what it receives, and whether it is enabled at all.
+func registerEndpointCommands(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint], deliveries rest.Spec[*contracts.Delivery], svc *Service) {
+	write := httpx.Permission(contracts.PermissionWebhookUpdate)
 
 	// The replay is rest.Command rather than a hand mount: its answer is the
 	// entity of the log's own Spec — a *new* delivery row, which is why the log
@@ -156,6 +170,11 @@ func RegisterRoutes(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint],
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Endpoint, error) {
 			return svc.Disable(ctx, tx, id)
 		}, rest.CommandOptions{Auth: write})
+}
+
+// recordSecretDoors names the two hand-mounted doors on their resource, so a generated screen or a native shell can find the create and the rotate that rest.Spec cannot mount.
+func recordSecretDoors(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint], deliveries rest.Spec[*contracts.Delivery], svc *Service) {
+	write := httpx.Permission(contracts.PermissionWebhookUpdate)
 
 	// The two doors above are hand-mounted because their answer is a signing
 	// secret, and they are recorded on their resource by hand for the same

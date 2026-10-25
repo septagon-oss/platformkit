@@ -42,6 +42,15 @@ var unavailable = problem.New(http.StatusServiceUnavailable, "the database is no
 // RegisterRoutes mounts the doors. `files` is the file module, which is where a bundle's
 // bytes live and the only way to stream them back out.
 func RegisterRoutes(r httpx.Surfaces, svc contracts.Service, files filecontracts.Service) {
+	registerExportRequests(r, svc, files)
+
+	registerExportReads(r, svc, files)
+
+	registerErasureAndBundle(r, svc, files)
+}
+
+// registerExportRequests mounts the two ways an export request is filed: a person's own, and the operator's about anybody.
+func registerExportRequests(r httpx.Surfaces, svc contracts.Service, files filecontracts.Service) {
 	httpx.Register(r.App, huma.Operation{
 		OperationID: "subject-export-request-mine",
 		Method:      http.MethodPost,
@@ -95,7 +104,10 @@ func RegisterRoutes(r httpx.Surfaces, svc contracts.Service, files filecontracts
 			row, err := svc.RequestExport(ctx, tx, contracts.RequestExportInput{Subject: ask.Subject, Reason: ask.Reason})
 			return &rest.Item[*contracts.Request]{Body: row}, fault(err)
 		})
+}
 
+// registerExportReads mounts the reading half of an export request: where it got to, and the two mints that open a bundle.
+func registerExportReads(r httpx.Surfaces, svc contracts.Service, files filecontracts.Service) {
 	// The person's own question, asked again later: where is my export. One route answers
 	// it, and the notice the walk sends links to this address — which is why the route
 	// exists the moment the notice names it, rather than after somebody asks for a page.
@@ -163,7 +175,10 @@ func RegisterRoutes(r httpx.Surfaces, svc contracts.Service, files filecontracts
 			link, err := svc.Mint(ctx, tx, in.ID, actor, true)
 			return &rest.Item[*contracts.Link]{Body: link}, fault(err)
 		})
+}
 
+// registerErasureAndBundle mounts the erasure door and the bundle door: the one that asks every owner for a person's rows, and the public link onto what an export produced.
+func registerErasureAndBundle(r httpx.Surfaces, svc contracts.Service, files filecontracts.Service) {
 	httpx.Register(r.App, huma.Operation{
 		OperationID: "subject-erase-request",
 		Method:      http.MethodPost,

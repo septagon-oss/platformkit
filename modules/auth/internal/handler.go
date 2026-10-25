@@ -38,7 +38,18 @@ var mints, credential = httpx.MintsACredential()
 // routes are the exception and say so with role:manage — a role is what
 // everybody else in the tenant may do.
 func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
-	app, public := surfaces.App, surfaces.Public
+	registerSignInRoutes(surfaces, svc, cookies)
+	registerPasswordRoutes(surfaces, svc, cookies)
+
+	registerSessionRoutes(surfaces, svc, cookies)
+
+	registerRoleRoutes(surfaces, svc, cookies)
+}
+
+// registerSignInRoutes mounts signing in with a password, signing out again, and the identity a session answers with.
+func registerSignInRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
+	app := surfaces.App
+
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-login",
 		Method:      http.MethodPost,
@@ -86,6 +97,11 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 			usercontracts.EventPasswordSet, contracts.EventSessionRevoked,
 		}},
 	}, httpx.SignedIn(), handleChangePassword(svc))
+}
+
+// registerPasswordRoutes mounts the three password doors: the change made from a session, and the forgot and reset pair a caller reaches without one.
+func registerPasswordRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
+	app, public := surfaces.App, surfaces.Public
 
 	httpx.Register(public, huma.Operation{
 		OperationID: "auth-password-forgot",
@@ -117,6 +133,11 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 			mints: credential,
 		},
 	}, httpx.Public(), handleResetPassword(svc, cookies))
+}
+
+// registerSessionRoutes mounts the caller's own sessions: which are open now, and the two ways they end — this one, or every one of them at once.
+func registerSessionRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
+	app := surfaces.App
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-session-list",
@@ -149,6 +170,11 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Errors:      []int{http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventSessionRevoked}},
 	}, httpx.SignedIn(), handleRevokeAllSessions(svc, cookies))
+}
+
+// registerRoleRoutes mounts the two roles routes, the tenant's roles and one role of one person. A role is what everybody else in the tenant may do, so both answers are role:manage.
+func registerRoleRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cookies) {
+	app := surfaces.App
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-list",
@@ -170,7 +196,6 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRoleSet}},
 	}, httpx.Permission(contracts.PermissionRoleManage), handleSetRole(svc, surfaces))
-
 }
 
 // sessionOf is the session id the caller presented, read back off the request
