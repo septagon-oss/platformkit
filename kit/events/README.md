@@ -223,6 +223,16 @@ for the reasoning and the cases beside it. `kit/db`'s `phase=data` window refuse
 same act against a table keyed by anything other than the tenant, which is why this is a
 drain its owner owns in a job rather than a migration.
 
+The count the move refuses over is a column, and a column can still be on its way in: the
+runner applies nothing of an owner behind a `phase=data` file until that file's drain
+finishes, so an installation upgrading through a release that ships a backfill and an
+expansion together runs this release's code over the ledger as it was before the
+expansion. This step is the one that meets that state, because kit/app holds every
+subscription and every job — that drain tick among them — until the move returns. So the
+ledger is read for the column before it is read for the count: absent, nothing has ever
+raised a count, the answer is zero by the shape of the write and the rename goes ahead;
+present, the refusal above stands.
+
 ## Limits
 
 Delivery is at least once. Independent sinks must provide their own durable
@@ -313,3 +323,48 @@ session or actor impersonation. Explicit completion and owner-designated termina
 callbacks share the existing delivery transaction. Audit copies the six facts
 and exposes an exact operation-reference filter. [The receipt contract](../idempotency/README.md)
 is the canonical explanation of transitions, admission and retention.
+
+## The ack rule: a delivery owes its effects
+
+Decision 0022, for this delivery. **Reused:** the claim in `platformkit_handled`
+(`claim`, `000003`), the delivery context `Consume` already builds, the system-token
+precedent of `deadLetter`, and the transport ladder in
+`internal/delivery/policy.go` — no provider line changed, because `Sink.Handle`
+already acks on nil and nothing else. **Added:** `Defer`, the `effects_owed` count
+(`000075`) and `ErrDeliveryOwesEffect`: a claim used to know only *claimed*, and a
+redelivery that arrived while the first attempt was still handing an effect over had
+nothing to read, so it acknowledged work nobody finished. The debt is counted rather
+than flagged because a handler may defer more than one effect and `kit/db` runs them as
+one queue registered by different work: the count reaches zero only when the last of
+them comes back, so a delivery that owes two is not acknowledged by the one that
+finished first. **Made reusable:** a delivery that can say what it still owes, read
+under its row lock, and the release that makes a failed effect come back rather than
+vanish.
+
+Two endings read that count rather than ignore it. The transport's ladder running out
+over an owed effect writes its dead letter — `deadLetter` records the exhaustion beside
+a claim already standing when the count above zero is what stopped every attempt — and
+writes none of the count away, because a terminal record says work an operator has to
+look at and not that the work finished. It is what keeps the outbox row, and so the
+payload, past the purge, which exempts a row a dead letter describes, and
+`events.Replay` stays the verb that recovers it. And `MoveLedger` refuses a rename over
+a claim that still owes one: the rename makes a new primary key, so an outstanding
+effect would be left naming a row the move deleted, the scoped twin would read as owed
+nothing, and the debt would have been paid by moving it. The run after the effect comes
+back moves the row, and the refusal is `ErrLedgerMoveContended`, which is the sentence
+for "ask again".
+
+## Composition of delivery steps
+
+**Reused** — `Consume`, `MoveLedger`, `relayBatch`, `Schema.check` and the existing
+claim, transport and telemetry helpers retain delivery behavior. **Added** —
+private subscription, claim/handler, ledger publication, relay-row and JSON-shape
+steps expose the ordering previously nested in long functions. **Made reusable** —
+named internal steps operating on the caller's existing transaction and context.
+
+[Subscription delivery](consume.go) validates and subscribes in order, then checks
+tenant placement before claiming and handling. [Ledger movement](ledger.go)
+locks tenants and durables before renaming both ledgers and publishing records.
+[Relay](relay.go) reads locked rows, settles lag, publishes envelopes and stamps
+only after publication. [Schema validation](schema.go) preserves null handling
+and open projections. These steps add no transaction or transport boundary.

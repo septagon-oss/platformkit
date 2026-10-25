@@ -35,6 +35,7 @@ var _ contracts.Service = (*Service)(nil)
 // Assign makes assignee responsible, and acknowledges the task if nobody had
 // taken it. The same person twice is the same task and no second event: a
 // retried click must not appear in a workload dashboard twice.
+// Errors return no task; the caller must roll back its transaction.
 func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee uuid.UUID) (*contracts.Task, error) {
 	if assignee == uuid.Nil {
 		return nil, fmt.Errorf("%w: a task is assigned to somebody", crud.ErrInvalid)
@@ -66,15 +67,19 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	if err := events.Succeed(ctx, tx, db.Now()); err != nil {
 		return nil, err
 	}
-	return task, events.Publish(ctx, tx, contracts.EventAssigned, contracts.Assigned{
+	if err := events.Publish(ctx, tx, contracts.EventAssigned, contracts.Assigned{
 		TaskID: task.ID, Assignee: assignee, Status: task.Status, At: db.Now(),
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 // Resolve closes the loop. Repeating it with the resolution already recorded,
 // or with none, changes nothing; a different one on a resolved task is a
 // conflict rather than an overwrite, because the account a task gives of itself
 // is the auditable part and a retry is not a correction.
+// Errors return no task; the caller must roll back its transaction.
 func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, resolution string) (*contracts.Task, error) {
 	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
@@ -101,9 +106,12 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	if err := events.Succeed(ctx, tx, at); err != nil {
 		return nil, err
 	}
-	return task, events.Publish(ctx, tx, contracts.EventResolved, contracts.Resolved{
+	if err := events.Publish(ctx, tx, contracts.EventResolved, contracts.Resolved{
 		TaskID: task.ID, Resolution: task.Resolution, At: at,
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 // CheckSLA records a breach, once. The sweep calls it every minute for every

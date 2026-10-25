@@ -26,7 +26,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 
 | Contract | Implementation and consumer |
 |---|---|
-| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
+| Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`](kit/rest/rest.go)/[`Command`](kit/rest/command.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). A refusal the kernel makes before a handler exists — the cross-site guard, a panic — is the same problem value, shaped by whoever asked ([ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)): `httpx.Options.Fault`, and the application supplies `page.FaultHandler(shell)` so a browser gets a page and a client gets the JSON. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/app/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
 | Rich text field | A string with `ui:"widget:richtext"` enters [`richtext.Prepare`](kit/richtext/render.go) through `rest.Spec` inside the tenant transaction; the same package renders sanitized HTML for [`components.Prose`](ui/components/prose.go) in generated details and public content. [`richtext.Files`](kit/richtext/render.go) resolves images per tenant and audience, with [`modules/file.RichTextFiles`](modules/file/richtext.go) wired at composition. The schema publishes `contentMediaType: text/markdown`, and the no-JavaScript form uses a textarea with formatting help. |
@@ -75,7 +75,7 @@ Explain and Describe return alike because all four resolve through one plan.
 
 | Area | Observed limitation and counterexample | Required direction |
 |---|---|---|
-| Resource | [`rest.Operation[I,O]`](kit/rest/operation.go) accepts projections, but [`rest.Spec`/`Command`](kit/rest/rest.go) require [`crud.Entity`'s storage identity](kit/entity/entity.go). An existing catalogue reservation screen adds Base/TableName scaffolding to an already identified contract; duplicate identity/timestamp fields can change its JSON. An availability answer has no stored row at all. | Extend the existing resource/presentation owner with non-storage input/output metadata; retain operation validation and commands. Remove the reservation adapter only after proving IDs, timestamps, wire fields and absent generic write routes remain intact. A status PATCH must never replace Confirm's revision, command identity and eligibility checks. |
+| Resource | [`rest.Operation[I,O]`](kit/rest/operation.go) accepts projections, but [`rest.Spec`](kit/rest/rest.go)/[`Command`](kit/rest/command.go) require [`crud.Entity`'s storage identity](kit/entity/entity.go). An existing catalogue reservation screen adds Base/TableName scaffolding to an already identified contract; duplicate identity/timestamp fields can change its JSON. An availability answer has no stored row at all. | Extend the existing resource/presentation owner with non-storage input/output metadata; retain operation validation and commands. Remove the reservation adapter only after proving IDs, timestamps, wire fields and absent generic write routes remain intact. A status PATCH must never replace Confirm's revision, command identity and eligibility checks. |
 | Content | Markdown is a meaning even when its editor is a textarea. Work already stores a format, while its traced display drops it. Current resource media metadata follows the richtext widget. The saved string `*draft*` is literal in plain text and emphasis in Markdown. | Extend semantic format propagation through the existing entity/rest, content/richtext and file owners, independently of editor selection. Preserve saved meaning and publication digests. A successful generic CRUD upload does not prove custom Work commands validate private attachments or roll file-use writes back. |
 | Operation | Existing operation/catalog schemas describe command fields and presentation without a complete retry/effect/completion contract. AddItem repeated twice increments twice; Checkout recovers the existing transition. Equal-amount refunds can be distinct intents. | Extend existing descriptions and [`httpx` receipts](kit/httpx/operation_receipt.go), retaining domain receipts and the catalogue's refund intent/reservation owner. Do not create another journal. Describe local commit, outbox delivery and external completion separately; a timeout must not turn an uncertain refund into available funds. |
 | Payment subject | The traced payment contract's `SubjectKind`/`Subject` supports cart and subscription; the actual payers use cart. No traced reservation or Work operation needs another payable kind. | Retain that closed set. “PaymentSubject” is a description, not a new type or generic entity reference. A named consumer must justify another subject before the shared contract grows. |
@@ -353,8 +353,8 @@ describes the constraint.
 A service records events in its transaction. [kit/events](kit/events/) delivers
 the committed outbox through the selected transport and claims each event for
 a subscription in the handler's transaction.
-[Spec](kit/rest/rest.go) shares create, update and delete mutations between JSON
-routes and registered resources. Updates and deletes lock the live row before merging,
+[Spec](kit/rest/rest.go) shares its [create, update and delete core](kit/rest/write.go)
+between JSON routes and registered resources. Updates and deletes lock the live row before merging,
 validation, hooks and event snapshots. This serializes server-side decisions;
 it does not reject an old form based on the revision its user originally saw.
 Use [rest.Operation](kit/rest/operation.go) for typed service projections with
@@ -426,8 +426,8 @@ database, and a stylesheet adds none of it.
 one stylesheet per pair rather than recomposing per request
 (`design/design.go:165-166`); no span opens and no event publishes.
 
-**How an app extends it.** Hand `ui.Compose` (`ui/ui.go:440`) a `Pair` of its
-own, plus a `ui.Extra` (`ui/ui.go:103`) for rules. The reference product's own
+**How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
+own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
 line is `apps/platformkit/fault.go:110`: `ui.Compose(design.Default())`, the same
 pair the composition hands the shell at `apps/platformkit/app.go:167`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
@@ -438,8 +438,8 @@ a role.
 **Where it lives.** `ui/css` is the stylesheet's IR — `Sheet`
 (`ui/css/css.go:130`), `AddRule` (`ui/css/css.go:142`) — and `ui/style` compiles
 tokens into it (`ThemeVars`, `ui/style/theme.go:24`). Behaviour is controllers
-served as static files beside the API (`ui/ui.go:2`), mounted by `ui.Assets`
-(`ui/ui.go:529`) in `modules/web/internal/mount.go:78` and
+served as static files beside the API ([ui/assets.go](ui/assets.go)), mounted by `ui.Assets`
+([ui/assets.go](ui/assets.go)) in `modules/web/internal/mount.go:78` and
 `modules/admin/internal/mount.go:146`.
 
 **Builds on.** `maragu.dev/gomponents` v1.3.0 (MIT) for the DOM the controllers
@@ -469,44 +469,46 @@ layer.
 
 ### Authorization: OPA
 
-**Where it lives.** `kit/tenancy` owns the port — `Policy`
-(`kit/tenancy/policy.go:14`) deciding over a `PolicyResource` (`:36`) and a
-`PolicyRequest` (`:43`) — and `RequirePolicy` (`:90`) is the boundary a service
-calls. The adapter sits beside it: `kit/tenancy/providers/opa` builds a policy
-from Rego source (`New`, `kit/tenancy/providers/opa/opa.go:45`) and answers
-(`Decide`, `:74`).
+**Where it lives.** [kit/tenancy](kit/tenancy/policy.go) owns `Policy`, `PolicyRequest` and `RequirePolicy`; [Task](modules/task/README.md) is the consumer.
 
-**Builds on.** Open Policy Agent embedded as a library,
-`github.com/open-policy-agent/opa` v1.21.0 (Apache-2.0): a composition writes its
-rules in Rego and they run in process, with no policy server to deploy, reach or
-keep in step (`kit/tenancy/providers/opa/opa.go:3-5`). Input is
-`input.tenant.id`, `input.actor.kind`, `input.resource.*` (`:13`).
-`kit/tenancy/providers/topaz` implements the same port over
-`github.com/aserto-dev/go-authorizer` v0.24.1 (Apache-2.0) for a deployment whose
-relations are served elsewhere.
+**Builds on.** Embedded OPA uses `github.com/open-policy-agent/opa` v1.21.0;
+Topaz uses `github.com/aserto-dev/go-authorizer` v0.24.1 (both Apache-2.0).
 
-**How the tenant crosses it.** Twice, both load-bearing:
-`PolicyRequest.Validate` refuses a request whose resource carries another
-tenant's id as an invalid request rather than a denial
-(`kit/tenancy/policy.go:65`), and row-level security answers afterwards anyway —
-a policy refines the database's constraint and never replaces it
-(`docs/adr/0003-tenancy-by-postgres.md:1`).
+**How the tenant crosses it.** [The service](modules/task/internal/service.go) locks under [RLS](docs/adr/0003-tenancy-by-postgres.md)
+in `db.Tx[db.Tenant]`; `RequirePolicy` then validates tenant equality and explicit actor identity.
 
-**How it is traced and audited.** `kit/tenancy` starts no span of its own, so a
-decision is seen inside the operation span the transport opened
-(`kit/httpx/traced.go:86`) and in the refusal counter (`:140`, classed by
-`RefusalClass`, `kit/telemetry/telemetry.go:212`), and reaches the trail through
-the owning module's event. Each decision carries `sha256:` of the policy source
-(`kit/tenancy/providers/opa/opa.go:19-20`), so the rules that answered are
-nameable afterwards.
+**How it is traced and audited.** Decisions run within [the HTTP span](kit/httpx/traced.go);
+[the refusal hook](kit/httpx/authorize.go) records authenticated denials as `security.denied`.
+OPA hashes its source; Topaz Revision is configuration, not server freshness.
+Refusal silence concerns task domain effects; audit and receipts have separate paths.
 
-**How an app extends it.** It implements `tenancy.Policy`, and composition names
-which one: `var taskPolicy = opa.MustNew(…)` at `apps/platformkit/product.go:220`,
-put for the task module to take at `:109`, with the rules in the application's own
-`apps/platformkit/policy/task.rego:1`. A denial (`ErrPolicyDenied`,
-`kit/tenancy/policy.go:61`) belongs to the caller; a nil provider, a failing one,
-or an answer that is not `{"allow": bool}` is an outage and never a permissive
-default (`ErrPolicyUnavailable`, `:62`, refused by `RequirePolicy`).
+**How an app extends it.** [The product](apps/platformkit/product.go) provides `tenancy.Policy` through pkit;
+[task.Module](modules/task/provider.go) consumes it optionally. [cloud.profile](pkit/cloud.go) does not select policy.
+Deliberate absence retains route grants; configured failure never becomes that absence.
+
+#### Policy substitution boundary
+
+The consumer is `POST /api/v1/task/tasks/{id}/resolve`, with `assign` beside it.
+HTTP checks account and `task:update` in the request transaction; task locks and asks policy before domain checks/retries.
+`task:assign`/`task:resolve` are policy actions. Direct service callers own current account/grant checks.
+
+| Dimension | Supported boundary | Evidence and limits |
+|---|---|---|
+| Inputs | [Task facts](modules/task/internal/policy.go): transaction tenant ID/slug, principal user ID, action, locked resource kind/ID/tenant and status/priority/assignee_id; assignment adds requested_assignee_id. | OPA receives tenant/actor/action/resource directly; Topaz nests them under input.resource, adds tenant.operator/resource.tenant_id and sends MANUAL identity (NONE for public). OPA omits those two extra fields; Task uses user actors/string attributes only. |
+| Decisions | RequirePolicy rejects invalid facts before evaluation and discards any decision accompanying an error. Denial is 403 POLICY_DENIED; invalid facts/provider failure are sanitized 503 POLICY_UNAVAILABLE. | Denial is distinct from outage; a fresh call evaluates current policy and resource facts. A command refused by policy returns no task and changes no task state or domain event. |
+| OPA | [The adapter](kit/tenancy/providers/opa/opa.go) evaluates compiled rules per call, with caller context, no default timeout or decision cache; undefined denies, malformed/conflicting results fail. | [Library tests](kit/tenancy/providers/opa/opa_test.go) and [reference HTTP journey](apps/platformkit/object_scope_test.go) exist. Direct Decide validation parity with Topaz remains unverified; the consumer uses RequirePolicy. |
+| Topaz | [The adapter](kit/tenancy/providers/topaz/topaz.go) requires one correctly named boolean decision; RPC/encoding errors or missing/duplicate/wrong decisions fail. No local decision cache; timeout defaults to two seconds, with earlier caller deadlines honored. | [Real client/protobuf tests](kit/tenancy/providers/topaz/topaz_test.go) use a disposable gRPC protocol double, not a Topaz service certification. Application owns connection/close, deployment and directory synchronization. Server caches/freshness remain unverified. |
+| Local ports | Task Service.Assign/Resolve/CheckSLA, Creator.Create, Writer.Save, LockedReader.TaskForUpdate and Reader.TaskByID share the caller's local tenant transaction; the plain reader has no write lock. Mutations/outbox commit together. | [Contracts](modules/task/contracts/task.go) support local SQL participation, not a remote clone of db.Tx. Row locks serialize task commands; no expected-revision argument exists. Remote allow and concurrent grant/directory revocation are not atomic with local commit. |
+| Fresh retries / cancellation | A fresh invocation reloads locked facts and evaluates again before returning an idempotent result. Cancelled or expired evaluation refuses without task effects; OPA checks context before and after evaluation. | [Common consumer cases](modules/task/contracts/tasktest/policy_conformance.go), [scope probes](modules/task/provider_scope_test.go), [cancellation](modules/task/provider_cancellation_test.go) and [SQL boundaries](modules/task/provider_transaction_test.go) exercise both adapters. Cancellation racing COMMIT can leave an uncertain outcome; it does not prove rollback. |
+| Cached answers | [HTTP recovery](kit/httpx/operation_receipt.go) can bypass the task handler; route grants still run. | Task declares no [RecheckingReplay](kit/httpx/auth.go) policy hook. The [reference-app characterization](apps/platformkit/policy_recovery_test.go) confirms cached replies bypass policy revocation for both adapters, while revoked route grants refuse them. This is an unsupported authority guarantee, not a safe retry claim. |
+| Other substitutions | The task row/outbox are local effects; external policy is a bounded remote decision. | Other providers, arbitrary attribute types, remote transaction services and deployed directory behavior remain unverified. |
+
+The [common suite](modules/task/provider_consumer_test.go) runs the same cases against the existing fake, SQL service and mounted HTTP commands.
+It uses real embedded OPA and the official Topaz client over a disposable gRPC protocol double; no Topaz process is certified.
+The fake carries the service's trusted attributes and shares [domain.Resolve](modules/task/domain/resolve.go), but proves no RLS/rollback. Compare adapters under equal rules:
+the [Topaz example](modules/auth/policies/README.md) allows self-claim; the reference rule allows reassignment/unassigned resolution.
+`Choose` selects whole modules. The reference fixture supplies its policy through the same product declarations at construction,
+retaining the product's other provisions; it adds no cloud-profile policy selector or runtime reload.
 
 ### Authentication: sessions, TOTP, and WebAuthn
 
@@ -597,7 +599,7 @@ matching and CLDR plural rules. Nothing here is a service.
 hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
-(`ui/page/serve.go:101`, `ui/page/locale.go:61`). Why a refusal may not answer in
+([ui/page/serve.go](ui/page/serve.go), `ui/page/locale.go:61`). Why a refusal may not answer in
 an undeclared language is the comment at `kit/httpx/tenant.go:281-289` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
@@ -660,9 +662,9 @@ vocabulary of its own.
 
 ### Events: CloudEvents, the outbox, JetStream
 
-**Where it lives.** `kit/events` — `Publish` (`kit/events/events.go:61`),
-`PublishFor` (`:80`) for a system transaction that has to name its tenant,
-`Consume` (`:208`), and the claim and dead-letter paths (`:284`, `:293`). The
+**Where it lives.** `kit/events` — [`Publish` and `PublishFor`](kit/events/events.go)
+record tenant and system writes; [`Consume`](kit/events/consume.go) delivers them
+through the [claim and dead-letter paths](kit/events/events.go). The
 wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
 (`kit/events/transport/transport.go:192`) is the other door onto the same stream:
 one tenant's one event, watched from now on, claiming nothing, retrying nothing
@@ -681,7 +683,7 @@ against the `nats:2-alpine` container (`compose.yaml:52`).
 
 **How the tenant crosses it.** Three ways, all load-bearing: `Publish` takes a
 `db.Tx[db.Tenant]`, so no call publishes without a tenant transaction
-(`kit/events/events.go:61`); the `tenantid` extension is required here, because an
+([publication](kit/events/events.go)); the `tenantid` extension is required here, because an
 event with no tenant has no transaction to deliver it in
 (`kit/events/transport/cloudevents.go:50-54`); and the outbox rows are filtered by
 row-level security (`migrations/000002_outbox.up.sql:15`, `:37-38`).
@@ -691,7 +693,7 @@ and `tracestate` (`kit/events/transport/cloudevents.go:56-62`), plus a PlatformK
 owned `baggage` carrying the publisher's request id, because the specification fixes
 those two members and says nothing about correlation (`:63-70`; the column is
 `migrations/000041_outbox_baggage.up.sql:42`). Spans: the relay's batch
-(`kit/events/relay.go:281`), `<event> publish` and `<event> deliver`
+([relay batches](kit/events/relay.go)), `<event> publish` and `<event> deliver`
 (`kit/events/trace.go:143`, `:178`). The trail *is* this stream: `SubscribeAll`
 (`modules/audit/module.go:93`) turns every declared event into a row.
 
@@ -839,7 +841,7 @@ process serves many tenants, as `## Follow a request` says.
 **How it is traced and audited.** This pillar *is* the trace: the transport span
 (`kit/httpx/traced.go:50`), named after the operation id (`:86`), the transaction
 span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:143`, `:178`),
-the relay batch (`kit/events/relay.go:281`), and the job run with one span per
+the relay batch ([relay batches](kit/events/relay.go)), and the job run with one span per
 tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
 verbatim and indexes the trace out of it, as the audit section below explains.
 The instruments are the three named at `kit/telemetry/instruments.go:61-69`,
@@ -934,7 +936,7 @@ flaky spec is a bug report, not a retry.
 **Where it lives.** The contract is a document. `ui/screens` publishes the screen
 and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Catalog`
 (`:31`), `Entry` with the operation ids an app calls (`:42`, `:77`) — at
-`/api/v1/app/resources` (`kit/httpx/surfaces.go:77`); `kit/app` renders the event
+`/api/v1/app/resources` ([surface addresses](kit/httpx/surfaces.go)); `kit/app` renders the event
 half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:48`, `CoveredEvents`
 `:161`), pinned by the golden files in `apps/platformkit/testdata/`.
 `apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
@@ -952,7 +954,7 @@ dependency. Screens are derived from schemas rather than authored
 
 **How the tenant crosses it.** The document is reached behind host resolution, on
 the tenant's own address, so a shell never names a tenant
-(`kit/httpx/surfaces.go:77`), and every operation inside it carries the tenant
+([surface addresses](kit/httpx/surfaces.go)), and every operation inside it carries the tenant
 through the request's transaction like any other call. `CoveredEvents`
 (`kit/app/asyncapi.go:161`) counts the declared events the document names, which
 is the claim that a shell sees no event nobody declared.

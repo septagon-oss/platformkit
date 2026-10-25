@@ -68,7 +68,8 @@ func words(t *testing.T, language string) screens.Text {
 func TestTheReferenceTaskCatalogueReadsWellInEnglishAndPortuguese(t *testing.T) {
 	task := resourceAt(t, "task", "task")
 	for _, language := range []string{"en", "pt-PT"} {
-		entry := screens.Describe1(screens.Localise(task, words(t, language)), true)
+		text := words(t, language)
+		entry := screens.DescribeEntry(screens.Localise(task, text), true, text, language)
 		got, err := json.MarshalIndent(entry, "", "  ")
 		if err != nil {
 			t.Fatal(err)

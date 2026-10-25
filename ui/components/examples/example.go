@@ -354,65 +354,14 @@ func decodeExampleValue(raw []byte, typ reflect.Type) (reflect.Value, error) {
 		return out, json.Unmarshal(raw, out.Addr().Interface())
 	}
 	if typ.Kind() == reflect.Struct {
-		fields, err := exampleFields(typ)
-		if err != nil {
-			return out, err
-		}
-		values, err := exampleObject(raw)
-		if err != nil {
-			return out, err
-		}
-		for name, data := range values {
-			i := slices.IndexFunc(fields, func(f exampleField) bool { return f.name == name })
-			if i < 0 {
-				return out, fmt.Errorf("unknown or internal property %q", name)
-			}
-			if err := fields[i].validateChoice(data); err != nil {
-				return out, err
-			}
-			value, err := fields[i].decode(data)
-			if err != nil {
-				return out, err
-			}
-			exampleFieldValue(out, fields[i].index).Set(value)
-		}
-		return out, nil
+		return decodeExampleStruct(raw, typ, out)
 	}
 	if typ.Kind() == reflect.Map && typ.Key().Kind() == reflect.String {
-		values, err := exampleObject(raw)
-		if err != nil {
-			return out, err
-		}
-		out.Set(reflect.MakeMapWithSize(typ, len(values)))
-		for name, data := range values {
-			value, err := decodeExampleValue(data, typ.Elem())
-			if err != nil {
-				return out, err
-			}
-			out.SetMapIndex(reflect.ValueOf(name).Convert(typ.Key()), value)
-		}
-		return out, nil
+		return decodeExampleMap(raw, typ, out)
 	}
 	byteSlice := typ.Kind() == reflect.Slice && typ.Elem().Kind() == reflect.Uint8
 	if (typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array) && !byteSlice {
-		var values []json.RawMessage
-		if err := json.Unmarshal(raw, &values); err != nil {
-			return out, err
-		}
-		if typ.Kind() == reflect.Array && len(values) != typ.Len() {
-			return out, fmt.Errorf("expected array of length %d", typ.Len())
-		}
-		if typ.Kind() == reflect.Slice {
-			out.Set(reflect.MakeSlice(typ, len(values), len(values)))
-		}
-		for i, data := range values {
-			value, err := decodeExampleValue(data, typ.Elem())
-			if err != nil {
-				return out, err
-			}
-			out.Index(i).Set(value)
-		}
-		return out, nil
+		return decodeExampleSequence(raw, typ, out)
 	}
 	// Arbitrary JSON containers use the same strict recursive paths as typed
 	// maps and slices; the standard interface decoder silently merges keys.
@@ -427,6 +376,73 @@ func decodeExampleValue(raw []byte, typ reflect.Type) (reflect.Value, error) {
 		}
 		return out, err
 	}
+	return decodeExampleScalar(raw, typ, out)
+}
+
+func decodeExampleStruct(raw []byte, typ reflect.Type, out reflect.Value) (reflect.Value, error) {
+	fields, err := exampleFields(typ)
+	if err != nil {
+		return out, err
+	}
+	values, err := exampleObject(raw)
+	if err != nil {
+		return out, err
+	}
+	for name, data := range values {
+		i := slices.IndexFunc(fields, func(f exampleField) bool { return f.name == name })
+		if i < 0 {
+			return out, fmt.Errorf("unknown or internal property %q", name)
+		}
+		if err := fields[i].validateChoice(data); err != nil {
+			return out, err
+		}
+		value, err := fields[i].decode(data)
+		if err != nil {
+			return out, err
+		}
+		exampleFieldValue(out, fields[i].index).Set(value)
+	}
+	return out, nil
+}
+
+func decodeExampleMap(raw []byte, typ reflect.Type, out reflect.Value) (reflect.Value, error) {
+	values, err := exampleObject(raw)
+	if err != nil {
+		return out, err
+	}
+	out.Set(reflect.MakeMapWithSize(typ, len(values)))
+	for name, data := range values {
+		value, err := decodeExampleValue(data, typ.Elem())
+		if err != nil {
+			return out, err
+		}
+		out.SetMapIndex(reflect.ValueOf(name).Convert(typ.Key()), value)
+	}
+	return out, nil
+}
+
+func decodeExampleSequence(raw []byte, typ reflect.Type, out reflect.Value) (reflect.Value, error) {
+	var values []json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return out, err
+	}
+	if typ.Kind() == reflect.Array && len(values) != typ.Len() {
+		return out, fmt.Errorf("expected array of length %d", typ.Len())
+	}
+	if typ.Kind() == reflect.Slice {
+		out.Set(reflect.MakeSlice(typ, len(values), len(values)))
+	}
+	for i, data := range values {
+		value, err := decodeExampleValue(data, typ.Elem())
+		if err != nil {
+			return out, err
+		}
+		out.Index(i).Set(value)
+	}
+	return out, nil
+}
+
+func decodeExampleScalar(raw []byte, typ reflect.Type, out reflect.Value) (reflect.Value, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	if typ == reflect.TypeFor[json.Number]() {

@@ -1,24 +1,17 @@
-// Package events is the one door a module's events leave through.
+// Package events publishes through a transactional outbox and delivers at least
+// once. Consume claims each event/subscription pair in the handler's transaction,
+// so committed work is skipped on redelivery and failed work remains retryable.
+// Periodic scheduling belongs to kit/jobs; see README.md for delivery limits.
 //
-// A module writes an event with Publish, inside the same transaction as the
-// state change that caused it, so the row and the change commit together or
-// not at all: there is no window in which the state moved and the event was
-// lost. The relay in the worker role reads those rows and hands them to a
-// transport — in-process for a single-process run, JetStream for a fleet.
-//
-// Delivery is at-least-once, and Consume is what turns that into exactly-once
-// handling: it claims each (event, subscription) pair in platformkit_handled
-// inside the handler's own transaction, so a redelivery of work already done
-// finds the claim taken and skips the handler.
-//
-// This is also the job queue: durable, retried, transactional background work
-// is what an outbox is, and asking for it twice buys nothing. Periodic work is
-// kit/jobs. Both arguments are docs/adr/0004.
+// The [Publish] example declares an event and writes it in a tenant transaction.
+// It then relays the committed event to a subscription through the in-process transport.
 package events
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -144,26 +137,9 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if hasAttr {
 		kind, file, line, initiator = attr.ActorKind, nilIfEmpty(attr.SourceFile), nilIfZero(attr.SourceLine), nilUUID(attr.InitiatorID)
 	}
-	// The trace context is stored beside the actor for the same reason the actor
-	// is: the relay publishes later, in a transaction of its own and with no
-	// request left to ask. Storing it here is what lets a delivery name the call
-	// that caused it. Absent is normal and stays absent — a periodic job, a
-	// handler reacting to another event. See kit/trace and kit/events/trace.go.
-	//
-	// Three trace members, not two: the request id that lets an operator quote
-	// this write in a trace travels beside the trace parent, in the baggage the
-	// router wrote — see migrations/000041. The request id and the client address
-	// arrive in the same breath and for the same reason: they are readable only
-	// while the call is open, and the row outlives it. The baggage and the column
-	// hold the same id by different owners — the baggage is the trace's own
-	// correlation member, read back onto the delivery's context, while request_id
-	// is the audit trail's answer to "which call", read by a query — and the
-	// together set is what lets the trail answer who, what, when, which call and
-	// from where: see kit/request and migrations/000034. An absent member is
-	// written as NULL and not as the empty string: the propagator answers "" for
-	// what it was not given, and a row that carries no trace is asked about with
-	// `traceparent IS NULL` — the query the migration says is ordinary, and one
-	// the empty string answers with an empty result set.
+	// Persist causality while the request is available so later relay and delivery
+	// can reconstruct its trace, actor and origin. Missing trace members stay NULL;
+	// baggage carries trace correlation while request_id supports audit queries.
 	op, err := operationSnapshot(ctx, gdb, tenantID, system)
 	if err != nil {
 		return err
@@ -245,166 +221,9 @@ func (s Subscription) durable() string {
 	return appname.Durable(s.App, s.Module, s.Name)
 }
 
-// Consume subscribes every handler in subs to its event. Each delivery opens a
-// transaction in the event's own tenant, so a handler reaches the tenant's rows
-// the same way a request handler does and can publish events of its own into
-// the same transaction.
-//
-// "The event's own tenant" is a tenant this app holds, and three checks say so
-// before a handler runs. The transport compares the *address* it routed by with
-// the document (transport.AddressMismatch, and the check its Subscribe contract
-// asks for): that refuses the message whose routing belongs to another app, or
-// names no app at all. The subscription's durable carries the app, which is what
-// makes the second check expressible at all: the tenant named inside the document
-// is compared with tenants.app (holdsTenant), because an address can say that a
-// publisher *claims* the delivery is for this app and that tenant, and nothing
-// about a tenant id says which app holds it. Both come before the third: the
-// transaction, which opens *as* that tenant, so past this point row-level security
-// is the tenant's own and would show this app's handler code another app's rows.
-// A message stored on one tenant's address while stamped as another's is not this
-// kernel's event at all, and neither is one that names a tenant this app does not
-// hold; a refusal runs no handler and writes no claim, so the event stays
-// replayable for the app that does hold its tenant. See claim.
-//
-// A subscription whose App is set but is not a slug is refused here, at boot:
-// an app segment that a subject token cannot hold forms nothing, so its durable
-// would be the unscoped one — some other app's consumer — and no delivery of its
-// own could ever be shown to belong to it.
-func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscription) error {
-	for _, s := range subs {
-		if s.Handler == nil {
-			return fmt.Errorf("events: subscription %s to %s has no handler", s.Module, s.Name)
-		}
-		if s.App.Named() {
-			// The type is not the check: a Name built by conversion bypasses Parse,
-			// and a slug a subject token cannot hold forms an unscoped durable —
-			// somebody else's consumer.
-			if _, err := appname.Parse(string(s.App)); err != nil {
-				return fmt.Errorf("events: subscription %s to %s names app %q: %w", s.Module, s.Name, string(s.App), err)
-			}
-		}
-		h, durable := s.Handler, s.durable()
-		// older is the durable this very subscription's mark was written under before
-		// the tenant it is delivering into had an app — the same name with the app's
-		// prefix taken off, which is the one rename ledger.go performs and appname
-		// forms. Only a subscription that names an app has one: the app-less name is
-		// already its own. See claim.
-		older := ""
-		if s.App.Named() {
-			older = appname.Durable("", s.Module, s.Name)
-		}
-		sink := Sink{
-			Handle: func(ctx context.Context, ev Event) error {
-				// A handler holds a transaction, so it is bounded. The
-				// acknowledgement deadline is the ladder's first rung, which
-				// is shorter than this, so a handler slower than that rung is
-				// redelivered while its first attempt is still writing: the
-				// claim's row lock serializes the two, and the redelivery acks
-				// as soon as the first attempt commits. handlerTimeout is what
-				// bounds that wait. See claim, and providers/nats/jetstream.go's ackWait.
-				ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
-				defer cancel()
-				holds, err := holdsTenant(ctx, conn, s.App, ev.TenantID)
-				if err != nil {
-					// Nothing is known about the delivery, so nothing runs and the
-					// transport retries: the outbox row stays pending and the event
-					// is not lost to a database that is merely unreadable.
-					return err
-				}
-				if !holds {
-					// The same shape as a message at an address its document does
-					// not claim: this copy is undeliverable, the outbox still holds
-					// the row for the app that does hold the tenant, and the copy
-					// that app's own relay publishes is a different message. A claim
-					// row here would mark another app's event handled under this
-					// durable, which is a refusal that takes the last copy away.
-					slog.ErrorContext(ctx, "events: delivery names a tenant this app does not hold",
-						"app", s.App.String(), "durable", durable, "event", ev.Name,
-						"id", ev.ID, "tenant", ev.TenantID)
-					return nil
-				}
-				// Only the id is known here. It is all kit/db needs to scope
-				// the transaction, and it is what row-level security reads.
-				if err := transport.ValidateOperation(ev.Operation); err != nil {
-					return err
-				}
-				ctx = request.WithOperation(ctx, ev.Operation)
-				request.DeferOperation(ctx)
-				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
-				// One span per delivery, on the trace of the work that published the
-				// event rather than of the worker that woke up. See trace.go.
-				ctx, span := startDelivery(ctx, ev)
-				err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-					// The same question again, of the transaction that is about to mark
-					// the work done — and only of a subscription naming no app, because
-					// that is the only subscription whose answer moves. A tenant does not
-					// leave an app (migrations/000043, and 000059 writes an app onto a row
-					// that is still empty), so a scoped delivery that passed holdsTenant
-					// cannot be told otherwise; an app-less one can, because the placement
-					// is exactly the act that turns its answer into somebody else's. See
-					// holdsUnscoped.
-					if !s.App.Named() {
-						holds, err := holdsUnscoped(ctx, tx, ev.TenantID)
-						if err != nil {
-							return err
-						}
-						if !holds {
-							// The reading outside the transaction said this tenant was
-							// nobody's, and the row now says otherwise: the placement landed
-							// between the two, and the app the row names answers for the
-							// delivery from here. Write nothing, and refuse the copy the way
-							// the check above does — a claim under the unscoped durable would
-							// be a mark in the one ledger that app will never read, which is
-							// the window the move exists to close, marked instead of closed.
-							slog.ErrorContext(ctx, "events: delivery's tenant took an app while it was being read",
-								"durable", durable, "event", ev.Name,
-								"id", ev.ID, "tenant", ev.TenantID)
-							return nil
-						}
-					}
-					first, err := claim(tx, ev.ID, durable, older)
-					if err != nil || !first {
-						return err
-					}
-					ctx = context.WithValue(ctx, commandDeliveryKey{}, commandDelivery{event: ev, durable: durable})
-					return h(ctx, tx, ev)
-				})
-				endSpan(span, err)
-				return err
-			},
-			Dead: func(ctx context.Context, ev Event, cause error) error {
-				if s.Terminal != nil {
-					return terminalLetter(ctx, conn, ev, durable, cause, s.App, s.Terminal)
-				}
-				return deadLetter(ctx, conn, ev, durable, cause)
-			},
-		}
-		if err := t.Subscribe(ctx, durable, s.Name, sink); err != nil {
-			return fmt.Errorf("events: subscribe %s to %s: %w", s.Module, s.Name, err)
-		}
-	}
-	return nil
-}
-
-// holdsTenant reports whether the tenant an event names is one `app` holds, read
-// from tenants.app — the same column, compared the same way, as the relay's claim
-// on the rows of its own app (RelayApp), because the two halves of one rule
-// written twice drift, and drift here is one app's handler running inside another
-// app's rows.
-//
-// Why this is a read and not something cheaper: nothing the message carries says
-// which app a tenant belongs to. The address says what its publisher claimed, the
-// envelope repeats the claim (it carries no app of its own), and the tenant id is
-// the same vocabulary on both sides of the boundary. tenants.app is the fact, the
-// relay already reads it to decide what to publish, and this is the same question
-// asked of the same column at the moment it decides what to run. It costs one
-// indexed read of one row per delivery, and the alternative is a delivery that
-// trusts the document.
-//
-// A tenant row that is gone names no app, so coalesce answers `”` and the
-// deployment that names no app keeps it: LEFT JOIN and coalesce are RelayApp's
-// shape for the same reason, and an app that names itself reads nothing of an app
-// nothing declared.
+// holdsTenant checks tenants.app using the relay's ownership predicate; an
+// address or envelope alone cannot establish tenant ownership. Missing tenant
+// rows belong only to the unnamed deployment, matching RelayApp's LEFT JOIN.
 func holdsTenant(ctx context.Context, conn *db.Conn, app appname.Name, tenantID uuid.UUID) (bool, error) {
 	var holds bool
 	err := db.RunSystem(ctx, conn, tenantToken, func(_ context.Context, tx db.Tx[db.System]) error {
@@ -422,30 +241,9 @@ func holdsTenant(ctx context.Context, conn *db.Conn, app appname.Name, tenantID 
 	return holds, err
 }
 
-// holdsUnscoped declares the tenant this delivery is written for, and only then
-// re-reads — inside the delivery's own transaction — the question holdsTenant asked
-// outside it: is this tenant still nobody's?
-//
-// It exists because the outer read is a decision made from a snapshot the write does
-// not hold. A delivery reads the row, the placement names it, and the claim that
-// follows marks work done under a durable the tenant's new app will never subscribe
-// under — the move that renames those rows has already looked, found nothing, and
-// reported its zero.
-//
-// The re-read alone narrowed that window to two statements and no further, because the
-// reading it replaced was stale in the same way: a second nonlocking snapshot can be
-// overtaken by the same placement, and the trigger's key arrives too late to help, since
-// the INSERT that fires it can itself wait — behind a relation lock, or behind another
-// writer's row — with nothing said about its tenant. So the lock comes first and the read
-// second, and the order is the cure: once this statement has run, no move of this tenant
-// can commit while the delivery is open, so the answer below is either "still nobody's,
-// and nobody can become somebody before the claim commits" or "someone's, and the claim
-// is not ours to write". A lock taken after a decision records it; taken before, it makes
-// it authoritative.
-//
-// Holding it to commit costs the app-less deployment the window the claim already held
-// the same key for, and costs a deployment that has moved nothing: the key is asked for
-// by an app-less subscription alone, and a placement moves a tenant out of that branch.
+// holdsUnscoped takes the tenant's shared ledger lock before re-reading placement
+// inside the delivery transaction. This prevents placement from overtaking the
+// ownership decision while the claim waits to insert; a named tenant is refused.
 func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID) (bool, error) {
 	// The declaration, before the reading: see above, and declareTenant for why this is
 	// the half the row trigger cannot reach.
@@ -464,61 +262,14 @@ func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID)
 	return whose == "", nil
 }
 
-// claim writes this subscription's mark against the event and reports whether
-// it was the one that wrote it. A second delivery conflicts on the primary key,
-// inserts nothing, and is told to skip the handler.
-//
-// It runs inside the handler's own transaction, which is the whole design: the
-// mark and everything the handler writes commit together, so a handler that
-// fails rolls its claim back with its work and sees the event again, and a
-// handler that succeeded can never run twice. A separate transaction would
-// leave a window between the two in which a crash loses one or repeats the
-// other, which is the problem this exists to remove.
-//
-// The cost is a lock, and it is worth naming. An INSERT ... ON CONFLICT DO
-// NOTHING against a row another open transaction has already inserted does not
-// return zero rows: it blocks on that row's lock until the first transaction
-// commits or rolls back, and only then learns which. So a redelivery that
-// arrives while the first attempt is still running does not run the handler
-// twice and does not skip it either — it waits. What bounds the wait is
-// handlerTimeout: the first attempt holds its transaction for at most that
-// long, so the second waits at most that long before it is told the work is
-// done (commit) or given the work itself (rollback). Two deliveries of one
-// event are therefore serialized rather than concurrent, and the timeout is
-// what keeps "serialized" from meaning "stuck".
-//
-// Which name the mark sits under is a third question, and `older` answers it for
-// the one tenant whose durable spelling can change underneath a running consumer.
-// The durable half of this key is fixed when the subscription is made; the tenant's
-// app is written later, by a step this delivery takes no part in (kit/app's
-// placement, in whichever replica's boot runs it). A placement is also the act that
-// makes that tenant's *pending* rows this app's relay's to publish, so a consumer
-// that opened its scoped subscription while the tenant was still app-less can be
-// handed the same event a second time, at the scoped address, with its own mark
-// sitting under the unscoped name — the key this statement looks for is not the row
-// the table holds, and the handler commits work its tenant already committed.
-// Renaming the row is what a move does, and a move cannot be what this refusal rests
-// on: the move is another replica's step, it refuses whenever a delivery is open, and
-// the relay is not obliged to wait for it. So the mark is read under both spellings
-// of the name one subscription goes by, and the rename is what makes the record
-// findable afterwards rather than what makes the second delivery refuse.
-//
-// Reading the older name cannot refuse work nobody did. A claim under an unscoped
-// durable is written only while its tenant names no app — holdsUnscoped re-reads
-// that inside the claim's own transaction and refuses the mark once one is named —
-// and a tenant's app, once written, is never rewritten or moved (migrations/000043,
-// and 000059 checks `app = ”` at the write itself). So an older-spelling mark in this
-// tenant is this subscription's own history, in this tenant, and no other app's.
-// The same holds of the terminal record beside it: a refusal to run a handler an
-// operator already ended is that refusal, seen under the name it was written at.
-//
-// What the read cannot see is a mark that has not committed yet, and it is worth
-// naming rather than dressing: two spellings are two primary keys, so an app-less
-// delivery still open across the placement is not serialized against this one the way
-// two deliveries under one name are. It is the window the move's own tenant key exists
-// to make rare (migrations/000061), it needs an app-less consumer still running in a
-// tenant that has just been placed, and this package's README names what closing it
-// would cost.
+// claim inserts the event/subscription mark in the handler's transaction and
+// returns whether this delivery owns it. A conflict waits for the prior writer, then
+// reads what that mark proves: a claim that owes no deferred effect is finished work
+// this delivery skips and acknowledges, and one that still owes one has not finished,
+// so the copy is refused and left to the transport's ladder. Rollback leaves the work
+// retryable. Scoped subscriptions also consult older unscoped marks and terminal
+// records. Separate durable spellings do not serialize uncommitted claims by
+// themselves; see README.md for placement limits.
 func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable, older string) (bool, error) {
 	// One name for an app-less subscription, two for one that names an app: the
 	// statement asks the same question of both ledgers and cannot ask it of a name
@@ -527,58 +278,106 @@ func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable, older string) (bool, erro
 	if older != "" && older != durable {
 		names = append(names, older)
 	}
-	args := append([]any{id, durable, db.TenantOf(tx).ID, id}, names...)
-	// Older releases wrote dead letters without a claim. They are terminal too.
+	first, err := insertClaim(tx, id, names)
+	if err != nil || first {
+		return first, err
+	}
+	return owedOrHandled(tx, id, names)
+}
+
+// insertClaim writes the mark and reports whether this transaction wrote it. The
+// two guards are the two ways the work is already spoken for: a claim under either
+// spelling of this subscription's name, and — for releases that wrote a dead letter
+// with no claim beside it — a terminal record, which is as finished as a claim.
+func insertClaim(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	n := len(names)
 	q := "INSERT INTO " + handled + " (event_id, durable, tenant_id) SELECT ?, ?, ?" +
-		" WHERE NOT EXISTS (SELECT 1 FROM " + deadLetters + " WHERE event_id = ? AND " + durableSet(len(names)) + ")" +
-		" AND NOT EXISTS (SELECT 1 FROM " + handled + " WHERE event_id = ? AND " + durableSet(len(names)) + ")"
+		" WHERE NOT EXISTS (SELECT 1 FROM " + deadLetters + " WHERE event_id = ? AND " + durableSet(n) + ")" +
+		" AND NOT EXISTS (SELECT 1 FROM " + handled + " WHERE event_id = ? AND " + durableSet(n) + ")"
+	args := append([]any{id, names[0], db.TenantOf(tx).ID, id}, names...)
 	args = append(args, id)
 	args = append(args, names...)
 	res := tx.DB().Exec(q+" ON CONFLICT DO NOTHING", args...)
 	if res.Error != nil {
-		return false, fmt.Errorf("events: claim %s for %s: %w", id, durable, res.Error)
+		return false, fmt.Errorf("events: claim %s for %v: %w", id, names, res.Error)
 	}
 	return res.RowsAffected == 1, nil
+}
+
+// owedOrHandled reads the claim this delivery conflicted with, under its lock, and
+// says which of two facts the conflict proves: the work is finished, or somebody
+// still owes effects it deferred past its own commit.
+//
+// The lock is the point of the read: the attempt that wrote the row may still be
+// running its effects, and the value that decides this answer is one it is about to
+// change. FOR UPDATE takes the row from them — either the last count is in, or this
+// delivery waits for the attempt that owes and reads what it settled on.
+//
+// The row can also be gone: its attempt released the claim after this transaction's
+// zero-row INSERT, or the purge took it. A terminal record beside it is still an
+// answer; with neither record the work is for the taking, so the INSERT is retried
+// once and a second conflict is refused rather than guessed at.
+func owedOrHandled(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	var owed int
+	err := tx.DB().Raw("SELECT effects_owed FROM "+handled+" WHERE event_id = ? AND "+durableSet(len(names))+
+		" FOR UPDATE", append([]any{id}, names...)...).Row().Scan(&owed)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, gorm.ErrRecordNotFound) {
+		// No claim to read the mark off. A terminal record is the other way this
+		// event is finished — deadLetter writes its claim beside the letter, and older
+		// releases wrote the letter alone — and neither record means the work is there
+		// for the taking.
+		terminal, terr := terminalRecorded(tx, id, names)
+		if terr != nil {
+			return false, terr
+		}
+		if terminal {
+			return false, nil
+		}
+		return claimAfterTheRowWentAway(tx, id, names)
+	}
+	if err != nil {
+		return false, fmt.Errorf("events: ask whether %s still owes an effect: %w", id, err)
+	}
+	if owed > 0 {
+		return false, fmt.Errorf("events: %s is claimed by a delivery whose effect has not run: %w", id, ErrDeliveryOwesEffect)
+	}
+	return false, nil
+}
+
+// terminalRecorded reports whether this event already has a dead letter under
+// either spelling of this subscription's name.
+func terminalRecorded(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	var recorded bool
+	err := tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM "+deadLetters+" WHERE event_id = ? AND "+durableSet(len(names))+")",
+		append([]any{id}, names...)...).Row().Scan(&recorded)
+	if err != nil {
+		return false, fmt.Errorf("events: ask whether %s is dead-lettered: %w", id, err)
+	}
+	return recorded, nil
+}
+
+// claimAfterTheRowWentAway takes the claim a conflict no longer stands on, once
+// terminalRecorded has said nothing ended this event. One row affected means this
+// delivery is the first to do the work after all; none means a claim this delivery
+// has never seen appeared while it was reading, which it must not run over.
+func claimAfterTheRowWentAway(tx db.Tx[db.Tenant], id uuid.UUID, names []any) (bool, error) {
+	first, err := insertClaim(tx, id, names)
+	if err != nil || first {
+		return first, err
+	}
+	return false, fmt.Errorf("events: %s is claimed again as fast as it is read: %w", id, ErrDeliveryOwesEffect)
 }
 
 // handlerTimeout bounds each transaction and any wait on another delivery's
 // claim. Broker redeliveries may overlap it; the claim serializes their effects.
 const handlerTimeout = 25 * time.Second
 
-// deadLetter atomically claims a terminal outcome and records its cause. The
-// same unique claim serializes this with successful or concurrent handling.
-// A failed insert rolls back the claim; a lost acknowledgment of successful
-// work cannot create a false dead letter. An explicit operator replay must
-// remove the terminal claim as well as review the failure; relaying alone
-// deliberately cannot repeat a consequential action.
-//
-// Under which durable, then, is the row written? Under the one the app that
-// holds this tenant reads, and that is not always the durable the delivery
-// arrived on. A dead letter has one job: to make the next delivery of this event
-// to this subscription skip the handler (claim) and to be the row events.Replay
-// clears when an operator decides to ask again. The delivery that ends here is
-// the last one that will ever run under the name it arrived on — the transport
-// terminates the message as soon as this write commits — so a terminal record
-// written where no subscription looks is a dead letter that stops nothing and
-// that no replay of the subscription that did the work will ever find.
-//
-// The two spellings differ exactly once: after a placement, before this write. A
-// handled claim cannot land in that gap, because holdsUnscoped re-reads
-// tenants.app inside the delivery's own transaction and refuses the mark when the
-// tenant has taken an app. A terminal write cannot refuse: the message is
-// exhausted, and a refusal leaves it pending for a redelivery that will be
-// refused again, forever, with the failure recorded nowhere — the event would be
-// neither terminated nor replayable. It is the write that has to land somewhere,
-// so it lands in the ledger of the app that now holds the tenant, which is the
-// same ownership transition MoveLedger performs for rows that got there first:
-// the unscoped name, prefixed with the app tenants.app names.
-//
-// The read is as authoritative as holdsUnscoped's, for the same reason and in the
-// same order: declare the tenant, then ask. While this transaction holds that
-// shared key its tenant's move refuses rather than queues, so the answer is either
-// "nobody's, and no placement can commit under this record" or "somebody's, and
-// this record is theirs to carry" — and of a placement that landed first, this read
-// is the one that sees it.
+// deadLetter claims a terminal outcome and records its cause atomically, using
+// the same unique claim as handling. It locks the tenant before reading placement
+// and writes under the current app's durable, so exhausted work remains findable, and
+// a claim that still owes a deferred effect is terminalised beside its letter rather
+// than left unrecorded. Operator replay must clear the terminal claim as well as the
+// failure record.
 func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, cause error) error {
 	ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 	defer cancel()
@@ -603,9 +402,14 @@ func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, ca
 		return tx.DB().Exec(`WITH claimed AS (
    INSERT INTO `+handled+` (event_id, durable, tenant_id) VALUES (?, ?, ?)
    ON CONFLICT DO NOTHING RETURNING event_id
+  ), owed AS (
+   SELECT event_id FROM `+handled+` WHERE event_id = ? AND durable = ? AND effects_owed > 0
+  ), ending AS (
+   SELECT event_id FROM claimed UNION SELECT event_id FROM owed
   ) INSERT INTO `+deadLetters+` (event_id, durable, tenant_id, name, error)
-   SELECT event_id, ?, ?, ?, ? FROM claimed ON CONFLICT DO NOTHING`,
-			ev.ID, recorded, ev.TenantID, recorded, ev.TenantID, ev.Name, cause.Error()).Error
+   SELECT event_id, ?, ?, ?, ? FROM ending ON CONFLICT DO NOTHING`,
+			ev.ID, recorded, ev.TenantID, ev.ID, recorded,
+			recorded, ev.TenantID, ev.Name, cause.Error()).Error
 	})
 }
 
