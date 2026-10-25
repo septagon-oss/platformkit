@@ -123,17 +123,15 @@ func validateReadInput[I any](ctx context.Context, in I, fields []entity.Field, 
 			return err
 		}
 	}
-	if v, ok := any(in).(entity.Validator); ok {
-		if err := v.Validate(ctx); err != nil {
-			return fmt.Errorf("%w: %w", crud.ErrInvalid, err)
-		}
+	v, ok := any(in).(entity.Validator)
+	if !ok {
+		v, ok = any(&in).(entity.Validator)
+	}
+	if !ok {
 		return nil
 	}
-	if v, ok := any(&in).(entity.Validator); ok {
-		if err := v.Validate(ctx); err != nil {
-			return fmt.Errorf("%w: %w", crud.ErrInvalid, err)
-		}
-		return nil
+	if err := v.Validate(ctx); err != nil {
+		return fmt.Errorf("%w: %w", crud.ErrInvalid, err)
 	}
 	return nil
 }

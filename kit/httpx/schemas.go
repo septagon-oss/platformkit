@@ -348,10 +348,10 @@ func (a *API) RegisterResource(r Resource) {
 }
 
 // guard returns r with its closures behind the two declarations it
-// carries: the read guard for count/list/get, the write guard for the three
-// writes. The same pairing the routes declare, read through the same methods a
-// page and the catalogue ask, so a resource cannot guard its routes one way and
-// its closures another.
+// carries: the read guard for the typed query and for count/list/get, the write
+// guard for the three writes. The same pairing the routes declare, read through
+// the same methods a page and the catalogue ask, so a resource cannot guard its
+// routes one way and its closures another.
 func (a *API) guard(r Resource) Resource {
 	list, get, create, update, remove := r.List, r.Get, r.Create, r.Update, r.Delete
 	read, write := r.ReadAuth(), r.WriteAuth()
@@ -379,9 +379,8 @@ func (a *API) guard(r Resource) Resource {
 			return list(ctx, q)
 		}
 	}
-	// The two narrowed counts ask the same question the total asks, and are
-	// wrapped here rather than at their caller for the same reason Count is: a
-	// Resource built anywhere else is unguarded until it is registered.
+	// The two narrowed counts ask what the total asks, wrapped here for Count's
+	// own reason: a Resource built anywhere else is unguarded until registered.
 	if narrowed := r.CountFiltered; narrowed != nil {
 		r.CountFiltered = func(ctx context.Context, w crud.Where) (int64, error) {
 			if err := a.mayDeclare(ctx, read); err != nil {
@@ -404,6 +403,14 @@ func (a *API) guard(r Resource) Resource {
 				return nil, err
 			}
 			return get(ctx, id)
+		}
+	}
+	if input := r.InputRun; input != nil {
+		r.InputRun = func(ctx context.Context, values map[string]any) (any, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return input(ctx, values)
 		}
 	}
 	if create != nil {
@@ -442,23 +449,6 @@ func (a *API) guard(r Resource) Resource {
 			}
 			return remove(ctx, id)
 		}
-	}
-	return r
-}
-
-// guardInput wraps a typed query's closure in the read guard its resource
-// declares: the generated pages answer with it, and a page whose closure did
-// not ask would read past the permission the API's own route stands behind.
-func (a *API) guardInput(r Resource) Resource {
-	if r.InputRun == nil {
-		return r
-	}
-	input, read := r.InputRun, r.ReadAuth()
-	r.InputRun = func(ctx context.Context, values map[string]any) (any, error) {
-		if err := a.mayDeclare(ctx, read); err != nil {
-			return nil, err
-		}
-		return input(ctx, values)
 	}
 	return r
 }

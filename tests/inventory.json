@@ -25334,6 +25334,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/resource_input_door_test.go",
+   "id": "kit/httpx/resource_input_door_test.go#TestAResourcesInputDoorAsksWhatItsRouteAsks",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAResourcesInputDoorAsksWhatItsRouteAsks",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/route_writes_test.go",
    "id": "kit/httpx/route_writes_test.go#TestACountedRouteRefusesTheSpentCaller",
    "kind": "go",
@@ -83548,7 +83567,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2261,
+  "files": 2262,
   "forge_runs": [
    408,
    413,
@@ -83582,7 +83601,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3612,
+   "behaviour": 3613,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -83601,9 +83620,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4234,
+  "rows": 4235,
   "tiers": {
-   "merge": 2613,
+   "merge": 2614,
    "nightly": 111,
    "push": 1510
   },
@@ -83611,13 +83630,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2016,
+   "keep": 2017,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3848,
+   "keep": 3849,
    "keep-rewrite": 170,
    "merge": 216
   }
