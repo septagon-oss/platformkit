@@ -56547,6 +56547,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/saved/internal/erasure_takes_a_name_inside_a_hex_escape_test.go",
+   "id": "modules/saved/internal/erasure_takes_a_name_inside_a_hex_escape_test.go#TestAnErasureTakesANameInsideAHexEscape",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnErasureTakesANameInsideAHexEscape",
+   "needs_db": true,
+   "pkg": "modules/saved/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/saved/internal/explicit_clock_test.go",
    "id": "modules/saved/internal/explicit_clock_test.go#TestACopyCarriesTheInstantTheCompositionStampedIt",
    "kind": "go",
@@ -87632,7 +87651,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2377,
+  "files": 2378,
   "forge_runs": [
    408,
    413,
@@ -87666,7 +87685,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3815,
+   "behaviour": 3816,
    "composition": 497,
    "contract": 24,
    "journey": 110
@@ -87685,9 +87704,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4446,
+  "rows": 4447,
   "tiers": {
-   "merge": 2715,
+   "merge": 2716,
    "nightly": 110,
    "push": 1621
   },
@@ -87695,13 +87714,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2132,
+   "keep": 2133,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4060,
+   "keep": 4061,
    "keep-rewrite": 170,
    "merge": 216
   }
