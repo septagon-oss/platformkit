@@ -44,347 +44,22 @@ func Gallery() []Example {
 		return ExampleInfo{ID: id, ComponentID: componentID, Group: group, Name: name}
 	}
 
-	entries := []Example{
-		ExampleWithChildren(info("pk-ui.component.standalone/default", "Layout", "Standalone / access page"), components.ComponentProps{}, []g.Node{components.Heading(components.HeadingProps{Text: "Sign in", Level: 1})}, components.Standalone),
-		ExampleWithChildren(info("pk-ui.component.disclosure/default", "Layout", "Disclosure / permissions"), components.DisclosureProps{Label: "Coordinator", Description: "Review permissions"}, []g.Node{components.Text(components.TextProps{Content: "Choose the permissions this role needs."})}, components.Disclosure),
-		ExampleOf(info("pk-ui.component.prose/default", "Type", "Prose / headings, lists, quote, code, table and figure"), components.ProseProps{HTML: `<h2 id="pk-opening">Opening</h2><p>Formatted <strong>body</strong> text.</p><ul><li>First<ul><li>Second<ul><li>Third</li></ul></li></ul></li></ul><blockquote><p>A quoted note.</p></blockquote><pre><code>fmt.Println(1)</code></pre><table><thead><tr><th>Day</th></tr></thead><tbody><tr><td>Monday</td></tr></tbody></table><figure data-missing-image="true"><figcaption>Image unavailable</figcaption></figure>`}, components.Prose),
-		ExampleOf(info("pk-ui.component.heading/display", "Sections", "Heading / independent size"), components.HeadingProps{Text: "A section with presence", Level: 2, Size: 1}, components.Heading),
-		ExampleOf(info("pk-ui.component.section-header/default", "Sections", "Section header"), components.SectionHeaderProps{Eyebrow: "Your workspace", Title: "Everything in its place", Description: "A shared introduction for composed pages.", Level: 2}, components.SectionHeader),
-		ExampleWithSlots(info("pk-ui.component.section/default", "Sections", "Section"), components.SectionProps{MaxWidth: "lg"}, components.SectionSlots{Header: []g.Node{components.Heading(components.HeadingProps{Text: "Latest activity", Level: 2})}, Body: []g.Node{components.Text(components.TextProps{Content: "Compose your own content inside a shared section."})}}, components.Section),
-		ExampleWithSlots(info("pk-ui.component.hero/default", "Sections", "Hero"), components.HeroProps{SectionHeaderProps: components.SectionHeaderProps{Eyebrow: "PlatformKit", Title: "Build your next workspace", Description: "Shared components. Your composition."}}, components.HeroSlots{Actions: []g.Node{components.Button(components.ButtonProps{Label: "Get started"})}, Media: []g.Node{components.Card(components.CardProps{Title: "One composition", Description: "This region accepts your product's media or content."})}}, components.Hero),
-		ExampleWithChildren(info("pk-ui.component.grid/responsive", "Sections", "Grid / responsive"), components.GridProps{Columns: "1", SM: "2", LG: "3", Gap: "4"}, []g.Node{components.Card(components.CardProps{Title: "Plan"}), components.Card(components.CardProps{Title: "Build"}), components.Card(components.CardProps{Title: "Review"})}, components.Grid),
-		ExampleOf(info("pk-ui.component.video/default", "Media", "Video / captions"), components.VideoProps{Label: "Recorded instruction", Sources: []components.VideoSource{{Src: "/example.mp4", Type: "video/mp4"}}, Tracks: []components.VideoTrack{{Src: "/example.vtt", Language: "en", Label: "English", Default: true}}}, components.Video),
-		ExampleOf(info("pk-ui.component.video/disabled", "Media", "Video / unavailable"), components.VideoProps{ComponentProps: components.ComponentProps{Disabled: true}, Label: "Recording unavailable"}, components.Video),
-		ExampleOf(info("pk-ui.component.heading/1", "Type", "Heading / 1"), components.HeadingProps{Text: "Page title", Level: 1}, components.Heading),
-		ExampleOf(info("pk-ui.component.heading/2", "Type", "Heading / 2"), components.HeadingProps{Text: "Section", Level: 2, Anchor: "section"}, components.Heading),
-		ExampleOf(info("pk-ui.component.heading/3", "Type", "Heading / 3"), components.HeadingProps{Text: "Sub", Level: 3}, components.Heading),
-		ExampleOf(info("pk-ui.component.heading/4", "Type", "Heading / 4"), components.HeadingProps{Text: "Minor", Level: 4}, components.Heading),
-		ExampleOf(info("pk-ui.component.heading/5", "Type", "Heading / 5"), components.HeadingProps{Text: "Small", Level: 5}, components.Heading),
-		ExampleOf(info("pk-ui.component.heading/6", "Type", "Heading / 6"), components.HeadingProps{Text: "Eyebrow", Level: 6}, components.Heading),
-		ExampleOf(info("pk-ui.component.text/muted", "Type", "Text / muted"), components.TextProps{Content: "Plain body copy.", Size: "sm", Color: "muted"}, components.Text),
-		ExampleOf(info("pk-ui.component.text/loud", "Type", "Text / loud"), components.TextProps{Content: "Loud.", Size: "xl", Weight: "bold", Color: "brand"}, components.Text),
-		ExampleOf(info("pk-ui.component.text/truncated", "Type", "Text / truncated"), components.TextProps{Content: "Cut off eventually.", Truncate: true}, components.Text),
-		ExampleOf(info("pk-ui.component.link/internal", "Type", "Link / internal"), components.LinkProps{Label: "Internal", Href: "/docs"}, components.Link),
-		ExampleOf(info("pk-ui.component.link/external", "Type", "Link / external"), components.LinkProps{Label: "External", Href: "https://example.test", External: true}, components.Link),
-		ExampleOf(info("pk-ui.component.divider/default", "Type", "Divider"), components.DividerProps{}, components.Divider),
-		ExampleOf(info("pk-ui.component.divider/labelled", "Type", "Divider / labelled"), components.DividerProps{Text: "Or continue with"}, components.Divider),
-		ExampleOf(info("pk-ui.component.divider/vertical", "Type", "Divider / vertical"), components.DividerProps{Orientation: "vertical"}, components.Divider),
-
-		ExampleOf(info("pk-ui.component.icon/check", "Icon", "Icon / check"), components.IconProps{Name: "check", Size: "lg", Tone: "success"}, components.Icon),
-		ExampleOf(info("pk-ui.component.icon/trash", "Icon", "Icon / trash"), components.IconProps{Name: "trash", Size: "md", Tone: "danger"}, components.Icon),
-		ExampleOf(info("pk-ui.component.icon/unknown", "Icon", "Icon / unknown"), components.IconProps{Name: "no-such-glyph"}, components.Icon),
-
-		ExampleWithSlots(info("pk-ui.component.button/primary", "Action", "Button / primary"),
-			components.ButtonProps{Label: "Save", Variant: "primary", Tone: "neutral", Size: "md"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/secondary", "Action", "Button / secondary"),
-			components.ButtonProps{Label: "Cancel", Variant: "secondary", Tone: "neutral", Size: "sm"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/danger", "Action", "Button / danger"),
-			components.ButtonProps{Label: "Delete", Variant: "primary", Tone: "danger", Size: "xs"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/ghost", "Action", "Button / ghost"),
-			components.ButtonProps{Label: "Ghost", Variant: "ghost", Tone: "neutral", Size: "lg"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/link", "Action", "Button / link"), components.ButtonProps{Label: "Docs", Variant: "link", Tone: "neutral", Size: "xl"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/outline-full", "Action", "Button / outline full"),
-			components.ButtonProps{Label: "Outline", Variant: "outline", Tone: "neutral", Size: "2xl", FullWidth: true}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/info", "Action", "Button / info"), components.ButtonProps{Label: "Info", Variant: "primary", Tone: "info"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/warning", "Action", "Button / warning"), components.ButtonProps{Label: "Warn", Variant: "primary", Tone: "warning"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/success", "Action", "Button / success"), components.ButtonProps{Label: "OK", Variant: "primary", Tone: "success"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/loading", "Action", "Button / loading"), components.ButtonProps{Label: "Busy", Loading: true}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/as-link", "Action", "Button / as link"), components.ButtonProps{Label: "Open", Href: "/somewhere"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/disabled-link", "Action", "Button / disabled link"),
-			components.ButtonProps{ComponentProps: components.ComponentProps{Disabled: true}, HTMXProps: components.HTMXProps{Get: "/admin", Boost: true}, Label: "Unavailable", Href: "/admin"}, components.ButtonSlots{}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/with-icon", "Action", "Button / with icon"),
-			components.ButtonProps{Label: "Iconed", Variant: "primary", Tone: "neutral", Size: "md"}, components.ButtonSlots{IconEnd: []g.Node{
-				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "plus", Size: "md", Tone: "neutral"}, components.Icon).Node,
-			}}, components.ButtonWithSlots),
-		ExampleWithSlots(info("pk-ui.component.button/with-leading-icon", "Action", "Button / leading icon"),
-			components.ButtonProps{Label: "Add item", Variant: "primary", Tone: "neutral", Size: "md"}, components.ButtonSlots{IconStart: []g.Node{
-				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "plus", Size: "sm", Tone: "neutral"}, components.Icon).Node,
-			}}, components.ButtonWithSlots),
-
-		ExampleWithSlots(info("pk-ui.component.badge/default", "Status", "Badge / default"), components.BadgeProps{Label: "Default"}, components.BadgeSlots{}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/brand-dot", "Status", "Badge / brand dot"),
-			components.BadgeProps{Label: "New", Variant: "primary", Tone: "brand", Dot: true}, components.BadgeSlots{}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/success", "Status", "Badge / success"), components.BadgeProps{Label: "OK", Tone: "success"}, components.BadgeSlots{}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/warning", "Status", "Badge / warning"),
-			components.BadgeProps{Label: "Careful", Tone: "warning"}, components.BadgeSlots{IconStart: []g.Node{
-				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "warning", Size: "sm", Tone: "warning"}, components.Icon).Node,
-			}}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/danger", "Status", "Badge / danger"), components.BadgeProps{Label: "Bad", Tone: "danger"}, components.BadgeSlots{}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/info", "Status", "Badge / info"), components.BadgeProps{Label: "FYI", Tone: "info"}, components.BadgeSlots{}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/secondary", "Status", "Badge / secondary"), components.BadgeProps{Label: "Two", Variant: "secondary"}, components.BadgeSlots{}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/outline", "Status", "Badge / outline"), components.BadgeProps{Label: "Outlined", Variant: "outline"}, components.BadgeSlots{}, components.BadgeWithSlots),
-		ExampleWithSlots(info("pk-ui.component.badge/count", "Status", "Badge / count"), components.BadgeProps{Label: "Messages", Count: 120, Removable: true, Live: true}, components.BadgeSlots{}, components.BadgeWithSlots),
-
-		ExampleWithSlots(info("pk-ui.component.alert/success", "Status", "Alert / success"), components.AlertProps{Title: "Saved", Message: "All good.", Tone: "success"}, components.AlertSlots{}, components.AlertWithSlots),
-		ExampleWithSlots(info("pk-ui.component.alert/warning", "Status", "Alert / warning"), components.AlertProps{Message: "Careful now.", Tone: "warning"},
-			components.AlertSlots{IconStart: []g.Node{
-				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "warning", Size: "md", Tone: "warning"}, components.Icon).Node,
-			}}, components.AlertWithSlots),
-		ExampleWithSlots(info("pk-ui.component.alert/danger", "Status", "Alert / danger"), components.AlertProps{Message: "That failed.", Tone: "danger"}, components.AlertSlots{}, components.AlertWithSlots),
-		ExampleWithSlots(info("pk-ui.component.alert/info", "Status", "Alert / info"), components.AlertProps{Message: "Heads up.", Tone: "info"}, components.AlertSlots{}, components.AlertWithSlots),
-		ExampleWithSlots(info("pk-ui.component.alert/compact", "Status", "Alert / compact"), components.AlertProps{Message: "Compact.", Tone: "info", Compact: true}, components.AlertSlots{}, components.AlertWithSlots),
-		ExampleWithSlots(info("pk-ui.component.alert/bordered", "Status", "Alert / bordered"), components.AlertProps{Message: "Accented.", Tone: "warning", Bordered: true}, components.AlertSlots{}, components.AlertWithSlots),
-		ExampleWithSlots(info("pk-ui.component.alert/dismissible", "Status", "Alert / dismissible"), components.AlertProps{Message: "Dismiss me.", Tone: "success", Dismissible: true}, components.AlertSlots{}, components.AlertWithSlots),
-
-		ExampleOf(info("pk-ui.component.spinner/brand", "Status", "Spinner / brand"), components.SpinnerProps{Size: "sm", Tone: "brand"}, components.Spinner),
-		ExampleOf(info("pk-ui.component.spinner/labelled", "Status", "Spinner / labelled"), components.SpinnerProps{Size: "md", Tone: "info", Label: "Fetching"}, components.Spinner),
-		ExampleOf(info("pk-ui.component.spinner/success", "Status", "Spinner / success"), components.SpinnerProps{Size: "lg", Tone: "success"}, components.Spinner),
-
-		ExampleOf(info("pk-ui.component.skeleton/block", "Status", "Skeleton / block"), components.SkeletonProps{}, components.Skeleton),
-		ExampleOf(info("pk-ui.component.skeleton/block-sm", "Status", "Skeleton / block sm"), components.SkeletonProps{Shape: "block", Size: "sm"}, components.Skeleton),
-		ExampleOf(info("pk-ui.component.skeleton/block-lg", "Status", "Skeleton / block lg"), components.SkeletonProps{Shape: "block", Size: "lg"}, components.Skeleton),
-		ExampleOf(info("pk-ui.component.skeleton/text", "Status", "Skeleton / text"), components.SkeletonProps{Shape: "text", Lines: 3, Size: "sm"}, components.Skeleton),
-		ExampleOf(info("pk-ui.component.skeleton/circle", "Status", "Skeleton / circle"), components.SkeletonProps{Shape: "circle"}, components.Skeleton),
-		ExampleOf(info("pk-ui.component.tableskeleton/table", "Status", "Skeleton / table"), components.TableSkeletonProps{}, components.TableSkeleton),
-		ExampleOf(info("pk-ui.component.tableskeleton/table-compact", "Status", "Skeleton / table compact"), components.TableSkeletonProps{Columns: 2, Rows: 5, Compact: true}, components.TableSkeleton),
-
-		ExampleWithSlots(info("pk-ui.component.emptystate/default", "Status", "EmptyState"),
-			components.EmptyStateProps{Title: "No tenants yet", Description: "Create the first tenant to get started.", Bordered: true},
-			components.EmptyStateSlots{Actions: []g.Node{
-				ExampleOf(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.link"}, components.LinkProps{Label: "New tenant", Href: "/app/tenant/tenants/new"}, components.Link).Node,
-			}}, components.EmptyStateWithSlots),
-		ExampleWithSlots(info("pk-ui.component.emptystate/compact", "Status", "EmptyState / compact"), components.EmptyStateProps{Title: "Empty", Compact: true}, components.EmptyStateSlots{}, components.EmptyStateWithSlots),
-
-		ExampleOf(info("pk-ui.component.label/default", "Form", "Label"), components.LabelProps{Text: "Standalone", For: "x", Required: true}, components.Label),
-		ExampleOf(info("pk-ui.component.input/email", "Form", "Input / email"), components.InputProps{Name: "email", Type: "email", Label: "Email",
-			Placeholder: "you@example.test", HelpText: "We never share it.", Required: true}, components.Input),
-		ExampleOf(info("pk-ui.component.input/invalid", "Form", "Input / invalid"), components.InputProps{Name: "slug", Label: "Slug", Value: "hello",
-			Error: "Already taken.", Pattern: "[a-z-]+"}, components.Input),
-		ExampleOf(info("pk-ui.component.input/bare", "Form", "Input / bare"), components.InputProps{Name: "quiet"}, components.Input),
-		ExampleOf(info("pk-ui.component.input/read-only", "Form", "Input / read-only"), components.InputProps{Name: "id", Label: "Id", Value: "42", ReadOnly: true}, components.Input),
-		ExampleOf(info("pk-ui.component.input/file", "Form", "Input / file"), components.InputProps{Name: "cover", Type: "file", Label: "Cover image",
-			Accept: "image/png,image/jpeg", HelpText: "PNG or JPEG. The form it sits in is multipart."}, components.Input),
-		ExampleOf(info("pk-ui.component.input/file-multiple", "Form", "Input / file multiple"), components.InputProps{Name: "attachments", Type: "file",
-			Label: "Attachments", Accept: "image/*", Multiple: true}, components.Input),
-		ExampleOf(info("pk-ui.component.select/default", "Form", "Select"), components.SelectProps{Name: "kind", Label: "Kind", Required: true,
-			Options: []components.SelectOption{{Label: "Post", Value: "post"}, {Label: "Page", Value: "page"}},
-			Value:   "post", HelpText: "What the entry renders as."}, components.Select),
-		ExampleOf(info("pk-ui.component.select/invalid", "Form", "Select / invalid"), components.SelectProps{Name: "state", Label: "State", Placeholder: "Any state",
-			Options: []components.SelectOption{{Label: "Draft", Value: "draft"}}, Error: "Pick a state."}, components.Select),
-		ExampleOf(info("pk-ui.component.textarea/default", "Form", "Textarea"), components.TextareaProps{Name: "body", Label: "Body", Rows: 6,
-			HelperText: "Markdown is fine.", MaxLength: 500}, components.Textarea),
-		ExampleOf(info("pk-ui.component.textarea/invalid", "Form", "Textarea / invalid"), components.TextareaProps{Name: "bad", Label: "Bad", ErrorMessage: "Too long."}, components.Textarea),
-		ExampleOf(info("pk-ui.component.textarea/autoresize", "Form", "Textarea / autoresize"), components.TextareaProps{
-			ComponentProps: components.ComponentProps{Disabled: true},
-			Name:           "details", Label: "Details", Value: "Existing", HelperText: "Add context.",
-			ErrorMessage: "More detail is required.", AutoResize: true, MinRows: 3, MaxRows: 15, FullWidth: true}, components.Textarea),
-		ExampleOf(info("pk-ui.component.checkbox/default", "Form", "Checkbox"), components.CheckboxProps{Name: "agree", Label: "I agree", Required: true}, components.Checkbox),
-		ExampleOf(info("pk-ui.component.checkbox/checked", "Form", "Checkbox / checked"), components.CheckboxProps{Name: "done", Label: "Done", Checked: true}, components.Checkbox),
-		ExampleOf(info("pk-ui.component.checkbox/indeterminate", "Form", "Checkbox / indeterminate"), components.CheckboxProps{Name: "some", Label: "Some", Indeterminate: true}, components.Checkbox),
-		ExampleOf(info("pk-ui.component.checkbox/disabled", "Form", "Checkbox / disabled"), components.CheckboxProps{
-			ComponentProps: components.ComponentProps{Disabled: true}, Name: "disabled", Label: "Disabled"}, components.Checkbox),
-
-		ExampleWithChildren(info("pk-ui.component.stack/default", "Layout", "Stack"), components.StackProps{Gap: "2", Align: "start"}, []g.Node{g.Text("a"), g.Text("b")}, components.Stack),
-		ExampleWithChildren(info("pk-ui.component.flex/default", "Layout", "Flex"), components.FlexProps{Direction: "row", Gap: "4", Align: "center",
-			Justify: "between", Wrap: true}, []g.Node{g.Text("l"), g.Text("r")}, components.Flex),
-		ExampleWithChildren(info("pk-ui.component.grid/default", "Layout", "Grid"), components.GridProps{Columns: "3", Gap: "6"}, []g.Node{
-			ExampleOf(ExampleInfo{ID: "first", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "1"}, components.Text).Node,
-			ExampleOf(ExampleInfo{ID: "second", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "2"}, components.Text).Node,
-			ExampleOf(ExampleInfo{ID: "third", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "3"}, components.Text).Node,
-		}, components.Grid),
-		ExampleWithChildren(info("pk-ui.component.container/default", "Layout", "Container"), components.ContainerProps{MaxWidth: "4xl"}, []g.Node{g.Text("content")}, components.Container),
-		ExampleWithSlots(info("pk-ui.component.card/default", "Layout", "Card"), components.CardProps{Title: "Plain card", Description: "With copy."}, components.CardSlots{}, components.CardWithSlots),
-		ExampleWithSlots(info("pk-ui.component.card/clickable", "Layout", "Card / clickable"), components.CardProps{Title: "Go somewhere", Clickable: true, Href: "/detail"}, components.CardSlots{}, components.CardWithSlots),
-
-		ExampleWithSlots(info("pk-ui.component.table/default", "Data", "Table"), components.TableProps{
-			Columns: []components.TableColumn{{Key: "name", Label: "Name"}, {Key: "role", Label: "Role"}},
-			Rows: []components.TableRow{
-				{ID: "u1", Cells: map[string]any{"name": "Ada", "role": "admin"}},
-				{ID: "u2", Cells: map[string]any{"name": "Lin", "role": 7}},
-			}}, components.TableSlots{}, components.TableWithSlots),
-		// A table wider than its box is only readable with a keyboard when the
-		// scrolling box takes focus and says what it is scrolling.
-		ExampleWithSlots(info("pk-ui.component.table/scroll-region", "Data", "Table / named scroll region"), components.TableProps{
-			Label:   "People",
-			Columns: []components.TableColumn{{Key: "name", Label: "Name"}, {Key: "role", Label: "Role"}},
-			Rows: []components.TableRow{
-				{ID: "u1", Cells: map[string]any{"name": "Ada", "role": "admin"}},
-			}}, components.TableSlots{}, components.TableWithSlots),
-		ExampleWithSlots(info("pk-ui.component.table/empty", "Data", "Table / empty"), components.TableProps{
-			Columns: []components.TableColumn{{Key: "a", Label: "A"}}, EmptyText: "No rows.", Compact: true}, components.TableSlots{}, components.TableWithSlots),
-		ExampleWithSlots(info("pk-ui.component.table/sortable", "Data", "Table / sortable"), components.TableProps{
-			Sortable: true, Striped: true, Selectable: true,
-			Columns: []components.TableColumn{
-				{Key: "name", Label: "Name", Sortable: true, Primary: true},
-				{Key: "count", Label: "Count", Sortable: true, Align: "right"},
-				{Key: "note", Label: "Note"},
-			},
-			Rows: []components.TableRow{
-				{ID: "r1", Cells: map[string]any{"name": "First", "count": 3, "note": "odd"}},
-				{ID: "r2", Cells: map[string]any{"name": "Second", "count": 1, "note": "even"}},
-				{ID: "r3", Cells: map[string]any{"name": "Third", "count": 2}},
-			}}, components.TableSlots{}, components.TableWithSlots),
-		ExampleOf(info("pk-ui.component.detaillist/default", "Data", "DetailList"), components.DetailListProps{
-			ComponentProps: components.ComponentProps{ID: "account-facts"},
-			Title:          "Profile",
-			Description:    "Identity used across this workspace.",
-			SemanticRole:   "identity",
-			Items: []components.DetailItem{
-				{Label: "Email", Value: "ada@example.test", Tone: "neutral"},
-				{Label: "Plan", Value: "Studio", Description: "Renews next month.", Tone: "brand"},
-				{Label: "Health", Value: "Good", Tone: "success"},
-				{Label: "Review", Value: "Soon", Tone: "warning"},
-				{Label: "Risk", Value: "High", Tone: "danger"},
-				{Label: "Region", Value: "EU", Tone: "info"},
-			}}, components.DetailList),
-
-		ExampleOf(info("pk-ui.component.breadcrumb/default", "Navigation", "Breadcrumb"), components.BreadcrumbProps{Items: []components.BreadcrumbItem{
-			{Label: "Home", Href: "/"}, {Label: "Tenants", Href: "/tenants"}, {Label: "Acme"},
-		}}, components.Breadcrumb),
-		// Each landmark on this page needs a name of its own: two navigations
-		// both called "Pagination" is a screen reader offering the same
-		// destination twice. It is the gallery's problem and not the
-		// component's, so it is solved with the prop the component already has.
-		ExampleOf(info("pk-ui.component.pagination/default", "Navigation", "Pagination"), components.PaginationProps{
-			CurrentPage: 5, TotalPages: 12, BaseURL: "/rows", NavigationLabel: "Pagination, twelve pages"}, components.Pagination),
-		ExampleOf(info("pk-ui.component.pagination/two-pages", "Navigation", "Pagination / two pages"), components.PaginationProps{
-			CurrentPage: 1, TotalPages: 2, BaseURL: "/few", NavigationLabel: "Pagination, two pages"}, components.Pagination),
-		ExampleOf(info("pk-ui.component.tabs/default", "Navigation", "Tabs"), components.TabsProps{ActiveTab: "b", Items: []components.TabItem{
-			{Key: "a", Label: "First", URL: "/tab/a"}, {Key: "b", Label: "Second"},
-		}}, components.Tabs),
-		ExampleWithSlots(ExampleInfo{ID: "pk-ui.component.tabs/vertical-pills", ComponentID: "pk-ui.component.tabpanels", Group: "Navigation", Name: "Tabs / vertical pills"},
-			components.TabsProps{ActiveTab: "profile", Orientation: "vertical", Variant: "pills"}, components.TabsSlots{Tabs: []components.TabSlot{
-				{ID: "profile", Label: "Profile", Icon: "user", Badge: "New", Content: []g.Node{g.Text("Profile panel")}},
-				{ID: "security", Label: "Security", Disabled: true, Content: []g.Node{g.Text("Security panel")}},
-				{ID: "activity", Label: "Activity", HxGet: "/activity"},
-			}}, components.TabsWithSlots),
-		ExampleWithSlots(info("pk-ui.component.sidebar/default", "Navigation", "Sidebar"), components.SidebarProps{
-			NavigationLabel: "Sidebar example, sections",
-			Current:         "/app/user/users/new",
-			Sections: []components.SidebarSection{{
-				ID: "operate", Label: "Operate", Glyph: "O", Tone: "brand",
-				Items: []components.SidebarItem{
-					{Label: "Dashboard", Href: "/admin", Icon: "gear"},
-					{Label: "Users", Href: "/app/user/users", Icon: "user", Badge: "24", Children: []components.SidebarItem{
-						{Label: "New user", Href: "/app/user/users/new"},
-					}},
-				},
-			}},
-		}, components.SidebarSlots{Footer: []g.Node{g.Text("Signed in")}}, components.SidebarWithSlots),
-		ExampleWithSlots(info("pk-ui.component.sidebar/content-flavor", "Navigation", "Sidebar / content flavor"), components.SidebarProps{
-			ComponentProps: components.ComponentProps{ID: "docs-sidebar"},
-			Flavor:         "content", Current: "#two", NavigationLabel: "Documentation sections",
-			Sections: []components.SidebarSection{{
-				ID: "runtime", Label: "Runtime", Glyph: "R", Tone: "info", SearchText: "runtime docs",
-				Items: []components.SidebarItem{
-					{ID: "one", Label: "Overview", Href: "#one", Prefix: "01", SearchText: "overview"},
-					{ID: "two", Label: "Handoff", Href: "#two", Prefix: "02", SearchText: "handoff"},
-				},
-			}},
-		}, components.SidebarSlots{Brand: []g.Node{h.Strong(g.Text("Documentation"))}, Footer: []g.Node{g.Text("Version 1")}}, components.SidebarWithSlots),
-		ExampleWithSlots(info("pk-ui.component.sidebar/collapsed", "Navigation", "Sidebar / collapsed"), components.SidebarProps{
-			ComponentProps:  components.ComponentProps{Disabled: true},
-			NavigationLabel: "Sidebar example, collapsed",
-			Collapsible:     true, Collapsed: true,
-			Items: []components.SidebarItem{
-				{Label: "Home", Href: "/admin", Icon: "gear"},
-				{Label: "Plans", Href: "/app/billing/plans", Icon: "file-text", Disabled: true},
-			}}, components.SidebarSlots{}, components.SidebarWithSlots),
-
-		ExampleWithSlots(info("pk-ui.component.modal/default", "Overlay", "Modal"), components.ModalProps{ComponentProps: components.ComponentProps{ID: "confirm-modal"},
-			Title: "Archive", Description: "This action cannot be undone.",
-			Body: "Review the affected records.", Footer: "Confirm or cancel.", Size: "small", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/medium", "Overlay", "Modal / medium"), components.ModalProps{Title: "Edit record", Size: "medium", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/large", "Overlay", "Modal / large"), components.ModalProps{Title: "Large review", Size: "large", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/xl", "Overlay", "Modal / xl"), components.ModalProps{Title: "Wide review", Size: "xl", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/undismissable", "Overlay", "Modal / undismissable"), components.ModalProps{AriaLabel: "Required decision", Size: "full", Open: true,
-			Closable: new(false), CloseOnOverlay: new(false), CloseOnEscape: new(false), ShowClose: new(false), ShowOverlay: new(false), Centered: new(false)}, components.ModalSlots{}, components.ModalWithSlots),
-		ExampleWithSlots(info("pk-ui.component.modal/deferred", "Overlay", "Modal / deferred"), components.ModalProps{ComponentProps: components.ComponentProps{ID: "server-modal"},
-			AriaLabel: "Server dialog", Deferred: true, OpenOnSwap: true}, components.ModalSlots{}, components.ModalWithSlots),
-		ExampleWithSlots(ExampleInfo{ID: "pk-ui.component.modal/panel", ComponentID: "pk-ui.component.modalpanel", Group: "Overlay", Name: "Modal / panel"},
-			components.ModalProps{Title: "Panel only"}, components.ModalSlots{Body: []g.Node{g.Text("Body")}}, components.ModalPanelWithSlots),
-		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/form", ComponentID: "pk-ui.component.modalform", Group: "Overlay", Name: "Modal / form"},
-			components.ModalForm(g.Text("Fields")), "ModalForm accepts arbitrary nodes rather than typed properties."),
-		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/close-button", ComponentID: "pk-ui.component.modalclosebutton", Group: "Overlay", Name: "Modal / close button"},
-			components.ModalCloseButton("Close", ""), "ModalCloseButton accepts strings rather than a typed properties contract."),
-		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/cancel-button", ComponentID: "pk-ui.component.modalcancelbutton", Group: "Overlay", Name: "Modal / cancel button"},
-			components.ModalCancelButton("Cancel", ""), "ModalCancelButton accepts strings rather than a typed properties contract."),
-		ExampleOf(info("pk-ui.component.confirmdialog/default", "Overlay", "ConfirmDialog"), components.ConfirmDialogProps{
-			Title: "Delete this row?", AcceptLabel: "Delete", CancelLabel: "Keep"}, components.ConfirmDialog),
-
-		ExamplePreview(info("pk-ui.component.skiplink/default", "Frame", "SkipLink"), components.SkipLink("content", "Skip to content"), "SkipLink accepts strings rather than a typed properties contract."),
-		ExampleWithChildren(info("pk-ui.component.toolbar/default", "Frame", "Toolbar"),
-			components.ToolbarProps{Title: "Tasks", Subtitle: "12 records"}, []g.Node{
-				ExampleWithSlots(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
-					components.ButtonProps{Label: "New task", Href: "/admin/task/tasks/new"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
-			}, components.Toolbar),
-		ExampleWithChildren(info("pk-ui.component.form/default", "Frame", "Form"),
-			components.FormProps{Action: "/admin/task/tasks", Label: "New task"}, []g.Node{
-				ExampleOf(ExampleInfo{ID: "title", ComponentID: "pk-ui.component.input"},
-					components.InputProps{Name: "title", Label: "Title", Required: true}, components.Input).Node,
-				ExampleWithChildren(ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
-					ExampleWithSlots(ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
-						components.ButtonProps{Label: "Cancel", Variant: "secondary", Href: "/admin/task/tasks"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
-					ExampleWithSlots(ExampleInfo{ID: "create", ComponentID: "pk-ui.component.button"},
-						components.ButtonProps{Label: "Create", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
-				}, components.FormActions).Node,
-			}, components.Form),
-		ExampleOf(info("pk-ui.component.form-sentence/default", "Frame", "Form sentence"),
-			components.FormSentenceProps{Text: "This row stops being served. You can publish it again later."},
-			components.FormSentence),
-		// Media is where a picture says what it is doing instead of failing silently.
-		// The five states are shown together, in this order, because the interesting
-		// question is not what a picture looks like — it is whether a stranger can
-		// tell a refusal from an empty shelf at a glance, and that is only answerable
-		// with both on the same screen.
-		//
-		// The source is a data: URI rather than a path: a specimen whose image 404s
-		// would prove nothing, and e2e/design-audit.spec.ts measures whether every
-		// image on this page actually decodes and carries alt text.
-		ExampleOf(info("pk-ui.component.media/ready", "Media", "Picture / ready"),
-			components.MediaProps{Src: mediaSpecimen, Alt: "Die-cut proof plate, 592 by 400 millimetres", Width: 160, Height: 90}, components.Media),
-		ExampleOf(info("pk-ui.component.media/captioned", "Media", "Picture / with a caption"),
-			components.MediaProps{Src: mediaSpecimen, Alt: "Die-cut proof plate", Width: 160, Height: 90,
-				Caption: "Proof plate, 592×400 mm — the caption is markup, not alt text"}, components.Media),
-		ExampleOf(info("pk-ui.component.media/loading", "Media", "Picture / waiting"),
-			components.MediaProps{Status: components.MediaLoading, Alt: "Cutting the subject out", Width: 160, Height: 90}, components.Media),
-		ExampleOf(info("pk-ui.component.media/empty", "Media", "Picture / nothing here"),
-			components.MediaProps{Status: components.MediaEmpty, Reason: "No artwork on this album yet."}, components.Media),
-		ExampleOf(info("pk-ui.component.media/failed", "Media", "Picture / it failed"),
-			components.MediaProps{Status: components.MediaFailed, Reason: "The cut-out engine is not answering. Ask for it again."}, components.Media),
-		ExampleOf(info("pk-ui.component.media/refused", "Media", "Picture / not permitted"),
-			components.MediaProps{Status: components.MediaRefused, Reason: "This artwork belongs to a tier you are not in."}, components.Media),
-
-		// Avatar is the same argument as Media in a smaller shape: every product
-		// that ever showed a person invented a coloured div with a letter in it.
-		// The specimens are ordered so the interesting pair sits together — the one
-		// that speaks and the one that stays quiet because its name is already on
-		// screen, which is the difference between a reader saying a person's name
-		// once and saying it twice.
-		ExampleOf(info("pk-ui.component.avatar/initials", "Avatar", "Person / no picture"),
-			components.AvatarProps{Name: "Jean-Paul Reyes"}, components.Avatar),
-		ExampleOf(info("pk-ui.component.avatar/sizes", "Avatar", "Person / three sizes"),
-			components.AvatarProps{Name: "Ada Lovelace", Size: "lg"}, components.Avatar),
-		ExampleOf(info("pk-ui.component.avatar/picture", "Avatar", "Person / with a picture"),
-			components.AvatarProps{Name: "Jean-Paul Reyes", Src: mediaSpecimen}, components.Avatar),
-		ExampleOf(info("pk-ui.component.avatar/linked", "Avatar", "Person / linking to them"),
-			components.AvatarProps{Name: "Ada Lovelace", Href: "/admin/_gallery"}, components.Avatar),
-		ExampleOf(info("pk-ui.component.avatar/unknown", "Avatar", "Person / nothing known"),
-			components.AvatarProps{}, components.Avatar),
-		// The decorative case cannot be a lone disc or the specimen would prove
-		// nothing: what makes it decorative is the name sitting beside it, so the
-		// pair is shown as a toolbar would show it in a member row.
-		// This one is a Toolbar specimen and not an Avatar specimen, and the export
-		// says why: every occurrence of a component must present one interface, so
-		// an Avatar cannot be the thing that holds others. The pair is shown under
-		// the component that actually composes it — which is what a member row is.
-		ExampleWithChildren(info("pk-ui.component.toolbar/member", "Frame", "Toolbar / a member row"),
-			components.ToolbarProps{Title: "A member row", Subtitle: "The disc stays quiet because the name is right there"},
-			[]g.Node{
-				ExampleOf(ExampleInfo{ID: "avatar", ComponentID: "pk-ui.component.avatar"},
-					components.AvatarProps{Name: "Jean-Paul Reyes", Decorative: true, Size: "sm"}, components.Avatar).Node,
-				ExampleOf(ExampleInfo{ID: "name", ComponentID: "pk-ui.component.text"},
-					components.TextProps{Content: "Jean-Paul Reyes"}, components.Text).Node,
-			}, components.Toolbar),
-
-		// Shell is not in this list, and cannot be: it renders <main>, and the
-		// page this gallery is on is itself a Shell, so an example would be a
-		// second main landmark inside the first — two documents in one, which
-		// is exactly what the landmark rules exist to catch. The page is the
-		// example. Its classes are covered by modules/admin's own closure test,
-		// which renders every real screen and checks each class against the
-		// stylesheet.
-	}
+	var entries []Example
+	entries = append(entries, galleryIntroduction(info)...)
+	entries = append(entries, galleryTypography(info)...)
+	entries = append(entries, galleryIcons(info)...)
+	entries = append(entries, galleryButtons(info)...)
+	entries = append(entries, galleryFeedback(info)...)
+	entries = append(entries, galleryStates(info)...)
+	entries = append(entries, galleryControls(info)...)
+	entries = append(entries, galleryLayout(info)...)
+	entries = append(entries, galleryData(info)...)
+	entries = append(entries, galleryNavigation(info)...)
+	entries = append(entries, gallerySidebar(info)...)
+	entries = append(entries, galleryOverlays(info)...)
+	entries = append(entries, galleryForms(info)...)
+	entries = append(entries, galleryMedia(info)...)
+	entries = append(entries, galleryPeople(info)...)
 	entries = append(entries, richStateExamples()...)
 	entries = append(entries, dataListExamples()...)
 	entries = append(entries, detailPanelExamples()...)
@@ -529,4 +204,407 @@ func propertyRows(d ExampleDescription) []components.TableRow {
 		rows = append(rows, components.TableRow{ID: name, Cells: map[string]any{"name": name, "type": kind, "value": value, "choices": strings.Join(choices, ", "), "description": property.Description}})
 	}
 	return rows
+}
+
+func galleryIntroduction(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleWithChildren(info("pk-ui.component.standalone/default", "Layout", "Standalone / access page"), components.ComponentProps{}, []g.Node{components.Heading(components.HeadingProps{Text: "Sign in", Level: 1})}, components.Standalone),
+		ExampleWithChildren(info("pk-ui.component.disclosure/default", "Layout", "Disclosure / permissions"), components.DisclosureProps{Label: "Coordinator", Description: "Review permissions"}, []g.Node{components.Text(components.TextProps{Content: "Choose the permissions this role needs."})}, components.Disclosure),
+		ExampleOf(info("pk-ui.component.prose/default", "Type", "Prose / headings, lists, quote, code, table and figure"), components.ProseProps{HTML: `<h2 id="pk-opening">Opening</h2><p>Formatted <strong>body</strong> text.</p><ul><li>First<ul><li>Second<ul><li>Third</li></ul></li></ul></li></ul><blockquote><p>A quoted note.</p></blockquote><pre><code>fmt.Println(1)</code></pre><table><thead><tr><th>Day</th></tr></thead><tbody><tr><td>Monday</td></tr></tbody></table><figure data-missing-image="true"><figcaption>Image unavailable</figcaption></figure>`}, components.Prose),
+		ExampleOf(info("pk-ui.component.heading/display", "Sections", "Heading / independent size"), components.HeadingProps{Text: "A section with presence", Level: 2, Size: 1}, components.Heading),
+		ExampleOf(info("pk-ui.component.section-header/default", "Sections", "Section header"), components.SectionHeaderProps{Eyebrow: "Your workspace", Title: "Everything in its place", Description: "A shared introduction for composed pages.", Level: 2}, components.SectionHeader),
+		ExampleWithSlots(info("pk-ui.component.section/default", "Sections", "Section"), components.SectionProps{MaxWidth: "lg"}, components.SectionSlots{Header: []g.Node{components.Heading(components.HeadingProps{Text: "Latest activity", Level: 2})}, Body: []g.Node{components.Text(components.TextProps{Content: "Compose your own content inside a shared section."})}}, components.Section),
+		ExampleWithSlots(info("pk-ui.component.hero/default", "Sections", "Hero"), components.HeroProps{SectionHeaderProps: components.SectionHeaderProps{Eyebrow: "PlatformKit", Title: "Build your next workspace", Description: "Shared components. Your composition."}}, components.HeroSlots{Actions: []g.Node{components.Button(components.ButtonProps{Label: "Get started"})}, Media: []g.Node{components.Card(components.CardProps{Title: "One composition", Description: "This region accepts your product's media or content."})}}, components.Hero),
+		ExampleWithChildren(info("pk-ui.component.grid/responsive", "Sections", "Grid / responsive"), components.GridProps{Columns: "1", SM: "2", LG: "3", Gap: "4"}, []g.Node{components.Card(components.CardProps{Title: "Plan"}), components.Card(components.CardProps{Title: "Build"}), components.Card(components.CardProps{Title: "Review"})}, components.Grid),
+		ExampleOf(info("pk-ui.component.video/default", "Media", "Video / captions"), components.VideoProps{Label: "Recorded instruction", Sources: []components.VideoSource{{Src: "/example.mp4", Type: "video/mp4"}}, Tracks: []components.VideoTrack{{Src: "/example.vtt", Language: "en", Label: "English", Default: true}}}, components.Video),
+		ExampleOf(info("pk-ui.component.video/disabled", "Media", "Video / unavailable"), components.VideoProps{ComponentProps: components.ComponentProps{Disabled: true}, Label: "Recording unavailable"}, components.Video),
+	}
+}
+
+func galleryTypography(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleOf(info("pk-ui.component.heading/1", "Type", "Heading / 1"), components.HeadingProps{Text: "Page title", Level: 1}, components.Heading),
+		ExampleOf(info("pk-ui.component.heading/2", "Type", "Heading / 2"), components.HeadingProps{Text: "Section", Level: 2, Anchor: "section"}, components.Heading),
+		ExampleOf(info("pk-ui.component.heading/3", "Type", "Heading / 3"), components.HeadingProps{Text: "Sub", Level: 3}, components.Heading),
+		ExampleOf(info("pk-ui.component.heading/4", "Type", "Heading / 4"), components.HeadingProps{Text: "Minor", Level: 4}, components.Heading),
+		ExampleOf(info("pk-ui.component.heading/5", "Type", "Heading / 5"), components.HeadingProps{Text: "Small", Level: 5}, components.Heading),
+		ExampleOf(info("pk-ui.component.heading/6", "Type", "Heading / 6"), components.HeadingProps{Text: "Eyebrow", Level: 6}, components.Heading),
+		ExampleOf(info("pk-ui.component.text/muted", "Type", "Text / muted"), components.TextProps{Content: "Plain body copy.", Size: "sm", Color: "muted"}, components.Text),
+		ExampleOf(info("pk-ui.component.text/loud", "Type", "Text / loud"), components.TextProps{Content: "Loud.", Size: "xl", Weight: "bold", Color: "brand"}, components.Text),
+		ExampleOf(info("pk-ui.component.text/truncated", "Type", "Text / truncated"), components.TextProps{Content: "Cut off eventually.", Truncate: true}, components.Text),
+		ExampleOf(info("pk-ui.component.link/internal", "Type", "Link / internal"), components.LinkProps{Label: "Internal", Href: "/docs"}, components.Link),
+		ExampleOf(info("pk-ui.component.link/external", "Type", "Link / external"), components.LinkProps{Label: "External", Href: "https://example.test", External: true}, components.Link),
+		ExampleOf(info("pk-ui.component.divider/default", "Type", "Divider"), components.DividerProps{}, components.Divider),
+		ExampleOf(info("pk-ui.component.divider/labelled", "Type", "Divider / labelled"), components.DividerProps{Text: "Or continue with"}, components.Divider),
+		ExampleOf(info("pk-ui.component.divider/vertical", "Type", "Divider / vertical"), components.DividerProps{Orientation: "vertical"}, components.Divider),
+	}
+}
+
+func galleryIcons(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleOf(info("pk-ui.component.icon/check", "Icon", "Icon / check"), components.IconProps{Name: "check", Size: "lg", Tone: "success"}, components.Icon),
+		ExampleOf(info("pk-ui.component.icon/trash", "Icon", "Icon / trash"), components.IconProps{Name: "trash", Size: "md", Tone: "danger"}, components.Icon),
+		ExampleOf(info("pk-ui.component.icon/unknown", "Icon", "Icon / unknown"), components.IconProps{Name: "no-such-glyph"}, components.Icon),
+	}
+}
+
+func galleryButtons(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleWithSlots(info("pk-ui.component.button/primary", "Action", "Button / primary"),
+			components.ButtonProps{Label: "Save", Variant: "primary", Tone: "neutral", Size: "md"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/secondary", "Action", "Button / secondary"),
+			components.ButtonProps{Label: "Cancel", Variant: "secondary", Tone: "neutral", Size: "sm"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/danger", "Action", "Button / danger"),
+			components.ButtonProps{Label: "Delete", Variant: "primary", Tone: "danger", Size: "xs"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/ghost", "Action", "Button / ghost"),
+			components.ButtonProps{Label: "Ghost", Variant: "ghost", Tone: "neutral", Size: "lg"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/link", "Action", "Button / link"), components.ButtonProps{Label: "Docs", Variant: "link", Tone: "neutral", Size: "xl"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/outline-full", "Action", "Button / outline full"),
+			components.ButtonProps{Label: "Outline", Variant: "outline", Tone: "neutral", Size: "2xl", FullWidth: true}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/info", "Action", "Button / info"), components.ButtonProps{Label: "Info", Variant: "primary", Tone: "info"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/warning", "Action", "Button / warning"), components.ButtonProps{Label: "Warn", Variant: "primary", Tone: "warning"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/success", "Action", "Button / success"), components.ButtonProps{Label: "OK", Variant: "primary", Tone: "success"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/loading", "Action", "Button / loading"), components.ButtonProps{Label: "Busy", Loading: true}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/as-link", "Action", "Button / as link"), components.ButtonProps{Label: "Open", Href: "/somewhere"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/disabled-link", "Action", "Button / disabled link"),
+			components.ButtonProps{ComponentProps: components.ComponentProps{Disabled: true}, HTMXProps: components.HTMXProps{Get: "/admin", Boost: true}, Label: "Unavailable", Href: "/admin"}, components.ButtonSlots{}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/with-icon", "Action", "Button / with icon"),
+			components.ButtonProps{Label: "Iconed", Variant: "primary", Tone: "neutral", Size: "md"}, components.ButtonSlots{IconEnd: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "plus", Size: "md", Tone: "neutral"}, components.Icon).Node,
+			}}, components.ButtonWithSlots),
+		ExampleWithSlots(info("pk-ui.component.button/with-leading-icon", "Action", "Button / leading icon"),
+			components.ButtonProps{Label: "Add item", Variant: "primary", Tone: "neutral", Size: "md"}, components.ButtonSlots{IconStart: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "plus", Size: "sm", Tone: "neutral"}, components.Icon).Node,
+			}}, components.ButtonWithSlots),
+	}
+}
+
+func galleryFeedback(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleWithSlots(info("pk-ui.component.badge/default", "Status", "Badge / default"), components.BadgeProps{Label: "Default"}, components.BadgeSlots{}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/brand-dot", "Status", "Badge / brand dot"),
+			components.BadgeProps{Label: "New", Variant: "primary", Tone: "brand", Dot: true}, components.BadgeSlots{}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/success", "Status", "Badge / success"), components.BadgeProps{Label: "OK", Tone: "success"}, components.BadgeSlots{}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/warning", "Status", "Badge / warning"),
+			components.BadgeProps{Label: "Careful", Tone: "warning"}, components.BadgeSlots{IconStart: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "warning", Size: "sm", Tone: "warning"}, components.Icon).Node,
+			}}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/danger", "Status", "Badge / danger"), components.BadgeProps{Label: "Bad", Tone: "danger"}, components.BadgeSlots{}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/info", "Status", "Badge / info"), components.BadgeProps{Label: "FYI", Tone: "info"}, components.BadgeSlots{}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/secondary", "Status", "Badge / secondary"), components.BadgeProps{Label: "Two", Variant: "secondary"}, components.BadgeSlots{}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/outline", "Status", "Badge / outline"), components.BadgeProps{Label: "Outlined", Variant: "outline"}, components.BadgeSlots{}, components.BadgeWithSlots),
+		ExampleWithSlots(info("pk-ui.component.badge/count", "Status", "Badge / count"), components.BadgeProps{Label: "Messages", Count: 120, Removable: true, Live: true}, components.BadgeSlots{}, components.BadgeWithSlots),
+
+		ExampleWithSlots(info("pk-ui.component.alert/success", "Status", "Alert / success"), components.AlertProps{Title: "Saved", Message: "All good.", Tone: "success"}, components.AlertSlots{}, components.AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/warning", "Status", "Alert / warning"), components.AlertProps{Message: "Careful now.", Tone: "warning"},
+			components.AlertSlots{IconStart: []g.Node{
+				ExampleOf(ExampleInfo{ID: "icon", ComponentID: "pk-ui.component.icon"}, components.IconProps{Name: "warning", Size: "md", Tone: "warning"}, components.Icon).Node,
+			}}, components.AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/danger", "Status", "Alert / danger"), components.AlertProps{Message: "That failed.", Tone: "danger"}, components.AlertSlots{}, components.AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/info", "Status", "Alert / info"), components.AlertProps{Message: "Heads up.", Tone: "info"}, components.AlertSlots{}, components.AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/compact", "Status", "Alert / compact"), components.AlertProps{Message: "Compact.", Tone: "info", Compact: true}, components.AlertSlots{}, components.AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/bordered", "Status", "Alert / bordered"), components.AlertProps{Message: "Accented.", Tone: "warning", Bordered: true}, components.AlertSlots{}, components.AlertWithSlots),
+		ExampleWithSlots(info("pk-ui.component.alert/dismissible", "Status", "Alert / dismissible"), components.AlertProps{Message: "Dismiss me.", Tone: "success", Dismissible: true}, components.AlertSlots{}, components.AlertWithSlots),
+	}
+}
+
+func galleryStates(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleOf(info("pk-ui.component.spinner/brand", "Status", "Spinner / brand"), components.SpinnerProps{Size: "sm", Tone: "brand"}, components.Spinner),
+		ExampleOf(info("pk-ui.component.spinner/labelled", "Status", "Spinner / labelled"), components.SpinnerProps{Size: "md", Tone: "info", Label: "Fetching"}, components.Spinner),
+		ExampleOf(info("pk-ui.component.spinner/success", "Status", "Spinner / success"), components.SpinnerProps{Size: "lg", Tone: "success"}, components.Spinner),
+
+		ExampleOf(info("pk-ui.component.skeleton/block", "Status", "Skeleton / block"), components.SkeletonProps{}, components.Skeleton),
+		ExampleOf(info("pk-ui.component.skeleton/block-sm", "Status", "Skeleton / block sm"), components.SkeletonProps{Shape: "block", Size: "sm"}, components.Skeleton),
+		ExampleOf(info("pk-ui.component.skeleton/block-lg", "Status", "Skeleton / block lg"), components.SkeletonProps{Shape: "block", Size: "lg"}, components.Skeleton),
+		ExampleOf(info("pk-ui.component.skeleton/text", "Status", "Skeleton / text"), components.SkeletonProps{Shape: "text", Lines: 3, Size: "sm"}, components.Skeleton),
+		ExampleOf(info("pk-ui.component.skeleton/circle", "Status", "Skeleton / circle"), components.SkeletonProps{Shape: "circle"}, components.Skeleton),
+		ExampleOf(info("pk-ui.component.tableskeleton/table", "Status", "Skeleton / table"), components.TableSkeletonProps{}, components.TableSkeleton),
+		ExampleOf(info("pk-ui.component.tableskeleton/table-compact", "Status", "Skeleton / table compact"), components.TableSkeletonProps{Columns: 2, Rows: 5, Compact: true}, components.TableSkeleton),
+
+		ExampleWithSlots(info("pk-ui.component.emptystate/default", "Status", "EmptyState"),
+			components.EmptyStateProps{Title: "No tenants yet", Description: "Create the first tenant to get started.", Bordered: true},
+			components.EmptyStateSlots{Actions: []g.Node{
+				ExampleOf(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.link"}, components.LinkProps{Label: "New tenant", Href: "/app/tenant/tenants/new"}, components.Link).Node,
+			}}, components.EmptyStateWithSlots),
+		ExampleWithSlots(info("pk-ui.component.emptystate/compact", "Status", "EmptyState / compact"), components.EmptyStateProps{Title: "Empty", Compact: true}, components.EmptyStateSlots{}, components.EmptyStateWithSlots),
+	}
+}
+
+func galleryControls(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleOf(info("pk-ui.component.label/default", "Form", "Label"), components.LabelProps{Text: "Standalone", For: "x", Required: true}, components.Label),
+		ExampleOf(info("pk-ui.component.input/email", "Form", "Input / email"), components.InputProps{Name: "email", Type: "email", Label: "Email",
+			Placeholder: "you@example.test", HelpText: "We never share it.", Required: true}, components.Input),
+		ExampleOf(info("pk-ui.component.input/invalid", "Form", "Input / invalid"), components.InputProps{Name: "slug", Label: "Slug", Value: "hello",
+			Error: "Already taken.", Pattern: "[a-z-]+"}, components.Input),
+		ExampleOf(info("pk-ui.component.input/bare", "Form", "Input / bare"), components.InputProps{Name: "quiet"}, components.Input),
+		ExampleOf(info("pk-ui.component.input/read-only", "Form", "Input / read-only"), components.InputProps{Name: "id", Label: "Id", Value: "42", ReadOnly: true}, components.Input),
+		ExampleOf(info("pk-ui.component.input/file", "Form", "Input / file"), components.InputProps{Name: "cover", Type: "file", Label: "Cover image",
+			Accept: "image/png,image/jpeg", HelpText: "PNG or JPEG. The form it sits in is multipart."}, components.Input),
+		ExampleOf(info("pk-ui.component.input/file-multiple", "Form", "Input / file multiple"), components.InputProps{Name: "attachments", Type: "file",
+			Label: "Attachments", Accept: "image/*", Multiple: true}, components.Input),
+		ExampleOf(info("pk-ui.component.select/default", "Form", "Select"), components.SelectProps{Name: "kind", Label: "Kind", Required: true,
+			Options: []components.SelectOption{{Label: "Post", Value: "post"}, {Label: "Page", Value: "page"}},
+			Value:   "post", HelpText: "What the entry renders as."}, components.Select),
+		ExampleOf(info("pk-ui.component.select/invalid", "Form", "Select / invalid"), components.SelectProps{Name: "state", Label: "State", Placeholder: "Any state",
+			Options: []components.SelectOption{{Label: "Draft", Value: "draft"}}, Error: "Pick a state."}, components.Select),
+		ExampleOf(info("pk-ui.component.textarea/default", "Form", "Textarea"), components.TextareaProps{Name: "body", Label: "Body", Rows: 6,
+			HelperText: "Markdown is fine.", MaxLength: 500}, components.Textarea),
+		ExampleOf(info("pk-ui.component.textarea/invalid", "Form", "Textarea / invalid"), components.TextareaProps{Name: "bad", Label: "Bad", ErrorMessage: "Too long."}, components.Textarea),
+		ExampleOf(info("pk-ui.component.textarea/autoresize", "Form", "Textarea / autoresize"), components.TextareaProps{
+			ComponentProps: components.ComponentProps{Disabled: true},
+			Name:           "details", Label: "Details", Value: "Existing", HelperText: "Add context.",
+			ErrorMessage: "More detail is required.", AutoResize: true, MinRows: 3, MaxRows: 15, FullWidth: true}, components.Textarea),
+		ExampleOf(info("pk-ui.component.checkbox/default", "Form", "Checkbox"), components.CheckboxProps{Name: "agree", Label: "I agree", Required: true}, components.Checkbox),
+		ExampleOf(info("pk-ui.component.checkbox/checked", "Form", "Checkbox / checked"), components.CheckboxProps{Name: "done", Label: "Done", Checked: true}, components.Checkbox),
+		ExampleOf(info("pk-ui.component.checkbox/indeterminate", "Form", "Checkbox / indeterminate"), components.CheckboxProps{Name: "some", Label: "Some", Indeterminate: true}, components.Checkbox),
+		ExampleOf(info("pk-ui.component.checkbox/disabled", "Form", "Checkbox / disabled"), components.CheckboxProps{
+			ComponentProps: components.ComponentProps{Disabled: true}, Name: "disabled", Label: "Disabled"}, components.Checkbox),
+	}
+}
+
+func galleryLayout(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleWithChildren(info("pk-ui.component.stack/default", "Layout", "Stack"), components.StackProps{Gap: "2", Align: "start"}, []g.Node{g.Text("a"), g.Text("b")}, components.Stack),
+		ExampleWithChildren(info("pk-ui.component.flex/default", "Layout", "Flex"), components.FlexProps{Direction: "row", Gap: "4", Align: "center",
+			Justify: "between", Wrap: true}, []g.Node{g.Text("l"), g.Text("r")}, components.Flex),
+		ExampleWithChildren(info("pk-ui.component.grid/default", "Layout", "Grid"), components.GridProps{Columns: "3", Gap: "6"}, []g.Node{
+			ExampleOf(ExampleInfo{ID: "first", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "1"}, components.Text).Node,
+			ExampleOf(ExampleInfo{ID: "second", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "2"}, components.Text).Node,
+			ExampleOf(ExampleInfo{ID: "third", ComponentID: "pk-ui.component.text"}, components.TextProps{Content: "3"}, components.Text).Node,
+		}, components.Grid),
+		ExampleWithChildren(info("pk-ui.component.container/default", "Layout", "Container"), components.ContainerProps{MaxWidth: "4xl"}, []g.Node{g.Text("content")}, components.Container),
+		ExampleWithSlots(info("pk-ui.component.card/default", "Layout", "Card"), components.CardProps{Title: "Plain card", Description: "With copy."}, components.CardSlots{}, components.CardWithSlots),
+		ExampleWithSlots(info("pk-ui.component.card/clickable", "Layout", "Card / clickable"), components.CardProps{Title: "Go somewhere", Clickable: true, Href: "/detail"}, components.CardSlots{}, components.CardWithSlots),
+	}
+}
+
+func galleryData(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleWithSlots(info("pk-ui.component.table/default", "Data", "Table"), components.TableProps{
+			Columns: []components.TableColumn{{Key: "name", Label: "Name"}, {Key: "role", Label: "Role"}},
+			Rows: []components.TableRow{
+				{ID: "u1", Cells: map[string]any{"name": "Ada", "role": "admin"}},
+				{ID: "u2", Cells: map[string]any{"name": "Lin", "role": 7}},
+			}}, components.TableSlots{}, components.TableWithSlots),
+		// A table wider than its box is only readable with a keyboard when the
+		// scrolling box takes focus and says what it is scrolling.
+		ExampleWithSlots(info("pk-ui.component.table/scroll-region", "Data", "Table / named scroll region"), components.TableProps{
+			Label:   "People",
+			Columns: []components.TableColumn{{Key: "name", Label: "Name"}, {Key: "role", Label: "Role"}},
+			Rows: []components.TableRow{
+				{ID: "u1", Cells: map[string]any{"name": "Ada", "role": "admin"}},
+			}}, components.TableSlots{}, components.TableWithSlots),
+		ExampleWithSlots(info("pk-ui.component.table/empty", "Data", "Table / empty"), components.TableProps{
+			Columns: []components.TableColumn{{Key: "a", Label: "A"}}, EmptyText: "No rows.", Compact: true}, components.TableSlots{}, components.TableWithSlots),
+		ExampleWithSlots(info("pk-ui.component.table/sortable", "Data", "Table / sortable"), components.TableProps{
+			Sortable: true, Striped: true, Selectable: true,
+			Columns: []components.TableColumn{
+				{Key: "name", Label: "Name", Sortable: true, Primary: true},
+				{Key: "count", Label: "Count", Sortable: true, Align: "right"},
+				{Key: "note", Label: "Note"},
+			},
+			Rows: []components.TableRow{
+				{ID: "r1", Cells: map[string]any{"name": "First", "count": 3, "note": "odd"}},
+				{ID: "r2", Cells: map[string]any{"name": "Second", "count": 1, "note": "even"}},
+				{ID: "r3", Cells: map[string]any{"name": "Third", "count": 2}},
+			}}, components.TableSlots{}, components.TableWithSlots),
+		ExampleOf(info("pk-ui.component.detaillist/default", "Data", "DetailList"), components.DetailListProps{
+			ComponentProps: components.ComponentProps{ID: "account-facts"},
+			Title:          "Profile",
+			Description:    "Identity used across this workspace.",
+			SemanticRole:   "identity",
+			Items: []components.DetailItem{
+				{Label: "Email", Value: "ada@example.test", Tone: "neutral"},
+				{Label: "Plan", Value: "Studio", Description: "Renews next month.", Tone: "brand"},
+				{Label: "Health", Value: "Good", Tone: "success"},
+				{Label: "Review", Value: "Soon", Tone: "warning"},
+				{Label: "Risk", Value: "High", Tone: "danger"},
+				{Label: "Region", Value: "EU", Tone: "info"},
+			}}, components.DetailList),
+	}
+}
+
+func galleryNavigation(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleOf(info("pk-ui.component.breadcrumb/default", "Navigation", "Breadcrumb"), components.BreadcrumbProps{Items: []components.BreadcrumbItem{
+			{Label: "Home", Href: "/"}, {Label: "Tenants", Href: "/tenants"}, {Label: "Acme"},
+		}}, components.Breadcrumb),
+		// Each landmark on this page needs a name of its own: two navigations
+		// both called "Pagination" is a screen reader offering the same
+		// destination twice. It is the gallery's problem and not the
+		// component's, so it is solved with the prop the component already has.
+		ExampleOf(info("pk-ui.component.pagination/default", "Navigation", "Pagination"), components.PaginationProps{
+			CurrentPage: 5, TotalPages: 12, BaseURL: "/rows", NavigationLabel: "Pagination, twelve pages"}, components.Pagination),
+		ExampleOf(info("pk-ui.component.pagination/two-pages", "Navigation", "Pagination / two pages"), components.PaginationProps{
+			CurrentPage: 1, TotalPages: 2, BaseURL: "/few", NavigationLabel: "Pagination, two pages"}, components.Pagination),
+		ExampleOf(info("pk-ui.component.tabs/default", "Navigation", "Tabs"), components.TabsProps{ActiveTab: "b", Items: []components.TabItem{
+			{Key: "a", Label: "First", URL: "/tab/a"}, {Key: "b", Label: "Second"},
+		}}, components.Tabs),
+		ExampleWithSlots(ExampleInfo{ID: "pk-ui.component.tabs/vertical-pills", ComponentID: "pk-ui.component.tabpanels", Group: "Navigation", Name: "Tabs / vertical pills"},
+			components.TabsProps{ActiveTab: "profile", Orientation: "vertical", Variant: "pills"}, components.TabsSlots{Tabs: []components.TabSlot{
+				{ID: "profile", Label: "Profile", Icon: "user", Badge: "New", Content: []g.Node{g.Text("Profile panel")}},
+				{ID: "security", Label: "Security", Disabled: true, Content: []g.Node{g.Text("Security panel")}},
+				{ID: "activity", Label: "Activity", HxGet: "/activity"},
+			}}, components.TabsWithSlots),
+	}
+}
+
+func gallerySidebar(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleWithSlots(info("pk-ui.component.sidebar/default", "Navigation", "Sidebar"), components.SidebarProps{
+			NavigationLabel: "Sidebar example, sections",
+			Current:         "/app/user/users/new",
+			Sections: []components.SidebarSection{{
+				ID: "operate", Label: "Operate", Glyph: "O", Tone: "brand",
+				Items: []components.SidebarItem{
+					{Label: "Dashboard", Href: "/admin", Icon: "gear"},
+					{Label: "Users", Href: "/app/user/users", Icon: "user", Badge: "24", Children: []components.SidebarItem{
+						{Label: "New user", Href: "/app/user/users/new"},
+					}},
+				},
+			}},
+		}, components.SidebarSlots{Footer: []g.Node{g.Text("Signed in")}}, components.SidebarWithSlots),
+		ExampleWithSlots(info("pk-ui.component.sidebar/content-flavor", "Navigation", "Sidebar / content flavor"), components.SidebarProps{
+			ComponentProps: components.ComponentProps{ID: "docs-sidebar"},
+			Flavor:         "content", Current: "#two", NavigationLabel: "Documentation sections",
+			Sections: []components.SidebarSection{{
+				ID: "runtime", Label: "Runtime", Glyph: "R", Tone: "info", SearchText: "runtime docs",
+				Items: []components.SidebarItem{
+					{ID: "one", Label: "Overview", Href: "#one", Prefix: "01", SearchText: "overview"},
+					{ID: "two", Label: "Handoff", Href: "#two", Prefix: "02", SearchText: "handoff"},
+				},
+			}},
+		}, components.SidebarSlots{Brand: []g.Node{h.Strong(g.Text("Documentation"))}, Footer: []g.Node{g.Text("Version 1")}}, components.SidebarWithSlots),
+		ExampleWithSlots(info("pk-ui.component.sidebar/collapsed", "Navigation", "Sidebar / collapsed"), components.SidebarProps{
+			ComponentProps:  components.ComponentProps{Disabled: true},
+			NavigationLabel: "Sidebar example, collapsed",
+			Collapsible:     true, Collapsed: true,
+			Items: []components.SidebarItem{
+				{Label: "Home", Href: "/admin", Icon: "gear"},
+				{Label: "Plans", Href: "/app/billing/plans", Icon: "file-text", Disabled: true},
+			}}, components.SidebarSlots{}, components.SidebarWithSlots),
+	}
+}
+
+func galleryOverlays(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExampleWithSlots(info("pk-ui.component.modal/default", "Overlay", "Modal"), components.ModalProps{ComponentProps: components.ComponentProps{ID: "confirm-modal"},
+			Title: "Archive", Description: "This action cannot be undone.",
+			Body: "Review the affected records.", Footer: "Confirm or cancel.", Size: "small", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/medium", "Overlay", "Modal / medium"), components.ModalProps{Title: "Edit record", Size: "medium", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/large", "Overlay", "Modal / large"), components.ModalProps{Title: "Large review", Size: "large", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/xl", "Overlay", "Modal / xl"), components.ModalProps{Title: "Wide review", Size: "xl", Open: true}, components.ModalSlots{}, components.ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/undismissable", "Overlay", "Modal / undismissable"), components.ModalProps{AriaLabel: "Required decision", Size: "full", Open: true,
+			Closable: new(false), CloseOnOverlay: new(false), CloseOnEscape: new(false), ShowClose: new(false), ShowOverlay: new(false), Centered: new(false)}, components.ModalSlots{}, components.ModalWithSlots),
+		ExampleWithSlots(info("pk-ui.component.modal/deferred", "Overlay", "Modal / deferred"), components.ModalProps{ComponentProps: components.ComponentProps{ID: "server-modal"},
+			AriaLabel: "Server dialog", Deferred: true, OpenOnSwap: true}, components.ModalSlots{}, components.ModalWithSlots),
+		ExampleWithSlots(ExampleInfo{ID: "pk-ui.component.modal/panel", ComponentID: "pk-ui.component.modalpanel", Group: "Overlay", Name: "Modal / panel"},
+			components.ModalProps{Title: "Panel only"}, components.ModalSlots{Body: []g.Node{g.Text("Body")}}, components.ModalPanelWithSlots),
+		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/form", ComponentID: "pk-ui.component.modalform", Group: "Overlay", Name: "Modal / form"},
+			components.ModalForm(g.Text("Fields")), "ModalForm accepts arbitrary nodes rather than typed properties."),
+		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/close-button", ComponentID: "pk-ui.component.modalclosebutton", Group: "Overlay", Name: "Modal / close button"},
+			components.ModalCloseButton("Close", ""), "ModalCloseButton accepts strings rather than a typed properties contract."),
+		ExamplePreview(ExampleInfo{ID: "pk-ui.component.modal/cancel-button", ComponentID: "pk-ui.component.modalcancelbutton", Group: "Overlay", Name: "Modal / cancel button"},
+			components.ModalCancelButton("Cancel", ""), "ModalCancelButton accepts strings rather than a typed properties contract."),
+		ExampleOf(info("pk-ui.component.confirmdialog/default", "Overlay", "ConfirmDialog"), components.ConfirmDialogProps{
+			Title: "Delete this row?", AcceptLabel: "Delete", CancelLabel: "Keep"}, components.ConfirmDialog),
+	}
+}
+
+func galleryForms(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		ExamplePreview(info("pk-ui.component.skiplink/default", "Frame", "SkipLink"), components.SkipLink("content", "Skip to content"), "SkipLink accepts strings rather than a typed properties contract."),
+		ExampleWithChildren(info("pk-ui.component.toolbar/default", "Frame", "Toolbar"),
+			components.ToolbarProps{Title: "Tasks", Subtitle: "12 records"}, []g.Node{
+				ExampleWithSlots(ExampleInfo{ID: "action", ComponentID: "pk-ui.component.button"},
+					components.ButtonProps{Label: "New task", Href: "/admin/task/tasks/new"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+			}, components.Toolbar),
+		ExampleWithChildren(info("pk-ui.component.form/default", "Frame", "Form"),
+			components.FormProps{Action: "/admin/task/tasks", Label: "New task"}, []g.Node{
+				ExampleOf(ExampleInfo{ID: "title", ComponentID: "pk-ui.component.input"},
+					components.InputProps{Name: "title", Label: "Title", Required: true}, components.Input).Node,
+				ExampleWithChildren(ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
+					ExampleWithSlots(ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
+						components.ButtonProps{Label: "Cancel", Variant: "secondary", Href: "/admin/task/tasks"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+					ExampleWithSlots(ExampleInfo{ID: "create", ComponentID: "pk-ui.component.button"},
+						components.ButtonProps{Label: "Create", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				}, components.FormActions).Node,
+			}, components.Form),
+		ExampleOf(info("pk-ui.component.form-sentence/default", "Frame", "Form sentence"),
+			components.FormSentenceProps{Text: "This row stops being served. You can publish it again later."},
+			components.FormSentence),
+	}
+}
+
+func galleryMedia(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		// Media is where a picture says what it is doing instead of failing silently.
+		// The five states are shown together, in this order, because the interesting
+		// question is not what a picture looks like — it is whether a stranger can
+		// tell a refusal from an empty shelf at a glance, and that is only answerable
+		// with both on the same screen.
+		//
+		// The source is a data: URI rather than a path: a specimen whose image 404s
+		// would prove nothing, and e2e/design-audit.spec.ts measures whether every
+		// image on this page actually decodes and carries alt text.
+		ExampleOf(info("pk-ui.component.media/ready", "Media", "Picture / ready"),
+			components.MediaProps{Src: mediaSpecimen, Alt: "Die-cut proof plate, 592 by 400 millimetres", Width: 160, Height: 90}, components.Media),
+		ExampleOf(info("pk-ui.component.media/captioned", "Media", "Picture / with a caption"),
+			components.MediaProps{Src: mediaSpecimen, Alt: "Die-cut proof plate", Width: 160, Height: 90,
+				Caption: "Proof plate, 592×400 mm — the caption is markup, not alt text"}, components.Media),
+		ExampleOf(info("pk-ui.component.media/loading", "Media", "Picture / waiting"),
+			components.MediaProps{Status: components.MediaLoading, Alt: "Cutting the subject out", Width: 160, Height: 90}, components.Media),
+		ExampleOf(info("pk-ui.component.media/empty", "Media", "Picture / nothing here"),
+			components.MediaProps{Status: components.MediaEmpty, Reason: "No artwork on this album yet."}, components.Media),
+		ExampleOf(info("pk-ui.component.media/failed", "Media", "Picture / it failed"),
+			components.MediaProps{Status: components.MediaFailed, Reason: "The cut-out engine is not answering. Ask for it again."}, components.Media),
+		ExampleOf(info("pk-ui.component.media/refused", "Media", "Picture / not permitted"),
+			components.MediaProps{Status: components.MediaRefused, Reason: "This artwork belongs to a tier you are not in."}, components.Media),
+	}
+}
+
+func galleryPeople(info func(string, string, string) ExampleInfo) []Example {
+	return []Example{
+		// Avatar is the same argument as Media in a smaller shape: every product
+		// that ever showed a person invented a coloured div with a letter in it.
+		// The specimens are ordered so the interesting pair sits together — the one
+		// that speaks and the one that stays quiet because its name is already on
+		// screen, which is the difference between a reader saying a person's name
+		// once and saying it twice.
+		ExampleOf(info("pk-ui.component.avatar/initials", "Avatar", "Person / no picture"),
+			components.AvatarProps{Name: "Jean-Paul Reyes"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/sizes", "Avatar", "Person / three sizes"),
+			components.AvatarProps{Name: "Ada Lovelace", Size: "lg"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/picture", "Avatar", "Person / with a picture"),
+			components.AvatarProps{Name: "Jean-Paul Reyes", Src: mediaSpecimen}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/linked", "Avatar", "Person / linking to them"),
+			components.AvatarProps{Name: "Ada Lovelace", Href: "/admin/_gallery"}, components.Avatar),
+		ExampleOf(info("pk-ui.component.avatar/unknown", "Avatar", "Person / nothing known"),
+			components.AvatarProps{}, components.Avatar),
+		// The decorative case cannot be a lone disc or the specimen would prove
+		// nothing: what makes it decorative is the name sitting beside it, so the
+		// pair is shown as a toolbar would show it in a member row.
+		// This one is a Toolbar specimen and not an Avatar specimen, and the export
+		// says why: every occurrence of a component must present one interface, so
+		// an Avatar cannot be the thing that holds others. The pair is shown under
+		// the component that actually composes it — which is what a member row is.
+		ExampleWithChildren(info("pk-ui.component.toolbar/member", "Frame", "Toolbar / a member row"),
+			components.ToolbarProps{Title: "A member row", Subtitle: "The disc stays quiet because the name is right there"},
+			[]g.Node{
+				ExampleOf(ExampleInfo{ID: "avatar", ComponentID: "pk-ui.component.avatar"},
+					components.AvatarProps{Name: "Jean-Paul Reyes", Decorative: true, Size: "sm"}, components.Avatar).Node,
+				ExampleOf(ExampleInfo{ID: "name", ComponentID: "pk-ui.component.text"},
+					components.TextProps{Content: "Jean-Paul Reyes"}, components.Text).Node,
+			}, components.Toolbar),
+
+		// Shell is not in this list, and cannot be: it renders <main>, and the
+		// page this gallery is on is itself a Shell, so an example would be a
+		// second main landmark inside the first — two documents in one, which
+		// is exactly what the landmark rules exist to catch. The page is the
+		// example. Its classes are covered by modules/admin's own closure test,
+		// which renders every real screen and checks each class against the
+		// stylesheet.
+	}
 }

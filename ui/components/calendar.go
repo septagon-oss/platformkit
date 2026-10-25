@@ -68,6 +68,26 @@ func (p CalendarProps) Validate() error {
 		}
 		return nil
 	}
+	if err := validateCalendarDisplay(p); err != nil {
+		return err
+	}
+	if err := validateCalendarEvents(p.Events); err != nil {
+		return err
+	}
+	if err := validateChoices(p.Views); err != nil {
+		return err
+	}
+	for _, choice := range []*ChoiceLink{p.Previous, p.Next, p.Today} {
+		if choice != nil {
+			if err := validateChoices([]ChoiceLink{*choice}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateCalendarDisplay(p CalendarProps) error {
 	if !required(p.ID, p.TimeZone, p.TimeZoneLabel, p.Language, p.AllDayLabel, p.AgendaLabel, p.GridLabel, p.FallbackText) || !utcInstant(p.NowUTC) || p.FirstWeekday < 0 || p.FirstWeekday > 6 {
 		return fmt.Errorf("Calendar: labels, explicit locale/zone/now and weekday required")
 	}
@@ -93,34 +113,35 @@ func (p CalendarProps) Validate() error {
 	if p.DateStrip.SelectedDate < p.RangeStartDate || p.DateStrip.SelectedDate >= p.RangeEndDate {
 		return fmt.Errorf("Calendar: selected date must fall inside the displayed range")
 	}
+	return nil
+}
+
+func validateCalendarEvents(events []CalendarEvent) error {
 	ids := map[string]bool{}
-	for _, event := range p.Events {
+	for _, event := range events {
 		if !required(event.ID, event.Title, event.TimeText, event.StatusLabel) || ids[event.ID] {
 			return fmt.Errorf("Calendar: unique labeled events required")
 		}
 		ids[event.ID] = true
-		if event.AllDay {
-			a, err := civilDate(event.StartDate)
-			if err != nil {
-				return err
-			}
-			b, err := civilDate(event.EndDate)
-			if err != nil || !b.After(a) || !event.StartUTC.IsZero() || !event.EndUTC.IsZero() {
-				return fmt.Errorf("Calendar: all-day events use exclusive civil dates only")
-			}
-		} else if event.StartDate != "" || event.EndDate != "" || !utcInstant(event.StartUTC) || !utcInstant(event.EndUTC) || !event.EndUTC.After(event.StartUTC) {
-			return fmt.Errorf("Calendar: timed events require ordered UTC instants only")
+		if err := validateCalendarEventTime(event); err != nil {
+			return err
 		}
 	}
-	if err := validateChoices(p.Views); err != nil {
-		return err
-	}
-	for _, choice := range []*ChoiceLink{p.Previous, p.Next, p.Today} {
-		if choice != nil {
-			if err := validateChoices([]ChoiceLink{*choice}); err != nil {
-				return err
-			}
+	return nil
+}
+
+func validateCalendarEventTime(event CalendarEvent) error {
+	if event.AllDay {
+		a, err := civilDate(event.StartDate)
+		if err != nil {
+			return err
 		}
+		b, err := civilDate(event.EndDate)
+		if err != nil || !b.After(a) || !event.StartUTC.IsZero() || !event.EndUTC.IsZero() {
+			return fmt.Errorf("Calendar: all-day events use exclusive civil dates only")
+		}
+	} else if event.StartDate != "" || event.EndDate != "" || !utcInstant(event.StartUTC) || !utcInstant(event.EndUTC) || !event.EndUTC.After(event.StartUTC) {
+		return fmt.Errorf("Calendar: timed events require ordered UTC instants only")
 	}
 	return nil
 }
