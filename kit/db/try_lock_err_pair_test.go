@@ -1,8 +1,8 @@
 package db_test
 
 // TryLockErr answers the one question a lock caller has — ErrHeld, or the release —
-// and TryLock now asks it. The pair below is that the old door's three answers, and
-// its failure sentence in particular, survive the delegation.
+// and TryLock now asks it: the pair is that the old door's three answers, and its
+// failure sentence in particular, survive the delegation.
 
 import (
 	"errors"
@@ -13,8 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
 
-// poolFor opens a connection pool of its own at the schema's application role, so
-// two holders are two sessions and not two handles on one session.
+// poolFor opens a pool of its own, so two holders are two sessions, not two handles.
 func poolFor(t *testing.T, url string) *db.Conn {
 	t.Helper()
 	conn, err := db.OpenWithPool(t.Context(), url, db.Pool{MaxOpenConns: 2, MaxIdleConns: 2})
@@ -26,8 +25,8 @@ func poolFor(t *testing.T, url string) *db.Conn {
 }
 
 // TestTryLockErrAnswersErrHeldWhereTryLockAnswersNotTaken: the holder keeps the lock
-// while a second process is told so, the loser is handed no release — pinning one on
-// every replica but one is the failure — and the key is free once the holder is done.
+// while a second process is told so, the loser is handed no release, and the key is
+// free once the holder is done.
 func TestTryLockErrAnswersErrHeldWhereTryLockAnswersNotTaken(t *testing.T) {
 	_, appURL := dbtest.URLs(t)
 	holder, asker := poolFor(t, appURL), poolFor(t, appURL)
@@ -57,9 +56,9 @@ func TestTryLockErrAnswersErrHeldWhereTryLockAnswersNotTaken(t *testing.T) {
 	third()
 }
 
-// TestTryLockFailureSentenceIsTheSentenceTryLockErrReturns: a job's log line is the
-// sentence this package wrote, and a delegating door that wrapped it again would
-// double the prefix under a comment telling nobody to expect a new one.
+// TestTryLockFailureSentenceIsTheSentenceTryLockErrReturns: a job's log line is this
+// package's own sentence, and a door that wrapped it again would double the prefix under
+// a comment telling nobody to expect a new one.
 func TestTryLockFailureSentenceIsTheSentenceTryLockErrReturns(t *testing.T) {
 	_, appURL := dbtest.URLs(t)
 	conn := poolFor(t, appURL)
@@ -80,8 +79,8 @@ func TestTryLockFailureSentenceIsTheSentenceTryLockErrReturns(t *testing.T) {
 }
 
 // TestUnlockReleasesOnceHoweverOftenItIsCalled: the release is guarded rather than
-// harmless by accident, so a caller that hands the same Unlock to two deferred
-// paths neither ends the session twice nor leaves the key behind.
+// harmless by accident, so a caller that hands one Unlock to two deferred paths neither
+// ends the session twice nor leaves the key behind.
 func TestUnlockReleasesOnceHoweverOftenItIsCalled(t *testing.T) {
 	_, appURL := dbtest.URLs(t)
 	holder, asker := poolFor(t, appURL), poolFor(t, appURL)

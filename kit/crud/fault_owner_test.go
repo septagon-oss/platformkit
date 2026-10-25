@@ -80,8 +80,8 @@ func TestClassifyMapsToTheSharedSentinels(t *testing.T) {
 		t.Errorf("diagnostics = %q", duplicate)
 	}
 
-	// A refusal that is already one of the three is not a driver error, and
-	// Classify leaves it alone whichever name it arrived under.
+	// A refusal already one of the three is no driver error, and Classify leaves
+	// it alone whichever name it arrived under.
 	for _, err := range []error{fmt.Errorf("validate: %w", fault.ErrInvalid), fmt.Errorf("validate: %w", crud.ErrInvalid)} {
 		if !errors.Is(crud.Classify(err), fault.ErrInvalid) {
 			t.Errorf("Classify changed a refusal that was already classified: %v", err)
@@ -89,16 +89,12 @@ func TestClassifyMapsToTheSharedSentinels(t *testing.T) {
 	}
 }
 
-// TestTheInMemoryStoreAndTheReadDoorAnswerOneNotFoundForNoRow: the double a
-// command suite runs on and the SQL door have to refuse a missing row with one
-// object, or a command passes on the fake and answers another status at the
-// database. GetCtx turns a driver's not-found into this sentinel in one place,
-// Classify, so the two halves are compared where the decision is actually made and
-// with no database in the way: the store's wrap and the door's classification have
-// to be the same value kit/fault owns. The soft/hard split, the zero-rows answer and
-// the deleted_at stamp stay out of this case, because an in-memory store holds no
-// deleted_at and its Delete tells nobody when there was nothing to delete; those are
-// proved against the schema.
+// TestTheInMemoryStoreAndTheReadDoorAnswerOneNotFoundForNoRow: the double a command
+// suite runs on and the SQL door have to refuse a missing row with one object, or a
+// command passes on the fake and answers another status at the database. GetCtx
+// classifies a driver's not-found in one place, Classify, so the two halves meet
+// there with no database in the way. The soft/hard split and the deleted_at stamp
+// stay out, because an in-memory store holds neither: those are proved at the schema.
 func TestTheInMemoryStoreAndTheReadDoorAnswerOneNotFoundForNoRow(t *testing.T) {
 	store := porttest.NewStore(func(row *Task) uuid.UUID { return row.ID })
 	ctx := tenancy.WithTenant(context.Background(), acme)

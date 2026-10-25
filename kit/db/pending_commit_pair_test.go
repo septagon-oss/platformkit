@@ -1,9 +1,8 @@
 package db_test
 
 // The four cases below are the pair for Pending's ending: Commit answers what
-// Close(true) answered and Rollback what Close(false) answered, decision by decision.
-// A spelling that lost the effect queue, or reached the commit past the settings
-// re-read, would break the transactional outbox behind a friendly name.
+// Close(true) answered and Rollback what Close(false) did, decision by decision — a
+// spelling that lost the effect queue would break the transactional outbox behind it.
 
 import (
 	"context"
@@ -13,8 +12,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 )
 
-// TestPendingCommitCommitsWhatCloseTrueCommitted: the row reaches another connection
-// and the effect deferred to the commit runs once, on the first Commit and none after.
+// TestPendingCommitCommitsWhatCloseTrueCommitted: the row reaches another connection,
+// and the deferred effect runs once, on the first Commit and none after.
 func TestPendingCommitCommitsWhatCloseTrueCommitted(t *testing.T) {
 	admin, conn, tenant := acmeThings(t)
 	ctx, pending, _ := lazy(t, conn, tenant)
@@ -68,9 +67,8 @@ func TestPendingRollbackRollsBackWhatCloseFalseRolledBack(t *testing.T) {
 	}
 }
 
-// TestCommitUnderAnEndedOwnerWritesNothingTheWayCloseTrueDid: whatever the ending
-// was asked for, nothing commits under an owner that has ended, and the answer
-// names that owner's own cause.
+// TestCommitUnderAnEndedOwnerWritesNothingTheWayCloseTrueDid: nothing commits under an
+// owner that has ended, and the answer names that owner's own cause.
 func TestCommitUnderAnEndedOwnerWritesNothingTheWayCloseTrueDid(t *testing.T) {
 	admin, conn, tenant := acmeThings(t)
 	ctx, pending, cancel := lazy(t, conn, tenant)
@@ -89,9 +87,8 @@ func TestCommitUnderAnEndedOwnerWritesNothingTheWayCloseTrueDid(t *testing.T) {
 	}
 }
 
-// TestCommitRefusesATransactionWhoseSettingsWereRewrittenTheWayCloseDid: the
-// settings re-read is inside the ending, so the friendlier spelling cannot reach
-// the commit past it.
+// TestCommitRefusesATransactionWhoseSettingsWereRewrittenTheWayCloseDid: the settings
+// re-read is inside the ending, so the friendlier spelling cannot commit past it.
 func TestCommitRefusesATransactionWhoseSettingsWereRewrittenTheWayCloseDid(t *testing.T) {
 	admin, conn, tenant := acmeThings(t)
 	ctx, pending, _ := lazy(t, conn, tenant)

@@ -1,10 +1,9 @@
 package crud_test
 
 // The three read doors that take a context send the same statements on the same
-// handle the older three use, plus one question asked of the caller first. The pair
-// is that the answer is identical while the caller is alive — row for row, sentinel
-// for sentinel, including what row-level security answers for another tenant's row —
-// and that the only difference is the ended caller.
+// handle the older three use, plus one question asked of the caller first. The pair is
+// that the answer is identical while the caller is alive — row for row, sentinel for
+// sentinel, tenant for tenant — and that the only difference is the ended caller.
 
 import (
 	"context"
@@ -33,10 +32,9 @@ func seed(t *testing.T, conn *db.Conn, n int) []uuid.UUID {
 	return ids
 }
 
-// TestListCtxRefusesAFieldTheSchemaDoesNotKnowTheWayListDoes: a query naming a field
-// of no schema is the caller's bug and is answered whatever the caller's own state.
-// The argument refusal before the caller's keeps a wiring mistake from arriving as a
-// cancellation somebody has to reproduce.
+// TestListCtxRefusesAFieldTheSchemaDoesNotKnowTheWayListDoes: a query naming a field of
+// no schema is the caller's bug, answered whatever the caller's own state — an argument
+// refusal keeps a wiring mistake from arriving as a cancellation to reproduce.
 func TestListCtxRefusesAFieldTheSchemaDoesNotKnowTheWayListDoes(t *testing.T) {
 	ended, cancel := context.WithCancelCause(context.Background())
 	cause := errors.New("the caller walked away")
@@ -60,8 +58,8 @@ func TestListCtxRefusesAFieldTheSchemaDoesNotKnowTheWayListDoes(t *testing.T) {
 	}
 }
 
-// TestGetCtxReadsWhatGetReads: the same row field for field, and the same refusal for
-// a row that is not there and for one another tenant holds.
+// TestGetCtxReadsWhatGetReads: the same row field for field, the same refusal for a
+// row that is not there and for another tenant's.
 func TestGetCtxReadsWhatGetReads(t *testing.T) {
 	conn := setup(t)
 	var mine, theirs uuid.UUID
@@ -132,8 +130,7 @@ func TestCountCtxCountsWhatCountCounts(t *testing.T) {
 	})
 }
 
-// TestListCtxReturnsWhatListReturns: the same page, in the same order, with the same
-// total it came from and the same clamp on a limit nobody bounded.
+// TestListCtxReturnsWhatListReturns: same page, same order, same total, same clamp.
 func TestListCtxReturnsWhatListReturns(t *testing.T) {
 	conn := setup(t)
 	seed(t, conn, 5)
@@ -165,9 +162,8 @@ func TestListCtxReturnsWhatListReturns(t *testing.T) {
 }
 
 // TestGetCtxAnswersTheEndedCallerAndSendsNoStatement: the one behavioural difference,
-// and it is this call's and not the transaction's — the row exists and the older door
-// still reads it, the new door answers the caller's own cause, and the transaction
-// goes on answering its other reads.
+// this call's and not the transaction's — the new door answers the caller's own cause,
+// the older door still reads the row, and the transaction keeps answering.
 func TestGetCtxAnswersTheEndedCallerAndSendsNoStatement(t *testing.T) {
 	conn := setup(t)
 	var mine uuid.UUID
@@ -208,4 +204,24 @@ func TestGetCtxAnswersTheEndedCallerAndSendsNoStatement(t *testing.T) {
 			t.Errorf("Get refused a row that exists: %v", errLegacy)
 		}
 	})
+}
+
+// TestSoftDeleteDeleteRowAndCountCtxRefuseTheEndedCallerToo: the guard is the write
+// doors' and the count's too; the zero handle sends a door that ran for a nil database.
+func TestSoftDeleteDeleteRowAndCountCtxRefuseTheEndedCallerToo(t *testing.T) {
+	ended, cancel := context.WithCancelCause(context.Background())
+	cause := errors.New("the tick ended")
+	cancel(cause)
+	tx, id := db.Tx[db.Tenant]{}, uuid.New()
+	_, counted := crud.CountCtx[*Task](ended, tx)
+	asked := map[string]error{
+		"SoftDelete": crud.SoftDelete[*Task](ended, tx, id),
+		"DeleteRow":  crud.DeleteRow[*Task](ended, tx, id),
+		"CountCtx":   counted,
+	}
+	for door, err := range asked {
+		if !errors.Is(err, cause) || err.Error() != "crud: the caller ended before the statement: "+cause.Error() {
+			t.Errorf("%s answered %v for an ended caller, want its cause named in the door's own sentence", door, err)
+		}
+	}
 }

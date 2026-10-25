@@ -1,9 +1,8 @@
 package db_test
 
 // MigrateWithOptions and BackfillWithOptions are the six older doors reduced to one
-// spelling each. What a delegation of that shape can break is what these cases pin:
-// the sentence a refused run answers, the defaults a run that names nothing lands on,
-// the settings the declaration puts on the session, and the ledger the run leaves.
+// spelling each; what a delegation can break is what these cases pin — the sentence of
+// a refused run, the defaults of one naming nothing, its declaration, its ledger.
 
 import (
 	"database/sql"
@@ -76,8 +75,8 @@ func migrateOne(run func() error) (string, error) {
 	return err.Error(), err
 }
 
-// TestConnectionFailureAtTheOptionsDoorCarriesNoCredential: the boot and the worker
-// now stand at these doors, so the host in the message and the password out of it.
+// TestConnectionFailureAtTheOptionsDoorCarriesNoCredential: the boot and the worker now
+// stand at these doors, so the host stays in the message and the password out of it.
 func TestConnectionFailureAtTheOptionsDoorCarriesNoCredential(t *testing.T) {
 	const secret = "hunter2-not-a-real-password"
 	url := "postgres://platformkit_owner:" + secret + "@127.0.0.1:1/platformkit?sslmode=disable&connect_timeout=2"
@@ -147,8 +146,7 @@ func ledger(t *testing.T, admin *sql.DB) string {
 	return out.String()
 }
 
-// freshSchema hands back a namespace one door has not touched: dbtest names the
-// schema after the test, so asking again leaves an empty database of that name.
+// freshSchema hands back a namespace one door has not touched, named after the test.
 func freshSchema(t *testing.T) (adminURL string, admin *sql.DB) {
 	t.Helper()
 	adminURL, _ = dbtest.URLsFor(t)
@@ -156,8 +154,7 @@ func freshSchema(t *testing.T) (adminURL string, admin *sql.DB) {
 }
 
 // TestMigrateOptionsWithNoOptionsAppliesWhatMigrateApplies: the zero options are the
-// run Migrate performs — file for file, checksum for checksum, including the work
-// the run did to the rows themselves.
+// run Migrate performs — file for file, checksum for checksum, rows included.
 func TestMigrateOptionsWithNoOptionsAppliesWhatMigrateApplies(t *testing.T) {
 	source := db.MigrationSource{Owner: "pair", Files: pairFiles()}
 	first, firstAdmin := freshSchema(t)
@@ -188,7 +185,7 @@ func queue(t *testing.T, admin *sql.DB) int {
 }
 
 // TestMigrateOptionsCarriesWhatMigrateDeclaringCarries: the declaration reaches the
-// session before the files run on either door, NULL kept for what was not declared.
+// session before the files, on either door, NULL kept for what was not declared.
 func TestMigrateOptionsCarriesWhatMigrateDeclaringCarries(t *testing.T) {
 	app := "pair-app"
 	decl := db.Declaration{App: &app, Hosts: []string{"acme.example", "globex.example"}, Tenants: map[string]string{"acme": "pair-app"}}
@@ -219,8 +216,7 @@ func TestMigrateOptionsCarriesWhatMigrateDeclaringCarries(t *testing.T) {
 	}
 }
 
-// declaredThrough runs one door over a schema whose file records its own session
-// settings, then reads the record back with NULL kept.
+// declaredThrough runs one door over a schema whose file records its session settings.
 func declaredThrough(t *testing.T, url, record string, door func(url string, files fstest.MapFS) error) []string {
 	t.Helper()
 	files := fstest.MapFS{

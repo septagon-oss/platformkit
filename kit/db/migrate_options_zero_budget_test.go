@@ -2,11 +2,10 @@ package db
 
 import "testing"
 
-// The zero MigrateOptions is documented as the run Migrate and Backfill perform,
-// which is only true because the empty budget it carries reaches the same two
-// settings the documented default does. The comparison is the claim: a field added
-// to MigrateOptions that steered the statement away from the default would show up
-// here before it changed what every installation waits for.
+// The zero MigrateOptions is documented as the run Migrate and Backfill perform, which
+// is only true because the empty budget it carries reaches the same two settings the
+// documented default does: a field that steered the statement away from the default
+// would show up here before it changed what every installation waits for.
 func TestTheZeroBudgetAndTheDefaultBudgetIssueTheSameSettings(t *testing.T) {
 	want := DefaultMigrationBudget().statement()
 	for name, got := range map[string]string{

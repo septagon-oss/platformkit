@@ -1,10 +1,8 @@
 package crud_test
 
-// The two doors name the two answers the bool in Delete(tx, id, soft) carried. A
-// rename of that shape must not change which rows either answer touches, the stamp the
-// hiding one writes, or the permanence the removing one promises: a DeleteRow that
-// quietly soft-deleted would turn a purge into a hidden row. The referring-row case is
-// the other half of the claim: the database refuses it, classified and not answered.
+// The two doors name the two answers the bool in Delete(tx, id, soft) carried, and a
+// rename must not change which rows either touches, the stamp the hiding one writes, or
+// the permanence the removing one promises: a soft DeleteRow turns a purge into a miss.
 
 import (
 	"context"
@@ -73,8 +71,8 @@ func deletedAt(t *testing.T, tx db.Tx[db.Tenant], id uuid.UUID) (time.Time, bool
 }
 
 // TestSoftDeleteStampsTheRowDeleteWithSoftTrueStamped: the row stays in the table,
-// hidden from every read, stamped with the instant the column keeps — and a row
-// already hidden is refused, which is what makes the answer idempotent.
+// hidden from every read, stamped with the instant the column keeps — and a row already
+// hidden is refused.
 func TestSoftDeleteStampsTheRowDeleteWithSoftTrueStamped(t *testing.T) {
 	conn := setupOwned(t)
 	hidden, alsoHidden := write(t, conn, "hidden by the new door"), write(t, conn, "hidden by the old one")
@@ -128,8 +126,7 @@ func TestSoftDeleteStampsTheRowDeleteWithSoftTrueStamped(t *testing.T) {
 	})
 }
 
-// TestDeleteRowRemovesTheRowDeleteWithSoftFalseRemoved: both doors take the row out of
-// the table rather than hiding it, both answer ErrNotFound for a row that is not there.
+// TestDeleteRowRemovesTheRowDeleteWithSoftFalseRemoved: both doors take the row out of the table, not hide it.
 func TestDeleteRowRemovesTheRowDeleteWithSoftFalseRemoved(t *testing.T) {
 	conn := setupOwned(t)
 	gone, alsoGone := write(t, conn, "removed by the new door"), write(t, conn, "removed by the old one")
@@ -168,8 +165,8 @@ func TestDeleteRowRemovesTheRowDeleteWithSoftFalseRemoved(t *testing.T) {
 		}
 	})
 
-	// A row a foreign key points at is the database's refusal, and both doors hand
-	// it back the same way: the same verdict, nothing removed, the referring row kept.
+	// A row a foreign key points at is the database's refusal: both doors hand back the
+	// same verdict, nothing removed, the referring row kept.
 	referenced := write(t, conn, "someone still points at me")
 	var newText, oldText string
 	attempt(t, conn, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) {
