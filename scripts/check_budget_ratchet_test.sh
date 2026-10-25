@@ -225,6 +225,16 @@ fresh_branch approved
 budget 1004 docs && commit 'build(budget): go 3 -> 1004' 'Owner-approved: the owner, for this raise'
 expect_merge_base 0 'a raise over 1,000 lines with Owner-approved passes'
 
+fresh_branch approved_in_steps
+budget 903 docs && commit 'build(budget): go 3 -> 903'
+budget 1004 docs && commit 'build(budget): go 903 -> 1004' 'Owner-approved: the owner, for the whole raise'
+expect_merge_base 0 'the approval goes on the commit that crosses 1,000 lines, not on the raises before it'
+
+fresh_branch crossing_unapproved
+budget 903 docs && commit 'build(budget): go 3 -> 903' 'Owner-approved: an early word'
+budget 1004 docs && commit 'build(budget): go 903 -> 1004'
+expect_merge_base 1 'the commit that takes a bucket past 1,000 lines carries the approval itself'
+
 fresh_branch unfetched
 git update-ref -d refs/remotes/origin/main
 expect_merge_base 2 'a branch with no merge base with origin/main is refused'
