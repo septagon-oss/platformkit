@@ -1,4 +1,6 @@
 # Suite kind and exact foreign constructors, followed by the composition reason.
+modules/admin@external github.com/septagon-oss/platformkit/modules/billing,github.com/septagon-oss/platformkit/modules/content,github.com/septagon-oss/platformkit/modules/site,github.com/septagon-oss/platformkit/modules/task,github.com/septagon-oss/platformkit/modules/tenant,github.com/septagon-oss/platformkit/modules/user Composes billing, content, site, task, tenant and user so the shell, refusal and form language cases read a real workspace in the reader's language.
+modules/admin/internal@internal github.com/septagon-oss/platformkit/modules/task Composes Task so the dashboard's reader-formatted count and noun are measured over a resource with real rows.
 modules/auth@external github.com/septagon-oss/platformkit/modules/notification,github.com/septagon-oss/platformkit/modules/user Composes notification and user migrations for public Auth repair and seed behavior.
 modules/auth/contracts@external github.com/septagon-oss/platformkit/modules/notification,github.com/septagon-oss/platformkit/modules/user Builds the real schema used by the verification limiter contract tests.
 modules/auth/internal@internal github.com/septagon-oss/platformkit/modules/user Migrates and constructs User to check session cleanup against real users.
