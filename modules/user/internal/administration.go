@@ -200,8 +200,9 @@ func (s *Service) recordRefusal(ctx context.Context, attempt string, u *contract
 // countingRoles names the roles that make this person one of the tenant's
 // administrators: the grant the refused write would have taken away, which is the
 // fact a reader of the trail is asking about. A refusal always finds somebody who
-// counted, because the gate in floor is what got here; the list is never empty on
-// this path. The contract spells out why nothing else is carried.
+// counted, because the gate every floor runs before its check is what got here; the
+// list is never empty on this path. The contract spells out why nothing else is
+// carried.
 //
 // It is this package's copy of the filter modules/user/contracts applies to the
 // same rows in LeavingAdministration, and it stays here rather than widening the
@@ -220,19 +221,26 @@ func countingRoles(u *contracts.User, administering []string) []string {
 
 // RefuseLastAdministrator is the delete route's half of the floor: the row is
 // already gone as far as this transaction is concerned, so the state the write
-// would leave is no row at all.
+// would leave is no row at all. It is rest.Spec.AfterDelete rather than a Service
+// command because deleting a user is the generated CRUD route — there is no Delete
+// method for the rule to live in — and the hook runs inside the request's
+// transaction, so returning an error rolls the delete back and the caller gets a
+// 422 naming the rule.
 //
-// It is rest.Spec.AfterDelete rather than a Service command because deleting a
-// user is the generated CRUD route and not a lifecycle command — there is no
-// Delete method for the rule to live in. The hook runs inside the request's
-// transaction, so returning an error rolls the delete back and the caller gets
-// a 422 naming the rule.
+// Every refusal it makes is recorded, whichever half of the floor decided it: the
+// trail row is the only thing a refused delete leaves, and the invitation half
+// writes none, because an invitation command that is refused writes nothing. So the
+// record is this door's own, written with the roles that half counted.
 func (s *Service) RefuseLastAdministrator(ctx context.Context, tx db.Tx[db.Tenant], u *contracts.User) error {
 	if u.Invitation.Phase == contracts.InvitationPending {
 		return fmt.Errorf("%w: revoke the invitation before removing it", crud.ErrConflict)
 	}
 	if u.Invitation.Phase != "" {
-		return s.invitationFloor(ctx, tx, u, nil)
+		administering, err := s.invitationFloor(ctx, tx, u, nil)
+		if err != nil {
+			s.recordRefusal(ctx, attemptDelete, u, administering)
+		}
+		return err
 	}
 	return s.floor(ctx, tx, attemptDelete, u, nil)
 }

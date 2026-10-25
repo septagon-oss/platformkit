@@ -92,7 +92,7 @@ func (s *Service) LockForErasure(ctx context.Context, tx db.Tx[db.Tenant], id uu
 	if u.Invitation.Phase == contracts.InvitationPending {
 		return nil, fmt.Errorf("%w: revoke the invitation before erasure", crud.ErrConflict)
 	}
-	if err := s.invitationFloor(ctx, tx, &u, nil); err != nil {
+	if _, err := s.invitationFloor(ctx, tx, &u, nil); err != nil {
 		return nil, err
 	}
 	return &u, nil
