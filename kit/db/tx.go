@@ -196,17 +196,17 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 	// A panic must not leave the transaction open on the pooled connection.
 	defer func() {
 		if r := recover(); r != nil {
-			_ = p.Close(false)
+			_ = p.Rollback()
 			panic(r)
 		}
 	}()
 	// A nested join clones the shared handle, never this caller's operation handle.
 	gtx, span := p.handle()
 	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: gtx, tenant: t, span: span, hooks: p.hooks}), tx); err != nil {
-		_ = p.Close(false)
+		_ = p.Rollback()
 		return err
 	}
-	return p.Close(true)
+	return p.Commit()
 }
 
 // RunSystem opens a cross-tenant transaction. Only packages under kit/ can
@@ -434,16 +434,44 @@ func (p *Pending) handle() (*gorm.DB, trace.Span) {
 	return p.gtx, p.span
 }
 
+// Commit ends the open transaction by committing it, when its owner has not ended
+// and the settings its open placed are still the ones in force, and runs the
+// effects registered to after the commit. It answers what Close(true) answers: an
+// owner that ended first is an error wrapping its cause and nothing is committed,
+// a transaction whose settings were rewritten is refused with ErrScopeTampered and
+// rolled back, and a Pending with nothing open is a no-op that answers nil. It is
+// idempotent, and a commit leaves the Pending unable to open again under the owner
+// that ended.
+func (p *Pending) Commit() error { return p.finalise(true) }
+
+// Rollback ends the open transaction by discarding it, dropping the effects that
+// waited for its commit. It answers what Close(false) answers: the no-op and nil of
+// a Pending with nothing open, idempotent, and — as the commit is not — a Pending
+// left able to open again under a live owner.
+func (p *Pending) Rollback() error { return p.finalise(false) }
+
 // Close ends the transaction: it commits when keep is true, the owner has not
 // ended and the settings the open placed are still the ones in force, and rolls
 // back otherwise. An owner that ended first is reported as an error wrapping its
 // cause, whatever keep asked for. It is a no-op when nothing is open, and
 // idempotent; a Close under a live owner leaves the Pending able to open again.
 //
+// Deprecated: Use Commit or Rollback, which say which of the two answers they ask
+// for instead of a bare bool at the call site.
+func (p *Pending) Close(keep bool) error {
+	if keep {
+		return p.Commit()
+	}
+	return p.Rollback()
+}
+
+// finalise performs the one ending Close, Commit and Rollback all ask for, and
+// reports what it decided.
+//
 // The effects registered to after the commit belong to the transaction that
 // registered them, so they run here and nowhere else: a rollback drops them with
 // the rows, and the transaction this Pending opens next runs only its own.
-func (p *Pending) Close(keep bool) error {
+func (p *Pending) finalise(keep bool) error {
 	committed, deferred, err := p.end(keep)
 	if err != nil || !committed {
 		return err

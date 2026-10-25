@@ -224,7 +224,7 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := s.clearFileUses(ctx, tx, e); err != nil {
 		return e, err
 	}
-	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
+	if err := s.removeRow(ctx, tx, id); err != nil {
 		return e, err
 	}
 	// The record is gone, so every translation of it is gone with it, in this
@@ -238,6 +238,16 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		}
 	}
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
+}
+
+// removeRow is the delete this resource declared: SoftDelete hides the row and
+// keeps it for anything that referenced it, DeleteRow ends it. Spec's own flag
+// decides which, and the two doors say it in their names.
+func (s Spec[T]) removeRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+	if s.SoftDelete {
+		return crud.SoftDelete[T](ctx, tx, id)
+	}
+	return crud.DeleteRow[T](ctx, tx, id)
 }
 
 // CreateRow, UpdateRow and DeleteRow are this resource's write orchestration at

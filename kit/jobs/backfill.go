@@ -42,7 +42,7 @@ const BackfillJobName = "schema-backfill"
 // waits longest behind the running application's rows.
 //
 // The declaration travels with it because the drain is where a data file that places
-// rows is run, not the boot that left it pending: db.BackfillDeclaring states why the
+// rows is run, not the boot that left it pending: db.BackfillWithOptions states why the
 // session state cannot stay on the connection that declared it, and the composition
 // that named its slug and its hosts at Migrate is the only party that still knows them
 // when the tick arrives.
@@ -51,7 +51,7 @@ func BackfillMigrations(every time.Duration, migrateURL string, budget db.Migrat
 		Name:  BackfillJobName,
 		Every: every,
 		Run: func(ctx context.Context, _ *db.Conn) error {
-			return db.BackfillDeclaring(ctx, migrateURL, budget, decl, sources...)
+			return db.BackfillWithOptions(ctx, migrateURL, db.MigrateOptions{Budget: budget, Declaration: decl}, sources...)
 		},
 	}
 }
