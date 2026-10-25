@@ -208,20 +208,20 @@ func (s *Scheduler) run(ctx context.Context, j Job) {
 		span.End()
 	}()
 	if !j.Parallel {
-		unlock, ok, err := db.TryLock(ctx, s.conn, appname.JobLock(s.app, j.Name))
+		unlock, err := db.TryLockErr(ctx, s.conn, appname.JobLock(s.app, j.Name))
+		// The visible half of what an advisory lock costs, and the one no log level
+		// shows during an incident: this replica wanted to run the job and another
+		// one holds it. ErrHeld is that answer; any other error is the lock failing.
+		if errors.Is(err, db.ErrHeld) {
+			outcome = "another replica"
+			s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
+			return
+		}
 		if err != nil {
 			outcome = "lock refused"
 			s.log.ErrorContext(ctx, "jobs: could not take the lock", "job", j.Name, "error", err)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return
-		}
-		if !ok {
-			// The visible half of what an advisory lock costs, and the one no log
-			// level shows during an incident: this replica wanted to run the job and
-			// another one holds it.
-			outcome = "another replica"
-			s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
 			return
 		}
 		defer unlock()
