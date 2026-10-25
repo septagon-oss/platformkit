@@ -50,25 +50,25 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// round11ID is this router's tenant, under an id no other case in this binary moves.
-var round11ID = uuid.MustParse("11e11e11-11e1-41e1-81e1-11e11e11e111")
+// meteredID is this router's tenant, under an id no other case in this binary moves.
+var meteredID = uuid.MustParse("11e11e11-11e1-41e1-81e1-11e11e11e111")
 
-// round11Foreign names somebody else: the tenant this case puts in a header and the
+// meteredForeign names somebody else: the tenant this case puts in a header and the
 // kernel must never write anywhere. The strings are unique to this file, so a scan of
 // every span and datapoint in the process is a scan for exactly these.
 var (
-	round11ForeignID   = uuid.MustParse("f07e11f0-11f0-41f0-81f0-f07e11f07e11")
-	round11ForeignSlug = "globex-round11"
+	meteredForeignID   = uuid.MustParse("f07e11f0-11f0-41f0-81f0-f07e11f07e11")
+	meteredForeignSlug = "globex-metered"
 )
 
 const (
-	round11Permission = "round11:read"
-	round11ForgedID   = "the-request-id-the-caller-invented"
+	meteredPermission = "metered:read"
+	meteredForgedID   = "the-request-id-the-caller-invented"
 )
 
-// round11Router resolves one host, denies round11Permission, and refuses every other
+// meteredRouter resolves one host, denies meteredPermission, and refuses every other
 // name with the loader's own ErrNoSuchHost.
-func round11Router(t *testing.T) http.Handler {
+func meteredRouter(t *testing.T) http.Handler {
 	t.Helper()
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
@@ -79,25 +79,25 @@ func round11Router(t *testing.T) http.Handler {
 			if h != host {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 			}
-			return tenancy.Tenant{ID: round11ID, Slug: "acme11", Name: "Round Eleven"}, nil
+			return tenancy.Tenant{ID: meteredID, Slug: "acme11", Name: "Metered Site"}, nil
 		}),
 		Authorize: authorizerFunc(func(_ context.Context, _ tenancy.Tenant, g tenancy.Grant) (bool, error) {
-			return g.Permission != round11Permission, nil
+			return g.Permission != meteredPermission, nil
 		}),
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{}, false, nil
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	httpx.Register(api.Surfaces("round11").App, huma.Operation{
-		OperationID: "round11_ping", Method: http.MethodGet, Path: "/ping",
+	httpx.Register(api.Surfaces("metered").App, huma.Operation{
+		OperationID: "metered_ping", Method: http.MethodGet, Path: "/ping",
 	}, httpx.Public(), func(context.Context, *struct{}) (*struct{}, error) {
 		return &struct{}{}, nil
 	})
-	httpx.Register(api.Surfaces("round11").App, huma.Operation{
-		OperationID: "round11_secret", Method: http.MethodGet, Path: "/secret",
-	}, httpx.Permission(round11Permission), func(context.Context, *struct{}) (*struct{}, error) {
-		t.Errorf("the guard let a caller through to round11_secret, so the 401 below is not a refusal")
+	httpx.Register(api.Surfaces("metered").App, huma.Operation{
+		OperationID: "metered_secret", Method: http.MethodGet, Path: "/secret",
+	}, httpx.Permission(meteredPermission), func(context.Context, *struct{}) (*struct{}, error) {
+		t.Errorf("the guard let a caller through to metered_secret, so the 401 below is not a refusal")
 		return &struct{}{}, nil
 	})
 	if err := api.ValidateDeclarations(); err != nil {
@@ -106,8 +106,8 @@ func round11Router(t *testing.T) http.Handler {
 	return router
 }
 
-// round11Sent is one request through the router, answered as the client saw it.
-func round11Sent(t *testing.T, router http.Handler, authority, path string, header [][2]string) *httptest.ResponseRecorder {
+// meteredSent is one request through the router, answered as the client saw it.
+func meteredSent(t *testing.T, router http.Handler, authority, path string, header [][2]string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "http://"+authority+path, nil)
@@ -118,19 +118,19 @@ func round11Sent(t *testing.T, router http.Handler, authority, path string, head
 	return rec
 }
 
-// round11Poisoned reports an attribute whose value names the tenant this caller
+// meteredPoisoned reports an attribute whose value names the tenant this caller
 // invented. Both keys are checked, and by value rather than by key, because the
 // defect this case refuses does not have to use a pkit. key to be the defect:
 // writing the forged slug under http.host would be the same lie.
-func round11Poisoned(kv attribute.KeyValue) bool {
+func meteredPoisoned(kv attribute.KeyValue) bool {
 	v := kv.Value.Emit()
-	return strings.Contains(v, round11ForeignID.String()) || strings.Contains(v, round11ForeignSlug)
+	return strings.Contains(v, meteredForeignID.String()) || strings.Contains(v, meteredForeignSlug)
 }
 
-// round11Points is every attribute set every instrument holds right now, with the
+// meteredPoints is every attribute set every instrument holds right now, with the
 // instrument named beside it. The reader is cumulative, so the case looks for the
 // caller's own strings rather than trying to empty it.
-func round11Points(t *testing.T) map[string][]attribute.Set {
+func meteredPoints(t *testing.T) map[string][]attribute.Set {
 	t.Helper()
 	out := map[string][]attribute.Set{}
 	for name, m := range metrics(t) {
@@ -162,13 +162,13 @@ func round11Points(t *testing.T) map[string][]attribute.Set {
 // channel carries a tenant, the resolver answers a different one, and every number
 // and span this process emits names the resolver's.
 func TestACallerNamesNoTenantOnASpanOrANumberItDidNotResolve(t *testing.T) {
-	router := round11Router(t)
+	router := meteredRouter(t)
 	spans.Reset()
 
-	rec := round11Sent(t, router, host, "/api/v1/round11/ping", [][2]string{
-		{"Baggage", "pkit.tenant=" + round11ForeignSlug +
-			",pkit.tenant.id=" + round11ForeignID.String() +
-			",pkit.request.id=" + round11ForgedID},
+	rec := meteredSent(t, router, host, "/api/v1/metered/ping", [][2]string{
+		{"Baggage", "pkit.tenant=" + meteredForeignSlug +
+			",pkit.tenant.id=" + meteredForeignID.String() +
+			",pkit.request.id=" + meteredForgedID},
 	})
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("the public route answered %d, want it to reach the handler: %s", rec.Code, rec.Body.String())
@@ -181,7 +181,7 @@ func TestACallerNamesNoTenantOnASpanOrANumberItDidNotResolve(t *testing.T) {
 			continue
 		}
 		server = append(server, s.Name())
-		for key, want := range map[string]string{telemetry.AttrTenant: "acme11", telemetry.AttrTenantID: round11ID.String()} {
+		for key, want := range map[string]string{telemetry.AttrTenant: "acme11", telemetry.AttrTenantID: meteredID.String()} {
 			got, found := attributeOf(s, key)
 			if !found || got.Emit() != want {
 				t.Errorf("%s %s = %v (found %v), want %q", s.Name(), key, got, found, want)
@@ -193,7 +193,7 @@ func TestACallerNamesNoTenantOnASpanOrANumberItDidNotResolve(t *testing.T) {
 	}
 
 	// And nothing, on either surface, carries the tenant the header named.
-	round11NothingNames(t, "a tenant named in the caller's baggage and resolved by nobody")
+	meteredNothingNames(t, "a tenant named in the caller's baggage and resolved by nobody")
 
 	// The same header at a host the loader refuses, with an id Baggage itself will not
 	// carry (kit/httpx accepts a comma; W3C refuses one) so the caller's bag is the bag
@@ -203,9 +203,9 @@ func TestACallerNamesNoTenantOnASpanOrANumberItDidNotResolve(t *testing.T) {
 	// a header. an_unresolved_host_invents_no_number_test.go pins the Host-header form
 	// of this rule; nothing pinned its baggage form.
 	spans.Reset()
-	rec = round11Sent(t, router, "nobody-round11.test", "/api/v1/round11/secret", [][2]string{
+	rec = meteredSent(t, router, "nobody-metered.test", "/api/v1/metered/secret", [][2]string{
 		{"X-Request-ID", "a,b,c"},
-		{"Baggage", "pkit.tenant=" + round11ForeignSlug + ",pkit.tenant.id=" + round11ForeignID.String()},
+		{"Baggage", "pkit.tenant=" + meteredForeignSlug + ",pkit.tenant.id=" + meteredForeignID.String()},
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("the unresolvable host answered %d, want the 404 it gets: %s", rec.Code, rec.Body.String())
@@ -213,26 +213,26 @@ func TestACallerNamesNoTenantOnASpanOrANumberItDidNotResolve(t *testing.T) {
 	if rec.Header().Get(httpx.RequestIDHeader) != "a,b,c" {
 		t.Fatalf("the kernel answered %q as the request id, want the caller's own id kept in the header", rec.Header().Get(httpx.RequestIDHeader))
 	}
-	round11NothingNames(t, "a tenant named in a header, at a host that resolved no tenant")
+	meteredNothingNames(t, "a tenant named in a header, at a host that resolved no tenant")
 }
 
-// round11NothingNames scans every span this process recorded and every attribute set
+// meteredNothingNames scans every span this process recorded and every attribute set
 // every instrument holds, and refuses any value that names the tenant the caller
 // invented. By value rather than by key: writing the forged slug under http.host would
 // be the same lie with a tidier key.
-func round11NothingNames(t *testing.T, why string) {
+func meteredNothingNames(t *testing.T, why string) {
 	t.Helper()
 	for _, s := range spans.Ended() {
 		for _, kv := range s.Attributes() {
-			if round11Poisoned(kv) {
+			if meteredPoisoned(kv) {
 				t.Errorf("span %q carries %s=%s — %s", s.Name(), kv.Key, kv.Value.Emit(), why)
 			}
 		}
 	}
-	for name, sets := range round11Points(t) {
+	for name, sets := range meteredPoints(t) {
 		for _, set := range sets {
 			for _, kv := range set.ToSlice() {
-				if round11Poisoned(kv) {
+				if meteredPoisoned(kv) {
 					t.Errorf("%s carries %s=%s — %s", name, kv.Key, kv.Value.Emit(), why)
 				}
 			}
@@ -247,13 +247,13 @@ func round11NothingNames(t *testing.T, why string) {
 // carry — kit/httpx accepts any printable ASCII to 64 bytes, and W3C refuses "=" — the
 // kernel leaves the bag alone, and the bag the caller sent arrives with it.
 func TestEverySpanOfARequestNamesTheRequestTheCallerWasAnsweredFor(t *testing.T) {
-	router := round11Router(t)
+	router := meteredRouter(t)
 	spans.Reset()
 
-	const given = "round11=id=baggage=refuses=this"
-	rec := round11Sent(t, router, host, "/api/v1/round11/ping", [][2]string{
+	const given = "metered=id=baggage=refuses=this"
+	rec := meteredSent(t, router, host, "/api/v1/metered/ping", [][2]string{
 		{"X-Request-ID", given},
-		{"Baggage", "pkit.request.id=" + round11ForgedID},
+		{"Baggage", "pkit.request.id=" + meteredForgedID},
 	})
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("the public route answered %d, want it to reach the handler: %s", rec.Code, rec.Body.String())
@@ -287,12 +287,12 @@ func TestEverySpanOfARequestNamesTheRequestTheCallerWasAnsweredFor(t *testing.T)
 // series naming no tenant, even though the same router counted a refusal for a tenant
 // one request earlier.
 func TestARefusalTheResolverCouldNotAttributeNamesNoTenantAfterATenantWasServed(t *testing.T) {
-	router := round11Router(t)
+	router := meteredRouter(t)
 
-	refused := func() int64 { return refusalSum(t, "unauthenticated", &round11ID) }
+	refused := func() int64 { return refusalSum(t, "unauthenticated", &meteredID) }
 	beforeDenied := refused()
 
-	rec := round11Sent(t, router, host, "/api/v1/round11/secret", nil)
+	rec := meteredSent(t, router, host, "/api/v1/metered/secret", nil)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("the guarded route answered %d, want the 401 an anonymous caller gets: %s", rec.Code, rec.Body.String())
 	}
@@ -300,9 +300,9 @@ func TestARefusalTheResolverCouldNotAttributeNamesNoTenantAfterATenantWasServed(
 		t.Fatalf("the refusal of acme11's own request moved acme11's unauthenticated count by %d, want 1", grew)
 	}
 
-	beforeSeries := round11Refusals(t)
+	beforeSeries := meteredRefusals(t)
 	beforeAll := refusalClassTotal(t, "not_found")
-	rec = round11Sent(t, router, "unattributed-round11.test", "/api/v1/round11/secret", nil)
+	rec = meteredSent(t, router, "unattributed-metered.test", "/api/v1/metered/secret", nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("a host the loader does not know answered %d, want the 404 that answers it: %s",
 			rec.Code, rec.Body.String())
@@ -324,7 +324,7 @@ func TestARefusalTheResolverCouldNotAttributeNamesNoTenantAfterATenantWasServed(
 		added    int64
 		tenanted []string
 	)
-	for series, now := range round11Refusals(t) {
+	for series, now := range meteredRefusals(t) {
 		grew := now - beforeSeries[series]
 		if grew < 0 {
 			t.Fatalf("the series %s went down from %d to %d between two requests", series, beforeSeries[series], now)
@@ -346,10 +346,10 @@ func TestARefusalTheResolverCouldNotAttributeNamesNoTenantAfterATenantWasServed(
 	}
 }
 
-// round11Refusals is every refusal series the reader holds, rendered as
+// meteredRefusals is every refusal series the reader holds, rendered as
 // "<class> {key=value ...}" -> count, so a series' whole identity is comparable and
 // printable in the same breath.
-func round11Refusals(t *testing.T) map[string]int64 {
+func meteredRefusals(t *testing.T) map[string]int64 {
 	t.Helper()
 	out := map[string]int64{}
 	m, ok := metrics(t)["pkit.http.refusals"]

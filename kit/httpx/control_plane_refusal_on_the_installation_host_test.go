@@ -1,6 +1,7 @@
 package httpx_test
 
-// The fifth review's cases, left in the tree by a reviewer who did not write the fix.
+// Two refusals of the installation's own host must not be told apart by anything a client can
+// read.
 //
 // ## The case that fails, and what it falsifies
 //
@@ -45,8 +46,9 @@ package httpx_test
 //
 // ## The case that passes
 //
-// Retry-After on the public write limit was left unverified by the fourth review for the
-// limb this round changed. Headers are set before the answer is written, on either end of
+// Retry-After on the public write limit has two limbs — the answer inside the limit and the
+// one past it — and both are verified here. Headers are set before the answer is written, on
+// either end of
 // the opt-out, which the second case pins so a later change to the fallback writer that
 // drops them is caught here rather than in a browser.
 
@@ -74,12 +76,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// round5Kernel is guardKernel with the one thing it cannot express: whether the tenant this
+// controlPlaneKernel is guardKernel with the one thing it cannot express: whether the tenant this
 // installation resolves at the installation host *is* the operator's. Without it an Ops
 // address is either never served (a customer host, refused by the host gate) or never
 // refused by notHere (an operator tenant), and the road README's second half describes
 // cannot be built at all.
-func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler, func(rel string) string, func(rel string) string) {
+func controlPlaneKernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler, func(rel string) string, func(rel string) string) {
 	t.Helper()
 	who := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme", Operator: operator}
 	_, app := dbtest.Schema(t)
@@ -100,7 +102,7 @@ func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler,
 		Fault: fault,
 	})
 	httpx.Register(api.Surfaces(probe).Ops, huma.Operation{
-		OperationID: "round5-operate", Method: http.MethodGet, Path: "/all",
+		OperationID: "controlPlane-operate", Method: http.MethodGet, Path: "/all",
 	}, httpx.OperatorPermission("billing:operate"), ok)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the fixture does not describe itself: %v", err)
@@ -108,11 +110,11 @@ func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler,
 	return router, api.Surfaces(probe).Ops.Path, func(rel string) string { return httpx.AppRoot + rel }
 }
 
-// round5Answer is what one request read off a real server: the status, the headers as they
+// controlPlaneAnswer is what one request read off a real server: the status, the headers as they
 // arrived (Content-Length included) and the whole body a client would parse. The two stamps
 // bracket the exchange on the client's own clock, which is the interval inside which the
-// server can have written the Date this answer carries; round5Date is what reads them.
-type round5Answer struct {
+// server can have written the Date this answer carries; controlPlaneDate is what reads them.
+type controlPlaneAnswer struct {
 	status int
 	header http.Header
 	body   string
@@ -120,7 +122,7 @@ type round5Answer struct {
 	readAt time.Time
 }
 
-func round5Ask(t *testing.T, server, authority, path, accept, id string) round5Answer {
+func controlPlaneAsk(t *testing.T, server, authority, path, accept, id string) controlPlaneAnswer {
 	t.Helper()
 	sent := time.Now()
 	req, err := http.NewRequest(http.MethodGet, server+path, nil)
@@ -140,7 +142,7 @@ func round5Ask(t *testing.T, server, authority, path, accept, id string) round5A
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
-	return round5Answer{status: res.StatusCode, header: res.Header, body: string(body),
+	return controlPlaneAnswer{status: res.StatusCode, header: res.Header, body: string(body),
 		sentAt: sent, readAt: time.Now()}
 }
 
@@ -148,7 +150,7 @@ func round5Ask(t *testing.T, server, authority, path, accept, id string) round5A
 // (headers.go), which is the one thing a comparison of two responses may not read apart.
 var noncePattern = regexp.MustCompile(`'nonce-[A-Za-z0-9_=+/]+'`)
 
-// round5Date compares the other thing two responses may not be read apart on — and this file
+// controlPlaneDate compares the other thing two responses may not be read apart on — and this file
 // had it wrong, which is why the reason is written here. `Date` is not part of the answer this
 // kernel writes: nothing in kit/httpx sets or clears one (the word does not appear in the
 // package's non-test files, nor in any file of this repository that touches a ResponseWriter),
@@ -168,7 +170,7 @@ var noncePattern = regexp.MustCompile(`'nonce-[A-Za-z0-9_=+/]+'`)
 // that carried it (copied off a cached answer, or a writer that stopped the clock) fails here.
 // What stopped being a failure condition is the agreement of the two strings, which was never
 // this case's claim.
-func round5Date(t *testing.T, which string, answer round5Answer) {
+func controlPlaneDate(t *testing.T, which string, answer controlPlaneAnswer) {
 	t.Helper()
 	values := answer.header.Values("Date")
 	if len(values) != 1 {
@@ -187,7 +189,7 @@ func round5Date(t *testing.T, which string, answer round5Answer) {
 	}
 }
 
-func round5Same(t *testing.T, a, b round5Answer, asked, reference string) {
+func controlPlaneSame(t *testing.T, a, b controlPlaneAnswer, asked, reference string) {
 	t.Helper()
 	if a.status != b.status {
 		t.Errorf("%s answers %d where %s answers %d: README.md promises one status for both",
@@ -200,17 +202,17 @@ func round5Same(t *testing.T, a, b round5Answer, asked, reference string) {
 	// The two Date stamps are compared as instants, which is the only way two of them taken a
 	// second apart are comparable: each must be the single readable stamp of its own exchange,
 	// and that bracket bounds the pair, since both then lie between the first ask and the
-	// reading of the second. round5Date says why, and fails the case when either answer fails
+	// reading of the second. controlPlaneDate says why, and fails the case when either answer fails
 	// it; the header is out of the loop below because no string comparison has anything left
 	// to catch in it.
-	round5Date(t, asked, a)
-	round5Date(t, reference, b)
+	controlPlaneDate(t, asked, a)
+	controlPlaneDate(t, reference, b)
 	for name := range b.header {
 		if strings.EqualFold(name, "X-Request-Id") {
 			continue // the caller sent it, and sent the same value on both
 		}
 		if name == "Date" {
-			continue // round5Date compared it above, as the instant it is
+			continue // controlPlaneDate compared it above, as the instant it is
 		}
 		got := fmt.Sprint(a.header.Values(name))
 		want := fmt.Sprint(b.header.Values(name))
@@ -242,10 +244,10 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 	// composition where the host resolves to the operator's tenant the very same address
 	// is *served*. If this fails, the address is not mounted and the table below compares
 	// two ordinary 404s and means nothing.
-	served, opsAt, _ := round5Kernel(t, true, nil)
+	served, opsAt, _ := controlPlaneKernel(t, true, nil)
 	opServer := httptest.NewServer(served)
 	defer opServer.Close()
-	if got := round5Ask(t, opServer.URL, installationHost, opsAt("/all"), "application/json", id); got.status != http.StatusOK {
+	if got := controlPlaneAsk(t, opServer.URL, installationHost, opsAt("/all"), "application/json", id); got.status != http.StatusOK {
 		t.Fatalf("the operator's tenant at %s = %d %s; the address is not mounted, so the case below compares nothing",
 			opsAt("/all"), got.status, got.body)
 	}
@@ -264,11 +266,11 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 			if shape.answer {
 				fault = documentFault
 			}
-			router, opsAt, appAt := round5Kernel(t, false, fault)
+			router, opsAt, appAt := controlPlaneKernel(t, false, fault)
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			refusal := round5Ask(t, server.URL, installationHost, opsAt("/all"), shape.accept, id)
+			refusal := controlPlaneAsk(t, server.URL, installationHost, opsAt("/all"), shape.accept, id)
 			if refusal.status != http.StatusNotFound {
 				t.Fatalf("the control plane asked by a tenant that is not the installation's = %d %s, want the 404 this case compares",
 					refusal.status, refusal.body)
@@ -284,7 +286,7 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 			} else if n := strings.Count(refusal.body, "<!doctype html>"); n != 1 {
 				t.Errorf("%s carries %d pages in one body: %s", shape.name, n, refusal.body)
 			}
-			round5Same(t, refusal, round5Ask(t, server.URL, installationHost, appAt(nowhere), shape.accept, id),
+			controlPlaneSame(t, refusal, controlPlaneAsk(t, server.URL, installationHost, appAt(nowhere), shape.accept, id),
 				"the control plane at the installation host", "an address nobody mounted")
 		})
 	}

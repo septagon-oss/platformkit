@@ -276,7 +276,7 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 // (kit/db/migrate.go: compositionLockKey), spelled out here rather than borrowed from
 // another file's declaration so this case stands on its own. The lock is the two-key
 // one: since main's 5605448 a run takes (compositionLockKey, the OID of the namespace
-// it resolves to), because one history table belongs to one namespace, and review3_guard_floor_test.go
+// it resolves to), because one history table belongs to one namespace, and composition_lock_oid_test.go
 // and composition_lock_rehold_test.go hold and release that pair. A session holding
 // the bare key blocks nothing, which is why this case names the pair too.
 const cancellationCompositionKey = 7240101
@@ -337,9 +337,9 @@ func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
 // this schema's OID, so a run of another package's schema is not standing in it — and
 // what this case can still queue behind is another session of its own schema, which is
 // what the two cases that hold the key on purpose
-// (review3_guard_floor_test.go, composition_lock_rehold_test.go) do. So getting
+// (composition_lock_oid_test.go, composition_lock_rehold_test.go) do. So getting
 // the key is a wait in a queue this test does not control, which is why the bound is the
-// five minutes review3_guard_floor_test.go gives its own acquisition: losing a fair race
+// five minutes composition_lock_rehold_test.go gives its own acquisition: losing a fair race
 // here says nothing about the behaviour under test.
 func takeCompositionKey(t *testing.T, migrateURL string) func() {
 	t.Helper()

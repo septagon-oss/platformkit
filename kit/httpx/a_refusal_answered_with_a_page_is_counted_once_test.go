@@ -55,7 +55,7 @@ import (
 // pageMarker is what the renderer below writes and nothing else in this package
 // can write. It is the reachability probe: a case that does not find it in the body
 // never reached the branch it means to test, and says so.
-const pageMarker = "<!--round13-->"
+const pageMarker = "<!--refusal-page-->"
 
 // pageFault is a renderer that answers: the status the verdict carries, the marker,
 // and nothing but the page. Returning false — the opt-out — is the other branch and
@@ -82,7 +82,7 @@ func pageFixture(t *testing.T) http.Handler {
 			if h != host {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 			}
-			return tenancy.Tenant{ID: reviewTenant, Slug: "acme", Name: "Acme"}, nil
+			return tenancy.Tenant{ID: counterTenant, Slug: "acme", Name: "Acme"}, nil
 		}),
 		Authorize: authorizerFunc(func(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
 			return false, nil // every grant is refused: this is the guard's branch
@@ -90,14 +90,14 @@ func pageFixture(t *testing.T) http.Handler {
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			// A signed-in caller, so the refusal below is the guard's denial of the
 			// grant and not the anonymous branch (which answers 303 at the sign-in page).
-			return tenancy.Principal{UserID: reviewTenant, Roles: []string{"reviewer"}}, true, nil
+			return tenancy.Principal{UserID: counterTenant, Roles: []string{"reviewer"}}, true, nil
 		},
 		Fault: pageFault,
 		Log:   slog.New(slog.DiscardHandler),
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
 		OperationID: "r13_public_query", Method: http.MethodGet, Path: "/public-query",
-	}, httpx.Public(), func(context.Context, *reviewInput) (*struct{}, error) {
+	}, httpx.Public(), func(context.Context, *counterInput) (*struct{}, error) {
 		return &struct{}{}, nil
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{

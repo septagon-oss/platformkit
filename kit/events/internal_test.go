@@ -450,7 +450,7 @@ func deliver(t *testing.T, transport Transport, seen <-chan Event, name string) 
 	}
 }
 
-// TestTwoWorkersShareOneDurable is the review's finding about scaling out: the
+// TestTwoWorkersShareOneDurable holds the rule about scaling out: the
 // boot log recommends running more than one worker, and a second one could not
 // start. A push consumer with no deliver group belongs to one subscriber, and
 // the second subscription is refused —
