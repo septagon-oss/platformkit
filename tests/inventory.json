@@ -45709,6 +45709,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/pool_floor_two_links_test.go",
+   "id": "modules/auth/internal/pool_floor_two_links_test.go#TestTwoMailedLinksAtTheKernelsPoolFloorAreEachRecordedAsSent",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoMailedLinksAtTheKernelsPoolFloorAreEachRecordedAsSent",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/presentation_ownership_test.go",
    "id": "modules/auth/internal/presentation_ownership_test.go#TestAuthPageMarkupLivesInInternalUI",
    "kind": "go",
@@ -45942,6 +45961,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/internal/resend_cooldown_outlives_the_handover_test.go",
+   "id": "modules/auth/internal/resend_cooldown_outlives_the_handover_test.go#TestTheResendCooldownIsInForceTheMomentTheMailSlotIsReleased",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheResendCooldownIsInForceTheMomentTheMailSlotIsReleased",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
    "verdict": "keep"
   },
   {
@@ -86123,7 +86161,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2361,
+  "files": 2363,
   "forge_runs": [
    408,
    413,
@@ -86157,7 +86195,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3725,
+   "behaviour": 3727,
    "composition": 504,
    "contract": 24,
    "journey": 116
@@ -86176,9 +86214,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4369,
+  "rows": 4371,
   "tiers": {
-   "merge": 2688,
+   "merge": 2690,
    "nightly": 116,
    "push": 1565
   },
@@ -86186,13 +86224,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2116,
+   "keep": 2118,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3983,
+   "keep": 3985,
    "keep-rewrite": 170,
    "merge": 216
   }
