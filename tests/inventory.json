@@ -6573,25 +6573,6 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
-   "file": "apps/platformkit/seed_budget_order_test.go",
-   "id": "apps/platformkit/seed_budget_order_test.go#TestSeedCaseHasItsBudgetBeforeItLands",
-   "kind": "go",
-   "layer": "composition",
-   "name": "TestSeedCaseHasItsBudgetBeforeItLands",
-   "needs_db": true,
-   "pkg": "apps/platformkit",
-   "round_named": false,
-   "rule": "",
-   "rule_present": false,
-   "tier": "merge",
-   "unique_lines": null,
-   "unique_reach": [],
-   "unique_reach_kind": "symbols",
-   "verdict": "keep"
-  },
-  {
-   "area": "apps",
-   "evidence": "not-round-named",
    "file": "apps/platformkit/seed_command_authentication_test.go",
    "id": "apps/platformkit/seed_command_authentication_test.go#TestSeedCommandRequiresAnAuthenticatedOperator",
    "kind": "go",
@@ -83071,7 +83052,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2245,
+  "files": 2244,
   "forge_runs": [
    408,
    413,
@@ -83106,7 +83087,7 @@
   ],
   "layers": {
    "behaviour": 3585,
-   "composition": 495,
+   "composition": 494,
    "contract": 21,
    "journey": 109
   },
@@ -83124,9 +83105,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4210,
+  "rows": 4209,
   "tiers": {
-   "merge": 2599,
+   "merge": 2598,
    "nightly": 109,
    "push": 1502
   },
@@ -83134,13 +83115,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2000,
+   "keep": 1999,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3824,
+   "keep": 3823,
    "keep-rewrite": 170,
    "merge": 216
   }
