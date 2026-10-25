@@ -91,14 +91,20 @@ var faults = []int{
 // out of the service rather than out of a screen.
 func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 	app, public := surfaces.App, surfaces.Public
-	// The address the door below is mounted at, prefix included. A refusal that
-	// sends a caller somewhere has to name where that thing is served, and only
-	// the router knows: the module owns "/files/{id}/uses" while the surface owns
-	// the /api/v1/<module> in front of it. Composing it here rather than writing
-	// the whole address out is what keeps this module free of a prefix literal it
-	// could easily get wrong — an address assembled from the relative path alone
-	// is one a caller follows into a 404.
-	usesAt := app.Path(usesRoute)
+
+	registerLibraryReads(app, svc)
+	registerCaptionDoors(app, svc)
+	registerFileRead(app, svc)
+	registerUpload(app, svc)
+	registerContentDoors(app, public, svc)
+	registerDeleteGrantAndUses(app, svc)
+	registerHoldsAndErasure(app, svc)
+
+	catalog(surfaces, svc)
+}
+
+// registerLibraryReads mounts the two reads an administrator opens a screen with: the tenant's files, and the storage meter beside them.
+func registerLibraryReads(app *httpx.Router, svc door) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-list",
 		Method:      http.MethodGet,
@@ -150,7 +156,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			}
 			return &rest.Item[*contracts.Quota]{Body: q}, nil
 		})
+}
 
+// registerCaptionDoors mounts the caption at the two doors that perform it.
+func registerCaptionDoors(app *httpx.Router, svc door) {
 	// The caption, at the two doors that perform it.
 	//
 	// PUT is this module's own spelling, and PUT rather than PATCH because the pair
@@ -198,7 +207,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventAltered}},
 		}, httpx.Permission(contracts.PermissionFileManage), caption)
 	}
+}
 
+// registerFileRead mounts one file's record, which is what a caller reads before it asks for the bytes.
+func registerFileRead(app *httpx.Router, svc door) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-read",
 		Method:      http.MethodGet,
@@ -219,7 +231,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			}
 			return &rest.Item[*contracts.File]{Body: f}, nil
 		})
+}
 
+// registerUpload mounts the multipart create: the only file route that writes bytes, and the reason this module has no rest.Spec.
+func registerUpload(app *httpx.Router, svc door) {
 	httpx.Register(app, huma.Operation{
 		OperationID:   "file-file-upload",
 		Method:        http.MethodPost,
@@ -282,7 +297,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			}
 			return &rest.Item[*contracts.File]{Body: f}, nil
 		})
+}
 
+// registerContentDoors mounts the bytes at the member's door and the public door, for GET and for HEAD.
+func registerContentDoors(app, public *httpx.Router, svc door) {
 	// GET and HEAD, twice, because a browser and a downloader both ask for the
 	// size before they ask for the bytes and chi mounts no method a route did
 	// not declare. The handler is the same one: http.ServeContent writes the
@@ -322,6 +340,18 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			return download(ctx, svc, in.ID, true, in.Width)
 		})
 	}
+}
+
+// registerDeleteGrantAndUses mounts the removal, the visibility grant, and the read of who shows the file.
+func registerDeleteGrantAndUses(app *httpx.Router, svc door) {
+	// The address the door below is mounted at, prefix included. A refusal that
+	// sends a caller somewhere has to name where that thing is served, and only
+	// the router knows: the module owns "/files/{id}/uses" while the surface owns
+	// the /api/v1/<module> in front of it. Composing it here rather than writing
+	// the whole address out is what keeps this module free of a prefix literal it
+	// could easily get wrong — an address assembled from the relative path alone
+	// is one a caller follows into a 404.
+	usesAt := app.Path(usesRoute)
 
 	httpx.Register(app, huma.Operation{
 		OperationID:   "file-file-delete",
@@ -397,7 +427,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			}
 			return &rest.Item[[]contracts.UseRow]{Body: uses}, nil
 		})
+}
 
+// registerHoldsAndErasure mounts the two writes that keep bytes alive or end them: a hold placed and released, and a subject's erasure.
+func registerHoldsAndErasure(app *httpx.Router, svc door) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-retain",
 		Method:      http.MethodPost,
@@ -472,8 +505,6 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			}
 			return &rest.Item[*contracts.ErasureReceipt]{Body: receipt}, nil
 		})
-
-	catalog(surfaces, svc)
 }
 
 // arriving is the file part of a multipart request, as a reader nothing has

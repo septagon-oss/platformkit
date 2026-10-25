@@ -36,6 +36,16 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	// relative to it.
 	protocol := s.App.At("/scim/v2")
 
+	registerProtocolMeta(protocol, svc)
+	registerUserProvisioning(protocol, svc)
+	registerUserChanges(protocol, svc)
+	registerGroupProvisioning(protocol, svc)
+	registerGroupChanges(protocol, svc)
+	registerGroupMappings(s.App, svc)
+}
+
+// registerProtocolMeta answers the three discovery questions a client asks before it provisions anything: what this service supports, what resources it has, and what fields each one carries.
+func registerProtocolMeta(protocol *httpx.Router, svc contracts.Service) {
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-service-provider-config", Method: http.MethodGet, Path: "/ServiceProviderConfig",
 		Summary: "What this service supports", Tags: []string{"scim"},
@@ -92,7 +102,10 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		return answered(*schema), nil
 	})
+}
 
+// registerUserProvisioning mounts the people: the filtered list, the create, and one read.
+func registerUserProvisioning(protocol *httpx.Router, svc contracts.Service) {
 	// The people.
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-users-list", Method: http.MethodGet, Path: "/Users",
@@ -145,7 +158,10 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		return answered(*u), nil
 	})
+}
 
+// registerUserChanges mounts the three ways a person's resource changes: replaced whole, patched, and deactivated.
+func registerUserChanges(protocol *httpx.Router, svc contracts.Service) {
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-user-replace", Method: http.MethodPut, Path: "/Users/{id}",
 		Summary: "Replace a person's record", Tags: []string{"scim"},
@@ -205,7 +221,10 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		return &empty{}, nil
 	})
+}
 
+// registerGroupProvisioning mounts the collections: the list, the create, and one read.
+func registerGroupProvisioning(protocol *httpx.Router, svc contracts.Service) {
 	// The collections, and the role each brings.
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-groups-list", Method: http.MethodGet, Path: "/Groups",
@@ -256,7 +275,10 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		return answered(*g), nil
 	})
+}
 
+// registerGroupChanges mounts the three ways a group changes: replaced whole, patched by membership operation, and deleted.
+func registerGroupChanges(protocol *httpx.Router, svc contracts.Service) {
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-group-replace", Method: http.MethodPut, Path: "/Groups/{id}",
 		Summary: "Replace a group", Tags: []string{"scim"},
@@ -315,12 +337,15 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		return &empty{}, nil
 	})
+}
 
+// registerGroupMappings mounts the tenant's own door beside the protocol's: which role a group name brings.
+func registerGroupMappings(app *httpx.Router, svc contracts.Service) {
 	// The tenant's own door: which role a group brings. Guarded by the user
 	// module's existing permissions, because binding a group name to a role is a
 	// role assignment written in advance — which is exactly what user:manage
 	// already means — and minting scim:map would put two names on one act.
-	httpx.Register(s.App, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "scim-group-mappings-list", Method: http.MethodGet, Path: "/group-mappings",
 		Summary: "Which role each group brings", Tags: []string{"scim"},
 	}, httpx.Permission(usercontracts.PermissionUserRead), func(ctx context.Context, _ *struct{}) (*document[contracts.MappingList], error) {
@@ -335,7 +360,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		return answered(list), nil
 	})
 
-	httpx.Register(s.App, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "scim-group-mapping-write", Method: http.MethodPut, Path: "/group-mappings",
 		Summary: "Bind a group to a role, or clear the binding", Tags: []string{"scim"},
 		Description: "An empty role clears the binding; the group stays, because a connector still mirrors it. The role has to be one this tenant knows.",
