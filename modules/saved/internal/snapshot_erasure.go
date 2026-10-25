@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -63,9 +64,9 @@ func (*snapshotRow) TableName() string { return "saved_items" }
 // identifier stands or as the escaping of a JSON string writes it. A rewritten copy keeps
 // its id, its source, its words around the placeholder and the revision every unsave
 // quotes, and takes the instant of the rewrite in updated_at, because a rewrite is a
-// write. A rewrite that would leave bytes which parse as nothing refuses the whole
-// erasure, so an erasure either reaches every document it should and commits, or leaves
-// the table as it was.
+// write. A copy this rewrite cannot read, or whose rewrite would leave bytes which parse as
+// nothing, refuses the whole erasure, so an erasure either reaches every document it should
+// and commits, or leaves the table as it was.
 func scrubSnapshots(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Subject) error {
 	terms := mentions(s)
 	spelled, args := spelledIn(s)
@@ -143,16 +144,21 @@ func escapedInJSON(id string) string {
 }
 
 // rewriteSnapshot writes one document back, if the erasure changes it at all. A copy that
-// no longer answers as a document after its rewrite is a refusal rather than a write: the
-// transaction holding the erasure rolls back, and no copy is left holding bytes every
-// reader of it would choke on.
+// this rewrite cannot read, or that no longer answers as a document after its rewrite, is a
+// refusal rather than a write: the transaction holding the erasure rolls back, and no copy
+// is left holding bytes every reader of it would choke on. A row selected for the subject
+// and then left unread is refused for the same reason — an erasure that reported the copy
+// done would leave the person's own words standing in it forever, unremarked.
 func rewriteSnapshot(ctx context.Context, tx db.Tx[db.Tenant], held *snapshotRow,
 	terms []mention, s personaldata.Subject, at time.Time) error {
 	// The copy a person kept of their own source is deleted outright before this runs, so
 	// every row still standing is one the subject did not save. The bare-word form of a
 	// handle, which the kernel reserves for a row carrying its subject's own id, is offered
 	// to the row that ever says so, and the @-mention is all another person's copy loses.
-	next, changed := rewriteDocument(held.Values, terms, s.Token(), held.PersonID == s.ID)
+	next, changed, err := rewriteDocument(held.Values, terms, s.Token(), held.PersonID == s.ID)
+	if err != nil {
+		return fmt.Errorf("saved: erasing %s could not read the copy %s: %w", s.ID, held.ID, err)
+	}
 	if !changed {
 		return nil
 	}
@@ -172,11 +178,16 @@ func rewriteSnapshot(ctx context.Context, tx db.Tx[db.Tenant], held *snapshotRow
 // the placeholder is spliced over the bytes that text arrived as, whole escape sequences
 // included — which also reaches a name the escaping wrote, the one a match over stored
 // bytes leaves standing. Untouched strings, numbers and key order come back byte for byte.
-// A document that does not parse is answered with itself: this rewrite exists to keep a
-// snapshot a document, and bytes that never were one are not its to repair.
-func rewriteDocument(document string, terms []mention, token string, own bool) (string, bool) {
-	if len(terms) == 0 || !json.Valid([]byte(document)) {
-		return document, false
+// A document this rewrite cannot read — bytes that parse as no document at all, or a string
+// whose escapes no reader of the column could decode — answers an error rather than itself:
+// the copy is one the erasure cannot certify, and answering with the document unchanged is
+// how an erasure comes to report a person forgotten while their name still stands.
+func rewriteDocument(document string, terms []mention, token string, own bool) (string, bool, error) {
+	if len(terms) == 0 {
+		return document, false, nil
+	}
+	if !json.Valid([]byte(document)) {
+		return document, false, errors.New("the copy holds bytes that parse as no document")
 	}
 	var out strings.Builder
 	out.Grow(len(document))
@@ -189,7 +200,7 @@ func rewriteDocument(document string, terms []mention, token string, own bool) (
 		}
 		held, ok := decodeString(document, at+1)
 		if !ok {
-			return document, false
+			return document, false, errors.New("the copy holds a string no reader of it can decode")
 		}
 		if kept, changed := held.splice(terms, token, own); changed {
 			out.WriteString(kept)
@@ -200,9 +211,9 @@ func rewriteDocument(document string, terms []mention, token string, own bool) (
 		at = held.end + 1
 	}
 	if !rewrote {
-		return document, false
+		return document, false, nil
 	}
-	return out.String(), true
+	return out.String(), true, nil
 }
 
 // documentString is one string of a document: the text it decodes to, where its closing
@@ -218,8 +229,8 @@ type documentString struct {
 
 // decodeString reads the string of document that begins at from — the byte after its
 // opening quote — and answers the text it holds. A string that never closes, or that
-// carries an escape the JSON grammar does not know, answers false, and the caller leaves
-// the whole document as it stands.
+// carries an escape the JSON grammar does not write at all, answers false, and the caller
+// refuses the whole document rather than rewriting part of it.
 func decodeString(document string, from int) (documentString, bool) {
 	held := documentString{doc: document, from: from}
 	for at := from; at < len(document); {
@@ -253,9 +264,14 @@ func (held *documentString) take(text string, lo, hi int) {
 }
 
 // unescape reads the escape sequence at the head of at, and answers the text it stands for
-// and the width of the sequence that stood for it. An unpaired surrogate is not text: the
-// document that holds one was refused at Save, and this rewrite reads no further than the
-// grammar does.
+// and the width of the sequence that stood for it. A surrogate names a character only in
+// its pair, and only a high one begins one; a lone one stands for the replacement character
+// over the width of the escape that wrote it, which is what every other reader of this
+// column makes of it — encoding/json, and behind it Get, List, the export and the copy's
+// own keeper. A document may hold one and still be a document: the acceptance rule at Save
+// is a valid UTF-8 JSON object, RFC 8259 admits the escape, and the column is text, so this
+// read does not refuse what its readers read. Only an escape the grammar does not write at
+// all answers false.
 func unescape(at string) (string, int, bool) {
 	if len(at) < 2 {
 		return "", 0, false
@@ -281,13 +297,12 @@ func unescape(at string) (string, int, bool) {
 		if first < 0xD800 || first > 0xDFFF {
 			return string(rune(first)), 6, true
 		}
-		// A surrogate names a character only in its pair, and only a high one begins one.
 		if utf16IsLow(first) {
-			return "", 0, false
+			return string(utf8.RuneError), 6, true
 		}
 		second, ok := hex4(at[8:])
 		if !ok || !utf16IsLow(second) {
-			return "", 0, false
+			return string(utf8.RuneError), 6, true
 		}
 		return string(utf16.Decode([]uint16{uint16(first), uint16(second)})), 12, true
 	}
