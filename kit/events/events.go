@@ -2,6 +2,9 @@
 // once. Consume claims each event/subscription pair in the handler's transaction,
 // so committed work is skipped on redelivery and failed work remains retryable.
 // Periodic scheduling belongs to kit/jobs; see README.md for delivery limits.
+//
+// The [Publish] example declares an event and writes it in a tenant transaction.
+// It then relays the committed event to a subscription through the in-process transport.
 package events
 
 import (

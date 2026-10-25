@@ -316,7 +316,9 @@ func TestThePatchOfNothingAnswersWhatTheReadDoorAnswers(t *testing.T) {
 	read := func(t *testing.T, body string) map[string]any {
 		t.Helper()
 		var out map[string]any
-		if err := json.Unmarshal([]byte(body), &out); err != nil {
+		decoder := json.NewDecoder(strings.NewReader(body))
+		decoder.UseNumber()
+		if err := decoder.Decode(&out); err != nil {
 			t.Fatalf("read the row in %s: %v", body, err)
 		}
 		return out

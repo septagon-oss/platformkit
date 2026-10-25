@@ -57,6 +57,21 @@ shown, which the generated screens read without linking this package.
 
 ## Composition (typed PATCH)
 
+Resource and command `int64` fields use the [HTTP integer contract](../httpx/README.md#exact-signed-integers).
+Numeric output is deprecated; request the explicit decimal representation to
+preserve every digit in JavaScript clients. Domain fields and database columns
+remain signed integers. PATCH, command defaults and screen row/form handoffs
+bind through the same exact decoder; native `int`/`int32` values stay numeric.
+Resource row maps retain untyped numbers as `json.Number`, so a form does not
+lose digits before binding them to a declared field.
+
+**Reused** — `Spec`, `Command`, `merge`, `row` and `decode` keep their field,
+authorization, transaction and outbox decisions.
+**Added** — exact integer binding at their existing JSON seams, because an
+untyped float map loses digits before a writable field can validate them.
+**Made reusable** — the same full-range CRUD sequence runs against PostgreSQL
+and `porttest.Store`, including silent refusals and competing revision checks.
+
 **Reused** — `Spec.Schema`, `crud.FieldNamed`, `foldedName` and Huma's entity
 schemas provide the writable names, types, formats, enums and media annotations.
 **Added** — `httpx.SetPatchSchema` replaces the untyped map with `<Entity>Patch`:
