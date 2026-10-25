@@ -102,8 +102,30 @@ printf 'module example.com/consumer\n\ngo 1.25\n\nrequire github.com/septagon-os
 	>"$work/consumer/go.mod"
 target=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 digest=$(sha256sum "$shipped" | cut -d' ' -f1)
+# The evidence a case keeps beside its receipt, as the real run writes it: the applied
+# ledger the installation arrived with, the ledger it left with (those same rows plus what
+# it applied), and the facts before and after. scripts/check_pin_rehearsal.sh re-takes every
+# figure below from these bytes, so the fixture has to carry them the way a run does —
+# 24 arrived rows, 90 after, all 24 still there, 12 fact lines, 6 boundary reads of a
+# neighbour that stays invisible, and 90 queued outbox rows.
+ledger_before="$work/before-ledger.tsv"
+ledger_after="$work/after-ledger.tsv"
+facts_before="$work/before-facts.tsv"
+facts_after="$work/after-facts.tsv"
+awk 'BEGIN { for (i = 1; i <= 24; i++) printf "audit/%02d\t0000%02d_x.up.sql\tchk%02d\t2026-10-01 00:00:00+00\n", i, i, i }' \
+	</dev/null >"$ledger_before"
+cp "$ledger_before" "$ledger_after"
+awk 'BEGIN { for (i = 25; i <= 90; i++) printf "audit/%02d\t0000%02d_x.up.sql\tchk%02d\t2026-10-02 00:00:00+00\n", i, i, i }' \
+	</dev/null >>"$ledger_after"
+awk 'BEGIN { for (i = 1; i <= 12; i++) printf "contents/rehearse\t%d\t0\n", i * 5 }' </dev/null >"$facts_before"
+{
+	awk 'BEGIN { for (i = 1; i <= 6; i++) printf "other/rehearse%02d/users\t10\t0\n", i }' </dev/null
+	printf 'outbox.pending\t90\t0\n'
+} >"$facts_after"
 matrix() {
 	jq -n --arg t "$target" --arg digest "$digest" \
+		 --arg ev_bl "$ledger_before" --arg ev_al "$ledger_after" \
+		 --arg ev_bf "$facts_before" --arg ev_af "$facts_after" \
 		 --argjson fixtures "$("$reader" fixtures | jq -R -s 'split("\n") | map(select(length > 0) | split("\t") | {path: .[0], sha256: .[1]})')" \
 		 --slurpfile r <("$reader" refused | cut -f1,2,3 |
 		jq -R -r 'split("\t") | select(length > 0) | {ref: .[0], commit: .[1]}') --slurpfile s <("$reader" positives |
@@ -118,6 +140,8 @@ matrix() {
 		   data: {facts_lines: 12, boundary_reads: 6, foreign_rows_visible: 0,
 		          applied_rows_before: 24, applied_rows_after: 90, applied_rows_retained: 24,
 		          pending_outbox_rows: 90},
+		   evidence: {before_ledger: $ev_bl, after_ledger: $ev_al,
+		              before_facts: $ev_bf, after_facts: $ev_af},
 		   files: [{owner: "audit", version: "48", name: "000048_audit_history_append_only.up.sql",
 		            phase: "expand", seconds: 0.002}]}}],
 		 refused: [$r[] | {ref, commit: (if . == "" then null else . end), reason: "refused by the record", refused_with: 1}],
@@ -176,10 +200,29 @@ jq '.sources[0].rehearsal.data.foreign_rows_visible = 40' "$work/good.json" >"$w
 jq '.sources[0].rehearsal.data.applied_rows_before = 0' "$work/good.json" >"$work/no-starting-ledger.json"
 jq '.sources[1].rehearsal.data.applied_rows_retained = 12' "$work/good.json" >"$work/rows-not-retained.json"
 jq 'del(.refused)' "$work/good.json" >"$work/no-refused-key.json"
+# The figures are claims; the four files beside the receipt are the evidence. A case that
+# kept none can be checked by nobody but the run that wrote it, and a case whose numbers do
+# not match those bytes is a receipt from a different run than its own evidence — including
+# the one where every recorded figure still reads "all retained" while the ledger the case
+# kept lost one of the rows it arrived with.
+jq 'del(.sources[0].rehearsal.evidence)' "$work/good.json" >"$work/no-evidence.json"
+jq '.sources[0].rehearsal.data.facts_lines = 13' "$work/good.json" >"$work/figures-moved.json"
+awk 'BEGIN { for (i = 1; i <= 23; i++) printf "audit/%02d\t0000%02d_x.up.sql\tchk%02d\t2026-10-01 00:00:00+00\n", i, i, i;
+	for (i = 25; i <= 91; i++) printf "audit/%02d\t0000%02d_x.up.sql\tchk%02d\t2026-10-02 00:00:00+00\n", i, i, i }' \
+	</dev/null >"$work/lost-row-after-ledger.tsv"
+[ "$(grep -c '' <"$work/lost-row-after-ledger.tsv")" = 90 ] || {
+	echo "FAIL  the ledger that lost one arrived row is $(grep -c '' <"$work/lost-row-after-ledger.tsv") line(s), not the 90 the receipt records: the case below would refuse for the wrong reason"
+	fails=$((fails + 1))
+}
+jq --arg p "$work/lost-row-after-ledger.tsv" \
+	'.sources[0].rehearsal.evidence.after_ledger = $p' "$work/good.json" >"$work/lost-one-row.json"
 checkcase 1 "a case that read no tenant boundary" "$work/no-boundary-read.json"
 checkcase 1 "a case whose application role saw another tenant's rows" "$work/neighbour-visible.json"
 checkcase 1 "a case that arrived with no applied migration" "$work/no-starting-ledger.json"
 checkcase 1 "a case that did not retain the applied rows it arrived with" "$work/rows-not-retained.json"
+checkcase 1 "a case that kept no evidence of what it measured" "$work/no-evidence.json"
+checkcase 1 "a case whose figures do not match the evidence it kept" "$work/figures-moved.json"
+checkcase 1 "a case that claims every applied row and kept a ledger that lost one" "$work/lost-one-row.json"
 checkcase 1 "a matrix with no refused list at all" "$work/no-refused-key.json"
 checkcase 1 "a single-revision receipt in release mode" "$work/legacy.json"
 

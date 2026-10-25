@@ -92,13 +92,26 @@ else
 	note "contract: the exported surface was not compared ($line_record); the receipt records that it did not run"
 fi
 n=0
+# The four files each case compares (the ledger and the facts, before and after) outlive the
+# run that reads them, because scripts/check_pin_rehearsal.sh --strict re-derives the
+# receipt's figures from those bytes rather than trusting the run that wanted to pass. Under
+# an aggregate receipt every case gets a directory of its own beside it; with no receipt
+# named there is nothing for anyone to inspect afterwards, so the evidence goes with the
+# temp directory the run already removes.
+evidence_root="${REHEARSE_RECEIPT:-}"
+case "$evidence_root" in
+	"") evidence_root="$work/evidence" ;;
+	/*) evidence_root="${evidence_root}.d" ;;
+	*) evidence_root="$PWD/${REHEARSE_RECEIPT}.d" ;;
+esac
 while IFS=$'	' read -r case_ref case_commit case_roles; do
 	[ -n "$case_ref" ] || continue
 	n=$((n + 1))
 	case_receipt="$work/case-$n.json"
 	note "case $n: $case_ref (${case_commit:0:12}), discharging ${case_roles:-no named role}"
 	set +e
-	REHEARSE_RECEIPT="$case_receipt" "$root/scripts/rehearse_migrations.sh" --base-ref "$case_commit" \
+	REHEARSE_RECEIPT="$case_receipt" REHEARSE_EVIDENCE="$evidence_root/case-$n" \
+		"$root/scripts/rehearse_migrations.sh" --base-ref "$case_commit" \
 		--max-file-seconds "$max_file" --max-lock-ms "$max_lock"
 	case_code=$?
 	set -e

@@ -93,6 +93,14 @@ and how many rows of every other tenant each tenant's own session sees, read as 
 application role — the owner role answers that last question with "everything".
 `FACTS CHANGED`, `TENANT LEAK` or `AUTHORITY LOST` is exit 1.
 
+Those two reads are kept, not deleted with the run: a passing case copies the ledger and
+the facts, before and after, into a directory beside its receipt (`${REHEARSE_RECEIPT}.d`,
+or `REHEARSE_EVIDENCE` where the matrix gives each case its own), names the four paths in
+the receipt's `evidence`, and prints the directory. A release reviewer inspects the
+pre-upgrade ledger the promise is measured against, and
+`scripts/check_pin_rehearsal.sh --strict` re-takes every figure below from those bytes, so
+a receipt that lost its evidence, or disagrees with it, is refused rather than quoted.
+
 `./scripts/check_pin_rehearsal.sh --strict` reads the matrix and reads the record for
 itself: a missing case, a repeated case, a drifted revision, another support record, a
 case that seeded a fixture the record does not owe, a matrix that recorded no
@@ -101,13 +109,16 @@ case inside passed. The data figures are obligations at that read as well, and n
 number beside each case: at least one tenant-boundary read, zero rows of another tenant
 visible to the application role, an applied ledger the case arrived with, and every one of
 those rows retained. The producer refuses the same shapes as it runs; the release is
-certified where the receipt is read, so the reading happens on both sides. `REHEARSE_ARGS=--supported
+certified where the receipt is read, so the reading happens on both sides — and the figures
+themselves are re-taken from the evidence named above, not read out of the run that wrote
+them. `REHEARSE_ARGS=--supported
 REHEARSE_RECEIPT=$PWD/.artifacts/rehearsal.json make check-rehearse` is the release
 form; the default stays the single-source diagnostic it was.
 
 ## What this repository owes and what the consumer owes
 
-Here: the rehearsal runs in `make check` (`check-rehearse`) and in CI, the receipt
+Here: the rehearsal runs in `make check` (`check-rehearse`, one source, and
+`check-rehearse-supported`, the whole matrix, in the merge tier and in CI), the receipt
 is written, this script exists and is tested here, and the public-API comparison
 runs as `check-apidiff` against the release line's frozen surface, named by the
 line record under `scripts/baselines/`. Wiring the pin check into a client's own pipeline is that

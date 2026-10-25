@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-comments check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations check-support-record fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-comments check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations check-support-record check-rehearse-supported fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -350,6 +350,16 @@ APIDIFF_RECORD ?= scripts/baselines/public-api-v2.0.0-candidate.json
 check-rehearse: ## Apply this tree's pending migrations to a copy of the previous release's database
 	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
 
+# The release form of the same step: one case per installation this release promises to
+# upgrade from, which is the support record's list and not this file's, plus the record's
+# refusals asked for their reason and the exported-surface comparison beside the data.
+# `check-rehearse` stays the single-source diagnostic a contributor runs in a minute;
+# nothing is published from one case, and scripts/check_pin_rehearsal.sh --strict refuses a
+# receipt that measured one. It costs a second base build and a second copied database, so
+# it is the merge tier's and not every pull request's.
+check-rehearse-supported: ## Certify this tree against every installation the release promises to upgrade from
+	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh --supported
+
 # The support record decides which installations a release undertakes to upgrade from, and
 # the release is certified from that same file, so the cases that read it are the promise's
 # own coverage check rather than extra tests of a helper: which revisions the record may
@@ -415,7 +425,7 @@ inference-conformance: ## Run the inference port's suite against operator-named 
 check-push: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
 	./scripts/check_push_tier.sh
 
-check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
+check-merge: check-rehearse check-rehearse-supported check ## The merge tier: the whole suite, the rehearsal against a populated database, the whole supported matrix, the journeys in the suite
 
 check-nightly: ## The nightly tier: the journeys, and the reports the inventory's duration and flake columns read
 	$(MAKE) e2e

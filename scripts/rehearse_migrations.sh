@@ -803,20 +803,45 @@ if [ "$code" -eq 0 ] && [ -n "${REHEARSE_RECEIPT:-}" ]; then
 		'{facts_lines: $lines, boundary_reads: $reads, foreign_rows_visible: $foreign,
 		  applied_rows_before: $before, applied_rows_after: $after, applied_rows_retained: $retained,
 		  pending_outbox_rows: $pending}')
-	mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
+	# The bytes those figures came from, kept where a release reviewer can read them. The
+	# run's temp directory goes when this process does, so the four files the ledger and fact
+	# comparisons were made from are copied beside the receipt, and
+	# scripts/check_pin_rehearsal.sh --strict re-derives every figure in `data` from these
+	# files rather than trusting the run that wanted to pass. REHEARSE_EVIDENCE names where
+	# they go — scripts/rehearse_supported_matrix.sh gives every case its own directory under
+	# the aggregate receipt, so a case's evidence outlives the matrix's own temp directory —
+	# and the default is a directory beside this case's receipt.
+	evidence_dir="${REHEARSE_EVIDENCE:-${REHEARSE_RECEIPT}.d}"
+	case "$evidence_dir" in /*) ;; *) evidence_dir="$PWD/$evidence_dir" ;; esac
+	mkdir -p "$evidence_dir" || die 2 "cannot write the evidence directory $evidence_dir for $REHEARSE_RECEIPT"
+	evidence_json='{}'
+	for kept in "before_ledger:$before_ledger" "after_ledger:$work/after-ledger.tsv" \
+		"before_facts:$before_facts" "after_facts:$work/after-facts.tsv"; do
+		evidence_key="${kept%%:*}"
+		evidence_src="${kept#*:}"
+		[ -s "$evidence_src" ] ||
+			die 2 "the receipt would name $evidence_key with no bytes behind it ($evidence_src): a case that could not take its own before-and-after evidence writes no receipt"
+		cp "$evidence_src" "$evidence_dir/$evidence_key.tsv" ||
+			die 2 "the evidence for $evidence_key could not be copied into $evidence_dir"
+		evidence_json=$(jq -c --arg key "$evidence_key" --arg path "$evidence_dir/$evidence_key.tsv" \
+			'. + {($key): $path}' <<<"$evidence_json") ||
+			die 2 "the evidence path for $evidence_key could not be recorded"
+	done
+	note "evidence: $evidence_dir — the ledger and the facts, before and after, re-read by the release check"
 	jq -n --arg base_ref "$ref" \
 		--arg base_commit "$(git rev-parse --verify --quiet "${ref}^{commit}" || true)" \
 		--arg candidate_commit "$(git rev-parse HEAD)" \
 		--arg seed "$seed" \
 		--argjson fixtures "$fixtures_json" \
 		--argjson data "$data_json" \
+		--argjson evidence "$evidence_json" \
 		--argjson files "$files" \
 		--argjson max_lock_ms "$lock_ms" \
 		--argjson samples "$samples" \
 		'{base_ref: (if $base_ref == "" then null else $base_ref end),
 		  base_commit: (if $base_commit == "" then null else $base_commit end),
 		  candidate_commit: $candidate_commit, seed: $seed, fixtures: $fixtures,
-		  data: $data, files: $files,
+		  data: $data, evidence: $evidence, files: $files,
 		  max_lock_ms: $max_lock_ms, lock_samples: $samples,
 		  tool: "scripts/rehearse_migrations.sh", exit: 0}' >"$REHEARSE_RECEIPT" ||
 		die 2 "the receipt could not be written to $REHEARSE_RECEIPT"

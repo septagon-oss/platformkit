@@ -178,8 +178,9 @@ EOF
 			(.sources[] | select(.ref == $ref and .commit == $commit) | .rehearsal.data) // {}
 			| [ (.boundary_reads // 0), (.foreign_rows_visible // -1),
 			    (.applied_rows_before // 0), (.applied_rows_retained // -1),
-			    (.facts_lines // 0), (.pending_outbox_rows // 0) ] | @tsv' "$receipt")
-		IFS=$'\t' read -r d_reads d_foreign d_before d_retained d_facts d_pending <<EOF
+			    (.facts_lines // 0), (.pending_outbox_rows // 0),
+			    (.applied_rows_after // -1) ] | @tsv' "$receipt")
+		IFS=$'\t' read -r d_reads d_foreign d_before d_retained d_facts d_pending d_after <<EOF
 $data_evidence
 EOF
 		[ "${d_reads:-0}" -ge 1 ] ||
@@ -190,6 +191,51 @@ EOF
 			{ echo "pin-rehearsal: the case for $src_ref arrived with $d_before applied ledger row(s); a database with no applied migration is a fresh install, and an upgrade is not measured on one."; exit 1; }
 		[ "${d_retained:-1}" = "${d_before:-0}" ] ||
 			{ echo "pin-rehearsal: the case for $src_ref retained $d_retained of the $d_before applied row(s) it arrived with; applied history is immutable on both sides of an upgrade."; exit 1; }
+		# Every figure above is a claim the running step made about itself, and the step that
+		# made it is the step that wanted to pass. The four files the case compared are kept
+		# beside its receipt (scripts/rehearse_migrations.sh writes them, and
+		# scripts/rehearse_supported_matrix.sh gives each case its own directory), and the
+		# release is refused here unless the numbers are re-taken from those bytes: a receipt
+		# whose evidence is gone, or disagrees with itself, is prose about a rehearsal rather
+		# than one. The retained count is recomputed row by row, the way the run computes it.
+		evidence_paths=$(jq -r --arg ref "$src_ref" --arg commit "$src_commit" '
+			(.sources[] | select(.ref == $ref and .commit == $commit) | .rehearsal.evidence) // {}
+			| [ (.before_ledger // ""), (.after_ledger // ""), (.before_facts // ""), (.after_facts // "") ] | @tsv' "$receipt")
+		IFS=$'\t' read -r ev_before_ledger ev_after_ledger ev_before_facts ev_after_facts <<EOF
+$evidence_paths
+EOF
+		for kept in "the applied ledger the installation arrived with:$ev_before_ledger" \
+			"the applied ledger it left with:$ev_after_ledger" \
+			"the facts taken before the candidate:$ev_before_facts" \
+			"the facts taken after the candidate:$ev_after_facts"; do
+			[ -s "${kept#*:}" ] || {
+				echo "pin-rehearsal: the case for $src_ref keeps no readable evidence: ${kept%*:} is missing at [${kept#*:}], so none of its figures can be checked against what the run read; scripts/rehearse_migrations.sh keeps these four files beside the receipt it writes."
+				exit 1
+			}
+		done
+		derived_before=$(grep -c '' <"$ev_before_ledger")
+		derived_after=$(grep -c '' <"$ev_after_ledger")
+		derived_facts=$(grep -c '' <"$ev_before_facts")
+		derived_reads=$(grep -c '^other/' <"$ev_after_facts" || true)
+		derived_foreign=$(awk -F'\t' '$1 ~ /^other\// { s += $3 } END { print s + 0 }' <"$ev_after_facts")
+		derived_pending=$(awk -F'\t' '$1 == "outbox.pending" { print $2; exit }' <"$ev_after_facts")
+		derived_pending=${derived_pending:-0}
+		lost_rows=$(comm -23 <(cut -f1,2,3,4 "$ev_before_ledger" | sort) <(cut -f1,2,3,4 "$ev_after_ledger" | sort) | grep -c '' || true)
+		derived_retained=$((derived_before - ${lost_rows:-0}))
+		for figure in "applied row(s) it arrived with:${d_before:-}:${derived_before}" \
+			"applied row(s) it left with:${d_after:-}:${derived_after}" \
+			"applied row(s) retained:${d_retained:-}:${derived_retained}" \
+			"fact line(s):${d_facts:-}:${derived_facts}" \
+			"tenant-boundary read(s):${d_reads:-}:${derived_reads}" \
+			"row(s) of another tenant:${d_foreign:-}:${derived_foreign}" \
+			"queued outbox row(s):${d_pending:-}:${derived_pending}"; do
+			claim="${figure#*:}"
+			claim="${claim%%:*}"
+			[ "$claim" = "${figure##*:}" ] || {
+				echo "pin-rehearsal: the case for $src_ref records ${claim:-nothing} ${figure%%:*} and the evidence it kept answers ${figure##*:}; the receipt and the bytes it came from are two different runs, and a release note is only worth the second one."
+				exit 1
+			}
+		done
 		carried=$((carried + ${d_facts:-0}))
 		queued=$((queued + ${d_pending:-0}))
 	done <"$required"
