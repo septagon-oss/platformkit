@@ -34720,6 +34720,63 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/patch_drawing_cleared_or_blanked_test.go",
+   "id": "kit/rest/patch_drawing_cleared_or_blanked_test.go#TestAClearedDrawingNamesTheColumnTheWriteUses",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAClearedDrawingNamesTheColumnTheWriteUses",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/patch_drawing_cleared_or_blanked_test.go",
+   "id": "kit/rest/patch_drawing_cleared_or_blanked_test.go#TestABlankedDrawingNamesTheColumnAndWritesAnEmptyBoard",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestABlankedDrawingNamesTheColumnAndWritesAnEmptyBoard",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/patch_drawing_cleared_or_blanked_test.go",
+   "id": "kit/rest/patch_drawing_cleared_or_blanked_test.go#TestABodyThatNamesNoDrawingKeepsTheStrokesTheRowHeld",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestABodyThatNamesNoDrawingKeepsTheStrokesTheRowHeld",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/patch_drawings_and_digits_merge_test.go",
    "id": "kit/rest/patch_drawings_and_digits_merge_test.go#TestAMergedPatchBodyWritesItsDrawingAndItsDigitsIntoTheRow",
    "kind": "go",
@@ -86321,7 +86378,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2347,
+  "files": 2348,
   "forge_runs": [
    408,
    413,
@@ -86355,7 +86412,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3753,
+   "behaviour": 3756,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86374,9 +86431,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4379,
+  "rows": 4382,
   "tiers": {
-   "merge": 2680,
+   "merge": 2683,
    "nightly": 110,
    "push": 1589
   },
@@ -86384,13 +86441,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2102,
+   "keep": 2103,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3993,
+   "keep": 3996,
    "keep-rewrite": 170,
    "merge": 216
   }
