@@ -319,9 +319,11 @@ var errNoConnection = errors.New("auth: no connection to record a mail delivery 
 // marks writes the outcome one send reached, wherever the hand-off stands. Inside its
 // bracketing transaction the write joins that transaction, so the record of the send and
 // the mail slot it protected come away on one connection and in one commit; outside one
-// it is a transaction of its own, bounded as a statement is. A hand-off whose answer went
-// unwritten is a mailbox holding a link the table never marked, which the next offer
-// mints a second link over — so this is the join the bracket exists to make.
+// it is a transaction of its own. Either way the write is a statement and keeps the write
+// budget: a row somebody else is holding must not turn this hand-off into a connection
+// parked on the pool for the bracket's whole bound. A hand-off whose answer went unwritten
+// is a mailbox holding a link the table never marked, which the next offer mints a second
+// link over — so this join is what the bracket exists to make.
 func (s *Service) marks(ctx context.Context, fn func(context.Context, db.Tx[db.Tenant]) error) error {
 	if _, open := db.TxFrom(ctx); !open {
 		return s.detached(ctx, fn)
@@ -330,7 +332,9 @@ func (s *Service) marks(ctx context.Context, fn func(context.Context, db.Tx[db.T
 	if !ok {
 		return errNoConnection
 	}
-	return db.Run(ctx, conn, fn)
+	written, cancel := context.WithTimeout(ctx, detachedWriteBudget)
+	defer cancel()
+	return db.Run(written, conn, fn)
 }
 
 // detached runs one write on the application's connection, outside the transaction
