@@ -54,7 +54,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		localeStrip(locales),
-		details(r, o.Words(r.Schema), row, rendered),
+		details(r, o, o.Words(r.Schema), row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
@@ -107,7 +107,7 @@ func localeStrip(locales []entity.LocaleState) g.Node {
 // order, as a description list. `hide:list` hides nothing here — it is about a table
 // being readable, not about a field being secret — and `visibility:hidden` is the one
 // declaration that is off this screen too, which readable applies.
-func details(r Resource, words Words, row map[string]any, rendered map[string]string) g.Node {
+func details(r Resource, o Options, words Words, row map[string]any, rendered map[string]string) g.Node {
 	// One pass, in schema order: richtext becomes a prose section as it always
 	// did, and every other readable field becomes a term beside its value.
 	var prose []g.Node
@@ -121,6 +121,7 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 	// the term a person reads is the only identity an item has, and it is the same words the <dt>
 	// carries. Two fields labelled alike would be two <dt>s nobody could tell apart anyway.
 	instantsByLabel := map[string]components.TimeText{}
+	choicesByLabel := map[string]g.Node{}
 	for _, f := range readable(r.Schema.Fields) {
 		if f.Widget == "richtext" {
 			if html, ok := rendered[f.Name]; ok {
@@ -131,6 +132,9 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 			continue
 		}
 		label := words.FieldLabel(f)
+		if f.Choices != nil {
+			choicesByLabel[label] = r.choiceRead(o, f, row[f.Name])
+		}
 		value := words.Value(f, row[f.Name])
 		if f.Type == entity.TypeTime {
 			if when, ok := display.Instant(row[f.Name]); ok {
@@ -147,6 +151,9 @@ func details(r Resource, words Words, row map[string]any, rendered map[string]st
 	list := func(items []components.DetailItem) g.Node {
 		return components.DetailListWithSlots(components.DetailListProps{Items: items}, components.DetailListSlots{
 			Value: func(item components.DetailItem) g.Node {
+				if choice := choicesByLabel[item.Label]; choice != nil {
+					return choice
+				}
 				when, ok := instantsByLabel[item.Label]
 				if !ok {
 					return nil

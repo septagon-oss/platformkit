@@ -227,7 +227,17 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// leaf-by-leaf count: the document before it exists only outside the merge. The
 	// digest below is this merged tree's own measurement, printed by the refusal and
 	// copied from it.
-	if legacy.SHA256 != "a76f10dda799497ceed8f725bb98e94e96dfd91680b8e444feec0f6fd2efb316" {
+	// OptionChips grew the properties a finite choice needs — one name carried many
+	// times, an explicit described-by, a clear affordance and the stable option key
+	// on the input — so every one of its fourteen Gallery examples now renders a
+	// `for` on each label and a wider input, and each example's source schema gains
+	// the four optional properties clearLabel, describedBy, multiple and values.
+	// Exported this tree against the tree before the change and walked both
+	// documents leaf by leaf: 70 leaves move, 56 of them those added properties,
+	// 14 the examples' html, none removed; /css gains 174 lines of choice rules and
+	// loses none, and /sha256 follows them. No token, theme, notice, icon, class or
+	// other component moves.
+	if legacy.SHA256 != "e1b8ffecf367ee9e43647936511795094e50e70795aa81e38d4592be466ec87a" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

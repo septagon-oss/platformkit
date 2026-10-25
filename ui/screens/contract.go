@@ -15,7 +15,9 @@ func screenRef(r httpx.Resource, kind, verb string) screen.ViewRef {
 }
 
 func declaredViews(r httpx.Resource) []screen.View {
-	v := described(r)
+	// The inventory is structure, not one language: no request's locale enters it, so
+	// it resolves with no Options at all.
+	v := described(r, Options{})
 	for _, c := range r.Commands {
 		if c.Run == nil || c.Present.System {
 			continue

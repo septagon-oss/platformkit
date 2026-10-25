@@ -44,8 +44,8 @@ func (c Command) fieldAnchor(path ...string) screen.AnchorRef {
 	return ""
 }
 
-func (c Command) formField(words Words, f entity.Field) forms.Field {
-	field := formField(words, f)
+func (c Command) formField(words Words, f entity.Field, o Options) forms.Field {
+	field := formField(words, f, o)
 	field.Anchor = c.fieldAnchor(f.Name)
 	return field
 }

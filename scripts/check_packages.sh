@@ -194,7 +194,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("kit/designconfig", p "design", "gopkg.in/yaml.v3")
         check("ui/forms", policy " " uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
         check("ui/document", p "kit/locale " presentation " " markup)
-        check("ui/resource", uuid " " p "kit/entity " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
+        check("ui/resource", uuid " " p "kit/entity " p "kit/entity/present " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
         check("ui/page", kernel " " presentation, web, "web")
         check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "kit/entity/present " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
         # The kernel runner selects a transport by name and builds none: neither

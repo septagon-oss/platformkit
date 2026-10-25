@@ -658,6 +658,8 @@
     },
     "fields": [
       {
+        "choice": null,
+        "figure": null,
         "name": "id",
         "label": "Id",
         "help": "",
@@ -683,6 +685,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "createdAt",
         "label": "Created at",
         "help": "",
@@ -711,6 +715,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "updatedAt",
         "label": "Updated at",
         "help": "",
@@ -739,6 +745,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "slug",
         "label": "Nome do endereço",
         "help": "Usado para montar o endereço web desta página",
@@ -764,6 +772,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "title",
         "label": "Title",
         "help": "Headline",
@@ -789,6 +799,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "body",
         "label": "Body",
         "help": "The content itself, in Markdown",
@@ -814,6 +826,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "coverImageId",
         "label": "Capa",
         "help": "ID do ficheiro da imagem de capa",
@@ -839,6 +853,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "kind",
         "label": "Tipo",
         "help": "page or post",
@@ -862,12 +878,18 @@
         },
         "options": [
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "page",
             "label": "Page",
             "tone": "neutral",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "post",
             "label": "Post",
             "tone": "neutral",
@@ -877,6 +899,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "status",
         "label": "Status",
         "help": "Lifecycle state",
@@ -900,18 +924,27 @@
         },
         "options": [
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "draft",
             "label": "Draft",
             "tone": "neutral",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "published",
             "label": "Published",
             "tone": "success",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "archived",
             "label": "Archived",
             "tone": "neutral",
@@ -921,6 +954,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "publishedAt",
         "label": "Publicada",
         "help": "When this was published",
@@ -949,6 +984,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "author",
         "label": "Author",
         "help": "The user who created this",
@@ -976,6 +1013,8 @@
         }
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "revision",
         "label": "Revision",
         "help": "This row's own write count, from 1",
@@ -1048,12 +1087,18 @@
           "kind": "enum",
           "values": [
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "page",
               "label": "Page",
               "tone": "neutral",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "post",
               "label": "Post",
               "tone": "neutral",
@@ -1067,18 +1112,27 @@
           "kind": "enum",
           "values": [
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "draft",
               "label": "Draft",
               "tone": "neutral",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "published",
               "label": "Published",
               "tone": "success",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "archived",
               "label": "Archived",
               "tone": "neutral",
@@ -1090,6 +1144,89 @@
     },
     "commands": [
       {
+        "fields": [
+          {
+            "choice": null,
+            "figure": null,
+            "name": "version",
+            "label": "Version",
+            "help": "The version to write back, as the list answered it",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "number",
+            "kind": "number",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": 0,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          },
+          {
+            "choice": null,
+            "figure": null,
+            "name": "locale",
+            "label": "Locale",
+            "help": "The series to read it from; the record's own language when unset",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          },
+          {
+            "choice": null,
+            "figure": null,
+            "name": "expectedRevision",
+            "label": "Expected revision",
+            "help": "The row's write count as the caller read it; a row past it is refused with 412 and writes nothing",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "number",
+            "kind": "number",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": 0,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          }
+        ],
         "verb": "restore",
         "label": "Restaurar esta versão",
         "visible": true,
@@ -1104,6 +1241,89 @@
         "successMessage": "Foi gravada uma nova versão com o conteúdo que restaurou."
       },
       {
+        "fields": [
+          {
+            "choice": null,
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language being written: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          },
+          {
+            "choice": null,
+            "figure": null,
+            "name": "values",
+            "label": "Values",
+            "help": "The text of each translatable field, keyed by field name",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "map",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          },
+          {
+            "choice": null,
+            "figure": null,
+            "name": "expected",
+            "label": "Expected",
+            "help": "Each field's revision as read; 0 for a field with no translation yet",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "map",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          }
+        ],
         "verb": "translate",
         "label": "Translate a content",
         "visible": true,
@@ -1114,6 +1334,62 @@
         "successMessage": ""
       },
       {
+        "fields": [
+          {
+            "choice": null,
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language this acts on: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          },
+          {
+            "choice": null,
+            "figure": null,
+            "name": "fields",
+            "label": "Fields",
+            "help": "The field names; empty for every translatable field of the record",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          }
+        ],
         "verb": "review-translation",
         "label": "Mark a content's translation reviewed",
         "visible": true,
@@ -1124,6 +1400,62 @@
         "successMessage": ""
       },
       {
+        "fields": [
+          {
+            "choice": null,
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language this acts on: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          },
+          {
+            "choice": null,
+            "figure": null,
+            "name": "fields",
+            "label": "Fields",
+            "help": "The field names; empty for every translatable field of the record",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          }
+        ],
         "verb": "suggest-translation",
         "label": "Ask the machine for a draft of a content",
         "visible": true,
@@ -1134,6 +1466,62 @@
         "successMessage": ""
       },
       {
+        "fields": [
+          {
+            "choice": null,
+            "figure": null,
+            "name": "lang",
+            "label": "Lang",
+            "help": "The language this acts on: a tag this tenant is served in, other than its own",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          },
+          {
+            "choice": null,
+            "figure": null,
+            "name": "fields",
+            "label": "Fields",
+            "help": "The field names; empty for every translatable field of the record",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "",
+            "kind": "list",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          }
+        ],
         "verb": "untranslate",
         "label": "Remove a content's translation",
         "visible": true,
@@ -1144,6 +1532,7 @@
         "successMessage": ""
       },
       {
+        "fields": [],
         "verb": "publish",
         "label": "Publicar",
         "visible": true,
@@ -1154,6 +1543,7 @@
         "successMessage": ""
       },
       {
+        "fields": [],
         "verb": "unpublish",
         "label": "Despublicar",
         "visible": true,
@@ -1164,6 +1554,7 @@
         "successMessage": ""
       },
       {
+        "fields": [],
         "verb": "archive",
         "label": "Arquivar",
         "visible": true,

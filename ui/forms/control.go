@@ -16,6 +16,7 @@ import (
 // leaving it empty uses the component's historical name-derived default. Enclosing
 // forms should use Example, which supplies a distinct identity to every control.
 type ControlProps struct {
+	ChoiceValues     []string
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
@@ -56,6 +57,9 @@ func Control(p ControlProps) g.Node {
 	if f.Widget == "hidden" || f.Widget == "richtext" {
 		attrs = nil
 	}
+	if f.Choices != nil || entity.ChoiceAppearance(f.Widget) {
+		return choiceControl(p, p.Field.Anchor)
+	}
 	word := func(key, fallback string) string {
 		if p.Text == nil {
 			return fallback
@@ -71,23 +75,7 @@ func Control(p ControlProps) g.Node {
 	}
 	switch {
 	case len(f.Enum) > 0 || f.Widget == "select":
-		options := slices.Clone(p.Field.Options)
-		if options == nil {
-			options = make([]components.SelectOption, 0, len(f.Enum))
-			for _, value := range f.Enum {
-				options = append(options, components.SelectOption{Label: value, Value: value})
-			}
-		}
-		placeholder := ""
-		if f.Default == "" {
-			placeholder = "Choose a " + strings.ToLower(label)
-		}
-		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
-			Name:           name, Label: label, Value: p.Value, Error: p.Error,
-			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText, FullWidth: true,
-		}, components.Select).Node
+		return selectControl(p, base)
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
@@ -137,4 +125,26 @@ func Control(p ControlProps) g.Node {
 		base.Value = base.Value[:16]
 	}
 	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
+}
+
+func selectControl(p ControlProps, base components.InputProps) g.Node {
+	f := p.Field.Definition
+	name, label := base.Name, base.Label
+	options := slices.Clone(p.Field.Options)
+	if options == nil {
+		options = make([]components.SelectOption, 0, len(f.Enum))
+		for _, value := range f.Enum {
+			options = append(options, components.SelectOption{Label: value, Value: value})
+		}
+	}
+	placeholder := ""
+	if f.Default == "" {
+		placeholder = "Choose a " + strings.ToLower(label)
+	}
+	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
+		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: base.Attrs},
+		Name:           name, Label: label, Value: p.Value, Error: p.Error,
+		Required: f.Required, Options: options, Placeholder: placeholder,
+		HelpText: base.HelpText, FullWidth: true,
+	}, components.Select).Node
 }
