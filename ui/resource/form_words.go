@@ -26,7 +26,7 @@ func (w Words) form(mode string, h *entity.FormHints) *entity.FormHints {
 		if step.Section == "" {
 			key = "unsectioned"
 		}
-		out.Steps[i].PrimaryLabel = w.say(prefix+"step."+key+".primaryLabel", step.PrimaryLabel)
+		out.Steps[i].PrimaryLabel = step.WithLabel(w.say(prefix+"step."+key+".primaryLabel", step.PrimaryLabel))
 		out.Steps[i].EmptyLabel = w.say(prefix+"step."+key+".emptyLabel", step.EmptyLabel)
 	}
 	return &out

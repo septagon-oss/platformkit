@@ -180,7 +180,6 @@ func stepResponse(r httpx.Resource, o Options, req page.Request, state rest.Form
 		errs, detail = rest.FieldErrorsIn(err, r.Schema.Fields, words(o, req))
 		detail, o.Refusal = refusedWrite(req.Locale, err, detail)
 		state.Step = rest.FormErrorStep(form, errs, state.Step)
-		status = http.StatusInternalServerError
 		if p, ok := errors.AsType[*problem.Problem](err); ok {
 			status = p.Status
 		}
