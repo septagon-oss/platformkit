@@ -95,12 +95,18 @@ func (p GuidedPage) nextURL() string {
 	}
 	return p.pairURL(step, set)
 }
-func (p GuidedPage) restSeconds() int32 {
+
+// Rest is the pause this pair's screen may show: the seconds the session declares
+// after the set under the person — between its sets, or after its last one — and
+// whether that pair owns it, which only the pair at the end of the recorded prefix does.
+func (p GuidedPage) Rest() (seconds int32, owned bool) {
 	step := p.Session.Steps[p.Step]
 	if p.Set+1 < len(step.Sets) {
-		return step.RestBetweenSeconds
+		seconds = step.RestBetweenSeconds
+	} else {
+		seconds = step.RestAfterSeconds
 	}
-	return step.RestAfterSeconds
+	return seconds, seconds > 0 && p.completed() == p.position()+1
 }
 func (p GuidedPage) restURL() string {
 	s := p.Session.Steps[p.Step]
@@ -155,35 +161,39 @@ func (p GuidedPage) stepBody(o Options) []g.Node {
 	if p.Step > 0 {
 		back = []g.Node{p.link("previous_step", p.pairURL(p.Step-1, 0), "outline")}
 	}
+	notice, controls := p.stepAction()
+	content = append(content, notice...)
 	var body g.Node = c.Stack(c.StackProps{Gap: "4"}, content...)
 	if step.Picture != "" {
 		body = c.Grid(c.GridProps{Columns: "1", MD: "2", Gap: "6"}, guidedPicture(step.Picture, step.Title, false, o), body)
 	}
 	return []g.Node{c.StepperWithSlots(c.StepperProps{Label: p.Session.Title, Segmented: true, ProgressText: progress, Steps: segments, CurrentKey: step.ID.String()}, c.StepperSlots{
-		Body: []g.Node{body}, Back: back, Continue: p.stepAction(), SaveExit: []g.Node{p.link("finish", p.Base+"/finish", "outline")},
+		Body: []g.Node{body}, Back: back, Continue: controls, SaveExit: []g.Node{p.link("finish", p.Base+"/finish", "outline")},
 	})}
 }
 
-func (p GuidedPage) stepAction() []g.Node {
+// stepAction is a step's way forward: body text says what the control does, and the
+// row of controls holds controls, because that row lays its children side by side.
+func (p GuidedPage) stepAction() (notice, controls []g.Node) {
 	step := p.Session.Steps[p.Step]
 	if p.Policy.Complete.Callable && p.position() == p.completed() {
 		label := "next_step"
 		if len(step.Sets) > 1 {
 			label = "done_set"
 		}
-		return []g.Node{p.form("complete-set", p.word(label), map[string]string{"stepId": step.ID.String(), "setId": step.Sets[p.Set].String()})}
+		return nil, []g.Node{p.form("complete-set", p.word(label), map[string]string{"stepId": step.ID.String(), "setId": step.Sets[p.Set].String()})}
 	}
 	if p.Policy.Complete.Declared && !p.Policy.Complete.Callable {
-		return []g.Node{guidedText(p.word("completion_unavailable")), p.link("reload", p.Base, "primary")}
+		return []g.Node{guidedText(p.word("completion_unavailable"))}, []g.Node{p.link("reload", p.Base, "primary")}
 	}
 	next, label := p.nextURL(), "next_step"
-	if p.restSeconds() > 0 {
-		next = p.restURL()
-	}
 	if p.Set+1 < len(step.Sets) {
 		label = "next_set"
 	}
-	return []g.Node{guidedText(p.word("navigation_only")), p.link(label, next, "primary")}
+	if _, owned := p.Rest(); owned {
+		next = p.restURL()
+	}
+	return []g.Node{guidedText(p.word("navigation_only"))}, []g.Node{p.link(label, next, "primary")}
 }
 
 func (p GuidedPage) form(verb, label string, fields map[string]string) g.Node {

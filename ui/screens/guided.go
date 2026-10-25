@@ -33,7 +33,7 @@ func mountGuided(router *httpx.Router, shell page.Shell, o Options, res httpx.Re
 		}
 		page.Serve(router, shell, page.Route{ID: prefix + mode, Method: http.MethodGet, Path: path, Summary: "Guided session"}, res.ReadAuth(),
 			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
-				p, err := guidedPage(ctx, res, localized(o, req), in.ID, mode)
+				p, err := guidedPage(ctx, res, o, req, in.ID, mode)
 				if err != nil {
 					return page.View{}, err
 				}
@@ -56,24 +56,19 @@ func mountGuided(router *httpx.Router, shell page.Shell, o Options, res httpx.Re
 		}
 		page.Serve(router, shell, page.Route{ID: prefix + mode, Method: http.MethodGet, Path: path, Summary: "Guided session " + mode}, res.ReadAuth(),
 			func(ctx context.Context, req page.Request, in *guidedPairInput) (page.View, error) {
-				p, err := guidedPage(ctx, res, localized(o, req), in.ID, mode)
+				p, err := guidedPage(ctx, res, o, req, in.ID, mode)
 				if err != nil {
 					return page.View{}, err
 				}
 				if p.Session.Progress != nil && p.Session.Progress.Finished != nil {
 					return page.View{}, httpx.SeeOther(p.Base + "/summary")
 				}
-				position, ok := guidedFind(&p, in.Step, in.Set)
-				if !ok {
+				if !guidedFind(&p, in.Step, in.Set) {
 					return page.View{}, problem.NotFound("session pair is unavailable")
 				}
 				if mode == "rest" {
-					step := p.Session.Steps[p.Step]
-					seconds := step.RestAfterSeconds
-					if p.Set+1 < len(step.Sets) {
-						seconds = step.RestBetweenSeconds
-					}
-					if seconds == 0 || (p.Session.Progress != nil && position != len(p.Session.Progress.Completed)-1) {
+					seconds, owned := p.Rest()
+					if !owned {
 						return page.View{}, httpx.SeeOther(p.Base)
 					}
 					p.Extra = min(in.Extra, 86400-int(seconds))
@@ -84,7 +79,7 @@ func mountGuided(router *httpx.Router, shell page.Shell, o Options, res httpx.Re
 	mountGuidedCommands(router, shell, res, prefix)
 }
 
-func guidedPage(ctx context.Context, res httpx.Resource, o Options, id uuid.UUID, mode string) (resource.GuidedPage, error) {
+func guidedPage(ctx context.Context, res httpx.Resource, o Options, req page.Request, id uuid.UUID, mode string) (resource.GuidedPage, error) {
 	s, err := res.Guided(ctx, id)
 	if err != nil {
 		return resource.GuidedPage{}, rest.Fault(err)
@@ -95,12 +90,7 @@ func guidedPage(ctx context.Context, res httpx.Resource, o Options, id uuid.UUID
 	}
 	actor, _ := tenancy.PrincipalFrom(ctx)
 	res.Commands = res.CommandsFor(ctx)
-	text := func(key, fallback string) string {
-		if o.Locale == nil {
-			return fallback
-		}
-		return o.Locale.Formatter.Text(key, fallback)
-	}
+	text := words(o, req)
 	policy := resolve(Localise(res, text), text, "")
 	exit := o.Workspace
 	if !httpx.LocalPath(exit) {
@@ -137,18 +127,16 @@ func guidedResume(p resource.GuidedPage) string {
 	return p.Base + "/steps/" + p.Session.Steps[step].ID.String() + "/sets/" + p.Session.Steps[step].Sets[set].String()
 }
 
-func guidedFind(p *resource.GuidedPage, step, set uuid.UUID) (int, bool) {
-	position := 0
+func guidedFind(p *resource.GuidedPage, step, set uuid.UUID) bool {
 	for i, s := range p.Session.Steps {
 		for j, id := range s.Sets {
 			if s.ID == step && id == set {
 				p.Step, p.Set = i, j
-				return position, true
+				return true
 			}
-			position++
 		}
 	}
-	return 0, false
+	return false
 }
 
 func mountGuidedCommands(router *httpx.Router, shell page.Shell, res httpx.Resource, prefix string) {

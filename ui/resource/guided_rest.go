@@ -10,7 +10,8 @@ import (
 )
 
 func (p GuidedPage) restBody(o Options) []g.Node {
-	seconds := p.restSeconds() + int32(p.Extra)
+	declared, _ := p.Rest()
+	seconds := declared + int32(p.Extra)
 	deadline := ""
 	if progress := p.Session.Progress; progress != nil {
 		at := progress.Completed[p.position()].CompletedAt.Add(time.Duration(seconds) * time.Second)
@@ -22,7 +23,7 @@ func (p GuidedPage) restBody(o Options) []g.Node {
 		next := p.Session.Steps[step]
 		nextTitle, picture = next.Title, guidedPicture(next.Picture, next.Title, true, o)
 	}
-	add := p.restURL() + "?extra=" + strconv.Itoa(min(p.Extra+15, 86400-int(p.restSeconds())))
+	add := p.restURL() + "?extra=" + strconv.Itoa(min(p.Extra+15, 86400-int(declared)))
 	countdown := c.Stack(c.StackProps{Gap: "6"},
 		h.Div(g.Attr("data-guided-rest", deadline), g.Attr("data-guided-seconds", strconv.Itoa(int(seconds))), g.Attr("aria-live", "off"), c.Text(c.TextProps{Content: guidedDuration(seconds), Size: "5xl", Element: "span", ComponentProps: c.ComponentProps{Attrs: map[string]string{"data-guided-value": ""}}})),
 		g.If(deadline != "", h.NoScript(guidedText(time.UnixMilli(parseDeadline(deadline)).UTC().Format(time.RFC3339)))),
