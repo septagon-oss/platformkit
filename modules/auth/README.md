@@ -127,9 +127,14 @@ transaction, so a refused request leaves no token and no ledger row either. It i
 the command rather than on the route because the route is mounted against the frozen
 `contracts.Service`, which every installation's own wiring already answers.
 What is deliberately left alone: approval sign-up, which commits a pending account and promises
-an operator's decision rather than a mail; the redeem doors, which consume a credential
-somebody was already sent; and the mails raised inside a transaction, which still reach the
-carrier and are recorded `suppressed` where nothing delivers.
+an operator's decision rather than a mail. The password travels to the user owner inside that
+request, so the account it commits already holds the credential its person chose, and
+`Service.Offer` sends a set-password link only to a person in `user.invited` — nothing in this
+module ever mails the approved one, so the door is asked nothing it cannot keep. Refusing it
+would turn down a promise the installation can honour; the same installation still refuses the
+three emailed doors beside it, which is the boundary a case holds. Also left alone: the redeem
+doors, which consume a credential somebody was already sent, and the mails raised inside a
+transaction, which still reach the carrier and are recorded `suppressed` where nothing delivers.
 
 ## Authorization
 
