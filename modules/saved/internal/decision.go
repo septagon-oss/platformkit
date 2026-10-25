@@ -51,6 +51,28 @@ func text(s string, max int) bool {
 	return strings.TrimSpace(s) != "" && len(s) <= max && utf8.ValidString(s) && !strings.ContainsFunc(s, unicode.IsControl)
 }
 
+// ValidDeclarations refuses a composition's declaration set that this service
+// could not honour: a pair that is not a slug pair, a pair with no source to ask,
+// and one pair declared twice — which would make the answer to "who captures this
+// save" depend on the order the modules were listed in.
+func ValidDeclarations(savables []contracts.Savable) error {
+	seen := map[string]bool{}
+	for _, declared := range savables {
+		pair := declared.Module + "|" + declared.Kind
+		if !slug.MatchString(declared.Module) || !slug.MatchString(declared.Kind) {
+			return fmt.Errorf("%w: savable %q/%q is not a slug pair", contracts.ErrInvalid, declared.Module, declared.Kind)
+		}
+		if declared.Source == nil {
+			return fmt.Errorf("%w: savable %q/%q names no source", contracts.ErrInvalid, declared.Module, declared.Kind)
+		}
+		if seen[pair] {
+			return fmt.Errorf("%w: savable %q/%q is declared twice", contracts.ErrInvalid, declared.Module, declared.Kind)
+		}
+		seen[pair] = true
+	}
+	return nil
+}
+
 // DecideSave validates freshly authorized source data and preserves an existing
 // copy. A nil prior creates a snapshot; errors return zero and never change prior.
 func DecideSave(prior *contracts.Item, in contracts.Save, capture contracts.Capture, at time.Time) (contracts.Snapshot, bool, error) {
