@@ -133,7 +133,7 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 # Makefile exports, so this fixture counts packages with the gate's own compiler.
 selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
-for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
+for path in apps/platformkit kit/internal/jsonbody kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
@@ -186,6 +186,10 @@ boundary_rejects kit/cache/providers/valkey "$foundation/kit/db"
 boundary_rejects kit/fault "$foundation/kit/db"
 # The wire gate reads JSON only; a renderer or transaction is not its dependency.
 boundary_rejects kit/wire "$foundation/kit/db"
+# The private JSON codec transforms values without a request or transaction.
+boundary_rejects kit/internal/jsonbody "$foundation/kit/db"
+boundary_rejects kit/internal/jsonbody database/sql
+boundary_rejects kit/internal/jsonbody net/http
 # kit/trace carries a W3C trace context and nothing else: the two values, their
 # parsing and the standard library. It is in the outbox and kernel allowances
 # because the relay stores the context with the event and hands it to the

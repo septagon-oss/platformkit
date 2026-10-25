@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/internal/jsonbody"
 )
 
 // SetPatchSchema documents a registered map-body PATCH with the writable fields
@@ -62,4 +63,10 @@ func SetPatchSchema[T any](router *Router, path string, fields []entity.Field) {
 	}
 	operation := doc.Paths[router.compose(path, false)].Patch
 	operation.RequestBody.Content["application/json"].Schema = &huma.Schema{Ref: "#/components/schemas/" + name}
+	for _, integer := range router.api.integers {
+		if integer.op == operation {
+			integer.body, integer.patch = jsonbody.Describe(typ), true
+			integer.documentIntegers()
+		}
+	}
 }
