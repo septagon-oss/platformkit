@@ -1,5 +1,12 @@
 // Package forms composes portable entity forms from detached presentation inputs.
 // Handlers own authorization, parsing, persistence and the meaning of errors.
+//
+// Nothing here reads a request, a transaction or a catalogue: this package holds
+// its own copy under messages/ and asks the formatter its caller composed to
+// answer that copy in the language of the request, naming no provider, no tenant
+// and no language. That is what the package gate holds to kit/entity, kit/locale,
+// design, ui/icon, ui/css, ui/style, ui/components, ui/components/examples and
+// gomponents.
 package forms
 
 import (
