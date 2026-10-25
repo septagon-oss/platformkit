@@ -13,18 +13,15 @@ import (
 // cursors and answers ErrBackfillBudget at the worker's batch bound, preserving
 // completed batches; cursor compare-and-set protects each batch without holding
 // the composition lock throughout the drain. opts is the pair MigrateWithOptions
-// takes — the drain reads the same three session settings the migration puts on
-// its connection — and its zero value is what Backfill runs on. See README.md for
-// the worker lifecycle.
+// takes and its zero value is what Backfill runs on. See README.md for the worker
+// lifecycle.
 //
-// The declaration belongs on this door and not only on the migration, because a
-// drain opens its own connection and its own transaction per window and the
-// declaration a file reads is session state: a placement of tenants left behind by
-// a boot that declared its slug and hosts is placed by nothing at all on the door
-// that drains it, which is the half of a release where the placement actually runs
-// (planOwner leaves a data file to this door whenever the owner has history). The
-// door that declares nothing places nothing, which is what a file's own refusal is
-// for.
+// The declaration belongs here and not only on the migration: a drain connects of
+// its own and runs each window in a transaction of its own, while the declaration a
+// file reads is session state — so a placement a boot declared for the migration is
+// placed by nothing on the door that drains it, which is where planOwner leaves a
+// data file once its owner has history. A door that declares nothing places nothing,
+// which is what a file's own refusal is for.
 func BackfillWithOptions(ctx context.Context, migrateURL string, opts MigrateOptions, sources ...MigrationSource) error {
 	if err := opts.Budget.validate(); err != nil {
 		return fmt.Errorf("db: backfill: %w", err)

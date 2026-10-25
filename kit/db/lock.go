@@ -89,12 +89,8 @@ func TryLockErr(ctx context.Context, c *Conn, name string) (Unlock, error) {
 // periodic job opens transactions of its own, and a lock held by an enclosing
 // transaction would make every db.Run inside it a scope mismatch.
 //
-// The key is Postgres's own hash of the name, so two processes that spell the
-// name the same way take the same lock without a registry of numbers to keep in
-// step. Locks are per-database and independent of any schema.
-//
-// Deprecated: Use TryLockErr, which answers ErrHeld for the outcome "another
-// process holds it" instead of a false in a triple whose third slot is a failure.
+// Deprecated: Use TryLockErr, whose ErrHeld names the held case a false in a
+// triple whose third slot is a failure cannot.
 func TryLock(ctx context.Context, c *Conn, name string) (unlock func(), ok bool, err error) {
 	unlock, err = TryLockErr(ctx, c, name)
 	switch {
