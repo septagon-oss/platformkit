@@ -189,7 +189,7 @@ func memory(t *testing.T) cachetest.Store {
 	t.Helper()
 	return func(t *testing.T) cache.Cache {
 		t.Helper()
-		c, err := cache.New("pkit", shared(t))
+		c, err := cache.NewFor("pkit", shared(t))
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
@@ -204,7 +204,7 @@ func broken(t *testing.T) cachetest.Failing {
 	t.Helper()
 	return func(t *testing.T) cache.Cache {
 		t.Helper()
-		c, err := cache.New("pkit", unreachable{})
+		c, err := cache.NewFor("pkit", unreachable{})
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}

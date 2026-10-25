@@ -3,8 +3,6 @@ package tasktest
 import (
 	"context"
 	"fmt"
-	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -14,6 +12,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/domain"
+	// The one non-test file under modules/*/contracts/ that reaches into its own
+	// module's internal package: legal because that rule is rooted at the parent of
+	// internal/ and this package sits under modules/task/, and sound because the code
+	// it calls is this module's creation decision and nothing else's.
+	"github.com/septagon-oss/platformkit/modules/task/internal"
 )
 
 // Fake is contracts.Service over kit/porttest's plumbing: the same rules, no
@@ -58,10 +61,24 @@ func NewFake() *Fake {
 }
 
 var (
-	_ contracts.Service = (*Fake)(nil)
-	_ contracts.Creator = (*Fake)(nil)
-	_ contracts.Reader  = (*Fake)(nil)
+	_ contracts.Service      = (*Fake)(nil)
+	_ contracts.Creator      = (*Fake)(nil)
+	_ contracts.Reader       = (*Fake)(nil)
+	_ contracts.LockedReader = (*Fake)(nil)
 )
+
+// TaskForUpdate is contracts.LockedReader over the fake's store: the same row the
+// plain read returns.
+//
+// It fakes the read and nothing else. The row lock is a Postgres fact, and the
+// reason this fake hands back no transaction is the reason it cannot hold one;
+// modules/task/internal proves the lock against the schema. What this method is for
+// is the consumer's own apply path — a change subject tested end to end against
+// this double exercises the read its diff was made against, and only the real
+// service's suite can show that read was locked while it happened.
+func (f *Fake) TaskForUpdate(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.Task, error) {
+	return f.TaskByID(ctx, db.Tx[db.Tenant]{}, id)
+}
 
 // Put stores a task for the tenant on the context, giving it an id if it has
 // none, and returns the id. It is the fake's stand-in for the create route, and
@@ -89,20 +106,16 @@ func (f *Fake) Task(ctx context.Context, id uuid.UUID) (contracts.Task, error) {
 
 // Create mirrors the Creator the module's service will implement. Every refusal
 // is decided before the store is touched, so a refused create writes nothing and
-// says nothing. Like the commands it ignores the transaction, which is why the
-// rollback cases of CreatorSuite are the real service's alone.
+// says nothing — and the refusal is the service's own decision, made by the same
+// call internal.Service.Create makes, so the two worlds cannot disagree about an
+// input. Like the commands it ignores the transaction, which is why the rollback
+// cases of CreatorSuite are the real service's alone.
 func (f *Fake) Create(ctx context.Context, _ db.Tx[db.Tenant], in contracts.CreateTask) (*contracts.Task, error) {
-	task := contracts.Task{
-		Title: in.Title, Description: in.Description, Status: in.Status, Priority: in.Priority,
-		DueAt: utc(in.DueAt), SLADeadline: utc(in.SLADeadline), Source: in.Source, SourceRef: in.SourceRef,
-		Revision: 1,
-	}
-	if err := refuseCreate(in, task); err != nil {
+	task, err := internal.NewTask(ctx, in)
+	if err != nil {
 		return nil, err
 	}
-	if err := task.Validate(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %w", crud.ErrInvalid, err)
-	}
+	task.Revision = 1 // a created row reads 1: there, gorm's default, and here, this line
 	says := []string{contracts.EventCreated}
 	if in.AssigneeID != nil {
 		task.AssigneeID = in.AssigneeID
@@ -115,8 +128,7 @@ func (f *Fake) Create(ctx context.Context, _ db.Tx[db.Tenant], in contracts.Crea
 		task.SLABreached, task.Revision = true, task.Revision+1
 		says = append(says, contracts.EventSLABreached)
 	}
-	task.ID = uuid.New()
-	task.ID = porttest.Seed(ctx, f.Fake, f.tasks, task)
+	task.ID = porttest.Seed(ctx, f.Fake, f.tasks, *task)
 	for _, name := range says {
 		if err := f.Events.Emit(name); err != nil {
 			return nil, err
@@ -124,31 +136,6 @@ func (f *Fake) Create(ctx context.Context, _ db.Tx[db.Tenant], in contracts.Crea
 	}
 	stored, err := f.tasks.Get(ctx, task.ID)
 	return &stored, err
-}
-
-// refuseCreate is the part of Create's input check that Task.Validate cannot make:
-// the column widths of source and sourceRef, an assignee that is nobody, and a
-// time that is no instant. All are correctable.
-func refuseCreate(in contracts.CreateTask, task contracts.Task) error {
-	switch {
-	case utf8.RuneCountInString(in.Source) > 40:
-		return fmt.Errorf("%w: source must have at most 40 characters", crud.ErrInvalid)
-	case utf8.RuneCountInString(in.SourceRef) > 120:
-		return fmt.Errorf("%w: sourceRef must have at most 120 characters", crud.ErrInvalid)
-	case in.AssigneeID != nil && *in.AssigneeID == uuid.Nil:
-		return fmt.Errorf("%w: a task is assigned to somebody", crud.ErrInvalid)
-	case task.DueAt != nil && task.DueAt.IsZero(), task.SLADeadline != nil && task.SLADeadline.IsZero():
-		return fmt.Errorf("%w: a time that is unsaid is nil, not the zero instant", crud.ErrInvalid)
-	}
-	return nil
-}
-
-func utc(at *time.Time) *time.Time {
-	if at == nil {
-		return nil
-	}
-	u := at.UTC()
-	return &u
 }
 
 // Count is how many tasks the fake holds for the tenant on the context.
@@ -171,7 +158,7 @@ func (f *Fake) Assign(ctx context.Context, _ db.Tx[db.Tenant], id, assignee uuid
 	return f.command(ctx, porttest.Command[contracts.Task]{
 		Row: id,
 		Decide: func(task contracts.Task) error {
-			if err := f.authorize(ctx, task, "task:assign"); err != nil {
+			if err := f.authorize(ctx, task, "task:assign", assignee); err != nil {
 				return err
 			}
 			if task.Status == contracts.StatusResolved || task.Status == contracts.StatusClosed {
@@ -202,7 +189,7 @@ func (f *Fake) Resolve(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, re
 	return f.command(ctx, porttest.Command[contracts.Task]{
 		Row: id,
 		Decide: func(task contracts.Task) error {
-			if err := f.authorize(ctx, task, "task:resolve"); err != nil {
+			if err := f.authorize(ctx, task, "task:resolve", uuid.Nil); err != nil {
 				return err
 			}
 			proposed, err := domain.Resolve(task.Status, task.Resolution, resolution)
@@ -238,19 +225,9 @@ func (f *Fake) CheckSLA(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 	})
 }
 
-// authorize is internal.Service.authorize read against the fake's context rather
-// than the transaction's: the same tenancy.RequirePolicy call, the same actor,
-// action and resource, the same sentinel, and inside Decide, which is where
-// porttest.Do puts a command's rules — after the row was loaded and before
-// anything was written — so the fake refuses a caller where the real service does.
-//
-// Two differences, both stated. The attributes internal sends describe the task
-// to a policy that reads them; tasktest.Policy reads the actor and nothing else,
-// and a fact nothing reads is not written here. And Stranger is refused before
-// the policy is asked, whoever holds the fake: the port's Denied case needs a
-// caller with no grant, and a world that had to install a policy to be refused
-// one would be a world with an opinion about grants it may not have.
-func (f *Fake) authorize(ctx context.Context, task contracts.Task, action string) error {
+// authorize sends the same locked-row facts as the SQL service. Stranger remains
+// the fixture's caller without a grant, independent of the configured policy.
+func (f *Fake) authorize(ctx context.Context, task contracts.Task, action string, assignee uuid.UUID) error {
 	if porttest.Actor(ctx) == Stranger {
 		return tenancy.ErrPolicyDenied
 	}
@@ -262,12 +239,19 @@ func (f *Fake) authorize(ctx context.Context, task contracts.Task, action string
 		return tenancy.ErrPolicyDenied
 	}
 	tenant, _ := tenancy.FromContext(ctx) // porttest.Do refused a context naming no tenant already
+	attributes := map[string]any{"status": task.Status, "priority": task.Priority, "assignee_id": ""}
+	if task.AssigneeID != nil {
+		attributes["assignee_id"] = task.AssigneeID.String()
+	}
+	if assignee != uuid.Nil {
+		attributes["requested_assignee_id"] = assignee.String()
+	}
 	_, err := tenancy.RequirePolicy(ctx, f.Policy, tenancy.PolicyRequest{
 		Tenant: tenant,
 		Actor:  tenancy.PolicyActor{Kind: tenancy.PolicyUser, ID: principal.UserID.String()},
 		Action: action,
 		Resource: tenancy.PolicyResource{
-			TenantID: task.TenantID, Kind: "task", ID: task.ID.String(),
+			TenantID: task.TenantID, Kind: "task", ID: task.ID.String(), Attributes: attributes,
 		},
 	})
 	return err

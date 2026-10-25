@@ -71,8 +71,9 @@ itself guarantees.
 **Budgets.** Every file runs with `lock_timeout` five seconds and no
 `statement_timeout`, re-asserted on the runner's session before each file so a file
 that sets one for itself cannot leak it to the next; `database.lock_timeout` and
-`database.statement_timeout` change them, and `MigrateWith` takes the same values as
-a `MigrationBudget`. The budgets are the runner's patience, not the operator's: a
+`database.statement_timeout` change them, and `MigrateWithOptions` takes the same values
+in its `MigrateOptions.Budget` (`MigrateWith`, `MigrateDeclaring` and their `Backfill`
+partners are that one door's older spellings and are deprecated in its favour). The budgets are the runner's patience, not the operator's: a
 migration that cannot take a lock in five seconds of *waiting* stops. The statement
 budget defaults to no bound because a legitimate index build on a large table is the
 statement a duration bound would kill. **The one exception is the file in autocommit
@@ -371,6 +372,23 @@ context does not derive from the owner; every in-tree caller's does. A cancel th
 `COMMIT` round trip is reported as not committed, though PostgreSQL may have committed. `RunSystem`
 keeps one context for its whole transaction: its caller is owner and only operation.
 
+## An effect that waits for the commit
+
+Decision 0022, for this delivery. **Reused:** `Pending`, the one commit site
+(`Close`), `Run`'s join, `Detached` as the context a deferred action is handed, and
+`httpx`'s position for the application connection — which now lives here
+(`WithConn`/`ConnFrom`), because a delivery runs on the same pool and code that
+writes after its transaction has ended must read one name in both. **Added:**
+`AfterCommit`, `ErrEffectNotRun` and the queue on `Pending` — nothing existing could
+carry them: `Detached` commits *earlier*, and the outbox cannot hold the one effect
+this exists for, a secret that may not become a row. The queue is the transaction's,
+not the `Pending`'s: `open` starts one and `end` hands it over or drops it, so the
+actions registered to a rolled back transaction are dropped with its rows and a
+request that reopened under a live owner runs only what the transaction it is ending
+registered. **Made reusable:** a hand-off
+any module can register on, and an error that separates "committed, effect missing"
+from a rollback, which is the fact every retry underneath this has to branch on.
+
 ## Composition of migration steps
 
 **Reused** — `MigrateDeclaring`, the existing runner, history ledger and backfill
@@ -387,3 +405,18 @@ The public inputs, entry points and composition-lock window remain in [migrate.g
 [migration rules](migration_rules.go). [Source reading](migration_files.go)
 finishes before connecting; an out-of-range rule floor is still judged against
 pending history before any pending file executes.
+
+## Composition of the call-site doors
+
+**Reused** — the runner's own doors: `MigrateWithOptions` and `BackfillWithOptions` are
+`MigrateDeclaring`'s and `BackfillDeclaring`'s bodies with the budget and declaration read
+out of one `MigrateOptions`, `Commit` and `Rollback` are `Close`'s `finalise`, `TryLockErr`
+is `TryLock`'s session and its key, and the ladder above them is untouched. **Added** —
+`MigrateOptions`, `Unlock`, `ErrHeld` and the options door itself, because a caller that
+wants a budget *and* a declaration had to reach the door named after the least of its
+arguments, "held by another process" had only a false in a triple whose third slot is a
+failure, and a bare `bool` decided whether a delete was a hiding or an ending. **Made
+reusable** — one options struct every migration door takes and a named `Unlock` any lock
+caller can hand to a deferred path. The old/new pair case beside each door is the shape
+this branch leaves for the next renaming of one: a description to copy, not something a
+module can import.

@@ -35,12 +35,37 @@ func TestTheRunnerPurgesTheCounterTableItWrites(t *testing.T) {
 
 	// One spent window and one open one, both written the way a request writes one:
 	// on the request's own connection, under a tenant's context, through the limiter
-	// httpx is handed.
+	// httpx is handed. The ask is repeated until the window is on the table, because
+	// the answer that records nothing carries no error to notice: the first event under
+	// a quota of three is admitted, so the one answer that is neither an error nor an
+	// admission is the counter still being busy with this key — it reached no row and
+	// counted nothing, and says so by refusing rather than by failing, which is what
+	// lets a caller that fails open keep serving while a counter is queued (kit/limit's
+	// Reserve answers ErrBusy this way on purpose). A helper that read only the error
+	// would leave the count below to blame the job for a table the counter never
+	// filled; the whole suite shares one Postgres, and the wall one counter attempt is
+	// given is short next to the load several suites put on it.
 	count := func(name string) {
 		t.Helper()
-		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New(), Slug: name}), conn)
-		if _, _, _, err := limit.Postgres(httpx.ConnFrom).Reserve(ctx, name, 3, time.Minute); err != nil {
-			t.Fatalf("count a %s window: %v", name, err)
+		id := uuid.New()
+		for ask := 1; ; ask++ {
+			ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: id, Slug: name}), conn)
+			admitted, _, _, err := limit.Postgres(httpx.ConnFrom).Reserve(ctx, name, 3, time.Minute)
+			if err != nil {
+				t.Fatalf("count a %s window: %v", name, err)
+			}
+			if admitted {
+				return
+			}
+			if ask >= seedAsks {
+				t.Fatalf("count a %s window: the counter refused to count the first event of a quota of three %d times, "+
+					"each refusal answering that it was still busy with the key and recording nothing", name, ask)
+			}
+			select {
+			case <-t.Context().Done():
+				t.Fatalf("count a %s window: %v", name, t.Context().Err())
+			case <-time.After(seedPause):
+			}
 		}
 	}
 	count("spent")
@@ -76,6 +101,17 @@ func TestTheRunnerPurgesTheCounterTableItWrites(t *testing.T) {
 			"a window closed a day ago goes and one still counting stays", purge.Name, rows, open)
 	}
 }
+
+// seedAsks and seedPause are how long the seeding above will keep asking a busy
+// counter. Four asks a quarter-second apart span the wait a loaded machine answers
+// in — each ask already waits out the counter's own budget before it refuses — and
+// stay far short of becoming this case's watchdog: a counter that is still busy after
+// that is the thing the case reports, and it reports it as the counter rather than as
+// a row count.
+const (
+	seedAsks  = 4
+	seedPause = 250 * time.Millisecond
+)
 
 // kernelJob is the one job of the composition's own list a case is about. Its absence
 // is the failure the case reports, and loudly: a job that quietly stopped being
