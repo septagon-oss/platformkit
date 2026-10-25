@@ -133,7 +133,7 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 # Makefile exports, so this fixture counts packages with the gate's own compiler.
 selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
-for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
+for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/entity/present kit/entity/view kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request kit/operation \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
@@ -169,6 +169,8 @@ boundary_rejects ui/screens "$foundation/ui/export"
 boundary_rejects ui/document "$foundation/kit/httpx"
 boundary_rejects ui/resource "$foundation/kit/db"
 boundary_rejects kit/entity/display "$foundation/kit/crud"
+# A Page decides what a screen says, so the store that loads its rows and the router that serves it are both its caller's.
+boundary_rejects kit/entity/view "$foundation/kit/db"
 # The refusal sentinels exist so a value package can name one without linking
 # the storage adapter, so the edge this case refuses is the one into a
 # transaction: kit/db, and through it gorm and a driver. The edge in the other

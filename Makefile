@@ -238,6 +238,7 @@ check-complexity: ## Require exact complexity ceilings and reviewed budget trans
 # never written here (CONTRIBUTING.md, "Generated and golden files").
 generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
+	go run ./tools/pageschema -out kit/entity/view/page-v1.schema.json
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
 
 # The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md

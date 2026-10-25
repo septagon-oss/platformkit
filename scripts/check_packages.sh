@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
+parts=(kit/wire kit/entity kit/entity/display kit/entity/present kit/entity/view kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/inference kit/inference/providers/openai
@@ -151,6 +151,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         check("kit/entity", uuid)
         check("kit/entity/display", uuid " " p "kit/entity")
         check("kit/entity/present", uuid " " p "kit/entity " p "kit/entity/display")
+        check("kit/entity/view", uuid " " p "kit/entity " p "kit/entity/display " p "kit/entity/present")
         check("kit/locale", "")
         # kit/fault declares the three refusal sentinels a value package wraps.
         # Its closure is the standard library and itself, or wrapping a refusal
