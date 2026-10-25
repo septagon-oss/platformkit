@@ -373,7 +373,6 @@ var sessionWords = map[string]string{
 	"screens.session.navigation_only":        "Next does not record progress.",
 	"screens.session.completion_unavailable": "Set completion is unavailable.",
 	"screens.session.finish_unavailable":     "Finish is unavailable.",
-	"screens.session.retry":                  "Retry",
 	"screens.session.reload":                 "Reload",
 	"screens.session.no_script":              "Live countdown and sound need JavaScript.",
 	"screens.session.storage_unavailable":    "Timers will reset if you reload.",

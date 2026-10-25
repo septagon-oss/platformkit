@@ -58,7 +58,7 @@ function namedTimers(root, cfg, timers, list, enable, words, read, store, remove
     const start = () => {
       if (timer.value && timer.value.deadline > now()) return;
       Promise.resolve(prepareAudio()).catch(() => { enable.hidden = false; });
-      timer.value = {seconds, deadline:now()+seconds*1000, generation:crypto.randomUUID(), notified:false};
+      timer.value = {seconds, deadline:now()+seconds*1000, notified:false};
       store(key, timer.value); tick();
     };
     const cancel = timerButton(signal, words('cancel_timer', {name:timer.name}), () => { timer.value = null; remove(key); tick(); });
@@ -107,7 +107,7 @@ function install(root) {
     restKey = `${step.id}/${set}/rest`;
     const seconds = Number(rest.dataset.guidedSeconds), declared = cfg.Set+1 < step.sets.length ? step.restBetweenSeconds : step.restAfterSeconds;
     restValue = read(restKey, declared);
-    if (!restValue) restValue = {seconds:declared, deadline:Number(rest.dataset.guidedRest) || now()+seconds*1000, generation:crypto.randomUUID(), notified:false};
+    if (!restValue) restValue = {seconds:declared, deadline:Number(rest.dataset.guidedRest) || now()+seconds*1000, notified:false};
     if (rest.dataset.guidedRest) restValue.deadline = Math.max(restValue.deadline,Number(rest.dataset.guidedRest));
     store(restKey,restValue);
     root.querySelector('[data-guided-add]')?.addEventListener('click', event => {
@@ -115,7 +115,6 @@ function install(root) {
       restValue.deadline = Math.min(now()+86400000, Math.max(now(),restValue.deadline)+15000);
       restValue.notified = false; store(restKey,restValue); notice(words('rest_added')); tick();
     }, {signal:events.signal});
-    root.querySelector('[data-guided-skip]')?.addEventListener('click', () => { restValue.skipped = true; store(restKey,restValue); }, {signal:events.signal});
   }
   function tick() {
     if (disposed || document.hidden) return;

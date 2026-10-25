@@ -279,11 +279,6 @@
     "translation": "Terminar está indisponível.",
     "plural": { "": "Terminar está indisponível." }
   },
-  "screens.session.retry": {
-    "references": ["ui/screens/catalog.go"],
-    "translation": "Tentar novamente",
-    "plural": { "": "Tentar novamente" }
-  },
   "screens.session.reload": {
     "references": ["ui/screens/catalog.go"],
     "translation": "Recarregar",
