@@ -110,10 +110,11 @@ func ambiguousCredential(r *http.Request) bool {
 // It is the second half of SystemToken: db.RunSystem takes a connection and a
 // capability, and a module holds neither until it is handed them. A module that
 // has not taken a token can do nothing with this that it could not already do
-// with the request's own transaction.
+// with the request's own transaction. The connection is carried under kit/db's
+// own key, because an event delivery runs on the same pool and a service that
+// writes outside the transaction it was handed reads one name in both.
 func ConnFrom(ctx context.Context) (*db.Conn, bool) {
-	c, ok := ctx.Value(connKey{}).(*db.Conn)
-	return c, ok
+	return db.ConnFrom(ctx)
 }
 
 // WithConn puts a connection on ctx. The transaction middleware calls it for
@@ -121,7 +122,5 @@ func ConnFrom(ctx context.Context) (*db.Conn, bool) {
 // position a request puts it in, rather than the service growing a second code
 // path that exists to be testable.
 func WithConn(ctx context.Context, c *db.Conn) context.Context {
-	return context.WithValue(ctx, connKey{}, c)
+	return db.WithConn(ctx, c)
 }
-
-type connKey struct{}
