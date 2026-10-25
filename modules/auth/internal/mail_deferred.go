@@ -49,10 +49,8 @@ type linkMail struct {
 // refusal is recorded and swallowed as it was before the send moved.
 //
 // The send runs inside this person's mail slot, which the hand-off holds from before
-// the send to after its marks commit (see holdMailSlot). That bracket is what makes the
-// read below and the send that follows it one decision, and what an offer that finds
-// the slot taken defers to rather than mailing a link the single-pending write is about
-// to drop.
+// the send to after its marks commit (see holdMailSlot): the read below and the send
+// after it are one decision no second offer of one person's link can overtake.
 func (s *Service) mailAfterCommit(ctx context.Context, m linkMail) error {
 	err := s.detachedWithin(ctx, handoverBudget, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if err := holdMailSlot(tx, m); err != nil {
