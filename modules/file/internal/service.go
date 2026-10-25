@@ -113,27 +113,19 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
-	size, digestHex, contentType := counted.n, hex.EncodeToString(digest.Sum(nil)), up.ContentType
-	var width, height int
-	if pass != nil {
-		// The re-encoded frame goes under a key of its own, because Storage is
-		// write-once — Put refuses a key that exists — and a second write to the
-		// same name is not a thing this module asks for anywhere else. The object
-		// that was streamed in is therefore referenced by no row the moment this
-		// returns, and the Delete a few lines below removes it straight away; the
-		// daily orphan sweep is what catches the object this process could not
-		// remove itself, which is the gap between a blob write and a transaction.
-		// The row below names the one key a reader is served.
-		reencoded := contracts.Key(uuid.NewString())
-		meta := contracts.MetaFor(&contracts.File{ContentType: pass.ContentType, Visibility: up.Visibility})
-		if err := s.storage.Put(ctx, scope, reencoded, bytes.NewReader(pass.Bytes), int64(len(pass.Bytes)), meta); err != nil {
-			_ = s.storage.Delete(ctx, scope, key)
-			return nil, fmt.Errorf("file: store the re-encoded image: %w", err)
-		}
+	saved, err := s.storedFrame(ctx, scope, up, stored{
+		key: key, size: counted.n, digest: hex.EncodeToString(digest.Sum(nil)), contentType: up.ContentType,
+	}, pass)
+	if err != nil {
 		_ = s.storage.Delete(ctx, scope, key)
-		key = reencoded
-		size, digestHex, contentType = int64(len(pass.Bytes)), sha256Hex(pass.Bytes), pass.ContentType
-		width, height = pass.Width, pass.Height
+		return nil, err
+	}
+	if pass != nil {
+		// The object that was streamed in is named by no row once its re-encoded
+		// frame is stored, so it goes now; the daily orphan sweep catches what this
+		// process could not remove itself, which is the gap between a blob write and
+		// a transaction.
+		_ = s.storage.Delete(ctx, scope, key)
 	}
 	// Every byte is on disk, so there is finally something to open a
 	// transaction for — and the quota is measured inside it, under the lock.
@@ -142,14 +134,57 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
-	if err := s.charge(ctx, tx, size); err != nil {
+	if err := s.charge(ctx, tx, saved.size); err != nil {
 		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
 
+	f, err := s.record(ctx, tx, up, saved)
+	if err != nil {
+		_ = s.storage.Delete(ctx, scope, key)
+		return nil, err
+	}
+	return f, events.Publish(ctx, tx, contracts.EventUploaded, contracts.Uploaded{
+		FileID: f.ID, Name: f.Name, ContentType: f.ContentType, Size: f.Size,
+		SHA256: f.SHA256, Visibility: f.Visibility, At: db.Now(),
+	})
+}
+
+// stored is what an upload left in the object store: the key a reader is served, and
+// the size, digest, media type and frame the row must therefore claim — which, after
+// the image pass, are the ones of what is stored rather than of what was sent.
+type stored struct {
+	key                 contracts.Key
+	size                int64
+	digest, contentType string
+	width, height       int
+}
+
+// storedFrame keeps the re-encoded pixels when the image pass produced any. They go
+// under a key of their own because Storage is write-once — Put refuses a key that
+// exists — and a second write to the same name is not a thing this module asks for
+// anywhere else. With no pass the bytes that arrived are the bytes a reader fetches.
+func (s *Service) storedFrame(ctx context.Context, scope contracts.Scope, up contracts.Upload, arrived stored, pass *contracts.ImagePass) (stored, error) {
+	if pass == nil {
+		return arrived, nil
+	}
+	reencoded := contracts.Key(uuid.NewString())
+	meta := contracts.MetaFor(&contracts.File{ContentType: pass.ContentType, Visibility: up.Visibility})
+	if err := s.storage.Put(ctx, scope, reencoded, bytes.NewReader(pass.Bytes), int64(len(pass.Bytes)), meta); err != nil {
+		return arrived, fmt.Errorf("file: store the re-encoded image: %w", err)
+	}
+	return stored{
+		key: reencoded, size: int64(len(pass.Bytes)), digest: sha256Hex(pass.Bytes),
+		contentType: pass.ContentType, width: pass.Width, height: pass.Height,
+	}, nil
+}
+
+// record writes the row and the plan for the other widths in one transaction, so a
+// plan never exists without its picture and an upload that rolled back files nothing.
+func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], up contracts.Upload, saved stored) (*contracts.File, error) {
 	f := &contracts.File{
-		Name: up.Name, ContentType: contentType, Visibility: up.Visibility, Kind: up.Kind, Sealed: up.Sealed,
-		Size: size, SHA256: digestHex, StorageKey: key.String(), Width: width, Height: height,
+		Name: up.Name, ContentType: saved.contentType, Visibility: up.Visibility, Kind: up.Kind, Sealed: up.Sealed,
+		Size: saved.size, SHA256: saved.digest, StorageKey: saved.key.String(), Width: saved.width, Height: saved.height,
 		// The same word in both columns, and this one is where it stays: what the
 		// upload was given is the floor of who may read the file, and the only
 		// writes it ever sees after here are this one and the migration that
@@ -169,7 +204,6 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 	// cannot tell an unsaved picture from a configured one; see this module's README
 	// and the round's report.
 	if err := crud.Create(ctx, tx, f); err != nil {
-		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
 	// The plan for the other widths, filed in the same transaction as the row it
@@ -182,16 +216,12 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 	// one thing that had to happen in it, which is to store and serve the frame.
 	// internal/variants.go builds the rest on the clock, and until it has been
 	// round, the srcset names this row alone.
-	for _, row := range contracts.VariantPlan(f.ID, width, height, contentType) {
+	for _, row := range contracts.VariantPlan(f.ID, saved.width, saved.height, saved.contentType) {
 		if err := crud.Create(ctx, tx, row); err != nil {
-			_ = s.storage.Delete(ctx, scope, key)
 			return nil, err
 		}
 	}
-	return f, events.Publish(ctx, tx, contracts.EventUploaded, contracts.Uploaded{
-		FileID: f.ID, Name: f.Name, ContentType: f.ContentType, Size: f.Size,
-		SHA256: f.SHA256, Visibility: f.Visibility, At: db.Now(),
-	})
+	return f, nil
 }
 
 // Uses is the live list, read straight off the table the rewrite maintains.
