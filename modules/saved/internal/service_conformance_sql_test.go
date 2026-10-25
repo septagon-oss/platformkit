@@ -72,10 +72,18 @@ func world(t *testing.T, run func(savedtest.Fixture)) {
 	grants.grant(owner, contracts.PermissionRead, contracts.PermissionWrite)
 	grants.grant(other, contracts.PermissionRead, contracts.PermissionWrite)
 	home, abroad := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}, tenancy.Tenant{ID: uuid.New(), Slug: "away"}
+	// The fixture's clock is the one this adapter stamps with, which is the point of
+	// the case that advances it: a copy's instant is the composition's fact, and an
+	// adapter that read the process clock instead would answer the fake's suite with
+	// a time the suite never set.
+	clock := porttest.NewClock(time.Now().UTC())
 	service := internal.NewService(grants, []contracts.Savable{
 		{Module: "example", Kind: "thing", Words: words("Save thing", "Saved to things"), Source: source},
 		{Module: "example", Kind: "plan", Words: words("Save plan", "Saved to plans"), Source: source},
 	})
+	service.Clock = clock.Now
+	undeclared := internal.NewService(grants, nil)
+	undeclared.Clock = clock.Now
 
 	signIn := func(tenant tenancy.Tenant, person uuid.UUID) context.Context {
 		return tenancy.WithPrincipal(tenancy.WithTenant(t.Context(), tenant), tenancy.Principal{UserID: person})
@@ -85,7 +93,7 @@ func world(t *testing.T, run func(savedtest.Fixture)) {
 	run(savedtest.Fixture{
 		Owner: homeOf, OtherPerson: signIn(home, other),
 		OtherTenant: signIn(abroad, owner), Denied: signIn(home, stranger),
-		Service: service, Undeclared: internal.NewService(grants, nil),
+		Service: service, Undeclared: undeclared,
 		Within: func(ctx context.Context, body func(db.Tx[db.Tenant]) error) error {
 			return db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error { return body(tx) })
 		},
@@ -96,7 +104,7 @@ func world(t *testing.T, run func(savedtest.Fixture)) {
 		Rows:      func() string { return witness(t, conn, homeOf) },
 		Published: func() []string { return published(t, conn, homeOf, home) },
 		Source:    source,
-		Clock:     porttest.NewClock(time.Now().UTC()),
+		Clock:     clock,
 		Revoke:    func() { grants.drop(owner) },
 	})
 }

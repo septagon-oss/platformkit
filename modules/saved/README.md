@@ -275,10 +275,10 @@ the erasure in that same transaction. Export makes no writes or domain events.
 
 What this tree holds and what it specifies are not the same list, so the line is
 here rather than implied: the pkit declaration below is shipped in `module.go`
-(`Provides` Service, `Needs` Access and every Savable, `Contributes`
+(`Provides` Service, `Needs` Access, `Clock` and every Savable, `Contributes`
 personaldata.Part — export and erasure over the person's own copies), and every
-other row is owed: the `httpx.Saving` adapter, the `Opener`/`FileUses` edge, the
-`Clock` the SQL adapter stamps with, and everything from
+other row is owed: the `httpx.Saving` adapter, the `Opener`/`FileUses` edge, and
+everything from
 "### HTTP and generated-screen ownership" down. No application composes the
 module yet, so nothing here is reachable by a person.
 

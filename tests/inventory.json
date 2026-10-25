@@ -53426,6 +53426,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/saved/internal/explicit_clock_test.go",
+   "id": "modules/saved/internal/explicit_clock_test.go#TestACopyCarriesTheInstantTheCompositionStampedIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACopyCarriesTheInstantTheCompositionStampedIt",
+   "needs_db": true,
+   "pkg": "modules/saved/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/saved/internal/foreign_removal_test.go",
    "id": "modules/saved/internal/foreign_removal_test.go#TestARemoteMemberRemovingAnownedCopyWritesNothingAndAnnouncesNothing",
    "kind": "go",
@@ -53598,10 +53617,10 @@
    "area": "modules",
    "evidence": "not-round-named",
    "file": "modules/saved/plan_test.go",
-   "id": "modules/saved/plan_test.go#TestCompositionRefusesTheAuthorityPortNobodyAnswers",
+   "id": "modules/saved/plan_test.go#TestCompositionRefusesThePortsNobodyAnswers",
    "kind": "go",
    "layer": "behaviour",
-   "name": "TestCompositionRefusesTheAuthorityPortNobodyAnswers",
+   "name": "TestCompositionRefusesThePortsNobodyAnswers",
    "needs_db": false,
    "pkg": "modules/saved",
    "round_named": false,
@@ -83476,7 +83495,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2261,
+  "files": 2262,
   "forge_runs": [
    408,
    413,
@@ -83510,7 +83529,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3608,
+   "behaviour": 3609,
    "composition": 489,
    "contract": 22,
    "journey": 110
@@ -83529,9 +83548,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4229,
+  "rows": 4230,
   "tiers": {
-   "merge": 2603,
+   "merge": 2604,
    "nightly": 110,
    "push": 1516
   },
@@ -83539,13 +83558,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2016,
+   "keep": 2017,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3843,
+   "keep": 3844,
    "keep-rewrite": 170,
    "merge": 216
   }

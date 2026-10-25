@@ -33,11 +33,28 @@ type Service struct {
 	// that is not declared is ErrUnavailable: saving is only ever possible for
 	// something a composition said how to capture.
 	Savables []contracts.Savable
+
+	// Clock is the instant a snapshot is taken at. NewService leaves it nil, which
+	// is the kernel's process clock; the module's boundary requires a Clock, so a
+	// composed service never runs on this default.
+	Clock contracts.Clock
+}
+
+// now is the instant this stamping happens at, from whoever the composition put
+// there. The kernel's own clock is the fallback for a service built outside a
+// composition, which is a test's own construction and not a composed answer.
+func (s *Service) now() time.Time {
+	if s.Clock == nil {
+		return db.Now()
+	}
+	return s.Clock()
 }
 
 // NewService returns the SQL adapter over the declaration set. Access must not be
 // nil for anything but a read-only composition: a service with no authority port
-// refuses every command rather than guessing who is asking.
+// refuses every command rather than guessing who is asking. The returned service
+// stamps with the kernel's process clock until its owner sets Clock, which a
+// composition does through the module's Deps.
 func NewService(access contracts.Access, savables []contracts.Savable) *Service {
 	return &Service{Access: access, Savables: slices.Clone(savables)}
 }
@@ -191,7 +208,7 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sa
 		earlier := before.item()
 		held = &earlier
 	}
-	snapshot, changed, err := DecideSave(held, in, capture, db.Now())
+	snapshot, changed, err := DecideSave(held, in, capture, s.now())
 	if err != nil {
 		return contracts.Item{}, err
 	}

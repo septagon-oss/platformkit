@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -24,12 +25,23 @@ func (desk) Current(context.Context, db.Tx[db.Tenant], string) (string, error) {
 	return "", contracts.ErrDenied
 }
 
-// authority is the composition's half of the one port saved Needs.
+// authority is the composition's half of the two ports saved Needs: who is asking,
+// and what its now is.
 func authority(name string) *pkit.Module {
 	return pkit.NewModule(name, func(w *pkit.Wiring) (module.Module, error) {
 		pkit.Put[contracts.Access](w, desk{})
+		pkit.Put[contracts.Clock](w, func() time.Time { return time.Unix(1900000000, 0).UTC() })
 		return module.Module{Name: name}, nil
-	}, pkit.Provides[contracts.Access]())
+	}, pkit.Provides[contracts.Access](), pkit.Provides[contracts.Clock]())
+}
+
+// mute is a provider that answers a port with nothing at all.
+func mute(name string) *pkit.Module {
+	return pkit.NewModule(name, func(w *pkit.Wiring) (module.Module, error) {
+		pkit.Put[contracts.Access](w, desk{})
+		pkit.Put[contracts.Clock](w, contracts.Clock(nil))
+		return module.Module{Name: name}, nil
+	}, pkit.Provides[contracts.Access](), pkit.Provides[contracts.Clock]())
 }
 
 // contributing is a source module's half: the one pair it can capture, contributed
@@ -86,13 +98,20 @@ func TestCompositionComposesNothingYetAsAnEmptyLibrary(t *testing.T) {
 	}
 }
 
-// TestCompositionRefusesTheAuthorityPortNobodyAnswers is the plan read at boot: a
-// Need with no supplier is refused before a connection, a migration or a
-// listener, and the refusal names the contract that went unanswered.
-func TestCompositionRefusesTheAuthorityPortNobodyAnswers(t *testing.T) {
+// TestCompositionRefusesThePortsNobodyAnswers is the plan read at boot: a Need with
+// no supplier is refused before a connection, a migration or a listener, and the
+// refusal names the contracts that went unanswered. A port answered with a nil
+// value is the same refusal by the service's own rule: an installation that named
+// no clock keeps no copy.
+func TestCompositionRefusesThePortsNobodyAnswers(t *testing.T) {
 	err := pkit.NewApp("saved-fixture").Use(saved.Module).Validate(pkit.Deployment{Environment: pkit.Development})
-	if err == nil || !strings.Contains(err.Error(), "Access") {
-		t.Fatalf("a plan with nobody to answer who is asking: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "Access") || !strings.Contains(err.Error(), "Clock") {
+		t.Fatalf("a plan with nobody to answer who is asking, or what now is: %v", err)
+	}
+	err = pkit.NewApp("saved-fixture").Use(mute("desk_fixture"), saved.Module).
+		Validate(pkit.Deployment{Environment: pkit.Development})
+	if err == nil || !strings.Contains(err.Error(), "clock") {
+		t.Fatalf("a plan whose provider answered the clock with nothing: %v", err)
 	}
 }
 

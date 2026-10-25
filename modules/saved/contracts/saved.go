@@ -151,6 +151,12 @@ type Savable struct {
 	Source Source
 }
 
+// Clock is the composition's own now: the instant a capture is retained at, and
+// so the order one person's copies come back in. NewService leaves it unset, which
+// is the kernel's process clock; the module's boundary requires one, so nothing a
+// composition builds answers with the default, and a test supplies one it can move.
+type Clock func() time.Time
+
 // Access rereads the authenticated person's current membership and grant in tx.
 // It returns a canonical person UUID string, or zero with a refusal. Cached
 // request grants cannot substitute for this check after a lock wait. Authority

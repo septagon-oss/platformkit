@@ -28,6 +28,11 @@ type Deps struct {
 	// one pair. An empty set composes, and means nothing can be captured yet —
 	// the library reads as empty and every save names the pair nobody declared.
 	Savables []contracts.Savable
+
+	// Clock is the instant a retained copy is stamped at, and so the order a
+	// person's copies come back in. A composition that cannot say what its now is
+	// has no business keeping a copy, so a nil Clock refuses the plan.
+	Clock contracts.Clock
 }
 
 // Module is a person's retained copies as the resolver sees it, for an
@@ -45,6 +50,7 @@ type Deps struct {
 // own declaration.
 var Module = pkit.NewModule("saved", wire,
 	pkit.Needs[contracts.Access](),
+	pkit.Needs[contracts.Clock](),
 	pkit.Needs[[]contracts.Savable](),
 	pkit.Provides[contracts.Service](),
 	pkit.Contributes[personaldata.Part](),
@@ -57,7 +63,12 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if err := internal.ValidDeclarations(savables); err != nil {
 		return module.Module{}, fmt.Errorf("saved: %w", err)
 	}
+	stamp := pkit.Get[contracts.Clock](w)
+	if stamp == nil {
+		return module.Module{}, fmt.Errorf("%w: saved names no clock to stamp a capture with", contracts.ErrInvalid)
+	}
 	svc := internal.NewService(pkit.Get[contracts.Access](w), savables)
+	svc.Clock = stamp
 	pkit.Put[contracts.Service](w, svc)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest(), nil
