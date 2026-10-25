@@ -15,12 +15,17 @@ import (
 type phraser func(key, fallback string, args ...any) string
 
 // phrasesFor composes the two seams ControlProps and Options carry into one read
-// path. A formatter answers every phrase with its provider in charge of
-// interpolation, plural rules and regional number format. The older func is asked
-// with the phrase already formatted, because a message that takes arguments has a
-// key no catalogue written before it can hold, so that seam can only ever answer
-// with source text — and source text left holding Go's verbs is a sentence a
-// person reads with verbs in it. With neither seam composed, the source text
+// path. A formatter answers every phrase, with its provider in charge of
+// interpolation, plural rules and regional number format, and it answers it first
+// where both seams are composed: it is the only seam that can put a value inside
+// the sentence the copy wrote.
+//
+// The older func carries no value at all, so a phrase that asks for one is answered
+// from its source text rather than asked of that seam. A catalogue can hold such a
+// key, and a caller that answers keys through a seam with nothing to interpolate
+// would receive the copy with its verbs unfulfilled — the shape of the sentence
+// then belongs to Go, and a person reads the verbs. A phrase with no value in it is
+// still asked of the older seam, and with neither seam composed the source text
 // stands as it always did.
 func phrasesFor(format locale.Formatter, text func(key, fallback string) string) phraser {
 	return func(key, fallback string, args ...any) string {
@@ -28,7 +33,7 @@ func phrasesFor(format locale.Formatter, text func(key, fallback string) string)
 			return format.Text(key, fallback, args...)
 		}
 		line := sourceText(fallback, args)
-		if text == nil {
+		if text == nil || len(args) > 0 {
 			return line
 		}
 		return text(key, line)

@@ -97,9 +97,13 @@ Every word this package draws a person reads is one message, and a value the
 message interpolates — a keystroke, a field's label, a domain's refusal — arrives
 as an argument, never joined in Go. `Options.Format` and `ControlProps.Format`
 carry the request's `locale.Formatter`; with none composed, the source text
-stands. A note about the control a form chose is drawn as its own sentence beside
-the field's own documentation, so two authors share one paragraph without either
-sentence being assembled out of the other.
+stands. Where both seams are composed the formatter answers, and a phrase that asks
+for a value is never asked of the older one, because a provider that answers keys
+with nothing to interpolate returns its copy with the verb unfulfilled — a finished
+sentence in the language the package was written in is the better answer than a
+broken one in the reader's. A note about the control a form chose is drawn as its
+own sentence beside the field's own documentation, so two authors share one paragraph
+without either sentence being assembled out of the other.
 
 * **Reused** — `kit/locale`'s `Formatter` as the seam, `kit/locale/providers/xtext` as the provider that formats it, `ui/resource.Options.Text`'s existing argument-taking shape, `ui/components`' help paragraph and its `aria-describedby` pair.
 * **Added** — `Format` on the two props structs, because widening `Text` to take arguments is a break on the frozen surface and the copy that needs a value cannot be assembled from a seam that carries none; `HelpNotes`/`HelperNotes` on the four help-bearing props structs, because that paragraph held exactly one string and a second sentence had nowhere to be drawn.
