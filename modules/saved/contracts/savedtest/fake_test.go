@@ -11,6 +11,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/porttest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	picture "github.com/septagon-oss/platformkit/modules/picture/contracts"
+	"github.com/septagon-oss/platformkit/modules/picture/contracts/picturetest"
 	"github.com/septagon-oss/platformkit/modules/saved/contracts"
 	"github.com/septagon-oss/platformkit/modules/saved/contracts/savedtest"
 )
@@ -35,8 +37,22 @@ func TestFakeConforms(t *testing.T) {
 				rows := append(fake.Rows(owner), fake.Rows(other)...)
 				return fmt.Sprintf("%#v", rows)
 			},
-			Published: fake.Events.Names,
-			Revoke:    func() { fake.Grants = &porttest.Grants{} },
+			Published:       fake.Events.Names,
+			Revoke:          func() { fake.Grants = &porttest.Grants{} },
+			Picture:         retainedPicture(t),
+			ComposedPicture: picturetest.Oracle,
 		})
 	})
+}
+
+// retainedPicture compiles the picture the suite's retention case saves and reads
+// back. The fixture bytes belong to the picture module, and shipped source may not
+// import that helper, so the world that runs the suite brings the composition.
+func retainedPicture(t *testing.T) contracts.PictureInput {
+	t.Helper()
+	template, err := picture.Compile("fixture", picturetest.SVG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contracts.PictureInput{Template: template, Value: picturetest.Value()}
 }

@@ -12,6 +12,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/porttest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	picture "github.com/septagon-oss/platformkit/modules/picture/contracts"
+	"github.com/septagon-oss/platformkit/modules/picture/contracts/picturetest"
 	"github.com/septagon-oss/platformkit/modules/saved"
 	"github.com/septagon-oss/platformkit/modules/saved/contracts"
 	"github.com/septagon-oss/platformkit/modules/saved/contracts/savedtest"
@@ -106,11 +108,27 @@ func world(t *testing.T, run func(savedtest.Fixture)) {
 		Source:    source,
 		Clock:     clock,
 		Revoke:    func() { grants.drop(owner) },
+		// The retention case's composition comes from this world, not from the
+		// suite: the bytes are the picture module's own fixture.
+		Picture:         retainedPicture(t),
+		ComposedPicture: picturetest.Oracle,
 	})
 }
 
 func words(save, savedTo string) contracts.Words {
 	return contracts.Words{Save: save, Saved: savedTo, Remove: "Remove", ListTitle: "My things"}
+}
+
+// retainedPicture compiles the picture the suite's retention case saves and reads
+// back. The fixture bytes belong to the picture module, and shipped source may not
+// import that helper, so the world that runs the suite brings the composition.
+func retainedPicture(t *testing.T) contracts.PictureInput {
+	t.Helper()
+	template, err := picture.Compile("fixture", picturetest.SVG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contracts.PictureInput{Template: template, Value: picturetest.Value()}
 }
 
 // witness renders every row this tenant can see, so a case can say "nothing moved"

@@ -15,7 +15,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/porttest"
 	picture "github.com/septagon-oss/platformkit/modules/picture/contracts"
-	"github.com/septagon-oss/platformkit/modules/picture/contracts/picturetest"
 	"github.com/septagon-oss/platformkit/modules/saved/contracts"
 )
 
@@ -67,6 +66,11 @@ type Fixture struct {
 	Source     *Source
 	Clock      *porttest.Clock
 	Revoke     func()
+	// Picture is the composition the retention case saves, and ComposedPicture
+	// the exact document the compositor makes of it. A world brings both from the
+	// picture module's own fixture, which only test source may import.
+	Picture         contracts.PictureInput
+	ComposedPicture string
 }
 
 type Harness func(*testing.T, func(Fixture))
@@ -312,20 +316,16 @@ func sourceCallCases() []porttest.Case[Fixture] {
 			}
 		}},
 		{Name: "a saved picture preserves its original composed bytes", Because: "A literal picture oracle distinguishes retention from rerendering current inputs.", Run: func(t *testing.T, f Fixture) {
-			template, err := picture.Compile("fixture", picturetest.SVG)
-			if err != nil {
-				t.Fatal(err)
-			}
-			f.Source.Value.Picture = contracts.PictureInput{Template: template, Value: picturetest.Value()}
+			f.Source.Value.Picture = f.Picture
 			row := mustSave(t, f, first)
-			if row.Snapshot.Picture.SVG != picturetest.Oracle {
+			if row.Snapshot.Picture.SVG != f.ComposedPicture {
 				t.Fatalf("unexpected retained picture: %s", row.Snapshot.Picture.SVG)
 			}
 			f.Source.Value.Picture.Value.Colours[0] = "#000000"
 			f.Source.Value.Picture.Template = picture.Template{}
 			f.Source.Failure = contracts.ErrUnavailable
 			view, err := get(f, f.Owner, row.ID)
-			if err != nil || view.Availability != "unavailable" || view.Snapshot.Picture.SVG != picturetest.Oracle {
+			if err != nil || view.Availability != "unavailable" || view.Snapshot.Picture.SVG != f.ComposedPicture {
 				t.Fatalf("retained picture changed: %v", err)
 			}
 		}},
