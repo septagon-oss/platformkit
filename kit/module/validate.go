@@ -43,7 +43,9 @@ func (v *validation) add(format string, args ...any) {
 }
 
 func (v *validation) module(m Module) {
-	v.views(m)
+	if err := validateViews(m); err != nil {
+		v.add("%v", err)
+	}
 	switch {
 	case m.Name == "":
 		v.add("a module has no name")
