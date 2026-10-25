@@ -53,7 +53,7 @@ func TestARestoredVersionIsNamedInsideItsOwnSentence(t *testing.T) {
 		t.Errorf("the restored line is no longer the sentence this package wrote it in:\n%s", source)
 	}
 	pt := spokenRecord(t, "pt-PT", restoredVersions(), nil)
-	if !strings.Contains(pt, "Restaurado da versão 3") {
+	if !strings.Contains(pt, "Restaurada desde a versão 3") {
 		t.Errorf("the restored line lost the wording its own language gave the version:\n%s", pt)
 	}
 	for _, page := range []string{source, pt} {

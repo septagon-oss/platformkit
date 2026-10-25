@@ -91,8 +91,8 @@
   },
   "screens.history.restored": {
     "references": ["ui/resource/history.go"],
-    "translation": "Restaurado da versão %[1]d",
-    "plural": { "": "Restaurado da versão %[1]d" }
+    "translation": "Restaurada desde a versão %[1]d",
+    "plural": { "": "Restaurada desde a versão %[1]d" }
   },
   "screens.history.unchanged": {
     "references": ["ui/resource/history.go"],
