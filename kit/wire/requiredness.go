@@ -76,8 +76,9 @@ func requirednessProblem(a RequirednessAllowance, seen map[string]bool, oldShape
 	return ""
 }
 
-// wireDate reports whether text is a calendar date in the one spelling an allowance
-// carries it, so a review cannot be dated 2026-13-45.
+// wireDate reports whether text is a calendar date in the one spelling a review is
+// dated with: a four-digit year, a two-digit month and a two-digit day, each reading
+// back as itself.
 func wireDate(text string) bool {
 	day, err := time.Parse("2006-01-02", text)
 	return err == nil && day.Format("2006-01-02") == text

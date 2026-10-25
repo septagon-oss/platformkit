@@ -85,25 +85,7 @@ func compareWire(golden, current []byte, allowances []AuthorizationAllowance, re
 		return finish()
 	}
 	oldOps, updated := wireOperations(oldDoc), wireOperations(newDoc)
-	known := map[string]bool{}
-	for _, op := range updated {
-		known[op.operationID] = true
-	}
-	for _, old := range oldOps {
-		fresh, ok := updated.find(old.key)
-		switch {
-		case !ok:
-			add("B2", old.key, "route", fmt.Sprintf("B2 (breaking): %s is no longer in the document", old.key))
-		case fresh.operationID != old.operationID:
-			add("B2", old.key, "route", fmt.Sprintf("B2 (breaking): %s is answered by %q, which used to be %q", old.key, fresh.operationID, old.operationID))
-		}
-		if ok && fresh.auth != old.auth && !authorizationsWiden(old.auth, fresh.auth, allowances) {
-			add("B6", old.key, "x-platformkit-auth", fmt.Sprintf("B6 (breaking): %s (%s) is authorized %s where it was %s", old.key, old.operationID, fresh.auth, old.auth))
-		}
-		if !known[old.operationID] {
-			add("B1", old.key, "operationId", fmt.Sprintf("B1 (breaking): operationId %q is no longer in the document", old.operationID))
-		}
-	}
+	wireOperationBreaks(oldOps, updated, allowances, add)
 	// Associate shape records with their operation without parsing diagnostic text.
 	addresses := map[string]string{}
 	for _, op := range oldOps {
@@ -175,6 +157,31 @@ func incompleteReads(oldRead, newRead wireAnalysis, shapePath func(string) strin
 
 func authorizationsWiden(from, to string, allowances []AuthorizationAllowance) bool {
 	return slices.ContainsFunc(allowances, func(a AuthorizationAllowance) bool { return a.From == from && a.To == to })
+}
+
+// wireOperationBreaks states what moved between the two documents' operations: an
+// address that went away or changed hands (B2), an operationId no route answers (B1),
+// and a door that authorizes someone it did not (B6) beyond what a reviewed pair covers.
+func wireOperationBreaks(oldOps, updated wireRoutes, allowances []AuthorizationAllowance, add func(rule, path, member, message string)) {
+	known := map[string]bool{}
+	for _, op := range updated {
+		known[op.operationID] = true
+	}
+	for _, old := range oldOps {
+		fresh, ok := updated.find(old.key)
+		switch {
+		case !ok:
+			add("B2", old.key, "route", fmt.Sprintf("B2 (breaking): %s is no longer in the document", old.key))
+		case fresh.operationID != old.operationID:
+			add("B2", old.key, "route", fmt.Sprintf("B2 (breaking): %s is answered by %q, which used to be %q", old.key, fresh.operationID, old.operationID))
+		}
+		if ok && fresh.auth != old.auth && !authorizationsWiden(old.auth, fresh.auth, allowances) {
+			add("B6", old.key, "x-platformkit-auth", fmt.Sprintf("B6 (breaking): %s (%s) is authorized %s where it was %s", old.key, old.operationID, fresh.auth, old.auth))
+		}
+		if !known[old.operationID] {
+			add("B1", old.key, "operationId", fmt.Sprintf("B1 (breaking): operationId %q is no longer in the document", old.operationID))
+		}
+	}
 }
 
 func wireOperations(doc map[string]any) wireRoutes {
