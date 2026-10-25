@@ -29,7 +29,7 @@ func TestFakeConforms(t *testing.T) {
 		fake.Grants.Grant(person, contracts.PermissionRead, contracts.PermissionWrite)
 		fake.Grants.Grant(otherPerson, contracts.PermissionRead, contracts.PermissionWrite)
 		run(savedtest.Fixture{Owner: owner, OtherPerson: as(tenant, otherPerson), OtherTenant: other, Denied: as(tenant, denied),
-			Service: fake, Source: source, Clock: fake.Clock,
+			Service: fake, Undeclared: fake.WithoutSources(), Source: source, Clock: fake.Clock,
 			Within: func(_ context.Context, run func(db.Tx[db.Tenant]) error) error { return run(db.Tx[db.Tenant]{}) },
 			Rows: func() string {
 				rows := append(fake.Rows(owner), fake.Rows(other)...)

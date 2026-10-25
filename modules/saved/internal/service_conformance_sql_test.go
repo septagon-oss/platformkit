@@ -84,7 +84,7 @@ func world(t *testing.T, run func(savedtest.Fixture)) {
 	run(savedtest.Fixture{
 		Owner: homeOf, OtherPerson: signIn(home, other),
 		OtherTenant: signIn(abroad, owner), Denied: signIn(home, stranger),
-		Service: service,
+		Service: service, Undeclared: internal.NewService(grants, nil),
 		Within: func(ctx context.Context, body func(db.Tx[db.Tenant]) error) error {
 			return db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error { return body(tx) })
 		},

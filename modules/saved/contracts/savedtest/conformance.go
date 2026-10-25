@@ -56,12 +56,17 @@ type Fixture struct {
 	OtherTenant context.Context
 	Denied      context.Context
 	Service     contracts.Service
-	Within      func(context.Context, func(db.Tx[db.Tenant]) error) error
-	Rows        func() string
-	Published   func() []string
-	Source      *Source
-	Clock       *porttest.Clock
-	Revoke      func()
+	// Undeclared is the same adapter over the same store with no source
+	// declaration left in it: this composition one release later, still holding
+	// the copies of a source it no longer names. A world that cannot offer it
+	// cannot show that a copy outlives what it was taken from.
+	Undeclared contracts.Service
+	Within     func(context.Context, func(db.Tx[db.Tenant]) error) error
+	Rows       func() string
+	Published  func() []string
+	Source     *Source
+	Clock      *porttest.Clock
+	Revoke     func()
 }
 
 type Harness func(*testing.T, func(Fixture))
@@ -198,7 +203,7 @@ func cases() []porttest.Case[Fixture] {
 	out = append(out, sourceCallCases()...)
 	out = append(out, retainedReadCases()...)
 	out = append(out, privateScopeCases()...)
-	return append(out, sourceLossCases()...)
+	return append(append(out, sourceLossCases()...), droppedDeclarationCases()...)
 }
 
 // The first save, the duplicate that must not refresh it, and the removal that ends it.
@@ -462,4 +467,71 @@ func sourceLossCases() []porttest.Case[Fixture] {
 		}})
 	}
 	return out
+}
+
+// A source the composition no longer declares is the last case, not the first:
+// the copies it made stay readable, marked, and removable, and only the live
+// action goes with it. Both adapters answer through the shared Availability
+// decision, which is what makes this the contract rather than one adapter's own
+// answer for a (module, kind) nobody declared.
+func droppedDeclarationCases() []porttest.Case[Fixture] {
+	return []porttest.Case[Fixture]{
+		{Name: "a source the composition dropped leaves the copy readable, marked and removable",
+			Because: "An adapter may not decide on its own that an undeclared pair is a failed read.",
+			Run: func(t *testing.T, f Fixture) {
+				row := mustSave(t, f, first)
+				ask := func(body func(db.Tx[db.Tenant]) error) error {
+					return f.Within(f.Owner, func(tx db.Tx[db.Tenant]) error { return body(tx) })
+				}
+				copies, events := f.Rows(), slices.Clone(f.Published())
+
+				var view contracts.View
+				if err := ask(func(tx db.Tx[db.Tenant]) error {
+					var err error
+					view, err = f.Undeclared.Get(f.Owner, tx, row.ID.String())
+					return err
+				}); err != nil || view.Availability != "unavailable" || !reflect.DeepEqual(view.Item, row) {
+					t.Fatalf("a dropped source refused the copy rather than marking it: %v, %v", view, err)
+				}
+				var page contracts.Page
+				if err := ask(func(tx db.Tx[db.Tenant]) error {
+					var err error
+					page, err = f.Undeclared.List(f.Owner, tx, contracts.Query{})
+					return err
+				}); err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Availability != "unavailable" {
+					t.Fatalf("a dropped source emptied the library: %v, %v", page, err)
+				}
+				var found contracts.View
+				if err := ask(func(tx db.Tx[db.Tenant]) error {
+					var err error
+					found, err = f.Undeclared.Find(f.Owner, tx, first)
+					return err
+				}); err != nil || found.ID != row.ID || found.Availability != "unavailable" {
+					t.Fatalf("a dropped source hid the pressed state: %v, %v", found, err)
+				}
+				var path string
+				err := ask(func(tx db.Tx[db.Tenant]) error {
+					var err error
+					path, err = f.Undeclared.Open(f.Owner, tx, row.ID.String())
+					return err
+				})
+				if !errors.Is(err, contracts.ErrUnavailable) || path != "" {
+					t.Fatalf("a dropped source opened a live action: %q, %v", path, err)
+				}
+				if f.Rows() != copies || !slices.Equal(events, f.Published()) {
+					t.Fatal("reading a source that had gone wrote or emitted")
+				}
+				if err := ask(func(tx db.Tx[db.Tenant]) error {
+					return f.Undeclared.Unsave(f.Owner, tx, contracts.Unsave{ID: row.ID.String(), ExpectedRevision: row.Revision})
+				}); err != nil {
+					t.Fatalf("a dropped source prevented removal: %v", err)
+				}
+				if _, err := get(f, f.Owner, row.ID); !errors.Is(err, contracts.ErrNotFound) {
+					t.Fatalf("the copy survived its removal: %v", err)
+				}
+				if want := append(events, contracts.EventUnsaved); !slices.Equal(want, f.Published()) {
+					t.Fatalf("the copy's two commands published %v, want %v", f.Published(), want)
+				}
+			}},
+	}
 }

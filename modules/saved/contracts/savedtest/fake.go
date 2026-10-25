@@ -36,6 +36,13 @@ func NewFake(at time.Time, sources []contracts.Savable) *Fake {
 		items: porttest.NewStore(func(row contracts.Item) uuid.UUID { return row.ID }), sources: slices.Clone(sources)}
 }
 
+// WithoutSources returns an adapter over the same store, clock, authority and
+// event recorder with no declaration left in it: the same composition one
+// release later, holding copies whose source it no longer names.
+func (f *Fake) WithoutSources() *Fake {
+	return &Fake{Fake: f.Fake, items: f.items}
+}
+
 var _ contracts.Service = (*Fake)(nil)
 
 func (f *Fake) actor(ctx context.Context, permission string) (string, error) {
