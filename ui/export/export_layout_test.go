@@ -228,14 +228,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// digest below is this merged tree's own measurement, printed by the refusal and
 	// copied from it.
 	//
-	// The guided session moves it again, in two named ways. Measured by exporting this
-	// tree and its merge base and walking both documents leaf by leaf: 99,996 leaves
-	// become 100,028. The 32 added leaves are one `segmented` schema property beside
-	// each of the 32 Stepper captures that now declares it; of the 2 changed, one is
-	// /sha256 and the other /css, whose component layer gains the rules that space a
-	// session page and its timer list. No example, schema, notice, theme, icon or font
-	// policy moves, and no leaf is removed.
-	if legacy.SHA256 != "3e47e22a77916626fab4be447b3cb55d487e8433179cb09a92fe98a0341eba60" {
+	// The guided session moves the export in three named ways. Exporting this tree
+	// and its merge base and walking both documents leaf by leaf: 99,996 leaves
+	// become 100,028, the 32 added ones one `segmented` schema property beside each
+	// Stepper capture that now declares it. The rules a session page carries then
+	// space its timer list, and cap the prose inside its wide block at 65ch, so /css
+	// and /sha256 move again over 100,028 leaves on both sides, none added, none
+	// removed. No example, schema, notice, theme, icon or font policy moves.
+	if legacy.SHA256 != "efec82a2e336ce5ba75240b5ef3a5eb67ddbc56e92bb3ee92c45229c9a14a663" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
