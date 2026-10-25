@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,8 +35,8 @@ func (v *patchValues[T]) UnmarshalJSON(data []byte) error {
 			}
 			out[name] = drawing
 		} else {
-			var value any
-			if err := json.Unmarshal(data, &value); err != nil {
+			value, err := patchFieldValue(data)
+			if err != nil {
 				return err
 			}
 			out[name] = value
@@ -43,6 +44,19 @@ func (v *patchValues[T]) UnmarshalJSON(data []byte) error {
 	}
 	*v = out
 	return nil
+}
+
+// patchFieldValue decodes one submitted field of a patch body, keeping a number as
+// the token the body wrote. merge carries these values into the entity through the
+// same codec the request body went through, which refuses a float64 whose precision
+// cannot establish an exact int64: an untyped float64 here would ask a caller who
+// sent exact digits to send them again as a string.
+func patchFieldValue(data []byte) (any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	err := decoder.Decode(&value)
+	return value, err
 }
 
 func sketchDeclarationFault(t reflect.Type, fields []entity.Field) string {

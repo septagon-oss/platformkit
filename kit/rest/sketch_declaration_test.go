@@ -38,8 +38,8 @@ func TestSketchPatchKeepsOrdinaryNumberHandling(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"count":1.0,"drawing":[[[1,2,0]]]}`), &values); err != nil {
 		t.Fatal(err)
 	}
-	if values["count"] != float64(1) {
-		t.Fatal(values)
+	if count, ok := values["count"].(json.Number); !ok || count.String() != "1.0" {
+		t.Fatalf("count = %#v, want the exact token 1.0 the body wrote", values["count"])
 	}
 	if _, ok := values["drawing"].(entity.Sketch); !ok {
 		t.Fatal(values)
