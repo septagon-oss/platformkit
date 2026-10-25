@@ -53,8 +53,11 @@ func text(s string, max int) bool {
 
 // ValidDeclarations refuses a composition's declaration set that this service
 // could not honour: a pair that is not a slug pair, a pair with no source to ask,
-// and one pair declared twice — which would make the answer to "who captures this
-// save" depend on the order the modules were listed in.
+// one pair declared twice — which would make the answer to "who captures this
+// save" depend on the order the modules were listed in — and a declared word no
+// screen could print. A source owns the wording of its own label and this module
+// prints it wherever a person sees the pair, so a word is refused here, before
+// anything opens, rather than reaching a page as a paragraph or a control sequence.
 func ValidDeclarations(savables []contracts.Savable) error {
 	seen := map[string]bool{}
 	for _, declared := range savables {
@@ -64,6 +67,13 @@ func ValidDeclarations(savables []contracts.Savable) error {
 		}
 		if declared.Source == nil {
 			return fmt.Errorf("%w: savable %q/%q names no source", contracts.ErrInvalid, declared.Module, declared.Kind)
+		}
+		for _, word := range []string{declared.Words.Save, declared.Words.Saved, declared.Words.Remove, declared.Words.ListTitle} {
+			// An empty word is not a bad one: it selects the fallback the composition's
+			// own catalogue answers with.
+			if word != "" && !text(word, 256) {
+				return fmt.Errorf("%w: savable %q/%q declares a word no screen can print", contracts.ErrInvalid, declared.Module, declared.Kind)
+			}
 		}
 		if seen[pair] {
 			return fmt.Errorf("%w: savable %q/%q is declared twice", contracts.ErrInvalid, declared.Module, declared.Kind)

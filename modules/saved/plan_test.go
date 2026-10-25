@@ -115,10 +115,11 @@ func TestCompositionRefusesThePortsNobodyAnswers(t *testing.T) {
 	}
 }
 
-// TestCompositionRefusesADeclarationItCouldNotHonour asks the three shapes this
+// TestCompositionRefusesADeclarationItCouldNotHonour asks the four shapes this
 // service cannot serve, from two owners' contributions and saved's own decision:
 // one pair named twice, which would make the source depend on the order modules
-// were listed; a pair with nothing to ask; and a pair whose name is no slug pair.
+// were listed; a pair with nothing to ask; a pair whose name is no slug pair; and
+// words no screen could print.
 func TestCompositionRefusesADeclarationItCouldNotHonour(t *testing.T) {
 	for _, tc := range []struct {
 		named []contracts.Savable
@@ -127,6 +128,9 @@ func TestCompositionRefusesADeclarationItCouldNotHonour(t *testing.T) {
 		{[]contracts.Savable{thing("example", "thing"), thing("example", "thing")}, "twice"},
 		{[]contracts.Savable{{Module: "example", Kind: "thing"}, {Module: "example", Kind: "plan"}}, "no source"},
 		{[]contracts.Savable{{Module: "Example", Kind: "thing", Source: &savedtest.Source{}}, thing("example", "plan")}, "slug"},
+		{[]contracts.Savable{{Module: "example", Kind: "thing",
+			Words:  contracts.Words{Save: strings.Repeat("word ", 60)},
+			Source: &savedtest.Source{}}}, "word"},
 	} {
 		uses := []*pkit.Module{authority("desk_fixture"), saved.Module}
 		for i, one := range tc.named {
