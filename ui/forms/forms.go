@@ -117,11 +117,12 @@ type Options struct {
 	// interpolation, plural rules and regional number format. Nil — the default —
 	// answers every phrase with its source text.
 	Format locale.Formatter
-	// Text answers one phrase without arguments. Format answers it, and Format is
-	// asked with the phrase already formatted whenever both are composed.
+	// Text answers one phrase that carries no value. Format answers every phrase,
+	// and Format is asked first whenever both are composed.
 	//
-	// Deprecated: Text cannot carry a value inside a phrase, so anything drawn
-	// with it has to be assembled out of sentences in Go. Compose Format instead.
+	// Deprecated: a phrase that asks for a value is answered from its source text
+	// and never asked of Text, so this seam answers only the phrases carrying none.
+	// Compose Format instead.
 	Text func(key, fallback string) string
 }
 
