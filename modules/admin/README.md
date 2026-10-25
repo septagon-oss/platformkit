@@ -43,8 +43,8 @@ These checks cover the shared flows, not every product's custom workspace.
 ## Composition (T-0196)
 
 **Reused** — `rest.Spec`, `rest.Singleton`, `httpx.Resource`, `ui/screens`, `ui/resource`, and the composed x/text catalogue provide the named resource screens and dashboard counts.
-**Added** — declared singular and plural resource names and a source plural check because the old machine entity names could not express “Settings” or Portuguese plurals.
-**Made reusable** — the `rest.Name` declaration, `resource.<module>.<entity>` catalogue pattern, and `tools/checkplurals` check are available to the next module.
+**Added** — declared singular and plural resource names, because the old machine entity names could not express “Settings” or Portuguese plurals.
+**Made reusable** — the `rest.Name` declaration and the `resource.<module>.<entity>` catalogue pattern are available to the next module; each module owns both plural forms of its own copy in its catalogues rather than building one from a suffix.
 
 The dashboard takes the request's catalogue selection, as do generated resource
 names. A module owns its English and Portuguese name forms; applications may

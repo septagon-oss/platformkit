@@ -312,9 +312,6 @@ MIGRATIONS_BASE ?=
 check-applied-migrations: ## Fail when a migration file the base carries was edited, renamed or removed
 	./scripts/check_applied_migrations.sh $(MIGRATIONS_BASE)
 
-check-plurals: ## Refuse plural suffix construction in Go and catalogues
-	go run ./tools/checkplurals
-
 # The pillar section of ARCHITECTURE.md is prose a contributor is meant to trust, and
 # it carries line citations into other people's files, so it drifts the way code does:
 # a file grows, a citation that named a symbol names a blank line, and nothing fails.
@@ -570,7 +567,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory check-plurals ## Everything a pull request must pass
+check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an

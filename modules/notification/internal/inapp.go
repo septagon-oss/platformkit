@@ -207,7 +207,7 @@ func inboxWords(loc *page.Locale, key, english string) string {
 
 // inboxCount is the toolbar's line about how many notices this person has, in the form
 // this request's language picks for that number rather than one built here by appending
-// a letter to a word, which is what tools/checkplurals refuses a page for doing.
+// a letter to a word: a suffix right in one language is wrong in the other.
 func inboxCount(loc *page.Locale, total int64) string {
 	const one = "%d notice, newest first. Only the person a notice is addressed to sees it here."
 	const other = "%d notices, newest first. Only the person a notice is addressed to sees it here."

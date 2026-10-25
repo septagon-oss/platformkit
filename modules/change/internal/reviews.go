@@ -608,7 +608,7 @@ func queueWords(loc *page.Locale, key, english string) string {
 
 // queueCount is the toolbar's line about how many proposals are waiting, in the form
 // this request's language picks for that number rather than one built here by appending
-// a letter to a word, which is what tools/checkplurals refuses a page for doing.
+// a letter to a word: a suffix right in one language is wrong in the other.
 func queueCount(loc *page.Locale, total int64) string {
 	const one = "%d proposal, newest first. Each one waits for an account other than the person who wrote it."
 	const other = "%d proposals, newest first. Each one waits for an account other than the person who wrote it."

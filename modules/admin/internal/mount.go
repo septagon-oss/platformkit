@@ -580,9 +580,9 @@ func chromeSentence(r page.Request, key, format string, args ...any) string {
 // chromeCount is a sentence of the shell's own copy about how many there are, in
 // the form this request's language picks for that number. English writes "1 role."
 // and "4 roles."; Portuguese writes "1 função." and "4 funções.". Neither is built
-// here by appending a letter to a word — the two forms are the catalogue's, and the
-// language's cardinal rule chooses between them — which is what tools/checkplurals
-// refuses a page for doing by hand.
+// here by appending a letter to a word: the two forms are the catalogue's, and the
+// language's cardinal rule chooses between them. A suffix written here would be right
+// in one language and wrong in the other.
 func chromeCount(r page.Request, key string, count int64, one, other string) string {
 	if r.Locale == nil {
 		chosen := other
