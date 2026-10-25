@@ -97,12 +97,13 @@ func scrubSnapshots(ctx context.Context, tx db.Tx[db.Tenant], s personaldata.Sub
 }
 
 // spelledIn is the server's half of the search: the question that asks whether a stored
-// document could hold one of the subject's identifiers at all. It is deliberately weaker
-// than the rewrite — a case-insensitive substring of the identifier or of the way a JSON
-// string escapes it, with no word boundary and no decoded text — because its only job is
-// to keep documents out of the driver and out of memory, and every copy the rewrite would
-// change answers it. The escaped spelling is what lets a copy holding John \"JJ\" Smith
-// be found for the person called John "JJ" Smith.
+// document could hold one of the subject's identifiers at all. It asks the stored bytes —
+// the identifier as it stands, or with `"` and `\` written the way a document must write
+// them — case-insensitively and with no word boundary, because its only job is to keep
+// documents out of the driver and out of memory. Decoded text is the rewrite's question,
+// and a name the document escaped for its own reasons (\u0057ren) is reached by neither,
+// which README §10's Limits sentence names a limit. The escaped spelling is what lets a
+// copy holding John \"JJ\" Smith be found for the person called John "JJ" Smith.
 func spelledIn(s personaldata.Subject) ([]string, []any) {
 	var where []string
 	var args []any
