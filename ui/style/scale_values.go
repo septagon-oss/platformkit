@@ -35,40 +35,9 @@ type ScaleValue struct {
 // require equality to current defaults or claim that a contextual unit has the
 // same value across fonts, root sizes, containers or viewports.
 func (v ScaleValue) Validate() error {
-	valid := false
-	if v.Number == nil {
-		valid = (v.Scale == "spacing" && v.Key == "auto" && v.Keyword == "auto") ||
-			(v.Scale == "max-width" && v.Key == "none" && v.Keyword == "none")
-	} else if v.Keyword == "" {
-		n, length := v.Number.number("px", "rem", "em", "ch", "vw")
-		nonnegative := n >= 0 && !negativeNumber(v.Number.Value)
-		switch v.Scale {
-		case "tracking":
-			valid = length && trackings[v.Key] != ""
-		case "leading":
-			_, unitless := v.Number.number("")
-			valid = unitless && nonnegative && leadings[v.Key] != ""
-		case "radius":
-			valid = length && nonnegative && slices.Contains(AllRadii(), Radius(v.Key))
-		case "max-width":
-			_, dimension := v.Number.number("px", "rem", "em", "ch", "vw", "%")
-			valid = dimension && nonnegative && v.Key != "none" && maxWidths[v.Key] != ""
-		case "breakpoint":
-			_, dimension := v.Number.number("px", "rem", "em")
-			valid = dimension && nonnegative && breakpoints[v.Key] != ""
-		case "duration":
-			_, time := v.Number.number("ms", "s")
-			valid = time && nonnegative && slices.Contains(AllDurations(), Duration(v.Key))
-		case "spacing":
-			if v.Key == "full" {
-				_, percentage := v.Number.number("%")
-				valid = percentage && nonnegative
-				break
-			}
-			fallthrough
-		default:
-			valid = (Measurement{Scale: v.Scale, Key: v.Key, Value: v.Number.Value, Unit: v.Number.Unit}).Validate() == nil
-		}
+	valid := validScaleKeyword(v)
+	if v.Number != nil && v.Keyword == "" {
+		valid = validScaleNumber(v)
 	}
 	if !valid {
 		return fmt.Errorf("style: invalid scale value %q/%q", v.Scale, v.Key)
@@ -135,4 +104,43 @@ func ScaleValues() ([]ScaleValue, error) {
 		}
 	}
 	return out, nil
+}
+
+func validScaleKeyword(v ScaleValue) bool {
+	return v.Number == nil && ((v.Scale == "spacing" && v.Key == "auto" && v.Keyword == "auto") ||
+		(v.Scale == "max-width" && v.Key == "none" && v.Keyword == "none"))
+}
+
+func validScaleNumber(v ScaleValue) bool {
+	valid := false
+	n, length := v.Number.number("px", "rem", "em", "ch", "vw")
+	nonnegative := n >= 0 && !negativeNumber(v.Number.Value)
+	switch v.Scale {
+	case "tracking":
+		valid = length && trackings[v.Key] != ""
+	case "leading":
+		_, unitless := v.Number.number("")
+		valid = unitless && nonnegative && leadings[v.Key] != ""
+	case "radius":
+		valid = length && nonnegative && slices.Contains(AllRadii(), Radius(v.Key))
+	case "max-width":
+		_, dimension := v.Number.number("px", "rem", "em", "ch", "vw", "%")
+		valid = dimension && nonnegative && v.Key != "none" && maxWidths[v.Key] != ""
+	case "breakpoint":
+		_, dimension := v.Number.number("px", "rem", "em")
+		valid = dimension && nonnegative && breakpoints[v.Key] != ""
+	case "duration":
+		_, time := v.Number.number("ms", "s")
+		valid = time && nonnegative && slices.Contains(AllDurations(), Duration(v.Key))
+	case "spacing":
+		if v.Key == "full" {
+			_, percentage := v.Number.number("%")
+			valid = percentage && nonnegative
+			break
+		}
+		fallthrough
+	default:
+		valid = (Measurement{Scale: v.Scale, Key: v.Key, Value: v.Number.Value, Unit: v.Number.Unit}).Validate() == nil
+	}
+	return valid
 }
