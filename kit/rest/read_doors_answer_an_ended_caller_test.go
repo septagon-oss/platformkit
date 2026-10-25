@@ -12,10 +12,10 @@ import (
 )
 
 // TestEachReadDoorAsksItsCallerBeforeItsStatement: the item door, the list door, the
-// count and the translation overview's page are everything this package sends to the
-// database, and each asks the caller before it sends a statement — the ended caller gets
-// an error wrapping its own cause, never a row, ErrNotFound or ErrInvalid. No mounted
-// route can ask that, so the transaction here carries no handle to reach for.
+// count and the translation overview's page are the four reads this package moved onto
+// doors that ask their caller, and each answers an ended caller with an error wrapping
+// its own cause — never a row, ErrNotFound or ErrInvalid. No mounted route can ask that,
+// so the transaction here carries no handle to reach for.
 func TestEachReadDoorAsksItsCallerBeforeItsStatement(t *testing.T) {
 	ended, cancel := context.WithCancelCause(context.Background())
 	cause := errors.New("the browser hung up")
