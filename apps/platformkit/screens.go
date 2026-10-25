@@ -20,9 +20,9 @@ import (
 // screenCommand is `platformkit screens`: it writes the reference composition's
 // views and anchors to -out and the typed Go references generated from them to
 // -refs. It opens nothing, so it runs offline, and `make generate` is its caller.
-// A published view that vanished is refused before anything is written, so a
-// control removed by accident never reaches a product as a silently retired
-// reference; `make check-generated` then diffs both files against the tree.
+// A published view or anchor whose binding moved is refused before anything is
+// written, so a control cannot be retargeted under a product that names it;
+// `make check-generated` then diffs both files against the tree.
 func screenCommand(args []string) error {
 	flags := flag.NewFlagSet("screens", flag.ContinueOnError)
 	configPath := flags.String("config", "config.yaml", "Composition configuration")

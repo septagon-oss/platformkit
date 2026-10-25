@@ -240,9 +240,16 @@ check-complexity: ## Require exact complexity ceilings and reviewed budget trans
 # Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
 # A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is
 # never written here (CONTRIBUTING.md, "Generated and golden files").
+# The baseline the published screen artifact is held to, so a view or anchor the
+# line already published cannot be retargeted by the next `make generate`. A
+# repository that carries no origin/main — a copy of this tree committed into a
+# throwaway repository, which is where `make check`'s own generated-file cases run —
+# is read against this commit's artifact: that file is what a product already
+# reaches, and a write that retargets a name held in it is refused there too.
+SCREENS_BASE ?= $(shell git rev-parse --verify --quiet origin/main >/dev/null && echo origin/main || echo HEAD)
 generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
-	go run ./apps/platformkit screens -config apps/platformkit/testdata/composition.yaml
+	go run ./apps/platformkit screens -config apps/platformkit/testdata/composition.yaml -base $(SCREENS_BASE)
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
 
 # The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
