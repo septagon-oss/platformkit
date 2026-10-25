@@ -600,7 +600,7 @@ hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
 ([ui/page/serve.go](ui/page/serve.go), `ui/page/locale.go:61`). Why a refusal may not answer in
-an undeclared language is the comment at `kit/httpx/tenant.go:281-289` — a page
+an undeclared language is the comment at `kit/httpx/tenant.go:262-275` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
 (`migrations/000029_tenant_locale.up.sql:1`).
@@ -840,7 +840,7 @@ request (`:188`, `:174-186`). The tenant is never a resource attribute: one
 process serves many tenants, as `## Follow a request` says.
 
 **How it is traced and audited.** This pillar *is* the trace: the transport span
-(`kit/httpx/traced.go:50`), named after the operation id (`:86`), the transaction
+(`kit/httpx/traced.go:44`), named after the operation id (`:80`), the transaction
 span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:109`, `:134`),
 the relay batch ([relay batches](kit/events/relay.go)), and the job run with one span per
 tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
@@ -969,7 +969,7 @@ renamed JSON tag fails `make check` rather than a shipped build.
 product's share is not to extend it but not to break it. Nothing overrides a
 refusal, including `UPDATE_GOLDEN=1` (`kit/wire/README.md:17-19`); a planned
 breaking change ships as a new
-address plus an alias row (`kit/httpx/aliases.go:87`,
+address plus an alias row (`kit/httpx/aliases.go:62`,
 `httpx.API.Alias` and `module.Module.Moved`). B1–B6 are immutable to the change —
 a removed operationId, a retyped schema member, a new required field, an enum that
 strands a reader, a narrowed authorisation, a plan feature added, dropped or renamed —

@@ -23169,6 +23169,63 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/architecture_citations_land_on_what_the_prose_names_test.go",
+   "id": "kit/httpx/architecture_citations_land_on_what_the_prose_names_test.go#TestEveryCitationIntoThisPackageResolvesInsideTheFile",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryCitationIntoThisPackageResolvesInsideTheFile",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/httpx/architecture_citations_land_on_what_the_prose_names_test.go",
+   "id": "kit/httpx/architecture_citations_land_on_what_the_prose_names_test.go#TestTheRefusalLanguageRuleIsCitedWhereItIsWritten",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheRefusalLanguageRuleIsCitedWhereItIsWritten",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/httpx/architecture_citations_land_on_what_the_prose_names_test.go",
+   "id": "kit/httpx/architecture_citations_land_on_what_the_prose_names_test.go#TestTheTraceCitationsLandOnTheSpansTheyName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTraceCitationsLandOnTheSpansTheyName",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/ask_replay_policy_test.go",
    "id": "kit/httpx/ask_replay_policy_test.go#TestAnAskRefusalPreservesTheWholePolicyFieldOnRetry",
    "kind": "go",
@@ -85999,7 +86056,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2338,
+  "files": 2339,
   "forge_runs": [
    408,
    413,
@@ -86033,7 +86090,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3736,
+   "behaviour": 3739,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86052,9 +86109,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4362,
+  "rows": 4365,
   "tiers": {
-   "merge": 2669,
+   "merge": 2672,
    "nightly": 110,
    "push": 1583
   },
@@ -86062,13 +86119,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2093,
+   "keep": 2094,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3976,
+   "keep": 3979,
    "keep-rewrite": 170,
    "merge": 216
   }
