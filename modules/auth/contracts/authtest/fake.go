@@ -258,15 +258,15 @@ func (f *Fake) Forget(_ context.Context, _ db.Tx[db.Tenant], _ string) error {
 	return nil
 }
 
-// deliversAccountMail mirrors internal.Delivery.deliversAccountMail field for
-// field: a sender must exist, and the MailDelivery port must exist and say it
-// attempts what it is handed. It asks the port rather than type-asserting the
-// sender, because the real service asks the port — a fake that asked the sender
-// would answer a hand-built Deps by one rule and be run against it by another,
-// which is the disagreement the conformance case exists to catch. A port nobody
-// wired reads as "nothing is delivered", the same fail-closed answer the real
-// service gives. The fake holds no contracts.Hosts: it builds its link from
-// resetPage, so the host half of the real predicate has no fake counterpart.
+// deliversAccountMail is the fake's read of the two ports the real service asks
+// — internal.Delivery.deliversAccountMail: a sender must exist, and the
+// MailDelivery port must exist and say it attempts what it is handed. It asks
+// the port rather than type-asserting the sender because the real service does:
+// a fake that asked the sender would answer a hand-built Deps by one rule and be
+// run against it by another, the disagreement the conformance case catches. A
+// port nobody wired reads as "nothing is delivered" — the service's own
+// fail-closed answer. The service also asks whether a host can build the link's
+// address; that half is the composition's, and the fake holds no Hosts to ask.
 func (f *Fake) deliversAccountMail() bool {
 	return f.Mailer != nil && f.MailDelivery != nil && f.MailDelivery.Available()
 }
