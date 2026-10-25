@@ -666,7 +666,7 @@ vocabulary of its own.
 record tenant and system writes; [`Consume`](kit/events/consume.go) delivers them
 through the [claim and dead-letter paths](kit/events/events.go). The
 wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
-(`kit/events/transport/transport.go:192`) is the other door onto the same stream:
+(`kit/events/transport/transport.go:174-185`) is the other door onto the same stream:
 one tenant's one event, watched from now on, claiming nothing, retrying nothing
 and holding no history — what a live connection is built on (`kit/stream`), and
 what an app opens for its own events by declaring `Streams`
@@ -939,7 +939,7 @@ and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Cata
 (`:31`), `Entry` with the operation ids an app calls (`:42`, `:77`) — at
 `/api/v1/app/resources` ([surface addresses](kit/httpx/surfaces.go)); `kit/app` renders the event
 half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:41`, `CoveredEvents`
-`:164`), pinned by the golden files in `apps/platformkit/testdata/`.
+`:169`), pinned by the golden files in `apps/platformkit/testdata/`.
 `apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
 that `kit/wire` owns and lists (`kit/wire/README.md:28-35`) over the whole
 authorization declaration an operation emits, kind, permission and plan feature
