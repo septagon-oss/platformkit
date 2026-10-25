@@ -145,39 +145,9 @@ func (s TokenExport) Validate() error {
 			return fmt.Errorf("token export: invalid or duplicate mode %q", mode.Mode)
 		}
 		modes[mode.Mode] = true
-		base := slices.Clone(mode.Colors)
-		for _, color := range base {
-			if color.Type != "color" {
-				return fmt.Errorf("token export mode %s: non-colour %q", mode.Mode, color.Name)
-			}
-		}
-		for _, font := range mode.Fonts {
-			if err := font.Validate(); err != nil {
-				return fmt.Errorf("token export mode %s: %w", mode.Mode, err)
-			}
-			base = append(base, design.Token{Name: font.Name, Type: "fontFamily"})
-		}
-		if _, err := design.ResolveColors(base, s.Colors); err != nil {
-			return fmt.Errorf("token export mode %s: %w", mode.Mode, err)
-		}
-		kinds := make(map[string]string, len(base))
-		for _, token := range base {
-			kinds[token.Name] = token.Type
-		}
-		// Shape travels with the palette, so it keeps the same identity rule: a
-		// radius is a dimension this format can express, and both modes expose the
-		// same shape identities as each other (kinds is compared below).
-		for _, dimension := range mode.Dimensions {
-			if dimension.Type != "dimension" || !slices.Contains(design.RadiusTokenNames(), dimension.Name) {
-				return fmt.Errorf("token export mode %s: shape token %q is not a radius dimension", mode.Mode, dimension.Name)
-			}
-			if _, _, err := design.ParseRadius(dimension.Value); err != nil {
-				return fmt.Errorf("token export mode %s: %w", mode.Mode, err)
-			}
-			if kinds[dimension.Name] != "" {
-				return fmt.Errorf("token export mode %s: duplicate token %q", mode.Mode, dimension.Name)
-			}
-			kinds[dimension.Name] = dimension.Type
+		kinds, err := validateTokenMode(mode, s.Colors)
+		if err != nil {
+			return err
 		}
 		if firstKinds == nil {
 			firstKinds = kinds
@@ -186,33 +156,23 @@ func (s TokenExport) Validate() error {
 		}
 	}
 	seen := make(map[string]bool)
-	check := func(key string, err error) error {
-		if err != nil {
-			return fmt.Errorf("token export %s: %w", key, err)
-		}
-		if seen[key] {
-			return fmt.Errorf("token export: duplicate %s", key)
-		}
-		seen[key] = true
-		return nil
-	}
 	for _, v := range s.Scales {
-		if err := check("scale/"+v.Scale+"/"+v.Key, v.Validate()); err != nil {
+		if err := checkTokenKey(seen, "scale/"+v.Scale+"/"+v.Key, v.Validate()); err != nil {
 			return err
 		}
 	}
 	for _, v := range s.Shadows {
-		if err := check("shadow/"+v.Key, v.Validate()); err != nil {
+		if err := checkTokenKey(seen, "shadow/"+v.Key, v.Validate()); err != nil {
 			return err
 		}
 	}
 	for _, v := range s.Easings {
-		if err := check("easing/"+v.Key, v.Validate()); err != nil {
+		if err := checkTokenKey(seen, "easing/"+v.Key, v.Validate()); err != nil {
 			return err
 		}
 	}
 	for _, v := range s.Transitions {
-		if err := check("transition/"+v.Key, v.Validate()); err != nil {
+		if err := checkTokenKey(seen, "transition/"+v.Key, v.Validate()); err != nil {
 			return err
 		}
 		if (v.Duration != "" && !seen["scale/duration/"+v.Duration]) || (v.Easing != "" && !seen["easing/"+v.Easing]) {
@@ -220,4 +180,60 @@ func (s TokenExport) Validate() error {
 		}
 	}
 	return design.ValidateAssets(s.Assets, s.Faces)
+}
+
+func validateTokenMode(mode TokenMode, colors []design.ColorToken) (map[string]string, error) {
+	base := slices.Clone(mode.Colors)
+	for _, color := range base {
+		if color.Type != "color" {
+			return nil, fmt.Errorf("token export mode %s: non-colour %q", mode.Mode, color.Name)
+		}
+	}
+	for _, font := range mode.Fonts {
+		if err := font.Validate(); err != nil {
+			return nil, fmt.Errorf("token export mode %s: %w", mode.Mode, err)
+		}
+		base = append(base, design.Token{Name: font.Name, Type: "fontFamily"})
+	}
+	if _, err := design.ResolveColors(base, colors); err != nil {
+		return nil, fmt.Errorf("token export mode %s: %w", mode.Mode, err)
+	}
+	kinds := make(map[string]string, len(base))
+	for _, token := range base {
+		kinds[token.Name] = token.Type
+	}
+	if err := validateModeDimensions(mode, kinds); err != nil {
+		return nil, err
+	}
+	return kinds, nil
+}
+
+func validateModeDimensions(mode TokenMode, kinds map[string]string) error {
+	// Shape travels with the palette, so it keeps the same identity rule: a
+	// radius is a dimension this format can express, and both modes expose the
+	// same shape identities as each other (kinds is compared below).
+	for _, dimension := range mode.Dimensions {
+		if dimension.Type != "dimension" || !slices.Contains(design.RadiusTokenNames(), dimension.Name) {
+			return fmt.Errorf("token export mode %s: shape token %q is not a radius dimension", mode.Mode, dimension.Name)
+		}
+		if _, _, err := design.ParseRadius(dimension.Value); err != nil {
+			return fmt.Errorf("token export mode %s: %w", mode.Mode, err)
+		}
+		if kinds[dimension.Name] != "" {
+			return fmt.Errorf("token export mode %s: duplicate token %q", mode.Mode, dimension.Name)
+		}
+		kinds[dimension.Name] = dimension.Type
+	}
+	return nil
+}
+
+func checkTokenKey(seen map[string]bool, key string, err error) error {
+	if err != nil {
+		return fmt.Errorf("token export %s: %w", key, err)
+	}
+	if seen[key] {
+		return fmt.Errorf("token export: duplicate %s", key)
+	}
+	seen[key] = true
+	return nil
 }

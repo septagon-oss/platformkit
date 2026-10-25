@@ -7,10 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
-	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -45,35 +43,10 @@ type (
 	}
 )
 
-// Mount is the screens of one resource, each a renderer behind page.Serve.
-// Everything about them comes from the resource — its own path, its two
-// permissions, its schema, and the doors it has from which operations it
-// actually mounted.
-//
-// router is the workspace router of the resource's own module (`s.App.ForModule("task")`
-// for the task screens), so every address below is composed by the kernel from
-// the module and the surface rather than spelled out by the shell that generated
-// the page. A screen is always workspace work, whatever surface its API's reads
-// answer on: a person stands in front of it, and the page declares the same
-// permission the JSON route beside it does.
-//
-// A collection gets the seven: list, new, create, read, edit, update, delete. A
-// singleton gets the two it has routes behind, because rest.Singleton mounts one
-// read and one write on the resource's own path with no id in it — mounting the
-// rest is what produced a settings page that listed one row, offered to create a
-// second one, and linked an id of all zeros. See mountSingleton.
-//
-// Both declarations come off the resource: a screen must preserve the API's
-// operator boundary for private reads as well as writes. A customer's wildcard
-// must not open a screen whose corresponding API route refused it.
-// See docs/adr/0008.
-//
-// A page is mounted iff the resource mounted the route behind it — see
-// rest.Spec.Operations — and a resource with no collection page at all mounts no
-// generated page: every link a renderer writes is built from the screen address,
-// so a page of such a resource would link into an address that answers 404. A
-// module that wants pages for a resource the generator would leave bare writes
-// them, the way modules/admin writes its own.
+// Mount registers the offered resource screens with their declared guards.
+// router is the resource module's workspace router. A collection needs a screen
+// address; a singleton uses its own read/write paths. Commands retain their
+// own guards and a verb collision panics. See docs/adr/0008.
 func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	// at is where the screens are: /app/<module>/<entity>, composed by the kernel
 	// when the resource was registered. Every link is built from it. rel is the
@@ -93,99 +66,13 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 		return
 	}
 
-	if res.Offers(httpx.CRUDList) {
-		page.Serve(router, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " list",
-			Subject: subject(res, o, at, false)}, read,
-			func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
-				pageNo := max(in.Page, 1)
-				rows, total, err := res.List(ctx, crud.Query{Limit: perPage, Offset: (pageNo - 1) * perPage, Sort: in.Sort})
-				if err != nil {
-					return page.View{}, err
-				}
-				return listView(res, ctx, localized(o, req), at, rows, total, pageNo, in.Sort, res.Writable(ctx)), nil
-			})
-	}
-
-	if writeAvailable(res, httpx.CRUDCreate) {
-		page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
-			func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
-				o := localized(o, req)
-				return Form(res, o, at, o.Text("screens.new", "New %s", entryName(res, o)), nil, nil, "", true), nil
-			})
-	}
-
-	if writeAvailable(res, httpx.CRUDCreate) {
-		page.Serve(router, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
-			func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
-				// Immutable is refused here rather than dropped: this form does not
-				// render those fields at all, so a value for one did not come from
-				// it. See rest.Values.
-				sent, err := rest.Values(in.RawBody, res.Schema.Fields, res.Immutable)
-				if err == nil {
-					var row map[string]any
-					if row, err = res.Create(ctx, sent); err == nil {
-						return page.View{}, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
-					}
-				}
-				return refusedForm(res, o, req, at, "screens.new", "New %s", true, sent, err), nil
-			})
-	}
-
-	if res.Offers(httpx.CRUDRead) {
-		page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity,
-			Subject: subject(res, o, at, true)}, read,
-			func(ctx context.Context, req page.Request, in *readInput) (page.View, error) {
-				if in.ID == "new" {
-					return page.View{}, huma.Error404NotFound("No form is available")
-				}
-				rowID, err := uuid.Parse(in.ID)
-				if err != nil {
-					return page.View{}, huma.Error422UnprocessableEntity("Invalid record ID")
-				}
-				row, err := res.Get(ctx, rowID)
-				if err != nil {
-					return page.View{}, err
-				}
-				return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
-			})
-	}
-
-	if writeAvailable(res, httpx.CRUDUpdate) {
-		page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form",
-			Subject: subject(res, o, at, true)}, write,
-			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
-				row, err := res.Get(ctx, in.ID)
-				if err != nil {
-					return page.View{}, err
-				}
-				o := localized(o, req)
-				return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", entryName(res, o)), row, nil, "", false), nil
-			})
-	}
-
-	if writeAvailable(res, httpx.CRUDUpdate) {
-		page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
-			func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
-				item := at + "/" + in.ID.String()
-				sent, err := rest.UpdateValues(in.RawBody, res.Schema.Fields, nil)
-				if err == nil {
-					if _, err = res.Update(ctx, in.ID, rest.Writable(sent, res.Immutable)); err == nil {
-						return page.View{}, httpx.SeeOther(item)
-					}
-				}
-				return refusedForm(res, o, req, item, "screens.edit_item", "Edit %s", false, sent, err), nil
-			})
-	}
-
-	if writeAvailable(res, httpx.CRUDDelete) {
-		page.Serve(router, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: rel + "/{id}/delete", Summary: "Delete a " + res.Entity}, write,
-			func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
-				if err := res.Delete(ctx, in.ID); err != nil {
-					return page.View{}, err
-				}
-				return page.View{}, httpx.SeeOther(at)
-			})
-	}
+	mountCollectionList(router, s, o, res, at, rel, id, read)
+	mountCollectionNew(router, s, o, res, at, rel, id, write)
+	mountCollectionCreate(router, s, o, res, at, rel, id, write)
+	mountCollectionRead(router, s, o, res, at, rel, id, read)
+	mountCollectionEdit(router, s, o, res, at, rel, id, write)
+	mountCollectionUpdate(router, s, o, res, at, rel, id, write)
+	mountCollectionDelete(router, s, o, res, at, rel, id, write)
 
 	mountCommands(router, s, o, res, at, rel, id)
 }
