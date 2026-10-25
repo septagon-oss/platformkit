@@ -727,13 +727,12 @@ and return `Cache-Control: no-store`. Lists accept `limit` (default 25, maximum
 100), `offset`, and pending/expired/accepted/revoked `state`. Each snapshot includes
 recipient, assigned/permitted roles, lifecycle, revision, decision time and advisory
 capabilities. It excludes tokens, hashes, delivery identities and provider errors.
-A failed ledger read returns 503 with no partial page.
+A failed snapshot read returns 503 with no partial page.
 
 | Field | Meanings |
 | --- | --- |
-| `request` | `queued` while a recorded generation is pending; `ended` after expiry or a terminal transition; `unrecorded` for adopted legacy history. |
-| `observation` | `unobserved` before a claim; `unknown` for a claim without a committed terminal result; `transport_accepted`, `reported_failed`, or `suppressed` for recorded observations. |
-| `failureCode` | A stable transport/worker/suppression code, never the provider's error text. |
+| `request` | `queued` while a recorded generation is pending; `ended` once the invitation expires or a command decides it; `unrecorded` for adopted legacy history that recorded no generation. |
+| `observation` | `unobserved` while no transport has reported on the committed handoff; `unknown` for adopted legacy history. No durable mail-attempt record exists here, so the reading never answers a transport result and never claims a message arrived. |
 
 A reading correlates the delivery identity in the returned user snapshot, so a
 concurrent resend cannot attach an older attempt to the newer generation. Public
