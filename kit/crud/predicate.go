@@ -2,8 +2,13 @@ package crud
 
 import (
 	"fmt"
+	"maps"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -14,33 +19,66 @@ import (
 // timestamp column broken into days.
 //
 // The grammar is data and never a fragment of SQL. A column name reaches a
-// statement only through the schema — the same route conditions already takes for
-// an equality filter — so a question written by one module can name no column of
-// another, and no caller of this package holds a way to write one.
+// statement only through the schema — the same route an equality filter already
+// takes — so a question written by one module can name no column of another, and
+// no caller of this package holds a way to write one.
 //
-// The list grammar (?filter=field:value) stays equality-only: this is the
-// internal form a checked declaration builds, not a public parameter, and a new
-// meaning inside the existing parameter would change what the documents quoting
-// it have always meant.
+// Query.Where carries this grammar to a page, and CountWhere carries it to a total
+// with no page. Neither is a public parameter: the list grammar
+// (?filter=field:value) stays equality-only, because a new meaning inside the
+// existing parameter would change what the documents quoting it have always meant.
 
 // Op is one comparison against a field's own value.
 type Op string
 
-// The five comparisons. `ne`, `in` and a containment test are absent because
-// nothing declares them yet, and an operator no declaration uses is an operator
-// no mount gate has ever had to refuse.
+// The comparisons a question can ask. Each is checked against the type of the
+// field it names, so an operator a column cannot answer is refused rather than
+// spelled as SQL that would match nothing. A containment test is absent because
+// nothing declares one yet, and an operator no declaration uses is an operator no
+// mount gate has ever had to refuse.
 const (
-	OpEq  Op = "eq"
+	OpEq Op = "eq"
+
+	// OpNe is `col <> ?`. A row whose column is NULL answers no comparison, so it
+	// is not on a `ne` page either; OpNotNull is how a caller says it means those
+	// rows too.
+	OpNe Op = "ne"
+
+	// OpIn is `col IN (?,?,…)` with one placeholder per value. An empty list is
+	// the false clause `1 = 0` and never `IN ()`, which is not SQL.
+	OpIn Op = "in"
+
+	// OpIsNull and OpNotNull are the only way to see a NULL column, and take no
+	// operand. Whether a column may be NULL is no fact the schema records, so an
+	// is_null asked of a NOT NULL column answers zero rows, which is an honest
+	// answer to a question nobody could ask better.
+	OpIsNull  Op = "is_null"
+	OpNotNull Op = "not_null"
+
+	// OpLt, OpLte, OpGt and OpGte ask where a value sits on a scale, which only a
+	// count, an amount or a moment has.
 	OpLt  Op = "lt"
 	OpLte Op = "lte"
 	OpGt  Op = "gt"
 	OpGte Op = "gte"
+
+	// OpEqFold is `lower(col COLLATE "C") = lower((?)::text COLLATE "C")`: it
+	// folds ASCII A-Z onto a-z and nothing else, alike in every installation
+	// whatever the cluster's locale, because an uncollated lower() means whatever
+	// that libc means and folds lossily. The stated price: no Unicode or accent
+	// folding, and no index until a deployment creates the matching expression.
+	OpEqFold Op = "eq_fold"
 )
 
 // Ops is every operator a predicate may carry. The list is here rather than only
 // in the constants because the mount gate refuses a name outside it and has to
-// say what it admits.
-var Ops = []string{string(OpEq), string(OpLt), string(OpLte), string(OpGt), string(OpGte)}
+// say what it admits. What a *declared* sub-count may ask with is narrower than
+// what this grammar can spell, and kit/rest owns that shorter list.
+var Ops = []string{
+	string(OpEq), string(OpEqFold),
+	string(OpLt), string(OpLte), string(OpGt), string(OpGte),
+	string(OpNe), string(OpIn), string(OpIsNull), string(OpNotNull),
+}
 
 // ValidOp reports whether a declaration names a comparison this grammar has.
 func ValidOp(name string) bool {
@@ -52,10 +90,15 @@ func ValidOp(name string) bool {
 	return false
 }
 
-// symbol is the SQL each operator spells.
+// symbol is the SQL each comparison spells. The membership and nullness operators
+// are spelled by their own builders below, each of which takes an operand shape the
+// comparisons do not.
 var symbol = map[Op]string{
-	OpEq: "=", OpLt: "<", OpLte: "<=", OpGt: ">", OpGte: ">=",
+	OpEq: "=", OpNe: "<>", OpLt: "<", OpLte: "<=", OpGt: ">", OpGte: ">=",
 }
+
+// orderOps is the four comparisons that ask where a value sits on a scale.
+var orderOps = map[Op]bool{OpLt: true, OpLte: true, OpGt: true, OpGte: true}
 
 // Predicate is one comparison on one field of this entity. Value is the value
 // already read as the field's own type — a time.Time for a timestamp, an int64
@@ -68,24 +111,242 @@ type Predicate struct {
 }
 
 // Where is a question: every predicate must hold, the same way every key of a
-// filter map must hold for one row to be on the page.
+// filter map must hold for one row to be on the page. The conjunction has no OR:
+// a caller that wants a union of two sets asks twice, and what one question cannot
+// answer is one total over a union.
 type Where []Predicate
 
-// predicateSQL turns one predicate into SQL, with the column taken from the schema. An
-// unknown name, a list column and an unknown operator are refused rather than
-// dropped: a narrowed count that quietly lost its predicate is the unfiltered
-// total wearing a label.
-func predicateSQL(fields []Field, p Predicate) (string, []any, error) {
+// fragment is one WHERE condition and the values it takes. The two travel
+// together because a comparison takes one value and a membership test takes as
+// many as it names: a builder that paired clause i with argument i would bind the
+// first value of a list and drop the rest, widening the set it meant to narrow.
+type fragment struct {
+	sql  string
+	args []any
+}
+
+// predicateSQL spells one predicate as one condition and its values, with the
+// column taken from the schema and every value left as a parameter. An unknown
+// name, a list column and an unknown operator are refused rather than dropped: a
+// narrowed count that quietly lost its predicate is the unfiltered total wearing a
+// label.
+func predicateSQL(fields []Field, p Predicate) (fragment, error) {
 	f, err := comparable(fields, p.Field, "filter")
 	if err != nil {
-		return "", nil, err
+		return fragment{}, err
 	}
-	op, ok := symbol[p.Op]
+	switch p.Op {
+	case OpIsNull, OpNotNull:
+		return nullarySQL(f, p)
+	case OpIn:
+		return inSQL(f, p)
+	case OpEqFold:
+		return foldSQL(f, p)
+	}
+	sym, ok := symbol[p.Op]
 	if !ok {
-		return "", nil, fmt.Errorf("%w: %q is not an operator to filter %s on; Ops admits %s",
+		return fragment{}, fmt.Errorf("%w: %q is not an operator to filter %s on; Ops admits %s",
 			ErrInvalid, string(p.Op), p.Field, strings.Join(Ops, ", "))
 	}
-	return f.Column + " " + op + " ?", []any{p.Value}, nil
+	if err := orderFault(f, p.Op); err != nil {
+		return fragment{}, err
+	}
+	if err := operandFault(f, p.Op, p.Value); err != nil {
+		return fragment{}, err
+	}
+	return fragment{sql: f.Column + " " + sym + " ?", args: []any{p.Value}}, nil
+}
+
+// nullarySQL is is_null and not_null: the column, one of two spellings, and no
+// operand at all. An operator that quietly ignored a value would teach the reader
+// that the value was doing nothing, which is exactly what it was doing.
+func nullarySQL(f Field, p Predicate) (fragment, error) {
+	if p.Value != nil {
+		return fragment{}, fmt.Errorf("%w: %s %s takes no value", ErrInvalid, f.Name, p.Op)
+	}
+	if p.Op == OpIsNull {
+		return fragment{sql: f.Column + " IS NULL"}, nil
+	}
+	return fragment{sql: f.Column + " IS NOT NULL"}, nil
+}
+
+// inSQL is the membership test, spelled with one placeholder per value: the number
+// of values a caller listed has to be the number of parameters the statement really
+// carries, because MaxInValues bounds the work and not the text.
+//
+// An empty list is `1 = 0`. `IN ()` is not SQL and `IN (NULL)` is three-valued;
+// both would answer nothing by accident, and an empty set of allowed values answers
+// nothing because that is what an empty set of allowed values means.
+func inSQL(f Field, p Predicate) (fragment, error) {
+	list, ok := listValues(p.Value)
+	if !ok {
+		return fragment{}, fmt.Errorf("%w: %s %s takes a list of values, not a %T", ErrInvalid, f.Name, p.Op, p.Value)
+	}
+	if len(list) == 0 {
+		return fragment{sql: "1 = 0"}, nil
+	}
+	if len(list) > MaxInValues {
+		return fragment{}, fmt.Errorf("%w: %s %s holds %d values; MaxInValues is %d",
+			ErrInvalid, f.Name, p.Op, len(list), MaxInValues)
+	}
+	marks := make([]string, len(list))
+	for i, v := range list {
+		if err := operandFault(f, p.Op, v); err != nil {
+			return fragment{}, err
+		}
+		marks[i] = "?"
+	}
+	return fragment{sql: f.Column + " IN (" + strings.Join(marks, ", ") + ")", args: list}, nil
+}
+
+// foldSQL is case-folded equality on a word. The COLLATE "C" is the whole rule:
+// without it the fold means whatever this cluster's libc means, so one record
+// answers a different set of rows in another locale, and the fold there is lossy.
+// The parameter is cast before it collates because a bare ? reaches Postgres with
+// no type and COLLATE on an unknown type is refused. The price is the one stated on
+// OpEqFold: ASCII only, and no index until a deployment creates the matching one.
+func foldSQL(f Field, p Predicate) (fragment, error) {
+	if f.Type != TypeString && f.Type != TypeText {
+		return fragment{}, fmt.Errorf("%w: %s is a %s, and folding case reads a word", ErrInvalid, f.Name, f.Type)
+	}
+	if err := operandFault(f, OpEqFold, p.Value); err != nil {
+		return fragment{}, err
+	}
+	return fragment{
+		sql:  `lower(` + f.Column + ` COLLATE "C") = lower((?)::text COLLATE "C")`,
+		args: []any{p.Value},
+	}, nil
+}
+
+// orderFault is this package's half of the rule the mount gate already holds for a
+// declared sub-count: only a count, an amount or a moment is asked about with an
+// order. Stating it where the statement is built is what keeps a page from narrowing
+// by a comparison a card is refused for counting by — and keeps a text column's
+// collation from deciding which rows a range holds.
+func orderFault(f Field, op Op) error {
+	if !orderOps[op] {
+		return nil
+	}
+	switch f.Type {
+	case TypeInt, TypeFloat, TypeTime:
+		return nil
+	}
+	return fmt.Errorf("%w: %s %s compares a %s, and only a count, an amount or a moment is asked about with an order",
+		ErrInvalid, f.Name, op, f.Type)
+}
+
+// operandFault refuses a value the column cannot hold, including no value at all:
+// `col = NULL` matches nothing, which is the shape of a filter that quietly does
+// nothing rather than the refusal it has to be. The check is on the Go shape and not
+// on text, because reading text as the field's own type is Coerce's door and a
+// statement that guessed at a spelling would compare a value nobody wrote.
+//
+// The sentence names the field, the operator and the operand's Go type, never the
+// operand: a predicate's value is a record's own data, and an error log is an export.
+func operandFault(f Field, op Op, v any) error {
+	if v == nil {
+		return fmt.Errorf("%w: %s %s carries no value; is_null asks about absence", ErrInvalid, f.Name, op)
+	}
+	if holds(f, v) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is a %s and the %s operand is a %T", ErrInvalid, f.Name, f.Type, op, v)
+}
+
+// holds is whether one Go value can be sent as this column's own type. An integer
+// column takes any Go integer kind and a float column takes those and the float
+// kinds: widening up is exact and the reverse is not.
+func holds(f Field, v any) bool {
+	switch f.Type {
+	case TypeString, TypeText:
+		_, ok := v.(string)
+		return ok
+	case TypeInt:
+		return integerKind(v)
+	case TypeFloat:
+		return floatKind(v) || integerKind(v)
+	case TypeBool:
+		_, ok := v.(bool)
+		return ok
+	case TypeTime:
+		_, ok := v.(time.Time)
+		return ok
+	case TypeUUID:
+		_, ok := v.(uuid.UUID)
+		return ok
+	}
+	return false
+}
+
+func integerKind(v any) bool {
+	switch reflect.ValueOf(v).Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return true
+	}
+	return false
+}
+
+func floatKind(v any) bool {
+	switch reflect.ValueOf(v).Kind() {
+	case reflect.Float32, reflect.Float64:
+		return true
+	}
+	return false
+}
+
+// listValues is a slice or array as its own elements, and a nil operand as the empty
+// list it is: an In that carries nothing narrows to nothing, which is the honest
+// direction for a filter with no values to compare against.
+func listValues(v any) ([]any, bool) {
+	if v == nil {
+		return nil, true
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+		return nil, false
+	}
+	out := make([]any, rv.Len())
+	for i := range out {
+		out[i] = rv.Index(i).Interface()
+	}
+	return out, true
+}
+
+// fragments is the question one read asks: every equality key of a filter map and
+// every predicate, ANDed. The lifecycle clause belongs to the door that asks —
+// deleted_at IS NULL is added there and no predicate can name it, because
+// deletedAt is no field of any schema.
+//
+// Filter keys come first in sorted field order and predicates follow in the order
+// they were written, so a query that is unanswerable two ways refuses with one
+// sentence every time rather than whichever one a map walk reached first. A field
+// named twice is narrowed twice, never overwritten: the AND is what the caller wrote.
+//
+// Both doors build through here — CountWhere, and the count and the page of ListCtx
+// together — which is what makes a narrowed total and a narrowed page answers about
+// one set of rows, and what binds MaxQueryValues at both doors at once.
+func fragments(fields []Field, filter map[string]any, w Where) ([]fragment, error) {
+	asked := make(Where, 0, len(filter)+len(w))
+	for _, name := range slices.Sorted(maps.Keys(filter)) {
+		asked = append(asked, Predicate{Field: name, Op: OpEq, Value: filter[name]})
+	}
+	asked = append(asked, w...)
+	out := make([]fragment, 0, len(asked))
+	values := 0
+	for _, p := range asked {
+		c, err := predicateSQL(fields, p)
+		if err != nil {
+			return nil, err
+		}
+		values += len(c.args)
+		out = append(out, c)
+	}
+	if values > MaxQueryValues {
+		return nil, fmt.Errorf("%w: this question carries %d values; MaxQueryValues is %d",
+			ErrInvalid, values, MaxQueryValues)
+	}
+	return out, nil
 }
 
 // Coerce reads a filter value as the field's own type. A field the grammar reads
@@ -147,16 +408,16 @@ func Resolve(fields []Field, named []entity.EntryPredicate, asOf time.Time) (Whe
 
 // CountWhere counts this tenant's live rows the predicates admit. It applies the
 // same lifecycle predicate Count does, so a narrowed total and the whole one are
-// answers about the same set of rows.
+// answers about the same set of rows, and it builds its conditions through the same
+// fragments the page is built from, so the two cannot disagree about the question.
 func CountWhere[T Entity](tx db.Tx[db.Tenant], w Where) (int64, error) {
-	fields := Fields[T]()
+	clauses, err := fragments(Fields[T](), nil, w)
+	if err != nil {
+		return 0, err
+	}
 	query := tx.DB().Model(blank[T]()).Where("deleted_at IS NULL")
-	for _, p := range w {
-		sql, args, err := predicateSQL(fields, p)
-		if err != nil {
-			return 0, err
-		}
-		query = query.Where(sql, args...)
+	for _, c := range clauses {
+		query = query.Where(c.sql, c.args...)
 	}
 	var total int64
 	return total, Classify(query.Count(&total).Error)
