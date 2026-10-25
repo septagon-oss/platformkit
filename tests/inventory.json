@@ -74873,6 +74873,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/stepped_save_refuses_a_row_that_moved_past_the_limit_test.go",
+   "id": "ui/screens/stepped_save_refuses_a_row_that_moved_past_the_limit_test.go#TestASteppedSaveRefusesARowThatMovedPastTheDigitsItRead",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASteppedSaveRefusesARowThatMovedPastTheDigitsItRead",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/stepped_update_past_the_float64_limit_test.go",
    "id": "ui/screens/stepped_update_past_the_float64_limit_test.go#TestASteppedUpdateWritesARowWhoseRevisionAFloat64CannotHold",
    "kind": "go",
@@ -83757,7 +83776,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2268,
+  "files": 2269,
   "forge_runs": [
    408,
    413,
@@ -83791,7 +83810,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3623,
+   "behaviour": 3624,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -83810,9 +83829,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4245,
+  "rows": 4246,
   "tiers": {
-   "merge": 2624,
+   "merge": 2625,
    "nightly": 111,
    "push": 1510
   },
@@ -83820,13 +83839,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2023,
+   "keep": 2024,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3859,
+   "keep": 3860,
    "keep-rewrite": 170,
    "merge": 216
   }
