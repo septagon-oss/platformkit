@@ -344,20 +344,12 @@ func (p *Pending) Tx(ctx context.Context) (Tx[Tenant], error) {
 func (p *Pending) open() error {
 	// The span opens with the transaction and not with the Pending: a request
 	// that never queries opens neither, which is the whole reason Pending
-	// exists, and a span for a transaction that never happened would be the
-	// trace equivalent of a log line about a query nobody sent.
-	//
-	// One span per opened transaction, under whatever span the work already sits
-	// in — a request's, a job run's, an event delivery's — which is what makes
-	// "SQL under Tx" a boundary a reader can see: the span's duration is the
-	// transaction's, from BEGIN to the commit that was checked, and every
-	// statement the runner issued is inside it. Not one span per statement:
-	// kit/db's own promise is that GORM is the SQL executor and nothing else — no
-	// callbacks, no plugins — and a per-statement span is bought with a callback
-	// and a map of open statements. A transaction that took 40ms says what a
-	// reader needs to know in one span; the question "which of its four
-	// statements was the slow one" is answered by the statement log, not by a
-	// trace of this shape.
+	// exists. One span per opened transaction, under whatever span the work already
+	// sits in, is what makes "SQL under Tx" a boundary a reader can see: its
+	// duration is the transaction's, from BEGIN to the commit that was checked.
+	// Not one span per statement — kit/db's promise is that GORM is the SQL
+	// executor and nothing else, and a per-statement span is bought with a
+	// callback; "which statement was the slow one" is the statement log's answer.
 	ctx, span := telemetry.Tracer().Start(p.owner, "database transaction",
 		trace.WithAttributes(telemetry.SpanAttrs(p.owner)...))
 	// One queue per opened transaction, for as long as that transaction is open:
@@ -499,20 +491,14 @@ func (p *Pending) end(keep bool) (bool, *commitQueue, error) {
 // sealed refuses to commit a transaction that ends under different settings
 // than the ones its runner placed.
 //
-// This is a backstop, and the precise claim matters. platformkit.tenant_id and
-// platformkit.system_access are placeholder GUCs, which are USERSET: any
-// statement inside the transaction can rewrite them, and no database privilege
-// prevents it. This check catches the naive escape — code that sets a setting
-// and leaves it set — and it catches nothing else: an escape that restores the
-// value before returning re-reads clean and commits. There is no way to close
-// that with a re-read, because the state it inspects is the state the escape
-// restored.
-//
-// So the control for a deliberate escape is not here. It is scripts/check_gucs.sh,
-// which fails the build when anything outside kit/db writes either setting, in Go
-// or in SQL, and the type parameter, which makes crossing the tenant by accident
-// impossible. This costs one round trip per transaction, both settings in one
-// query, and it is worth that because the naive escape is the one that happens.
+// This is a backstop, and the precise claim matters: the two GUCs are USERSET, so
+// any statement inside the transaction can rewrite them. This catches the naive
+// escape — code that sets a setting and leaves it set — and catches nothing else,
+// because an escape that restores the value before returning re-reads clean. The
+// control for a deliberate escape is scripts/check_gucs.sh, which fails the build
+// when anything outside kit/db writes either setting, and the type parameter, which
+// makes crossing a tenant by accident impossible. It costs one round trip per
+// transaction, worth it because the naive escape is the one that happens.
 func sealed(gtx *gorm.DB, wantTenant, wantSystem string) error {
 	var tenant, system string
 	const q = `SELECT coalesce(current_setting('platformkit.tenant_id', true), ''),
