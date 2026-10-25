@@ -188,32 +188,9 @@ func namespace(app *httpx.Router, module string) *httpx.Router {
 func Mount(s httpx.Surfaces, sh Shell) {
 	sheet := ui.Compose(sh.Theme)
 	app := s.App
-	// The workspace has one home. This module is composed last, so it takes the
-	// claim when no product module wanted the root and the generated dashboard
-	// is what a person lands on; a product that claimed it first moves the
-	// dashboard one level down, and the shell's own links follow.
 	home, claimed := app.Home()
-	dashboardRel := "/"
-	if !claimed {
-		dashboardRel = "/dashboard"
-	}
-	a := addresses{
-		workspace:     at(app, "/"),
-		dashboard:     route{dashboardRel, home.PagePath(dashboardRel)},
-		assets:        at(app, "/assets"),
-		login:         at(app, "/login"),
-		health:        at(app, "/health"),
-		gallery:       at(app, "/_gallery"),
-		tenants:       inNamespace(app, "tenant", "/tenants"),
-		roles:         inNamespace(app, "auth", "/roles"),
-		forgot:        at(app, "/login/forgot"),
-		reset:         inNamespace(app, "auth", "/reset"),
-		verify:        inNamespace(app, "auth", "/verify-email"),
-		register:      at(app, "/register"),
-		sessions:      inNamespace(app, "auth", "/sessions"),
-		sessionRevoke: inNamespace(app, "auth", "/sessions/revoke"),
-		sessionsRest:  inNamespace(app, "auth", "/sessions/revoke-rest"),
-	}
+	a := addressesOf(app, home, claimed)
+
 	// Static files are outside every middleware chain: a stylesheet has no
 	// tenant, no session and no transaction to pay for.
 	app.Static(a.assets.rel, ui.Assets(sheet))
@@ -230,8 +207,58 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// what this mount is about to add — it is composed last, so nothing else
 	// will record them. A hand-written page counts as much as a generated one,
 	// and there is no second list to keep in step.
-	served := page.Served(s.Recorded())
-	own := ownScreens(served, resources)
+	recorded := page.Served(s.Recorded())
+	own := ownScreens(recorded, resources)
+	served := servedPaths(recorded, app, sh, a, resources)
+	nav := page.NewNavigation(sh.Nav, served, s.Required())
+	// A nav entry nothing answers is a mistake in a module's manifest, and it
+	// is reported here, once, at boot — not rendered as a disabled row that
+	// every person using the application sees for the life of the deployment.
+	warnUnserved("admin: a nav entry leads to a path no route serves", nav.Unserved())
+	primary := primaryAction(sh, served, s.Required())
+	shell := shellOf(sheet, a, sh, nav, resources)
+	mountGenerated(app, shell, opts, resources, own)
+
+	// The catalogue as the kernel read it off every manifest, taken here because
+	// this module is composed last and it is therefore complete. The roles
+	// screen offers it as checkboxes; auth checks a write against it. The route
+	// itself is the composition's — see app.Options.WorkspaceCatalog.
+	pages{Shell: sh, shell: shell, at: a, nav: nav, primary: primary, resources: resources, declared: s.Permissions()}.mount(s, home, app)
+}
+
+// addressesOf composes the address of every page the shell links to, the home
+// included: the workspace root when no product module claimed it, and
+// /dashboard when one did.
+func addressesOf(app, home *httpx.Router, claimed bool) addresses {
+	dashboardRel := "/"
+	if !claimed {
+		dashboardRel = "/dashboard"
+	}
+	return addresses{
+		workspace:     at(app, "/"),
+		dashboard:     route{dashboardRel, home.PagePath(dashboardRel)},
+		assets:        at(app, "/assets"),
+		login:         at(app, "/login"),
+		health:        at(app, "/health"),
+		gallery:       at(app, "/_gallery"),
+		tenants:       inNamespace(app, "tenant", "/tenants"),
+		roles:         inNamespace(app, "auth", "/roles"),
+		forgot:        at(app, "/login/forgot"),
+		reset:         inNamespace(app, "auth", "/reset"),
+		verify:        inNamespace(app, "auth", "/verify-email"),
+		register:      at(app, "/register"),
+		sessions:      inNamespace(app, "auth", "/sessions"),
+		sessionRevoke: inNamespace(app, "auth", "/sessions/revoke"),
+		sessionsRest:  inNamespace(app, "auth", "/sessions/revoke-rest"),
+	}
+}
+
+// servedPaths is everything this application answers: what the kernel recorded,
+// the screens each declared resource will serve, and the shell's own pages —
+// every one of which exists only in a composition that mounted the door it
+// posts to.
+func servedPaths(recorded []string, app *httpx.Router, sh Shell, a addresses, resources []httpx.Resource) []string {
+	served := recorded
 	for _, r := range resources {
 		// A Spec that offers no list has no screen address, so it serves no path:
 		// recording "" and "/new" would call them addresses something answers.
@@ -257,28 +284,38 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	if sh.Sessions != nil {
 		served = append(served, a.sessions.at)
 	}
-	nav := page.NewNavigation(sh.Nav, served, s.Required())
-	// A nav entry nothing answers is a mistake in a module's manifest, and it
-	// is reported here, once, at boot — not rendered as a disabled row that
-	// every person using the application sees for the life of the deployment.
-	for _, entry := range nav.Unserved() {
-		slog.Default().Warn("admin: a nav entry leads to a path no route serves",
+	return served
+}
+
+// warnUnserved says the one sentence every unserved navigation entry needs, once
+// per entry, at boot.
+func warnUnserved(what string, entries []module.NavEntry) {
+	for _, entry := range entries {
+		slog.Default().Warn(what,
 			"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
 	}
-	var primary page.Navigation
-	if sh.Primary.Screen != "" {
-		primary = page.NewNavigation([]module.NavEntry{sh.Primary}, served, s.Required())
-		for _, entry := range primary.Unserved() {
-			slog.Default().Warn("admin: the primary action leads to a path no route serves",
-				"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
-		}
-	}
+}
 
+// primaryAction navigates the one action a view offers by the same rule as the
+// sidebar, so the home cannot lead somewhere the shell would refuse to show.
+func primaryAction(sh Shell, served []string, required []tenancy.Grant) page.Navigation {
+	if sh.Primary.Screen == "" {
+		return page.Navigation{}
+	}
+	primary := page.NewNavigation([]module.NavEntry{sh.Primary}, served, required)
+	warnUnserved("admin: the primary action leads to a path no route serves", primary.Unserved())
+	return primary
+}
+
+// shellOf builds the value every page of this shell shares: the chrome, the
+// frame this caller may follow, and the negotiation the generated screens read
+// their labels through.
+func shellOf(sheet ui.Sheet, a addresses, sh Shell, nav page.Navigation, resources []httpx.Resource) page.Shell {
 	frameAt := a
 	if sh.Sessions == nil {
 		frameAt.sessions = route{}
 	}
-	shell := page.Shell{
+	return page.Shell{
 		Chrome: page.Chrome{
 			Brand: brand, Assets: a.assets.at, Stylesheet: sheet,
 			Scripts: ui.Controllers, SignIn: a.login.at,
@@ -296,7 +333,11 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		Messages: sh.Messages,
 		Locale:   sh.Locale,
 	}
+}
 
+// mountGenerated draws every resource the composition declared, except the ones
+// whose own module drew the pages.
+func mountGenerated(app *httpx.Router, shell page.Shell, opts screens.Options, resources []httpx.Resource, own map[string]bool) {
 	for _, r := range resources {
 		if own[r.Screen] {
 			// The module wrote this resource's workspace pages itself, and they are what a person is
@@ -309,11 +350,6 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		}
 		screens.Mount(namespace(app, r.Module), shell, opts, r)
 	}
-	// The catalogue as the kernel read it off every manifest, taken here because
-	// this module is composed last and it is therefore complete. The roles
-	// screen offers it as checkboxes; auth checks a write against it. The route
-	// itself is the composition's — see app.Options.WorkspaceCatalog.
-	pages{Shell: sh, shell: shell, at: a, nav: nav, primary: primary, resources: resources, declared: s.Permissions()}.mount(s, home, app)
 }
 
 // frame is the admin's arrangement: the sidebar the caller may follow, the

@@ -97,7 +97,24 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 
 // productWithPolicy supplies explicit policy rules through the same product
 // declarations as the reference composition. The caller owns the adapter.
+// productWithPolicy supplies explicit policy rules through the same product
+// declarations as the reference composition. The caller owns the adapter.
 func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures, policy tenancy.Policy) *pkit.Module {
+	return pkit.NewModule("product", func(w *pkit.Wiring) (module.Module, error) {
+		if err := putProductStores(w, cfg, policy); err != nil {
+			return module.Module{}, err
+		}
+		if err := putProductDoors(w, cfg, grants, pictures); err != nil {
+			return module.Module{}, err
+		}
+		return module.Module{Name: "product"}, nil
+	}, productDeclarations(cfg)...)
+}
+
+// productDeclarations is what the product module offers to resolve and needs
+// nothing for: every port this application puts, and the two contributions it
+// makes to a port another module owns.
+func productDeclarations(cfg config.Config) []pkit.Declaration {
 	decls := []pkit.Declaration{
 		pkit.Provides[usercontracts.Administration](),
 		pkit.Provides[usercontracts.Granting](),
@@ -133,142 +150,154 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 	if cfg.Server.StorybookDir != "" {
 		decls = append(decls, pkit.Provides[admincontracts.Storybook]())
 	}
-	return pkit.NewModule("product", func(w *pkit.Wiring) (module.Module, error) {
-		installed := catalogues()
-		// The bytes go wherever the deployment said they go, read off the configuration
-		// the profile resolved rather than the one this function was handed: a profile
-		// that picked the object store picks it for this product too, and a store built
-		// from the settings as they arrived would be a different store from the one
-		// Explain names. A store missing an input its adapter cannot do without is
-		// refused here, before any effect; whether the address answers is asked of the
-		// first upload, because nothing here dials (see objectStore).
-		store, err := objectStore(pkit.Config(w, func(c config.Config) config.Files { return c.Files }))
-		if err != nil {
-			return module.Module{}, err
-		}
-		// auth.AdministeringRoles is what makes "the last person who can still
-		// administer this tenant" answerable at all: the user module owns who
-		// holds a role, the auth module owns what a role grants, and neither reads
-		// the other's rows. This is where the two meet, and the only line in this
-		// application that decides administration is made of roles.
-		pkit.Put[usercontracts.Administration](w, &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles})
-		// The empty holder. user reads it and auth fills its Ask — the one edge in
-		// this application that is late-bound rather than built, and product puts
-		// it precisely because it needs nobody and so is built first.
-		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
-		pkit.Put[filecontracts.Storage](w, store)
-		// The secret store, opened once and put under both halves of the port;
-		// `store` above is the object store, and the why sits with the Provides.
-		secretsStore, err := secretStore(cfg)
-		if err != nil {
-			return module.Module{}, err
-		}
-		pkit.Put[secrets.Secrets](w, secretsStore)
-		pkit.Put[secrets.Keys](w, secretsStore)
-		// The trail is this reference product's worked example of something a plan
-		// includes or does not. The name is the price list's, and it is chosen here
-		// rather than inside the module because which features a product sells is
-		// this file's decision and not the audit module's: an installation that
-		// sells the trail to everybody composes no Plan and nothing is asked.
-		pkit.Put[auditcontracts.Plan](w, auditcontracts.Plan("audit-trail"))
-		// The product supplies object-scope rules; modules keep their lifecycle rules.
-		pkit.Put[tenancy.Policy](w, policy)
-		// The installation's flags, read by kit/config out of the flags block and
-		// answered once for the whole process: configFlags targets nobody, not even
-		// by tenant. One evaluator is built here, for the one door that asks it.
-		var flagEval configFlags
-		if cfg.Flags != nil {
-			flagEval = cfg.Flags.Values
-		}
-		pkit.Put[sitecontracts.WriteGate](w, settingsGate{eval: flagEval})
-		// The task desk's five generated routes get the same kind of door, over the
-		// same one evaluator and a different key: which of a task's fields this
-		// installation will not let one account move alone is apps/platformkit/change.go,
-		// and modules/task hands the answer to its own mount because a Spec mounts its
-		// own routes (task.Deps.Gate).
-		pkit.Put[rest.Gate](w, taskGate(flagEval))
-		// The two addresses the public site links and does not serve. They are
-		// written here because they are this product's facts: which shell it
-		// composed, and which door of which module answers for a file a visitor may
-		// see. A module that named them would be naming a surface it does not serve,
-		// and a composition that writes one is pinning an address the kernel
-		// composed — which is only safe because a test asks the running server: the
-		// way in by TestThePublicFrameLinksOnlyTheWorkspaceRoot, and the logo's file
-		// by TestThePublicPageLinksOnlyAddressesTheInstallationServes, which uploads
-		// a public file, sets it as the tenant's logo, reads the src back off the
-		// public home page and fetches it.
-		//
-		// The way in is the workspace root, not the sign-in page below it.
-		// pinnedSignIn stays the address the guard turns a refused caller towards,
-		// and the fault chrome keeps linking it; this line is what an anonymous
-		// visitor on a tenant's own host is offered, and a public frame may offer no
-		// address deeper into a workspace than its root. The root asks no permission
-		// of its own — httpx.SignedIn guards it — so the workspace decides whether
-		// the visitor gets a page or the form, and returns them to the root once
-		// they have signed in.
-		pkit.Put[webcontracts.Links](w, webcontracts.Links{
-			SignIn:     pinnedWorkspace,
-			PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
-		})
-		// Which entity's records this product's public site renders, as the
-		// translation port has to be handed it. It is a value and not a call: the
-		// row set is derived from the entity's own schema tags, so naming it here
-		// builds nothing and needs nobody — which is why this is the one edge the
-		// sentence cannot draw between two modules. content needs the port that
-		// holds the other languages, translation needs to know which table has
-		// fields worth holding them for, and an edge in either direction between
-		// the two is a cycle the resolver would refuse. So the application names
-		// the entity — the same line this composition wrote by hand before the
-		// resolver existed, now said in a place the graph can read.
-		pkit.Put[rest.TranslationSource](w, content.TranslationSource())
-		// The form on the shell's login page posts to the auth module's door, and
-		// the link to the registration form is the same value, so neither half can
-		// offer what the other did not mount. The address is the public door as the
-		// surface composes it — see pinnedRegisterAPI.
-		pkit.Put[admincontracts.Signin](w, admincontracts.Signin{
-			Address: pinnedSignInAPI,
-			Registration: &admincontracts.Registration{
-				Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI,
-			},
-		})
-		// Where a stored picture's bytes are fetched from. The workspace catalogue
-		// publishes this same address to a shell that is not a browser, and the
-		// generated screens fetch through it; the door is the file module's and the
-		// document is the kernel's, so this composition is the only party that has met
-		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
-		pkit.Put[admincontracts.Pictures](w, pictures)
-		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
-		// What a person comes to this installation's workspace to do: the home leads
-		// with it, for whoever may read the tasks it opens.
-		pkit.Put[admincontracts.PrimaryAction](w, admincontracts.PrimaryAction{
-			Label: "Go to tasks", Screen: "task/tasks", Permission: taskcontracts.PermissionTaskRead,
-		})
-		// A tenant created here is served in every language this installation's
-		// copy is written in, read off the catalogues rather than named: the set
-		// exists before the operator narrows it, so a page can answer a person in
-		// the language its text was authored in on the day the tenant appears.
-		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
-		pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
-		// Which event names may be put on a webhook endpoint is this file's fact:
-		// the modules that emit them are composed by this file, and the module that
-		// checks a subscription against them cannot enumerate them. The literal is
-		// webhook_catalogue.go's, and a case asks the resolved composition whether it
-		// still matches what that composition emits.
-		pkit.Put[webhookcontracts.Catalogue](w, webhookCatalogue)
-		// A task is this product's second change subject, and it needs no service to
-		// be named: the locked read a diff is made against and the whole-row write an
-		// approved proposal comes through are two named constructors of the module that
-		// owns the table (task.NewWriter says why the gate never stands on that write).
-		// Which of a task's fields this installation will not let one account move is
-		// apps/platformkit/change.go's opinion, over the switch this module already
-		// holds — which is why the subject is contributed here, needing nobody, and not
-		// from access below, which had to wait for a site service to read its own.
-		pkit.Put[changecontracts.SubjectBinding](w, taskSubjectBinding(task.NewWriter(), task.NewLockedReader()))
-		if cfg.Server.StorybookDir != "" {
-			pkit.Put[admincontracts.Storybook](w, admincontracts.Storybook(operatorStorybook(cfg.Server.StorybookDir)))
-		}
-		return module.Module{Name: "product"}, nil
-	}, decls...)
+	return decls
+}
+
+// putProductStores puts the edges that reach outside the process: the object
+// store, the secret store, and the two gates that decide what this installation
+// lets one account write alone.
+func putProductStores(w *pkit.Wiring, cfg config.Config, policy tenancy.Policy) error {
+	// The bytes go wherever the deployment said they go, read off the configuration
+	// the profile resolved rather than the one this function was handed: a profile
+	// that picked the object store picks it for this product too, and a store built
+	// from the settings as they arrived would be a different store from the one
+	// Explain names. A store missing an input its adapter cannot do without is
+	// refused here, before any effect; whether the address answers is asked of the
+	// first upload, because nothing here dials (see objectStore).
+	store, err := objectStore(pkit.Config(w, func(c config.Config) config.Files { return c.Files }))
+	if err != nil {
+		return err
+	}
+	// auth.AdministeringRoles is what makes "the last person who can still
+	// administer this tenant" answerable at all: the user module owns who
+	// holds a role, the auth module owns what a role grants, and neither reads
+	// the other's rows. This is where the two meet, and the only line in this
+	// application that decides administration is made of roles.
+	pkit.Put[usercontracts.Administration](w, &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles})
+	// The empty holder. user reads it and auth fills its Ask — the one edge in
+	// this application that is late-bound rather than built, and product puts
+	// it precisely because it needs nobody and so is built first.
+	pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
+	pkit.Put[filecontracts.Storage](w, store)
+	// The secret store, opened once and put under both halves of the port;
+	// `store` above is the object store, and the why sits with the Provides.
+	secretsStore, err := secretStore(cfg)
+	if err != nil {
+		return err
+	}
+	pkit.Put[secrets.Secrets](w, secretsStore)
+	pkit.Put[secrets.Keys](w, secretsStore)
+	// The trail is this reference product's worked example of something a plan
+	// includes or does not. The name is the price list's, and it is chosen here
+	// rather than inside the module because which features a product sells is
+	// this file's decision and not the audit module's: an installation that
+	// sells the trail to everybody composes no Plan and nothing is asked.
+	pkit.Put[auditcontracts.Plan](w, auditcontracts.Plan("audit-trail"))
+	// The product supplies object-scope rules; modules keep their lifecycle rules.
+	pkit.Put[tenancy.Policy](w, policy)
+	// The installation's flags, read by kit/config out of the flags block and
+	// answered once for the whole process: configFlags targets nobody, not even
+	// by tenant. One evaluator is built here, for the one door that asks it.
+	var flagEval configFlags
+	if cfg.Flags != nil {
+		flagEval = cfg.Flags.Values
+	}
+	pkit.Put[sitecontracts.WriteGate](w, settingsGate{eval: flagEval})
+	// The task desk's five generated routes get the same kind of door, over the
+	// same one evaluator and a different key: which of a task's fields this
+	// installation will not let one account move alone is apps/platformkit/change.go,
+	// and modules/task hands the answer to its own mount because a Spec mounts its
+	// own routes (task.Deps.Gate).
+	pkit.Put[rest.Gate](w, taskGate(flagEval))
+	return nil
+}
+
+// putProductDoors puts the edges a page or a caller reads: the two addresses the
+// public site links, the sign-in form, the languages a new tenant is served in,
+// and the subjects a change proposal can be filed about.
+func putProductDoors(w *pkit.Wiring, cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures) error {
+	installed := catalogues()
+	// The two addresses the public site links and does not serve. They are
+	// written here because they are this product's facts: which shell it
+	// composed, and which door of which module answers for a file a visitor may
+	// see. A module that named them would be naming a surface it does not serve,
+	// and a composition that writes one is pinning an address the kernel
+	// composed — which is only safe because a test asks the running server: the
+	// way in by TestThePublicFrameLinksOnlyTheWorkspaceRoot, and the logo's file
+	// by TestThePublicPageLinksOnlyAddressesTheInstallationServes, which uploads
+	// a public file, sets it as the tenant's logo, reads the src back off the
+	// public home page and fetches it.
+	//
+	// The way in is the workspace root, not the sign-in page below it.
+	// pinnedSignIn stays the address the guard turns a refused caller towards,
+	// and the fault chrome keeps linking it; this line is what an anonymous
+	// visitor on a tenant's own host is offered, and a public frame may offer no
+	// address deeper into a workspace than its root. The root asks no permission
+	// of its own — httpx.SignedIn guards it — so the workspace decides whether
+	// the visitor gets a page or the form, and returns them to the root once
+	// they have signed in.
+	pkit.Put[webcontracts.Links](w, webcontracts.Links{
+		SignIn:     pinnedWorkspace,
+		PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
+	})
+	// Which entity's records this product's public site renders, as the
+	// translation port has to be handed it. It is a value and not a call: the
+	// row set is derived from the entity's own schema tags, so naming it here
+	// builds nothing and needs nobody — which is why this is the one edge the
+	// sentence cannot draw between two modules. content needs the port that
+	// holds the other languages, translation needs to know which table has
+	// fields worth holding them for, and an edge in either direction between
+	// the two is a cycle the resolver would refuse. So the application names
+	// the entity — the same line this composition wrote by hand before the
+	// resolver existed, now said in a place the graph can read.
+	pkit.Put[rest.TranslationSource](w, content.TranslationSource())
+	// The form on the shell's login page posts to the auth module's door, and
+	// the link to the registration form is the same value, so neither half can
+	// offer what the other did not mount. The address is the public door as the
+	// surface composes it — see pinnedRegisterAPI.
+	pkit.Put[admincontracts.Signin](w, admincontracts.Signin{
+		Address: pinnedSignInAPI,
+		Registration: &admincontracts.Registration{
+			Kind: admincontracts.KindPassword, Address: pinnedRegisterAPI,
+		},
+	})
+	// Where a stored picture's bytes are fetched from. The workspace catalogue
+	// publishes this same address to a shell that is not a browser, and the
+	// generated screens fetch through it; the door is the file module's and the
+	// document is the kernel's, so this composition is the only party that has met
+	// the two. See apps/platformkit/fault.go on the document's `pictures` block.
+	pkit.Put[admincontracts.Pictures](w, pictures)
+	pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
+	// What a person comes to this installation's workspace to do: the home leads
+	// with it, for whoever may read the tasks it opens.
+	pkit.Put[admincontracts.PrimaryAction](w, admincontracts.PrimaryAction{
+		Label: "Go to tasks", Screen: "task/tasks", Permission: taskcontracts.PermissionTaskRead,
+	})
+	// A tenant created here is served in every language this installation's
+	// copy is written in, read off the catalogues rather than named: the set
+	// exists before the operator narrows it, so a page can answer a person in
+	// the language its text was authored in on the day the tenant appears.
+	pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
+	pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
+	// Which event names may be put on a webhook endpoint is this file's fact:
+	// the modules that emit them are composed by this file, and the module that
+	// checks a subscription against them cannot enumerate them. The literal is
+	// webhook_catalogue.go's, and a case asks the resolved composition whether it
+	// still matches what that composition emits.
+	pkit.Put[webhookcontracts.Catalogue](w, webhookCatalogue)
+	// A task is this product's second change subject, and it needs no service to
+	// be named: the locked read a diff is made against and the whole-row write an
+	// approved proposal comes through are two named constructors of the module that
+	// owns the table (task.NewWriter says why the gate never stands on that write).
+	// Which of a task's fields this installation will not let one account move is
+	// apps/platformkit/change.go's opinion, over the switch this module already
+	// holds — which is why the subject is contributed here, needing nobody, and not
+	// from access below, which had to wait for a site service to read its own.
+	pkit.Put[changecontracts.SubjectBinding](w, taskSubjectBinding(task.NewWriter(), task.NewLockedReader()))
+	if cfg.Server.StorybookDir != "" {
+		pkit.Put[admincontracts.Storybook](w, admincontracts.Storybook(operatorStorybook(cfg.Server.StorybookDir)))
+	}
+	return nil
 }
 
 // objectStore is this product's reading of files.store: the directory the kernel
