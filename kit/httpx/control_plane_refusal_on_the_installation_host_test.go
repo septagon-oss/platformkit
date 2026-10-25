@@ -19,10 +19,11 @@ package httpx_test
 // kit/httpx/fault.go's own rule is the reason it should hold: "a second writer of problem
 // bodies in this package is a second answer to the question this file exists to ask once".
 //
-// The first half is held and pinned: review_surfaces_test.go compares the host gate with a
-// never-mounted address, headers and body, at both shapes, and the gate was moved inside
-// the headers middleware to make that true. That fixture resolves the installation host to
-// an *operator* tenant, so nothing it asks ever reaches notHere. The second half — the road
+// The first half is held and pinned: TestTheControlPlaneIsNotFoundAtATenantHost in
+// kit/httpx/surfaces_test.go compares the host gate with a never-mounted address, headers
+// and body, and the gate was moved inside the headers middleware to make that true. That
+// fixture resolves the installation host to an *operator* tenant, so nothing it asks ever
+// reaches notHere. The second half — the road
 // the published table's row "a door only the operator may open, asked at another tenant"
 // describes — has never been compared to anything.
 //
@@ -48,9 +49,8 @@ package httpx_test
 //
 // Retry-After on the public write limit has two limbs — the answer inside the limit and the
 // one past it — and both are verified here. Headers are set before the answer is written, on
-// either end of
-// the opt-out, which the second case pins so a later change to the fallback writer that
-// drops them is caught here rather than in a browser.
+// either end of the opt-out, which the second case pins so a later change to the fallback
+// writer that drops them is caught here rather than in a browser.
 
 import (
 	"context"
@@ -233,9 +233,9 @@ func controlPlaneSame(t *testing.T, a, b controlPlaneAnswer, asked, reference st
 }
 
 // TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobodyMounted holds
-// the half of the README's Ops paragraph that review_surfaces_test.go could not reach: not
-// the host gate, but the refusal of a tenant that is not the installation's *at the host the
-// control plane is served at*.
+// the half of the README's Ops paragraph kit/httpx/surfaces_test.go could not compare: it
+// refuses a tenant that is not the installation's *at the host the control plane is served
+// at*, but never sets that answer beside the answer of an address nobody mounted there.
 func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobodyMounted(t *testing.T) {
 	const id = "one-request-id-for-both"
 	const nowhere = "/nothing-is-mounted-at-this-address"
