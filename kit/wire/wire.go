@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 )
 
 // Break identifies one refused change. Message preserves the B1–B6 diagnostics.
@@ -43,6 +42,10 @@ func Compare(golden, current []byte) []Break {
 // CompareWithAllowances applies the caller's explicit policy without retaining or
 // modifying inputs. Read-only calls are safe to run concurrently.
 func CompareWithAllowances(golden, current []byte, allowances []AuthorizationAllowance) []Break {
+	return compareWire(golden, current, allowances, nil)
+}
+
+func compareWire(golden, current []byte, allowances []AuthorizationAllowance, required []RequirednessAllowance) []Break {
 	var problems []Break
 	add := func(rule, path, member, message string) {
 		problems = append(problems, Break{rule, path, member, message})
@@ -55,9 +58,8 @@ func CompareWithAllowances(golden, current []byte, allowances []AuthorizationAll
 	}
 	seen := map[[2]string]bool{}
 	for i, a := range allowances {
-		date, err := time.Parse("2006-01-02", a.ReviewedOn)
 		pair := [2]string{a.From, a.To}
-		if a.From == "" || a.To == "" || a.From == a.To || err != nil || date.Format("2006-01-02") != a.ReviewedOn || strings.TrimSpace(a.Reason) == "" || seen[pair] {
+		if a.From == "" || a.To == "" || a.From == a.To || !wireDate(a.ReviewedOn) || strings.TrimSpace(a.Reason) == "" || seen[pair] {
 			add("B6", "$allowances", fmt.Sprintf("#%d", i), fmt.Sprintf("B6 (breaking): invalid authorization allowance #%d", i))
 		}
 		seen[pair] = true
@@ -115,10 +117,20 @@ func CompareWithAllowances(golden, current []byte, allowances []AuthorizationAll
 	}
 	oldRead, newRead := wireShapes(oldDoc), wireShapes(newDoc)
 	oldShapes, newShapes := oldRead.shapes, newRead.shapes
+	// A requiredness list that no reviewer signed record by record, or that could carry
+	// more than the one move it names, is refused and forgives nothing: the rules below
+	// still read the whole pair, so a bad review never hides a break beside it.
+	if refused := reviewRequiredness(required, oldShapes, newShapes); len(refused) > 0 {
+		problems = append(problems, refused...)
+		required = nil
+	}
 	for _, key := range sortedKeys(oldShapes) {
 		fresh, ok := newShapes[key]
 		switch {
 		case !ok:
+			if requirednessRelaxation(required, key) {
+				continue
+			}
 			add("B3", shapePath(key), key, fmt.Sprintf("B3 (breaking): %s is gone", key))
 		default:
 			if problem := enumMove(key, oldShapes[key], fresh); problem != "" {
