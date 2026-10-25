@@ -1,0 +1,402 @@
+{
+    "name": "pictures-cover-thumbnail",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:741473913f13cb22953b3d3ccd946d48f4f447b721f3f3322fddbfcad857c738",
+      "expectedHash": "sha256:99f028842396cd62ac53f3378fdf2b335d534513f653f033e512afb412dc06e5"
+    },
+    "input": {
+      "hints": {
+        "CoverField": "photo"
+      },
+      "language": "en",
+      "rows": [],
+      "schema": {
+        "module": "m",
+        "entity": "note",
+        "path": "/api/v1/m/note",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "readOnly": true
+          },
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "photo",
+            "type": "picture"
+          },
+          {
+            "name": "side",
+            "type": "picture"
+          }
+        ]
+      },
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "New",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": true,
+            "title": "New",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "photo",
+                "label": "Photo",
+                "help": "",
+                "control": "",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "side",
+                "label": "Side",
+                "help": "",
+                "control": "",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "Edit",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "photo",
+                "label": "Photo",
+                "help": "",
+                "control": "",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "side",
+                "label": "Side",
+                "help": "",
+                "control": "",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "list": {
+          "pageVersion": 1,
+          "kind": "list",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "notes",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "create",
+              "verb": "create",
+              "label": "",
+              "scope": "collection",
+              "target": {
+                "resource": "m/note",
+                "id": ""
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [],
+          "table": {
+            "columns": [
+              {
+                "field": "title",
+                "label": "Title",
+                "sortable": true,
+                "sort": "title",
+                "current": false
+              },
+              {
+                "field": "photo",
+                "label": "Photo",
+                "sortable": false,
+                "sort": "",
+                "current": false
+              },
+              {
+                "field": "side",
+                "label": "Side",
+                "sortable": false,
+                "sort": "",
+                "current": false
+              }
+            ],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 50
+            },
+            "total": 0,
+            "counted": true,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [
+              {
+                "query": "id",
+                "label": "Id",
+                "field": "id",
+                "desc": false
+              },
+              {
+                "query": "-id",
+                "label": "Id",
+                "field": "id",
+                "desc": true
+              },
+              {
+                "query": "title",
+                "label": "Title",
+                "field": "title",
+                "desc": false
+              },
+              {
+                "query": "-title",
+                "label": "Title",
+                "field": "title",
+                "desc": true
+              }
+            ],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "record": {
+          "refused": "record"
+        }
+      }
+    }
+  }

@@ -1,0 +1,651 @@
+{
+    "name": "null-and-false",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:d6ff84a5b82f7826ca8aa98b76b7e367dcee5e322a934369766175bab2fd3a96",
+      "expectedHash": "sha256:9665d25d3f70d8b719864582acb7abe7bc678ada584ac3767e2d2f08d1f43bc6"
+    },
+    "input": {
+      "hints": {},
+      "language": "en",
+      "rows": [
+        {
+          "id": "r1",
+          "title": null,
+          "active": false,
+          "count": null
+        },
+        {
+          "id": "r2",
+          "title": "x",
+          "active": true,
+          "count": 0
+        }
+      ],
+      "schema": {
+        "module": "m",
+        "entity": "note",
+        "path": "/api/v1/m/note",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "readOnly": true
+          },
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "active",
+            "type": "bool"
+          },
+          {
+            "name": "count",
+            "type": "int"
+          }
+        ]
+      },
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "New",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": true,
+            "title": "New",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "active",
+                "label": "Active",
+                "help": "",
+                "control": "checkbox",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "boolean",
+                "elem": "",
+                "value": false,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "count",
+                "label": "Count",
+                "help": "",
+                "control": "number",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": "r1"
+          },
+          "title": "Edit",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit",
+              "ref": {
+                "resource": "m/note",
+                "id": "r1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "active",
+                "label": "Active",
+                "help": "",
+                "control": "checkbox",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "boolean",
+                "elem": "",
+                "value": false,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "count",
+                "label": "Count",
+                "help": "",
+                "control": "number",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "list": {
+          "pageVersion": 1,
+          "kind": "list",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "notes",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "create",
+              "verb": "create",
+              "label": "",
+              "scope": "collection",
+              "target": {
+                "resource": "m/note",
+                "id": ""
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [],
+          "table": {
+            "columns": [
+              {
+                "field": "title",
+                "label": "Title",
+                "sortable": true,
+                "sort": "title",
+                "current": false
+              },
+              {
+                "field": "active",
+                "label": "Active",
+                "sortable": true,
+                "sort": "active",
+                "current": false
+              },
+              {
+                "field": "count",
+                "label": "Count",
+                "sortable": true,
+                "sort": "count",
+                "current": false
+              }
+            ],
+            "rows": [
+              {
+                "id": "r1",
+                "title": "r1",
+                "cells": [
+                  {
+                    "field": "title",
+                    "label": "Title",
+                    "text": "—",
+                    "tone": "",
+                    "valueKind": "absent",
+                    "elem": "",
+                    "value": null
+                  },
+                  {
+                    "field": "active",
+                    "label": "Active",
+                    "text": "No",
+                    "tone": "",
+                    "valueKind": "boolean",
+                    "elem": "",
+                    "value": false
+                  },
+                  {
+                    "field": "count",
+                    "label": "Count",
+                    "text": "—",
+                    "tone": "",
+                    "valueKind": "absent",
+                    "elem": "",
+                    "value": null
+                  }
+                ]
+              },
+              {
+                "id": "r2",
+                "title": "x",
+                "cells": [
+                  {
+                    "field": "title",
+                    "label": "Title",
+                    "text": "x",
+                    "tone": "",
+                    "valueKind": "string",
+                    "elem": "",
+                    "value": "x"
+                  },
+                  {
+                    "field": "active",
+                    "label": "Active",
+                    "text": "Yes",
+                    "tone": "",
+                    "valueKind": "boolean",
+                    "elem": "",
+                    "value": true
+                  },
+                  {
+                    "field": "count",
+                    "label": "Count",
+                    "text": "0",
+                    "tone": "",
+                    "valueKind": "decimal",
+                    "elem": "",
+                    "value": "0"
+                  }
+                ]
+              }
+            ],
+            "window": {
+              "offset": 0,
+              "limit": 50
+            },
+            "total": 2,
+            "counted": true,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [
+              {
+                "query": "id",
+                "label": "Id",
+                "field": "id",
+                "desc": false
+              },
+              {
+                "query": "-id",
+                "label": "Id",
+                "field": "id",
+                "desc": true
+              },
+              {
+                "query": "title",
+                "label": "Title",
+                "field": "title",
+                "desc": false
+              },
+              {
+                "query": "-title",
+                "label": "Title",
+                "field": "title",
+                "desc": true
+              },
+              {
+                "query": "active",
+                "label": "Active",
+                "field": "active",
+                "desc": false
+              },
+              {
+                "query": "-active",
+                "label": "Active",
+                "field": "active",
+                "desc": true
+              },
+              {
+                "query": "count",
+                "label": "Count",
+                "field": "count",
+                "desc": false
+              },
+              {
+                "query": "-count",
+                "label": "Count",
+                "field": "count",
+                "desc": true
+              }
+            ],
+            "filters": [
+              {
+                "field": "active",
+                "label": "Active",
+                "kind": "bool",
+                "values": [
+                  {
+                    "value": "true",
+                    "label": "Yes",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "value": "false",
+                    "label": "No",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ]
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "record": {
+          "pageVersion": 1,
+          "kind": "record",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": "r1"
+          },
+          "title": "r1",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "r1",
+              "ref": {
+                "resource": "m/note",
+                "id": "r1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "update",
+              "verb": "update",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/note",
+                "id": "r1"
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            },
+            {
+              "kind": "delete",
+              "verb": "delete",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/note",
+                "id": "r1"
+              },
+              "primary": false,
+              "destructive": true,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [
+            {
+              "key": "information",
+              "label": "",
+              "fields": [
+                {
+                  "name": "active",
+                  "label": "Active",
+                  "help": "",
+                  "text": "No",
+                  "tone": "",
+                  "reference": "",
+                  "valueKind": "boolean",
+                  "elem": "",
+                  "value": false
+                },
+                {
+                  "name": "count",
+                  "label": "Count",
+                  "help": "",
+                  "text": "—",
+                  "tone": "",
+                  "reference": "",
+                  "valueKind": "absent",
+                  "elem": "",
+                  "value": null
+                }
+              ]
+            }
+          ],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        }
+      }
+    }
+  }

@@ -1,0 +1,412 @@
+{
+    "name": "command-owned-create-fields",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:4f1db87e92ca8fef590e14e081c052978782d672f581479bc9d231fd076c6b83",
+      "expectedHash": "sha256:766ba200933d966d4de9583633153a2fbf21338c2632b3fb1fee6d2d378380a9"
+    },
+    "input": {
+      "hints": {},
+      "immutable": [
+        "status",
+        "approved"
+      ],
+      "language": "en",
+      "rows": [],
+      "schema": {
+        "module": "m",
+        "entity": "note",
+        "path": "/api/v1/m/note",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "readOnly": true
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "enum": [
+              "draft",
+              "approved"
+            ]
+          },
+          {
+            "name": "approved",
+            "type": "bool"
+          }
+        ]
+      },
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "New",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": true,
+            "title": "New",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "Edit",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "list": {
+          "pageVersion": 1,
+          "kind": "list",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "notes",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "create",
+              "verb": "create",
+              "label": "",
+              "scope": "collection",
+              "target": {
+                "resource": "m/note",
+                "id": ""
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [],
+          "table": {
+            "columns": [
+              {
+                "field": "title",
+                "label": "Title",
+                "sortable": true,
+                "sort": "title",
+                "current": false
+              },
+              {
+                "field": "status",
+                "label": "Status",
+                "sortable": true,
+                "sort": "status",
+                "current": false
+              },
+              {
+                "field": "approved",
+                "label": "Approved",
+                "sortable": true,
+                "sort": "approved",
+                "current": false
+              }
+            ],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 50
+            },
+            "total": 0,
+            "counted": true,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [
+              {
+                "query": "id",
+                "label": "Id",
+                "field": "id",
+                "desc": false
+              },
+              {
+                "query": "-id",
+                "label": "Id",
+                "field": "id",
+                "desc": true
+              },
+              {
+                "query": "title",
+                "label": "Title",
+                "field": "title",
+                "desc": false
+              },
+              {
+                "query": "-title",
+                "label": "Title",
+                "field": "title",
+                "desc": true
+              },
+              {
+                "query": "status",
+                "label": "Status",
+                "field": "status",
+                "desc": false
+              },
+              {
+                "query": "-status",
+                "label": "Status",
+                "field": "status",
+                "desc": true
+              },
+              {
+                "query": "approved",
+                "label": "Approved",
+                "field": "approved",
+                "desc": false
+              },
+              {
+                "query": "-approved",
+                "label": "Approved",
+                "field": "approved",
+                "desc": true
+              }
+            ],
+            "filters": [
+              {
+                "field": "status",
+                "label": "Status",
+                "kind": "enum",
+                "values": [
+                  {
+                    "value": "draft",
+                    "label": "Draft",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "value": "approved",
+                    "label": "Approved",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              },
+              {
+                "field": "approved",
+                "label": "Approved",
+                "kind": "bool",
+                "values": [
+                  {
+                    "value": "true",
+                    "label": "Yes",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "value": "false",
+                    "label": "No",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ]
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "record": {
+          "refused": "record"
+        }
+      }
+    }
+  }

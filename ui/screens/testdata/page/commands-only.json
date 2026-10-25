@@ -1,0 +1,84 @@
+{
+    "name": "commands-only",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:a158f583d8c1cc51c6e28e23e5cfe8090467c112417a92bcc81585f724b06f04",
+      "expectedHash": "sha256:5f4e75028a9d17f61b6059911df42fb12fb1952cc2a45a7724e28259bf73d373"
+    },
+    "input": {
+      "commands": [
+        {
+          "Verb": "retire_key",
+          "Summary": "",
+          "Undo": "",
+          "HasResult": false,
+          "Hints": {
+            "Destructive": true,
+            "Confirmation": {
+              "title": "Retire?",
+              "body": "b",
+              "confirmLabel": "Retire"
+            },
+            "SuccessMessage": "Retired"
+          }
+        }
+      ],
+      "commandsOnly": true,
+      "hints": {},
+      "language": "en",
+      "operations": [],
+      "rows": [],
+      "schema": {
+        "module": "m",
+        "entity": "note",
+        "path": "/api/v1/m/note",
+        "fields": []
+      },
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "refused": "operations"
+        },
+        "form-update": {
+          "refused": "operations"
+        },
+        "list": {
+          "refused": "operations"
+        },
+        "record": {
+          "refused": "record"
+        }
+      }
+    }
+  }

@@ -1,0 +1,601 @@
+{
+    "name": "enum-fallbacks",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:a556f8ab2fc44e9605ec0692a017918db8a1a145d15cd931fc32ede88011f31f",
+      "expectedHash": "sha256:495f8961e7a94a9a956ae41bb365a61738b40734a30fffbe821b3ceb1a43626e"
+    },
+    "input": {
+      "hints": {
+        "StatusField": "status"
+      },
+      "language": "en",
+      "rows": [
+        {
+          "id": "r1",
+          "title": "a",
+          "status": "archived"
+        }
+      ],
+      "schema": {
+        "module": "m",
+        "entity": "note",
+        "path": "/api/v1/m/note",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "readOnly": true
+          },
+          {
+            "name": "title",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "done"
+            ],
+            "presentation": {
+              "enumLabels": {
+                "open": "Open now"
+              },
+              "enumTones": {
+                "open": "success",
+                "done": "bogus"
+              },
+              "doneValues": [
+                "done"
+              ]
+            }
+          }
+        ]
+      },
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "New",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": true,
+            "title": "New",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "a",
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "status",
+                "label": "Status",
+                "help": "",
+                "control": "select",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "archived",
+                "options": [
+                  {
+                    "value": "open",
+                    "label": "Open now",
+                    "tone": "success",
+                    "done": false
+                  },
+                  {
+                    "value": "in_progress",
+                    "label": "In progress",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "value": "done",
+                    "label": "Done",
+                    "tone": "neutral",
+                    "done": true
+                  }
+                ],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": "r1"
+          },
+          "title": "Edit",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit",
+              "ref": {
+                "resource": "m/note",
+                "id": "r1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "a",
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "status",
+                "label": "Status",
+                "help": "",
+                "control": "select",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "archived",
+                "options": [
+                  {
+                    "value": "open",
+                    "label": "Open now",
+                    "tone": "success",
+                    "done": false
+                  },
+                  {
+                    "value": "in_progress",
+                    "label": "In progress",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "value": "done",
+                    "label": "Done",
+                    "tone": "neutral",
+                    "done": true
+                  }
+                ],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "list": {
+          "pageVersion": 1,
+          "kind": "list",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "notes",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "create",
+              "verb": "create",
+              "label": "",
+              "scope": "collection",
+              "target": {
+                "resource": "m/note",
+                "id": ""
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [],
+          "table": {
+            "columns": [
+              {
+                "field": "title",
+                "label": "Title",
+                "sortable": true,
+                "sort": "title",
+                "current": false
+              },
+              {
+                "field": "status",
+                "label": "Status",
+                "sortable": true,
+                "sort": "status",
+                "current": false
+              }
+            ],
+            "rows": [
+              {
+                "id": "r1",
+                "title": "a",
+                "cells": [
+                  {
+                    "field": "title",
+                    "label": "Title",
+                    "text": "a",
+                    "tone": "",
+                    "valueKind": "string",
+                    "elem": "",
+                    "value": "a"
+                  },
+                  {
+                    "field": "status",
+                    "label": "Status",
+                    "text": "archived",
+                    "tone": "neutral",
+                    "valueKind": "string",
+                    "elem": "",
+                    "value": "archived"
+                  }
+                ]
+              }
+            ],
+            "window": {
+              "offset": 0,
+              "limit": 50
+            },
+            "total": 1,
+            "counted": true,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [
+              {
+                "query": "id",
+                "label": "Id",
+                "field": "id",
+                "desc": false
+              },
+              {
+                "query": "-id",
+                "label": "Id",
+                "field": "id",
+                "desc": true
+              },
+              {
+                "query": "title",
+                "label": "Title",
+                "field": "title",
+                "desc": false
+              },
+              {
+                "query": "-title",
+                "label": "Title",
+                "field": "title",
+                "desc": true
+              },
+              {
+                "query": "status",
+                "label": "Status",
+                "field": "status",
+                "desc": false
+              },
+              {
+                "query": "-status",
+                "label": "Status",
+                "field": "status",
+                "desc": true
+              }
+            ],
+            "filters": [
+              {
+                "field": "status",
+                "label": "Status",
+                "kind": "enum",
+                "values": [
+                  {
+                    "value": "open",
+                    "label": "Open now",
+                    "tone": "success",
+                    "done": false
+                  },
+                  {
+                    "value": "in_progress",
+                    "label": "In progress",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "value": "done",
+                    "label": "Done",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ]
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "record": {
+          "pageVersion": 1,
+          "kind": "record",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": "r1"
+          },
+          "title": "a",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "a",
+              "ref": {
+                "resource": "m/note",
+                "id": "r1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "update",
+              "verb": "update",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/note",
+                "id": "r1"
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            },
+            {
+              "kind": "delete",
+              "verb": "delete",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/note",
+                "id": "r1"
+              },
+              "primary": false,
+              "destructive": true,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [
+            {
+              "key": "overview",
+              "label": "",
+              "fields": [
+                {
+                  "name": "status",
+                  "label": "Status",
+                  "help": "",
+                  "text": "archived",
+                  "tone": "neutral",
+                  "reference": "",
+                  "valueKind": "string",
+                  "elem": "",
+                  "value": "archived"
+                }
+              ]
+            }
+          ],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        }
+      }
+    }
+  }

@@ -1,0 +1,489 @@
+{
+    "name": "absent-hints",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:b90961d4b05ae39f8776bee30fa042bbfe1dc5eae789c95749def747d3a5ed94",
+      "expectedHash": "sha256:01b1333794a230e65c2a27bba7bfffc341480820442fdd4da76c1d704b15f83e"
+    },
+    "input": {
+      "hints": {},
+      "language": "en",
+      "rows": [
+        {
+          "id": "r1",
+          "title": "Hello"
+        }
+      ],
+      "schema": {
+        "module": "m",
+        "entity": "note",
+        "path": "/api/v1/m/note",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "readOnly": true
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "createdAt",
+            "type": "time",
+            "readOnly": true
+          }
+        ]
+      },
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "New",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": true,
+            "title": "New",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "Hello",
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": "r1"
+          },
+          "title": "Edit",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit",
+              "ref": {
+                "resource": "m/note",
+                "id": "r1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "Hello",
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "list": {
+          "pageVersion": 1,
+          "kind": "list",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": ""
+          },
+          "title": "notes",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "create",
+              "verb": "create",
+              "label": "",
+              "scope": "collection",
+              "target": {
+                "resource": "m/note",
+                "id": ""
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [],
+          "table": {
+            "columns": [
+              {
+                "field": "title",
+                "label": "Title",
+                "sortable": true,
+                "sort": "title",
+                "current": false
+              },
+              {
+                "field": "createdAt",
+                "label": "Created at",
+                "sortable": true,
+                "sort": "createdAt",
+                "current": true
+              }
+            ],
+            "rows": [
+              {
+                "id": "r1",
+                "title": "Hello",
+                "cells": [
+                  {
+                    "field": "title",
+                    "label": "Title",
+                    "text": "Hello",
+                    "tone": "",
+                    "valueKind": "string",
+                    "elem": "",
+                    "value": "Hello"
+                  },
+                  {
+                    "field": "createdAt",
+                    "label": "Created at",
+                    "text": "—",
+                    "tone": "",
+                    "valueKind": "absent",
+                    "elem": "",
+                    "value": null
+                  }
+                ]
+              }
+            ],
+            "window": {
+              "offset": 0,
+              "limit": 50
+            },
+            "total": 1,
+            "counted": true,
+            "sort": "",
+            "defaultSort": "-createdAt",
+            "sorts": [
+              {
+                "query": "id",
+                "label": "Id",
+                "field": "id",
+                "desc": false
+              },
+              {
+                "query": "-id",
+                "label": "Id",
+                "field": "id",
+                "desc": true
+              },
+              {
+                "query": "title",
+                "label": "Title",
+                "field": "title",
+                "desc": false
+              },
+              {
+                "query": "-title",
+                "label": "Title",
+                "field": "title",
+                "desc": true
+              },
+              {
+                "query": "createdAt",
+                "label": "Created at",
+                "field": "createdAt",
+                "desc": false
+              },
+              {
+                "query": "-createdAt",
+                "label": "Created at",
+                "field": "createdAt",
+                "desc": true
+              }
+            ],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "record": {
+          "pageVersion": 1,
+          "kind": "record",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/note",
+            "id": "r1"
+          },
+          "title": "Hello",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "notes",
+              "ref": {
+                "resource": "m/note",
+                "id": ""
+              }
+            },
+            {
+              "label": "Hello",
+              "ref": {
+                "resource": "m/note",
+                "id": "r1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "update",
+              "verb": "update",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/note",
+                "id": "r1"
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            },
+            {
+              "kind": "delete",
+              "verb": "delete",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/note",
+                "id": "r1"
+              },
+              "primary": false,
+              "destructive": true,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [
+            {
+              "key": "information",
+              "label": "",
+              "fields": [
+                {
+                  "name": "createdAt",
+                  "label": "Created at",
+                  "help": "",
+                  "text": "—",
+                  "tone": "",
+                  "reference": "",
+                  "valueKind": "absent",
+                  "elem": "",
+                  "value": null
+                }
+              ]
+            }
+          ],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        }
+      }
+    }
+  }

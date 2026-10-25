@@ -1,0 +1,583 @@
+{
+    "name": "en-task",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:f150181f6717b514c120c41bcab3ecd98b96e3ab4f917122026d5c3014faeb1e",
+      "expectedHash": "sha256:9214fcce0aa1dd87ac6fee12967d31a0c9d5c68a1c6843b66e6071a8d0522937"
+    },
+    "input": {
+      "hints": {},
+      "language": "en",
+      "rows": [
+        {
+          "id": "t1",
+          "title": "Write",
+          "done": false
+        }
+      ],
+      "schema": {
+        "module": "m",
+        "entity": "task",
+        "path": "/api/v1/m/task",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "readOnly": true
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "done",
+            "type": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "time",
+            "readOnly": true
+          }
+        ]
+      },
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/task",
+            "id": ""
+          },
+          "title": "New",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "tasks",
+              "ref": {
+                "resource": "m/task",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": true,
+            "title": "New",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "Write",
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "done",
+                "label": "Done",
+                "help": "",
+                "control": "checkbox",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "boolean",
+                "elem": "",
+                "value": false,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/task",
+            "id": "t1"
+          },
+          "title": "Edit",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "tasks",
+              "ref": {
+                "resource": "m/task",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit",
+              "ref": {
+                "resource": "m/task",
+                "id": "t1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "Write",
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "done",
+                "label": "Done",
+                "help": "",
+                "control": "checkbox",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "boolean",
+                "elem": "",
+                "value": false,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "list": {
+          "pageVersion": 1,
+          "kind": "list",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/task",
+            "id": ""
+          },
+          "title": "tasks",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "tasks",
+              "ref": {
+                "resource": "m/task",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "create",
+              "verb": "create",
+              "label": "",
+              "scope": "collection",
+              "target": {
+                "resource": "m/task",
+                "id": ""
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [],
+          "table": {
+            "columns": [
+              {
+                "field": "title",
+                "label": "Title",
+                "sortable": true,
+                "sort": "title",
+                "current": false
+              },
+              {
+                "field": "done",
+                "label": "Done",
+                "sortable": true,
+                "sort": "done",
+                "current": false
+              },
+              {
+                "field": "createdAt",
+                "label": "Created at",
+                "sortable": true,
+                "sort": "createdAt",
+                "current": true
+              }
+            ],
+            "rows": [
+              {
+                "id": "t1",
+                "title": "Write",
+                "cells": [
+                  {
+                    "field": "title",
+                    "label": "Title",
+                    "text": "Write",
+                    "tone": "",
+                    "valueKind": "string",
+                    "elem": "",
+                    "value": "Write"
+                  },
+                  {
+                    "field": "done",
+                    "label": "Done",
+                    "text": "No",
+                    "tone": "",
+                    "valueKind": "boolean",
+                    "elem": "",
+                    "value": false
+                  },
+                  {
+                    "field": "createdAt",
+                    "label": "Created at",
+                    "text": "—",
+                    "tone": "",
+                    "valueKind": "absent",
+                    "elem": "",
+                    "value": null
+                  }
+                ]
+              }
+            ],
+            "window": {
+              "offset": 0,
+              "limit": 50
+            },
+            "total": 1,
+            "counted": true,
+            "sort": "",
+            "defaultSort": "-createdAt",
+            "sorts": [
+              {
+                "query": "id",
+                "label": "Id",
+                "field": "id",
+                "desc": false
+              },
+              {
+                "query": "-id",
+                "label": "Id",
+                "field": "id",
+                "desc": true
+              },
+              {
+                "query": "title",
+                "label": "Title",
+                "field": "title",
+                "desc": false
+              },
+              {
+                "query": "-title",
+                "label": "Title",
+                "field": "title",
+                "desc": true
+              },
+              {
+                "query": "done",
+                "label": "Done",
+                "field": "done",
+                "desc": false
+              },
+              {
+                "query": "-done",
+                "label": "Done",
+                "field": "done",
+                "desc": true
+              },
+              {
+                "query": "createdAt",
+                "label": "Created at",
+                "field": "createdAt",
+                "desc": false
+              },
+              {
+                "query": "-createdAt",
+                "label": "Created at",
+                "field": "createdAt",
+                "desc": true
+              }
+            ],
+            "filters": [
+              {
+                "field": "done",
+                "label": "Done",
+                "kind": "bool",
+                "values": [
+                  {
+                    "value": "true",
+                    "label": "Yes",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "value": "false",
+                    "label": "No",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ]
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "record": {
+          "pageVersion": 1,
+          "kind": "record",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/task",
+            "id": "t1"
+          },
+          "title": "Write",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "tasks",
+              "ref": {
+                "resource": "m/task",
+                "id": ""
+              }
+            },
+            {
+              "label": "Write",
+              "ref": {
+                "resource": "m/task",
+                "id": "t1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "update",
+              "verb": "update",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/task",
+                "id": "t1"
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            },
+            {
+              "kind": "delete",
+              "verb": "delete",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/task",
+                "id": "t1"
+              },
+              "primary": false,
+              "destructive": true,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [
+            {
+              "key": "information",
+              "label": "",
+              "fields": [
+                {
+                  "name": "done",
+                  "label": "Done",
+                  "help": "",
+                  "text": "No",
+                  "tone": "",
+                  "reference": "",
+                  "valueKind": "boolean",
+                  "elem": "",
+                  "value": false
+                },
+                {
+                  "name": "createdAt",
+                  "label": "Created at",
+                  "help": "",
+                  "text": "—",
+                  "tone": "",
+                  "reference": "",
+                  "valueKind": "absent",
+                  "elem": "",
+                  "value": null
+                }
+              ]
+            }
+          ],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        }
+      }
+    }
+  }

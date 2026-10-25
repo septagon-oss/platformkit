@@ -1,0 +1,174 @@
+{
+    "name": "singleton-update-surface",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-25",
+      "inputHash": "sha256:36f633f66687a8b65b8af2c457ab3df58b49b3d06a035d3dc0163ca39a5d6ba6",
+      "expectedHash": "sha256:a967bf4b682e47d8ad675b289ca86f23de36fd303d5c73deb02ee5fa18a8351d"
+    },
+    "input": {
+      "hints": {},
+      "language": "en",
+      "rows": [],
+      "schema": {
+        "module": "m",
+        "entity": "settings",
+        "path": "/api/v1/m/settings",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "readOnly": true
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "required": true
+          },
+          {
+            "name": "enabled",
+            "type": "bool"
+          },
+          {
+            "name": "createdAt",
+            "type": "time",
+            "readOnly": true
+          }
+        ]
+      },
+      "singleton": true,
+      "state": [
+        {
+          "name": "list",
+          "kind": "list",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "record",
+          "kind": "record",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z"
+        },
+        {
+          "name": "form-create",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "create": true,
+          "formTitle": "New"
+        },
+        {
+          "name": "form-update",
+          "kind": "form",
+          "home": "Workspace",
+          "now": "2026-10-25T08:00:00Z",
+          "formTitle": "Edit"
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "refused": "operations"
+        },
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-25T08:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/settings",
+            "id": ""
+          },
+          "title": "Edit",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "settings",
+              "ref": {
+                "resource": "m/settings",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit",
+              "ref": {
+                "resource": "m/settings",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "enabled",
+                "label": "Enabled",
+                "help": "",
+                "control": "checkbox",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "absent",
+                "elem": "",
+                "value": null,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        },
+        "list": {
+          "refused": "operations"
+        },
+        "record": {
+          "refused": "record"
+        }
+      }
+    }
+  }
