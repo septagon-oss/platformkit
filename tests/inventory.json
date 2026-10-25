@@ -74645,6 +74645,44 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/record_page_revision_digits_test.go",
+   "id": "ui/screens/record_page_revision_digits_test.go#TestASteppedRecordPageQuotesTheRevisionItsRowNowHolds",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASteppedRecordPageQuotesTheRevisionItsRowNowHolds",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/record_page_revision_digits_test.go",
+   "id": "ui/screens/record_page_revision_digits_test.go#TestASteppedRecordPageKeepsTheDigitsOfALargeRevision",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASteppedRecordPageKeepsTheDigitsOfALargeRevision",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/refused_form_notice_test.go",
    "id": "ui/screens/refused_form_notice_test.go#TestAFormRefusedByThePlanIsAQuietNoticeInWords",
    "kind": "go",
@@ -74811,6 +74849,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/step_routes_refuse_a_revoked_grant_test.go",
+   "id": "ui/screens/step_routes_refuse_a_revoked_grant_test.go#TestEveryStepRouteRefusesAGrantThatWentAway",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryStepRouteRefusesAGrantThatWentAway",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
    "verdict": "keep"
   },
   {
@@ -83681,7 +83738,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2265,
+  "files": 2267,
   "forge_runs": [
    408,
    413,
@@ -83715,7 +83772,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3619,
+   "behaviour": 3622,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -83734,9 +83791,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4241,
+  "rows": 4244,
   "tiers": {
-   "merge": 2620,
+   "merge": 2623,
    "nightly": 111,
    "push": 1510
   },
@@ -83744,13 +83801,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2020,
+   "keep": 2022,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3855,
+   "keep": 3858,
    "keep-rewrite": 170,
    "merge": 216
   }
