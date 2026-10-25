@@ -3,7 +3,7 @@ package httpx_test
 // A refusal comparison that runs against a real server reads what a real server writes, and
 // one of the things it writes is the second it wrote the answer in. Read as bytes, that stamp
 // made the pair in review_round5_refusal_shape_test.go red or green on the clock rather than
-// on the tree: `make check-race` at ca9fdb5 on 2026-10-09 (run 55756, job 56412) refused the
+// on the tree: `make check-race` refused the
 // head because the control plane answered `Date: Fri, 09 Oct 2026 04:38:34 GMT` and the
 // address nobody mounted answered `… 04:38:35 GMT`, and the same bytes passed that same step
 // on the run before and the run after. A gate that answers differently about an unchanged tree

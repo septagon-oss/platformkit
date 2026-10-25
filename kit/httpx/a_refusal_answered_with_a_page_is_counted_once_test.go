@@ -2,7 +2,7 @@ package httpx_test
 
 // What this file is the first to be able to ask.
 //
-// `7fc5e34` merged `origin/main` (T-0111, a locale per tenant) over this branch's
+// A merge of `origin/main` (a locale per tenant) landed over this branch's
 // refusal counting, and the merge landed inside the two functions that decide who
 // counts a refusal: `fail` counts only when the response is not held in a buffer
 // (`if _, held := bufferFrom(r.Context()); !held { countRefusal(...) }`), `refuse`

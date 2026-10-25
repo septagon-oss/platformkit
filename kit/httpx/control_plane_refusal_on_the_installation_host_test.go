@@ -155,7 +155,7 @@ var noncePattern = regexp.MustCompile(`'nonce-[A-Za-z0-9_=+/]+'`)
 // and the server writes it itself, from its own clock, as it writes the response. Two refusals
 // of one host therefore answer the same Date only while the clock stays inside one second —
 // not a property of the refusal, a coincidence of when the pair was taken. Read as bytes, this
-// comparison refused on 2026-10-09 (`make check-race`, run 55756 job 56412: the control-plane
+// comparison refused under `make check-race` (the control-plane
 // 404 answered `… 04:38:34` and the never-mounted 404 `… 04:38:35`) and passed on the other
 // runs of the same bytes.
 //
