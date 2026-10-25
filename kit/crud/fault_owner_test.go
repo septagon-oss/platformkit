@@ -1,15 +1,19 @@
 package crud_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/fault"
+	"github.com/septagon-oss/platformkit/kit/porttest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // TestSentinelsAreTheSharedValues pins the move: kit/fault owns the three
@@ -76,11 +80,34 @@ func TestClassifyMapsToTheSharedSentinels(t *testing.T) {
 		t.Errorf("diagnostics = %q", duplicate)
 	}
 
-	// A refusal that is already one of the three is not a driver error, and
-	// Classify leaves it alone whichever name it arrived under.
+	// A refusal already one of the three is no driver error, and Classify leaves
+	// it alone whichever name it arrived under.
 	for _, err := range []error{fmt.Errorf("validate: %w", fault.ErrInvalid), fmt.Errorf("validate: %w", crud.ErrInvalid)} {
 		if !errors.Is(crud.Classify(err), fault.ErrInvalid) {
 			t.Errorf("Classify changed a refusal that was already classified: %v", err)
 		}
+	}
+}
+
+// TestTheInMemoryStoreAndTheReadDoorAnswerOneNotFoundForNoRow: the double a command
+// suite runs on and the SQL door have to refuse a missing row with one object, or a
+// command passes on the fake and answers another status at the database. GetCtx
+// classifies a driver's not-found in one place, Classify, so the two halves meet
+// there with no database in the way. The soft/hard split and the deleted_at stamp
+// stay out, because an in-memory store holds neither: those are proved at the schema.
+func TestTheInMemoryStoreAndTheReadDoorAnswerOneNotFoundForNoRow(t *testing.T) {
+	store := porttest.NewStore(func(row *Task) uuid.UUID { return row.ID })
+	ctx := tenancy.WithTenant(context.Background(), acme)
+	_, fromTheStore := store.Get(ctx, uuid.New())
+	if !errors.Is(fromTheStore, crud.ErrNotFound) || !errors.Is(fromTheStore, fault.ErrNotFound) {
+		t.Errorf("the store refused a row it does not hold with %v, want the shared ErrNotFound", fromTheStore)
+	}
+	fromTheDoor := crud.Classify(fmt.Errorf("read: %w", gorm.ErrRecordNotFound))
+	if !errors.Is(fromTheDoor, crud.ErrNotFound) || !errors.Is(fromTheDoor, fault.ErrNotFound) {
+		t.Errorf("the read door classified a missing row as %v, want the shared ErrNotFound", fromTheDoor)
+	}
+	if crud.ErrNotFound != fault.ErrNotFound {
+		t.Errorf("crud.ErrNotFound and fault.ErrNotFound are %p and %p; a fake and a service holding different values answer a 404 twice",
+			crud.ErrNotFound, fault.ErrNotFound)
 	}
 }
