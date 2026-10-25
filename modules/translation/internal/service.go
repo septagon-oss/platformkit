@@ -212,30 +212,14 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], q rest.SaveQuer
 	if q.Locale == "" {
 		return fmt.Errorf("%w: a translation needs the language it is written in", crud.ErrInvalid)
 	}
-	fields := make([]string, 0, len(q.Values))
-	for field := range q.Values {
-		fields = append(fields, field)
-	}
-	// Sorted, so that a save of three fields publishes its events in the same
-	// order whichever order the map iterated in, and a replay of the same
-	// request is comparable with the first one.
-	slices.Sort(fields)
+	fields := savedFields(q)
 
 	existing, err := s.lock(ctx, tx, q.Module, q.Entity, q.Locale, q.RecordID, fields)
 	if err != nil {
 		return err
 	}
-	for _, field := range fields {
-		row := existing[field]
-		if row != nil && row.Revision != q.Expected[field] {
-			return fmt.Errorf("%w: the %s translation of %s changed since you read it (revision %d, you sent %d)",
-				crud.ErrConflict, q.Locale, field, row.Revision, q.Expected[field])
-		}
-		value := strings.TrimSpace(q.Values[field])
-		if value == "" {
-			return fmt.Errorf("%w: a translation of %s cannot be empty; delete it instead of blanking it",
-				crud.ErrInvalid, field)
-		}
+	if err := checkSave(q, existing); err != nil {
+		return err
 	}
 	for _, field := range fields {
 		if _, ok := q.Source[field]; !ok {
@@ -313,6 +297,38 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], q rest.SaveQuer
 		}
 		if err := s.publish(ctx, tx, q.Module, q.Entity, q.RecordID, field, q.Locale, row, &next); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// savedFields names the fields a save writes, sorted: a save of three fields
+// publishes its events in the same order whichever order the map iterated in, and
+// a replay of the same request is comparable with the first one.
+func savedFields(q rest.SaveQuery) []string {
+	fields := make([]string, 0, len(q.Values))
+	for field := range q.Values {
+		fields = append(fields, field)
+	}
+	slices.Sort(fields)
+	return fields
+}
+
+// checkSave reads the whole save before any of it is written: a field whose row
+// moved since the form read it is a conflict, and a field left blank is a field
+// the form should have deleted. Both are refused here rather than discovered
+// halfway through the write, because a half-applied translation is the state a
+// reviewer cannot recover from by reloading.
+func checkSave(q rest.SaveQuery, existing map[string]*Row) error {
+	for _, field := range savedFields(q) {
+		row := existing[field]
+		if row != nil && row.Revision != q.Expected[field] {
+			return fmt.Errorf("%w: the %s translation of %s changed since you read it (revision %d, you sent %d)",
+				crud.ErrConflict, q.Locale, field, row.Revision, q.Expected[field])
+		}
+		if strings.TrimSpace(q.Values[field]) == "" {
+			return fmt.Errorf("%w: a translation of %s cannot be empty; delete it instead of blanking it",
+				crud.ErrInvalid, field)
 		}
 	}
 	return nil

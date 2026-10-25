@@ -125,6 +125,49 @@ func DiffSource(atTranslation, current string, rich bool) (Diff, error) {
 	return d, nil
 }
 
+// commonTable is the longest-common-subsequence table of two runs of paragraph
+// keys: O(n·m) cells of int32, which is the bound maxParagraphs exists for.
+func commonTable(left, right []string) [][]int32 {
+	n, m := len(left), len(right)
+	table := make([][]int32, n+1)
+	for i := range table {
+		table[i] = make([]int32, m+1)
+	}
+	for i := n - 1; i >= 0; i-- {
+		for j := m - 1; j >= 0; j-- {
+			if left[i] == right[j] {
+				table[i][j] = table[i+1][j+1] + 1
+			} else if table[i+1][j] >= table[i][j+1] {
+				table[i][j] = table[i+1][j]
+			} else {
+				table[i][j] = table[i][j+1]
+			}
+		}
+	}
+	return table
+}
+
+// anchorsOf walks the table once and answers the paragraphs the two sources still
+// agree on. Spelled in the Diff's own terms: the first index walks the source the
+// translation was made from, which is the Target, and the second walks the source
+// as it now stands, which is the Source.
+func anchorsOf(left, right []string, table [][]int32) []Change {
+	var anchors []Change
+	i, j := 0, 0
+	for i < len(left) && j < len(right) {
+		switch {
+		case left[i] == right[j]:
+			anchors = append(anchors, Change{SourceIndex: j, TargetIndex: i, Kind: Unchanged})
+			i, j = i+1, j+1
+		case table[i+1][j] >= table[i][j+1]:
+			i++
+		default:
+			j++
+		}
+	}
+	return anchors
+}
+
 // align is step 3 and 4: the anchors, then the replacement runs between them.
 func align(left, right []string, key func(string) string) Diff {
 	lk := make([]string, len(left))
@@ -136,43 +179,11 @@ func align(left, right []string, key func(string) string) Diff {
 		rk[j] = key(p)
 	}
 
-	// LCS table, longest common subsequence of paragraph keys. O(n·m) cells of
-	// int32, which is the bound maxParagraphs exists for.
 	n, m := len(lk), len(rk)
-	table := make([][]int32, n+1)
-	for i := range table {
-		table[i] = make([]int32, m+1)
-	}
-	for i := n - 1; i >= 0; i-- {
-		for j := m - 1; j >= 0; j-- {
-			if lk[i] == rk[j] {
-				table[i][j] = table[i+1][j+1] + 1
-			} else if table[i+1][j] >= table[i][j+1] {
-				table[i][j] = table[i+1][j]
-			} else {
-				table[i][j] = table[i][j+1]
-			}
-		}
-	}
+	table := commonTable(lk, rk)
 
 	// Walk the table once, collecting matched pairs — the anchors.
-	var anchors []Change
-	i, j := 0, 0
-	for i < n && j < m {
-		switch {
-		case lk[i] == rk[j]:
-			// The pair is one paragraph the two sources still agree on. Spelled
-			// in the Diff's own terms: i walks the source the translation was
-			// made from, which is the Target, and j walks the source as it now
-			// stands, which is the Source.
-			anchors = append(anchors, Change{SourceIndex: j, TargetIndex: i, Kind: Unchanged})
-			i, j = i+1, j+1
-		case table[i+1][j] >= table[i][j+1]:
-			i++
-		default:
-			j++
-		}
-	}
+	anchors := anchorsOf(lk, rk, table)
 
 	var out Diff
 	// emit covers the run of paragraphs between the previous anchor and the
