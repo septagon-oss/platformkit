@@ -4,7 +4,6 @@ package rest
 // Screen adapters call them in-process under the same authorization.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +21,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/internal/jsonbody"
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
@@ -65,25 +65,14 @@ func row(e any) (map[string]any, error) {
 		return nil, err
 	}
 	var m map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(b))
-	decoder.UseNumber()
-	err = decoder.Decode(&m)
-	return m, err
+	return m, jsonbody.Decode(b, &m)
 }
 
-// decode builds an entity from a form's values, through the same decoder the
-// request body goes through, so "3" is an int in both.
-//
-// T is a pointer type, so unmarshalling into &e is unmarshalling into a
-// **Task, and encoding/json allocates the Task. That is why this needs no
-// reflection of its own.
+// decode binds form values exactly and lets encoding/json allocate the entity.
+// Custom codecs retain their contract; uncertain floating-point integers refuse.
 func decode[T crud.Entity](values map[string]any) (T, error) {
 	var e T
-	b, err := json.Marshal(values)
-	if err != nil {
-		return e, err
-	}
-	return e, json.Unmarshal(b, &e)
+	return e, jsonbody.Bind(values, &e)
 }
 
 // Form decoding and fault projection stay transport-neutral: strings and maps
