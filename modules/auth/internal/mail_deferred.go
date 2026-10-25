@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -46,39 +47,92 @@ type linkMail struct {
 // released beside it (events.Consume), the delivery comes back on the transport's own
 // ladder, and the retry mints a fresh link. Outside a delivery nobody retries, so the
 // refusal is recorded and swallowed as it was before the send moved.
+//
+// The send runs inside this person's mail slot, which the hand-off holds from before
+// the send to after its marks commit (see holdMailSlot). That bracket is what makes the
+// read below and the send that follows it one decision, and what an offer that finds
+// the slot taken defers to rather than mailing a link the single-pending write is about
+// to drop.
 func (s *Service) mailAfterCommit(ctx context.Context, m linkMail) error {
-	gone, err := s.linkSuperseded(ctx, m)
-	if err != nil {
+	err := s.detachedWithin(ctx, handoverBudget, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if err := holdMailSlot(tx, m); err != nil {
+			return err
+		}
+		superseded, err := linkSuperseded(tx, m)
+		if err != nil || superseded {
+			return err
+		}
+		if err := s.mail.Mailer.Send(ctx, m.msg); err != nil {
+			return s.undelivered(ctx, m, err)
+		}
+		return s.delivered(ctx, m)
+	})
+	if !errors.Is(err, errNoConnection) {
 		return err
 	}
-	if gone {
-		// A later offer replaced this row between its commit and this send — one
-		// transaction can mint both, because the send waits for that commit. The link the
-		// table holds is the one its recipient is being sent; mailing this one would put a
-		// dead credential in an envelope and record a delivery nobody was owed.
-		return nil
-	}
+	// Nothing to hold a slot on, so nothing to be told about either way: the row this
+	// hand-off describes stood or fell with its own transaction, and its outcome has no
+	// connection to be recorded on. See detached.
 	if err := s.mail.Mailer.Send(ctx, m.msg); err != nil {
 		return s.undelivered(ctx, m, err)
 	}
 	return s.delivered(ctx, m)
 }
 
-// linkSuperseded asks whether the credential table still holds the row this attempt
-// wrote. It reads on the pool, after the commit that made the row spendable, so a row a
-// newer offer has replaced answers no. A caller with no pool cannot be told either way:
-// the row it wrote stood or fell with its own transaction, so that one sends.
-func (s *Service) linkSuperseded(ctx context.Context, m linkMail) (bool, error) {
-	var held bool
-	err := s.detached(ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM "+m.table+
-			" WHERE tenant_id = ? AND user_id = ? AND token_hash = ?)",
-			db.TenantOf(tx).ID, m.person, m.digest).Row().Scan(&held)
-	})
-	if errors.Is(err, errNoConnection) {
-		return false, nil
+// handoverBudget bounds one credential hand-off: the wait for the person's mail slot,
+// the send, and the marks of the transport's answer. The slot is an advisory lock and
+// belongs to a transaction, so the bracketing transaction runs the send inside itself
+// and commits nothing — every write the hand-off owes stays in the detached transaction
+// it already had. It is the only shape that spans a mail server, so it names its own
+// bound rather than borrowing the write budget, which would cancel a real send.
+const handoverBudget = 30 * time.Second
+
+// mailSlotKey names the mail slot of one person in one credential table. The hand-off
+// that takes the slot and the offer that asks whether to take it build the key here, so
+// the two cannot key one fact apart.
+func mailSlotKey(tenant, person uuid.UUID, table string) string {
+	return "auth/mail/" + table + "/" + tenant.String() + "/" + person.String()
+}
+
+// holdMailSlot takes this person's mail slot for the transaction now open, waiting for
+// whoever holds it. The wait is for one send to be answered, and what bounds it is the
+// hand-off's own budget: a slot that cannot be had by then leaves this hand-off
+// uncarried, which is the at-least-once its transport already promises.
+func holdMailSlot(tx db.Tx[db.Tenant], m linkMail) error {
+	key := mailSlotKey(db.TenantOf(tx).ID, m.person, m.table)
+	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+		return fmt.Errorf("auth: wait for the %s mail slot of %s: %w", m.kind, m.person, err)
 	}
-	return !held, err
+	return nil
+}
+
+// mailSlotOpen reports whether nobody is handing this person a link right now, and takes
+// the slot for the asking transaction when it is free. It asks without waiting: the
+// message inside a taken slot is still leaving, and a caller that waited on it would be
+// a request parked behind a mail server it does not serve.
+func mailSlotOpen(tx db.Tx[db.Tenant], table string, person uuid.UUID) (bool, error) {
+	var free bool
+	err := tx.DB().Raw("SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))",
+		mailSlotKey(db.TenantOf(tx).ID, person, table)).Row().Scan(&free)
+	if err != nil {
+		return false, fmt.Errorf("auth: ask whether a %s link is in the air: %w", table, err)
+	}
+	return free, nil
+}
+
+// linkSuperseded asks whether the credential table still holds the row this attempt
+// wrote. It reads inside the mail slot, on the transaction that holds it, so the answer
+// and the send that follows it are one decision: a row a newer offer has replaced
+// answers no, and no second link of one person overtakes the first out of this order.
+func linkSuperseded(tx db.Tx[db.Tenant], m linkMail) (bool, error) {
+	var held bool
+	err := tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM "+m.table+
+		" WHERE tenant_id = ? AND user_id = ? AND token_hash = ?)",
+		db.TenantOf(tx).ID, m.person, m.digest).Row().Scan(&held)
+	if err != nil {
+		return false, fmt.Errorf("auth: read the %s link this delivery minted: %w", m.kind, err)
+	}
+	return !held, nil
 }
 
 // delivered leaves the three marks one accepted send is owed — the row's own record
@@ -209,11 +263,19 @@ var errNoConnection = errors.New("auth: no connection to record a mail delivery 
 // tenant, the caller, the trace — and the deadline of the attempt that has ended is
 // taken off too, because the step it was bounding is already over.
 func (s *Service) detached(ctx context.Context, fn func(context.Context, db.Tx[db.Tenant]) error) error {
+	return s.detachedWithin(ctx, detachedWriteBudget, fn)
+}
+
+// detachedWithin is detached with its bound named by the caller: a mark is a statement
+// and gets the write budget, and a hand-off that holds a transaction across a mail
+// server names the longer bound that fits what it actually waits for.
+func (s *Service) detachedWithin(ctx context.Context, budget time.Duration,
+	fn func(context.Context, db.Tx[db.Tenant]) error) error {
 	conn, ok := db.ConnFrom(ctx)
 	if !ok {
 		return errNoConnection
 	}
-	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), detachedWriteBudget)
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), budget)
 	defer cancel()
 	return db.Run(detached, conn, fn)
 }

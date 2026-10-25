@@ -165,10 +165,12 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // from the confirmation link this module mails the same way for the same reason.
 //
 // passwordLock is taken before recent(), because recent() is a read: two attempts
-// that both read "no link yet" would both mail. It is held across the commit, so
-// nothing else rotates or spends this person's credential while this offer's write
-// is in flight, and the two writes on the far side of the commit name this attempt's
-// hash rather than trusting the lock still to be held.
+// that both read "no link yet" would both mail. It is held to this transaction's
+// commit, so nothing else rotates or spends this person's credential while this offer's
+// write is in flight; what reaches past the commit is the mail slot, which the hand-off
+// holds across the send and its marks (see holdMailSlot), and which an offer asks about
+// before it mints. The two writes on the far side of the commit name this attempt's own
+// hash rather than trusting either lock.
 //
 // sent_at is what makes the ordering survivable in both directions. It records the
 // delivery the transport took, written in the same transaction as the record of the
@@ -202,6 +204,16 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	}
 	recent, err := s.recent(tx, user.ID)
 	if err != nil || recent {
+		return err
+	}
+	// A link of this person's that is with the transport right now is the link this
+	// person is being sent. The send leaves on the commit of the transaction that minted
+	// it, so while it is in the air the table holds that row unmarked, and the cooldown
+	// that counts sent marks cannot see it: minting over it would mail a second link of
+	// which the single-pending write keeps only the last, and the first envelope — the
+	// one already open in front of the person — would answer "those credentials are not
+	// right", with the cooldown holding the next ask off behind it.
+	if open, err := mailSlotOpen(tx, "password_tokens", user.ID); err != nil || !open {
 		return err
 	}
 	// Whether this person holds a link that still works is the other half of what
@@ -295,11 +307,11 @@ func (s *Service) refuseSetPassword(ctx context.Context, tx db.Tx[db.Tenant],
 // attempt is about to replace. It is the same advisory lock verificationLock takes
 // (verification.go), keyed the same way, and it is taken before recent() because
 // recent() is a read: two attempts that both read "no link yet" would both mail.
-// It is held across the commit and the send, so nothing else rotates or spends
-// this person's credential in between, and two offers of one address — an
-// invitation and a forgotten-password request arriving together — cannot each mail
-// a link of which the table keeps only the last. The key includes the tenant even
-// though table visibility is already RLS-bound.
+// Postgres holds it to this transaction's commit and no further, which is the reach
+// of every lock a transaction takes; the send leaves on that commit, so the offer that
+// arrives while a message is still with the transport is kept off by the mail slot
+// (see mailSlotOpen), not by this lock. The key includes the tenant even though table
+// visibility is already RLS-bound.
 func passwordLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 	key := "auth/password/" + db.TenantOf(tx).ID.String() + "/" + id.String()
 	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
@@ -319,10 +331,10 @@ type pendingLink struct {
 }
 
 // pendingLinkOf reads the one outstanding link a person holds. It is called under
-// the advisory lock, and it is the whole reason the lock is held across the send:
-// a refused attempt has to restore this value rather than delete "the" row, because
-// the row it replaced may be the only link that person has. sent_at comes back with
-// the row, because that column is the record of which delivery the transport took.
+// the advisory lock, and it is what a refused attempt puts back rather than deleting
+// "the" row, because the row it replaced may be the only link that person has. sent_at
+// comes back with the row, because that column is the record of which delivery the
+// transport took.
 func pendingLinkOf(tx db.Tx[db.Tenant], table string, id uuid.UUID) (pendingLink, error) {
 	var out pendingLink
 	err := tx.DB().Raw("SELECT token_hash, created_at, expires_at, sent_at FROM "+table+
@@ -371,6 +383,14 @@ func (s *Service) rotate(ctx context.Context, tx db.Tx[db.Tenant], user *usercon
 		return s.refuseSetPassword(ctx, tx, user.Email, err, token)
 	}
 	if err := s.commitDelivered(ctx, tx, user.ID, token, at); err != nil {
+		return err
+	}
+	// The transport took the replacement, so the record one accepted send is owed is
+	// written here rather than on the far side of a commit: this offer raised no send
+	// that waits, and a mail an operator's ledger cannot find is a mail nobody can
+	// account for.
+	if err := s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+		notificationcontracts.MailSent, ""); err != nil {
 		return err
 	}
 	if s.notify == nil {
