@@ -18,10 +18,13 @@ component say so — [sections.go](sections.go) (section headers, sections, hero
 [layouts.go](layouts.go) (stacks, flex, grids, containers), [shell.go](shell.go)
 (the application frame, the form it posts, the sentence a form states above its
 button and the confirm dialog), [skeleton.go](skeleton.go)
-(loading states) and [video.go](video.go). [props.go](props.go) holds the original Props contracts; the larger shared
-families keep their contracts beside their renderers. [classlists.go](classlists.go) holds the class lists a renderer may
-emit, and [layout_description.go](layout_description.go) what a layout
-declares about its root.
+(loading states) and [video.go](video.go). [props.go](props.go) holds base Props and shared state contracts; control,
+display, data, layout, navigation and media contracts live in the corresponding
+`props_*.go` files. Larger shared families keep contracts beside their renderers.
+[classlists.go](classlists.go) retains paint and state declarations, with
+[geometry](classlists_geometry.go), [typography](classlists_typography.go) and
+[inventories](classlists_inventory.go) beside it. [layout_description.go](layout_description.go)
+describes a layout's root.
 
 Every renderer takes its Props struct and returns a gomponents `Node`, and an
 unknown variant or size string falls back to the documented default rather than
@@ -40,7 +43,7 @@ One label deliberately has no default. `Table.Label` names the scroll wrapper so
 that a table wider than its box can be reached with a keyboard alone; a name
 invented by the renderer would be the renderer claiming to know what its
 caller's table is about. A table nobody names therefore stays an ordinary scroll
-box, exactly as it was, and [ui/resource](../resource/resource.go) names the
+box, exactly as it was, and [ui/resource](../resource/list.go) names the
 generated list after its own heading. [e2e/design-audit.spec.ts](../../e2e/design-audit.spec.ts)
 refuses a scroll box that cannot take focus, so the affordance cannot quietly go
 missing again.
@@ -124,7 +127,7 @@ redaction-safe event display.
 filter/sort/view links and an optional Pagination. `DataListSlots` retains Table's
 rich cells and server sorting callbacks, adds row and bulk actions, and keeps
 collection command forms in `Footer` before the pager. Generated
-[resource lists](../resource/resource.go) use this composition while retaining
+[resource lists](../resource/list.go) use this composition while retaining
 their schema projection, authorized native forms and server sorting. They do not
 enable bulk mutation through generic CRUD.
 

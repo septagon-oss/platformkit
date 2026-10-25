@@ -36,6 +36,14 @@ type Fixture struct {
 	// order. A case reads the link out of one to follow it, and it is the only
 	// place it can be read — which is the property, not an inconvenience.
 	Mailed func() []notificationcontracts.Message
+	// Settle runs step once the case's transaction has committed, in a
+	// transaction of its own over the same rows. A mailed link leaves with the
+	// commit and not with the transaction (kit/db AfterCommit), so the step is
+	// where a case reads one and spends it. The case's own work ends at the
+	// call: what it wrote is what the step reads, and a step's own writes are
+	// rolled back, so a step settles no further. Every harness says what
+	// settling means for it; a case given none is failed rather than skipped.
+	Settle func(step func(Fixture))
 	// Sessions reports how many sessions this user has, which is how a case
 	// says "and the others ended" without knowing how they are stored.
 	Sessions func(user uuid.UUID) int
@@ -120,6 +128,18 @@ func mailed(f Fixture) []notificationcontracts.Message {
 		return nil
 	}
 	return f.Mailed()
+}
+
+// settle hands the rest of a case to the point after its commit, which is the
+// first point at which a link the person was mailed exists to be read. A case
+// that reads one calls this rather than reading the mailbox beside the mint
+// that has not left yet.
+func settle(t *testing.T, f Fixture, step func(Fixture)) {
+	t.Helper()
+	if f.Settle == nil {
+		t.Fatalf("%s reads what the implementation mails, and this harness wires no Settle to read it after the commit", t.Name())
+	}
+	f.Settle(step)
 }
 
 // sessions is how many the user has, or -1 when the harness cannot say.
