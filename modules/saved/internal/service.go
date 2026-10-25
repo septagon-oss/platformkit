@@ -121,15 +121,17 @@ func (s *Service) source(ref contracts.Ref) (contracts.Source, error) {
 	return nil, contracts.ErrUnavailable
 }
 
-// hold takes a transaction-scoped advisory lock over one person's one source.
-// Find-or-insert cannot be one row's lock: two first saves of the same source
-// are two inserts, and the unique index would make one of them an error rather
-// than the idempotent success the contract promises. The lock is released with
-// the transaction, so a refusal keeps nothing open.
+// hold takes a transaction-scoped advisory lock over one tenant's one person's
+// one source. Find-or-insert cannot be one row's lock: two first saves of the
+// same source are two inserts, and the unique index would make one of them an
+// error rather than the idempotent success the contract promises. The lock is
+// released with the transaction, so a refusal keeps nothing open.
 func hold(ctx context.Context, tx db.Tx[db.Tenant], person uuid.UUID, ref contracts.Ref) error {
-	// Person and the two slugs carry no "|", so the key that follows them cannot
-	// be read as anything else; Postgres keeps no NUL in text for a delimiter.
-	fact := person.String() + "|" + ref.Module + "|" + ref.Kind + "|" + ref.Key
+	// Tenant and person carry no "|", so the key that follows them cannot be read
+	// as anything else; Postgres keeps no NUL in text for a delimiter. The tenant
+	// is in the key because person ids arrive from another owner's users table and
+	// two tenants must not serialize on one another's copies.
+	fact := db.TenantOf(tx).ID.String() + "|" + person.String() + "|" + ref.Module + "|" + ref.Kind + "|" + ref.Key
 	return tx.DB().Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, fact).Error
 }
 
@@ -166,10 +168,6 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sa
 	if err = hold(ctx, tx, person, in.Source); err != nil {
 		return contracts.Item{}, err
 	}
-	before, err := s.prior(tx, person, in.Source)
-	if err != nil {
-		return contracts.Item{}, err
-	}
 	capture, err := source.Capture(ctx, tx, in.Source.Key, in.ExpectedSourceVersion)
 	if err != nil {
 		return contracts.Item{}, err
@@ -178,6 +176,14 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sa
 	// rather than written: what authorizes this command is the answer of the
 	// authority owner after the wait, not the one that let it start.
 	if _, err = s.person(ctx, tx, contracts.PermissionWrite); err != nil {
+		return contracts.Item{}, err
+	}
+	// The held copy is read after both waits, not before them. A removal that
+	// committed while the source was being asked is the state this command now
+	// sees, so it answers with the copy it actually wrote rather than with one
+	// that is gone, and the row it returns always exists.
+	before, err := s.prior(tx, person, in.Source)
+	if err != nil {
 		return contracts.Item{}, err
 	}
 	var held *contracts.Item
@@ -270,21 +276,21 @@ func (s *Service) own(tx db.Tx[db.Tenant], person uuid.UUID, id uuid.UUID) (*row
 }
 
 // view adds the live observation to a retained copy. The copy is already read;
-// a source that fails now changes the words on it, never its content.
+// a source that has gone changes the words on it, never its content — including
+// a (module, kind) the composition no longer declares, which is the same
+// observation as a source whose row was deleted. A read that refused it would
+// leave the person unable to see or remove what they saved, which is the one
+// thing a copy that outlives its source must not do.
 func (s *Service) view(ctx context.Context, tx db.Tx[db.Tenant], item contracts.Item) (contracts.View, error) {
-	status := "unavailable"
 	source, err := s.source(item.Source)
 	if err == nil {
-		status, err = s.check(ctx, tx, source, item.Source.Key)
+		err = source.Check(ctx, tx, item.Source.Key)
 	}
+	status, err := Availability(err)
 	if err != nil {
 		return contracts.View{}, err
 	}
 	return contracts.View{Item: item, Availability: status}, nil
-}
-
-func (s *Service) check(ctx context.Context, tx db.Tx[db.Tenant], source contracts.Source, key string) (string, error) {
-	return Availability(source.Check(ctx, tx, key))
 }
 
 func (s *Service) Get(ctx context.Context, tx db.Tx[db.Tenant], raw string) (contracts.View, error) {

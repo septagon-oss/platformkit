@@ -72,7 +72,7 @@ not have identical nesting. IDs are nonzero UUIDs; source strings are case-sensi
 | `values` | Valid UTF-8 JSON object, at most 65,536 input bytes including surrounding whitespace, retained as text bytes without JSON-number round-tripping. It contains all resolved facts needed to reproduce the choice. No executable HTML, callbacks or current-source lookups are interpreted from it. |
 | `picture_file_id` | Nullable immutable file UUID, held using FileUses; exclusive with composed-picture columns. |
 | `picture_svg`, `picture_template_digest`, `picture_value` | Nullable exact output of the existing constrained compositor, original template digest and its canonical resolved input. The compositor's existing output bound is 1 MiB. All three absent, or all three present. |
-| `captured_at`, `created_at`, `updated_at` | Equal on creation, supplied by `Deps.Clock`, UTC, microsecond precision. Never moved by a duplicate save or an availability read. |
+| `captured_at`, `created_at`, `updated_at` | Equal on creation, stamped by the clock the adapter is given — the SQL adapter stamps `db.Now` — UTC, microsecond precision. Never moved by a duplicate save or an availability read. |
 
 No persisted availability, last-viewed time, mutable title, collection, order,
 tag, soft-delete flag, receipt table or tombstone. The inherited entity base is
@@ -162,13 +162,13 @@ revision in its own transaction; neither a card nor an earlier Check authorizes 
 Use the request's `db.Tx[db.Tenant]` throughout. No second transaction, system
 scope, raw GUC or mutation via generic CRUD. Every table enables and forces RLS
 with both `USING` and `WITH CHECK` using the existing tenant helper/policy pattern.
-Migration owner is `saved`; filename `000001_saved_items.up.sql`; transactional,
-no down file, no edits to another owner's applied migrations.
+Migration owner is `saved`; its one version is `000075_saved.up.sql`, added
+transactionally, with no down file and no edit to another owner's migration.
 
 For mutations, the service obtains current authority, then serializes the
-person/source tuple with a transaction advisory lock over an unambiguous
-length-prefixed encoding including tenant and person. Hash collisions may reduce
-throughput but cannot weaken the unique constraint. Authority is reread after
+person/source tuple with a transaction advisory lock over an encoding whose
+first four fields carry no delimiter. Hash collisions may reduce throughput but
+cannot weaken the unique constraint. Authority is reread after
 waiting. On Save, Capture runs under the source's own consistency/authority locks
 and compares ExpectedSourceVersion; after any wait, reread Access and reject an
 identity change. Then load the current saved row, run the shared DecideSave,
@@ -176,9 +176,9 @@ and insert only when changed. File references are locked/held through FileUses
 before publication; the unique constraint is the final backstop. One concurrent
 first save wins, all authorized duplicates return that same first copy.
 
-Unsave first selects an own row to learn its tuple, acquires the same tuple lock,
-then reloads the ID under lock and rechecks authority/expected revision. It never
-substitutes a new row with the same tuple for a now-absent old ID. Release uses,
+Unsave locks the row the ID names, then rechecks current authority, that the row
+is this person's, and the quoted revision before it deletes. It never substitutes
+a new row with the same tuple for a now-absent old ID. Release uses,
 delete and emit in one transaction. Duplicate removals and removal of a foreign
 ID write nothing and publish nothing. If Source or file callbacks fail, return zero/error and
 the caller rolls back the entire transaction. An outbox insertion or commit
@@ -191,12 +191,12 @@ composition; do not claim serializability from a fake mutex. Database deadlock o
 serialization failure is **correctable** by retrying the whole transaction with
 fresh grants and source facts, never just its last INSERT.
 
-Two simultaneous Save/Unsave commands take effect in tuple-lock order. Unsave
-that finds no own row is already successful. A Save arriving later can create a
-new copy. Natural idempotency is within a copy's lifetime; it is **not** durable
-intent replay across an intervening removal. After uncertain delivery, clients
-read Find/Get before choosing a fresh intent. A delayed Unsave names the old UUID
-and cannot remove a replacement. No hidden tombstone preserves deleted favorites.
+Save holds the person/source lock across its source wait and loads the current row
+after it, so an Unsave committed in between leaves a new copy, not an answer about
+a gone row. Unsave that finds no own row has succeeded. Idempotency is within a
+copy's lifetime, never durable intent replay across an intervening removal. After
+uncertain delivery, clients read Find/Get before a fresh intent. A delayed Unsave
+names the old UUID and cannot remove a replacement. No hidden tombstone remains.
 
 List sorts by `captured_at DESC, id DESC`; ties are deterministic. Default 24,
 maximum 100, offset >= 0; exact case-sensitive filters, unknown valid kinds give
