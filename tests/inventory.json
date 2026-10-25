@@ -65242,6 +65242,82 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/designexport/export_determinism_test.go",
+   "id": "tools/designexport/export_determinism_test.go#TestTheGalleryExportIsTheSameBytesOnEveryRun",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheGalleryExportIsTheSameBytesOnEveryRun",
+   "needs_db": false,
+   "pkg": "tools/designexport",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
+   "file": "tools/designexport/export_token_section_scope_test.go",
+   "id": "tools/designexport/export_token_section_scope_test.go#TestTheTokenExportChangesNothingButItsOwnSection",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTokenExportChangesNothingButItsOwnSection",
+   "needs_db": false,
+   "pkg": "tools/designexport",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
+   "file": "tools/designexport/export_tokens_accepted_test.go",
+   "id": "tools/designexport/export_tokens_accepted_test.go#TestTheTokenFlagIsAcceptedAndWritesBytes",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTokenFlagIsAcceptedAndWritesBytes",
+   "needs_db": false,
+   "pkg": "tools/designexport",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
+   "file": "tools/designexport/export_tokens_determinism_test.go",
+   "id": "tools/designexport/export_tokens_determinism_test.go#TestTheTokenExportIsTheSameBytesOnEveryRun",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTokenExportIsTheSameBytesOnEveryRun",
+   "needs_db": false,
+   "pkg": "tools/designexport",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/designexport/main_test.go",
    "id": "tools/designexport/main_test.go#TestExportReportsWriterFailure",
    "kind": "go",
@@ -84918,7 +84994,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2308,
+  "files": 2312,
   "forge_runs": [
    408,
    413,
@@ -84952,7 +85028,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3680,
+   "behaviour": 3684,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -84971,23 +85047,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4306,
+  "rows": 4310,
   "tiers": {
    "merge": 2634,
    "nightly": 110,
-   "push": 1562
+   "push": 1566
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2063,
+   "keep": 2067,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3920,
+   "keep": 3924,
    "keep-rewrite": 170,
    "merge": 216
   }
