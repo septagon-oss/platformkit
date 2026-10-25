@@ -33,12 +33,11 @@
 // refused with an error wrapping its own cause, not with a row that is not there.
 // None of them rebinds the statement — [db.Tx] already hands each operation a handle
 // bound to that caller, so a second context would only replace the transaction's, and
-// the handle each door sends comes from [begin], which takes the caller's context and
-// never hands it to a statement. [Get], [Count], [List] and [Delete] are the same doors
-// for a caller with nothing to cancel, and are deprecated in favour of these. [Create]
-// and [Update] ask nothing: their ctx reaches the entity's own Validate and nothing
-// else, so an ended caller still writes through them until their own task gives them a
-// guard.
+// the handle these five doors send comes from [begin], which never hands the caller's
+// context to a statement. [Get], [Count], [List] and [Delete] are the same doors for a
+// caller with nothing to cancel, and are deprecated in favour of these. [Create] and
+// [Update] ask nothing: their ctx reaches the entity's own Validate and nothing else, so
+// an ended caller still writes through them until their own task gives them a guard.
 //
 // The [Get] example reads a row through an explicit tenant transaction.
 // The [List] example reads a page and total from a tenant-isolated PostgreSQL fixture.
@@ -135,7 +134,7 @@ func Get[T Entity](tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
 // database, and the ended caller is an error wrapping its cause, not an ErrNotFound
 // for a row that exists. It never rebinds the statement, which runs on the handle
 // the transaction gave the caller — the handle already carries the caller's deadline,
-// and [begin] is the only place a door of this package gets one.
+// and a door of this package that asks its caller gets that handle only from [begin].
 func GetCtx[T Entity](ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
 	q, err := begin(ctx, tx)
 	if err != nil {
