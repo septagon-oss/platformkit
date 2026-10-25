@@ -9,7 +9,6 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 )
 
 // ControlProps describes one field's presentation. ID is the trusted DOM identity;
@@ -66,26 +65,10 @@ func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
 	word := p.phrases()
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
-	// A note says something about the control this package chose, not about the
-	// field, so it stands as its own sentence beside the field's own line instead of
-	// being joined onto it: two owners' sentences, one paragraph, neither assembled
-	// out of the other.
-	var notes []string
-	switch {
-	case f.Widget == "entity-picker":
-		notes = append(notes, word("forms.field.note.entityPicker",
-			"The identifier of the related record. There is no picker for it yet."))
-	case f.Type == entity.TypeList:
-		notes = append(notes, word("forms.field.note.list", "Comma separated."))
-	}
-	if p.Immutable {
-		notes = append(notes, word("forms.field.note.immutable",
-			"Changed by a command of its own, not by this form."))
-	}
 	base := components.InputProps{
 		ComponentProps: components.ComponentProps{ID: p.ID},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
-		HelpText: cmp.Or(p.Field.Help, f.Doc), HelpNotes: notes,
+		HelpText: cmp.Or(p.Field.Help, f.Doc), HelpNotes: controlNotes(p, word),
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {
@@ -118,30 +101,7 @@ func Control(p ControlProps) g.Node {
 			HelperNotes: base.HelpNotes,
 		}, components.Textarea).Node
 	case f.Widget == "richtext":
-		area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
-			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
-			Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
-			HelperNotes: base.HelpNotes, MaxLength: f.MaxLength, CharacterLimitOnly: true,
-		}, components.Textarea).Node
-		// Replace this native disclosure when the shared disclosure lands.
-		help := h.Details(
-			h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
-			h.Ul(
-				h.Li(g.Text(word("forms.richtext.paragraphs", "Paragraphs: leave a blank line; a hard break ends with \\."))),
-				h.Li(g.Text(word("forms.richtext.headings", "Headings: ## through ####."))),
-				h.Li(g.Text(word("forms.richtext.marks", "Bold **text**, italic *text*, strike ~~text~~, inline `code`."))),
-				h.Li(g.Text(word("forms.richtext.links", "Links: [label](https://example.com) or [label](/page)."))),
-				h.Li(g.Text(word("forms.richtext.lists", "Lists: - item, 1. item or - [ ] task; up to three levels."))),
-				h.Li(g.Text(word("forms.richtext.blocks", "Quote: > text; code: ```language; rule: ---."))),
-				h.Li(g.Text(word("forms.richtext.tables", "Tables: | heading | with a | --- | separator."))),
-				h.Li(g.Text(word("forms.richtext.images", "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."))),
-			),
-		)
-		// The editor's chrome is drawn beside the textarea rather than instead of
-		// it: with no JavaScript the field is the plain textarea above with the
-		// guidance below it, and the submitted value is the same either way.
-		return richtextChrome(p, area, help)
+		return richtextField(p, base, word)
 	case f.Widget == "checkbox" || f.Type == entity.TypeBool:
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
@@ -171,4 +131,25 @@ func Control(p ControlProps) g.Node {
 		base.Value = base.Value[:16]
 	}
 	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
+}
+
+// controlNotes are the lines this package has to say about the control it chose.
+// A note says something about that control, not about the field, so it stands as
+// its own sentence beside the field's own line instead of being joined onto it:
+// two owners' sentences, one paragraph, neither assembled out of the other.
+func controlNotes(p ControlProps, word phraser) []string {
+	f := p.Field.Definition
+	var notes []string
+	switch {
+	case f.Widget == "entity-picker":
+		notes = append(notes, word("forms.field.note.entityPicker",
+			"The identifier of the related record. There is no picker for it yet."))
+	case f.Type == entity.TypeList:
+		notes = append(notes, word("forms.field.note.list", "Comma separated."))
+	}
+	if p.Immutable {
+		notes = append(notes, word("forms.field.note.immutable",
+			"Changed by a command of its own, not by this form."))
+	}
+	return notes
 }
