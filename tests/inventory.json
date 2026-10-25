@@ -45302,6 +45302,44 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/one_transaction_two_asks_test.go",
+   "id": "modules/auth/internal/one_transaction_two_asks_test.go#TestOneSetPasswordAskMailsTheCredentialItsTransactionLeft",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestOneSetPasswordAskMailsTheCredentialItsTransactionLeft",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/internal/one_transaction_two_asks_test.go",
+   "id": "modules/auth/internal/one_transaction_two_asks_test.go#TestTwoAsksForOneLinkInOneTransactionMailOnlyTheRowTheTableStillHolds",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoAsksForOneLinkInOneTransactionMailOnlyTheRowTheTableStillHolds",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/page_copy_catalogue_test.go",
    "id": "modules/auth/internal/page_copy_catalogue_test.go#TestEveryLineTheConfirmationPageAsksForIsCopiedInTheLanguagesTheModuleSpeaks",
    "kind": "go",
@@ -47685,6 +47723,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestSealAndOpenRoundTripAndRefuseAnotherKey",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/internal/two_requests_one_link_in_the_air_test.go",
+   "id": "modules/auth/internal/two_requests_one_link_in_the_air_test.go#TestASecondResetAskedWhileTheFirstLinkIsInTheAirMailsOneLink",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASecondResetAskedWhileTheFirstLinkIsInTheAirMailsOneLink",
    "needs_db": true,
    "pkg": "modules/auth/internal",
    "round_named": false,
@@ -86066,7 +86123,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2359,
+  "files": 2361,
   "forge_runs": [
    408,
    413,
@@ -86100,7 +86157,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3722,
+   "behaviour": 3725,
    "composition": 504,
    "contract": 24,
    "journey": 116
@@ -86119,9 +86176,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4366,
+  "rows": 4369,
   "tiers": {
-   "merge": 2685,
+   "merge": 2688,
    "nightly": 116,
    "push": 1565
   },
@@ -86129,13 +86186,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2114,
+   "keep": 2116,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3980,
+   "keep": 3983,
    "keep-rewrite": 170,
    "merge": 216
   }
