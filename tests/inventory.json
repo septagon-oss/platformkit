@@ -704,6 +704,14 @@
    "coverage": "",
    "round_named": 0
   },
+  "modules/notification/providers/gomail/gomailtest": {
+   "ci_fails": 0,
+   "ci_max_s": null,
+   "ci_med_s": null,
+   "ci_runs": 0,
+   "coverage": "",
+   "round_named": 0
+  },
   "modules/picture": {
    "ci_fails": 0,
    "ci_max_s": null,
@@ -7525,25 +7533,6 @@
    "unique_reach": [],
    "unique_reach_kind": "routes",
    "verdict": "merge"
-  },
-  {
-   "area": "apps",
-   "evidence": "not-round-named",
-   "file": "apps/platformkit/smtp_relay_test.go",
-   "id": "apps/platformkit/smtp_relay_test.go#TestTheRelayPresentsTheMessageTheSenderWrote",
-   "kind": "go",
-   "layer": "composition",
-   "name": "TestTheRelayPresentsTheMessageTheSenderWrote",
-   "needs_db": true,
-   "pkg": "apps/platformkit",
-   "round_named": false,
-   "rule": "",
-   "rule_present": false,
-   "tier": "merge",
-   "unique_lines": null,
-   "unique_reach": [],
-   "unique_reach_kind": "symbols",
-   "verdict": "keep"
   },
   {
    "area": "apps",
@@ -43874,6 +43863,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/approval_signup_promises_the_operator_test.go",
+   "id": "modules/auth/internal/approval_signup_promises_the_operator_test.go#TestApprovalSignupStaysOpenWhereAnEmailDoorRefuses",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestApprovalSignupStaysOpenWhereAnEmailDoorRefuses",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/approval_test.go",
    "id": "modules/auth/internal/approval_test.go#TestPendingRegistrationCannotRecoverOrSignInBeforeApproval",
    "kind": "go",
@@ -44838,6 +44846,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/internal/mail_less_door_known_address_test.go",
+   "id": "modules/auth/internal/mail_less_door_known_address_test.go#TestAMailLessDoorRefusesAnAddressSomebodyHasUntilTheInstallationCanMail",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAMailLessDoorRefusesAnAddressSomebodyHasUntilTheInstallationCanMail",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
    "verdict": "keep"
   },
   {
@@ -54644,6 +54671,25 @@
    "name": "TestAMessageWithNoTextIsRefused",
    "needs_db": false,
    "pkg": "modules/notification/providers/gomail",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/notification/providers/gomail/gomailtest/relay_test.go",
+   "id": "modules/notification/providers/gomail/gomailtest/relay_test.go#TestTheRelayPresentsTheMessageTheSenderWrote",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheRelayPresentsTheMessageTheSenderWrote",
+   "needs_db": false,
+   "pkg": "modules/notification/providers/gomail/gomailtest",
    "round_named": false,
    "rule": "",
    "rule_present": false,
@@ -85012,7 +85058,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2307,
+  "files": 2309,
   "forge_runs": [
    408,
    413,
@@ -85046,8 +85092,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3681,
-   "composition": 496,
+   "behaviour": 3684,
+   "composition": 495,
    "contract": 24,
    "journey": 110
   },
@@ -85065,23 +85111,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4311,
+  "rows": 4313,
   "tiers": {
-   "merge": 2640,
+   "merge": 2641,
    "nightly": 110,
-   "push": 1561
+   "push": 1562
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2062,
+   "keep": 2064,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3925,
+   "keep": 3927,
    "keep-rewrite": 170,
    "merge": 216
   }
