@@ -3,11 +3,11 @@
 Status: the module exists. [Contracts](contracts/saved.go), the
 [shared decisions](internal/decision.go), the
 [conformance suite](contracts/savedtest/conformance.go) both adapters answer, the
-SQL service over `saved_items` and the [declaration](module.go) — its provider,
-grants, events and personal-data part — are written, and the suite runs against
-Postgres. What is not written yet is the composition half: no route, no picture
-delivery, no heart and no grid. Those sections below are **intended behavior**,
-not a claim that those surfaces exist.
+SQL service over `saved_items` and the [pkit declaration](module.go) — its needs,
+provides, contributions, grants, events and personal-data claim — are written, and
+the suite runs against Postgres. What is not written yet is the composition half:
+no route, no picture delivery, no heart and no grid. Those sections below are
+**intended behavior**, not a claim that those surfaces exist.
 
 Saved is an optional foundation capability. A person retains a source-authorized
 copy of anything identified by `(module, kind, key)`. Its first title, resolved
