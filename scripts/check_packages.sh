@@ -173,9 +173,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # net/http here would put a server in the closure of every worker.
         check("kit/operation", "")
         check("kit/request", p "kit/trace " operation)
-        # kit/cache is the value every replica reads: the standard library, uuid and
-        # singleflight. A store it talks to is a provider, not this core.
-        check("kit/cache", uuid " golang.org/x/sync/singleflight")
+        # kit/cache takes its application identity from the appname value package,
+        # beside uuid and singleflight. Stores remain behind the provider boundary.
+        check("kit/cache", uuid " " appname " golang.org/x/sync/singleflight")
         # The one store kit/cache speaks to: the port package and one client, and
         # the four commands the adapter issues are asserted in its own test rather
         # than here — this line is what the provider may link, which is the only

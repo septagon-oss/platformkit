@@ -149,9 +149,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 		)
 		start := make(chan struct{})
 		for range knocks {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				<-start
 				ok, _, err := l.Allow(ctx, "ada", allowance, window)
 				if err != nil {
@@ -163,7 +161,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 					admitted++
 					mu.Unlock()
 				}
-			}()
+			})
 		}
 		close(start)
 		wg.Wait()
@@ -206,7 +204,7 @@ func TestTwoReplicasShareOneLimit(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 	first, second := replica(t, appURL), replica(t, appURL)
-	l := limit.Postgres(httpx.ConnFrom)
+	l := limit.PostgresFor("", httpx.ConnFrom)
 
 	for i, ctx := range []context.Context{first, second, first} {
 		if ok, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil || !ok {
@@ -237,7 +235,7 @@ func TestTwoReplicasShareOneLimit(t *testing.T) {
 func TestPurgeDropsWindowsThatClosedLongAgo(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
-	l := limit.Postgres(httpx.ConnFrom)
+	l := limit.PostgresFor("", httpx.ConnFrom)
 	if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
@@ -264,7 +262,7 @@ func TestPurgeDropsWindowsThatClosedLongAgo(t *testing.T) {
 // answered "allowed" without saying so would be a limit nobody could tell had
 // stopped working.
 func TestAContextWithNoConnectionIsAnError(t *testing.T) {
-	l := limit.Postgres(httpx.ConnFrom)
+	l := limit.PostgresFor("", httpx.ConnFrom)
 	if _, _, _, err := l.Reserve(t.Context(), "ada", 3, window); !errors.Is(err, limit.ErrNoConnection) {
 		t.Errorf("Allow with no connection = %v, want ErrNoConnection", err)
 	}
@@ -285,7 +283,7 @@ func TestTheLimiterTellsAQueuedCounterFromADownOne(t *testing.T) {
 	t.Run("a key queued behind its own row is refused, with no error to fail open on", func(t *testing.T) {
 		admin, conn := dbtest.Schema(t)
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
-		l := limit.Postgres(httpx.ConnFrom)
+		l := limit.PostgresFor("", httpx.ConnFrom)
 		if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
 			t.Fatalf("Allow: %v", err)
 		}
@@ -324,7 +322,7 @@ func TestTheLimiterTellsAQueuedCounterFromADownOne(t *testing.T) {
 			t.Fatalf("open the pool: %v", err)
 		}
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
-		l := limit.Postgres(httpx.ConnFrom)
+		l := limit.PostgresFor("", httpx.ConnFrom)
 		if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
 			t.Fatalf("Allow while the store is there: %v", err)
 		}
@@ -354,7 +352,7 @@ func TestTheLimiterTellsAQueuedCounterFromADownOne(t *testing.T) {
 func TestTheLimiterRefusesToReadAWindowItCannotSee(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
-	l := limit.Postgres(httpx.ConnFrom)
+	l := limit.PostgresFor("", httpx.ConnFrom)
 	if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
 		t.Fatalf("Allow: %v", err)
 	}
@@ -384,7 +382,7 @@ func inMemory(t *testing.T) (limit.Limiter, context.Context) {
 func inPostgres(t *testing.T) (limit.Limiter, context.Context) {
 	t.Helper()
 	_, conn := dbtest.Schema(t)
-	return limit.Postgres(httpx.ConnFrom), httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
+	return limit.PostgresFor("", httpx.ConnFrom), httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
 }
 
 // replica is one pod's connection pool, on a schema somebody else migrated.

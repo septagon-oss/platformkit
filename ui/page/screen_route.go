@@ -8,11 +8,11 @@ import (
 	g "maragu.dev/gomponents"
 )
 
-func pageOperation(r *httpx.Router, s Shell, rt Route) huma.Operation {
-	op := huma.Operation{
-		OperationID: rt.ID, Method: rt.Method, Path: rt.Path, Summary: rt.Summary,
-		Tags: []string{s.Tag}, Errors: rt.Errors,
-	}
+// screenOperation is a page route's huma operation with its screen contract
+// attached: the views it may answer with and the form addresses its answer may
+// target. An empty contract declares nothing beyond the route itself.
+func screenOperation(r *httpx.Router, s Shell, rt Route) huma.Operation {
+	op := pageOperation(s, rt)
 	contract := screen.ResponseSet{Exception: rt.Exception, Reason: rt.Reason, Targets: rt.Targets}
 	if rt.View != "" {
 		kind := rt.Response
@@ -22,19 +22,6 @@ func pageOperation(r *httpx.Router, s Shell, rt Route) huma.Operation {
 		contract.Responses = []screen.Response{{View: rt.View, Kind: kind}}
 	}
 	r.DescribePage(&op, contract)
-	if rt.StreamsBody {
-		key, streamed := httpx.StreamedBody()
-		op.Extensions[key] = streamed
-	}
-	if rt.MintsCredential {
-		if op.Extensions == nil {
-			op.Extensions = map[string]any{}
-		}
-		op.Extensions[httpx.CredentialExtension] = true
-	}
-	if s.Chrome.SignIn != "" {
-		httpx.SignIn(&op, s.Chrome.SignIn)
-	}
 	return op
 }
 

@@ -6,8 +6,11 @@ a `ClassList`; its methods name utilities by role — `Padding(S4)`,
 `FontSize`, `Radius`, `BorderWidth`, `Color` and the rest), so a class that does
 not exist cannot be written. `For(lists...)` resolves lists to a `css.Sheet`
 with one rule per class; `Rules(classes...)` does the same for class names.
-Read [classes.go](classes.go) for the builder, [compile.go](compile.go) for the
-class names and [emission_resolve.go](emission_resolve.go) for their declarations.
+Read [classes.go](classes.go) for the builder and [compile.go](compile.go) for
+shared class atoms. The `compile_color`, `compile_spacing`, `compile_layout`,
+`compile_typography` and `compile_effects` files own each family's class names.
+[emission_resolve.go](emission_resolve.go) resolves base declarations;
+[emission_parametric.go](emission_parametric.go) resolves the ordered parametric families.
 
 Two sheets sit beneath the utilities: `ThemeVars(light, dark)` renders a
 `design.Pair`'s tokens as custom properties with the attribute-over-preference

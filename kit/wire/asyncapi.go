@@ -56,7 +56,7 @@ func validateAsyncAPI(doc map[string]any) error {
 			}
 			for _, field := range []string{"payload", "headers"} {
 				if raw, present := msg[field]; present {
-					if err := validateSchema(doc, raw, map[string]bool{}); err != nil {
+					if err := validateSchema(doc, raw, map[string]bool{}, true); err != nil {
 						return err
 					}
 				}
@@ -112,8 +112,9 @@ func asyncMessageKey(doc map[string]any, channelKey, ref string) (string, error)
 
 func asyncAPIOperations(doc map[string]any) wireRoutes {
 	var out wireRoutes
-	for id, raw := range wireMap(doc["operations"]) {
-		op := wireMap(raw)
+	operations := wireMap(doc["operations"])
+	for _, id := range slices.Sorted(maps.Keys(operations)) {
+		op := wireMap(operations[id])
 		ref, _ := wireMap(op["channel"])["$ref"].(string)
 		channel, _ := asyncObject(doc, wireResolve(doc, ref))
 		action, _ := op["action"].(string)
@@ -124,9 +125,12 @@ func asyncAPIOperations(doc map[string]any) wireRoutes {
 	return out
 }
 
-func asyncAPIShapes(doc map[string]any) map[string]string {
-	out := map[string]string{}
-	for key, raw := range wireMap(doc["channels"]) {
+func asyncAPIShapes(doc map[string]any) wireAnalysis {
+	w := newWireWalk(doc)
+	out := w.shapes
+	channels := wireMap(doc["channels"])
+	for _, key := range slices.Sorted(maps.Keys(channels)) {
+		raw := channels[key]
 		channel, _ := asyncObject(doc, raw)
 		at := "channel/" + pointerPart(key)
 		out[at], _ = channel["address"].(string)
@@ -158,12 +162,12 @@ func asyncAPIShapes(doc map[string]any) map[string]string {
 			for _, field := range []string{"payload", "headers"} {
 				if schema, ok := msg[field].(map[string]any); ok {
 					at := direction + " message/" + pointerPart(channelKey) + "/" + pointerPart(name) + " " + field
-					walkWire(out, id, at, schema, doc, 0)
+					w.walk(id, at, schema, 0)
 				}
 			}
 		}
 	}
-	return out
+	return w.analysis()
 }
 
 func asyncStructuralPath(doc map[string]any, member string) string {
