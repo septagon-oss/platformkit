@@ -1,4 +1,4 @@
-package picture
+package contracts
 
 import (
 	"errors"

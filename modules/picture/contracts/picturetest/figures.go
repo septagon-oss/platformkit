@@ -4,17 +4,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/septagon-oss/platformkit/kit/picture"
+	"github.com/septagon-oss/platformkit/modules/picture/contracts"
 )
 
 // FigureDecision is the declaration boundary exercised by every figure adapter.
 type FigureDecision interface {
-	DeclareFigure(string, string, []string) (picture.Figure, error)
+	DeclareFigure(string, string, []string) (contracts.Figure, error)
 }
 
 // DeclareFigure delegates the same bounded decision used by field declarations.
-func (*Fake) DeclareFigure(name, source string, ids []string) (picture.Figure, error) {
-	return picture.CompileFigure(name, source, ids)
+func (*Fake) DeclareFigure(name, source string, ids []string) (contracts.Figure, error) {
+	return contracts.CompileFigure(name, source, ids)
 }
 
 // RunFigures compares repeated regions and refusals against literal expectations.

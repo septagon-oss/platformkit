@@ -141,11 +141,11 @@ type ResolvedEditable struct {
 
 // ResolvedField is one schema field's policy.
 type ResolvedField struct {
-	Choice *ResolvedChoice      `json:"choice"`
-	Figure *entity.ChoiceFigure `json:"figure"`
-	Name   string               `json:"name"`
-	Label  string               `json:"label"`
-	Help   string               `json:"help"`
+	Choice *ResolvedChoice     `json:"choice"`
+	Figure entity.ChoiceFigure `json:"figure"`
+	Name   string              `json:"name"`
+	Label  string              `json:"label"`
+	Help   string              `json:"help"`
 	// Section is a declared section key, or "".
 	Section string `json:"section"`
 	// OnList and OnRecord are the effective surface membership, after

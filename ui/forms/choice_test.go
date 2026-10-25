@@ -6,6 +6,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
+	picturecontracts "github.com/septagon-oss/platformkit/modules/picture/contracts"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
 
@@ -17,11 +18,11 @@ func choiceField(t *testing.T, appearance, cardinality string) forms.Field {
 		f.Type, f.Elem = entity.TypeList, entity.TypeString
 	}
 	if appearance == "figure" {
-		figure, err := entity.CompileChoiceFigure("fixture", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><circle data-choice="round" cx="20" cy="20" r="10"/><circle data-choice="round" cx="20" cy="60" r="10"/><rect data-choice="square" x="50" y="10" width="20" height="20"/></svg>`, []string{"round", "square"})
+		figure, err := picturecontracts.CompileFigure("fixture", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><circle data-choice="round" cx="20" cy="20" r="10"/><circle data-choice="round" cx="20" cy="60" r="10"/><rect data-choice="square" x="50" y="10" width="20" height="20"/></svg>`, []string{"round", "square"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.Presentation.Figure = &figure
+		f.Presentation.Figure = figure
 	}
 	resolved := present.Resolve(present.Input{Schema: entity.Schema{Fields: []entity.Field{f}}})
 	return forms.Field{Definition: f, Resolved: &resolved.Fields[0]}

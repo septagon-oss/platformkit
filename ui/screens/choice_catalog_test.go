@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	picturecontracts "github.com/septagon-oss/platformkit/modules/picture/contracts"
 	"github.com/septagon-oss/platformkit/ui/screens"
 	"os"
 	"strings"
@@ -14,11 +15,13 @@ func choiceCatalogField(appearance string) entity.Field {
 	c := &entity.ChoiceSet{Cardinality: "many", Empty: entity.ChoiceEmpty{Mode: "refuse", Message: "Keep one shape."}, Options: []entity.ChoiceOption{{ID: "round", Label: "Round", Picture: &entity.ChoicePicture{Kind: "colour", Value: "#112233"}}, {ID: "square", Label: "Square", Picture: &entity.ChoicePicture{Kind: "colour", Value: "#AABBCC"}, Group: &entity.ChoiceGroup{Key: "corners", Label: "Corners"}}, {ID: "none", Label: "No preference"}}, NoPreference: "none", SearchThreshold: 2, Maximum: &entity.ChoiceMaximum{Count: 2, Behaviour: "replace-oldest"}}
 	f := entity.Field{Name: "shapes", Type: entity.TypeList, Elem: entity.TypeString, Widget: appearance, Choices: c}
 	if appearance == "figure" {
-		figure, err := entity.CompileChoiceFigure("fixture", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><circle data-choice="round" cx="20" cy="20" r="10"/><circle data-choice="round" cx="20" cy="60" r="10"/><rect data-choice="square" x="60" y="20" width="20" height="40"/></svg>`, []string{"round", "square"})
+		// A figure reaches the field compiled by the owner that drew it, the way a
+		// product's composition hands one to entity.WithChoices.
+		figure, err := picturecontracts.CompileFigure("fixture", `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><circle data-choice="round" cx="20" cy="20" r="10"/><circle data-choice="round" cx="20" cy="60" r="10"/><rect data-choice="square" x="60" y="20" width="20" height="40"/></svg>`, []string{"round", "square"})
 		if err != nil {
 			panic(err)
 		}
-		f.Presentation.Figure = &figure
+		f.Presentation.Figure = figure
 	}
 	return f
 }

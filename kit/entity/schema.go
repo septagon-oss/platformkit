@@ -354,9 +354,6 @@ func copyFields(fields []Field) []Field {
 		if out[i].Choices != nil {
 			out[i].Choices = out[i].Choices.Clone()
 		}
-		if out[i].Presentation.Figure != nil {
-			out[i].Presentation.Figure = new(*out[i].Presentation.Figure)
-		}
 		out[i].Enum = slices.Clone(out[i].Enum)
 		out[i].Index = slices.Clone(out[i].Index)
 		// The two hint maps are the new way to break the promise Fields makes

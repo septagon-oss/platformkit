@@ -2,8 +2,7 @@
 
 `kit/entity` owns the shared `Base`, the `Entity` constraint and the field
 metadata derived from Go structs. It needs no application, database or web
-server. Its runtime dependencies are `google/uuid` and the standard-library-only
-[`kit/picture`](../picture/README.md) value compiler.
+server. Its only dependency outside the standard library is `google/uuid`.
 
 For a plain form or command input, derive fields directly from its type:
 
@@ -188,8 +187,9 @@ leaves a patch untouched. New native selections append in display order; enhance
 forms retain interaction order. Native No preference clears other selections on
 submit; JSON mixed exclusive/ordinary answers refuse.
 
-Figures are immutable [bounded SVG values](../picture/README.md). Compile them
-with `CompileChoiceFigure` against all ordinary option IDs. Read-only figures
+A figure is a compiled value, not markup this package parses. `ChoiceFigure` is a
+port: the picture owner's `CompileFigure` compiles the drawing against all ordinary
+option IDs, and composition hands the result to `WithChoices`. Read-only figures
 highlight selections without inputs. Editable figures have equivalent native
 choices, keyboard focus movement and a selected-picture/count summary. Search,
 interactive toggles and summary updates enhance an ordinary radio/checkbox form;
@@ -198,16 +198,17 @@ without JavaScript its summary is explicitly the last rendered selection.
 ### Composition
 
 **Reused** — entity metadata, `present.Resolve`, REST row locks/revisions/outbox,
-OptionChips, Media, and the bounded picture compiler.
+OptionChips, Media, and `ui.choice-figure`.
 **Added** — finite ordered choice semantics and four presentation hints because
 enums do not express pictures, groups, maxima, exclusivity or figure mappings.
 **Made reusable** — detached choice policy, pure answer decisions, native form
-transport, and the verified figure value shared by web and native shells.
+transport, and a figure port shared by web and native shells.
 
 ### Limits
 
 Products own names, artwork, storage and grants; no domain vocabulary is built in.
-Catalogue version 4 carries explicit choice/figure metadata and resolved command
-fields. Native rendering and catalogue-version negotiation belong to the native
-shell. Unknown stored IDs remain visible for native correction rather than being
+The catalogue document carries explicit choice and figure metadata, and a command's
+resolved fields, at the version it already publishes: nothing an older shell could
+misread was added to it, which is why its number did not move. Native rendering and
+catalogue-version negotiation belong to the native shell. Unknown stored IDs remain visible for native correction rather than being
 silently discarded or enhanced into a valid-looking selection.

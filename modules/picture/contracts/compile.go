@@ -1,4 +1,4 @@
-package picture
+package contracts
 
 import (
 	"crypto/sha256"

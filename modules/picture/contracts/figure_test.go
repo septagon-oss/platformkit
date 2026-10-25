@@ -1,15 +1,15 @@
 package contracts_test
 
 import (
-	"github.com/septagon-oss/platformkit/kit/picture"
+	"github.com/septagon-oss/platformkit/modules/picture/contracts"
 	"github.com/septagon-oss/platformkit/modules/picture/contracts/picturetest"
 	"testing"
 )
 
 type pureFigure struct{}
 
-func (pureFigure) DeclareFigure(name, source string, ids []string) (picture.Figure, error) {
-	return picture.CompileFigure(name, source, ids)
+func (pureFigure) DeclareFigure(name, source string, ids []string) (contracts.Figure, error) {
+	return contracts.CompileFigure(name, source, ids)
 }
 func TestFigureAdaptersShareTheDecision(t *testing.T) {
 	t.Run("pure", func(t *testing.T) {

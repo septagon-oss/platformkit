@@ -27,15 +27,19 @@ import (
 // nothing renders — the same pin components' own test runs on its own list,
 // with the attribution standing in for the package directory.
 //
-// What a module renders is not here. The kernel does not know which modules are
-// composed, and a name the product writes is the product's to refuse. An
-// attribute is that case: nothing hands the kernel a module's markup. A class is
+// What a module renders is otherwise not here: the kernel does not know which
+// modules are composed, and a name the product writes is the product's to refuse.
+// An attribute is that case: nothing hands the kernel a module's markup. A class is
 // the other case — a module hands its classes to Compose in Extra.Lists, which is
 // how they get a rule in @layer components — so composedClasses reads those off
-// the composition instead of off this list.
+// the composition instead of off this list. The two names a figure carries are the
+// exception, and they are attributed to the file of the owner that compiled the
+// drawing rather than to a kernel file: ui draws a figure's containing field and
+// styles its selected state, so a product sheet may not spend those names, and the
+// gate still reads the attributed source to check the name is really rendered.
 var renderedHooks = map[string]string{
-	"data-choice":              "kit/picture/compile.go",
-	"data-selected":            "kit/picture/figure.go",
+	"data-choice":              "modules/picture/contracts/compile.go",
+	"data-selected":            "modules/picture/contracts/figure.go",
 	"data-choice-words":        "ui/forms/choice.go",
 	"data-choice-stale":        "ui/forms/choice.go",
 	"data-choice-colour":       "ui/forms/choice.go",

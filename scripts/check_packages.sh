@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/wire kit/picture kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
+parts=(kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/inference kit/inference/providers/openai
@@ -104,7 +104,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # why the HTTP middleware is the only writer of these fields.
         # Receipt completion uses the retry owner and the existing aggregate lock.
         # Portable operation values remain independent of request and storage.
-        outbox = identity " " delivery " " p "kit/db " p "kit/trace " p "kit/request " p "kit/idempotency " p "kit/crud " p "kit/entity " p "kit/picture " p "kit/fault"
+        outbox = identity " " delivery " " p "kit/db " p "kit/trace " p "kit/request " p "kit/idempotency " p "kit/crud " p "kit/entity " p "kit/fault"
         # The recorded closure of the page composition layer (see the comment above parts).
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
@@ -138,7 +138,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # no SQL and renders nothing, which is why admitting it adds no capability at
         # the page, the screen or the runner. Note that an apostrophe in this block
         # ends the single-quoted awk program for the shell: write around it.
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/picture " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/personaldata " p "kit/telemetry " richtextDeps
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/personaldata " p "kit/telemetry " richtextDeps
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
@@ -148,10 +148,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # nothing else needs these, and a second package that could install a
         # provider is a second answer to where the traces went.
         measurement = otel " go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/sdk/metric go.opentelemetry.io/otel/exporters/otlp/otlptrace go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc go.opentelemetry.io/otel/exporters/otlp/internal google.golang.org/grpc google.golang.org/protobuf github.com/cenkalti/backoff/v5 github.com/grpc-ecosystem/grpc-gateway/v2 golang.org/x/net golang.org/x/sys golang.org/x/text google.golang.org/genproto/googleapis/api google.golang.org/genproto/googleapis/rpc go.opentelemetry.io/proto/otlp"
-        check("kit/picture", "")
-        check("kit/entity", uuid " " p "kit/picture")
-        check("kit/entity/display", uuid " " p "kit/entity " p "kit/picture")
-        check("kit/entity/present", uuid " " p "kit/entity " p "kit/picture " p "kit/entity/display")
+        check("kit/entity", uuid)
+        check("kit/entity/display", uuid " " p "kit/entity")
+        check("kit/entity/present", uuid " " p "kit/entity " p "kit/entity/display")
         check("kit/locale", "")
         # kit/fault declares the three refusal sentinels a value package wraps.
         # Its closure is the standard library and itself, or wrapping a refusal
@@ -189,9 +188,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # configuration. Nothing in the kernel imports this package, which is why
         # admitting the format dependency here adds no dependency to kit/app.
         check("kit/designconfig", p "design", "gopkg.in/yaml.v3")
-        check("ui/forms", uuid " " p "kit/entity " p "kit/picture " p "kit/entity/present " p "kit/entity/display " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
+        check("ui/forms", uuid " " p "kit/entity " p "kit/entity/present " p "kit/entity/display " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
         check("ui/document", p "kit/locale " presentation " " markup)
-        check("ui/resource", uuid " " p "kit/entity " p "kit/picture " p "kit/entity/present " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
+        check("ui/resource", uuid " " p "kit/entity " p "kit/entity/present " p "kit/entity/display " p "kit/locale " presentation " " p "ui/forms " markup)
         check("ui/page", kernel " " presentation, web, "web")
         check("ui/screens", kernel " " presentation " " p "kit/rest " p "kit/entity/display " p "kit/entity/present " p "ui/forms " p "ui/page " p "ui/resource", web, "web")
         # The kernel runner selects a transport by name and builds none: neither

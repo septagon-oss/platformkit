@@ -23,7 +23,7 @@ func TestChoiceLocalesDetachCommandAndResourceWords(t *testing.T) {
 			local := screens.Localise(r, text)
 			entry := screens.DescribeEntry(local, true, text, language)
 			for _, field := range []entity.Field{local.Schema.Fields[0], local.Commands[0].Fields[0]} {
-				if !strings.HasPrefix(field.Choices.Options[0].Label, language+":") || field.Choices.Options[0].ID != "round" || field.Presentation.Figure.Digest() != f.Presentation.Figure.Digest() {
+				if !strings.HasPrefix(field.Choices.Options[0].Label, language+":") || field.Choices.Options[0].ID != "round" || field.Presentation.Figure.SVG() != f.Presentation.Figure.SVG() {
 					t.Errorf("locale changed identity or lost words: %+v", field)
 				}
 				field.Choices.Options[1].Group.Label = "Changed"

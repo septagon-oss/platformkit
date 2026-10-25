@@ -5,16 +5,23 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/septagon-oss/platformkit/kit/picture"
 )
 
-// ChoiceFigure is the immutable shared figure value, not arbitrary markup.
-type ChoiceFigure = picture.Figure
-
-// CompileChoiceFigure validates artwork against all ordinary IDs at declaration.
-func CompileChoiceFigure(name, source string, ids []string) (ChoiceFigure, error) {
-	return picture.CompileFigure(name, source, ids)
+// ChoiceFigure is one field's compiled artwork, handed to the kernel by the owner
+// that drew it. entity never parses markup: the figure arrives already compiled
+// against the field's ordinary choice IDs, and that same owner keeps the decision
+// which marks a selection, so a figure is a value the kernel can carry, compare and
+// draw without ever trusting a client's bytes. A nil figure is no figure. The
+// document form belongs to the owner: exactly a digest, the canonical SVG and the
+// sorted choice IDs, and a reader that draws it independently recompiles that form.
+type ChoiceFigure interface {
+	// SVG returns the canonical drawing with nothing marked.
+	SVG() string
+	// ChoiceIDs returns the mapped ordinary IDs, byte-sorted and detached.
+	ChoiceIDs() []string
+	// Render returns the same drawing with each listed ID marked, refusing an ID
+	// the figure does not map or a repeated one, and never changing its own bytes.
+	Render(selected []string) (string, error)
 }
 
 // ChoiceFields overlays finite field metadata at composition, never in type caches.
@@ -22,7 +29,7 @@ type ChoiceFields struct{ Fields []ChoiceField }
 type ChoiceField struct {
 	Name    string
 	Choices ChoiceSet
-	Figure  *ChoiceFigure
+	Figure  ChoiceFigure
 }
 
 // ChoiceAppearance reports whether a hint names one of the four choice renderers.
@@ -44,7 +51,7 @@ func WithChoices(fields []Field, declarations *ChoiceFields) ([]Field, error) {
 			seen[d.Name] = true
 			out[at].Choices = d.Choices.Clone()
 			if d.Figure != nil {
-				out[at].Presentation.Figure = new(*d.Figure)
+				out[at].Presentation.Figure = d.Figure
 			}
 		}
 	}
