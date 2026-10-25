@@ -176,8 +176,10 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	if locale.Locale != "" {
 		// The form is for this language, so the language is carried and not asked
 		// for, and the sentence beside the button says which one the person is
-		// about to write.
-		label = label + " — " + locale.Locale
+		// about to write. What that sentence looks like — which side the language
+		// sits on, and what holds them apart — belongs to the copy of the language
+		// the person reads, because it is the name a screen reader announces.
+		label = o.Text("screens.command_in_locale", "%[1]s — %[2]s", label, locale.Locale)
 	}
 	arguments := words.forCommand(c.Verb)
 	// Hex keeps action, locale and field boundaries distinct, including punctuation
