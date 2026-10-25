@@ -23,7 +23,7 @@ type Input struct {
 	Singleton bool
 	// CommandsOnly resolves no fields, layout or list, only the commands.
 	CommandsOnly bool
-	// Operations are the routes the resource offers (create, update, …); nil is all five.
+	// Operations are the routes the resource offers; nil is all five, empty is none.
 	Operations []string
 	// Commands are the commands the caller may call, in order.
 	Commands []CommandInput

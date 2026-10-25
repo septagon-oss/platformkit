@@ -62,10 +62,10 @@ type Resource struct {
 	// carried it to the native shell; ui/screens carries it here.
 	Singleton bool
 	// Operations names the routes this resource's API actually mounted — "list",
-	// "read", "create", "update", "delete" — in that order. Empty means all
-	// five, which is what every resource written before a Spec could name its
-	// operations offers, and what a screen rendered without a kernel behind it
-	// (a design export, a golden file) renders.
+	// "read", "create", "update", "delete" — in that order. Nil means all five,
+	// which is what every resource written before a Spec could name its operations
+	// offers, and what a screen rendered without a kernel behind it (a design
+	// export, a golden file) renders; an empty slice means none is mounted.
 	//
 	// The renderers draw a door only for a verb named here, because a door behind
 	// which no route answers is not a door: it is a refusal with a button on it.
@@ -174,11 +174,12 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 		}})
 }
 
-// offers reports whether this resource mounted the route for a verb. An empty
-// Operations means all five; the same question, stated once on httpx.Resource,
+// offers reports whether this resource mounted the route for a verb. A nil
+// Operations means all five and an empty one that none is mounted, the pair
+// present reads; the question itself is stated once on httpx.Resource, which
 // decides the route table, and this is its answer at the door.
 func (r Resource) offers(verb string) bool {
-	if len(r.Operations) == 0 {
+	if r.Operations == nil {
 		return true
 	}
 	for _, o := range r.Operations {
