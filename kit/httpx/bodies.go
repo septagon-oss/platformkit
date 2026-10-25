@@ -55,7 +55,7 @@ func (a *API) bodies(ctx huma.Context, next func(huma.Context)) {
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 	}
 	if p, ok := ctx.Context().Value(txKey{}).(*db.Pending); ok && waits {
-		if err := p.Close(true); err != nil {
+		if err := p.Commit(); err != nil {
 			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the guard transaction did not commit",
 				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 			a.refuse(ctx, http.StatusInternalServerError, "")
