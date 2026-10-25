@@ -27,11 +27,11 @@ type FormStepHints struct {
 	EmptyLabel   string
 }
 
-// WithLabel answers with a product's translation of this step's label when it can still
-// carry what the declaration declares — the same {answer} tokens and no brace beyond them.
-// Membership resolves from copy, so words no translator meant would take the whole form.
+// WithLabel answers with a product's translation of this step's label when it carries what
+// the declaration declares — words a person could read, the same {answer} tokens, and no
+// brace beyond them. Membership resolves from copy, so copy that fails costs this label.
 func (h FormStepHints) WithLabel(said string) string {
-	if strings.Count(said, "{answer}") == strings.Count(h.PrimaryLabel, "{answer}") && !strings.ContainsAny(strings.ReplaceAll(said, "{answer}", ""), "{}") {
+	if strings.TrimSpace(said) != "" && strings.Count(said, "{answer}") == strings.Count(h.PrimaryLabel, "{answer}") && !strings.ContainsAny(strings.ReplaceAll(said, "{answer}", ""), "{}") {
 		return said
 	}
 	return h.PrimaryLabel

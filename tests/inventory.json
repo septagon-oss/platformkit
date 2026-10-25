@@ -74721,6 +74721,63 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/step_copy_without_words_test.go",
+   "id": "ui/screens/step_copy_without_words_test.go#TestASteppedFormKeepsItsStepsWhenTheTranslatedLabelHasNoWords",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASteppedFormKeepsItsStepsWhenTheTranslatedLabelHasNoWords",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/step_copy_without_words_test.go",
+   "id": "ui/screens/step_copy_without_words_test.go#TestASteppedFormKeepsItsStepsWhenTheTranslatedAnswerPromptHasNoWords",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASteppedFormKeepsItsStepsWhenTheTranslatedAnswerPromptHasNoWords",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/step_copy_without_words_test.go",
+   "id": "ui/screens/step_copy_without_words_test.go#TestASteppedFormKeepsItsStepsWhenTheTranslatedLabelDropsTheAnswerSlot",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASteppedFormKeepsItsStepsWhenTheTranslatedLabelDropsTheAnswerSlot",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/summary_absence_test.go",
    "id": "ui/screens/summary_absence_test.go#TestAnUnansweredCountIsAbsentAndAZeroCountIsPrinted",
    "kind": "go",
@@ -83586,7 +83643,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2263,
+  "files": 2264,
   "forge_runs": [
    408,
    413,
@@ -83620,7 +83677,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3614,
+   "behaviour": 3617,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -83639,9 +83696,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4236,
+  "rows": 4239,
   "tiers": {
-   "merge": 2615,
+   "merge": 2618,
    "nightly": 111,
    "push": 1510
   },
@@ -83649,13 +83706,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2018,
+   "keep": 2019,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3850,
+   "keep": 3853,
    "keep-rewrite": 170,
    "merge": 216
   }
