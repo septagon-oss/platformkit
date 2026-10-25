@@ -302,36 +302,82 @@ func tally(s Snapshot, option Option) Result {
 	return out
 }
 
+// consistent checks that a snapshot describes one question of one tenant, and is
+// what a read of a snapshot answers with ErrIntegrity instead of a tally. The
+// question itself, its options, its participants and its votes are checked one
+// after the other in that order, because each step needs the identities the step
+// before collected: a vote is only answerable at all once the options and the
+// people it can name are known to be the question's own.
 func consistent(s Snapshot) error {
-	q := s.Question
+	if err := consistentQuestion(s.Question); err != nil {
+		return err
+	}
+	options, err := consistentOptions(s)
+	if err != nil {
+		return err
+	}
+	people, err := consistentParticipants(s)
+	if err != nil {
+		return err
+	}
+	if !people[s.Question.CreatorID] {
+		return ErrIntegrity
+	}
+	return consistentVotes(s, options, people)
+}
+
+// consistentQuestion checks the question itself: it exists, it belongs to a
+// tenant, it carries a revision and a creator, and its status is one a question
+// can be in.
+func consistentQuestion(q Question) error {
 	if q.ID == uuid.Nil || q.TenantID == uuid.Nil || q.Revision < 1 || q.CreatorID == uuid.Nil ||
 		(q.Status != StatusOpen && q.Status != StatusClosed) {
 		return ErrIntegrity
 	}
-	options, people := map[uuid.UUID]bool{}, map[uuid.UUID]bool{}
+	return nil
+}
+
+// consistentOptions checks every option against the question it claims to belong
+// to and answers with the set of ids a vote may name.
+func consistentOptions(s Snapshot) (map[uuid.UUID]bool, error) {
+	options := map[uuid.UUID]bool{}
 	for _, option := range s.Options {
-		if option.ID == uuid.Nil || options[option.ID] || option.TenantID != q.TenantID || option.QuestionID != q.ID || option.Position < 0 || option.Revision < 1 {
-			return ErrIntegrity
+		if option.ID == uuid.Nil || options[option.ID] || option.TenantID != s.Question.TenantID ||
+			option.QuestionID != s.Question.ID || option.Position < 0 || option.Revision < 1 {
+			return nil, ErrIntegrity
 		}
 		options[option.ID] = true
 	}
+	return options, nil
+}
+
+// consistentParticipants checks every participant against the question, refuses a
+// person counted twice, and answers with the set of ids that may vote.
+func consistentParticipants(s Snapshot) (map[uuid.UUID]bool, error) {
+	people := map[uuid.UUID]bool{}
 	for _, person := range s.Participants {
-		if person.ID == uuid.Nil || person.PersonID == uuid.Nil || people[person.PersonID] || person.TenantID != q.TenantID || person.QuestionID != q.ID || person.Revision != 1 {
-			return ErrIntegrity
+		if person.ID == uuid.Nil || person.PersonID == uuid.Nil || people[person.PersonID] ||
+			person.TenantID != s.Question.TenantID || person.QuestionID != s.Question.ID || person.Revision != 1 {
+			return nil, ErrIntegrity
 		}
 		people[person.PersonID] = true
 	}
+	return people, nil
+}
+
+// consistentVotes checks that every vote is one vote of one person on one option
+// of this question, and that a vote carrying a value carries one this question's
+// grammar accepts.
+func consistentVotes(s Snapshot, options, people map[uuid.UUID]bool) error {
 	pairs, ids := map[[2]uuid.UUID]bool{}, map[uuid.UUID]bool{}
 	for _, vote := range s.Votes {
 		pair := [2]uuid.UUID{vote.OptionID, vote.PersonID}
-		if vote.ID == uuid.Nil || ids[vote.ID] || pairs[pair] || vote.TenantID != q.TenantID || vote.QuestionID != q.ID ||
-			!options[vote.OptionID] || !people[vote.PersonID] || vote.Revision < 1 || (vote.Value != nil && !valid(*vote.Value)) {
+		if vote.ID == uuid.Nil || ids[vote.ID] || pairs[pair] || vote.TenantID != s.Question.TenantID ||
+			vote.QuestionID != s.Question.ID || !options[vote.OptionID] || !people[vote.PersonID] ||
+			vote.Revision < 1 || (vote.Value != nil && !valid(*vote.Value)) {
 			return ErrIntegrity
 		}
 		pairs[pair], ids[vote.ID] = true, true
-	}
-	if !people[q.CreatorID] {
-		return ErrIntegrity
 	}
 	return nil
 }

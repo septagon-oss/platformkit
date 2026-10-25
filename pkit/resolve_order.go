@@ -90,8 +90,30 @@ func (a *App) pickImplementation(p *plan, fail func(string, string, ...any), m *
 // place a module — the modules it could not place: a composition is never
 // answerable by leaving a module somebody named in Use out of it in silence.
 func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module, []*Module, []*Module) {
+	deps := a.dependencies(lives, dead, p)
+	out, placed := place(lives, dead, deps, p)
+	var left []*Module
+	for _, m := range lives {
+		if !dead[m] && !placed[m] {
+			left = append(left, m)
+		}
+	}
+	if len(left) == 0 {
+		return out, nil, nil
+	}
+	if cycle := cycleThrough(deps, left[0]); cycle != nil {
+		return out, cycle, nil
+	}
+	return out, nil, left
+}
+
+// dependencies builds, for every living module, the living modules it has to
+// follow: the ones it needs, the ones it optionally uses, and the ones that hand
+// it a contribution — in Use order, so the order the author declared breaks the
+// ties. The same map lands on the plan, because the explanation of a cycle is
+// read off it later.
+func (a *App) dependencies(lives []*Module, dead map[*Module]bool, p *plan) map[*Module][]*Module {
 	deps := map[*Module][]*Module{}
-	var queue []*Module
 	for _, m := range lives {
 		if dead[m] {
 			continue
@@ -119,7 +141,18 @@ func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module,
 		}
 		deps[m] = list
 		p.deps[m] = list
-		if m != p.last && len(list) == 0 {
+	}
+	return deps
+}
+
+// place walks the graph from the modules that need nothing, in Use order, and
+// answers what was placed and where. The module the plan holds as last goes on at
+// the end whatever it needs: it is the application, and the plan already refused
+// everything that would have made placing it a lie.
+func place(lives []*Module, dead map[*Module]bool, deps map[*Module][]*Module, p *plan) ([]*Module, map[*Module]bool) {
+	var queue []*Module
+	for _, m := range lives {
+		if !dead[m] && m != p.last && len(deps[m]) == 0 {
 			queue = append(queue, m)
 		}
 	}
@@ -128,17 +161,7 @@ func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module,
 	for len(queue) > 0 {
 		m := queue[0]
 		queue = queue[1:]
-		if placed[m] {
-			continue
-		}
-		ready := true
-		for _, dep := range deps[m] {
-			if !placed[dep] {
-				ready = false
-				break
-			}
-		}
-		if !ready {
+		if placed[m] || !readyNow(deps[m], placed) {
 			continue
 		}
 		placed[m] = true
@@ -147,14 +170,7 @@ func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module,
 			if dead[c] || placed[c] || c == p.last || !contains(deps[c], m) {
 				continue
 			}
-			ready := true
-			for _, dep := range deps[c] {
-				if !placed[dep] {
-					ready = false
-					break
-				}
-			}
-			if ready {
+			if readyNow(deps[c], placed) {
 				queue = append(queue, c)
 			}
 		}
@@ -163,19 +179,18 @@ func (a *App) order(lives []*Module, dead map[*Module]bool, p *plan) ([]*Module,
 		placed[p.last] = true
 		out = append(out, p.last)
 	}
-	var left []*Module
-	for _, m := range lives {
-		if !dead[m] && !placed[m] {
-			left = append(left, m)
+	return out, placed
+}
+
+// readyNow answers whether every dependency is already placed, which is the one
+// thing that decides whether a module can be written to the order this pass.
+func readyNow(deps []*Module, placed map[*Module]bool) bool {
+	for _, dep := range deps {
+		if !placed[dep] {
+			return false
 		}
 	}
-	if len(left) == 0 {
-		return out, nil, nil
-	}
-	if cycle := cycleThrough(deps, left[0]); cycle != nil {
-		return out, cycle, nil
-	}
-	return out, nil, left
+	return true
 }
 
 // cycleThrough walks dependency edges from the first unplaced module in Use

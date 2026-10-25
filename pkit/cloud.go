@@ -316,30 +316,12 @@ func resolveCloud(d Deployment) (cloudPlan, []issue) {
 	// mistake that has to be impossible: a deployment that chose a cloud and got
 	// the disk. Both sentences are collected, because under azure they have one
 	// fix and the deployment should hear both.
-	if d.Config.Files.Store != config.StoreS3 {
-		// The azure sentence is about a store nobody chose: an empty files.store is the
-		// disk the profile was never allowed to name, and a disk the deployment named
-		// itself is the deployment's own answer, which no profile contradicts.
-		if profile == config.ProfileAzure && d.Config.Files.Store == "" {
-			if warn {
-				p.warnings = append(p.warnings, azureStorageSentence)
-			} else {
-				issues = append(issues, issue{method: "Deployment", err: errors.New(azureStorageSentence)})
-			}
+	for _, sentence := range storageDeclined(d, profile) {
+		if warn {
+			p.warnings = append(p.warnings, sentence)
+			continue
 		}
-		// An unread key says what it says whoever wrote it: the deployment meant to
-		// use a store the composition was never given. Under a profile that had not
-		// yet been given the address this is a person mid-setup in development, which
-		// is why it warns there and refuses anywhere else, in the same shape as the
-		// missing inputs above.
-		if keys := d.Config.Files.S3Keys(); len(keys) > 0 {
-			sentence := s3NotWired(keys)
-			if warn {
-				p.warnings = append(p.warnings, sentence)
-			} else {
-				issues = append(issues, issue{method: "Deployment", err: errors.New(sentence)})
-			}
-		}
+		issues = append(issues, issue{method: "Deployment", err: errors.New(sentence)})
 	}
 
 	for _, def := range seams {
@@ -370,6 +352,39 @@ func resolveCloud(d Deployment) (cloudPlan, []issue) {
 	// the override is said, and it is said at boot rather than in Explain because
 	// the deployment chose the value and the composition should not read as
 	// disagreeing with the file it was started from.
+	p.warnings = append(p.warnings, lostProfileWrites(d, profile, unmet)...)
+	return p, issues
+}
+
+// storageDeclined names what a deployment owes when its profile chose a cloud and
+// the object store was never wired: azure's sentence, for the profile that was
+// allowed no store at all, and the sentence naming the keys nobody wired. Both,
+// in that order, when both are true. An empty files.store is the disk the profile
+// was never allowed to name, while a disk the deployment named itself is its own
+// answer, which no profile contradicts — so the first sentence is only owed while
+// the store is still empty.
+func storageDeclined(d Deployment, profile string) []string {
+	if d.Config.Files.Store == config.StoreS3 {
+		return nil
+	}
+	var sentences []string
+	if profile == config.ProfileAzure && d.Config.Files.Store == "" {
+		sentences = append(sentences, azureStorageSentence)
+	}
+	// An unread key says what it says whoever wrote it: the deployment meant to use
+	// a store the composition was never given.
+	if keys := d.Config.Files.S3Keys(); len(keys) > 0 {
+		sentences = append(sentences, s3NotWired(keys))
+	}
+	return sentences
+}
+
+// lostProfileWrites names, once per key, what the profile would have set and this
+// deployment named differently, which is the profile losing to the file it was
+// started from. A key the deployment never named is not an override: that is the
+// profile's own answer, and it is reported as missing input instead.
+func lostProfileWrites(d Deployment, profile string, unmet map[string]bool) []string {
+	var lost []string
 	for _, cell := range config.CloudProfile(profile) {
 		if cellUnmet(cell, unmet) {
 			continue
@@ -379,12 +394,12 @@ func resolveCloud(d Deployment) (cloudPlan, []issue) {
 			if !ok || got == w.Value {
 				continue
 			}
-			p.warnings = append(p.warnings, fmt.Sprintf(
+			lost = append(lost, fmt.Sprintf(
 				"cloud profile %s sets %s to %s; this deployment names %s and keeps what it wrote",
 				profile, w.Key, w.Value, w.Key))
 		}
 	}
-	return p, issues
+	return lost
 }
 
 // cellUnmet reports whether a cell's seam is still missing something the profile
