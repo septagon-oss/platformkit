@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
+
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -145,7 +147,7 @@ func TestTheConnectionScreenAndTheAPIAnswerAvailabilityAlike(t *testing.T) {
 			var (
 				path  string
 				cfg   config.Config
-				relay *smtpRelay
+				relay *gomailtest.Relay
 			)
 			if leg.mailHost {
 				path, cfg, relay = configureMailing(t)
@@ -297,7 +299,7 @@ func linkIn(body string) string {
 }
 
 // waitForMatter is how long the relay stayed empty.
-func waitForMatter(relay *smtpRelay, wait time.Duration) int {
+func waitForMatter(relay *gomailtest.Relay, wait time.Duration) int {
 	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
 		if n := len(relay.Sent()); n > 0 {
@@ -310,7 +312,7 @@ func waitForMatter(relay *smtpRelay, wait time.Duration) int {
 
 // waitForLink is the link the relay received for one address, or the empty string
 // once it has had a moment to be dialled.
-func waitForLink(t *testing.T, relay *smtpRelay, email string) string {
+func waitForLink(t *testing.T, relay *gomailtest.Relay, email string) string {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {

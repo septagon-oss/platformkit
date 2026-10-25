@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
+
 	"bytes"
 	"context"
 	"database/sql"
@@ -171,7 +173,7 @@ func writeConfig(t *testing.T, migrateURL, appURL string) (string, config.Config
 	// the relay on loopback; every other case gets the recording carrier it always
 	// got, which is what a deployment that names no host actually runs.
 	if relay, ok := mailing.Load(t); ok {
-		body += mailSection(relay.(*smtpRelay))
+		body += mailSection(relay.(*gomailtest.Relay))
 	}
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
