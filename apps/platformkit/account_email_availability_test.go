@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
-
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -19,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 

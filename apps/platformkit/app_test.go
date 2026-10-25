@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
-
 	"bytes"
 	"context"
 	"database/sql"
@@ -43,6 +41,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
