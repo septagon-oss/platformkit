@@ -137,20 +137,35 @@ func (p OrderSummaryProps) Validate() error {
 	if !required(p.TotalLabel, p.SubtotalLabel) {
 		return fmt.Errorf("OrderSummary: localized labels required")
 	}
-	ids := map[string]bool{}
-	var currency Currency
-	for _, amount := range []*MoneyText{p.Subtotal, p.Total} {
-		if amount != nil {
-			if err := amount.Validate(); err != nil {
-				return err
-			}
-			if currency != "" && currency != amount.Money.Currency {
-				return fmt.Errorf("OrderSummary: mixed currencies")
-			}
-			currency = amount.Money.Currency
-		}
+	currency, err := validateSummaryAmounts(p)
+	if err != nil {
+		return err
 	}
-	for _, line := range p.Lines {
+	if err := validateSummaryLines(p.Lines, currency); err != nil {
+		return err
+	}
+	if !p.Complete {
+		if p.Total != nil || !required(p.IncompleteText) {
+			return fmt.Errorf("OrderSummary: incomplete requires explanation and no total")
+		}
+		return nil
+	}
+	if p.Subtotal == nil || p.Total == nil {
+		return fmt.Errorf("OrderSummary: complete amounts required")
+	}
+	total, err := OrderTotal(p.Subtotal.Money, p.Lines)
+	if err != nil {
+		return err
+	}
+	if total != p.Total.Money {
+		return fmt.Errorf("OrderSummary: supplied total does not equal subtotal plus adjustments")
+	}
+	return nil
+}
+
+func validateSummaryLines(lines []SummaryLine, currency Currency) error {
+	ids := map[string]bool{}
+	for _, line := range lines {
 		if !required(line.Key, line.Label) || ids[line.Key] {
 			return fmt.Errorf("OrderSummary: unique keys and labels required")
 		}
@@ -176,22 +191,6 @@ func (p OrderSummaryProps) Validate() error {
 			}
 			currency = line.Amount.Money.Currency
 		}
-	}
-	if !p.Complete {
-		if p.Total != nil || !required(p.IncompleteText) {
-			return fmt.Errorf("OrderSummary: incomplete requires explanation and no total")
-		}
-		return nil
-	}
-	if p.Subtotal == nil || p.Total == nil {
-		return fmt.Errorf("OrderSummary: complete amounts required")
-	}
-	total, err := OrderTotal(p.Subtotal.Money, p.Lines)
-	if err != nil {
-		return err
-	}
-	if total != p.Total.Money {
-		return fmt.Errorf("OrderSummary: supplied total does not equal subtotal plus adjustments")
 	}
 	return nil
 }
@@ -408,43 +407,8 @@ func (p CartProps) Validate() error {
 	ids := map[string]bool{}
 	var subtotal Money
 	for _, line := range p.Lines {
-		if !required(line.ID, line.ProductID, line.Title, line.Revision, line.AvailabilityText) || ids[line.ID] || !availability(line.Availability) {
-			return fmt.Errorf("Cart: unique line identity, revision and availability required")
-		}
-		ids[line.ID] = true
-		if err := line.UnitPrice.Validate(); err != nil {
+		if err := validateCartLine(p.ID, line, ids, &subtotal); err != nil {
 			return err
-		}
-		if err := line.LineTotal.Validate(); err != nil {
-			return err
-		}
-		total, err := LineTotal(line.UnitPrice.Money, line.Quantity)
-		if err != nil {
-			return err
-		}
-		if total != line.LineTotal.Money {
-			return fmt.Errorf("Cart: line total mismatch")
-		}
-		if subtotal.Currency != "" && subtotal.Currency != total.Currency {
-			return fmt.Errorf("Cart: mixed currencies")
-		}
-		subtotal.Currency = total.Currency
-		subtotal.Minor, err = addMinor(subtotal.Minor, total.Minor)
-		if err != nil {
-			return err
-		}
-		if line.QuantityInput.Value != line.Quantity {
-			return fmt.Errorf("Cart: quantity control differs from line")
-		}
-		quantity := line.QuantityInput
-		quantity.ID = p.ID + "-quantity-" + line.ID
-		if err := quantity.Validate(); err != nil {
-			return err
-		}
-		if line.Media != nil {
-			if err := validatePhotoMedia(*line.Media); err != nil {
-				return err
-			}
 		}
 	}
 	if p.Summary.Subtotal != nil && (p.Summary.Subtotal.Money.Minor != subtotal.Minor || len(p.Lines) > 0 && p.Summary.Subtotal.Money.Currency != subtotal.Currency) {
@@ -497,4 +461,62 @@ func CartWithSlots(p CartProps, slots CartSlots) g.Node {
 		checkout = g.Group(slots.Checkout)
 	}
 	return sharedSection(p.ComponentProps, "cart", p.Label, stateBody(p.State, slots.StateSlots), h.Ul(h.Class(clDataList.Compile()), g.Group(rows)), Text(TextProps{Content: p.QuoteText, Size: "sm"}), OrderSummary(p.Summary), checkout)
+}
+
+func validateSummaryAmounts(p OrderSummaryProps) (Currency, error) {
+	var currency Currency
+	for _, amount := range []*MoneyText{p.Subtotal, p.Total} {
+		if amount != nil {
+			if err := amount.Validate(); err != nil {
+				return "", err
+			}
+			if currency != "" && currency != amount.Money.Currency {
+				return "", fmt.Errorf("OrderSummary: mixed currencies")
+			}
+			currency = amount.Money.Currency
+		}
+	}
+	return currency, nil
+}
+
+func validateCartLine(id string, line CartLine, ids map[string]bool, subtotal *Money) error {
+	if !required(line.ID, line.ProductID, line.Title, line.Revision, line.AvailabilityText) || ids[line.ID] || !availability(line.Availability) {
+		return fmt.Errorf("Cart: unique line identity, revision and availability required")
+	}
+	ids[line.ID] = true
+	if err := line.UnitPrice.Validate(); err != nil {
+		return err
+	}
+	if err := line.LineTotal.Validate(); err != nil {
+		return err
+	}
+	total, err := LineTotal(line.UnitPrice.Money, line.Quantity)
+	if err != nil {
+		return err
+	}
+	if total != line.LineTotal.Money {
+		return fmt.Errorf("Cart: line total mismatch")
+	}
+	if subtotal.Currency != "" && subtotal.Currency != total.Currency {
+		return fmt.Errorf("Cart: mixed currencies")
+	}
+	subtotal.Currency = total.Currency
+	subtotal.Minor, err = addMinor(subtotal.Minor, total.Minor)
+	if err != nil {
+		return err
+	}
+	if line.QuantityInput.Value != line.Quantity {
+		return fmt.Errorf("Cart: quantity control differs from line")
+	}
+	quantity := line.QuantityInput
+	quantity.ID = id + "-quantity-" + line.ID
+	if err := quantity.Validate(); err != nil {
+		return err
+	}
+	if line.Media != nil {
+		if err := validatePhotoMedia(*line.Media); err != nil {
+			return err
+		}
+	}
+	return nil
 }

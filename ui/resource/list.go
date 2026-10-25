@@ -7,12 +7,56 @@ import (
 	"slices"
 	"strings"
 
+	g "maragu.dev/gomponents"
+
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
-	g "maragu.dev/gomponents"
+	"github.com/septagon-oss/platformkit/ui/document"
 )
 
+// List renders the resolved collection layout, choices, count and pagination.
+// Rows and total must describe the same scoped read; writable permits only
+// mounted write operations. Invalid supported policy returns a render error.
+func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
+	r = r.policy(o)
+	if err := r.validatePolicy(); err != nil {
+		return document.View{Body: []g.Node{invalid(err)}}
+	}
+	at := r.Screen
+	reading := r.Resolved.Identity
+	title := reading.Plural
+	if sort == "" {
+		sort = r.Resolved.List.DefaultSort
+	}
+	noun := reading.Plural
+	if total == 1 {
+		noun = reading.Singular
+	}
+	var actions []g.Node
+	// The New button is drawn for a caller who may write *and* a resource that
+	// offers a create: the two questions are different, and the second is
+	// answered by the mounted routes rather than by anybody's permissions.
+	if writable && r.offers("create") {
+		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new", Variant: r.primaryAction(true)})}
+	}
+	pager := components.PaginationProps{
+		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
+		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: listURL(at, sort, r.Selected),
+		NavigationLabel:  o.Text("screens.pagination", "Pagination"),
+		PreviousLabel:    o.Text("screens.previous", "Previous page"),
+		NextLabel:        o.Text("screens.next", "Next page"),
+		PageLabel:        o.Text("screens.page", "Go to page %s", "%d"),
+		CurrentPageLabel: o.Text("screens.current_page", "Page %s, current page", "%d"),
+	}
+	body := []g.Node{table(o, r, at, title, rows, sort, o.Text("screens.count", "%d %s", total, noun), &pager, components.DataListSlots{
+		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title, Subtitle: reading.Description}, actions...)},
+		// Collection commands retain their native forms and precede the pager.
+		// Generated CRUD does not gain selected-row writes from a UI control.
+		Footer: CommandForms(r, o, at, true, nil),
+	})}
+	return document.View{Title: title, Language: r.Resolved.Language, Body: body}
+}
 func listURL(at, sort string, filters map[string]string) string {
 	query := url.Values{}
 	if sort != "" {
@@ -186,3 +230,4 @@ func (o Options) emptyCollection(plural string) string {
 	}
 	return fmt.Sprintf("No %s yet.", plural)
 }
+func pages(total int64) int { return int((total + PerPage - 1) / PerPage) }

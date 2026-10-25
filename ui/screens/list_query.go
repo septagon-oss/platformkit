@@ -15,7 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
-func mountList(router *httpx.Router, shell page.Shell, o Options, res httpx.Resource, id string) {
+func mountCollectionList(router *httpx.Router, shell page.Shell, o Options, res httpx.Resource, id string) {
 	if !res.Offers(httpx.CRUDList) {
 		return
 	}

@@ -11,10 +11,10 @@
 // configure, no lease to renew and no split brain: the lock lives on the
 // connection that holds it, so a worker that dies releases it.
 //
-// A job that says Parallel skips the lock, because it has a concurrency control
-// of its own. There is one, and the reason is worth stating: a locked job that
-// blocks stops that job on every replica, so a job that does not need the lock
-// must not take it.
+// A Parallel job skips the lock and supplies its own concurrency control.
+//
+// The [Job] example validates a schedule and invokes its work once.
+// It uses in-memory work and does not start a scheduler.
 package jobs
 
 import (
