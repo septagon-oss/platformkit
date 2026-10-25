@@ -80,7 +80,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-      "max": 148209
+      "max": 153139
     },
     {
       "name": "go_testsupport",
