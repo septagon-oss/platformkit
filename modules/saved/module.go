@@ -35,17 +35,14 @@ type Deps struct {
 //
 // The pairs that can be saved arrive as contributions rather than as an argument,
 // because which things are worth keeping is a fact about the modules a product
-// composed and never about this one: a look, a plan and a place to stay are three
-// captures written by three owners, and saved's service holds no switch among them.
-// A composition that contributes none gets the same service with nothing to
-// capture, which Explain names rather than leaves silent.
+// composed and never about this one; a composition that contributes none gets the
+// same service with nothing to capture, which Explain names rather than leaves
+// silent.
 //
 // What is absent from the manifest below is a decision, not an omission: no
-// Routes, no Nav and no generated screen, because the heart on a savable detail
-// and the saved grid are mounted by a composition that has a page to mount them
-// on, and the words they show come out of each Savable's own declaration. What is
-// here is the capability — the schema, the two grants, the two events and the
-// person's claim on their own rows.
+// Routes, no Nav and no generated screen, because a page belongs to the
+// composition that has one, and the words a heart shows come from each Savable's
+// own declaration.
 var Module = pkit.NewModule("saved", wire,
 	pkit.Needs[contracts.Access](),
 	pkit.Needs[[]contracts.Savable](),

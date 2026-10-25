@@ -86,8 +86,8 @@ func TestCompositionComposesNothingYetAsAnEmptyLibrary(t *testing.T) {
 	}
 }
 
-// TestCompositionRefusesTheAuthorityPortNobodyAnswers is decision 0074 read at
-// boot: a Need with no supplier is refused before a connection, a migration or a
+// TestCompositionRefusesTheAuthorityPortNobodyAnswers is the plan read at boot: a
+// Need with no supplier is refused before a connection, a migration or a
 // listener, and the refusal names the contract that went unanswered.
 func TestCompositionRefusesTheAuthorityPortNobodyAnswers(t *testing.T) {
 	err := pkit.NewApp("saved-fixture").Use(saved.Module).Validate(pkit.Deployment{Environment: pkit.Development})
