@@ -103,7 +103,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -176,12 +175,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
             "name": "createdAt",
@@ -205,11 +201,9 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
             "name": "updatedAt",
@@ -233,11 +227,9 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
             "name": "title",
@@ -257,12 +249,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
             "name": "body",
@@ -282,12 +271,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
             "name": "status",
@@ -307,9 +293,7 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
@@ -324,8 +308,7 @@
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           },
           {
             "name": "rank",
@@ -345,12 +328,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
             "name": "pinned",
@@ -370,12 +350,9 @@
               "missing": "—",
               "true": "Yes",
               "false": "No",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
             "name": "tags",
@@ -395,12 +372,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "list": {
@@ -468,7 +442,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           },
           {
@@ -478,7 +451,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           },
           {
@@ -488,7 +460,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
@@ -534,7 +505,6 @@
           }
         },
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },

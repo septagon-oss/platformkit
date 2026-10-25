@@ -20,8 +20,8 @@ type Resolved struct {
 	Fields   []ResolvedField   `json:"fields"`
 	List     ResolvedList      `json:"list"`
 	Commands []ResolvedCommand `json:"commands"`
-	// Deck is null unless the entry declares a swipe deck.
-	Deck    *ResolvedDeck   `json:"deck"`
+	// Deck is absent unless the entry declares a swipe deck.
+	Deck    *ResolvedDeck   `json:"deck,omitempty"`
 	Summary ResolvedSummary `json:"summary"`
 }
 
@@ -40,8 +40,8 @@ type ResolvedIdentity struct {
 	EmptyDescription string `json:"emptyDescription"`
 	// Icon is a name entity.Icons admits, or "".
 	Icon string `json:"icon"`
-	// Group is null when the entry names none.
-	Group *ResolvedGroup `json:"group"`
+	// Group is absent when the entry names none.
+	Group *ResolvedGroup `json:"group,omitempty"`
 	// Order is the declared position within the group; 0 is "no opinion".
 	Order int `json:"order"`
 }
@@ -125,8 +125,8 @@ type ResolvedReading struct {
 	// Precision is the decimal places of the type: 0 for an int, null (as
 	// stored) for everything else.
 	Precision *int           `json:"precision"`
-	Time      *ResolvedTime  `json:"time"`
-	Money     *ResolvedMoney `json:"money"`
+	Time      *ResolvedTime  `json:"time,omitempty"`
+	Money     *ResolvedMoney `json:"money,omitempty"`
 }
 
 // ResolvedEditable says whether a create or an update form takes the field. It is a
@@ -154,8 +154,8 @@ type ResolvedField struct {
 	Reading ResolvedReading `json:"reading"`
 	// Options is [] for a field that is not an enum.
 	Options []ResolvedOption `json:"options"`
-	// Reference is null when the author guessed no relationship.
-	Reference *ResolvedReference `json:"reference"`
+	// Reference is absent when the author guessed no relationship.
+	Reference *ResolvedReference `json:"reference,omitempty"`
 }
 
 // ResolvedSortOption is one order a list offers: Query is the exact `sort` parameter.
@@ -200,8 +200,8 @@ type ResolvedCommand struct {
 	System      bool   `json:"system"`
 	Primary     bool   `json:"primary"`
 	Destructive bool   `json:"destructive"`
-	// Confirmation is null when the command asks nothing first.
-	Confirmation   *ResolvedConfirmation `json:"confirmation"`
+	// Confirmation is absent when the command asks nothing first.
+	Confirmation   *ResolvedConfirmation `json:"confirmation,omitempty"`
 	SuccessMessage string                `json:"successMessage"`
 }
 
@@ -226,7 +226,7 @@ type ResolvedDeck struct {
 
 // ResolvedSummary carries the declared sub-count and trend of the entry's cards.
 type ResolvedSummary struct {
-	// Highlight is null when none is declared; its label is resolved.
-	Highlight  *entity.EntryHighlight `json:"highlight"`
+	// Highlight is absent when none is declared; its label is resolved.
+	Highlight  *entity.EntryHighlight `json:"highlight,omitempty"`
 	TrendField string                 `json:"trendField"`
 }

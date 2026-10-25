@@ -250,12 +250,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "createdAt",
@@ -279,11 +276,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "updatedAt",
@@ -307,11 +302,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "slug",
@@ -331,12 +324,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "title",
@@ -356,12 +346,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "body",
@@ -381,12 +368,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "coverImageId",
@@ -406,12 +390,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "kind",
@@ -431,9 +412,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
@@ -448,8 +427,7 @@
             "tone": "neutral",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
         "name": "status",
@@ -469,9 +447,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
@@ -492,8 +468,7 @@
             "tone": "neutral",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
         "name": "publishedAt",
@@ -517,11 +492,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "author",
@@ -541,9 +514,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [],
         "reference": {
@@ -568,12 +539,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": 0,
-          "time": null,
-          "money": null
+          "precision": 0
         },
-        "options": [],
-        "reference": null
+        "options": []
       }
     ],
     "list": {
@@ -685,7 +653,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -695,7 +662,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -705,7 +671,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -715,7 +680,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -725,7 +689,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -735,7 +698,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -787,7 +749,6 @@
       }
     },
     "summary": {
-      "highlight": null,
       "trendField": ""
     }
   },

@@ -295,12 +295,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "createdAt",
@@ -324,11 +321,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "updatedAt",
@@ -352,11 +347,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "title",
@@ -376,12 +369,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "description",
@@ -401,12 +391,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "status",
@@ -426,9 +413,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
@@ -461,8 +446,7 @@
             "tone": "neutral",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
         "name": "priority",
@@ -482,9 +466,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
@@ -511,8 +493,7 @@
             "tone": "danger",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
         "name": "source",
@@ -532,12 +513,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "sourceRef",
@@ -557,12 +535,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "assigneeId",
@@ -582,9 +557,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [],
         "reference": {
@@ -613,11 +586,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "slaDeadline",
@@ -641,11 +612,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "slaBreached",
@@ -665,12 +634,9 @@
           "missing": "—",
           "true": "Sim",
           "false": "Não",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "resolvedAt",
@@ -694,11 +660,9 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "resolution",
@@ -718,12 +682,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
         "name": "revision",
@@ -743,12 +704,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": 0,
-          "time": null,
-          "money": null
+          "precision": 0
         },
-        "options": [],
-        "reference": null
+        "options": []
       }
     ],
     "list": {
@@ -889,7 +847,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -899,7 +856,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -909,11 +865,9 @@
         "system": true,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       }
     ],
-    "deck": null,
     "summary": {
       "highlight": {
         "label": "Vence hoje",

@@ -106,7 +106,7 @@ func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET /openapi.json = %d %s, want 200: the reference composition serves its document", code, body)
 	}
-	wiregate.GoldenWithAllowances(t, openapiGolden, func() []byte { return []byte(body) }, wireAuthorizationAllowances())
+	wiregate.GoldenWithRequiredness(t, openapiGolden, func() []byte { return []byte(body) }, wireAuthorizationAllowances(), wireRequirednessAllowances())
 }
 
 // TestTheCatalogOperationDescribesWhatAShellParses is the hole this delivery
