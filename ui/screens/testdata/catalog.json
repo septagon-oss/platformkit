@@ -121,6 +121,8 @@
         },
         "fields": [
           {
+            "choice": null,
+            "figure": null,
             "name": "id",
             "label": "Id",
             "help": "",
@@ -146,6 +148,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "createdAt",
             "label": "Created at",
             "help": "",
@@ -174,6 +178,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
             "help": "",
@@ -202,6 +208,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "title",
             "label": "Title",
             "help": "What this note is about",
@@ -227,6 +235,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "body",
             "label": "Body",
             "help": "",
@@ -252,6 +262,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "status",
             "label": "Status",
             "help": "",
@@ -275,12 +287,18 @@
             },
             "options": [
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "open",
                 "label": "Open",
                 "tone": "neutral",
                 "done": false
               },
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "done",
                 "label": "Done",
                 "tone": "neutral",
@@ -290,6 +308,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "rank",
             "label": "Rank",
             "help": "",
@@ -315,6 +335,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "pinned",
             "label": "Pinned",
             "help": "",
@@ -340,6 +362,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "tags",
             "label": "Tags",
             "help": "",
@@ -472,12 +496,18 @@
               "kind": "enum",
               "values": [
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "open",
                   "label": "Open",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "done",
                   "label": "Done",
                   "tone": "neutral",
@@ -491,12 +521,18 @@
               "kind": "bool",
               "values": [
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "true",
                   "label": "Yes",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "false",
                   "label": "No",
                   "tone": "neutral",
@@ -508,6 +544,35 @@
         },
         "commands": [
           {
+            "fields": [
+              {
+                "choice": null,
+                "figure": null,
+                "name": "at",
+                "label": "At",
+                "help": "When it goes out; now if left empty",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "text",
+                "kind": "text",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null,
+                  "time": null,
+                  "money": null
+                },
+                "options": [],
+                "reference": null
+              }
+            ],
             "verb": "publish",
             "label": "Publish a note",
             "visible": true,
@@ -518,6 +583,7 @@
             "successMessage": ""
           },
           {
+            "fields": [],
             "verb": "archive",
             "label": "Archive every resolved note",
             "visible": true,
@@ -682,6 +748,8 @@
         },
         "fields": [
           {
+            "choice": null,
+            "figure": null,
             "name": "id",
             "label": "Id",
             "help": "",
@@ -707,6 +775,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "createdAt",
             "label": "Created at",
             "help": "",
@@ -735,6 +805,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
             "help": "",
@@ -763,6 +835,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "title",
             "label": "Title",
             "help": "What this note is about",
@@ -788,6 +862,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "body",
             "label": "Body",
             "help": "",
@@ -813,6 +889,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "status",
             "label": "Status",
             "help": "",
@@ -836,12 +914,18 @@
             },
             "options": [
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "open",
                 "label": "Open",
                 "tone": "neutral",
                 "done": false
               },
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "done",
                 "label": "Done",
                 "tone": "neutral",
@@ -851,6 +935,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "rank",
             "label": "Rank",
             "help": "",
@@ -876,6 +962,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "pinned",
             "label": "Pinned",
             "help": "",
@@ -901,6 +989,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "tags",
             "label": "Tags",
             "help": "",
@@ -1033,12 +1123,18 @@
               "kind": "enum",
               "values": [
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "open",
                   "label": "Open",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "done",
                   "label": "Done",
                   "tone": "neutral",
@@ -1052,12 +1148,18 @@
               "kind": "bool",
               "values": [
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "true",
                   "label": "Yes",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "false",
                   "label": "No",
                   "tone": "neutral",
@@ -1184,6 +1286,8 @@
         },
         "fields": [
           {
+            "choice": null,
+            "figure": null,
             "name": "id",
             "label": "Id",
             "help": "",
@@ -1209,6 +1313,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "createdAt",
             "label": "Created at",
             "help": "",
@@ -1237,6 +1343,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
             "help": "",
@@ -1265,6 +1373,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "title",
             "label": "Title",
             "help": "What this note is about",
@@ -1290,6 +1400,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "body",
             "label": "Body",
             "help": "",
@@ -1315,6 +1427,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "status",
             "label": "Status",
             "help": "",
@@ -1338,12 +1452,18 @@
             },
             "options": [
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "open",
                 "label": "Open",
                 "tone": "neutral",
                 "done": false
               },
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "done",
                 "label": "Done",
                 "tone": "neutral",
@@ -1353,6 +1473,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "rank",
             "label": "Rank",
             "help": "",
@@ -1378,6 +1500,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "pinned",
             "label": "Pinned",
             "help": "",
@@ -1403,6 +1527,8 @@
             "reference": null
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "tags",
             "label": "Tags",
             "help": "",

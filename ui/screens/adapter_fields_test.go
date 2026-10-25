@@ -91,6 +91,13 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 	row := map[string]any{"id": "11111111-1111-1111-1111-111111111111", "title": "Buy milk", "status": "open"}
 	rows := []map[string]any{row}
 	switch name {
+	case "Resolved":
+		a, b := base(), base()
+		a.Schema.Fields = []entity.Field{choiceCatalogField("chips")}
+		b.Schema.Fields = []entity.Field{choiceCatalogField("swatch")}
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.Form(r, opts, "/app/note/notes", "Edit", nil, nil, "", false))
+		}, true
 	case "Schema":
 		a, b := base(), base()
 		b.Schema.Fields = noteFields(entity.Field{Name: "urgent", Type: entity.TypeBool})

@@ -131,7 +131,7 @@ func (a *App) moveLedger(ctx context.Context, conn *db.Conn) error {
 // would be left behind forever, and "resumable" would mean "somebody runs a command
 // nobody has read about".
 func (a *App) drainMigrations() jobs.Job {
-	// The declaration travels with the tick for the reason db.BackfillDeclaring
+	// The declaration travels with the tick for the reason db.BackfillWithOptions
 	// gives: a placement runs where the drain runs, and the composition is the only
 	// party that still knows what it named itself when the tick arrives. A
 	// declaration this configuration cannot make is a refused worker, not a drain

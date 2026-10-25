@@ -50,8 +50,14 @@ type Options = resource.Options
 // shelf of one, with a New button that answered 405 and a Delete that answered 409.
 // A field the renderers read has to be delivered here, and
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
-func described(r httpx.Resource) resource.Resource {
-	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
+func described(r httpx.Resource, o Options) resource.Resource {
+	language := "en"
+	var text Text
+	if o.Locale != nil {
+		language = o.Locale.Language
+		text = func(key, fallback string) string { return o.Locale.Text(key, fallback) }
+	}
+	return resource.Resource{Resolved: resolve(Localise(r, text), text, language), Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
 		Screen: r.Screen, Operations: screenOperations(r), Present: r.Present, API: r.Path}
 }
 
@@ -93,8 +99,8 @@ func screenOperations(r httpx.Resource) []string {
 //
 // at is the list path, which is where a collection command's route is mounted and
 // what the renderer needs to build an action without knowing how paths are derived.
-func view(r httpx.Resource, ctx context.Context, at string) resource.Resource {
-	v := described(r)
+func view(r httpx.Resource, ctx context.Context, at string, o Options) resource.Resource {
+	v := described(r, o)
 	v.Commands = commands(r, ctx, at)
 	return v
 }
@@ -144,7 +150,7 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 // renders — a design export, a golden file, a test — and so carries no commands,
 // because "may this person resolve the task" has no answer where there is no person.
 func listView(r httpx.Resource, ctx context.Context, o Options, at string, rows []map[string]any, total int64, pageNo int, sort string, writable bool) page.View {
-	return resource.List(view(r, ctx, at), o, rows, total, pageNo, sort, writable)
+	return resource.List(view(r, ctx, at, o), o, rows, total, pageNo, sort, writable)
 }
 
 func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row map[string]any, writable bool) (page.View, error) {
@@ -172,7 +178,7 @@ func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row
 	if err != nil {
 		return page.View{}, err
 	}
-	v := view(r, ctx, at)
+	v := view(r, ctx, at, o)
 	v.History = historyPanel(r, ctx, o, at, row)
 	return resource.DetailRichText(v, o, row, writable, rendered, locales), nil
 }
@@ -198,25 +204,25 @@ func localeStates(ctx context.Context, r httpx.Resource, row map[string]any) ([]
 
 // List is the list screen of a registered resource. See resource.List.
 func List(r httpx.Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) page.View {
-	return resource.List(described(r), o, rows, total, pageNo, sort, writable)
+	return resource.List(described(r, o), o, rows, total, pageNo, sort, writable)
 }
 
 // Detail is one row of a registered resource. See resource.Detail.
 func Detail(r httpx.Resource, o Options, row map[string]any, writable bool) page.View {
 	// No caller and no request, so no language question gets asked: a design
 	// export and a golden file render the record, not its translation standing.
-	return resource.DetailRichText(described(r), o, row, writable, nil, nil)
+	return resource.DetailRichText(described(r, o), o, row, writable, nil, nil)
 }
 
 // Form is the create and edit screen of a registered resource. See resource.Form.
 func Form(r httpx.Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) page.View {
-	return resource.Form(described(r), o, action, title, row, errs, detail, create)
+	return resource.Form(described(r, o), o, action, title, row, errs, detail, create)
 }
 
 // FormExample captures the form body Form serves, without its page chrome, for
 // design export. See resource.FormExample.
 func FormExample(id string, r httpx.Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	return resource.FormExample(id, described(r), o, action, title, row, errs, detail, create)
+	return resource.FormExample(id, described(r, o), o, action, title, row, errs, detail, create)
 }
 
 // Control adapts an entity field to the portable form control. See resource.Control.

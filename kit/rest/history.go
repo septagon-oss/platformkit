@@ -235,7 +235,7 @@ func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read *httpx.Router) {
 				if err != nil {
 					return nil, err
 				}
-				if _, err := crud.Get[T](tx, in.ID); err != nil {
+				if _, err := crud.GetCtx[T](ctx, tx, in.ID); err != nil {
 					return nil, Fault(err)
 				}
 				limit := in.Limit

@@ -160,6 +160,9 @@ func finishDrain(ctx context.Context, tx *sql.Tx, m migration) error {
 // ErrBackfillBudget at the worker's batch bound, preserving completed batches.
 // Cursor compare-and-set protects each batch without holding the composition
 // lock throughout the drain. See README.md for the worker lifecycle.
+//
+// Deprecated: Use BackfillWithOptions with the zero MigrateOptions, which drains
+// on these same default budgets and declares nothing.
 func Backfill(ctx context.Context, migrateURL string, sources ...MigrationSource) error {
 	return BackfillWith(ctx, migrateURL, MigrationBudget{}, sources...)
 }
@@ -171,79 +174,21 @@ func Backfill(ctx context.Context, migrateURL string, sources ...MigrationSource
 // patience an operator shortened because a boot must not sit on a busy table is the
 // one that matters most here, and a drain that always ran on the default would run the
 // work on a patience its own deployment had refused.
+//
+// Deprecated: Use BackfillWithOptions with MigrateOptions{Budget: budget}, which is
+// this call and nothing more.
 func BackfillWith(ctx context.Context, migrateURL string, budget MigrationBudget, sources ...MigrationSource) error {
 	return BackfillDeclaring(ctx, migrateURL, budget, Declaration{}, sources...)
 }
 
 // BackfillDeclaring is BackfillWith plus what the boot declares about itself, the
-// same three settings MigrateDeclaring puts on its session.
+// same three settings the migration puts on its session; see BackfillWithOptions
+// for why a drain needs them on its own connection.
 //
-// It exists because a drain opens its own connection and its own transaction per
-// window, and the declaration a schema half reads is session state: a placement of
-// tenants left behind by a boot that declared its slug and hosts is placed by
-// nothing at all on the door that drains it, which is 000043's bug again in the one
-// half of the release where the placement actually runs (planOwner leaves a data
-// file to this door whenever the owner has history). kit/app.Drain and the worker's
-// drain job both come through here for that reason; the door that declares nothing
-// places nothing, which is what the file's own refusal is for.
+// Deprecated: Use BackfillWithOptions, which takes the budget and the declaration
+// as the one MigrateOptions it runs on.
 func BackfillDeclaring(ctx context.Context, migrateURL string, budget MigrationBudget, decl Declaration, sources ...MigrationSource) error {
-	if err := budget.validate(); err != nil {
-		return fmt.Errorf("db: backfill: %w", err)
-	}
-	migrations, _, err := readMigrations(sources)
-	if err != nil {
-		return err
-	}
-	pool, err := sql.Open("pgx", migrateURL)
-	if err != nil {
-		return fmt.Errorf("db: backfill: open: %w", err)
-	}
-	defer pool.Close()
-	conn, err := pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("db: backfill: connect: %w", err)
-	}
-	defer conn.Close()
-	if err := requireLedger(ctx, conn); err != nil {
-		return err
-	}
-	// Session state, on the connection every window of this run will take: the same
-	// three settings, read the same way, declared before the ledger is read.
-	if err := decl.declare(ctx, conn); err != nil {
-		return fmt.Errorf("db: backfill: %w", err)
-	}
-	pending, _, err := pendingMigrations(ctx, conn, migrations)
-	if err != nil {
-		return err
-	}
-	// The same guard the migration runs: a drain is a second door to the same file,
-	// and a floor that excuses nothing excuses less on the door that never reads the
-	// rule table than on the one that does.
-	if err := checkPendingGuards(pending); err != nil {
-		return fmt.Errorf("db: backfill: %w", err)
-	}
-	run := &runner{conn: conn, budget: budget}
-	for _, group := range groupedByOwner(pending) {
-		for _, m := range group {
-			if m.phase != phaseData {
-				break // the release has schema pending; the deploy migrates, then this drains
-			}
-			started := time.Now()
-			report, err := run.drain(ctx, m, workerBackfillBatches)
-			if err != nil {
-				return fmt.Errorf("db: backfill: %s/%s: %w", m.owner, m.name, run.refused(err))
-			}
-			// The drain's own measurement, in the same shape as the per-file line above:
-			// the rehearsal reports what the runner timed, and a backfill is the one
-			// migration a release most wants the length of. The batch count travels with
-			// it, because a file that took three transactions and one that took fifty
-			// have the same duration and a different cost per row.
-			slog.InfoContext(ctx, "db: drained data migration",
-				"owner", m.owner, "version", m.version, "name", m.name, "table", m.table,
-				"batch", m.batch, "batches", report.batches, "duration_ms", time.Since(started).Milliseconds())
-		}
-	}
-	return nil
+	return BackfillWithOptions(ctx, migrateURL, MigrateOptions{Budget: budget, Declaration: decl}, sources...)
 }
 
 // requireLedger is the drain's precondition: both tables it writes already exist.

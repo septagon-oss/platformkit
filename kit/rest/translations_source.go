@@ -93,7 +93,7 @@ func (s *specSource[T]) Rows(ctx context.Context, tx db.Tx[db.Tenant], ids []uui
 }
 
 func (s *specSource[T]) Page(ctx context.Context, tx db.Tx[db.Tenant], limit, offset int) ([]SourceRow, int64, error) {
-	rows, total, err := crud.List[T](tx, crud.Query{Limit: limit, Offset: offset})
+	rows, total, err := crud.ListCtx[T](ctx, tx, crud.Query{Limit: limit, Offset: offset})
 	if err != nil {
 		return nil, 0, err
 	}
