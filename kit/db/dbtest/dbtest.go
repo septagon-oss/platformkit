@@ -117,7 +117,7 @@ func migrateWithLog(ctx context.Context, adminURL string, logf func(string, ...a
 		if try > 1 && logf != nil {
 			logf("dbtest: the migration was refused by a lock, running it again: attempt %d of %d", try, migrateTries)
 		}
-		return db.Migrate(ctx, adminURL, sources...)
+		return db.MigrateWithOptions(ctx, adminURL, db.MigrateOptions{}, sources...)
 	})
 }
 
