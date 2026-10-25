@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/screen"
 	"log/slog"
+	"maps"
 	"net/http"
 	"reflect"
 	"strings"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/internal/jsonbody"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -34,6 +36,9 @@ import (
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
 	screenViews []screen.View
+	// integers is every operation registered with its own integer view of the
+	// document, so the gate can render each negotiated form. See int64_api.go.
+	integers []*integerAPI
 	// moved is this composition's own migration rows (API.Alias), asked after the
 	// kernel's table in aliases.go.
 	moved []struct{ from, to string }
@@ -292,6 +297,14 @@ func requiredOptions(cfg Options) Options {
 func documentConfig(cfg Options) (huma.Config, []string) {
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
 	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
+	// Every JSON form this composition serves decodes through one codec, so a
+	// body keeps its int64 digits whichever media type carried it. The private
+	// int64 media renders decimal strings instead of numbers.
+	config.Formats = maps.Clone(config.Formats)
+	format := huma.DefaultJSONFormat
+	format.Unmarshal = jsonbody.Decode
+	config.Formats["application/json"], config.Formats["json"] = format, format
+	config.Formats[int64JSONMediaType] = huma.Format{Marshal: jsonbody.Encode, Unmarshal: jsonbody.Decode}
 	// The extra JSON media types go into the same map the defaults went into,
 	// bound to the same format: parsing and rendering stay JSON's, and the type
 	// name is what a protocol client negotiated for.
@@ -301,7 +314,9 @@ func documentConfig(cfg Options) (huma.Config, []string) {
 			badMediaTypes = append(badMediaTypes, mt)
 			continue
 		}
-		config.Formats[mt] = huma.DefaultJSONFormat
+		if mt != int64JSONMediaType {
+			config.Formats[mt] = huma.DefaultJSONFormat
+		}
 	}
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}

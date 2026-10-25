@@ -6,6 +6,16 @@ import (
 	"github.com/septagon-oss/platformkit/kit/screen"
 )
 
+// views reports this module's own custom-screen descriptors: every ref parses, is
+// owned by this module, and is named once. A module that names no view adds nothing.
+func (v *validation) views(m Module) {
+	if err := validateViews(m); err != nil {
+		v.add("%v", err)
+	}
+}
+
+// validateViews is the same question asked of one module, as an error rather than
+// as diagnostics, so a caller that holds one module can refuse it on its own.
 func validateViews(m Module) error {
 	seen := map[screen.ViewRef]bool{}
 	for _, v := range m.Views {
@@ -18,12 +28,4 @@ func validateViews(m Module) error {
 		seen[v.Ref()] = true
 	}
 	return nil
-}
-
-func checkViews(mods []Module, add func(string, ...any)) {
-	for _, m := range mods {
-		if err := validateViews(m); err != nil {
-			add("%v", err)
-		}
-	}
 }
