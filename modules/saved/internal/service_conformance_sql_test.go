@@ -62,10 +62,11 @@ func world(t *testing.T, run func(savedtest.Fixture)) {
 	t.Helper()
 	_, conn := dbtest.Schema(t, saved.Migrations)
 
-	source := &savedtest.Source{Value: contracts.Capture{
-		Title: "The first thing", Locale: "en-GB", Version: "v1",
-		Values: json.RawMessage(`{"size":"red","fit":"relaxed"}`),
-	}}
+	source := &savedtest.Source{
+		Value: contracts.Capture{Title: "The first thing", Locale: "en-GB", Version: "v1",
+			Values: json.RawMessage(`{"size":"red","fit":"relaxed"}`)},
+		Destination: "/app/example/things/one",
+	}
 	grants := &desk{held: map[uuid.UUID][]string{}}
 	owner, other, stranger := uuid.New(), uuid.New(), uuid.New()
 	grants.grant(owner, contracts.PermissionRead, contracts.PermissionWrite)

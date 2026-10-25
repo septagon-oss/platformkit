@@ -466,11 +466,11 @@ undo history, quotas, recommendations, external save service or new provider SDK
 
 Run [RunService](contracts/savedtest/conformance.go) against the fake now and
 against the SQL adapter when it exists. It checks first-write events, duplicates,
-source and saved revisions, zero-result refusals, private reads/removals from the
-owner's side, source deletion/revocation/outage, last removal, new identity after
-removal, ordered kind filtering, grant recheck and detached values. Tests have
-independent expected snapshots, state and events; the fake delegates the decision
-instead of carrying a second version of it.
+source and saved revisions, zero-result refusals, owner-side private reads and
+removals, source deletion/revocation/outage, a source the composition dropped,
+an open's fresh destination, last removal, new identity, kind ordering, grant
+recheck and detached values. Tests have independent expected snapshots, state
+and events; the fake delegates the decision, not a second version of it.
 
 Implementation must add these boundary cases without replacing that suite:
 

@@ -203,7 +203,9 @@ func cases() []porttest.Case[Fixture] {
 	out = append(out, sourceCallCases()...)
 	out = append(out, retainedReadCases()...)
 	out = append(out, privateScopeCases()...)
-	return append(append(out, sourceLossCases()...), droppedDeclarationCases()...)
+	out = append(out, sourceLossCases()...)
+	out = append(out, droppedDeclarationCases()...)
+	return append(out, openDestinationCases()...)
 }
 
 // The first save, the duplicate that must not refresh it, and the removal that ends it.
@@ -531,6 +533,46 @@ func droppedDeclarationCases() []porttest.Case[Fixture] {
 				}
 				if want := append(events, contracts.EventUnsaved); !slices.Equal(want, f.Published()) {
 					t.Fatalf("the copy's two commands published %v, want %v", f.Published(), want)
+				}
+			}},
+	}
+}
+
+// What a live open answers with, and what it refuses to hand over. Every other
+// open assertion here is a refusal, so the branch that accepts a destination —
+// and the branch that refuses one that leaves the application — had no witness.
+func openDestinationCases() []porttest.Case[Fixture] {
+	open := func(f Fixture, id uuid.UUID) (string, error) {
+		var path string
+		err := f.Within(f.Owner, func(tx db.Tx[db.Tenant]) error {
+			var err error
+			path, err = f.Service.Open(f.Owner, tx, id.String())
+			return err
+		})
+		return path, err
+	}
+	return []porttest.Case[Fixture]{
+		{Name: "open answers the destination its source names, afresh",
+			Because: "A retained copy is a right to display its snapshot, never a stored link.",
+			Run: func(t *testing.T, f Fixture) {
+				row := mustSave(t, f, first)
+				copies, events := f.Rows(), slices.Clone(f.Published())
+				if path, err := open(f, row.ID); err != nil || path != f.Source.Destination || path == "" {
+					t.Fatalf("open: %q, %v, want the source's own %q", path, err, f.Source.Destination)
+				}
+				f.Source.Destination = "/app/example/things/another"
+				if path, err := open(f, row.ID); err != nil || path != "/app/example/things/another" {
+					t.Fatalf("open answered a stale destination: %q, %v", path, err)
+				}
+				for _, away := range []string{"https://elsewhere.example/x", "https://elsewhere.example/app/things",
+					"//elsewhere.example/app/x", "relative/path"} {
+					f.Source.Destination = away
+					if path, err := open(f, row.ID); !errors.Is(err, contracts.ErrInvalid) || path != "" {
+						t.Fatalf("open followed %q: %q, %v", away, path, err)
+					}
+				}
+				if f.Rows() != copies || !slices.Equal(events, f.Published()) {
+					t.Fatal("open wrote or published")
 				}
 			}},
 	}
