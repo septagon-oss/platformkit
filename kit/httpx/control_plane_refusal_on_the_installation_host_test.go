@@ -1,55 +1,19 @@
 package httpx_test
 
 // Two refusals of the installation's own host must not be told apart by anything a client can
-// read.
+// read: the control plane refused to a tenant that is not the installation's, and an address
+// nobody mounted at that host. README.md, CHANGELOG.md and authorize.go's notHere all promise
+// one status, one body and one set of headers, so what is compared here is the whole answer as
+// it arrived — every header, and the body a client would parse — rather than a list of names.
 //
-// ## The case that fails, and what it falsifies
-//
-// kit/httpx/README.md sells the control plane's secrecy in one sentence with two halves:
-// the surface "answers exactly what an address nobody mounted answers — the same status,
-// the same body, and the same headers every other refusal of that host carries, because
-// the gate runs inside the middleware that writes them, so the surface discloses nothing;
-// and at the installation's host a tenant that is not the installation's is refused the
-// same way, before the Authorizer is consulted". CHANGELOG.md repeats it ("the same
-// status, the same body and the same headers every other refusal of that host carries …
-// including to a tenant that is not the installation's"), and authorize.go's notHere —
-// the guard the second half names — states it most precisely: "the same verdict, the same
-// sentence and the same writer as the address nobody mounted … This is what makes the
-// answer byte-identical to the one a never-mounted address gets, Fault page included".
-// kit/httpx/fault.go's own rule is the reason it should hold: "a second writer of problem
-// bodies in this package is a second answer to the question this file exists to ask once".
-//
-// The first half is held and pinned: kit/httpx/control_plane_refusal_test.go compares the
-// host gate with a never-mounted address, headers and body, at both shapes, and the gate was
-// moved inside the headers middleware to make that true. That fixture resolves the
-// installation host to an *operator* tenant, so nothing it asks ever reaches notHere. The
-// second half — the road the published table's row "a door only the operator may open, asked
-// at another tenant" describes — has never been compared to anything.
-//
-// This case compares it, at the installation host, over a real HTTP/1.1 server, at both
-// document types and both ends of the renderer's opt-out. The page a browser is shown is
-// byte-identical, exactly as claimed, and that subtest passes. The document a client that
-// asked for a value is handed is not: `refuse` falls back to huma's writer and `fail` to
-// writeProblem, and the two encoders are not the same writer — one adds
-// `"$schema":"https://<host>/schemas/Problem.json"` and a `Link: … rel="describedby"`
-// response header, the other adds neither. So the same refusal of the same host arrives as
-// 211 bytes against 150, with a header the ordinary refusal does not answer: one body, yes
-// — but not "the same body", and not "the same headers", and the kernel does keep a second
-// writer of problem bodies.
-//
-// The fix has two honest shapes, and either turns every subtest green: answer the chain's
-// fallback with the same encoder the kernel-side answers use (this reviewer tried it —
-// `refuse` writing writeProblem on the writer humachi carries, four lines — and
-// ./kit/httpx ./ui/... ./kit/app ./apps/platformkit ./modules/auth ./kit/rest
-// ./modules/task all stay ok), or state in README.md, CHANGELOG.md and notHere that the
-// two answers differ and give up the claim that the address discloses nothing.
-//
-// ## The case that passes
-//
-// Retry-After on the public write limit has two limbs — the answer inside the limit and the
-// one past it — and both are verified here. Headers are set before the answer is written, on
-// either end of the opt-out, which the second case pins so a later change to the fallback
-// writer that drops them is caught here rather than in a browser.
+// kit/httpx/control_plane_refusal_test.go holds the host gate; its fixture resolves the
+// installation host to the operator's tenant, so nothing it asks is refused for who is asking.
+// This file holds the two things that fixture cannot reach: the refusal of a tenant that is not
+// the installation's at the very host the control plane is served at, at both document types and
+// both ends of the renderer's opt-out, and the answer the same opt-out leaves open on the public
+// write limit's Retry-After. Both go over a real HTTP/1.1 server, because the shape of an answer
+// — Content-Length, Date, which encoder wrote the body — belongs to the response a client reads,
+// not to a handler's arguments.
 
 import (
 	"context"
@@ -149,26 +113,15 @@ func controlPlaneAsk(t *testing.T, server, authority, path, accept, id string) c
 // (headers.go), which is the one thing a comparison of two responses may not read apart.
 var noncePattern = regexp.MustCompile(`'nonce-[A-Za-z0-9_=+/]+'`)
 
-// controlPlaneDate compares the other thing two responses may not be read apart on — and this file
-// had it wrong, which is why the reason is written here. `Date` is not part of the answer this
-// kernel writes: nothing in kit/httpx sets or clears one (the word does not appear in the
-// package's non-test files, nor in any file of this repository that touches a ResponseWriter),
-// and the server writes it itself, from its own clock, as it writes the response. Two refusals
-// of one host therefore answer the same Date only while the clock stays inside one second —
-// not a property of the refusal, a coincidence of when the pair was taken. Read as bytes, this
-// comparison refused under `make check-race` (the control-plane
-// 404 answered `… 04:38:34` and the never-mounted 404 `… 04:38:35`) and passed on the other
-// runs of the same bytes.
-//
-// README.md, CHANGELOG.md and authorize.go's notHere claim that no header says which surface
-// answered, and a stamp taken as the answer was written says nothing about the surface. So Date
-// is compared as an instant, and it is still pinned: exactly one of them, readable as an HTTP
-// date, inside the interval of its own exchange — one second of allowance, because the header
-// resolves to whole seconds and truncates downward, so an answer taken at …:34.9 reads …:34.
-// A refusal that answers no Date, two, an unreadable one, or one from outside the round trip
-// that carried it (copied off a cached answer, or a writer that stopped the clock) fails here.
-// What stopped being a failure condition is the agreement of the two strings, which was never
-// this case's claim.
+// controlPlaneDate checks the one other header two responses may not be read apart on. `Date`
+// is not part of the answer this kernel writes — nothing in kit/httpx sets or clears one; the
+// server stamps it from its own clock as it writes a response — so two refusals of one host
+// print the same string only while the clock stays inside one second, which says when the pair
+// was taken and not how the host was refused. What is pinned is the instant: exactly one Date,
+// readable as an HTTP date, inside the interval of its own exchange, with one second of
+// allowance because the header resolves to whole seconds and truncates downward. A refusal that
+// answers no Date, two, an unreadable one, or one from outside the round trip that carried it
+// (copied off a cached answer, or a writer that stopped the clock) fails here.
 func controlPlaneDate(t *testing.T, which string, answer controlPlaneAnswer) {
 	t.Helper()
 	values := answer.header.Values("Date")
