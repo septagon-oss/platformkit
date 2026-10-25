@@ -10729,6 +10729,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/app/conformance_steps_still_run_test.go",
+   "id": "kit/app/conformance_steps_still_run_test.go#TestSplitConformanceCasesAreStillRun",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestSplitConformanceCasesAreStillRun",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/app/counter_attempt_that_reached_no_row_records_none_test.go",
    "id": "kit/app/counter_attempt_that_reached_no_row_records_none_test.go#TestARefusedCounterAttemptRecordsNoRowThePurgeWouldCount",
    "kind": "go",
@@ -11260,6 +11279,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/app/no_suppression_directives_test.go",
+   "id": "kit/app/no_suppression_directives_test.go#TestKitSourcesCarryNoLintSuppression",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestKitSourcesCarryNoLintSuppression",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/app/operations_test.go",
    "id": "kit/app/operations_test.go#TestOperationProjectionBelongsOnlyToItsInitiatingPerson",
    "kind": "go",
@@ -11542,6 +11580,25 @@
    "round_named": false,
    "rule": "",
    "rule_present": true,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/app/source_file_length_test.go",
+   "id": "kit/app/source_file_length_test.go#TestAppSourceFilesStayReadable",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAppSourceFilesStayReadable",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
    "tier": "merge",
    "unique_lines": null,
    "unique_reach": [],
@@ -85649,6 +85706,26 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/designexport/openpencil/locked-patched-releases.test.mjs",
+   "id": "tools/designexport/openpencil/locked-patched-releases.test.mjs",
+   "kind": "node",
+   "layer": "behaviour",
+   "merge_into": "",
+   "name": "the lock resolves undici and zod to the releases package.json pins",
+   "needs_db": false,
+   "pkg": "tools/designexport/openpencil",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/designexport/openpencil/native.test.mjs",
    "id": "tools/designexport/openpencil/native.test.mjs",
    "kind": "node",
@@ -86196,7 +86273,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2342,
+  "files": 2346,
   "forge_runs": [
    408,
    413,
@@ -86230,7 +86307,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3743,
+   "behaviour": 3747,
    "composition": 495,
    "contract": 24,
    "journey": 110
@@ -86249,23 +86326,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4372,
+  "rows": 4376,
   "tiers": {
-   "merge": 2679,
+   "merge": 2682,
    "nightly": 110,
-   "push": 1583
+   "push": 1584
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2097,
+   "keep": 2101,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3986,
+   "keep": 3990,
    "keep-rewrite": 170,
    "merge": 216
   }
