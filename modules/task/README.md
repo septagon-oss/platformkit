@@ -14,7 +14,9 @@ composes it with `dbtest.Schema(t, task.Migrations)`.
 
 Compose it with `task.Deps{Service, Policy, Tenants, SweepEvery, Gate}`, or name
 `task.Module` in `Use` and let the resolver fill `Policy` and `Gate` from whatever
-the composition provides; both are optional, and
+the composition provides and put the desk back under `contracts.Service`,
+`contracts.Creator`, `contracts.Reader` and `contracts.LockedReader`; both inputs
+are optional, and
 [modules/auth/policies](../auth/policies/README.md) shows the
 Topaz adapter. The generated screens appear at `/app/task/tasks` with
 no code of the module's own. `make test TEST_PACKAGES=./modules/task/...`
@@ -104,11 +106,38 @@ The module does not create roles. A composition grants `task:read` and `task:upd
 
 ## Composition
 
+`task.Module` provides four contracts and one value: `contracts.Service`,
+`contracts.Creator`, `contracts.Reader` and `contracts.LockedReader` are one
+`internal.Service` put under four keys, so a module that needs part of the desk
+asks the plan for that part and is answered with the desk its own routes write
+through. With or without a `tenancy.Policy` in the composition, the same object
+answers all four. `contracts.Writer` is deliberately not among them: `Save` is the
+one door that moves a protected field with no gate in front of it, and handing it
+to every composition that asked would widen that door by composition rather than
+by decision — a product that composes the change-control subject builds it by name
+with `task.NewWriter`.
+
+**Reused** — `pkit.Provides` and `pkit.Put`, the one mechanism a capability is
+published by (the shape `modules/site` uses to hand out its own `LockedReader`),
+and the three contracts exactly as `contracts/task.go` already declares them, with
+no signature moved. **Added** — three declarations and three puts, because the
+implementation existed and the plan could not name it; and `internal.NewTask`, the
+exported name of the creation decision the fake in `contracts/tasktest` now calls,
+so the fake and the SQL service cannot answer one input differently. **Made
+reusable** — the four provides themselves, which is what lets another module ask
+Task to raise a task without reaching for a constructor; `internal.NewTask` as the
+single entry point a double may share; and the two cases beside it — one
+comparing what a consumer read from the plan with what the plan answered, one
+running a fake's decision against the service's — as the shape a module with a
+test double copies.
+
+### Proving a policy substitution at this module's boundary
+
 **Reused** — `tasktest.Fixture`, `porttest`, `dbtest.Schema`, `domain.Resolve`, the OPA/Topaz adapters and the reference product's typed declarations.
 **Added** — one shared adversarial policy consumer suite, because adapter-only cases could not prove task retries, row locks, rollback or HTTP refusal behavior; task commands now return no row if outbox insertion fails.
 **Made reusable** — `tasktest.RunPolicy` and the disposable `topaztest.Client` protocol fixture. The [substitution boundary](../../ARCHITECTURE.md#policy-substitution-boundary) names service fidelity and unsupported cached-reply authority guarantees.
 
-
+### The reading vocabulary
 **Reused** — the reading vocabulary `kit/entity` froze (`EntryHints`,
 `FieldHints`, `CommandHints`, `Icons`, `Tones`, `DoneValues`) declared at the three
 sites `kit/rest` already exposes (`Spec.Present`, the
@@ -158,4 +187,4 @@ than English, which is why `apps/platformkit/help_language_test.go` asks it of
 
 ## Creation
 
-**Reused** — `crud.Create`, `events.Publish`, `Task.Validate`, `Service.Assign` and `Service.CheckSLA`, composed by `internal.Service.Create`. **Added** — `contracts.Creator`, `CreateTask` and `contracts.Reader`, plus `rest.Spec.Create`, because the generic create had no seam through which an owner could take over identity, defaults and its events. The JSON create and the web form reach the creator and publish nothing of their own; `task:create` is not a policy action, so the route's `task:update` grant stands. **Made reusable** — `rest.Spec.Create` for any entity that owns its creation, and `tasktest.RunCreator` with its real-database harness (savepoint rollback, outbox-insert failure injection) as the pattern for the next creator.
+**Reused** — `crud.Create`, `events.Publish`, `Task.Validate`, `Service.Assign` and `Service.CheckSLA`, composed by `internal.Service.Create`, and `internal.NewTask` — the same input check and normalisation, named once — by `tasktest.Fake.Create`. **Added** — `contracts.Creator`, `CreateTask` and `contracts.Reader`, plus `rest.Spec.Create`, because the generic create had no seam through which an owner could take over identity, defaults and its events. The JSON create and the web form reach the creator and publish nothing of their own; `task:create` is not a policy action, so the route's `task:update` grant stands. **Made reusable** — `rest.Spec.Create` for any entity that owns its creation, `internal.NewTask` as the creation decision a test double may share rather than copy, and `tasktest.RunCreator` with its real-database harness (savepoint rollback, outbox-insert failure injection) as the pattern for the next creator. The two rollback cases need a transaction the fake cannot be handed, so they skip against it with that reason and run against the real store; the rest of the suite, including the tenant partition and every refusal, runs against both.
