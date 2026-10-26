@@ -13602,6 +13602,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/crud/an_inequality_operand_past_the_column_refuses_the_question_test.go",
+   "id": "kit/crud/an_inequality_operand_past_the_column_refuses_the_question_test.go#TestAnInequalityOperandPastTheColumnRefusesTheQuestion",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnInequalityOperandPastTheColumnRefusesTheQuestion",
+   "needs_db": true,
+   "pkg": "kit/crud",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/crud/an_operand_the_column_cannot_encode_leaves_the_transaction_usable_test.go",
    "id": "kit/crud/an_operand_the_column_cannot_encode_leaves_the_transaction_usable_test.go#TestAQuestionRefusedForAnOperandTheColumnCannotEncodeLeavesTheTransactionUsable",
    "kind": "go",
@@ -87798,7 +87817,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2377,
+  "files": 2378,
   "forge_runs": [
    408,
    413,
@@ -87832,7 +87851,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3825,
+   "behaviour": 3826,
    "composition": 497,
    "contract": 24,
    "journey": 110
@@ -87851,9 +87870,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4456,
+  "rows": 4457,
   "tiers": {
-   "merge": 2733,
+   "merge": 2734,
    "nightly": 110,
    "push": 1613
   },
@@ -87861,13 +87880,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2132,
+   "keep": 2133,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4070,
+   "keep": 4071,
    "keep-rewrite": 170,
    "merge": 216
   }
