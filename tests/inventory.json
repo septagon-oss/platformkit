@@ -13526,6 +13526,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/crud/a_refused_total_leaves_a_committed_write_and_a_connection_that_answers_test.go",
+   "id": "kit/crud/a_refused_total_leaves_a_committed_write_and_a_connection_that_answers_test.go#TestARefusedTotalLeavesACommittedWriteAndAConnectionThatAnswersItsOwnQuestion",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedTotalLeavesACommittedWriteAndAConnectionThatAnswersItsOwnQuestion",
+   "needs_db": true,
+   "pkg": "kit/crud",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/crud/a_refused_total_still_owes_that_transaction_a_write_and_its_own_narrower_total_test.go",
    "id": "kit/crud/a_refused_total_still_owes_that_transaction_a_write_and_its_own_narrower_total_test.go#TestARefusedTotalStillOwesThatTransactionAWriteAndItsOwnNarrowerTotal",
    "kind": "go",
@@ -87722,7 +87741,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2373,
+  "files": 2374,
   "forge_runs": [
    408,
    413,
@@ -87756,7 +87775,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3821,
+   "behaviour": 3822,
    "composition": 497,
    "contract": 24,
    "journey": 110
@@ -87775,9 +87794,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4452,
+  "rows": 4453,
   "tiers": {
-   "merge": 2729,
+   "merge": 2730,
    "nightly": 110,
    "push": 1613
   },
@@ -87785,13 +87804,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2128,
+   "keep": 2129,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4066,
+   "keep": 4067,
    "keep-rewrite": 170,
    "merge": 216
   }
