@@ -320,8 +320,15 @@ check-applied-migrations: ## Fail when a migration file the base carries was edi
 # Python file, which would leave the one gate that reads those citations to be run by
 # whoever remembered it. python3 is already a `check` prerequisite through
 # check-apidiff, so this costs a second and no new dependency.
-check-pillars: ## Fail when the pillar section drifts or one of its citations lands outside its file
+# The implementation map's own goal. The pillar test reads the pillar section's citations and
+# asks only that a cited number sit inside the file it names; the composition sentences are held
+# to the call they name by a case in kit/fault, which meets each of its claims at the first place
+# the map says it. So a claim said twice — a sentence copied into a summary while the section that
+# wrote it keeps its own — aims that case at the summary and leaves the citation behind it
+# unread, and the pin below refuses the document in that shape.
+check-pillars: ## Fail when the implementation map drifts: a pillar citation outside its file, or a composition claim said twice
 	python3 -B scripts/architecture_pillars_test.py
+	bash scripts/a_claim_the_composition_case_reads_is_said_once_in_the_implementation_map_test.sh
 
 # The rehearsal and the public-API comparison, both of which existed as steps
 # nobody was forced to run: `make rehearse` needed an operator who remembered it,
