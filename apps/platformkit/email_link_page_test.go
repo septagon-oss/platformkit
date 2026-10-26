@@ -29,8 +29,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
-	"github.com/septagon-oss/platformkit/modules/notification"
-	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
 // TestTheEmailedLinkOpensAPageThatConfirms is the journey in one boot of the
@@ -41,8 +39,7 @@ func TestTheEmailedLinkOpensAPageThatConfirms(t *testing.T) {
 		address  = "link-journey@acme.test"
 		password = "the-link-in-the-mail-is-how-this-account-opens"
 	)
-	path, cfg := configure(t)
-	path, cfg = keepMailInTheProcess(t, path, cfg)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
@@ -50,10 +47,6 @@ func TestTheEmailedLinkOpensAPageThatConfirms(t *testing.T) {
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the link out of it", c.mail)
-	}
 	signup, err := json.Marshal(map[string]any{
 		"email": address, "displayName": "Link Recipient",
 		"password": password, "confirmation": password, "termsAccepted": true,
@@ -65,19 +58,19 @@ func TestTheEmailedLinkOpensAPageThatConfirms(t *testing.T) {
 		t.Fatalf("signup = %d %s, want the neutral 202", code, body)
 	}
 
-	mail := notificationcontracts.Message{}
-	eventually(t, "the verification mail reaches the mailbox", func() bool {
-		for _, sent := range box.Sent() {
+	body := ""
+	eventually(t, "the verification mail reaches this installation's mail server", func() bool {
+		for _, sent := range relay.Sent() {
 			if sent.To == address && strings.Contains(sent.Body, contracts.VerifyEmailPath) {
-				mail = sent
+				body = sent.Body
 				return true
 			}
 		}
 		return false
 	})
-	raw := regexp.MustCompile(`(http://[^\s]+)`).FindString(mail.Body)
+	raw := regexp.MustCompile(`(http://[^\s]+)`).FindString(body)
 	if raw == "" {
-		t.Fatalf("the mail carried no address at all; its body read: %s", mail.Body)
+		t.Fatalf("the mail carried no address at all; its body read: %s", body)
 	}
 	link, err := url.Parse(raw)
 	if err != nil {

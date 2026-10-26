@@ -149,3 +149,24 @@ The full check needs the development services documented in
 [CONTRIBUTING.md](../../CONTRIBUTING.md#verify-at-the-relevant-boundary).
 Live Ollama and hosted-provider compatibility, browser/native journeys and CI
 were not verified by this delivery.
+
+## Why the port stops where it does
+
+The two kernel parts this port is built on — the counter that rations calls and the
+tracer that measures them — are reached by construction, as ports the composition
+fills, rather than by composing a module. That is why there is no manifest: an
+engine that could find its own limiter would be a port that decides who may call.
+
+Streaming, embeddings, tool calls and provider routing are absent by the same
+argument. A provider that streams is a different interaction, and a provider that
+does embeddings is a different wire: parity on chat does not imply parity there, so
+each of those arrives as a second port with its own conformance suite rather than
+as a method this one's adapters must all implement. A caller that needs a long
+document read chunks it and asks more than once; the byte bounds are what make that
+loop safe.
+
+Nothing may be asked in a caller's name: no permission is consulted, because the
+three checks that decide whether a call happens are mechanical — an allowance
+composed for the caller, a bounded input, and no transaction open around the ask.
+This is the inference seam of decisions 0087 and 0093; machine translation through
+`locale.Translator` is its intended second consumer.

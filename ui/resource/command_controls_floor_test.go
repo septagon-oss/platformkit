@@ -17,9 +17,9 @@ func TestQuietCommandControlsKeepTheirNativeSubmitAndAccessibleName(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			action, label := assignCommand.Action("/app/note/notes/11111111-1111-1111-1111-111111111111"), assignCommand.Description
+			action, label := assignCommand.Action("/app/note/notes/11111111-1111-1111-1111-111111111111"), assignCommand.Label
 			if name == "list" {
-				action, label = sweepCommand.Action(""), sweepCommand.Description
+				action, label = sweepCommand.Action(""), sweepCommand.Label
 			}
 			attrs := func(n *html.Node) map[string]string {
 				out := make(map[string]string)

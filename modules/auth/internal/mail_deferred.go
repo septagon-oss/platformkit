@@ -192,7 +192,8 @@ func linkSuperseded(tx db.Tx[db.Tenant], m linkMail) (bool, error) {
 // Together, because they describe one fact that is only true once the message left.
 // The notice is raised here rather than beside the mint for the same reason: its copy
 // tells the person to check their mail, and a sentence promising a mail the transport
-// refused is the lie the record exists to make impossible.
+// refused is the lie the record exists to make impossible. What the record claims about
+// the world is the carrier's answer, not this module's guess: see deliveredOutcome.
 func (s *Service) delivered(ctx context.Context, m linkMail) error {
 	err := s.marks(ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if err := markLinkSent(tx, m); err != nil {
@@ -203,7 +204,8 @@ func (s *Service) delivered(ctx context.Context, m linkMail) error {
 				return err
 			}
 		}
-		return s.recordMail(ctx, tx, m.kind, m.address, notificationcontracts.MailSent, "")
+		outcome, reason := s.deliveredOutcome()
+		return s.recordMail(ctx, tx, m.kind, m.address, outcome, reason)
 	})
 	if err != nil {
 		// The message left and its marks did not commit. The failure goes back to

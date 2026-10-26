@@ -216,6 +216,7 @@
         "notificationcontracts.Service",
         "authcontracts.Notifier",
         "notificationcontracts.Mailer",
+        "notificationcontracts.MailDelivery",
         "notificationcontracts.MailLedger"
       ],
       "needs": [
@@ -410,6 +411,10 @@
         },
         {
           "contract": "notificationcontracts.Mailer",
+          "from": "notification"
+        },
+        {
+          "contract": "notificationcontracts.MailDelivery",
           "from": "notification"
         },
         {

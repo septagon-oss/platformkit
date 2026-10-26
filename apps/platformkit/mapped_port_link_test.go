@@ -12,7 +12,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 // An installation published on a port that is not the one it listens on — a
@@ -22,7 +21,7 @@ import (
 // declared here, and the reset link a person asks for through the published port
 // has to lead back to it, never to the port behind the mapping.
 func TestAMappedInstallationMailsThePortItIsPublishedAt(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 
 	published, err := net.Listen("tcp", "127.0.0.1:0")
@@ -64,10 +63,8 @@ func TestAMappedInstallationMailsThePortItIsPublishedAt(t *testing.T) {
 	start(t, cfg, c.modules, options)
 	go forward(published, cfg.Server.Addr)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T", c.mail)
-	}
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	req, err := http.NewRequest(http.MethodPost, "http://"+published.Addr().String()+"/api/v1/public/auth/password/forgot",
 		strings.NewReader(`{"email":"`+adminEmail+`"}`))
 	if err != nil {

@@ -140,6 +140,16 @@ type Deps struct {
 	// attempt — which is the bug this closes, not a mode to preserve.
 	Mails contracts.MailLedger
 
+	// MailDelivery is whether the sender above attempts what it is handed. It is
+	// required, and it is fail-closed: nil reads as "nothing is delivered", the
+	// same answer a deployment with no mail host gives, because a port nobody
+	// wired is not evidence that mail goes out.
+	//
+	// The doors that would promise a person an email — sign-up, resend
+	// verification, forgotten password — refuse when it says no, and a composition
+	// that composes auth is refused at the plan unless something answers it.
+	MailDelivery contracts.MailDelivery
+
 	// Tenants is how the hourly sweep reaches every tenant, to delete the
 	// sessions and tokens that have expired.
 	Tenants jobs.TenantLister
@@ -301,6 +311,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewServiceWithGrants(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
+		MailDelivery:    deps.MailDelivery,
 		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
 		AccountRequests: deps.AccountRequests,
 	}, deps.Authorization, deps.Permissions)

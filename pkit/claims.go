@@ -3,44 +3,17 @@ package pkit
 // claims.go is the process's record of which application runs on which database,
 // and the refusal that keeps it that way round.
 //
-// `Server.Host` already refuses a process that hosts two applications, and
-// `Server.Explain` refuses to write a composition file for one. Both answers are
-// read off one `Server` value, which is the whole of their scope: a second
-// `Server` value, or a bare `App.Build`, is a second boot the first one never
-// heard about, and the two databases they name can be the same database. Two
-// compositions over one database is the arrangement kit/app's Runtime.Work says it
-// does not support — `events.Relay` claims any unpublished outbox row and stamps
-// what it publishes, so one composition can move another's event onto a transport
-// nobody subscribes to, and two schedulers over one database silence each other's
-// same-named job through the advisory lock — and the review that found it reached
-// the same database through a second `pkit.Server` value.
+// Host and Explain read their refusal off one Server value, so a second Server or
+// a bare App.Build boots a second composition onto the same database unseen — and
+// two compositions over one database is the arrangement kit/app says it does not
+// support. The claim is therefore per process, keyed by database, and carries the
+// composition, so a second boot under the held name with a different list of
+// modules is refused. pkit/README.md holds why, and what the check is not: no lock
+// across processes and no reading of what the database holds.
 //
-// So the claim is recorded per process and keyed by database, because one process
-// composes one application per database, and the claim carries that application's
-// composition: a second boot with the held name and a different list of modules is
-// a different application wearing it, and the events the first one declared are the
-// first one's contract rather than the name's. The event catalog answers the other
-// half, beside the database rather than over it: it is keyed by app
-// (kit/events ClaimApp), a boot neither replaces the shapes another app is
-// answering under nor takes one away on its way out, and the Close of the Runtime
-// that claimed a name gives it back. Refusing the one
-// composition per database is what keeps that catalog from being asked to paper over
-// two compositions writing one outbox.
-//
-// The claim is taken before the first effect, beside the other answers about the
-// composition, and released by the release of the lifecycle that took it — a boot
-// refused above the connection, a Runtime Closed, a Run that returned. A process
-// that holds nothing on a database claims it again freely, which is what lets a
-// deployment restart into a different composition once the live one is down.
-//
-// What this check is not: a lock across processes, and not a reading of what the
-// database already holds. Two OS processes pointed at one database each carry
-// their own record, and one database spelled two ways is one database to Postgres
-// and two keys here. The cross-process and cross-spelling answer is a later change's — the
-// one that puts the app's name in every name two apps share and the check at
-// every boundary — and the refusal says so, because an operator who reads "one
-// application per database" in one process and has two databases is being told
-// about the wrong thing.
+// The claim is taken before the first effect and released by the lifecycle that
+// took it, so a deployment can restart into another composition once the live one
+// is down.
 
 import (
 	"fmt"

@@ -101,6 +101,7 @@ pkit: auth.Module needs authcontracts.Users from user.Module.
 pkit: auth.Module needs authcontracts.Provisioner from user.Module.
 pkit: auth.Module needs authcontracts.Notifier from notification.Module.
 pkit: auth.Module needs notificationcontracts.Mailer from notification.Module.
+pkit: auth.Module needs notificationcontracts.MailDelivery from notification.Module.
 pkit: auth.Module needs notificationcontracts.HostLookup from tenant.Module.
 pkit: auth.Module needs notificationcontracts.MailLedger from notification.Module.
 pkit: auth.Module needs authcontracts.OIDCProviders from tenant.Module.

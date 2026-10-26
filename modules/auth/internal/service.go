@@ -45,6 +45,12 @@ type Delivery struct {
 	// the record exists to close rather than a mode to preserve.
 	Mails contracts.MailLedger
 
+	// MailDelivery is the carrier's own answer to whether it delivers, asked by the
+	// doors that would otherwise promise a person an email. Nil reads as "no": a
+	// composition that wired no answer is a composition that cannot promise a mail,
+	// which is the same reading as a mailer that was never wired.
+	MailDelivery contracts.MailDelivery
+
 	// SetPasswordPage and ConfirmEmailPage are the paths the invitation or reset
 	// link and the sign-up confirmation link open on the tenant's host. Empty is
 	// ResetPath and VerifyEmailPath, the workspace screens.
@@ -55,6 +61,17 @@ type Delivery struct {
 	// send: how many account requests one address may make in a window. The zero
 	// value is the module's own figure; module.go has already checked it.
 	AccountRequests contracts.AccountRequestBudget
+}
+
+// deliversAccountMail is the one question every mail-promising door asks: is
+// there a sender that could reach a mailbox at all (contracts.MailDeliverable
+// answers for the sender a deployment composed to send nothing), is there a host
+// to build the link's address on, and does that sender attempt what it is handed.
+// The nil reads are kept beside the port on purpose — a Delivery built outside
+// the wiring refuses rather than promising.
+func (d Delivery) deliversAccountMail() bool {
+	return contracts.MailDeliverable(d.Mailer) && d.Hosts != nil &&
+		d.MailDelivery != nil && d.MailDelivery.Available()
 }
 
 // Service is signing in and what a role may do.

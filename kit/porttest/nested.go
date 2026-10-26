@@ -16,26 +16,18 @@ import (
 // word and turns it into an event for a test with that name.
 const markFraming = 0x16
 
-// NestedRuns runs the test binary and keeps the nested runs named here out of
-// the framework's framing — the only thing that makes a runner's line readable
-// as the framework reporting a test.
+// NestedRuns runs the test binary and keeps the nested runs named here out of the
+// framework's framing, which is what makes a runner's line readable as a test.
 //
 // A mutation proof that runs a whole suite through testing.RunTests asks one
-// question of it — did it pass — and testing.RunTests answers by writing the
-// framing lines a test runner writes, from a second runner inside the first.
-// cmd/go cannot tell the two runners apart, so the suite's cases arrive as
-// events of tests the package does not contain: a package whose every test
-// passed reports a failing tasktest_RunService, and make check fails on the
-// mutant a suite refused on purpose. The names are the mutation proofs' own, and
-// none of them can ever be a test of the package — which is now this function's own
-// refusal and not the habit of its callers. A name beginning with Test is one a real
-// test could report under, and demoting a genuine `--- FAIL: TestSomething` to output
-// is how a red package arrives green under make check, so NestedRuns runs nothing and
-// returns 1 on such a name. Given no name at all it would buy a pipe to strip nothing
-// and returns 1 for that too — both refusals are decided before m.Run, so both are
-// reachable without a test binary to run.
-//
-// A package calls this from its TestMain:
+// question of it — did it pass — and answers by writing the framing lines a
+// runner writes, from a second runner inside the first. cmd/go cannot tell the
+// two apart, so the suite's cases arrive as events of tests the package does not
+// contain: a package whose every test passed reports a failing
+// tasktest_RunService, and make check fails on the mutant a suite refused on
+// purpose. A Test name could be a real test's, so demoting one to output is how a
+// red package arrives green, and a Test name — or no name at all — is refused
+// before m.Run:
 //
 //	func TestMain(m *testing.M) { os.Exit(porttest.NestedRuns(m, "tasktest_RunService")) }
 func NestedRuns(m *testing.M, names ...string) int {

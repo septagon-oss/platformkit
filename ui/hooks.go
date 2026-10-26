@@ -139,6 +139,18 @@ var renderedHooks = map[string]string{
 	"data-richtext-word-saved":   "ui/forms/richtext.go",
 	"data-richtext-word-saving":  "ui/forms/richtext.go",
 	"data-richtext-words":        "ui/forms/richtext.go",
+	// The resolved time's vocabulary: drawn by ui/resource on a <time>, read by
+	// ui/assets/js/components.js, which re-says the instant where the person is
+	// and never invents a marker of its own.
+	"data-time-count":    "ui/resource/value.go",
+	"data-time-kind":     "ui/resource/value.go",
+	"data-time-language": "ui/resource/value.go",
+	"data-time-now":      "ui/resource/value.go",
+	"data-time-offset":   "ui/resource/value.go",
+	"data-time-policy":   "ui/resource/value.go",
+	"data-time-relative": "ui/resource/value.go",
+	"data-time-unit":     "ui/resource/value.go",
+	"data-time-zone":     "ui/resource/value.go",
 }
 
 // kernelHooks is the vocabulary refuseClientSheet compares a selector against,
