@@ -109,39 +109,52 @@ func identity(in Input) ResolvedIdentity {
 
 // saving is one entry's saving declaration as the resolved reading, and nil for
 // every entry that cannot be saved: no capability in this installation, no
-// declaration, a pair that is not a slug pair, or a key and version the record
-// never published. It refuses the value and never the request, which is what a
-// null `savable` has always meant here, and it reads the hint without writing to
-// it, so one registration may resolve in ten languages at once.
+// declaration, a pair that is not a slug pair, a key or version the record never
+// published to the person reading it, or an entry that publishes no record at all.
+// It refuses the value and never the request, which is what a null `savable` has
+// always meant here, and it reads the hint without writing to it, so one
+// registration may resolve in ten languages at once.
 func saving(in Input) *ResolvedSaving {
 	h := in.Hints.Saving
-	if !in.SavingAvailable || h == nil || entity.SavingValid(h) != nil {
+	if !in.SavingAvailable || h == nil || entity.SavingValid(h) != nil || in.CommandsOnly {
 		return nil
 	}
-	if !in.CommandsOnly && !(in.publishes(h.KeyField) && in.publishes(h.VersionField)) {
+	if !in.publishes(h.KeyField) || !in.publishes(h.VersionField) {
 		return nil
 	}
 	return &ResolvedSaving{
 		Module: h.Module, Kind: h.Kind, KeyField: h.KeyField, VersionField: h.VersionField,
 		Words: ResolvedSavingWords{
-			Save:      in.word("saving.save", cmp.Or(h.Words.Save, "Save")),
-			Saved:     in.word("saving.saved", cmp.Or(h.Words.Saved, "Saved")),
-			Remove:    in.word("saving.remove", cmp.Or(h.Words.Remove, "Remove from saved")),
-			ListTitle: in.word("saving.listTitle", cmp.Or(h.Words.ListTitle, "Saved items")),
+			Save:      in.savingWord("saving.save", h.Words.Save, "Save"),
+			Saved:     in.savingWord("saving.saved", h.Words.Saved, "Saved"),
+			Remove:    in.savingWord("saving.remove", h.Words.Remove, "Remove from saved"),
+			ListTitle: in.savingWord("saving.listTitle", h.Words.ListTitle, "Saved items"),
 		},
 	}
 }
 
-// publishes reports whether the record publishes a field under this name, which is
-// the only thing a declaration may point at: a control that posts a value the
-// record never showed would be a refusal waiting for a click.
-func (in Input) publishes(name string) bool {
-	for _, f := range in.Schema.Fields {
-		if f.Name == name {
-			return true
-		}
+// savingWord is one word of a save control in the reading's language. The word the
+// entry declared has already been read in this language under the entry's own key —
+// that copy belongs to whoever wrote the entry — so it travels untouched, and only a
+// word the entry left blank asks the shared key and falls back to the one word every
+// shell may show. Asking beside a declared word would answer the entry's own copy
+// with a generic one, and the ask would name a key the entry's catalogue already
+// answered under a different name.
+func (in Input) savingWord(key, declared, fallback string) string {
+	if declared != "" {
+		return declared
 	}
-	return false
+	return in.word(key, fallback)
+}
+
+// publishes reports whether the record publishes a field under this name *and* shows
+// it to the person reading it, which is the only thing a declaration may point at: a
+// control that posts a value the record never showed would be a refusal waiting for a
+// click. A field kept off every screen is not published, and this is the same
+// question titles.go asks of a record's own candidates.
+func (in Input) publishes(name string) bool {
+	f, ok := fieldNamed(in.Schema.Fields, name)
+	return ok && visible(f)
 }
 
 func commands(in Input) []ResolvedCommand {

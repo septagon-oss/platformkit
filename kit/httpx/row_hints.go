@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 )
@@ -23,6 +24,16 @@ func CheckRowHints(resources []Resource) string {
 		}
 		if bad := deckRowHints(r, owner); bad != "" {
 			return bad
+		}
+		// A saving declaration is the one hint whose other half stands in another
+		// module: the slug pair it names is a contribution to the saving service, and
+		// a pair that service will never hold is a control on every record that answers
+		// nothing. The resolver already reads nil for it, which is why the refusal
+		// belongs here at boot rather than in the reading that hides it.
+		if r.Present.Saving != nil {
+			if err := entity.SavingValid(r.Present.Saving); err != nil {
+				return owner + " " + strings.TrimPrefix(err.Error(), "entity: ")
+			}
 		}
 	}
 	return ""

@@ -57,6 +57,17 @@ func TestResolveAnswersSavableOnlyWhereTheEntryDeclaredAndTheReadPublished(t *te
 		},
 		"a pair that is not slugs": func(in *present.Input) { in.Hints.Saving.Module = "My Looks" },
 		"a version field it omits": func(in *present.Input) { in.Hints.Saving.VersionField = "version" },
+		"a key field kept off every screen": func(in *present.Input) {
+			for i := range in.Schema.Fields {
+				if in.Schema.Fields[i].Name == "id" {
+					in.Schema.Fields[i].Presentation.Visibility = "hidden"
+				}
+			}
+		},
+		// A commands-only entry publishes no record at all, so no key or version of
+		// one reaches a person, and a control over values nobody was shown is the
+		// refusal this guard exists to make.
+		"an entry that publishes no record": func(in *present.Input) { in.CommandsOnly = true },
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := savableInput()
@@ -98,6 +109,14 @@ func TestResolveAsksTheCallerForTheSavingWordsInTheRequestLanguage(t *testing.T)
 	}
 	if got.ListTitle != "Saved items" {
 		t.Errorf("ListTitle = %q, want the fallback for a pair that declared no title", got.ListTitle)
+	}
+	// A word the entry wrote is its own copy, read in this language under the entry's
+	// key before the reading was built: the shared key answers only the entry that
+	// wrote nothing, or one generic label would replace what the author chose.
+	declared := savableInput()
+	declared.Text = func(string, string) string { return "Guardar" }
+	if got := present.Resolve(declared).Saving.Words; got.Save != "Save look" {
+		t.Errorf("Save = %q with the shared key answering every ask, want the declared word to travel", got.Save)
 	}
 }
 

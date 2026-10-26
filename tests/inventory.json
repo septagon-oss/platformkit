@@ -36348,6 +36348,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/saving_declaration_mount_gate_test.go",
+   "id": "kit/rest/saving_declaration_mount_gate_test.go#TestASavingDeclarationNoSavingServiceCouldAnswerIsRefusedAtTheMount",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASavingDeclarationNoSavingServiceCouldAnswerIsRefusedAtTheMount",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/screen_availability_test.go",
    "id": "kit/rest/screen_availability_test.go#TestAbsentWriteScreensReturnNotFoundWithoutReadingARow",
    "kind": "go",
@@ -88488,7 +88507,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2398,
+  "files": 2399,
   "forge_runs": [
    408,
    413,
@@ -88522,7 +88541,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3857,
+   "behaviour": 3858,
    "composition": 499,
    "contract": 24,
    "journey": 111
@@ -88541,9 +88560,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4491,
+  "rows": 4492,
   "tiers": {
-   "merge": 2729,
+   "merge": 2730,
    "nightly": 111,
    "push": 1651
   },
@@ -88551,13 +88570,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2153,
+   "keep": 2154,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4105,
+   "keep": 4106,
    "keep-rewrite": 170,
    "merge": 216
   }
