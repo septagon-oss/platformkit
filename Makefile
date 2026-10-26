@@ -1131,6 +1131,14 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# overlay and refusing when the copy passes the case. Two `go test` runs of one small package, 1 s,
 	# no stack and no browser.
 	bash scripts/a_module_that_declares_a_view_another_module_owns_is_refused_by_the_manifest_test.sh
+	# scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh asks the
+	# two questions the pin above cannot ask about itself: that this recipe still runs it, and that the
+	# mutated copy of validate.go is refused by the injected case's own assertion rather than by a
+	# build that stopped compiling — a mutation branch that reads any non-zero `go test` as that
+	# refusal prints its second ok over a copy that no longer builds. It reads the dry-run recipe of
+	# this goal and extracts the Go case from the pin it judges, so the two cannot drift apart. One
+	# dry run and two `go test` runs of one small package, 2 s, no stack and no browser.
+	bash scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
