@@ -29,9 +29,14 @@ type Input struct {
 	Commands []CommandInput
 	// Language is the tag the caller translated for; "" is English.
 	Language string
-	// Text translates the words this package introduces (see the present.* keys);
-	// nil keeps the English literal.
+	// Text translates the words this package introduces (the present.* and
+	// saving.* keys); nil keeps the English literal.
 	Text func(key, fallback string) string
+	// SavingAvailable says this installation composed the saving capability. It is
+	// one bool and not a port, because presence is the only question the policy
+	// asks here: false resolves no saving value at all, so a composition that
+	// wired no saving service draws no control while its reads stay unchanged.
+	SavingAvailable bool
 }
 
 // CommandInput is one command the caller may call.
@@ -55,6 +60,7 @@ func Resolve(in Input) Resolved {
 		Fields:        []ResolvedField{},
 		Commands:      commands(in),
 		Deck:          Deck(in.Hints.Deck, in.Commands),
+		Saving:        saving(in),
 		Summary:       ResolvedSummary{Highlight: in.Hints.Highlight, TrendField: in.Hints.TrendField},
 	}
 	if in.CommandsOnly {
@@ -99,6 +105,43 @@ func identity(in Input) ResolvedIdentity {
 		out.Group = &ResolvedGroup{Key: h.Group.Key, Label: h.Group.Label}
 	}
 	return out
+}
+
+// saving is one entry's saving declaration as the resolved reading, and nil for
+// every entry that cannot be saved: no capability in this installation, no
+// declaration, a pair that is not a slug pair, or a key and version the record
+// never published. It refuses the value and never the request, which is what a
+// null `savable` has always meant here, and it reads the hint without writing to
+// it, so one registration may resolve in ten languages at once.
+func saving(in Input) *ResolvedSaving {
+	h := in.Hints.Saving
+	if !in.SavingAvailable || h == nil || entity.SavingValid(h) != nil {
+		return nil
+	}
+	if !in.CommandsOnly && !(in.publishes(h.KeyField) && in.publishes(h.VersionField)) {
+		return nil
+	}
+	return &ResolvedSaving{
+		Module: h.Module, Kind: h.Kind, KeyField: h.KeyField, VersionField: h.VersionField,
+		Words: ResolvedSavingWords{
+			Save:      in.word("saving.save", cmp.Or(h.Words.Save, "Save")),
+			Saved:     in.word("saving.saved", cmp.Or(h.Words.Saved, "Saved")),
+			Remove:    in.word("saving.remove", cmp.Or(h.Words.Remove, "Remove from saved")),
+			ListTitle: in.word("saving.listTitle", cmp.Or(h.Words.ListTitle, "Saved items")),
+		},
+	}
+}
+
+// publishes reports whether the record publishes a field under this name, which is
+// the only thing a declaration may point at: a control that posts a value the
+// record never showed would be a refusal waiting for a click.
+func (in Input) publishes(name string) bool {
+	for _, f := range in.Schema.Fields {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func commands(in Input) []ResolvedCommand {

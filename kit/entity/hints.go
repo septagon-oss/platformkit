@@ -1,5 +1,12 @@
 package entity
 
+import (
+	"errors"
+	"regexp"
+	"strings"
+	"unicode/utf8"
+)
+
 // hints.go is the reading vocabulary and the three levels of declaration that
 // use it: what a resource's author says about how it reads, beside what a
 // caller already sees about what it holds.
@@ -163,6 +170,81 @@ type EntryHints struct {
 	// declared where no list route would answer it.
 	Highlight  *EntryHighlight
 	TrendField string
+	// Saving declares this entry savable: one person may keep a copy of a row of
+	// it. Nil is what every resource written before this field has and serialises
+	// as no deviation at all — an entry nobody declared is not an entry that
+	// refused, and the screens draw no save control for it.
+	Saving *SavingHints
+}
+
+// SavingWords are the four words one savable pair's control shows. An empty word
+// selects the fallback the resolver answers with, so a declaration says only what
+// its author would say differently; the words are translated through the same
+// entry-key path every other declared reading string takes.
+type SavingWords struct {
+	Save      string `json:"save"`
+	Saved     string `json:"saved"`
+	Remove    string `json:"remove"`
+	ListTitle string `json:"listTitle"`
+}
+
+// SavingHints declares one entry savable: the pair of slugs that names it, the two
+// published fields of the read that carry the source's own key and version, and
+// the words its control shows. It carries no principal, no pressed state and no
+// storage service — who is asking, whether they already kept this row and where
+// the copy lives are facts of the request and of the composition that answers the
+// control, never of a declaration a catalogue publishes.
+type SavingHints struct {
+	// Module and Kind are the lower-case slug pair the source contributes; the
+	// same pair names the copy, so a hint and a contribution that disagree is a
+	// wiring mistake the mount gate refuses rather than a copy nobody can find.
+	Module string `json:"module"`
+	Kind   string `json:"kind"`
+	// KeyField names an exposed field carrying the source's canonical key, and
+	// VersionField one carrying the source's own version. They name fields of the
+	// read that declares them, which is why the pair is declared here and not on
+	// the save command: the control posts what the record already published.
+	KeyField     string      `json:"keyField"`
+	VersionField string      `json:"versionField"`
+	Words        SavingWords `json:"words"`
+}
+
+// savingSlug is the grammar a savable pair must be: the same shape the saving
+// service refuses a contribution over, stated here so a declaration and the
+// contribution that answers it cannot drift apart.
+var savingSlug = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+
+// ValidSavingSlug reports whether s is one lower-case slug. The empty string is
+// invalid: a pair is named by an author who meant to name one.
+func ValidSavingSlug(s string) bool { return savingSlug.MatchString(s) }
+
+// SavingValid asks the shape questions of a declaration: a slug pair, the two
+// fields it names, and four words a screen can print. It is the whole bound a
+// mount gate can check without a request — what a kept copy means stays with the
+// source that owns it — and it is the bound the service applies to the
+// contribution that matches it, so one refusal serves both sides.
+func SavingValid(h *SavingHints) error {
+	if h == nil {
+		return errors.New("entity: no saving declaration to check")
+	}
+	if !ValidSavingSlug(h.Module) || !ValidSavingSlug(h.Kind) {
+		return errors.New("entity: savable " + h.Module + "/" + h.Kind + " is not a slug pair")
+	}
+	if strings.TrimSpace(h.KeyField) == "" || strings.TrimSpace(h.VersionField) == "" {
+		return errors.New("entity: savable " + h.Module + "/" + h.Kind + " names no key or version field")
+	}
+	for _, word := range []string{h.Words.Save, h.Words.Saved, h.Words.Remove, h.Words.ListTitle} {
+		// An empty word is not a bad one: it selects the fallback. A word with a
+		// control character in it, or longer than a card's line, is.
+		if word == "" {
+			continue
+		}
+		if !utf8.ValidString(word) || utf8.RuneCountInString(word) > 256 || strings.TrimSpace(word) != word ||
+			strings.IndexFunc(word, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+			return errors.New("entity: savable " + h.Module + "/" + h.Kind + " declares a word no screen can print")
+		}
+	}
+	return nil
 }
 
 // ResourceGroup is the navigation slot an entry names. Key is an identifier a

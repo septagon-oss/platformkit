@@ -23,6 +23,34 @@ type Resolved struct {
 	// Deck is null unless the entry declares a swipe deck.
 	Deck    *ResolvedDeck   `json:"deck"`
 	Summary ResolvedSummary `json:"summary"`
+	// Saving is null unless this installation composed the saving capability and
+	// this entry declared itself savable, so a shell draws a save control only for
+	// a non-null one. `savable` is the key, because what it answers is the
+	// reader's question and not the author's.
+	Saving *ResolvedSaving `json:"savable"`
+}
+
+// ResolvedSaving is one entry's saving declaration as a screen reads it: the pair
+// that names the copy, the two fields of the record that carry the source's key and
+// version, and the four words the control shows, every one already resolved for
+// language. It names no address and no principal: where a control posts is the
+// composition's route table and who is asking is the request's.
+type ResolvedSaving struct {
+	Module       string              `json:"module"`
+	Kind         string              `json:"kind"`
+	KeyField     string              `json:"keyField"`
+	VersionField string              `json:"versionField"`
+	Words        ResolvedSavingWords `json:"words"`
+}
+
+// ResolvedSavingWords are ResolvedSaving's four words with a fallback filled in for
+// every word the author left empty. This type is the only place those four
+// fallbacks are written, so no shell invents a fifth spelling of its own.
+type ResolvedSavingWords struct {
+	Save      string `json:"save"`
+	Saved     string `json:"saved"`
+	Remove    string `json:"remove"`
+	ListTitle string `json:"listTitle"`
 }
 
 // ResolvedGroup is the navigation slot of an entry; both strings are resolved.
