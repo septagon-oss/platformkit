@@ -90144,6 +90144,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/the_admin_shell_declares_a_sign_in_door_only_when_the_composition_named_one_test.sh",
+   "id": "scripts/the_admin_shell_declares_a_sign_in_door_only_when_the_composition_named_one_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "the_admin_shell_declares_a_sign_in_door_only_when_the_composition_named_one_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/the_check_goals_regenerate_before_they_diff_test.sh",
    "id": "scripts/the_check_goals_regenerate_before_they_diff_test.sh",
    "kind": "shell_pin",
@@ -92251,7 +92271,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2543,
+  "files": 2544,
   "forge_runs": [
    408,
    413,
@@ -92286,7 +92306,7 @@
   ],
   "layers": {
    "behaviour": 4007,
-   "composition": 534,
+   "composition": 535,
    "contract": 24,
    "journey": 122
   },
@@ -92304,23 +92324,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4687,
+  "rows": 4688,
   "tiers": {
    "merge": 2875,
    "nightly": 122,
-   "push": 1690
+   "push": 1691
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2298,
+   "keep": 2299,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4301,
+   "keep": 4302,
    "keep-rewrite": 170,
    "merge": 216
   }
