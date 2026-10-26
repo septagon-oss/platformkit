@@ -20,13 +20,14 @@ func TestFakeConforms(t *testing.T) {
 		users := usertest.NewFake()
 		fake := authtest.NewFake(users)
 		notices, box := &authtest.Notices{}, &authtest.Mailbox{}
-		fake.Notify, fake.Mailer = notices, box
+		fake.Notify, fake.Mailer, fake.MailDelivery = notices, box, box
 		ctx, tx := t.Context(), db.Tx[db.Tenant]{}
 		fake.Grant(contracts.RoleAdmin, contracts.Wildcard)
 		fake.Grant(contracts.RoleMember)
 		f := authtest.Fixture{
 			Ctx: ctx, Tx: tx, Service: fake, Published: fake.Published,
 			Role: fake.Grant, Sent: notices.Sent, Mailed: box.Sent, Sessions: fake.SessionsOf,
+			Delivering: func(delivers bool) { box.Undeliverable = !delivers },
 			User: func(email, password string, roles ...string) uuid.UUID {
 				u, err := users.Invite(ctx, tx, email, "")
 				if err != nil {

@@ -11,7 +11,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 // TestTheSignUpMailsLinkOpensAPage is the brief's fourth decided rule for the
@@ -29,7 +28,7 @@ import (
 // measured in e2e/mailed-links.spec.ts, the sign-up mail still had while the
 // invitation mail did not.
 func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
@@ -37,10 +36,8 @@ func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the link out of it", c.mail)
-	}
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	_, port, err := net.SplitHostPort(cfg.Server.Addr)
 	if err != nil {
 		t.Fatal(err)

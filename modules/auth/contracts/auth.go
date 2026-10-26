@@ -276,6 +276,14 @@ type (
 	// sends its mail exactly as it did before the record existed and leaves no
 	// trace of the attempt, which is the bug rather than a mode to preserve.
 	MailLedger = notificationcontracts.MailLedger
+
+	// MailDelivery is the notification module's own answer to whether this
+	// installation's sender attempts a message, named here the way Mailer, Hosts
+	// and MailLedger are so that Deps reads as one list of capabilities. It is a
+	// separate interface rather than a method on Mailer because the frozen public
+	// line refuses a method added to an exported interface; the composition puts
+	// the one carrier under both.
+	MailDelivery = notificationcontracts.MailDelivery
 )
 
 // The mails this module sends itself, named the way every event name is named.
