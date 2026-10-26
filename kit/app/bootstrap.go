@@ -41,7 +41,7 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 	if err := pool.Validate(); err != nil {
 		return fmt.Errorf("app: %w", err)
 	}
-	if err := db.MigrateWith(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), MigrationSources(mods)...); err != nil {
+	if err := db.MigrateWithOptions(ctx, cfg.Database.MigrateURL, db.MigrateOptions{Budget: migrationBudget(cfg.Database)}, MigrationSources(mods)...); err != nil {
 		return err
 	}
 	// New publishers require expansions that can follow an older data window.

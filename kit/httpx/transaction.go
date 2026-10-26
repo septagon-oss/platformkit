@@ -35,11 +35,11 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		a.refuse(ctx, http.StatusInternalServerError, "")
 		return
 	}
-	// Close is idempotent, so this covers the panic path and nothing else.
+	// Rollback is idempotent, so this covers the panic path and nothing else.
 	closed := false
 	defer func() {
 		if !closed {
-			rollbackErr := p.Close(false)
+			rollbackErr := p.Rollback()
 			if n, ok := operationNote(ctx.Context()); ok && rollbackErr == nil {
 				if err := a.failedOperation(n); err != nil {
 					n.failureErr = err
@@ -62,6 +62,43 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", openErr)
 	}
 
+	keep, undecided, unmarked := a.prepareCommit(ctx, p, inner.Status())
+	err = p.Close(keep)
+	closed = true
+	if err != nil {
+		noteUncommitted(ctx.Context())
+	}
+	if !a.recordRolledBackOperation(ctx, keep, err, unmarked) {
+		return
+	}
+	a.answerTransaction(ctx, err, unmarked, undecided)
+}
+
+// hungUp classifies cancellation and already-closed transactions for logging.
+// It does not decide whether an uncertain commit succeeded; the idempotency effect
+// marker retains that evidence. See README.md for request transaction lifetime.
+func hungUp(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || errors.Is(err, sql.ErrTxDone) || errors.Is(err, context.Canceled)
+}
+
+// statusOf decides whether the request's transaction commits, and whether the
+// response has to be replaced because nothing decided it. See the caller.
+func statusOf(ctx huma.Context, a *API, status int) (keep, undecided bool) {
+	if status != 0 {
+		return status < http.StatusBadRequest, false
+	}
+	b, ok := bufferFrom(ctx.Context())
+	if ok && b.begun() {
+		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: the response was streamed without a status; committing as 200",
+			"method", ctx.Method(), "path", ctx.URL().Path)
+		return true, false
+	}
+	a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the handler decided no status; rolling back",
+		"method", ctx.Method(), "path", ctx.URL().Path)
+	return false, true
+}
+
+func (a *API) prepareCommit(ctx huma.Context, p *db.Pending, status int) (bool, bool, error) {
 	// A status of zero is not a success. huma leaves it at zero on the
 	// streaming path, where the handler has already written the answer itself,
 	// and it is also what a handler that returned without deciding anything
@@ -69,7 +106,7 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// if bytes are on the wire the answer is 200 whatever this middleware
 	// thinks, so commit and say so; if nothing has been sent, nobody decided,
 	// and a transaction nobody decided about must not commit.
-	keep, undecided := statusOf(ctx, a, inner.Status())
+	keep, undecided := statusOf(ctx, a, status)
 	if n, ok := operationNote(ctx.Context()); ok {
 		if b, ok := bufferFrom(ctx.Context()); ok && b.streamRefused {
 			keep = false
@@ -98,20 +135,23 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 			noteUncommitted(ctx.Context())
 		}
 	}
-	err = p.Close(keep)
-	closed = true
-	if err != nil {
-		noteUncommitted(ctx.Context())
-	}
+	return keep, undecided, unmarked
+}
+
+func (a *API) recordRolledBackOperation(ctx huma.Context, keep bool, err, unmarked error) bool {
 	if n, ok := operationNote(ctx.Context()); ok && !keep && err == nil && unmarked == nil {
 		if failureErr := a.failedOperation(n); failureErr != nil {
 			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: failed operation evidence could not persist", "error", failureErr)
 			if b, ok := bufferFrom(ctx.Context()); ok && b.reset() {
 				a.refuse(ctx, http.StatusServiceUnavailable, "")
 			}
-			return
+			return false
 		}
 	}
+	return true
+}
+
+func (a *API) answerTransaction(ctx huma.Context, err, unmarked error, undecided bool) {
 	b, buffered := bufferFrom(ctx.Context())
 	switch {
 	case err == nil && unmarked != nil:
@@ -137,42 +177,4 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: request transaction failed after the response was written",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 	}
-}
-
-// hungUp reports that the transaction ended the way a client going away ends
-// one, rather than the way a database going away does.
-//
-// A browser that closes the tab cancels the request context, which owns the
-// request transaction (kit/db's README, "The transaction's owner"). Close then
-// refuses to commit whatever status the handler decided, answering with the
-// context's cause; a cancel landing after that check but before COMMIT has
-// database/sql roll back first, and the commit answers sql.ErrTxDone. Either
-// reads as a fault and is not one: nobody is left to tell. A cancellation that
-// lands while the COMMIT's answer is on its way may follow a write that did
-// commit; this reading only chooses the log line, and the idempotency record is
-// left to the effect marker before it.
-//
-// It matters because the alternative was an ERROR line per abandoned request.
-// An alert that fires on ordinary browsing is an alert people turn off, and the
-// line it buries — the database is unreachable and requests are not committing —
-// is the one worth waking somebody for.
-func hungUp(ctx context.Context, err error) bool {
-	return ctx.Err() != nil || errors.Is(err, sql.ErrTxDone) || errors.Is(err, context.Canceled)
-}
-
-// statusOf decides whether the request's transaction commits, and whether the
-// response has to be replaced because nothing decided it. See the caller.
-func statusOf(ctx huma.Context, a *API, status int) (keep, undecided bool) {
-	if status != 0 {
-		return status < http.StatusBadRequest, false
-	}
-	b, ok := bufferFrom(ctx.Context())
-	if ok && b.begun() {
-		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: the response was streamed without a status; committing as 200",
-			"method", ctx.Method(), "path", ctx.URL().Path)
-		return true, false
-	}
-	a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the handler decided no status; rolling back",
-		"method", ctx.Method(), "path", ctx.URL().Path)
-	return false, true
 }

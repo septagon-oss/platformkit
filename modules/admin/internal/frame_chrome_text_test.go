@@ -138,9 +138,10 @@ func TestTheFramesChromeIsOneBodyStep(t *testing.T) {
 	// Each of the three lines by name, so a red says which one fell back to a
 	// step of its own rather than "some paragraph was wrong".
 	for _, want := range []struct{ size, text string }{
-		{chromeTextSize, "End to end"},   // the workspace, named in the header below the sidebar's breakpoint
-		{chromeTextSize, "Ada Lovelace"}, // the caller, by the name they chose
-		{chromeTextSize, brand},          // the build stamp
+		{chromeTextSize, "End to end"},       // the workspace, named in the header below the sidebar's breakpoint
+		{chromeTextSize, "Ada Lovelace"},     // the caller, by the name they chose
+		{chromeTextSize, brand},              // the build stamp
+		{chromeTextSize, "Tenant workspace"}, // the scope, beside the stamp in the footer's disclosure
 	} {
 		found := false
 		for _, line := range signedIn {

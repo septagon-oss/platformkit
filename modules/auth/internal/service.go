@@ -112,7 +112,7 @@ func NewServiceWithGrants(users contracts.Users, notify contracts.Notifier, mail
 	// pool: this module is constructed before kit/app opens one, and every
 	// caller below is inside a request that carries it.
 	return &Service{users: users, notify: notify, mail: mail, authorization: authorization, permissions: permissions,
-		limiter: contracts.NewBudgetedLimiter(limit.Postgres(httpx.ConnFrom), mail.AccountRequests)}
+		limiter: contracts.NewBudgetedLimiter(limit.PostgresFor("", httpx.ConnFrom), mail.AccountRequests)}
 }
 
 // Precheck is the limiter's verdict, read from the shared counters. See

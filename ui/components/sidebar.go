@@ -268,91 +268,10 @@ func sidebarItemNode(
 	}
 	attrs = append(attrs, attrPairs(item.Attrs)...)
 
-	linkClass := clSidebarLinkAdmin
-	activeClass := clSidebarLinkActiveAdmin
-	idleClass := clSidebarLinkIdleAdmin
-	prefixClass := clSidebarPrefixAdmin
-	labelClass := clSidebarLabelVisible
-	if flavor == "content" {
-		linkClass = clSidebarLinkContent
-		activeClass = clSidebarLinkActiveContent
-		idleClass = clSidebarLinkIdleContent
-		prefixClass = clSidebarPrefixContent
-		labelClass = clSidebarLabelContent
-	}
-	foreground := style.FgOnInverse
-	if flavor == "content" {
-		foreground = style.FgSecondary
-		if active {
-			foreground = style.FgBrand
-		}
-	}
-	attrs = append(attrs, h.Class(style.New().TextColor(foreground).Compile()))
-	if p.Collapsed && flavor == "admin" {
-		linkClass = linkClass.Merge(clSidebarLinkPadCollapsed)
-		labelClass = clSidebarLabelHidden
-	} else {
-		linkClass = linkClass.Merge(clSidebarLinkPadExpanded)
-	}
-	if active {
-		linkClass = linkClass.Merge(activeClass)
-	} else {
-		linkClass = linkClass.Merge(idleClass)
-	}
-	if disabled {
-		linkClass = linkClass.Merge(clSidebarItemDisabled)
-	}
+	linkClass, prefixClass, labelClass, attrs := sidebarItemAppearance(p, flavor, active, disabled, attrs)
+	content := sidebarItemContent(p, item, flavor, itemID, active, disabled, linkClass, prefixClass, labelClass)
 
-	content := []g.Node{h.Class(linkClass.Compile()), g.Attr("data-nav", itemID)}
-	if active {
-		content = append(content, g.Attr("aria-current", "page"))
-	}
-	if disabled {
-		content = append(content, g.Attr("aria-disabled", "true"))
-	}
-	if p.Collapsed && flavor == "admin" {
-		content = append(content, g.Attr("aria-label", item.Label))
-	}
-	if validIconName(item.Icon) {
-		content = append(content, h.Span(
-			g.Attr("data-sidebar-item-icon", ""),
-			glyph(item.Icon),
-		))
-	}
-	if item.Prefix != "" && !(p.Collapsed && flavor == "admin") {
-		content = append(content, h.Span(
-			h.Class(prefixClass.Compile()),
-			g.Attr("data-sidebar-item-prefix", "true"),
-			g.Text(item.Prefix),
-		))
-	}
-	content = append(content, h.Span(
-		h.Class(labelClass.Compile()),
-		g.Attr("data-sidebar-item-label", "true"),
-		g.Text(item.Label),
-	))
-	if item.Badge != "" {
-		content = append(content, Badge(BadgeProps{
-			Label: item.Badge, Variant: item.BadgeVariant, Size: "sm",
-		}))
-	}
-	if len(item.Children) > 0 {
-		content = append(content, h.Span(
-			g.Attr("data-sidebar-item-chevron", ""),
-			glyph("chevron-down"),
-		))
-	}
-
-	var itemLink g.Node
-	if strings.TrimSpace(item.Href) != "" && !disabled {
-		itemLink = h.A(append([]g.Node{h.Href(item.Href)}, content...)...)
-	} else {
-		// A span has no role, and aria-label and aria-disabled are prohibited
-		// on an element that has none — axe says so and it is right: an
-		// attribute nothing can apply to is an attribute nothing reads. An
-		// entry that cannot be followed is still a link, so it says it is one.
-		itemLink = h.Span(append([]g.Node{g.Attr("role", "link")}, content...)...)
-	}
+	itemLink := sidebarItemLink(item, disabled, content)
 	if len(item.Children) == 0 {
 		attrs = append(attrs, itemLink)
 		return h.Li(attrs...)
@@ -423,4 +342,98 @@ func sidebarResolvedID(explicit string, fallback string) string {
 		return "item"
 	}
 	return id
+}
+
+func sidebarItemAppearance(p SidebarProps, flavor string, active, disabled bool, attrs []g.Node) (style.ClassList, style.ClassList, style.ClassList, []g.Node) {
+	linkClass := clSidebarLinkAdmin
+	activeClass := clSidebarLinkActiveAdmin
+	idleClass := clSidebarLinkIdleAdmin
+	prefixClass := clSidebarPrefixAdmin
+	labelClass := clSidebarLabelVisible
+	if flavor == "content" {
+		linkClass = clSidebarLinkContent
+		activeClass = clSidebarLinkActiveContent
+		idleClass = clSidebarLinkIdleContent
+		prefixClass = clSidebarPrefixContent
+		labelClass = clSidebarLabelContent
+	}
+	foreground := style.FgOnInverse
+	if flavor == "content" {
+		foreground = style.FgSecondary
+		if active {
+			foreground = style.FgBrand
+		}
+	}
+	attrs = append(attrs, h.Class(style.New().TextColor(foreground).Compile()))
+	if p.Collapsed && flavor == "admin" {
+		linkClass = linkClass.Merge(clSidebarLinkPadCollapsed)
+		labelClass = clSidebarLabelHidden
+	} else {
+		linkClass = linkClass.Merge(clSidebarLinkPadExpanded)
+	}
+	if active {
+		linkClass = linkClass.Merge(activeClass)
+	} else {
+		linkClass = linkClass.Merge(idleClass)
+	}
+	if disabled {
+		linkClass = linkClass.Merge(clSidebarItemDisabled)
+	}
+
+	return linkClass, prefixClass, labelClass, attrs
+}
+
+func sidebarItemContent(p SidebarProps, item SidebarItem, flavor, itemID string, active, disabled bool, linkClass, prefixClass, labelClass style.ClassList) []g.Node {
+	content := []g.Node{h.Class(linkClass.Compile()), g.Attr("data-nav", itemID)}
+	if active {
+		content = append(content, g.Attr("aria-current", "page"))
+	}
+	if disabled {
+		content = append(content, g.Attr("aria-disabled", "true"))
+	}
+	if p.Collapsed && flavor == "admin" {
+		content = append(content, g.Attr("aria-label", item.Label))
+	}
+	if validIconName(item.Icon) {
+		content = append(content, h.Span(
+			g.Attr("data-sidebar-item-icon", ""),
+			glyph(item.Icon),
+		))
+	}
+	if item.Prefix != "" && !(p.Collapsed && flavor == "admin") {
+		content = append(content, h.Span(
+			h.Class(prefixClass.Compile()),
+			g.Attr("data-sidebar-item-prefix", "true"),
+			g.Text(item.Prefix),
+		))
+	}
+	content = append(content, h.Span(
+		h.Class(labelClass.Compile()),
+		g.Attr("data-sidebar-item-label", "true"),
+		g.Text(item.Label),
+	))
+	if item.Badge != "" {
+		content = append(content, Badge(BadgeProps{
+			Label: item.Badge, Variant: item.BadgeVariant, Size: "sm",
+		}))
+	}
+	if len(item.Children) > 0 {
+		content = append(content, h.Span(
+			g.Attr("data-sidebar-item-chevron", ""),
+			glyph("chevron-down"),
+		))
+	}
+	return content
+}
+
+func sidebarItemLink(item SidebarItem, disabled bool, content []g.Node) g.Node {
+	var itemLink g.Node
+	if strings.TrimSpace(item.Href) != "" && !disabled {
+		itemLink = h.A(append([]g.Node{h.Href(item.Href)}, content...)...)
+	} else {
+		// Unavailable entries retain link semantics for their accessible labels
+		// and disabled state, even though they have no navigable address.
+		itemLink = h.Span(append([]g.Node{g.Attr("role", "link")}, content...)...)
+	}
+	return itemLink
 }

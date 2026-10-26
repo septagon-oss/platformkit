@@ -14,14 +14,18 @@ import (
 // claim under test is that a schema's ui:"widget:…" directive reaches a page.
 func controlOf(t *testing.T, f entity.Field) (tag, typeAttr, markup string) {
 	t.Helper()
+	field := forms.Field{Definition: f, Label: "Cover"}
+	if entity.ChoiceAppearance(f.Widget) {
+		field = choiceField(t, f.Widget, "one")
+	}
 	var out strings.Builder
 	if err := forms.Control(forms.ControlProps{
-		Field: forms.Field{Definition: f, Label: "Cover"},
+		Field: field,
 	}).Render(&out); err != nil {
 		t.Fatal(err)
 	}
 	for _, node := range elements(t, out.String()) {
-		if slices.Contains([]string{"input", "select", "textarea"}, node.Data) {
+		if slices.Contains([]string{"input", "select", "textarea"}, node.Data) && !(field.Definition.Choices != nil && attribute(node, "type") == "hidden") {
 			return node.Data, attribute(node, "type"), out.String()
 		}
 	}
@@ -34,6 +38,10 @@ func controlOf(t *testing.T, f entity.Field) (tag, typeAttr, markup string) {
 // plain text control and says so in its help text, because no picker exists yet.
 var drawnWidgets = map[string]struct{ tag, typeAttr string }{
 	"checkbox":      {"input", "checkbox"},
+	"tiles":         {"input", "radio"},
+	"chips":         {"input", "radio"},
+	"swatch":        {"input", "radio"},
+	"figure":        {"input", "radio"},
 	"color":         {"input", "color"},
 	"date":          {"input", "date"},
 	"datetime":      {"input", "datetime-local"},

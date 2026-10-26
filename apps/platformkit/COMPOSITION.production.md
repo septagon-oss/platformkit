@@ -191,6 +191,7 @@ pkit: admin.Module uses admincontracts.Signin from product.Module.
 pkit: admin.Module uses admincontracts.Pictures from product.Module.
 pkit: admin.Module uses admincontracts.Locale from product.Module.
 pkit: admin.Module could use admincontracts.Storybook; platformkit composes no provider, so it will not.
+pkit: admin.Module uses admincontracts.PrimaryAction from product.Module.
 pkit: admin.Module runs after everything and saw every other module's manifest.
 pkit: admin.Module defines the permission gallery:read.
 pkit: product.Module provides secrets.Keys; no module in platformkit needs it.
@@ -208,6 +209,9 @@ pkit: tenant.Module provides tenantcontracts.Bootstrapper; no module in platform
 pkit: tenant.Module provides tenantcontracts.LocaleSetter; no module in platformkit needs it.
 pkit: tenant.Module provides httpx.TenantLoader; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Service; no module in platformkit needs it.
+pkit: task.Module provides taskcontracts.Creator; no module in platformkit needs it.
+pkit: task.Module provides taskcontracts.Reader; no module in platformkit needs it.
+pkit: task.Module provides taskcontracts.LockedReader; no module in platformkit needs it.
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.
 pkit: auth.Module provides authcontracts.Auth; no module in platformkit needs it.
 pkit: auth.Module provides authcontracts.RoleRepairer; no module in platformkit needs it.

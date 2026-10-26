@@ -190,23 +190,23 @@ func (a *API) cached(ctx context.Context, key cache.Key) (tenancy.Tenant, bool) 
 // distinction the log keeps is the one an operator needs — a store that is
 // answering nothing is an outage, and a cold cache is not.
 func (a *API) cachedUnder(ctx context.Context, key cache.Key) (tenancy.Tenant, bool, cache.Generation) {
-	buf, found, under, err := a.opts.Cache.Get(ctx, key)
+	entry, err := cache.GetEntry(ctx, a.opts.Cache, key)
 	if err != nil {
 		a.log.WarnContext(ctx, "httpx: the shared cache is not answering; resolving from the database",
 			"host", key.Entry(), "error", err)
 		return tenancy.Tenant{}, false, cache.Generation{}
 	}
-	if !found {
-		return tenancy.Tenant{}, false, under
+	if !entry.Found {
+		return tenancy.Tenant{}, false, entry.Generation
 	}
 	var c cachedTenant
-	if err := json.Unmarshal(buf, &c); err != nil {
-		return tenancy.Tenant{}, false, under
+	if err := json.Unmarshal(entry.Value, &c); err != nil {
+		return tenancy.Tenant{}, false, entry.Generation
 	}
 	if c.ID == uuid.Nil {
-		return tenancy.Tenant{}, false, under
+		return tenancy.Tenant{}, false, entry.Generation
 	}
-	return c.tenant(), true, under
+	return c.tenant(), true, entry.Generation
 }
 
 // tenant resolves the request host to a tenant and puts it on the context,

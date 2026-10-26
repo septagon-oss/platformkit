@@ -12,10 +12,45 @@ request on the context (`RequestFrom`), the security headers, the per-request
 nonce (`Nonce`) and what a page may declare about its own response
 (`AllowWASM`).
 
+## Exact signed integers
+
+Typed JSON bodies accept an `int64` as either a decimal string or an exact
+integer number, including integral decimal/exponent spellings. Fractions,
+overflow and padded strings are refused with 422. Ordinary `int` and `int32`
+fields remain numbers. Custom JSON/text codecs and protocol media retain their
+own representation; opaque JSON is not interpreted as a declared integer.
+
+Numeric `int64` **output representation is deprecated**. During this release
+line ordinary `application/json` still returns numbers. Send
+`Accept: application/vnd.platformkit.int64+json` to receive decimal strings,
+including counts and revisions. A wildcard does not select it; equal explicit
+preferences keep legacy output. Both request content types accept both input
+forms. Responses vary on Accept. Keep strings or use exact integer arithmetic
+in clients; converting a large value to a floating-point number loses digits.
+
+With documentation enabled, `/openapi.json?int64=string` describes the complete
+input union and string/int64 responses. Generate adopting clients from that
+view and configure the explicit Accept header. The default document preserves
+the numeric contract and adds the selectable success media. A keyed retry must
+select the original response representation: changing it returns 409 without
+executing the command again. Recover the original answer or read the resource.
+The [next-major record](../../docs/compatibility/v3.0.0.md) owns the default cutover.
+
+### Composition
+
+**Reused** — `Register`, the Huma registry and JSON engine, REST field binding,
+request transactions and idempotency replay retain their existing ownership.
+**Added** — exact lexical int64 binding, API-local schema projections and explicit
+representation negotiation, because float-based map decoding cannot preserve
+the full signed range and the legacy output contract must remain available.
+**Made reusable** — the private [JSON body codec](../internal/jsonbody/codec.go)
+binds typed bodies and REST map/form values with the same integer decision,
+with shared real/fake precision cases. No public codec API is added.
+
 A module's `Routes` receives `httpx.Surfaces` — three routers, one per surface —
 and mounts on the one that fits the door. It never writes a prefix: `Prefix`,
 `Path` and `PagePath` compose an address from the surface and the module, and
-`Register` refuses a path that repeats either. See [surfaces.go](surfaces.go).
+`Register` refuses a path that repeats either. See [router.go](router.go) and [mounted_routes.go](mounted_routes.go).
 
 ## One page may run WebAssembly
 
@@ -40,7 +75,7 @@ to. Three consequences are the design:
   outside this package, and worth nothing after the status is written — a page
   that streamed past the response buffer keeps the policy it was given.
 
-[ui/page](../ui/page/serve.go)'s `View.RunsWASM` is the field a module author
+[ui/page](../../ui/page/serve.go)'s `View.RunsWASM` is the field a module author
 writes against, and `Serve` calls this for the view it actually rendered: a refusal
 page and a redirect instantiate nothing, so neither carries the token.
 
@@ -439,3 +474,21 @@ Prerequisites: a `db.Conn`, a `TenantLoader`, an `Authorizer` and the
 authenticate hook; [apps/platformkit](../../apps/platformkit/app.go) is the
 composition to copy. Tests run against the development database: `make up`,
 then `make test TEST_PACKAGES=./kit/httpx`.
+
+## Composition of request steps
+
+**Reused** — `New`, `Register`, `API.authorize`, the two admission paths and the
+lazy request transaction remain the HTTP lifecycle. **Added** — private admission
+and finalisation steps plus separate option, declaration, addressing and static
+files make that lifecycle readable without adding a router or policy layer.
+**Made reusable** — named steps for principal/grant checks, body restoration,
+receipt reservation and commit preparation within the existing request owner.
+
+[Construction](httpx.go) retains the middleware order, with inputs in
+[options.go](options.go) and the boot gate in [declarations.go](declarations.go).
+[Surfaces](surfaces.go), [router paths](router.go), [mounted routes](mounted_routes.go)
+and [static trees](static.go) retain their existing addresses and recording.
+[Authorization](authorize.go) precedes [legacy keyed admission](idempotency.go) or
+[receipt admission](operation_receipt.go); their clocks, contexts and responses
+remain distinct. [Transaction finalisation](transaction.go) prepares the receipt
+and effect marker before the single ordinary close, then chooses the response.

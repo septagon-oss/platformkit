@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -30,13 +31,19 @@ var Module = pkit.NewModule("admin", wire,
 	pkit.Optional[admincontracts.Pictures](),
 	pkit.Optional[admincontracts.Locale](),
 	pkit.Optional[admincontracts.Storybook](),
+	pkit.Optional[admincontracts.PrimaryAction](),
 	pkit.After(pkit.Everything),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	skin := w.Skin()
 	signin := pkit.Get[admincontracts.Signin](w)
+	primary, err := primaryAction(pkit.Get[admincontracts.PrimaryAction](w), pkit.Composition(w))
+	if err != nil {
+		return module.Module{}, err
+	}
 	return New(Deps{
+		Primary:    primary,
 		Modules:    pkit.Composition(w),
 		Authorize:  pkit.Get[httpx.Authorizer](w),
 		TenantList: pkit.Get[tenantcontracts.Lister](w),
@@ -93,6 +100,27 @@ func (p people) Person(ctx context.Context, userID uuid.UUID) (internal.Person, 
 		return internal.Person{}, err
 	}
 	return internal.Person{DisplayName: user.DisplayName, Email: user.Email}, nil
+}
+
+// primaryAction is the port's action checked against the composition, before
+// anything opens: the zero value is no action; an action with no words, no
+// permission, or a permission no composed module defines is refused, in the
+// words kit/module refuses such a nav entry with.
+func primaryAction(in admincontracts.PrimaryAction, mods []module.Module) (module.NavEntry, error) {
+	switch {
+	case in.Screen == "":
+		return module.NavEntry{}, nil
+	case in.Label == "":
+		return module.NavEntry{}, fmt.Errorf("admin: the primary action for screen %q has no label; a button with no words is not an action", in.Screen)
+	case in.Permission == "":
+		return module.NavEntry{}, fmt.Errorf("admin: the primary action %q declares no permission; a link everyone sees is still a decision", in.Label)
+	}
+	for _, g := range module.Grants(mods) {
+		if g.Permission == in.Permission {
+			return module.NavEntry(in), nil
+		}
+	}
+	return module.NavEntry{}, fmt.Errorf("admin: the primary action %q requires permission %q, which no module defines", in.Label, in.Permission)
 }
 
 // registration is the port's form choice read through the two lifecycles this

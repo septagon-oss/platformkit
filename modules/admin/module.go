@@ -153,6 +153,11 @@ type Deps struct {
 	// the operator tenant. Empty Examples stays empty. Every gallery endpoint
 	// also requires PermissionGalleryRead before calling this function.
 	Storybook func(context.Context) (export.Storybook, error)
+
+	// Primary is the application's primary action, as wire read and checked it
+	// (see admincontracts.PrimaryAction): the home draws it first for a caller who
+	// may follow it. The zero value draws none.
+	Primary module.NavEntry
 }
 
 const PermissionGalleryRead = "gallery:read"
@@ -175,6 +180,7 @@ func New(deps Deps) module.Module {
 		Routes: func(s httpx.Surfaces) {
 			internal.Mount(s, internal.Shell{
 				Nav:       navigation(deps.Modules),
+				Primary:   deps.Primary,
 				Authorize: deps.Authorize,
 				Tenants:   tenantList(deps),
 				Roles:     deps.Roles,

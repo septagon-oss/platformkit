@@ -4,7 +4,6 @@ import (
 	"maps"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -133,6 +132,7 @@ const (
 
 // Field is one column, as the API and a screen see it.
 type Field struct {
+	Choices *ChoiceSet `json:"choices,omitempty"`
 	// Name is the JSON name, which is the only name a caller ever uses.
 	Name string `json:"name"`
 	// Column is the storage column used by the CRUD adapter. It comes from
@@ -152,22 +152,9 @@ type Field struct {
 	Widget string `json:"widget,omitempty"`
 	// MaxLength is the declared character ceiling a generated control shows.
 	MaxLength int `json:"maxLength,omitempty"`
-	// Present is how a *read* renders the value: `ui:"present:person"`. It must be
-	// a name Presentations admits, and a Spec whose entity names anything else
-	// refuses to mount for the same reason Widget does — a name no renderer knows
-	// would draw the raw value in silence and the declaration would mean nothing.
-	//
-	// It is a separate axis from Widget rather than another widget name, and the
-	// reason is in Widgets' own comment: the control a widget names is drawn by
-	// ui/forms. `select` is a thing a person types into; `person` is a way a value
-	// is read, and there is no control to type a person's *name* into that a
-	// read-only cell needs. Forcing every read form through the form vocabulary
-	// would buy exactly one fake control per read form. Where a field genuinely is
-	// both, name both: `ui:"widget:entity-picker;present:person"`.
-	//
-	// It reaches the native consumer without further work: ui/screens' Entry
-	// embeds entity.Schema, so /api/v1/app/resources carries this field, and the
-	// native renderer decides what a person looks like there.
+	// Present selects a read renderer from Presentations, independently of Widget.
+	// kit/rest refuses unknown names at mount; entity.Schema also carries the
+	// selection to native consumers through the workspace catalog.
 	Present string `json:"present,omitempty"`
 	// Enum is the closed set of values, from `enum:"open,done"`.
 	Enum []string `json:"enum,omitempty"`
@@ -226,46 +213,23 @@ type Field struct {
 	Index []int `json:"-"`
 }
 
-// Widgets is every name `ui:"widget:…"` may carry. It is the vocabulary, not a
-// suggestion: the control each name draws lives in ui/forms, which cannot be
-// imported from here, so what binds the two is a test there that names a
-// rendered control for every entry here, and the mount-time refusal in
-// kit/rest's Spec.check. A widget absent from this list is a compile-adjacent
-// mistake rather than a runtime surprise: kit/entity owns the names because
-// ui/forms owns the renderers, and a kernel below the presentation layer has no
-// way to ask what a control is.
-//
-// Two entries are aliases of what a Go type already picks — `datetime` for a
-// time.Time and `checkbox` for a bool — kept because fifteen fields of the
-// foundation's own entities, and of the catalog and a client, name them. They
-// now mean the control instead of being ignored next to it, which is why a
-// string holding a timestamp or a "true" draws the same control its
-// time.Time and bool neighbours do.
+// Widgets lists the accepted ui:widget names rendered by ui/forms.
+// kit/rest refuses names outside this vocabulary. datetime and checkbox also
+// allow string-backed fields to select the controls their typed equivalents use.
+// tiles, chips, figure and swatch are the four appearances a finite choice draws:
+// each is a set of inputs a person operates, so the appearance is a widget and not
+// a read name, and a choice names it once, in `ui:"widget:…"`.
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "richtext", "time", "url", "week",
+	"textarea", "richtext", "time", "url", "week", "tiles", "chips", "figure", "swatch",
 }
 
-// Presentations is every name `ui:"present:…"` may carry, and it is the read-axis
-// twin of Widgets. The same argument binds it: the composition each name renders
-// lives in ui/resource, which a kernel package below the presentation layer cannot
-// import, so what ties the two together is a test there that names a rendered
-// composition for every entry here, plus the mount-time refusal in kit/rest.
-//
-// Three of the four read a file id — `image` is one picture, `images` a list of
-// them, `avatar` one picture of a person — and one reads a name. The picture
-// names earn their place the way `person` did: `image` is adopted by a reference
-// resource's cover field today, and `images` and `avatar` are honoured by the
-// same two compositions in ui/resource and wait on a product's own gallery and
-// profile field for an adopting column. What a name may not be is a type spelled
-// twice: `text` is deliberately absent, because the empty string already means
-// "derive it from the type", and an enum value, a timestamp and a boolean each
-// have a reading that needs no name.
-//
-// A name a mounted Spec claims and no screen renders refuses to mount, and the
-// shape a picture name may sit on is refused too — see ui/resource's own test
-// that names a composition per name here, and kit/rest's picture gate.
+// Presentations lists the ui:present names rendered by ui/resource.
+// An empty name derives presentation from the field type. kit/rest refuses
+// unknown names and incompatible picture shapes at mount, and refuses a control
+// name here: a finite choice declares its appearance as a widget and keeps this
+// read axis empty, which ValidateChoices checks.
 var Presentations = []string{"person", "image", "images", "avatar"}
 
 // PicturesAre reports whether the named presentation reads a file id, which is
@@ -338,6 +302,9 @@ func FieldsOf(t reflect.Type) []Field {
 func copyFields(fields []Field) []Field {
 	out := slices.Clone(fields)
 	for i := range out {
+		if out[i].Choices != nil {
+			out[i].Choices = out[i].Choices.Clone()
+		}
 		out[i].Enum = slices.Clone(out[i].Enum)
 		out[i].Index = slices.Clone(out[i].Index)
 		// The two hint maps are the new way to break the promise Fields makes
@@ -379,112 +346,12 @@ var (
 func derive(t reflect.Type) []Field {
 	var out []Field
 	for _, sf := range reflect.VisibleFields(t) {
-		if sf.Anonymous || !sf.IsExported() {
-			continue
-		}
-		name, ok := jsonName(sf)
+		f, ok := deriveField(t, sf)
 		if !ok {
 			continue
 		}
-		kind, elem, ok := fieldType(sf)
-		if !ok {
-			continue
-		}
-		f := Field{
-			Name:     name,
-			Column:   column(sf),
-			Type:     kind,
-			Elem:     elem,
-			Required: has(sf.Tag.Get("validate"), "required"),
-			ReadOnly: declaredBy(t, sf) == baseType || (kind == TypePicture && sf.Tag.Get("readOnly") == "true"),
-			Default:  sf.Tag.Get("default"),
-			Doc:      sf.Tag.Get("doc"),
-			Index:    sf.Index,
-		}
-		f.MaxLength, _ = strconv.Atoi(sf.Tag.Get("maxLength"))
-		// The translation tag is one word and takes no value: the field either
-		// may be said in another language or may not. It is a tag of its own and
-		// not another `ui:` directive, because `ui:` names what a control does
-		// and this names what the data is; a field can be `ui:"widget:richtext"`
-		// and translatable, and a title is translatable with no widget at all.
-		f.Translatable = has(sf.Tag.Get("i18n"), "translatable")
-		if enum := sf.Tag.Get("enum"); enum != "" {
-			f.Enum = strings.Split(enum, ",")
-		}
-		// Either separator: a struct tag reads as one string, and the entities
-		// in this repository were written with both. `ui:"widget:textarea;hide:list"`
-		// used to parse as one directive whose value was "textarea;hide:list",
-		// so the widget matched nothing and the field appeared on every list
-		// screen it had asked to be kept off. There is no third spelling.
-		for _, part := range strings.FieldsFunc(sf.Tag.Get("ui"), func(r rune) bool { return r == ',' || r == ';' }) {
-			switch key, value, _ := strings.Cut(part, ":"); key {
-			case "widget":
-				f.Widget = value
-			case "present":
-				f.Present = value
-			case "hide":
-				f.HideList = f.HideList || value == "list"
-			case "display":
-				// No value is read: `ui:"display:yes"` sets the same flag as `ui:"display"`, and a value
-				// would be a second shape nothing renders.
-				f.Display = true
-			case "label":
-				f.Presentation.Label = value
-			case "help":
-				f.Presentation.Help = value
-			case "section":
-				f.Presentation.Section = value
-			case "visibility":
-				// A bare `visibility:` sets the empty string, which is "not declared"
-				// and so refuses at mount rather than silently meaning "shown".
-				f.Presentation.Visibility = value
-			case "format":
-				f.Presentation.Format = value
-			case "reference":
-				f.Presentation.Reference = &FieldReference{Resource: value}
-			case "currency", "scale":
-				// Two flat directives, one object on the wire. The grammar has no
-				// nested value syntax, and inventing one here for two keys would be
-				// a second parser; the mount gate refuses the half of the pair that
-				// arrives alone (V26).
-				if f.Presentation.Money == nil {
-					f.Presentation.Money = &FieldMoney{}
-				}
-				if key == "currency" {
-					f.Presentation.Money.CurrencyField = value
-				} else {
-					f.Presentation.Money.Scale, _ = strconv.Atoi(value)
-				}
-			}
-		}
-		// Its own tag, for the reason the two maps below have theirs: the values
-		// are a comma-separated list, and `,` is a directive separator inside
-		// `ui:`, so a directive there could name one value and an entity with two
-		// would have to repeat the key. The list is the same shape as the `enum:`
-		// tag's own, because it is a subset of exactly that list.
-		if raw := sf.Tag.Get("doneValues"); raw != "" {
-			f.Presentation.DoneValues = strings.Split(raw, ",")
-		}
-		for _, tag := range []struct {
-			name string
-			into *map[string]string
-		}{
-			{"enumLabels", &f.Presentation.EnumLabels},
-			{"enumTones", &f.Presentation.EnumTones},
-		} {
-			// Their own tags, not `ui:` directives: the entity tag `enum:"open,done"`
-			// is the closed set of values, and a directive named `enum:` one
-			// character from it. A value may therefore not contain a comma — V25
-			// refuses it rather than let this parser drop the rest of the map.
-			if raw := sf.Tag.Get(tag.name); raw != "" {
-				into := make(map[string]string)
-				for _, pair := range strings.Split(raw, ",") {
-					key, value, _ := strings.Cut(pair, "=")
-					into[key] = value
-				}
-				*tag.into = into
-			}
-		}
+		readUI(&f, sf.Tag.Get("ui"))
+		readEnumPresentation(&f, sf.Tag)
 		out = append(out, f)
 	}
 	return out

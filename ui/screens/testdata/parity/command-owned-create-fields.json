@@ -1,0 +1,89 @@
+{
+ "name": "command-owned-create-fields",
+ "provenance": {
+  "author": "OpenAI Codex",
+  "date": "2026-10-23",
+  "inputHash": "sha256:5ab1ddf211c1a7671363ff28ea4a9e058dc69dcbeae340ae755bf334ae178f0b",
+  "expectedHash": "sha256:79de7d1fb8d94943b0bc8b293a78213acef725b7915064d7e9e3f5faa39376f1"
+ },
+ "input": {
+  "language": "en",
+  "schema": {
+   "module": "m",
+   "entity": "note",
+   "path": "/api/v1/m/note",
+   "fields": [
+    {
+     "name": "id",
+     "type": "uuid",
+     "readOnly": true
+    },
+    {
+     "name": "title",
+     "type": "string",
+     "required": true
+    },
+    {
+     "name": "status",
+     "type": "string",
+     "enum": [
+      "draft",
+      "approved"
+     ]
+    },
+    {
+     "name": "approved",
+     "type": "bool"
+    }
+   ]
+  },
+  "hints": {},
+  "immutable": [
+   "status",
+   "approved"
+  ],
+  "rows": []
+ },
+ "expected": {
+  "resolved": {
+   "layout": {
+    "create": [
+     "title"
+    ],
+    "update": [
+     "title"
+    ]
+   },
+   "fields": [
+    {
+     "name": "id",
+     "editable": {
+      "create": false,
+      "update": false
+     }
+    },
+    {
+     "name": "title",
+     "editable": {
+      "create": true,
+      "update": true
+     }
+    },
+    {
+     "name": "status",
+     "editable": {
+      "create": false,
+      "update": false
+     }
+    },
+    {
+     "name": "approved",
+     "editable": {
+      "create": false,
+      "update": false
+     }
+    }
+   ]
+  }
+ }
+}

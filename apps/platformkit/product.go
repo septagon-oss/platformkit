@@ -40,6 +40,7 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
+	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
@@ -69,6 +70,12 @@ func product(cfg config.Config, grants *lateCatalogue) *pkit.Module {
 // productPictures uses the application's declared picture doors in its ordinary
 // provider, so fixture and production compositions share the same typed wiring.
 func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures) *pkit.Module {
+	return productWithPolicy(cfg, grants, pictures, taskPolicy)
+}
+
+// productWithPolicy supplies explicit policy rules through the same product
+// declarations as the reference composition. The caller owns the adapter.
+func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures, policy tenancy.Policy) *pkit.Module {
 	decls := []pkit.Declaration{
 		pkit.Provides[filecontracts.Storage](),
 		// The door to the deployment's secrets, opened once here: which store it is
@@ -93,6 +100,7 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Pictures](),
 		pkit.Provides[admincontracts.Locale](),
+		pkit.Provides[admincontracts.PrimaryAction](),
 		pkit.Provides[tenantcontracts.Languages](),
 		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
@@ -129,8 +137,8 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// this file's decision and not the audit module's: an installation that
 		// sells the trail to everybody composes no Plan and nothing is asked.
 		pkit.Put[auditcontracts.Plan](w, auditcontracts.Plan("audit-trail"))
-		// Object scope (decision 0011): tasks are decided by policy/task.rego.
-		pkit.Put[tenancy.Policy](w, taskPolicy)
+		// The product supplies object-scope rules; modules keep their lifecycle rules.
+		pkit.Put[tenancy.Policy](w, policy)
 		// The installation's flags, read by kit/config out of the flags block and
 		// answered once for the whole process: configFlags targets nobody, not even
 		// by tenant. One evaluator is built here, for the one door that asks it.
@@ -196,6 +204,11 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 		// the two. See apps/platformkit/fault.go on the document's `pictures` block.
 		pkit.Put[admincontracts.Pictures](w, pictures)
 		pkit.Put[admincontracts.Locale](w, admincontracts.Locale(loginLocale))
+		// What a person comes to this installation's workspace to do: the home leads
+		// with it, for whoever may read the tasks it opens.
+		pkit.Put[admincontracts.PrimaryAction](w, admincontracts.PrimaryAction{
+			Label: "Go to tasks", Screen: "task/tasks", Permission: taskcontracts.PermissionTaskRead,
+		})
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
 		// exists before the operator narrows it, so a page can answer a person in

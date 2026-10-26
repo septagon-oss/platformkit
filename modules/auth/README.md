@@ -721,3 +721,17 @@ answers `crud.ErrNotFound`, where `RevokeToken` answers success —
 * Uses are not audited, and `last_used_at` is the record a person reads; the
   trail keeps the two facts that mean something about a key, that it was made and
   that it was stopped.
+
+## The two mails this module sends itself
+
+Decision 0022, for this delivery. **Reused:** `events.Defer` for the hand-off,
+`db.ConnFrom` for the connection a post-commit write needs (the same position
+`forget` already used through `httpx.ConnFrom`), `pendingLinkOf` and the
+compare-and-delete that protects a link the person already holds, `recordMail` and
+its redaction unchanged, and `created_at` as the column both resend caps read: the
+hand-off moved the send out of the minting transaction, but a cap that read a stamp
+written by a *later* transaction would stop binding for the work still inside the
+minting one, and one transaction that minted twice would mail twice. What answers a
+refused send is the withdraw, not a column. **Made reusable:** `linkMail`, the one
+shape of "everything read inside the transaction, only the send deferred", which any
+future credential link in this module takes instead of rediscovering the ordering.

@@ -27,7 +27,8 @@ closures, a page's two doors and the catalogue's entry, all through one
 routes check whose tenant a row is in and never whose row it is, so a write about
 one row the caller names is a `rest.Command`.
 `Singleton[T]` is the same for a tenant's one row: a read and a PUT, no list
-and no id in the path. Read [rest.go](rest.go) first;
+and no id in the path. Start with [Spec](rest.go), [Mount](mount.go) and
+[Command](command.go);
 [modules/task](../../modules/task/README.md) is the reference Spec.
 
 Beside the five routes, `Command` mounts a verb on a row or the collection
@@ -48,6 +49,21 @@ writes, validates nor publishes.
 shown, which the generated screens read without linking this package.
 
 ## Composition (typed PATCH)
+
+Resource and command `int64` fields use the [HTTP integer contract](../httpx/README.md#exact-signed-integers).
+Numeric output is deprecated; request the explicit decimal representation to
+preserve every digit in JavaScript clients. Domain fields and database columns
+remain signed integers. PATCH, command defaults and screen row/form handoffs
+bind through the same exact decoder; native `int`/`int32` values stay numeric.
+Resource row maps retain untyped numbers as `json.Number`, so a form does not
+lose digits before binding them to a declared field.
+
+**Reused** — `Spec`, `Command`, `merge`, `row` and `decode` keep their field,
+authorization, transaction and outbox decisions.
+**Added** — exact integer binding at their existing JSON seams, because an
+untyped float map loses digits before a writable field can validate them.
+**Made reusable** — the same full-range CRUD sequence runs against PostgreSQL
+and `porttest.Store`, including silent refusals and competing revision checks.
 
 **Reused** — `Spec.Schema`, `crud.FieldNamed`, `foldedName` and Huma's entity
 schemas provide the writable names, types, formats, enums and media annotations.
@@ -205,3 +221,19 @@ in-process `Spec.Update` beneath a worker and a lifecycle command, because they 
 diff can quote without writing a trigger, a column of its own or a second writer; and a
 command is asked about by verb, which is what leaves a command nobody annotated still
 answered by the module that owns the row.
+
+## Composition of resource steps
+
+**Reused** — `Spec`, `Command`, `Operation`, the locked CRUD write core and existing
+form/schema helpers remain the public resource path. **Added** — private route,
+validation, mutation, command and form steps separate responsibilities that were
+nested in the same functions. **Made reusable** — named steps shared by JSON
+routes and in-process resources, with no additional write implementation.
+
+[Declarations](rest.go), [mounting](mount.go), [declaration checks](spec_check.go),
+[commands](command.go), [request binding](request.go) and [patching](patch.go)
+keep their existing public signatures. [Writes](write.go) retain lock, validation,
+tenant/revision/gate, file, persistence, translation, history and event order;
+an empty patch only rechecks tenant ownership. [Resources](screens.go) use those
+same writes, and [forms](form.go) retain absent-versus-blank and typed-list rules.
+[Entry hints](entry_hints.go) keep the existing first-refusal order.

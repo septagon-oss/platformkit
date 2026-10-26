@@ -69,7 +69,10 @@ const chromeTextSize = "sm"
 
 // Shell is what the manifest hands the implementation.
 type Shell struct {
-	Nav       []module.NavEntry
+	Nav []module.NavEntry
+	// Primary is the action the home leads with, filtered like a nav entry. The
+	// zero value draws none.
+	Primary   module.NavEntry
 	Authorize httpx.Authorizer
 	Tenants   tenantcontracts.Lister
 	// Roles is the auth module's role administration, for the screen that
@@ -262,6 +265,14 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		slog.Default().Warn("admin: a nav entry leads to a path no route serves",
 			"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
 	}
+	var primary page.Navigation
+	if sh.Primary.Screen != "" {
+		primary = page.NewNavigation([]module.NavEntry{sh.Primary}, served, s.Required())
+		for _, entry := range primary.Unserved() {
+			slog.Default().Warn("admin: the primary action leads to a path no route serves",
+				"label", entry.Label, "screen", entry.Screen, "permission", entry.Permission)
+		}
+	}
 
 	frameAt := a
 	if sh.Sessions == nil {
@@ -302,7 +313,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// this module is composed last and it is therefore complete. The roles
 	// screen offers it as checkboxes; auth checks a write against it. The route
 	// itself is the composition's — see app.Options.WorkspaceCatalog.
-	pages{Shell: sh, shell: shell, at: a, nav: nav, resources: resources, declared: s.Permissions()}.mount(s, home, app)
+	pages{Shell: sh, shell: shell, at: a, nav: nav, primary: primary, resources: resources, declared: s.Permissions()}.mount(s, home, app)
 }
 
 // frame is the admin's arrangement: the sidebar the caller may follow, the
@@ -335,8 +346,7 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 				Sidebar: []g.Node{components.Sidebar(navigation)},
 				Header:  header(r, navigation, line),
 				Main:    body,
-				Footer: []g.Node{components.Text(components.TextProps{
-					Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"})},
+				Footer:  []g.Node{about(r)},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{Title: "Are you sure?"}),
 		})
@@ -475,10 +485,22 @@ func header(r page.Request, navigation components.SidebarProps, line string) []g
 	return []g.Node{
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
 			components.SidebarDisclosure(navigation),
-			components.ChromeContext(components.ChromeContextProps{Name: workspace(r, brand), Size: chromeTextSize}),
-			components.Badge(components.BadgeProps{Label: workspaceScope(r.Tenant, o), Tone: "neutral"})),
+			components.ChromeContext(components.ChromeContextProps{Name: workspace(r, brand), Size: chromeTextSize})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}
+}
+
+// about is the footer: the build stamp, always in view, and behind one closed
+// disclosure the fact support reads and a person does not look for — whose
+// workspace the host serves — so the header is left to name the person. Signed in
+// or not, as the build stamp always was.
+func about(r page.Request) g.Node {
+	o := resource.Options{Locale: r.Locale}
+	return g.Group([]g.Node{
+		components.Text(components.TextProps{Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"}),
+		components.Disclosure(components.DisclosureProps{Label: o.Text("admin.workspace.about", "About this workspace"), Flush: true},
+			components.Text(components.TextProps{Element: "span", Content: workspaceScope(r.Tenant, o), Size: chromeTextSize, Color: "muted"})),
+	})
 }
 
 // version is what the footer says. It is the revision the binary was built

@@ -19,6 +19,7 @@
         "admincontracts.Signin",
         "admincontracts.Pictures",
         "admincontracts.Locale",
+        "admincontracts.PrimaryAction",
         "tenantcontracts.Languages",
         "webhookcontracts.Catalogue"
       ],
@@ -265,7 +266,10 @@
     {
       "name": "task",
       "provides": [
-        "taskcontracts.Service"
+        "taskcontracts.Service",
+        "taskcontracts.Creator",
+        "taskcontracts.Reader",
+        "taskcontracts.LockedReader"
       ],
       "needs": [
         {
@@ -859,6 +863,10 @@
         {
           "contract": "admincontracts.Storybook",
           "from": ""
+        },
+        {
+          "contract": "admincontracts.PrimaryAction",
+          "from": "product"
         }
       ],
       "after": [

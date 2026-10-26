@@ -1,13 +1,9 @@
 // Package cache is one value every replica can read.
 //
-// A map in one process's memory is three answers when three pods are running and
-// none after a deploy — the same argument kit/limit makes about a counter, run
-// against a value instead of a count. It is also three answers to the question
-// "who may I treat this host as?": a suspension that invalidates one process
-// leaves the other two believing what the installation just stopped believing,
-// for the whole life of the entry. This package holds the port, the key type that
-// names whose value an entry is, and the in-process adapter that is a deployment
-// for one process and the double every test runs on.
+// Multiple replicas need shared invalidation: a host suspension must reach
+// every process that cached the host. This package holds the cache port and
+// tenant-qualified keys. The in-process adapter serves a single-process
+// deployment and the same conformance cases as a shared store.
 //
 // Two things make this more than a shared map. The first is the key: an entry is
 // addressed by the tenant that owns it, and no caller can form a key without
@@ -24,6 +20,9 @@
 // store: modules/auth's own kernel says why ("A permission cache is a window in
 // which a revoked grant still works"), and the read path for those is the
 // transaction under row-level security. docs/cache.md holds the table.
+//
+// The [Cache] example loads a value on a miss and reads it again from memory.
+// It uses [Cache.Get] and [Cache.Set] with the original generation and an explicit lifetime.
 package cache
 
 import (
@@ -36,6 +35,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 // budget bounds every call this package makes of its store. A cache sits in
@@ -235,6 +235,23 @@ type Cache interface {
 	Close() error
 }
 
+// Entry is one cache read. Found distinguishes a hit, including an empty value,
+// from a miss that may still carry stale bytes. Generation stamps a subsequent
+// Set for the same key, including after a miss.
+type Entry struct {
+	Value      []byte
+	Found      bool
+	Generation Generation
+}
+
+// GetEntry calls c.Get once with ctx and key, preserving its bytes, generation
+// and error without copying or wrapping. Byte ownership remains c.Get's; an
+// erroneous answer must not be used as a successful read. c must be non-nil.
+func GetEntry(ctx context.Context, c Cache, key Key) (Entry, error) {
+	value, found, generation, err := c.Get(ctx, key)
+	return Entry{Value: value, Found: found, Generation: generation}, err
+}
+
 // Value is one raw answer from a Backend. Found distinguishes "absent" from
 // "present and empty", which a byte slice cannot.
 type Value struct {
@@ -273,15 +290,31 @@ type Backend interface {
 	Close() error
 }
 
-// New returns the Cache over a store. app is this application's name, the first
-// segment of every key; it is validated to the slug grammar here, at the one
-// moment a composition could get it wrong, rather than on every call.
+// New returns a cache over backend, rejecting empty or invalid application names
+// with a Slug error. Construction does no I/O; Close releases backend.
+//
+// Deprecated: Use NewFor with an appname.Name. NewFor also accepts the zero name.
 func New(app string, backend Backend) (Cache, error) {
-	slug, err := Slug(app)
-	if err != nil {
+	if app == "" {
+		_, err := Slug(app)
 		return nil, err
 	}
-	return &store{app: slug, backend: backend}, nil
+	return NewFor(appname.Name(app), backend)
+}
+
+// NewFor returns a cache over backend, with app as its first key segment. The
+// zero name keeps an empty segment; nonempty names follow Slug's legacy grammar
+// and return its error if invalid. See README.md for the compatibility rule.
+// Construction does no I/O. Close releases backend, including for other handles
+// sharing it; a refused construction leaves backend untouched.
+func NewFor(app appname.Name, backend Backend) (Cache, error) {
+	name := app.String()
+	if name != "" {
+		if _, err := Slug(name); err != nil {
+			return nil, err
+		}
+	}
+	return &store{app: name, backend: backend}, nil
 }
 
 // store is the whole implementation of the port. Adapters hold none of it.
