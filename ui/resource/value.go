@@ -31,6 +31,15 @@ func value(f present.ResolvedField, row map[string]any, o Options) reading {
 		out.text = f.Reading.Missing
 		return out
 	}
+	if f.Kind == "number" && f.Reading.Money == nil {
+		// A measured value is written differently in each language: English groups
+		// 12,345 with a comma and Portuguese with a space, and the row carries
+		// neither. The two keys, not one, because a count and a measurement are
+		// written with different verbs — "%g" over an integer answers
+		// "%!g(int=…)", which a person then reads on the page.
+		out.text = o.numberText(raw)
+		return out
+	}
 	switch {
 	case f.Reading.Money != nil:
 		var err error
@@ -62,14 +71,6 @@ func value(f present.ResolvedField, row map[string]any, o Options) reading {
 		} else {
 			out.text = strconv.FormatInt(n, 10)
 		}
-	}
-	if f.Kind == "number" && f.Reading.Precision == nil {
-		// A measured value is written differently in each language: English groups
-		// 12,345 with a comma and Portuguese with a space, and the row carries
-		// neither. A count and a measurement take two keys because they are written
-		// with two different verbs — "%g" over an integer answers "%!g(int=…)", which
-		// a person then reads on the page.
-		out.text = o.numberText(raw)
 	}
 	for _, option := range f.Options {
 		if option.Value == text {

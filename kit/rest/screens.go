@@ -130,6 +130,14 @@ func invalid(field, key, text string, args ...any) error {
 	return refusedProblem(reason, field)
 }
 
+// invalidWord refuses one field with a sentence this package has no catalogue key
+// for yet: the control is still marked, and the writer's own English stands, exactly
+// as it did before a keyed refusal existed. A module that ships copy for its own
+// verdict passes it through invalid with a key instead.
+func invalidWord(field, why string) error {
+	return invalid(field, "", field+" "+why)
+}
+
 // refusedForm is the one refusal of this package's with no field to mark: the body
 // that arrived was not a form at all, so its sentence stands on its own.
 func refusedForm(key, text string, args ...any) error {

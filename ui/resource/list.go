@@ -162,7 +162,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	if len(rows) == 0 {
 		description := r.Resolved.Identity.EmptyDescription
 		if description == "" {
-			description = o.emptyCollection(r.Resolved.Identity.Plural)
+			description = o.emptyCollection(strings.ToLower(o.noun(r, 2)))
 		}
 		p.State = components.ContentState{Status: components.MediaEmpty, Title: title, Text: description}
 		p.Groups = nil

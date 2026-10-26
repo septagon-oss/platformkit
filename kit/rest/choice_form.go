@@ -23,21 +23,21 @@ func choiceMarkers(form url.Values, fields []entity.Field, refused []string) err
 		}
 		name, ok := strings.CutPrefix(key, prefix)
 		if !ok || !strings.HasSuffix(name, "]") {
-			return invalid(key, "invalid.rest.choice.marker", "unknown choice transport marker")
+			return invalidWord(key, "unknown choice transport marker")
 		}
 		name = strings.TrimSuffix(name, "]")
 		f, found := entity.FieldNamed(fields, name)
 		if !found || f.Choices == nil || entity.ServerOwned(f) || slices.Contains(refused, name) {
-			return invalid(name, "invalid.rest.choice.noWritableChoice", "choice marker names no writable choice")
+			return invalidWord(name, "choice marker names no writable choice")
 		}
 		if len(values) != 1 || (prefix == choicePresent && values[0] != "1") {
-			return invalid(name, "invalid.rest.choice.oneMarker", "supply one valid choice marker")
+			return invalidWord(name, "supply one valid choice marker")
 		}
 		if prefix == choiceOrder {
 			_, named := form[name]
 			_, present := form[choicePresent+name+"]"]
 			if f.Choices.Cardinality != "many" || (!named && !present) {
-				return invalid(name, "invalid.rest.choice.orderNeedsMany", "choice order requires a submitted many-choice field")
+				return invalidWord(name, "choice order requires a submitted many-choice field")
 			}
 		}
 	}
@@ -59,7 +59,7 @@ func readChoice(form url.Values, f entity.Field, update bool, out map[string]any
 	checked := *c.Clone()
 	checked.Empty.Mode, checked.Empty.Message, checked.Maximum, checked.NoPreference = "allow", "", nil, ""
 	if _, err := checked.Answer(ids); err != nil {
-		return invalid(f.Name, "invalid.rest.choice.value", "%s", err.Error())
+		return invalidWord(f.Name, err.Error())
 	}
 	if c.Cardinality == "many" {
 		ordered, err := nativeChoiceOrder(form, f, ids)
@@ -78,7 +78,7 @@ func readChoice(form url.Values, f entity.Field, update bool, out map[string]any
 		ids, err = c.Answer(ids)
 	}
 	if err != nil {
-		return invalid(f.Name, "invalid.rest.choice.value", "%s", err.Error())
+		return invalidWord(f.Name, err.Error())
 	}
 	out[f.Name] = choiceValue(c, ids)
 	return nil
@@ -88,12 +88,12 @@ func nativeChoiceOrder(form url.Values, f entity.Field, checked []string) ([]str
 	order := []string{}
 	if raw, ok := form[choiceOrder+f.Name+"]"]; ok {
 		if len(raw) != 1 || json.Unmarshal([]byte(raw[0]), &order) != nil || order == nil {
-			return nil, invalid(f.Name, "invalid.rest.choice.orderArray", "choice order must be an array of IDs")
+			return nil, invalidWord(f.Name, "choice order must be an array of IDs")
 		}
 		c := *f.Choices.Clone()
 		c.Empty.Mode, c.Empty.Message, c.Maximum, c.NoPreference = "allow", "", nil, ""
 		if _, err := c.Answer(order); err != nil {
-			return nil, invalid(f.Name, "invalid.rest.choice.value", "%s", err.Error())
+			return nil, invalidWord(f.Name, err.Error())
 		}
 	}
 	order = slices.DeleteFunc(order, func(id string) bool { return !slices.Contains(checked, id) })

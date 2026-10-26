@@ -95,12 +95,12 @@ func normalizeChoices(fields []entity.Field, values map[string]any, current map[
 		}
 		if raw, ok := value.(json.RawMessage); ok {
 			if err := json.Unmarshal(raw, &value); err != nil {
-				return nil, invalid(f.Name, "invalid.rest.choice.value", "%s", err.Error())
+				return nil, invalidWord(f.Name, err.Error())
 			}
 		}
 		ids, err := f.Choices.ChoiceIDs(value)
 		if err != nil {
-			return nil, invalid(f.Name, "invalid.rest.choice.value", "%s", err.Error())
+			return nil, invalidWord(f.Name, err.Error())
 		}
 		var answer, before []string
 		if create {
@@ -109,13 +109,13 @@ func normalizeChoices(fields []entity.Field, values map[string]any, current map[
 			if current[f.Name] != nil {
 				before, err = f.Choices.ChoiceIDs(current[f.Name])
 				if err != nil {
-					return nil, invalid(f.Name, "invalid.rest.choice.value", "%s", err.Error())
+					return nil, invalidWord(f.Name, err.Error())
 				}
 			}
 			answer, err = f.Choices.Change(before, ids)
 		}
 		if err != nil {
-			return nil, invalid(f.Name, "invalid.rest.choice.value", "%s", err.Error())
+			return nil, invalidWord(f.Name, err.Error())
 		}
 		if !create && slices.Equal(before, answer) {
 			delete(out, f.Name)
@@ -141,7 +141,7 @@ func (s Spec[T]) choiceCreate(e T, values map[string]any) (T, error) {
 func choiceCondition(fields []entity.Field, immutable []string, quoted string) error {
 	for _, f := range fields {
 		if f.Choices != nil && !entity.ServerOwned(f) && !slices.Contains(immutable, f.Name) && quoted == "" {
-			return invalid(entity.RevisionCondition, "invalid.rest.choice.revisionQuoted", "quote the revision before updating choices")
+			return invalidWord(entity.RevisionCondition, "quote the revision before updating choices")
 		}
 	}
 	return nil
