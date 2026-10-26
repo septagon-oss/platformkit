@@ -88440,6 +88440,26 @@
    "verdict": "keep"
   },
   {
+   "area": "scripts",
+   "evidence": "not-round-named",
+   "file": "scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh",
+   "id": "scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
    "area": "tools",
    "evidence": "not-round-named",
    "file": "tools/designexport/openpencil/adversarial.test.mjs",
@@ -90429,7 +90449,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2480,
+  "files": 2481,
   "forge_runs": [
    408,
    413,
@@ -90464,7 +90484,7 @@
   ],
   "layers": {
    "behaviour": 3936,
-   "composition": 514,
+   "composition": 515,
    "contract": 24,
    "journey": 118
   },
@@ -90482,23 +90502,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4592,
+  "rows": 4593,
   "tiers": {
    "merge": 2808,
    "nightly": 118,
-   "push": 1666
+   "push": 1667
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2235,
+   "keep": 2236,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4206,
+   "keep": 4207,
    "keep-rewrite": 170,
    "merge": 216
   }
