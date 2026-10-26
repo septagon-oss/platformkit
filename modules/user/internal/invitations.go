@@ -304,10 +304,11 @@ func (s *Service) saveInvitation(ctx context.Context, tx db.Tx[db.Tenant], befor
 }
 
 // publishInvitation writes the one fact an invitation change left behind, in the
-// words the payload the modules declared, through whichever outbox door the caller
-// holds. It is spelled once so a command inside a tenant and the control plane's
-// cross-tenant write carry the same fields — auth's subscriber reserves the mail
-// attempt from the delivery identity either of them recorded.
+// payload the two modules declared, through whichever outbox door the caller holds.
+// It is spelled once so a command inside a tenant and the control plane's
+// cross-tenant write carry the same fields: auth's subscriber hands a link over only
+// for the generation and delivery identity a committed event names, so neither door
+// can leave a worker an event it would have to invent a send for.
 func (s *Service) publishInvitation(ctx context.Context, write eventWriter, u *contracts.User, event string, at time.Time) error {
 	if event == contracts.EventInvited {
 		return write(ctx, event, contracts.Invited{UserID: u.ID, Email: u.Email, Status: u.Status, At: at,

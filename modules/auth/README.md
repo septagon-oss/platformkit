@@ -712,14 +712,23 @@ recipient binding and terminal state must all agree before password, membership,
 sessions and outbox events commit. Ordinary active-account recovery retains its
 existing behavior; old invited tokens have generation zero.
 
-A managed handoff first reserves its delivery identity in notification's existing
-ledger using a detached, bounded two-second tenant transaction. No confirmed
-reservation means no send. The worker then mints the token and invokes the existing
-mailer. A reported failure removes that generation's token and records only
-`transport_error`. A successful return records transport acceptance. Neither
-means that an inbox received the message. If the outer transaction rolls back
-after sending, the reservation survives as unknown and the token is unusable.
-Redelivery of that generation never sends again; an explicit authorized resend
+A managed handoff is fenced by the credential it mints, and every part of it runs in
+the worker's own tenant transaction. The worker first counts the credentials this
+person still holds, unused, for the named generation: a live one means that link is
+already out, so an event arriving again is the same work asked for twice and nothing
+is sent. It then mints the token, invokes the existing mailer, and appends the
+outcome to notification's existing ledger in that same transaction, so the ledger row
+and the invitation's own facts commit together or vanish together. A reported failure
+removes that generation's token and records only `transport_error`. A successful
+return records transport acceptance. Neither means that an inbox received the message.
+Nothing is reserved before a send, so a transaction that rolls back after the
+transport took the message leaves no credential and no ledger row: that link leads
+nowhere, and the next delivery of the generation sends again. One person never holds
+two live credentials for it — `password_tokens` keeps one row per person and the mint
+replaces it — so what a rollback costs is an unreachable message, not a second
+password. Distinguishing a finished handoff from a rolled-back one *before* sending
+needs a durable mail-attempt record, which this module does not keep (T-0730); that is
+why `observation` below names no transport result. An explicit authorized resend
 requests a new generation after the same cooldown.
 
 `GET /api/v1/auth/invitations` and `/{id}` require current `user:read` authority
@@ -734,8 +743,10 @@ A failed snapshot read returns 503 with no partial page.
 | `request` | `queued` while a recorded generation is pending; `ended` once the invitation expires or a command decides it; `unrecorded` for adopted legacy history that recorded no generation. |
 | `observation` | `unobserved` while no transport has reported on the committed handoff; `unknown` for adopted legacy history. No durable mail-attempt record exists here, so the reading never answers a transport result and never claims a message arrived. |
 
-A reading correlates the delivery identity in the returned user snapshot, so a
-concurrent resend cannot attach an older attempt to the newer generation. Public
+A delivery identity belongs to a generation, not to a message: the transition event
+carries it, the handoff fence above matches it against the row, and an event whose
+generation a resend superseded is refused a send, so what a caller reads always answers
+for the generation the person is on. Public
 recovery keeps its neutral acknowledgment and existing limiter. Its worker uses
 the original event timestamp, so duplicate or superseded requests do not rotate
 credentials later merely because delivery was delayed.
