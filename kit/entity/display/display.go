@@ -118,7 +118,7 @@ func Instant(v any) (at time.Time, ok bool) {
 }
 
 // Moment is an instant as a screen writes it, and as it did before the reader's
-// own clock was asked: UTC, "2026-07-01 14:12". It stays the answer every
+// own clock was asked: an RFC 3339 instant in UTC. It stays the answer every
 // reading shares — the cell, the description list and everything kit/rest
 // delegates — so that the zone a person reads is chosen by the browser that
 // knows it (see ui/assets/js/components.js) rather than baked into a string one
