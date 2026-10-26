@@ -31452,6 +31452,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/a_write_at_the_last_exact_count_answers_the_first_count_no_float64_holds_test.go",
+   "id": "kit/rest/a_write_at_the_last_exact_count_answers_the_first_count_no_float64_holds_test.go#TestAWriteAtTheLastExactCountAnswersTheFirstCountNoFloat64Holds",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAWriteAtTheLastExactCountAnswersTheFirstCountNoFloat64Holds",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/catalog_writable_narrowing_test.go",
    "id": "kit/rest/catalog_writable_narrowing_test.go#TestACallerWhoMayNotCallTheOnlyCommandIsNotToldTheResourceIsWritable",
    "kind": "go",
@@ -83985,7 +84004,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2280,
+  "files": 2281,
   "forge_runs": [
    408,
    413,
@@ -84019,7 +84038,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3635,
+   "behaviour": 3636,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -84038,9 +84057,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4257,
+  "rows": 4258,
   "tiers": {
-   "merge": 2636,
+   "merge": 2637,
    "nightly": 111,
    "push": 1510
   },
@@ -84048,13 +84067,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2035,
+   "keep": 2036,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3871,
+   "keep": 3872,
    "keep-rewrite": 170,
    "merge": 216
   }
