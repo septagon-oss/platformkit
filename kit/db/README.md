@@ -420,3 +420,113 @@ reusable** — one options struct every migration door takes and a named `Unlock
 caller can hand to a deferred path. The old/new pair case beside each door is the shape
 this branch leaves for the next renaming of one: a description to copy, not something a
 module can import.
+
+# A re-runnable statement and the object it left
+
+A migration file that runs its statement outside a transaction is required to be
+re-runnable, and the rule is read as "the statement may be sent twice". That is
+true of `CREATE INDEX CONCURRENTLY … IF NOT EXISTS` right up to the moment the
+first send is cancelled — by `lock_timeout`, which the run's own budget puts on the
+session before that statement runs, or by a client that gave up. PostgreSQL keeps
+the half-built index and marks it invalid; the second send then answers "relation
+already exists, skipping" and returns success. Certifying that answer writes a
+history row for a constraint the database does not enforce, and the first write
+that relies on it — an `ON CONFLICT` clause naming the index — answers 42P10
+against an installation whose own ledger says the constraint holds.
+
+So the object the statement names is read back from the catalog before the file is
+recorded. A name that resolves to nothing is a statement that reported creating
+something and did not; a name that resolves to an invalid index is the cancelled
+build. Both get the same answer, once: the half-built object is dropped the way a
+concurrent build is dropped, and the file's statement runs again. What still is not
+valid afterwards refuses the file rather than recording it, because the alternative
+is a boot that reports success and a table whose writes fail from then on. A
+refused file records nothing, so the next boot finds it pending and meets the same
+object with the same repair.
+
+A file that builds several concurrent indexes in one statement needs each of them
+behind `IF NOT EXISTS`, which is what "re-runnable" asks of it anyway: the repair
+re-runs the whole statement, so a second name that is already valid has to answer
+"skipping" rather than "already exists".
+
+The drop is sent re-askably, because being picked out of another session's cycle
+costs that statement nothing: cancelled or not, the object is gone afterwards, and
+`DROP INDEX CONCURRENTLY IF EXISTS` says so twice. The rebuild is not, and that is
+the one asymmetry in the pair. A concurrent build the deadlock detector cancels
+does not leave nothing behind — it leaves the half-built, invalid index, which is
+what this check exists to notice — so re-sending the build on its own meets the
+`IF NOT EXISTS` the file has to carry and answers "relation already exists,
+skipping": the statement doing nothing and reporting that it applied, which is the
+answer the certification refuses to record. Being picked out of a cycle therefore
+costs the repair a whole cycle, drop first, and not a re-send.
+
+# Which role may bypass row-level security
+
+`Open` refuses an application role that holds `SUPERUSER` or `BYPASSRLS`, and it
+asks the second question too: can this role *become* a role that does? BYPASSRLS is
+not inherited, so a clean reading of `current_user` says nothing about `SET ROLE`,
+which needs no privilege beyond the membership one `GRANT` hands out. Inside a
+transaction that statement moves the attribute along with the name: the GUC the
+policies read stays set, `FORCE ROW LEVEL SECURITY` stays in place, and the rows of
+every tenant answer. `pg_has_role` walks the membership graph to any depth, so the
+chain that decides this is not one hop long and is not visible in the role's own
+row. It reads membership rather than the `SET` option, which is the strict answer:
+a grant written `SET false` today is one `ALTER` away from true, and an application
+role should not be adjacent to a bypassing role either way.
+
+What the query still does not ask is whether the role can `CREATE ROLE`, which on
+some versions lets it write a role like the one it is not allowed to join. That is a
+reason to keep the application role's grants short, not a check this query could
+answer.
+
+`pg_has_role` takes the candidate by OID, not by name. The list of candidates comes
+from the statement's snapshot of `pg_roles`, but the name form resolves the role
+again in the live catalog, so a role dropped in between made `Open` fail with
+`role "..." does not exist` for a role it was never going to be. The OID form
+answers false for a role that no longer exists, which is the truth: nothing can
+become a role that is gone.
+
+# The tenant-scope walk
+
+`TenantTablesSQL` is the SELECT that lists every ordinary table a migration could
+have created, in every schema a module owns, for a caller to assert is scoped to a
+tenant or declared exempt. It is exported because the claim is one claim and two
+repositories make it: the migrations' RLS test and the catalog's own application
+test ran byte-identical copies of it, and both were pinned to `current_schema()`,
+which was the only schema until a module's SQL could own one. A table in a module's
+schema is a table that check never saw, and the way a walk goes wrong is by quietly
+returning fewer rows, not by failing.
+
+Six columns, in this order:
+
+1. schema name — `n.nspname`. A table is only identifiable as `cart.items`, because
+   under one schema per owner two modules may each have an `items`.
+2. table name — `c.relname`. Report the two together, never the bare name: "items
+   has no row-level security" is not a message anybody can act on when four schemas
+   have an `items`.
+3. RLS enabled — `c.relrowsecurity`, from `ENABLE ROW LEVEL SECURITY`.
+4. RLS forced — `c.relforcerowsecurity`, from `FORCE`. `ENABLE` alone exempts the
+   table's owner from its own policy, so a caller has to check both.
+5. table comment — `obj_description`, `""` when there is none: this is where the
+   exemption marker lives, and a walk that did not return it could not tell
+   deliberate from forgotten.
+6. policy expressions — the table's policies' `USING` expressions, from
+   `pg_get_expr(polqual)`, joined with spaces, `""` when the table has none. A
+   caller matches this against `platformkit_tenant_match(tenant_id)`.
+
+Which schemas: `current_schema()`, which is `public` in an application and the
+test's own schema under this package, and every schema whose name is an owner in
+`schema_migrations` — the ledger is what makes a schema a module's, so a schema
+created by raw SQL, or by a hand-written ledger row, is not one. That is also why
+the walk belongs to a caller running on the same URL as the DDL: `schema_migrations`
+resolves through the caller's `search_path`, and `pg_get_expr` deparses a policy's
+function call qualified or bare depending on whether that function's schema is on
+the path.
+
+Which URL: the admin URL this package returns — the first one `URLs` and `URLsFor`
+hand back, the owner of the schema — and not the application URL beside it. The
+runner revokes the application role's rights on `schema_migrations`
+(`kit/db/migrate.go`, `migrationLedger`), because a role that could forge history
+could forge a migration; so the walk on that URL is refused for one table rather
+than quietly listing fewer schemas, which is the loud answer and the only
+acceptable one.
