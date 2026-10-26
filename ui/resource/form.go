@@ -7,27 +7,27 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
-	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/document"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
 
-// Form is the create and edit screen: one control per writable field, derived
-// from the field's type and its ui:"widget:" tag, with the fields a command
-// owns shown read-only so a person can see them and not change them here. errs
-// and detail are a refused write's, and a form carrying a detail is a 422: the
-// kernel rolls the transaction back past 400, and htmx swaps a 422 in place
-// rather than treating it as an error nobody sees.
+// Form renders the resolved create or update layout with submitted values.
+// Nonempty detail marks a refused write and returns status 422; errs names
+// individual controls. Invalid supported policy returns an HTML render error.
 func Form(r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) document.View {
+	r = r.policy(o)
+	if err := r.validatePolicy(); err != nil {
+		return document.View{Body: []g.Node{invalid(err)}}
+	}
 	at := r.Screen
 	status := 0
 	if detail != "" {
 		status = statusUnprocessableEntity
 	}
-	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
-		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, title),
+	return document.View{Title: title, Language: r.Resolved.Language, Status: status, Modules: richtextModules(r), Body: []g.Node{
+		breadcrumb(o, r.collectionName(), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
@@ -43,8 +43,8 @@ const richtextModule = "js/richtext.js"
 // rich text is immutable is read-only chrome and no editor, and the page that
 // draws one costs the same as the page that draws none.
 func richtextModules(r Resource) []string {
-	for _, f := range readable(r.Schema.Fields) {
-		if f.Widget == "richtext" && !slices.Contains(r.Immutable, f.Name) {
+	for _, f := range r.Resolved.Fields {
+		if f.Control == "richtext" && (f.Editable.Create || f.Editable.Update) {
 			return []string{richtextModule}
 		}
 	}
@@ -65,19 +65,8 @@ const fileUploadRoute = "/api/v1/file/files"
 // reason: the browser is handed addresses, never a rule for making one.
 const fileImageSrc = "/api/v1/file/files/{file}/content"
 
-// richtextEditor is the server's answer to "what may this field's editor do, and
-// where". An author who is writing has no record yet, so there is nothing to keep
-// a draft under: the draft key appears with the record's id and nowhere else. No
-// write address is offered beside it, because this form is the write: it posts the
-// field and quotes the row's own write count as the condition on that post. A
-// browser handed the same address would PATCH the field as the person types, move
-// the row off the revision the form still carries, and refuse the Save pressed a
-// moment later — keeping no draft in which unsaved words would then live.
-//
-// submitted says this render is the answer to a write that was refused: its
-// controls carry the person's own post rather than the record's text. Nothing
-// compares a kept draft against that text — a refused write saves nothing, and the
-// copy on the device is the only place unsaved words live.
+// richtextEditor scopes an existing record draft without enabling autosave.
+// submitted preserves unsaved text after a refused write; create has no draft key.
 func richtextEditor(r Resource, row map[string]any, create bool, name string, submitted bool) forms.Editor {
 	editor := forms.Editor{FileUpload: fileUploadRoute, ImageSrc: fileImageSrc, Submitted: submitted}
 	if create || row == nil || r.Singleton || r.API == "" {
@@ -96,43 +85,51 @@ func richtextEditor(r Resource, row map[string]any, create bool, name string, su
 // because a renderer of values links no HTTP server.
 const statusUnprocessableEntity = 422
 
-// FormExample captures Form's body for an owner-local example ID and synthetic
-// row/errors. Field slots use "field/<name>"; action scopes the DOM across swaps.
-// Invalid portable form metadata panics. Property edits change presentation only.
+// FormExample captures the same form body as Form for offline design export.
+// id names the example; action scopes control identities across instances and
+// refusal swaps. Inputs are synthetic values, not persistence operations.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	// Detail fields remain editable; hidden fields do not become successful inputs.
-	// Reserve one extra slot for the edit's revision condition.
-	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
-	policy := r.policy(o)
+	r = r.policy(o)
+	if err := r.validatePolicy(); err != nil {
+		return examples.Example{Node: invalid(err)}
+	}
+	fields := make([]forms.Field, 0, len(r.Resolved.Fields)+1)
+	immutable := []string{}
 	choiceValues := map[string][]string{}
-	words := o.Words(r.Schema)
-	// A refusal keeps the submitted values when rebuilding the editor.
-	refused := detail != ""
-	for _, field := range readable(r.Schema.Fields) {
-		f := formField(words, field, o)
-		// A choice asks through the resolved policy, which names the appearance, and
-		// answers from the row's or the refused write's own selection.
+	names := r.Resolved.Layout.Update
+	if create {
+		names = r.Resolved.Layout.Create
+	}
+	for _, name := range names {
+		field, _ := fieldFor(r.Schema.Fields, name)
+		f := resolvedFormField(field, r.field(name), o)
+		// A choice answers from the row's own selection, or from the refused
+		// write's, which arrives here in the same row map.
 		if field.Choices != nil {
-			for _, resolved := range policy.Fields {
-				if resolved.Name == field.Name {
-					f.Resolved = new(resolved)
-				}
-			}
 			if value, exists := row[field.Name]; exists {
 				choiceValues[field.Name] = readChoiceIDs(field, value)
 			}
 		}
 		if f.Definition.Widget == "richtext" {
-			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
+			f.Editor = richtextEditor(r, row, create, name, detail != "")
 		}
 		fields = append(fields, f)
 	}
+	if !create {
+		for _, field := range r.Resolved.Fields {
+			f, _ := fieldFor(r.Schema.Fields, field.Name)
+			if field.OnRecord && !field.Editable.Update && !entity.ServerOwned(f) && !slices.Contains(names, field.Name) {
+				immutable = append(immutable, field.Name)
+				fields = append(fields, resolvedFormField(f, field, o))
+			}
+		}
+	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
-		values[name] = display.Text(value)
+		values[name] = scalarText(value)
 	}
-	// Keep the revision originally read, including after a refused write, so a
-	// resubmission cannot silently replace a newer row.
+	// An edit carries the observed revision, including after a refused write.
+	// A create has no observed row and quotes nothing.
 	if condition, quoted := revisionCondition(r, row, create); quoted {
 		fields = append(fields, forms.Field{Definition: entity.Field{
 			Name: entity.RevisionCondition, Type: entity.TypeString, Widget: "hidden",
@@ -141,7 +138,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		values[entity.RevisionCondition] = condition
 	}
 	return forms.MustExample(id, forms.Model{ChoiceValues: choiceValues, Fields: fields, Values: values, Errors: errs,
-		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
+		Immutable: immutable, Detail: detail, Create: create}, forms.Options{
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
 		Action:    action, CancelURL: r.Screen, Title: title,
@@ -189,7 +186,7 @@ func revisionCondition(r Resource, row map[string]any, create bool) (string, boo
 		return "", false
 	}
 	if count, has := row[entity.RevisionField]; has {
-		return display.Text(count), true
+		return scalarText(count), true
 	}
 	if carried, has := row[entity.RevisionCondition]; has {
 		return display.Text(carried), true
@@ -203,25 +200,7 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 	return forms.Control(forms.ControlProps{Field: formField(Words{}, f, Options{}), Value: value, Error: fieldErr, Immutable: immutable})
 }
 
-// formField projects display words at the screen boundary. The portable form
-// owns controls; the value words keep their owner in kit/entity/display, and
-// `words` is what puts them in the request's language — the zero Words reads
-// each of them exactly as written. A choice adds the request's picture sources
-// and the policy its control draws, resolved from the localised field.
+// formField resolves a standalone field for compatibility controls and commands.
 func formField(words Words, f entity.Field, o Options) forms.Field {
-	options := make([]components.SelectOption, 0, len(f.Enum))
-	for _, value := range f.Enum {
-		options = append(options, components.SelectOption{Label: words.EnumWord(f, value), Value: value})
-	}
-	out := forms.Field{PictureSource: o.PictureSource, ComposedSource: o.ComposedSource, Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
-	if f.Choices != nil {
-		local := words.Fields([]entity.Field{f})
-		resolved := present.Resolve(present.Input{Schema: entity.Schema{Fields: local}})
-		out.Resolved = &resolved.Fields[0]
-	}
-	return out
+	return resolvedFormField(f, words.field(f), o)
 }
-
-// table is the list screen's rows: the field a row is known by first, as the
-// link into it, then every other field the schema does not hide.
-//
