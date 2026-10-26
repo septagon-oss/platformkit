@@ -2,7 +2,7 @@
 
 package screen
 
-const ReferenceContractHash = "sha256:8a2a18ae6f7d46e1f5fa3c1b955bae50c1ac13d27e6157c88bf98eec6b909a9c"
+const ReferenceContractHash = "sha256:68a2c0ffcf928898ab3cb4d5b5679f48047d3025fde99f279828a8a865cfcb8e"
 
 const (
 	View__app__admin__custom__dashboard                                                                     ViewRef   = "app/admin/custom/dashboard"
@@ -234,6 +234,8 @@ const (
 	Anchor__app__webhook__resource__endpoint__edit__field__status                                           AnchorRef = "app/webhook/resource/endpoint/edit#field.status"
 	Anchor__app__webhook__resource__endpoint__edit__field__url                                              AnchorRef = "app/webhook/resource/endpoint/edit#field.url"
 	View__app__webhook__resource__endpoint__list                                                            ViewRef   = "app/webhook/resource/endpoint/list"
+	View__public__auth__custom__verify_2Demail                                                              ViewRef   = "public/auth/custom/verify-email"
+	Anchor__public__auth__custom__verify_2Demail__action__confirm                                           AnchorRef = "public/auth/custom/verify-email#action.confirm"
 	View__public__web__custom__home                                                                         ViewRef   = "public/web/custom/home"
 	View__public__web__custom__page                                                                         ViewRef   = "public/web/custom/page"
 )

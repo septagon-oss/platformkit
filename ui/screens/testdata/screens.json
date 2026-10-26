@@ -1,6 +1,6 @@
 {
   "app": "platformkit",
-  "hash": "sha256:8a2a18ae6f7d46e1f5fa3c1b955bae50c1ac13d27e6157c88bf98eec6b909a9c",
+  "hash": "sha256:68a2c0ffcf928898ab3cb4d5b5679f48047d3025fde99f279828a8a865cfcb8e",
   "operations": [
     {
       "guard": "signed_in",
@@ -133,6 +133,20 @@
       "id": "auth-verify-email",
       "method": "POST",
       "path": "/api/v1/public/auth/verify-email",
+      "surface": "public"
+    },
+    {
+      "guard": "public",
+      "id": "auth-verify-email-confirm",
+      "method": "POST",
+      "path": "/auth/verify-email",
+      "surface": "public"
+    },
+    {
+      "guard": "public",
+      "id": "auth-verify-email-page",
+      "method": "GET",
+      "path": "/auth/verify-email",
       "surface": "public"
     },
     {
@@ -4557,6 +4571,41 @@
           "path": "/app/webhook/endpoints",
           "response": "input",
           "surface": "app"
+        }
+      ]
+    },
+    {
+      "anchors": [
+        {
+          "binding": {
+            "fieldPath": [],
+            "fixed": [],
+            "kind": "submission",
+            "target": "auth-verify-email-confirm"
+          },
+          "control": "button",
+          "identityHash": "sha256:25d8eb97a4479fd5a9faa9d6040144736bedd064abc1cdcd33528234f6151cd4",
+          "interactions": [
+            "activated",
+            "submitted"
+          ],
+          "name": "action.confirm"
+        }
+      ],
+      "cardinality": "one",
+      "hosts": [],
+      "id": "public/auth/custom/verify-email",
+      "identityHash": "sha256:6cca022952853bb0d7f42cf5ab0d13f56481d619e69c132be7171a62c0819ab3",
+      "kind": "custom",
+      "owner": "auth",
+      "routes": [
+        {
+          "guard": "public",
+          "method": "GET",
+          "operationId": "auth-verify-email-page",
+          "path": "/auth/verify-email",
+          "response": "input",
+          "surface": "public"
         }
       ]
     },

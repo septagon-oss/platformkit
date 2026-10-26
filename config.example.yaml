@@ -223,6 +223,15 @@ auth:
 #     adapter: file
 #     dir: /run/secrets/platformkit
 
+# An empty host is not a sink and implies no stand-in for one. What a message
+# with no server behind it becomes is the notification module's choice, made once
+# per environment: a development deployment gets its in-process mailbox, so a
+# sign-up is accepted and its confirmation link waits in that process to be read;
+# anywhere else the installation composes the sender that refuses every send, the
+# command that would promise a mailed link refuses with a reason, and a notice
+# that asks for mail is recorded as suppressed. That is the difference between
+# "this machine has no relay today" and "this installation accepted a sign-up
+# whose confirmation nobody will ever receive".
 mail:
   host: ""
   # Submission with STARTTLS, which is what a modern relay listens on.

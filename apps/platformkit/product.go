@@ -126,6 +126,7 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[admincontracts.PrimaryAction](),
 		pkit.Provides[tenantcontracts.Languages](),
+		pkit.Provides[authcontracts.ConfirmationChrome](),
 		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
@@ -248,6 +249,16 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		// exists before the operator narrows it, so a page can answer a person in
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
+		// The two addresses the sheet a mailed confirmation link opens has to link.
+		// They are written here because every part of them is this product's fact:
+		// which mount hands out the stylesheet, and which sign-in page a person who
+		// has just confirmed their address is sent to. The module names the port and
+		// never an address — TestTheEmailedLinkOpensAPageThatConfirms asks the running
+		// application that the page the link opens answers, links the sheet named
+		// here, and returns the person to the page named here.
+		pkit.Put[authcontracts.ConfirmationChrome](w, authcontracts.ConfirmationChrome{
+			Assets: pinnedAssets, SignIn: pinnedSignIn,
+		})
 		pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
 		// Which event names may be put on a webhook endpoint is this file's fact:
 		// the modules that emit them are composed by this file, and the module that
@@ -443,8 +454,14 @@ func caches() app.Caches {
 // inputs for. It is not an edge and it names no module: the key list is what
 // makes an implementation choosable (pkit refuses one whose inputs are absent),
 // and the values it runs on are read from the typed section by the module that
-// picked it. The one thing that can go wrong here is the pair disagreeing with
-// cfg.Mail.Enabled(); the composition tests refuse that.
+// picked it. Mail is the only port with three implementations, so this is the one
+// place the state a server answers for is named in the resolver's words; naming
+// nothing at all leaves the mail-less choice to the module itself — its simulated
+// mailbox in a development deployment, the sender that refuses every send
+// anywhere else. What can go wrong here is the list disagreeing with what
+// kit/config loaded, and the composition tests refuse that: one boots a running
+// production application that names no mail server, and every case that reads a
+// link out of this process's memory boots the development one that does not.
 func deploymentInputs(cfg config.Config) map[string]string {
 	if !cfg.Mail.Enabled() {
 		return nil
