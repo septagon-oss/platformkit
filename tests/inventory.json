@@ -49978,6 +49978,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/the_installation_read_the_refused_door_cases_call_reaches_another_tenants_row_test.go",
+   "id": "modules/auth/internal/the_installation_read_the_refused_door_cases_call_reaches_another_tenants_row_test.go#TestTheInstallationReadTheRefusedDoorCasesCallReachesAnotherTenantsRow",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheInstallationReadTheRefusedDoorCasesCallReachesAnotherTenantsRow",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/the_last_passkey_is_not_withdrawn_test.go",
    "id": "modules/auth/internal/the_last_passkey_is_not_withdrawn_test.go#TestTheLastPasskeyIsNotWithdrawn",
    "kind": "go",
@@ -90829,7 +90848,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2497,
+  "files": 2498,
   "forge_runs": [
    408,
    413,
@@ -90863,7 +90882,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3954,
+   "behaviour": 3955,
    "composition": 514,
    "contract": 24,
    "journey": 121
@@ -90882,9 +90901,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4613,
+  "rows": 4614,
   "tiers": {
-   "merge": 2831,
+   "merge": 2832,
    "nightly": 121,
    "push": 1661
   },
@@ -90892,13 +90911,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2252,
+   "keep": 2253,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4227,
+   "keep": 4228,
    "keep-rewrite": 170,
    "merge": 216
   }
