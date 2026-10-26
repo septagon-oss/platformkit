@@ -97,8 +97,6 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 
 // productWithPolicy supplies explicit policy rules through the same product
 // declarations as the reference composition. The caller owns the adapter.
-// productWithPolicy supplies explicit policy rules through the same product
-// declarations as the reference composition. The caller owns the adapter.
 func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures, policy tenancy.Policy) *pkit.Module {
 	return pkit.NewModule("product", func(w *pkit.Wiring) (module.Module, error) {
 		if err := putProductStores(w, cfg, policy); err != nil {
