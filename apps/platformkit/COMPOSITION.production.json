@@ -923,9 +923,7 @@
       "name": "coordinator",
       "grants": [
         "task:read",
-        "task:update",
-        "saved:read",
-        "saved:write"
+        "task:update"
       ]
     },
     {

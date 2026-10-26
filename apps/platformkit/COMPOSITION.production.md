@@ -19,7 +19,7 @@ pkit: seam policy runs rego-in-process (kernel; not a cloud seam).
 pkit: seam telemetry runs none (default).
 pkit: seam identity runs password-only (default).
 pkit: seam flags runs configuration (kernel; not a cloud seam).
-pkit: a tenant of platformkit begins as coordinator, holding task:read, task:update, saved:read and saved:write.
+pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: a tenant of platformkit begins as subject_officer, holding subject:export and subject:erase.
 pkit: product.Module needs no other module.

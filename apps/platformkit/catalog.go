@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/notification"
+	savedmodule "github.com/septagon-oss/platformkit/modules/saved"
 	"github.com/septagon-oss/platformkit/modules/scim"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/subject"
@@ -21,6 +22,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
+	"github.com/septagon-oss/platformkit/ui/saved"
 )
 
 // catalogues is this application's one message catalog: every copy source the
@@ -47,6 +49,7 @@ func catalogues() xtext.Catalog {
 		xtext.Source{FS: forms.Catalogues(), Name: "ui/forms"},
 		xtext.Source{FS: richtext.Catalogues(), Name: "kit/richtext"},
 		xtext.Source{FS: resource.Catalogues(), Name: "ui/resource"},
+		xtext.Source{FS: saved.Catalogues(), Name: "ui/saved"},
 		admin.Catalogue(),
 		// Each module's own permission labels, so a refusal names a grant in the
 		// language the tenant is served in and not in a key. Every module that
@@ -57,6 +60,7 @@ func catalogues() xtext.Catalog {
 		billing.Catalogue(),
 		change.Catalogue(),
 		content.Catalogue(),
+		savedmodule.Catalogue(),
 		file.Catalogue(),
 		notification.Catalogue(),
 		scim.Catalogue(),

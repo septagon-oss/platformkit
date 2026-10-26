@@ -1,0 +1,10 @@
+{
+  "permission.saved:read": {
+    "references": ["modules/saved/module.go"],
+    "translation": "Ler as suas próprias cópias guardadas"
+  },
+  "permission.saved:write": {
+    "references": ["modules/saved/module.go"],
+    "translation": "Guardar e remover as suas próprias cópias"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "saved.breadcrumb": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Navegação"
+  },
+  "saved.empty": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Ainda não guardou nada."
+  },
+  "saved.empty.filtered": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Ainda não guardou nada deste tipo."
+  },
+  "saved.unavailable": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Já não está disponível."
+  },
+  "saved.temporary": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "De momento inacessível."
+  },
+  "saved.open": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Abrir o registo"
+  },
+  "saved.remove": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Remover dos guardados"
+  },
+  "saved.listTitle": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Itens guardados"
+  },
+  "saved.newer": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Cópias mais recentes"
+  },
+  "saved.older": {
+    "references": ["ui/saved/grid.go"],
+    "translation": "Cópias mais antigas"
+  }
+}

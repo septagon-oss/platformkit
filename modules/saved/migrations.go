@@ -19,9 +19,11 @@ var schema embed.FS
 // three indexes — owned as "saved". A test composes the schema it needs beside
 // the foundation with dbtest.Schema(t, saved.Migrations).
 //
-// The file carries the version number the foundation's own history had reached
-// when this table was written, so the version is new to every installation
-// rather than adopted from a time when saved's SQL belonged to somebody else.
+// The file carries the first version number the foundation's own history had not
+// taken when this table was composed. A version is the migrator's key: two owners
+// at one number means the second one's SQL is never applied, and the applied
+// census then reads the first owner's name where the second's table stands.
+// Composing this module is what made the collision visible.
 var Migrations = db.MigrationSource{
 	Owner: "saved",
 	Files: db.Sub(schema, "migrations"),

@@ -41,7 +41,7 @@ var authorizationQuestions = []string{
 // Every other name the composition resolves is a directory, and a kernel module
 // that grows a README-less sibling still fails here.
 var declaredElsewhere = map[string]string{
-	"product":           "README.md",
+	"product": "README.md",
 	// `saving` and `keeping` are this application's half of the saved surface,
 	// written in saved.go: the authority read and the pairs worth keeping, and the
 	// page they are kept from. Neither declares a permission of its own — the
