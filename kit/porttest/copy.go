@@ -4,25 +4,18 @@ import "reflect"
 
 // detached is a copy of a row that shares no storage with the row it came from.
 //
-// Assignment copies a struct's fields, and a slice, map or pointer field is a
-// header over storage the original also names — so a fake that hands a command an
-// assigned copy hands it the stored row. That is the direction a refusal travels:
-// `Do` checks what a command says after the command decided what to write, because
-// only the command knows which events its write is news about, and an undeclared
-// name then refuses a write whose header-backed fields already landed. The tenant
-// is left holding a change no event says and no commit covers, which is the half of
-// "domain state and what the command says commit together" a `bool` field cannot
-// show and a `[]NavItem` shows at once. A database gives a command the row it read,
-// not an alias of the page that holds it, and this is the same courtesy: what a
-// command mutates is its own until the store takes it.
+// Assignment copies fields, and a slice, map or pointer field is a header over
+// storage the original also names — so a fake that hands a command an assigned
+// copy hands it the stored row. That is the direction a refusal travels: Do
+// checks what a command says after the command decided what to write, because
+// only the command knows which events its write is news about, so an undeclared
+// name refuses a write whose header-backed fields already landed and the tenant
+// keeps a change no event says and no commit covers. A database gives a command
+// the row it read, not an alias of the page holding it; what a command mutates is
+// its own until the store takes it.
 //
-// Two limits are the row type's own, and saying them is cheaper than a mechanism
-// that hides them. A field the type does not export is copied as assignment leaves
-// it — reaching past it needs unsafe, which no test kernel has a claim on — so a row
-// whose unexported field is a header shares that storage with whoever holds the row;
-// `uuid.UUID` and `time.Time` are value fields as far as this cares. And the walk
-// follows what a row points at, which for a row means one level of what it owns: a
-// type that points back at itself is not a row, and this would follow it forever.
+// Two limits are the row type's own: an unexported field is copied as assignment
+// leaves it, and the walk follows one level of what a row owns, never a cycle.
 func detached[T any](row T) T {
 	v := reflect.ValueOf(row)
 	if !v.IsValid() || !sharesStorage(v.Type()) {

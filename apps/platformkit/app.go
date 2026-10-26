@@ -3,18 +3,14 @@ package main
 // app.go is the reference application read as one sentence, and decision 0074's
 // pilot: the modules it is made of are named once, in the order the composition
 // builds them, and every edge between them is a contract one of the two declares
-// rather than a hand-off this file performs.
-//
-// `run` and `start` are the two commands that go through it, which is the
-// difference between a sentence and a comment about one: what the image runs and
-// what a laptop runs are composed here, and what they are composed from is
-// `pkit.Server.Explain`'s text, committed beside this file as
+// rather than a hand-off this file performs. `run` and `start` both go through it,
+// so what the image runs and what a laptop runs are one sentence, worded out of
+// pkit.Server.Explain's text and committed beside this file as
 // COMPOSITION.development.md and COMPOSITION.production.md.
 //
-// The sentence reads in the order the composition is built: the product's own
-// values first, because everything below reads them; then the modules, in the
-// order their needs place them; then the words, the colours and the doors, which
-// are what this product adds to them.
+// It reads in build order: the product's own values first, because everything
+// below reads them; then the modules, in the order their needs place them; then
+// the words, the colours and the doors, which are what this product adds to them.
 
 import (
 	"encoding/json"
@@ -266,23 +262,18 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 
 // sentences is the one statement of this application's composition, and the six
 // values its own chrome reads: the reach an ask has here, which the access module
-// fills once the services it joins exist, the shell of the ask's two pages, which
-// is drawn from the skin the resolved composition answered with, the seed's
-// tenant-creation hook, which composeReference fills from the resolved plan for
-// the reason seeding gives, the permission catalogue the roles hook seeds from,
-// which the same line fills for the same reason, the workspace's own face, whose
-// mount is part of the sentence below while the answers it serves come out of the
-// plan, and the counting door's face, whose mount the same line takes while its
-// count arrives from the resources the plan resolved.
-// that boots the reference application goes through it: `run` and `start`, which
-// hand the whole thing to pkit, and appOptions, which is what a test in this
-// repository boots the same composition with when it wants the handler rather
-// than a process. There is one of it because a second statement of a
+// fills once the services it joins exist; the shell of the ask's two pages, drawn
+// from the skin the resolved composition answered with; the seed's tenant-creation
+// hook, the permission catalogue the roles hook seeds from, the workspace's face
+// and the counting door's face — the last four filled by composeReference from the
+// resolved plan, for the reason seeding gives. Every caller in this binary that
+// boots the reference application goes through it: `run` and `start` hand the whole
+// thing to pkit, and appOptions is what a test boots it with when it wants the
+// handler rather than a process. There is one of it because a second statement of a
 // composition is a second composition, and the two drift.
 //
 // `served` is the copy that one sentence is worded from: for every caller in this
-// binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
-// different value to name, and sentences is what everybody else calls.
+// binary, the catalogue `catalogues` loads.
 func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace, *summaryFace) {
 	ask, shell, provision, grants, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}
 	counts := &summaryFace{}

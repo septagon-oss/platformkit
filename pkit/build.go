@@ -3,29 +3,13 @@ package pkit
 // Build is the point where an app written in sentences becomes a running
 // application, and the last place a composition can still be refused for free.
 //
-// The engine is kit/app: it checks a composition, migrates, opens the
-// connection, builds the API and its gates, opens the transport, and serves or
-// works. What this file adds is the step before it — the resolver's ordered
-// modules, the app's own recorded choices and the ports the kernel cannot
-// answer for itself, all answered before the first effect. Every method on App
-// records; Build is what answers, with every problem at once (decision 0074
-// rule 1), and "before any effect" is meant literally: Plan and Declarations
-// open no connection, run no migration, write no row and listen on no port.
-//
-// What the engine registers one more time is the routes: kit/app.buildAPI mounts
-// them a fourth time, over an in-process store and with no connection open, and
-// refuses a callback that mounted differently there than on the three recorder
-// passes. That refusal is the last one the composition can be given for free: the
-// pool, the store the deployment names and the migration are what Start spends
-// after it, and the API that answers them is the one this registration built, so
-// there is no fifth call left to disagree with anything.
-//
-// Free means free of both sides of the effect: an App refused above the connection
-// — in the gate pass or in that fourth registration — keeps no record of the
-// attempt, so the corrected composition builds on this App, and an App whose boot
-// reached the pool keeps the lifecycle it handed over. App.release is what tells
-// the two apart, and app.RefusedBeforeEffects is what answers which side a refusal
-// was answered on.
+// The engine is kit/app: it checks a composition, migrates, opens the connection,
+// builds the API and its gates, opens the transport, and serves or works. This
+// file is the step before it — the resolver's ordered modules, the app's recorded
+// choices and the ports the kernel cannot answer for itself, all answered before
+// the first effect, with every problem at once. "Free of both sides of the
+// effect", what a refusal above the connection costs and what App.release tells
+// apart, and why the route registrations run four times: pkit/README.md.
 
 import (
 	"context"
@@ -127,28 +111,16 @@ func (p *Planned) answer(key any) ([]any, []*Module) {
 	return p.values[key], p.putBy[key]
 }
 
-// Plan answers every problem with the composition, at once, and changes
-// nothing. The phases run in this order, each before the first effect:
-//
-//	P1 settings   — an app with no name, a customisation set twice, an
-//	               AskForAccess with one half missing, an environment nobody
-//	               named, a Choose of a module Use never named
-//	P2 resolve    — a._resolve(d): duplicates, missing or ambiguous providers,
-//	               cycles, phase violations, FromDeployment inputs, a simulated
-//	               implementation outside development
-//	P3 dry build  — every module's build, its Puts counted, a contribution no
-//	               composed module takes refused, and the kernel's own manifest
-//	               gates (module.Expand, module.Validate) run over what the dry
-//	               build produced, so the subscription gate answers here too
-//	P4 ports      — the three required ports have exactly one provider each, and
-//	               every recorded role grants a permission a composed module
-//	               defines and none that reaches the control plane
+// Plan answers every problem with the composition, at once, and changes nothing:
+// the settings, the resolver, every module's dry build with the kernel's manifest
+// gates over what it produced, and the required ports and recorded roles, in that
+// order. pkit/README.md carries the table of what each phase answers.
 //
 // Nothing here opens a connection, migrates, writes, listens or dials a broker.
-// The remaining checks — the pool, the transport choice, and the gate that
-// every declared operation has an authorization — are kit/app's: New answers the
-// first two before anything is opened and the third needs the open pool, so it
-// stays in the effect phase (see Build's comment).
+// The remaining checks — the pool, the transport choice, and the gate that every
+// declared operation has an authorization — are kit/app's: New answers the first
+// two before anything is opened and the third needs the open pool, so it stays in
+// the effect phase (see Build).
 func (a *App) Plan(d Deployment) (*Planned, error) {
 	var errs []error
 	if a.name == "" {
@@ -296,40 +268,19 @@ func (a *App) release(err error) {
 }
 
 // newEngine is Plan plus the engine's own checks: it is where a Deployment's
-// configuration reaches kit/app, which answers about the pool, the transport the
-// role would use and every manifest gate before anything is opened.
+// configuration reaches kit/app, which answers about the pool, the transport
+// the role would use and every manifest gate before anything is opened.
 //
 // It is also where this process records that this application, with this
-// composition, is on this database (claims.go), which is the last answer that can be
-// given free of both effects: it
-// is read after Plan, so a composition that does not resolve is refused by the
-// sentences that caused it rather than by a process fact, and it is taken before
-// startEngine, so a boot refused here leaves the database it names undialed and
-// this App free to build a corrected composition. The held it returns belongs to
-// the lifecycle: a caller that starts nothing gives it back, and a Runtime carries
-// it to Close.
+// composition, is on this database: the claim is read after Plan, so a
+// composition that does not resolve is refused by the sentences that caused it,
+// and taken before startEngine, so a boot refused here leaves the database
+// undialed. The held claim belongs to the lifecycle — a caller that starts
+// nothing gives it back, and a Runtime carries it to Close (see claims.go).
 //
-// Between the engine's constructor and the first effect sits one more answer:
-// the route gates, over three dry registrations (app.Declarations). They are
-// registration-time checks over httpx's recorder — an operation guarded by a
-// permission no composed module defines, an operation that publishes an event no
-// module promised, a workspace that mounts nothing, an address that names a
-// prefix, and the registrations that did not mount the same surface — and nothing
-// in them reads the database, so decision 0074 rule 1 puts them before the
-// migration rather than after it. Three registrations on the recorder, not one:
-// the second is what a callback behind an idempotent mount guard needs and the
-// third is what a callback that answers differently on its third call needs, and
-// both are answered before the pool, the shared store and the migration. What the
-// engine builds after them, still with nothing open, is the API that would serve —
-// the fourth registration, judged against the first by the same comparison, and
-// the last thing this composition can be refused for. What stays on this side of
-// the migration is only what genuinely needs the connection: the pool, the
-// transport, and /ready's own probe of the schema it opened. The engine hands both
-// to the router it built above (httpx.API.Connect) and migrates only after every
-// gate has answered, because a module's Routes callback runs four times in one boot
-// and one that mounted differently between any of those runs would otherwise be a
-// composition that means two different things
-// (app.registrationsAgree).
+// Between the engine's constructor and the first effect sit the route gates:
+// three dry registrations and the API that would serve, none of which reads the
+// database. pkit/README.md says why three and what each one refuses.
 func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.App, *Planned, *held, error) {
 	p, err := a.Plan(d)
 	if err != nil {

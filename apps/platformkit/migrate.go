@@ -3,21 +3,17 @@ package main
 // migrate.go is the fourth command, and the shortest: apply what is pending and
 // exit.
 //
-// go run github.com/septagon-oss/platformkit/apps/platformkit@main migrate \
-//     --config config.yaml
+//	go run github.com/septagon-oss/platformkit/apps/platformkit@main migrate \
+//	    --config config.yaml
 //
-// It exists because contention is not failure. A migration that could not take a
+// It exists because contention is not failure: a migration that could not take a
 // lock within its budget returns db.ErrContended and says the operator may run it
-// again; the runner does not wait and retry inside itself, because it holds the
-// composition's advisory lock and a queue inside that lock stops every other
-// replica's boot behind the same wait. So the waiting and the running-again is a
-// human decision, and the person making it is not deploying — they are standing in
-// front of a database whose table somebody is reading. A door for that decision has
-// to exist that does not require starting a server.
-//
-// It is also the step scripts/rehearse_migrations.sh drives a candidate through: a
-// rehearsal that applied the migrations by some other route would be rehearsing a
-// different program from the one the release ships.
+// again. The runner does not wait and retry inside itself, because it holds the
+// composition's advisory lock, and a queue inside that lock stops every other
+// replica's boot behind the same wait. So the waiting is a human decision, and the
+// door for it must not require starting a server. It is also the step
+// scripts/rehearse_migrations.sh drives a candidate through, so a rehearsal
+// rehearses the program the release ships.
 
 import (
 	"context"

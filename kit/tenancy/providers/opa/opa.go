@@ -1,23 +1,17 @@
 // Package opa adapts Open Policy Agent, embedded as a library, to tenancy.Policy.
 //
-// The register (decision 0052) names OPA for object-scope authorization: a composition
-// writes its rules in Rego, the open standard policy language, and they run in process —
-// no policy server to deploy, reach or keep in step. The Topaz adapter beside this one is
-// the choice for a composition that wants a directory of relations served elsewhere.
+// The register (decision 0052) names OPA for object-scope authorization: a
+// composition writes its rules in Rego and they run in process, with no policy
+// server to deploy or keep in step; Topaz is the choice beside this one when the
+// relations are served elsewhere.
 //
 // A policy module answers `decision` in the package it declares, as an object:
 //
 //	package platformkit.task
 //	decision := {"allow": true, "reason": "..."} if { ... }
 //
-// with the tenancy.PolicyRequest as `input`: `input.tenant.id`, `input.tenant.slug`,
-// `input.actor.kind`, `input.actor.id`, `input.action`, `input.resource.kind`,
-// `input.resource.id`, `input.resource.attributes`. An undefined decision is a denial,
-// and anything that is not an object with a boolean `allow` is an outage — never an
-// allow — because tenancy.RequirePolicy treats a provider failure as a refusal.
-//
-// Revision is `sha256:` and the first twelve hex characters of the policy source, so a
-// decision stored beside the record it authorized names the exact rules that made it.
+// with the tenancy.PolicyRequest as `input`. An undefined decision is a denial,
+// and anything but an object with a boolean allow is an outage — never an allow.
 package opa
 
 import (

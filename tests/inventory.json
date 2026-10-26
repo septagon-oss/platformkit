@@ -23423,6 +23423,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/fault/architecture_composition_citations_name_the_call_their_sentence_names_test.go",
+   "id": "kit/fault/architecture_composition_citations_name_the_call_their_sentence_names_test.go#TestArchitectureCompositionCitationsNameTheCallTheirSentenceNames",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestArchitectureCompositionCitationsNameTheCallTheirSentenceNames",
+   "needs_db": false,
+   "pkg": "kit/fault",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/fault/architecture_shorthand_citations_test.go",
    "id": "kit/fault/architecture_shorthand_citations_test.go#TestEveryPillarCitationResolvesFromTheFileBeforeIt",
    "kind": "go",
@@ -23516,6 +23535,25 @@
    ],
    "unique_reach_kind": "symbols",
    "verdict": "keep-rewrite"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/fault/every_documented_line_citation_names_a_line_the_file_holds_test.go",
+   "id": "kit/fault/every_documented_line_citation_names_a_line_the_file_holds_test.go#TestEveryDocumentedLineCitationNamesALineTheFileHolds",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryDocumentedLineCitationNamesALineTheFileHolds",
+   "needs_db": false,
+   "pkg": "kit/fault",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
   },
   {
    "area": "kit",
@@ -86380,6 +86418,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/a_claim_the_composition_case_reads_is_said_once_in_the_implementation_map_test.sh",
+   "id": "scripts/a_claim_the_composition_case_reads_is_said_once_in_the_implementation_map_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_claim_the_composition_case_reads_is_said_once_in_the_implementation_map_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/a_drifted_dompurify_override_is_refused_by_the_pin_check_test.sh",
    "id": "scripts/a_drifted_dompurify_override_is_refused_by_the_pin_check_test.sh",
    "kind": "shell_pin",
@@ -88840,6 +88898,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh",
+   "id": "scripts/the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/the_inventory_lists_a_javascript_test_test.sh",
    "id": "scripts/the_inventory_lists_a_javascript_test_test.sh",
    "kind": "shell_pin",
@@ -90867,7 +90945,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2499,
+  "files": 2503,
   "forge_runs": [
    408,
    413,
@@ -90901,8 +90979,8 @@
    578
   ],
   "layers": {
-   "behaviour": 3956,
-   "composition": 514,
+   "behaviour": 3958,
+   "composition": 516,
    "contract": 24,
    "journey": 121
   },
@@ -90920,23 +90998,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4615,
+  "rows": 4619,
   "tiers": {
    "merge": 2833,
    "nightly": 121,
-   "push": 1661
+   "push": 1665
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2254,
+   "keep": 2258,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4229,
+   "keep": 4233,
    "keep-rewrite": 170,
    "merge": 216
   }
