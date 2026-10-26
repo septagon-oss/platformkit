@@ -1180,7 +1180,8 @@
     "summary": {
       "highlight": null,
       "trendField": ""
-    }
+    },
+    "savable": null
   },
   "screen": "/app/content/contents",
   "immutable": [

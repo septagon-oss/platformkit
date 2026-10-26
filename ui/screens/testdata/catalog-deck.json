@@ -575,7 +575,8 @@
         "summary": {
           "highlight": null,
           "trendField": ""
-        }
+        },
+        "savable": null
       },
       "screen": "/app/note/notes",
       "immutable": [

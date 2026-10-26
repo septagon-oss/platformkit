@@ -1082,7 +1082,8 @@
         ]
       },
       "trendField": "createdAt"
-    }
+    },
+    "savable": null
   },
   "screen": "/app/task/tasks",
   "immutable": [
