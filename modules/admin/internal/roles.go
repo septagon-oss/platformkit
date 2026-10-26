@@ -111,7 +111,7 @@ func (p pages) mountRoles(app *httpx.Router) {
 			}
 			form, err := url.ParseQuery(string(in.RawBody))
 			if err != nil {
-				return page.View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+				return page.View{}, page.FormUnreadable()
 			}
 			// The screenful the form was on, so that a refusal and a success
 			// both come back to what the person was reading.
