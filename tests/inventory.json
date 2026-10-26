@@ -19007,6 +19007,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/sketch_refusal_copy_states_each_ceiling_as_its_own_whole_number_test.go",
+   "id": "kit/entity/sketch_refusal_copy_states_each_ceiling_as_its_own_whole_number_test.go#TestEverySketchRefusalStatesItsCeilingAsAWholeNumberOfItsOwn",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEverySketchRefusalStatesItsCeilingAsAWholeNumberOfItsOwn",
+   "needs_db": false,
+   "pkg": "kit/entity",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/sketch_test.go",
    "id": "kit/entity/sketch_test.go#TestSketchRoundTripAndLimits",
    "kind": "go",
@@ -86625,7 +86644,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2360,
+  "files": 2361,
   "forge_runs": [
    408,
    413,
@@ -86659,7 +86678,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3769,
+   "behaviour": 3770,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86678,23 +86697,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4395,
+  "rows": 4396,
   "tiers": {
    "merge": 2693,
    "nightly": 110,
-   "push": 1592
+   "push": 1593
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2115,
+   "keep": 2116,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4009,
+   "keep": 4010,
    "keep-rewrite": 170,
    "merge": 216
   }
