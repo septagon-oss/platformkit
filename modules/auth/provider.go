@@ -31,6 +31,7 @@ var Module = pkit.NewModule("auth", wire,
 	// no SAML leg at all rather than three doors that answer 404 for everybody.
 	pkit.Optional[authcontracts.SAMLProviders](),
 	pkit.Optional[authcontracts.RegistrationMode](),
+	pkit.Optional[authcontracts.ConfirmationChrome](),
 	pkit.Optional[LinkPages](),
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[authcontracts.RoleEditor](),
@@ -100,18 +101,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		LinkPages:  pkit.Get[LinkPages](w),
 		PublicHost: server.PublicHost,
 	}
-	// Which public signup door this installation mounted is a composed module of
-	// its own (Registration, EmailRegistration, ApprovalRegistration), because
-	// three mutually exclusive Deps fields were one decision written three ways.
-	// None composed means no door, which is what the empty field always meant.
-	switch mode := pkit.Get[authcontracts.RegistrationMode](w).(type) {
-	case authcontracts.EmailRegistrationMode:
-		deps.EmailRegistration = mode.Policy
-	case authcontracts.ApprovalRegistrationMode:
-		deps.ApprovalRegistration = mode.Policy
-	case authcontracts.PasswordRegistration:
-		deps.Registration = mode.Users
-	}
+	mailedLinksOpen(&deps, w)
 	// A file-borne budget the counter cannot keep is the plan's refusal, not
 	// New's panic: the loader checked presence, and only the counter knows its
 	// horizon.
@@ -129,6 +119,35 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put[pkit.Authenticator](w, svc.Authenticate)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
+}
+
+// mailedLinksOpen writes the two Deps fields whose value is not a service the
+// composition resolved but a choice this installation made: the page a mailed link
+// opens, whose two addresses come from the composition — the only party that knows
+// what it mounted — and whose colours and words come from the skin the resolved
+// composition answered with, the same value the admin shell and the public site
+// draw themselves from; and which public signup door this installation mounted,
+// which is a composed module of its own (Registration, EmailRegistration,
+// ApprovalRegistration) because three mutually exclusive Deps fields were one
+// decision written three ways. Both halves are optional, and an installation that
+// named neither gets what an empty Deps field always gave: a bare document, and no
+// door.
+func mailedLinksOpen(deps *Deps, w *pkit.Wiring) {
+	chrome := pkit.Get[authcontracts.ConfirmationChrome](w)
+	if chrome.Assets != "" || chrome.SignIn != "" {
+		skin := w.Skin()
+		deps.Pages = Pages{
+			Theme: skin.Theme, Assets: chrome.Assets, SignIn: chrome.SignIn, Messages: skin.Copy,
+		}
+	}
+	switch mode := pkit.Get[authcontracts.RegistrationMode](w).(type) {
+	case authcontracts.EmailRegistrationMode:
+		deps.EmailRegistration = mode.Policy
+	case authcontracts.ApprovalRegistrationMode:
+		deps.ApprovalRegistration = mode.Policy
+	case authcontracts.PasswordRegistration:
+		deps.Registration = mode.Users
+	}
 }
 
 // MailedLinksOpen is how a composition names the pages its mailed links open:

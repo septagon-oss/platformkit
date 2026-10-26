@@ -63,7 +63,7 @@ pkit: notification.Module uses *notification.Page from workspace.Module.
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
 pkit: notification.Module contributes one personaldata.Part to subject.Module.
-pkit: notification.Module runs on mailbox, which the deployment picked.
+pkit: notification.Module runs on none, which the deployment picked.
 pkit: notification.Module defines the permission sender:manage.
 pkit: notification.Module emits notification.created, notification.email_requested, notification.read, notification.push_requested, notification.web_push_requested, notification.webhook_requested, notification.preference_set, notification.sender_set, notification.sender_verified, notification.sender_removed, notification.device_registered and notification.device_removed.
 pkit: notification.Module handles notification.email_requested.
@@ -96,7 +96,7 @@ pkit: webhook.Module contributes one personaldata.Part to subject.Module.
 pkit: webhook.Module defines the permission webhook:read and webhook:update.
 pkit: webhook.Module emits webhook.endpoint.created, webhook.endpoint.updated, webhook.endpoint.deleted, webhook.endpoint.disabled and webhook.endpoint.enabled.
 pkit: webhook.Module handles every event this application emits.
-pkit: auth.Module is built after authgrants.Module, user.Module, tenant.Module, notification.Module and emailregistration.Module.
+pkit: auth.Module is built after product.Module, authgrants.Module, user.Module, tenant.Module, notification.Module and emailregistration.Module.
 pkit: auth.Module needs authcontracts.Users from user.Module.
 pkit: auth.Module needs authcontracts.Provisioner from user.Module.
 pkit: auth.Module needs authcontracts.Notifier from notification.Module.
@@ -109,6 +109,7 @@ pkit: auth.Module needs authcontracts.GrantAuthorizer from authgrants.Module.
 pkit: auth.Module needs authcontracts.PermissionReader from authgrants.Module.
 pkit: auth.Module uses authcontracts.SAMLProviders from tenant.Module.
 pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Module.
+pkit: auth.Module uses authcontracts.ConfirmationChrome from product.Module.
 pkit: auth.Module could use auth.LinkPages; platformkit composes no provider, so it will not.
 pkit: auth.Module reads config.Auth.
 pkit: auth.Module reads config.Server.

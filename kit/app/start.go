@@ -78,13 +78,13 @@ func (a *App) connectRuntime(ctx context.Context, api *httpx.API, build cache.Ca
 	return conn, store, nil
 }
 
-func (a *App) finishRuntime(ctx context.Context, conn *db.Conn, store cache.Cache, handler http.Handler) (*Runtime, error) {
+func (a *App) finishRuntime(ctx context.Context, api *httpx.API, conn *db.Conn, store cache.Cache, handler http.Handler) (*Runtime, error) {
 	var err error
 	rt := &Runtime{app: a, conn: conn, handler: handler, cache: store,
 		declaredRelease: a.takeDeclaredRelease()}
 	if a.opts.Role == Worker {
 		// Worker routes are validated, but its serving surface contains only probes.
-		rt.handler = a.probes(conn)
+		rt.handler = a.probes(api, conn)
 	}
 	if a.opts.Role != Web {
 		if rt.transport, err = a.transport(); err != nil {

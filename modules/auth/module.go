@@ -71,6 +71,17 @@ func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
 // of its own rather than on the application's configuration surface.
 type OIDC = internal.OIDC
 
+// Pages is the chrome of the one page this module writes for itself: the page
+// the address in a verification email opens (see internal/ui/page.go).
+//
+// The page is the module's — it is the credential, the state and the command
+// that spends them — and its chrome is not: the palette, where the stylesheet is
+// served and where a person who has just confirmed an address is sent are facts
+// about the installation, so the composition writes them here. A composition
+// that turns emailed registration on and leaves Pages zero mails a link that
+// opens nothing.
+type Pages = internal.Pages
+
 // Deps is what this module cannot make for itself.
 type Deps struct {
 	// Authorization and Permissions must be supplied together. Leaving both nil
@@ -208,6 +219,11 @@ type Deps struct {
 	// browser refuses a Secure cookie over http://localhost, so a development
 	// machine would be a development machine nobody could sign in to.
 	PublicHost string
+
+	// Pages is the chrome of the page the verification link opens. Only the
+	// emailed-verification lifecycle has such a page, so only that lifecycle
+	// reads it; see Pages.
+	Pages Pages
 }
 
 // LinkPages names the pages a mailed link opens, as paths on the host the tenant
@@ -328,25 +344,28 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	return svc, manifest
 }
 
+// sessionSubscriptions is the two ways the same fact arrives: somebody who cannot
+// sign in has to be sent a link they can use. A send a transport refused is
+// acknowledged rather than retried, in internal.AcknowledgeRefusedDelivery.
 func sessionSubscriptions(svc *internal.Service) []events.Subscription {
 	return []events.Subscription{{
 		Module: "auth", Name: usercontracts.EventInvited,
-		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+		Handler: internal.AcknowledgeRefusedDelivery(func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
 			var invited usercontracts.Invited
 			if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 				return fmt.Errorf("auth: read the invitation: %w", err)
 			}
 			return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
-		},
+		}),
 	}, {
 		Module: "auth", Name: contracts.EventResetRequested,
-		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+		Handler: internal.AcknowledgeRefusedDelivery(func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
 			var asked contracts.ResetRequested
 			if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 				return fmt.Errorf("auth: read the reset request: %w", err)
 			}
 			return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
-		},
+		}),
 	}}
 }
 
@@ -366,6 +385,7 @@ func sessionRoutes(svc *internal.Service, deps Deps, cookies internal.Cookies, s
 		}
 		if deps.EmailRegistration != nil {
 			internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
+			internal.MountVerifyEmailPage(s, svc, *deps.EmailRegistration, deps.Pages)
 		}
 		if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
 			internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
