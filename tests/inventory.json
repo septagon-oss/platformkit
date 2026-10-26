@@ -46007,6 +46007,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/no_tenant_holds_what_a_refused_account_email_door_left_behind_test.go",
+   "id": "modules/auth/internal/no_tenant_holds_what_a_refused_account_email_door_left_behind_test.go#TestNoTenantHoldsWhatARefusedAccountEmailDoorLeftBehind",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestNoTenantHoldsWhatARefusedAccountEmailDoorLeftBehind",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/oidc_factor_test.go",
    "id": "modules/auth/internal/oidc_factor_test.go#TestAFederatedSignInRefusedForItsSecondHalfFinishesAtTheChallenge",
    "kind": "go",
@@ -86330,7 +86349,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2349,
+  "files": 2350,
   "forge_runs": [
    408,
    413,
@@ -86364,7 +86383,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3750,
+   "behaviour": 3751,
    "composition": 495,
    "contract": 24,
    "journey": 110
@@ -86383,9 +86402,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4379,
+  "rows": 4380,
   "tiers": {
-   "merge": 2685,
+   "merge": 2686,
    "nightly": 110,
    "push": 1584
   },
@@ -86393,13 +86412,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2104,
+   "keep": 2105,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3993,
+   "keep": 3994,
    "keep-rewrite": 170,
    "merge": 216
   }
