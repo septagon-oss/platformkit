@@ -258,9 +258,9 @@ where its files are.
 out of the environment by a test or journey that starts a process in the same file, a
 door naming where the gate lives must hand that process the value the environment gave
 it rather than a path written out by hand in its place, and a door naming where the
-gate's dumps go must hand a file write a path built from the value it read. Each check
-reads one file at a time, so a change that moves the spawn or the write into a helper of
-its own moves the read along with it.
+gate's dumps go must be answered at every call that puts bytes on disk in the file
+reading it, each writing at a path built from the value read. Each check reads one
+file at a time, so a value carried into a helper of its own answers there.
 
 **Reused** — the port, `shell_design_floor_test.go`'s rendered run of the reference
 app's five pages, the loop's gate behind the doors named above, and the journey that
