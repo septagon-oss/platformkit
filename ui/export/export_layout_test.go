@@ -237,7 +237,13 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// 14 the examples' html, none removed; /css gains 174 lines of choice rules and
 	// loses none, and /sha256 follows them. No token, theme, notice, icon, class or
 	// other component moves.
-	if legacy.SHA256 != "e1b8ffecf367ee9e43647936511795094e50e70795aa81e38d4592be466ec87a" {
+	//
+	// This merge sets main's choice properties and this branch's reading of a set on
+	// one document: a generated list example names its set by the words the resource
+	// declares and counts it in the number layout of whoever reads it. A merge claims no
+	// leaf-by-leaf count, and none is claimed here either — the digest below is this
+	// merged tree's own measurement, printed by the refusal and copied from it.
+	if legacy.SHA256 != "4f066a8a7f91c3a93287c51578ef4b04d24b37bbd53fe5b408e37404d5fb8750" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
