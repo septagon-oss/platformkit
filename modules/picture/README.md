@@ -36,6 +36,13 @@ adds object access. Missing/ambiguous providers, zero declarations, and more tha
 64 distinct template digests refuse dry composition before resources open.
 Same-content aliases are deduplicated; declaration labels are diagnostic only.
 
+`contracts` owns the grammar, the composed profile and the figure profile, and this
+module owns authorized delivery. A field's figure reaches the kernel as a compiled
+value through `entity.ChoiceFigure`, which entity declares and never parses: the
+kernel draws the containing control and styles the selected state, and this owner
+compiles the drawing and re-highlights it. No second SVG grammar exists on either
+side of that port.
+
 ## Templates
 
 `Compile(name, svg)` returns an immutable declaration or a bounded sentence naming
@@ -136,7 +143,7 @@ remain unimplemented.
 Derived `entity.Picture` fields use `readOnly:"true" ui:"present:image"` and
 `Spec.Immutable` when create/update exist. They have no form controls, widgets,
 file-use entries, or sort/filter semantics. JSON Schema describes a bounded
-string; shell catalog version 3 describes the new scalar. Compose
+string; the catalog document carries this scalar beside choice metadata at catalog version 3. Compose
 `admincontracts.Pictures.ComposedSource` and `screens.Pictures.ComposedSource`
 from `contracts.PictureSource` alongside the unchanged stored-file Source.
 A missing composed source or invalid token renders an empty picture. The list

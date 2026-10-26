@@ -132,9 +132,11 @@ func detailBlock(r Resource, o Options, row map[string]any, rendered map[string]
 		f := r.field(name)
 		read := value(f, row, o)
 		node := read.node
-		if raw := row[name]; raw != nil && scalarText(raw) != "" {
-			definition, _ := fieldFor(r.Schema.Fields, name)
-			definition.Present = f.Kind
+		definition, _ := fieldFor(r.Schema.Fields, name)
+		definition.Present = f.Kind
+		// A choice reads its selection whatever the value, an empty one included;
+		// a media kind is drawn only where the author left something to draw.
+		if raw := row[name]; definition.Choices != nil || (raw != nil && scalarText(raw) != "") {
 			if media := compose(definition, components.TableRow{Cells: row}, false, r.Screen, o, f.Label, f.Reading.Missing); media != nil {
 				node = media
 			}

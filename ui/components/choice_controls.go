@@ -1,7 +1,9 @@
 package components
 
 import (
+	"encoding/hex"
 	"fmt"
+	"slices"
 	"strconv"
 
 	g "maragu.dev/gomponents"
@@ -17,13 +19,17 @@ type Option struct {
 
 type OptionChipsProps struct {
 	ComponentProps
-	Label     string   `json:"label"`
-	Name      string   `json:"name"`
-	FormID    string   `json:"formID,omitempty"`
-	Options   []Option `json:"options"`
-	Value     string   `json:"value,omitempty"`
-	Required  bool     `json:"required,omitzero"`
-	ErrorText string   `json:"errorText,omitempty"`
+	Label       string   `json:"label"`
+	Name        string   `json:"name"`
+	FormID      string   `json:"formID,omitempty"`
+	Options     []Option `json:"options"`
+	Value       string   `json:"value,omitempty"`
+	Values      []string `json:"values,omitempty"`
+	Multiple    bool     `json:"multiple,omitzero"`
+	DescribedBy string   `json:"describedBy,omitempty"`
+	ClearLabel  string   `json:"clearLabel,omitempty"`
+	Required    bool     `json:"required,omitzero"`
+	ErrorText   string   `json:"errorText,omitempty"`
 }
 
 func (p OptionChipsProps) Validate() error {
@@ -40,6 +46,13 @@ func (p OptionChipsProps) Validate() error {
 			selected = true
 		}
 	}
+	seen := map[string]bool{}
+	for _, value := range p.Values {
+		if !ids[value] || seen[value] {
+			return fmt.Errorf("OptionChips: selected values must be unique option keys")
+		}
+		seen[value] = true
+	}
 	if !selected && !required(p.ErrorText) {
 		return fmt.Errorf("OptionChips: stale choice requires ErrorText")
 	}
@@ -49,20 +62,45 @@ func OptionChips(p OptionChipsProps) g.Node {
 	if err := p.Validate(); err != nil {
 		return invalidComponent(err)
 	}
+	return h.FieldSet(append(baseAttrs(p.ComponentProps), g.Attr("data-component", "option-chips"), g.Attr("data-shared-content", ""), h.Legend(h.Class(clLabel.Compile()), g.Text(p.Label)),
+		OptionChipsItems(p, nil), g.If(p.ErrorText != "", h.P(h.ID(p.ID+"-error"), h.Class(clFieldErr.Compile()), g.Text(p.ErrorText))))...)
+}
+
+// OptionChipsItems composes the native selection inputs inside an owning fieldset.
+// Picture is optional decoration beside each label; nil keeps label-only chips.
+func OptionChipsItems(p OptionChipsProps, picture func(Option) g.Node) g.Node {
+	options := slices.Clone(p.Options)
+	if !p.Multiple && p.ClearLabel != "" {
+		options = append(options, Option{Label: p.ClearLabel})
+	}
 	var choices []g.Node
-	for _, option := range p.Options {
-		attrs := []g.Node{h.Type("radio"), h.Name(p.Name), h.Value(option.Key), g.If(p.FormID != "", g.Attr("form", p.FormID)), g.If(p.Required, h.Required()), g.If(p.Disabled || option.Disabled, h.Disabled()), g.If(p.Value == option.Key && !option.Disabled, h.Checked())}
+	for _, option := range options {
+		kind, selected := "radio", p.Value == option.Key
+		if p.Multiple {
+			kind, selected = "checkbox", slices.Contains(p.Values, option.Key)
+		}
+		id := p.ID + "-option-" + hex.EncodeToString([]byte(option.Key))
+		attrs := []g.Node{h.ID(id), h.Type(kind), h.Name(p.Name), h.Value(option.Key), g.Attr("data-choice-input", ""), g.If(p.FormID != "", g.Attr("form", p.FormID)), g.If(p.Required && !p.Multiple, h.Required()), g.If(p.Disabled || option.Disabled, h.Disabled()), g.If(selected, h.Checked())}
+		if p.DescribedBy != "" {
+			attrs = append(attrs, g.Attr("aria-describedby", p.DescribedBy))
+		}
 		if p.ErrorText != "" {
-			attrs = append(attrs, g.Attr("aria-invalid", "true"), g.Attr("aria-describedby", p.ID+"-error"))
+			attrs = append(attrs, g.Attr("aria-invalid", "true"))
+			if p.DescribedBy == "" {
+				attrs = append(attrs, g.Attr("aria-describedby", p.ID+"-error"))
+			}
 		}
 		label := option.Label
 		if option.Reason != "" {
 			label += " · " + option.Reason
 		}
-		choices = append(choices, h.Label(h.Class(clChoice.Compile()), h.Input(attrs...), g.Text(label)))
+		var media g.Node
+		if picture != nil {
+			media = picture(option)
+		}
+		choices = append(choices, h.Label(h.For(id), h.Class(clChoice.Compile()), g.Attr("data-choice-item", option.Key), h.Input(attrs...), media, h.Span(g.Attr("data-choice-label", ""), g.Text(label)), h.Span(g.Attr("data-choice-check", ""), g.Attr("aria-hidden", "true"), g.Text("✓"))))
 	}
-	return h.FieldSet(append(baseAttrs(p.ComponentProps), g.Attr("data-component", "option-chips"), g.Attr("data-shared-content", ""), h.Legend(h.Class(clLabel.Compile()), g.Text(p.Label)),
-		Flex(FlexProps{Wrap: true, Gap: "2"}, choices...), g.If(p.ErrorText != "", h.P(h.ID(p.ID+"-error"), h.Class(clFieldErr.Compile()), g.Text(p.ErrorText))))...)
+	return Flex(FlexProps{Wrap: true, Gap: "2"}, choices...)
 }
 
 type QuantityInputProps struct {

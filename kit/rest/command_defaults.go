@@ -28,11 +28,10 @@ func commandDefaults[I any](fields []crud.Field) (func(map[string]any) (I, error
 		}
 		defaults[f.Name] = value
 	}
+	if _, err := decodeCommandValues[I](fields, defaults); err != nil {
+		return nil, "", fmt.Errorf("command defaults: %w", err)
+	}
 	prepare := func(values map[string]any) (I, error) {
-		var in I
-		if reflect.TypeFor[I]().Kind() == reflect.Pointer {
-			reflect.ValueOf(&in).Elem().Set(reflect.New(reflect.TypeFor[I]().Elem()))
-		}
 		patch := make(map[string]any, len(defaults)+len(values))
 		for name, value := range defaults {
 			patch[name] = value
@@ -40,14 +39,17 @@ func commandDefaults[I any](fields []crud.Field) (func(map[string]any) (I, error
 		for name, value := range values {
 			patch[name] = value
 		}
-		target := any(&in)
-		if reflect.TypeFor[I]().Kind() == reflect.Pointer {
-			target = any(in)
+		patch, err := normalizeChoices(fields, patch, nil, true)
+		if err != nil {
+			var zero I
+			return zero, err
 		}
-		_, err := merge(target, fields, nil, patch)
-		return in, err
+		return decodeCommandValues[I](fields, patch)
 	}
 	if _, err := prepare(nil); err != nil {
+		if hasChoices(fields) {
+			return prepare, err.Error(), nil
+		}
 		return nil, "", fmt.Errorf("command defaults: %w", err)
 	}
 	return prepare, fault, nil
@@ -93,4 +95,15 @@ func inputSchemaFault(in reflect.Type, fields []crud.Field) string {
 		}
 	}
 	return ""
+}
+
+func decodeCommandValues[I any](fields []crud.Field, values map[string]any) (I, error) {
+	var in I
+	target := any(&in)
+	if reflect.TypeFor[I]().Kind() == reflect.Pointer {
+		reflect.ValueOf(&in).Elem().Set(reflect.New(reflect.TypeFor[I]().Elem()))
+		target = any(in)
+	}
+	_, err := merge(target, fields, nil, values)
+	return in, err
 }

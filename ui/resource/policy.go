@@ -94,7 +94,7 @@ func (r Resource) primaryAction(collection bool) string {
 	return ""
 }
 
-func resolvedFormField(f entity.Field, p present.ResolvedField) forms.Field {
+func resolvedFormField(f entity.Field, p present.ResolvedField, o Options) forms.Field {
 	f.Doc = p.Help
 	// The control the resolver names is the one the form draws — except where
 	// its only reason is the column's storage type. A `text` column is not its
@@ -104,13 +104,21 @@ func resolvedFormField(f entity.Field, p present.ResolvedField) forms.Field {
 	if p.Control != "textarea" || f.Widget != "" {
 		f.Widget = p.Control
 	}
+	out := forms.Field{Resolved: &p, PictureSource: o.PictureSource, ComposedSource: o.ComposedSource,
+		Definition: f, Label: p.Label, Help: p.Help}
+	// A choice carries its answers in the resolved policy the control reads, and
+	// may not also declare an enum, so its field keeps no enum of its own.
+	if f.Choices != nil {
+		return out
+	}
 	f.Enum = make([]string, 0, len(p.Options))
 	options := make([]components.SelectOption, 0, len(p.Options))
 	for _, option := range p.Options {
 		f.Enum = append(f.Enum, option.Value)
 		options = append(options, components.SelectOption{Value: option.Value, Label: option.Label})
 	}
-	return forms.Field{Definition: f, Label: p.Label, Help: p.Help, Options: options}
+	out.Definition, out.Options = f, options
+	return out
 }
 
 func (w Words) field(f entity.Field) present.ResolvedField {

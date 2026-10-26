@@ -95,13 +95,21 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	}
 	fields := make([]forms.Field, 0, len(r.Resolved.Fields)+1)
 	immutable := []string{}
+	choiceValues := map[string][]string{}
 	names := r.Resolved.Layout.Update
 	if create {
 		names = r.Resolved.Layout.Create
 	}
 	for _, name := range names {
 		field, _ := fieldFor(r.Schema.Fields, name)
-		f := resolvedFormField(field, r.field(name))
+		f := resolvedFormField(field, r.field(name), o)
+		// A choice answers from the row's own selection, or from the refused
+		// write's, which arrives here in the same row map.
+		if field.Choices != nil {
+			if value, exists := row[field.Name]; exists {
+				choiceValues[field.Name] = readChoiceIDs(field, value)
+			}
+		}
 		if f.Definition.Widget == "richtext" {
 			f.Editor = richtextEditor(r, row, create, name, detail != "")
 		}
@@ -112,7 +120,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 			f, _ := fieldFor(r.Schema.Fields, field.Name)
 			if field.OnRecord && !field.Editable.Update && !entity.ServerOwned(f) && !slices.Contains(names, field.Name) {
 				immutable = append(immutable, field.Name)
-				fields = append(fields, resolvedFormField(f, field))
+				fields = append(fields, resolvedFormField(f, field, o))
 			}
 		}
 	}
@@ -129,7 +137,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		}})
 		values[entity.RevisionCondition] = condition
 	}
-	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
+	return forms.MustExample(id, forms.Model{ChoiceValues: choiceValues, Fields: fields, Values: values, Errors: errs,
 		Immutable: immutable, Detail: detail, Create: create}, forms.Options{
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
@@ -147,8 +155,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	})
 }
 
-// refusalHeading and refusalTone are the two parts of the verdict a form draws, read
-// from a render that named none as the empty pair they were drawn from before.
+// refusalHeading keeps the form's default heading when no refusal was supplied.
 func refusalHeading(o Options) string {
 	if o.Refusal == nil {
 		return ""
@@ -163,12 +170,8 @@ func refusalTone(o Options) string {
 	return o.Refusal.Tone
 }
 
-// revisionCondition is the edit form's condition on the write: the row's own write count,
-// and whether this form may quote one at all. A resource whose entity keeps no count,
-// and a form that is not editing a row it read, quote nothing — and the door they post to
-// writes as plainly as it always did. A singleton is the second case by declaration: its
-// API is a PUT with no tag to quote (kit/rest carries If-Match on the patch and the delete
-// alone), so its screen carries a condition its route would not honour.
+// revisionCondition quotes a declared revision from a read or refused form.
+// Creates and singleton PUTs have no supported revision condition.
 func revisionCondition(r Resource, row map[string]any, create bool) (string, bool) {
 	if create || r.Singleton || row == nil {
 		return "", false
@@ -180,8 +183,6 @@ func revisionCondition(r Resource, row map[string]any, create bool) (string, boo
 		}
 	}
 	if !counts {
-		// A row that arrived with a revision no field of this schema declares is not this
-		// renderer's to speak for; it quotes nothing, and the write is the plain one.
 		return "", false
 	}
 	if count, has := row[entity.RevisionField]; has {
@@ -196,10 +197,10 @@ func revisionCondition(r Resource, row map[string]any, create bool) (string, boo
 // Control adapts an entity field to the portable form control, preserving the
 // generated screens' existing labels, choices and name-derived DOM identity.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(Words{}, f), Value: value, Error: fieldErr, Immutable: immutable})
+	return forms.Control(forms.ControlProps{Field: formField(Words{}, f, Options{}), Value: value, Error: fieldErr, Immutable: immutable})
 }
 
 // formField resolves a standalone field for compatibility controls and commands.
-func formField(words Words, f entity.Field) forms.Field {
-	return resolvedFormField(f, words.field(f))
+func formField(words Words, f entity.Field, o Options) forms.Field {
+	return resolvedFormField(f, words.field(f), o)
 }

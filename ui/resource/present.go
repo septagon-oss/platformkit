@@ -17,6 +17,15 @@ import (
 // compose renders a supplied media kind, returning nil for a plain value.
 // primary preserves record navigation; name labels a picture used as its link.
 func compose(f entity.Field, row components.TableRow, primary bool, at string, o Options, name, missing string) g.Node {
+	// A declared choice answers through its resolved policy, which owns the
+	// appearance; a plain value leaves nil for the table to draw itself.
+	if f.Choices != nil {
+		node := (Resource{Schema: entity.Schema{Fields: []entity.Field{f}}}).choiceRead(o, f, row.Cells[f.Name])
+		if primary {
+			return h.A(h.Href(at+"/"+row.ID), node)
+		}
+		return node
+	}
 	if f.Present == "" {
 		return nil
 	}

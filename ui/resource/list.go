@@ -188,9 +188,11 @@ func listCell(r Resource, o Options, row map[string]any, c components.TableColum
 		return invalid(read.err)
 	}
 	title := present.Title(r.Resolved.Titles.ListCandidates, row, display.Text(row["id"]), r.Resolved.Titles.EmptyTitle)
-	if raw := row[c.Key]; raw != nil && display.Text(raw) != "" {
-		definition, _ := fieldFor(r.Schema.Fields, c.Key)
-		definition.Present = f.Kind
+	definition, _ := fieldFor(r.Schema.Fields, c.Key)
+	definition.Present = f.Kind
+	// A choice reads its selection whatever the value, an empty one included; a
+	// media kind is drawn only where the author left something to draw.
+	if raw := row[c.Key]; definition.Choices != nil || (raw != nil && display.Text(raw) != "") {
 		if node := compose(definition, components.TableRow{ID: display.Text(row["id"]), Cells: row}, c.Primary, r.Screen, o, title, f.Reading.Missing); node != nil {
 			return node
 		}
