@@ -4,14 +4,14 @@
 
 Compose `auth.Grants` before `user.Module` and `auth.Module` in the application's
 `Use` list. The resolver orders the independent `authgrants` provider before both
-consumers. It publishes `grants.Authorizer`, `grants.PermissionReader`,
+consumers. It publishes `contracts.GrantAuthorizer` and `contracts.PermissionReader`,
 `usercontracts.Granting` and `usercontracts.Administration`; it opens no resources
 and owns no migrations. The role tables remain in Auth's migration set.
 
 **Reused** — `kit/tenancy`, the existing role queries, `usercontracts.CheckedAdministration`,
 request transactions and pkit's typed declarations carry the policy and composition.
-**Added** — [contracts/grants](contracts/grants) separates permission decisions from
-session construction, which previously prevented User from constructing independently.
+**Added** — [the grant decision](contracts/grants.go) separates permission decisions
+from session construction, which previously prevented User from constructing independently.
 **Made reusable** — provider-owned [capabilities](contracts/capabilities.go), a shared
 fake/SQL grant suite and `RepairSeededRolesWith` let consumers request only their operations.
 
