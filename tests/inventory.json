@@ -77728,6 +77728,82 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/page_expectation_test.go",
+   "id": "ui/screens/page_expectation_test.go#TestPageFixturesMatchThePureBuilder",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestPageFixturesMatchThePureBuilder",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/page_expectation_test.go",
+   "id": "ui/screens/page_expectation_test.go#TestAWholePageFixtureIsByteForByte",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAWholePageFixtureIsByteForByte",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/page_expectation_test.go",
+   "id": "ui/screens/page_expectation_test.go#TestEveryPageFixtureIsAReviewedParityCase",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryPageFixtureIsAReviewedParityCase",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
+   "file": "ui/screens/page_expectation_test.go",
+   "id": "ui/screens/page_expectation_test.go#TestPageFixtureProvenanceIsEnforced",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestPageFixtureProvenanceIsEnforced",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/parity_test.go",
    "id": "ui/screens/parity_test.go#TestParityFixturesMatchTheProductionResolver",
    "kind": "go",
@@ -86786,7 +86862,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2341,
+  "files": 2342,
   "forge_runs": [
    408,
    413,
@@ -86820,7 +86896,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3777,
+   "behaviour": 3781,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86839,9 +86915,9 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4403,
+  "rows": 4407,
   "tiers": {
-   "merge": 2667,
+   "merge": 2671,
    "nightly": 110,
    "push": 1626
   },
@@ -86849,13 +86925,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2095,
+   "keep": 2096,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4016,
+   "keep": 4020,
    "keep-rewrite": 170,
    "merge": 217
   }
