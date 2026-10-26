@@ -254,10 +254,15 @@ func orderFault(f Field, op Op) error {
 // `col = NULL` matches nothing, which is the shape of a filter that quietly does
 // nothing rather than the refusal it has to be. The check is on the Go shape and not
 // on text, because reading text as the field's own type is Coerce's door and a
-// statement that guessed at a spelling would compare a value nobody wrote.
-//
-// The sentence names the field, the operator and the operand's Go type, never the
+// statement that guessed at a spelling would compare a value nobody wrote. The
+// sentence names the field, the operator and the operand's Go type, never the
 // operand: a predicate's value is a record's own data, and an error log is an export.
+//
+// Kind is checked and range is not: how wide a column is belongs to the migration that
+// made it, and this package reads no schema. An admitted kind too wide for this column
+// is refused by the driver before the statement goes out, and Classify passes that on
+// unclassified — a logged failure and not an ErrInvalid. Refusing the number itself
+// would take the width as a fact a field carries, and no field carries one today.
 func operandFault(f Field, op Op, v any) error {
 	if v == nil {
 		return fmt.Errorf("%w: %s %s carries no value; is_null asks about absence", ErrInvalid, f.Name, op)
@@ -268,13 +273,14 @@ func operandFault(f Field, op Op, v any) error {
 	return fmt.Errorf("%w: %s is a %s and the %s operand is a %T", ErrInvalid, f.Name, f.Type, op, v)
 }
 
-// holds is whether one Go value can be sent as this column's own type. An integer
-// column takes any Go integer kind and a float column takes those and the float
-// kinds, because those are widths of one number and the wider reading of one is
-// exact. A word, a flag, a moment and an id are read by type and not by kind — the
-// kind of a moment is a struct and of an id an array, and neither says what it holds
-// — so a named type over either is refused rather than converted. Predicate states
-// the rule where whoever writes an operand reads it.
+// holds is whether one Go value can be sent as this column's own type: its kind, and
+// not its range. An integer column takes any Go integer kind and a float column takes
+// those and the float kinds, because they are widths of one number — one read as the
+// other is exact up to 2^53 and rounds above it. A word, a flag, a moment and an id
+// are read by type and not by kind — the kind of a moment is a struct and of an id an
+// array, and neither says what it holds — so a named type over either is refused
+// rather than converted. Predicate states the rule where whoever writes an operand
+// reads it, and operandFault says what this package leaves the driver to refuse.
 func holds(f Field, v any) bool {
 	switch f.Type {
 	case TypeString, TypeText:
@@ -343,8 +349,9 @@ func listValues(v any) ([]any, bool) {
 //
 // Both doors build through here — CountWhere, and the count and the page of ListCtx —
 // so a narrowed total and a narrowed page answer one set and MaxQueryValues binds at
-// both doors at once. The next read door in this package takes its conditions, its
-// pairing and its operand budget from here; nothing outside it builds a condition.
+// both doors at once. Nothing else in this package turns a caller's condition into SQL:
+// the lifecycle clause names no field of any schema, and CountDays opens and closes
+// its window on the one timestamp column it was handed.
 func fragments(fields []Field, filter map[string]any, w Where) ([]fragment, error) {
 	asked := make(Where, 0, len(filter)+len(w))
 	for _, name := range slices.Sorted(maps.Keys(filter)) {

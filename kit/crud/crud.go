@@ -130,7 +130,10 @@ type Query struct {
 	// the rule Predicate states: any integer kind for a count, any float or integer
 	// kind for an amount, and exactly string, bool, time.Time or uuid.UUID for a
 	// word, a flag, a moment and an id. A value of another shape refuses the whole
-	// question with ErrInvalid before a statement is sent; none of it is coerced.
+	// question with ErrInvalid before a statement is sent; none of it is coerced. A
+	// value of the right shape and a number too wide for the column is the driver's
+	// refusal and not ErrInvalid: the rule is on a shape, and a column's width is no
+	// fact this package reads. Where takes the same rule.
 	Filter map[string]any
 
 	// Where is the comparisons of the same question, narrowed with Filter and bound
@@ -541,7 +544,9 @@ func comparable(fields []Field, name, what string) (Field, error) {
 // Classify names the two database failures a caller can do something about: a
 // row that is not there, and a unique constraint the write contradicts.
 // Everything else is ours and comes back unchanged, to be logged and answered
-// with a 500.
+// with a 500. One failure that is not ours arrives through here too: a value of a
+// kind this package admits that the column's own type cannot hold, which the driver
+// refuses on the way to the wire.
 //
 // It is exported because a module that writes rows this package cannot still
 // has to answer with the same errors. A tenant carries no tenant_id, so it is
