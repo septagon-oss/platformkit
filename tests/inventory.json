@@ -31224,6 +31224,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/a_delete_quoting_a_revision_the_row_has_passed_is_refused_and_leaves_the_row_test.go",
+   "id": "kit/rest/a_delete_quoting_a_revision_the_row_has_passed_is_refused_and_leaves_the_row_test.go#TestADeleteQuotingARevisionTheRowHasPassedIsRefusedAndLeavesTheRow",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestADeleteQuotingARevisionTheRowHasPassedIsRefusedAndLeavesTheRow",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/a_restore_past_the_float64_limit_is_answered_with_the_rows_own_count_test.go",
    "id": "kit/rest/a_restore_past_the_float64_limit_is_answered_with_the_rows_own_count_test.go#TestARestorePastTheFloat64LimitIsRefusedByTheRowsCountAndAnsweredByIt",
    "kind": "go",
@@ -84042,7 +84061,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2283,
+  "files": 2284,
   "forge_runs": [
    408,
    413,
@@ -84076,7 +84095,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3638,
+   "behaviour": 3639,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -84095,9 +84114,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4260,
+  "rows": 4261,
   "tiers": {
-   "merge": 2639,
+   "merge": 2640,
    "nightly": 111,
    "push": 1510
   },
@@ -84105,13 +84124,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2038,
+   "keep": 2039,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3874,
+   "keep": 3875,
    "keep-rewrite": 170,
    "merge": 216
   }
