@@ -10,6 +10,8 @@
 // others sleep. There is no leader election to configure and no lease to renew,
 // because the lock lives on the connection that holds it and a worker that dies
 // releases it. A Parallel job skips the lock and brings its own control.
+//
+// The [Job] example validates a schedule and invokes its work once.
 package jobs
 
 import (

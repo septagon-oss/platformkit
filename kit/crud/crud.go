@@ -1,8 +1,6 @@
 // Package crud is the five operations every tenant-owned resource needs: a
 // module writes a struct with an embedded Base and gets read, list, create,
 // update and delete, each refusing what row-level security would refuse anyway.
-// Entity definitions and schemas belong to kit/entity and the refusal sentinels
-// to kit/fault, both re-exported here for existing callers.
 //
 // This half links no web server: kit/rest owns routes, PATCH merging and OpenAPI
 // and imports this storage adapter. Instantiate with the pointer type —
@@ -11,7 +9,8 @@
 // The tenant is never a parameter: Create takes it from the transaction and
 // Update refuses an entity carrying a different one, which is defence in depth
 // over the boundary the database enforces (docs/adr/0003). Which family of door to
-// call, and what each asks of its caller, is in README.md.
+// call, and what each asks of its caller, is in README.md; the [Get] and [List]
+// examples call the two reads from inside a tenant transaction of their own.
 package crud
 
 import (
