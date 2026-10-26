@@ -158,7 +158,6 @@
         },
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "id",
             "label": "Id",
@@ -182,7 +181,6 @@
             "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "createdAt",
             "label": "Created at",
@@ -210,7 +208,6 @@
             "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
@@ -238,7 +235,6 @@
             "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "title",
             "label": "Title",
@@ -262,7 +258,6 @@
             "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "body",
             "label": "Body",
@@ -286,7 +281,6 @@
             "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "status",
             "label": "Status",
@@ -309,7 +303,6 @@
             },
             "options": [
               {
-                "picture": null,
                 "group": "",
                 "noPreference": false,
                 "value": "open",
@@ -318,7 +311,6 @@
                 "done": false
               },
               {
-                "picture": null,
                 "group": "",
                 "noPreference": false,
                 "value": "done",
@@ -329,7 +321,6 @@
             ]
           },
           {
-            "choice": null,
             "figure": null,
             "name": "rank",
             "label": "Rank",
@@ -353,7 +344,6 @@
             "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "pinned",
             "label": "Pinned",
@@ -377,7 +367,6 @@
             "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "tags",
             "label": "Tags",
@@ -424,7 +413,6 @@
               "kind": "enum",
               "values": [
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "open",
@@ -433,7 +421,6 @@
                   "done": false
                 },
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "done",
@@ -449,7 +436,6 @@
               "kind": "bool",
               "values": [
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "true",
@@ -458,7 +444,6 @@
                   "done": false
                 },
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "false",
