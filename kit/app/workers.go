@@ -9,6 +9,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/limit"
@@ -130,7 +131,7 @@ func (a *App) moveLedger(ctx context.Context, conn *db.Conn) error {
 // would be left behind forever, and "resumable" would mean "somebody runs a command
 // nobody has read about".
 func (a *App) drainMigrations() jobs.Job {
-	// The declaration travels with the tick for the reason db.BackfillDeclaring
+	// The declaration travels with the tick for the reason db.BackfillWithOptions
 	// gives: a placement runs where the drain runs, and the composition is the only
 	// party that still knows what it named itself when the tick arrives. A
 	// declaration this configuration cannot make is a refused worker, not a drain
@@ -168,6 +169,20 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 			subs = append(subs, s)
 		}
 	}
+	// The delivery context carries this composition's connection, the way the
+	// transaction middleware carries it on a request (kit/httpx.transaction calls
+	// httpx.WithConn for every one). A subscription is a caller in the same
+	// position as a request: it has a tenant transaction open on the context, and
+	// the one write that legitimately opens a second, shorter one — the fact that
+	// has to be committed *before* the step that announces it, modules/auth's
+	// emailed credential — reaches the pool through httpx.ConnFrom rather than
+	// holding a handle of its own.
+	//
+	// It cannot reach it through the wiring path. The composition builds the
+	// routes and answers every gate over them before this pool is dialled, so
+	// a module that took a connection while its Routes callback ran took nothing,
+	// and the failure only surfaced as a mail that never arrived.
+	ctx = httpx.WithConn(ctx, conn)
 	// The ledgers move before any subscription is made, and moveLedger is what
 	// makes that ordering a fact rather than an intention: a refusal parks the
 	// worker here until the rename commits, and no consumer exists while it waits.

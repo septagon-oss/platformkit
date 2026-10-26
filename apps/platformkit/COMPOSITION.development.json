@@ -23,6 +23,7 @@
         "admincontracts.Locale",
         "admincontracts.PrimaryAction",
         "tenantcontracts.Languages",
+        "authcontracts.ConfirmationChrome",
         "webhookcontracts.Catalogue"
       ],
       "contributes": [
@@ -238,7 +239,8 @@
         "config.Server"
       ],
       "implementation": {
-        "name": "mailbox"
+        "name": "mailbox",
+        "simulated": true
       }
     },
     {
@@ -418,6 +420,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "authcontracts.ConfirmationChrome",
+          "from": "product"
         },
         {
           "contract": "auth.LinkPages",

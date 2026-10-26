@@ -61,21 +61,12 @@ func Redirect(ctx context.Context, to string) *Page {
 // LocalPath reports whether p is a path on this site and nothing else: no
 // scheme, no authority, a leading slash, no backslash.
 //
-// It is the answer to "may I send a browser here", and there is one of it
-// because there were two and one of them was wrong. The admin sign-in form
-// checked a leading slash and a second character that was not a slash, so
-// `next=/\evil.example` passed — and every browser resolves a slash followed by
-// a backslash as an authority, so the login redirect left the site.
-// modules/site had the correct rule for its navigation; this is that rule, in
-// the kernel, and both callers read it.
-//
-// url.Parse is what tells the rest apart: a path on this site parses to no
-// scheme, no authority and a path that begins with a slash. The two prefix
-// checks come first because the parse alone is not enough — url.Parse reports
-// "//evil.example" as an empty host and a path, and a browser collapsing the
-// slashes goes to evil.example — and the backslash is refused outright, because
-// it has no meaning in a path and its only use here is to look like something
-// else.
+// It is the answer to "may I send a browser here", and there is one of it so no caller
+// writes its own prefix check. url.Parse tells most of it apart: a path on this site parses
+// to no scheme, no authority and a path that begins with a slash. The two prefix checks come
+// first because the parse alone is not enough — it reports "//evil.example" as an empty host
+// and a path, which a browser resolves to that host — and the backslash is refused outright,
+// because a browser resolves slash-backslash as an authority and it has no other meaning.
 func LocalPath(p string) bool {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.ContainsRune(p, '\\') {
 		return false
@@ -120,6 +111,7 @@ func HTML[I any](r *Router, op huma.Operation, auth Auth, handler func(context.C
 		if to, ok := errors.AsType[SeeOther](err); ok {
 			return Redirect(ctx, string(to)), nil
 		}
+		noteCarried(ctx, err)
 		return out, err
 	})
 }

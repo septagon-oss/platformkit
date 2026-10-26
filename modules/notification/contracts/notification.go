@@ -11,6 +11,7 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -231,6 +232,39 @@ type MailDeliveryFunc func() bool
 
 // Available answers the interface.
 func (f MailDeliveryFunc) Available() bool { return f() }
+
+// ErrNoTransport is what the sender a mail-less deployment composes answers, and
+// the one send error that is never worth a retry: no attempt reaches a server this
+// installation does not have.
+var ErrNoTransport = errors.New("notification: this installation has no mail transport")
+
+// noTransport is ErrNoTransport behind the Mailer shape.
+type noTransport struct{}
+
+func (noTransport) Send(context.Context, Message) error { return ErrNoTransport }
+
+// Available answers MailDelivery for this sender the way the SMTP carrier answers
+// it for itself: this one says it attempts nothing, so a door that would promise
+// a person an email is refused by the carrier rather than by a flag somebody has
+// to remember to check beside it.
+func (noTransport) Available() bool { return false }
+
+// NoTransport is the sender a deployment composes when it has neither a mail
+// server nor an in-process mailbox. It is a value rather than nothing because the
+// composition answers a module's Provided port with what that module put, and
+// apps/platformkit's composition test refuses a port that answers with nothing: an
+// installation that means "send nothing" says so by wiring this, not by leaving a
+// nil somebody else has to remember to check.
+var NoTransport Mailer = noTransport{}
+
+// IsNoTransport reports whether the sender in hand is that sender. A command that
+// would promise a mailed link asks it before it writes anything, because the
+// refusal is the command's own to make and a caller must not be told a link is on
+// its way when nothing will send it.
+func IsNoTransport(m Mailer) bool {
+	_, ok := m.(noTransport)
+	return ok
+}
 
 // Service is what a caller does with notifications. Every command takes the
 // caller's transaction rather than opening one, so the row and the events it

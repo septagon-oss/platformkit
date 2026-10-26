@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
+	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/providers/gomail/gomailtest"
@@ -213,7 +214,7 @@ func TestAMailHostCompositionAcceptsWhatItCanMail(t *testing.T) {
 		t.Fatalf("no confirmation link reached the relay; it kept %d messages and the ledger says %s",
 			len(relay.Sent()), mailRecords(t, owner))
 	}
-	if !strings.HasPrefix(confirmation, "http://"+served+"/app/auth/verify-email?token=") {
+	if !strings.HasPrefix(confirmation, "http://"+served+contracts.VerifyEmailPath+"?token=") {
 		t.Errorf("the confirmation link leads elsewhere: %s", confirmation)
 	}
 	after := rows(t, owner, writtenTables...)

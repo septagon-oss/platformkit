@@ -61,20 +61,20 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// round8Tenant is the one host this router does resolve, under an id no other case
+// unhostedTenant is the one host this router does resolve, under an id no other case
 // in this test binary can move: the assertion "nobody else's number moved" needs an
 // id that is nobody else's, not a shared constant.
-var round8Tenant = uuid.MustParse("8f8f8f8f-8f8f-4f8f-8f8f-8f8f8f8f8f8f")
+var unhostedTenant = uuid.MustParse("8f8f8f8f-8f8f-4f8f-8f8f-8f8f8f8f8f8f")
 
-const round8Permission = "round8:read"
+const unhostedPermission = "unhosted:read"
 
-// round8Router resolves `host` and refuses every other name with the loader's own
+// unhostedRouter resolves `host` and refuses every other name with the loader's own
 // ErrNoSuchHost — the answer a spray gets. The private operation exists so the
 // request reaches the tenant middleware with something to protect: a public
 // operation is served even when the host resolves nothing (tenant.go), which is a
 // different promise, and this file would silently assert nothing if it asked the
 // wrong one.
-func round8Router(t *testing.T) http.Handler {
+func unhostedRouter(t *testing.T) http.Handler {
 	t.Helper()
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
@@ -85,7 +85,7 @@ func round8Router(t *testing.T) http.Handler {
 			if h != host {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 			}
-			return tenancy.Tenant{ID: round8Tenant, Slug: "acme8", Name: "Round Eight"}, nil
+			return tenancy.Tenant{ID: unhostedTenant, Slug: "acme8", Name: "Unhosted Site"}, nil
 		}),
 		Authorize: authorizerFunc(func(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
 			return true, nil
@@ -95,9 +95,9 @@ func round8Router(t *testing.T) http.Handler {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	httpx.Register(api.Surfaces("round8").App, huma.Operation{
-		OperationID: "round8_private", Method: http.MethodGet, Path: "/private",
-	}, httpx.Permission(round8Permission), func(context.Context, *struct{}) (*struct{}, error) {
+	httpx.Register(api.Surfaces("unhosted").App, huma.Operation{
+		OperationID: "unhosted_private", Method: http.MethodGet, Path: "/private",
+	}, httpx.Permission(unhostedPermission), func(context.Context, *struct{}) (*struct{}, error) {
 		t.Errorf("the handler ran, so the request was served and the 404 below is not the answer")
 		return &struct{}{}, nil
 	})
@@ -107,8 +107,8 @@ func round8Router(t *testing.T) http.Handler {
 	return router
 }
 
-// round8Attrs renders an attribute set for a failure message, keys and values in order.
-func round8Attrs(set attribute.Set) string {
+// unhostedAttrs renders an attribute set for a failure message, keys and values in order.
+func unhostedAttrs(set attribute.Set) string {
 	var parts []string
 	for _, kv := range set.ToSlice() {
 		parts = append(parts, string(kv.Key)+"="+kv.Value.Emit())
@@ -116,19 +116,19 @@ func round8Attrs(set attribute.Set) string {
 	return "{" + strings.Join(parts, " ") + "}"
 }
 
-// round8Series is the identity of a refusal datapoint as the collector sees it: its
+// unhostedSeries is the identity of a refusal datapoint as the collector sees it: its
 // class and the full attribute set it was recorded under.
-type round8Series struct {
+type unhostedSeries struct {
 	class string
 	attrs attribute.Set
 }
 
-// round8Refusals snapshots every refusal series the reader holds right now. The
+// unhostedRefusals snapshots every refusal series the reader holds right now. The
 // reader is cumulative (kit/httpx/tracing_test.go says so), so the case compares
 // against itself rather than trying to empty the reader.
-func round8Refusals(t *testing.T) map[round8Series]int64 {
+func unhostedRefusals(t *testing.T) map[unhostedSeries]int64 {
 	t.Helper()
-	out := map[round8Series]int64{}
+	out := map[unhostedSeries]int64{}
 	m, ok := metrics(t)["pkit.http.refusals"]
 	if !ok {
 		return out
@@ -142,24 +142,24 @@ func round8Refusals(t *testing.T) map[round8Series]int64 {
 		if v, found := p.Attributes.Value(attribute.Key(telemetry.AttrRefusalClass)); found {
 			class = v.AsString()
 		}
-		out[round8Series{class: class, attrs: p.Attributes}] += p.Value
+		out[unhostedSeries{class: class, attrs: p.Attributes}] += p.Value
 	}
 	return out
 }
 
 // TestRefusalsOfHostsThatResolveNothingInventNeitherATenantNorASeries is the pin.
 func TestRefusalsOfHostsThatResolveNothingInventNeitherATenantNorASeries(t *testing.T) {
-	router := round8Router(t)
+	router := unhostedRouter(t)
 	const spray = 8
 
-	before := round8Refusals(t)
+	before := unhostedRefusals(t)
 
 	var hosts []string
 	for i := range spray {
 		h := fmt.Sprintf("spray-%d.test", i)
 		hosts = append(hosts, h)
 		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+h+"/api/v1/round8/private", nil))
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+h+"/api/v1/unhosted/private", nil))
 		// The reachability probe is the status the fixed behaviour answers with —
 		// tenant.go's ErrNoSuchHost branch, http.StatusNotFound — and not anything
 		// a refusal says.
@@ -169,7 +169,7 @@ func TestRefusalsOfHostsThatResolveNothingInventNeitherATenantNorASeries(t *test
 		}
 	}
 
-	after := round8Refusals(t)
+	after := unhostedRefusals(t)
 
 	// 1. Nothing that already existed changed, and every new series is a refusal of
 	//    a host nobody resolved: the delta is the spray, counted once per request.
@@ -182,7 +182,7 @@ func TestRefusalsOfHostsThatResolveNothingInventNeitherATenantNorASeries(t *test
 	for s, now := range after {
 		grew := now - before[s]
 		if grew < 0 {
-			t.Fatalf("the refusal series {class %q, %s} went down from %d to %d", s.class, round8Attrs(s.attrs), before[s], now)
+			t.Fatalf("the refusal series {class %q, %s} went down from %d to %d", s.class, unhostedAttrs(s.attrs), before[s], now)
 		}
 		if grew == 0 {
 			continue
@@ -191,10 +191,10 @@ func TestRefusalsOfHostsThatResolveNothingInventNeitherATenantNorASeries(t *test
 		added += grew
 		classed[s.class] += grew
 		if _, hasID := s.attrs.Value(attribute.Key(telemetry.AttrTenantID)); hasID {
-			tenantedNew = append(tenantedNew, round8Attrs(s.attrs))
+			tenantedNew = append(tenantedNew, unhostedAttrs(s.attrs))
 		}
 		if _, hasSlug := s.attrs.Value(attribute.Key(telemetry.AttrTenant)); hasSlug {
-			tenantedNew = append(tenantedNew, round8Attrs(s.attrs))
+			tenantedNew = append(tenantedNew, unhostedAttrs(s.attrs))
 		}
 	}
 	if added != spray {
@@ -223,10 +223,10 @@ func TestRefusalsOfHostsThatResolveNothingInventNeitherATenantNorASeries(t *test
 		if _, hasID := s.attrs.Value(attribute.Key(telemetry.AttrTenantID)); !hasID {
 			continue
 		}
-		if id, _ := s.attrs.Value(attribute.Key(telemetry.AttrTenantID)); id.AsString() == round8Tenant.String() {
+		if id, _ := s.attrs.Value(attribute.Key(telemetry.AttrTenantID)); id.AsString() == unhostedTenant.String() {
 			if grew := now - before[s]; grew != 0 {
 				t.Errorf("the tenant that resolved (%s) was charged %d of the refusals at hosts that resolved nothing",
-					round8Tenant, grew)
+					unhostedTenant, grew)
 			}
 		}
 	}

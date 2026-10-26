@@ -1,27 +1,17 @@
 package httpx
 
-// access.go is the sequel to a refusal: the person who was refused asks for the
-// grant, and the people who hold role management are told.
+// access.go is the sequel to a refusal: the person who was refused asks for the grant,
+// and the people who hold role management are told.
 //
-// It lives here, beside the refusal, because everything it names belongs to the
-// request that was refused: the permission key from the declared catalogue, the
-// address it was refused at, the principal and the tenant of that request. No
-// module can own it — no module ran, which is the same sentence
-// kit/app/denial.go writes about security.denied — and a module named `access`
-// would be a fifth manifest answering two questions whose owners are already
-// named: kit/httpx for the refusal and modules/user for who holds a role.
+// It lives here, beside the refusal, because everything it names belongs to the request
+// that was refused: the permission key from the declared catalogue, the address it was
+// refused at, the principal and the tenant. No module can own it — no module ran, the
+// same sentence kit/app/denial.go writes about security.denied — and a module named
+// `access` would be a fifth manifest answering two questions whose owners are named.
 //
-// What the capability cannot do itself is reach anybody: the people holding role
-// management are the auth module's roles and the user module's rows, and a notice
-// is the notification module's table. So the reach is a port, satisfied at
-// composition in the manner of usercontracts.Administration and
-// notificationcontracts.RecipientLookup, and a composition that wires no door
-// draws no ask control — a button whose action nobody mounted is a lie about a
-// door.
-//
-// The ask is never a way in. It writes no role, no session, no grant and no
-// revision; the next request is refused exactly as before until somebody who may
-// grant it does so through the user module's own door.
+// The reach is a port, satisfied at composition in the manner of
+// usercontracts.Administration: a composition that wires no door draws no ask control.
+// The ask is never a way in — it writes no role, no session, no grant and no revision.
 
 import (
 	"context"

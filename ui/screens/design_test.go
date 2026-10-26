@@ -69,7 +69,7 @@ func TestGeneratedFormInheritsObservedCoreContracts(t *testing.T) {
 			want := []string{"field/title", "field/body", "field/rank", "field/pinned", "field/tags",
 				"field/actions", "field/error", "field/ratio", "field/when", "field/owner", "actions"}
 			if !state.create {
-				want = slices.Insert(want, 2, "field/status")
+				want = slices.Insert(want, len(want)-1, "field/status")
 			}
 			if state.detail != "" {
 				want = append([]string{"error"}, want...)

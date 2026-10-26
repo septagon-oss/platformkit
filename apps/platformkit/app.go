@@ -204,7 +204,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		planned: p, modules: p.Modules(), options: p.Options(), messages: served,
 		tenants: value[tenantcontracts.Service](p), users: value[usercontracts.Service](p),
 		auth: value[authcontracts.Auth](p), notify: value[notificationcontracts.Service](p),
-		mail: value[notificationcontracts.Mailer](p), files: value[filecontracts.Service](p),
+		files:    value[filecontracts.Service](p),
 		plans:    value[httpx.Entitler](p),
 		tasks:    value[taskcontracts.Service](p),
 		contents: value[contentcontracts.Service](p),
@@ -224,6 +224,14 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		recoveryMail: mailDelivers(p),
 		connection:   face,
 	}
+	// The mailer is read without the panic every other value gets, because nil is
+	// one of the three answers this deployment can give for it: an installation
+	// that names no mail server and does not ask for the in-process sink composes
+	// no transport (modules/notification's "none"), which is the state a
+	// mail-less production deployment boots on purpose. Every reader of this
+	// field already treats nil as "nothing sends here", which is what makes the
+	// module's own refusal and this line the same fact.
+	c.mail, _ = pkit.Value[notificationcontracts.Mailer](p)
 	// Whether a password door stands here at all is read off the plan the sentence
 	// resolved and not written as a constant: a composition that took auth out
 	// would otherwise keep advertising a door it stopped mounting, which is the

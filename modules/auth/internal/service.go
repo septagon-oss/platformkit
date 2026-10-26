@@ -65,11 +65,14 @@ type Delivery struct {
 }
 
 // deliversAccountMail is the one question every mail-promising door asks: is
-// there a sender, is there a host to build the link's address on, and does that
-// sender attempt what it is handed. The nil reads are kept beside the port on
-// purpose — a Delivery built outside the wiring refuses rather than promising.
+// there a sender that could reach a mailbox at all (contracts.MailDeliverable
+// answers for the sender a deployment composed to send nothing), is there a host
+// to build the link's address on, and does that sender attempt what it is handed.
+// The nil reads are kept beside the port on purpose — a Delivery built outside
+// the wiring refuses rather than promising.
 func (d Delivery) deliversAccountMail() bool {
-	return d.Mailer != nil && d.Hosts != nil && d.MailDelivery != nil && d.MailDelivery.Available()
+	return contracts.MailDeliverable(d.Mailer) && d.Hosts != nil &&
+		d.MailDelivery != nil && d.MailDelivery.Available()
 }
 
 // Service is signing in and what a role may do.

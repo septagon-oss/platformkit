@@ -310,7 +310,14 @@ database-free reader of manifests appeared.
 
 A consumer imports another module's `contracts/`, not its `internal/` or
 constructor. Application composition is the place that connects them.
-[scripts/check_imports.sh](scripts/check_imports.sh) checks this boundary.
+[scripts/check_imports.sh](scripts/check_imports.sh) checks Go's direct production
+and test imports. Production contracts have an exact dependency policy, and test
+suites composing foreign constructors declare their targets and reason in
+`scripts/imports-integration.txt`. A contract dependency the published surface
+already carries is recorded per edge, with the frozen exported name that keeps it,
+in `scripts/imports-contract-baseline.txt`; a row whose import has gone is refused,
+so that list only shrinks. The [import gate](tools/importgate/README.md)
+documents provenance, refusals, build context and the per-pair edge report.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.
 
@@ -600,7 +607,7 @@ hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
 ([ui/page/serve.go](ui/page/serve.go), `ui/page/locale.go:61`). Why a refusal may not answer in
-an undeclared language is the comment at `kit/httpx/tenant.go:281-289` — a page
+an undeclared language is the comment at `kit/httpx/tenant.go:262-275` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
 (`migrations/000029_tenant_locale.up.sql:1`).
@@ -666,7 +673,7 @@ vocabulary of its own.
 record tenant and system writes; [`Consume`](kit/events/consume.go) delivers them
 through the [claim and dead-letter paths](kit/events/events.go). The
 wire format is its own file, `kit/events/transport/cloudevents.go`. `Observe`
-(`kit/events/transport/transport.go:192`) is the other door onto the same stream:
+(`kit/events/transport/transport.go:174-185`) is the other door onto the same stream:
 one tenant's one event, watched from now on, claiming nothing, retrying nothing
 and holding no history — what a live connection is built on (`kit/stream`), and
 what an app opens for its own events by declaring `Streams`
@@ -694,7 +701,7 @@ owned `baggage` carrying the publisher's request id, because the specification f
 those two members and says nothing about correlation (`:63-70`; the column is
 `migrations/000041_outbox_baggage.up.sql:42`). Spans: the relay's batch
 ([relay batches](kit/events/relay.go)), `<event> publish` and `<event> deliver`
-(`kit/events/trace.go:143`, `:178`). The trail *is* this stream: `SubscribeAll`
+(`kit/events/trace.go:109`, `:134`). The trail *is* this stream: `SubscribeAll`
 (`modules/audit/module.go:93`) turns every declared event into a row.
 
 **How an app extends it.** Declare in the manifest — `Declared` and
@@ -825,7 +832,7 @@ the attribute names (`:94-97`), `WithRequestID` and `RequestID` (`:136`, `:153`)
 `Instruments` (`kit/telemetry/instruments.go:34`). `kit/trace` carries the
 context — `Context` (`kit/trace/trace.go:59`), `Parent` (`:70`), `Parse` (`:100`) —
 with the header names written once (`:27-31`). `kit/app` installs the one
-`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:325`, `:326`).
+`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:302`, `:303`).
 
 **Builds on.** `go.opentelemetry.io/otel` v1.46.0 (Apache-2.0) and its OTLP/gRPC
 exporters; W3C Trace Context, which `kit/trace` implements rather than wraps. The
@@ -840,8 +847,8 @@ request (`:188`, `:174-186`). The tenant is never a resource attribute: one
 process serves many tenants, as `## Follow a request` says.
 
 **How it is traced and audited.** This pillar *is* the trace: the transport span
-(`kit/httpx/traced.go:50`), named after the operation id (`:86`), the transaction
-span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:143`, `:178`),
+(`kit/httpx/traced.go:44`), named after the operation id (`:80`), the transaction
+span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:109`, `:134`),
 the relay batch ([relay batches](kit/events/relay.go)), and the job run with one span per
 tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
 verbatim and indexes the trace out of it, as the audit section below explains.
@@ -938,8 +945,8 @@ flaky spec is a bug report, not a retry.
 and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Catalog`
 (`:31`), `Entry` with the operation ids an app calls (`:42`, `:77`) — at
 `/api/v1/app/resources` ([surface addresses](kit/httpx/surfaces.go)); `kit/app` renders the event
-half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:48`, `CoveredEvents`
-`:161`), pinned by the golden files in `apps/platformkit/testdata/`.
+half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:41`, `CoveredEvents`
+`:169`), pinned by the golden files in `apps/platformkit/testdata/`.
 `apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
 that `kit/wire` owns and lists (`kit/wire/README.md:28-35`) over the whole
 authorization declaration an operation emits, kind, permission and plan feature
@@ -957,7 +964,7 @@ dependency. Screens are derived from schemas rather than authored
 the tenant's own address, so a shell never names a tenant
 ([surface addresses](kit/httpx/surfaces.go)), and every operation inside it carries the tenant
 through the request's transaction like any other call. `CoveredEvents`
-(`kit/app/asyncapi.go:161`) counts the declared events the document names, which
+(`kit/app/asyncapi.go:169`) counts the declared events the document names, which
 is the claim that a shell sees no event nobody declared.
 
 **How it is traced and audited.** Nothing new: the events a shell may see are the
@@ -969,7 +976,7 @@ renamed JSON tag fails `make check` rather than a shipped build.
 product's share is not to extend it but not to break it. Nothing overrides a
 refusal, including `UPDATE_GOLDEN=1` (`kit/wire/README.md:17-19`); a planned
 breaking change ships as a new
-address plus an alias row (`kit/httpx/aliases.go:87`,
+address plus an alias row (`kit/httpx/aliases.go:62`,
 `httpx.API.Alias` and `module.Module.Moved`). B1–B6 are immutable to the change —
 a removed operationId, a retyped schema member, a new required field, an enum that
 strands a reader, a narrowed authorisation, a plan feature added, dropped or renamed —

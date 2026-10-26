@@ -93,7 +93,7 @@ func TestTheLagLedgerGrowsByRelayingRealRowsAndSettlesWhenTheQueueEmpties(t *tes
 		for r := 0; r < rowsPerSeries; r++ {
 			for s := 0; s < wideBacklogSeries; s++ {
 				if err := PublishFor(ctx, tx, tenant.ID,
-					fmt.Sprintf("review.round6_seeded_%05d", s), nil); err != nil {
+					fmt.Sprintf("series.seeded_%05d", s), nil); err != nil {
 					return err
 				}
 			}
