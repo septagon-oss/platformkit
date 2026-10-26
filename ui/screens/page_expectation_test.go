@@ -20,10 +20,10 @@ import (
 // policy resolves this one.
 type pageCase struct {
 	parityInput
-	Name     string            `json:"-"`
-	File     string            `json:"-"`
-	States   []pageState       `json:"state"`
-	Expected pageExpectations  `json:"-"`
+	Name     string           `json:"-"`
+	File     string           `json:"-"`
+	States   []pageState      `json:"state"`
+	Expected pageExpectations `json:"-"`
 }
 
 // pageState is the fixed state of one build. The README's defaults are writable,
@@ -72,7 +72,7 @@ func (c pageCase) build(s pageState) (view.Page, error) {
 			Sort: s.Sort, Violations: s.Violations, Detail: s.Detail},
 		State: view.State{Kind: view.Kind(s.Kind), Language: c.Language, Now: now,
 			Writable: written(s.Writable, true), Home: s.Home,
-			Form:     view.FormState{Create: s.Create, Title: s.FormTitle}}})
+			Form: view.FormState{Create: s.Create, Title: s.FormTitle}}})
 }
 
 // readPageCases reads the family, refusing a case that does not carry its own provenance,
