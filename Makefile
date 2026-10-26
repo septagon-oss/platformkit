@@ -1120,6 +1120,17 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# reaches both roads, so this pin runs each and refuses the length reading on both — on a copy, by
 	# Go's build overlay, never this checkout. Four `go test` invocations of two small packages, 2 s.
 	bash scripts/both_roads_keep_an_unset_operation_set_apart_from_an_empty_one_test.sh
+	# scripts/a_module_that_declares_a_view_another_module_owns_is_refused_by_the_manifest_test.sh
+	# asks the manifest the same question from the other side: module.Validate accepts a module's own
+	# custom-screen descriptor, refuses one whose owner is another module, refuses one named twice.
+	# screen.Publish refuses a foreign mount too, but at the routing door, with the manifest's own
+	# diagnostics gone and the sentence naming an operation rather than the module that wrote the
+	# declaration — and the composition gate that catches a missing route-level screen answer stays
+	# green with the manifest's check deleted, so nothing else in the tree asks it. The pin proves it
+	# answers to that call site by deleting the three lines from a copy of validate.go over Go's build
+	# overlay and refusing when the copy passes the case. Two `go test` runs of one small package, 1 s,
+	# no stack and no browser.
+	bash scripts/a_module_that_declares_a_view_another_module_owns_is_refused_by_the_manifest_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
