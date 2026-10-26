@@ -107,6 +107,15 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			if err != nil {
 				return err
 			}
+			if mailer == nil || contracts.IsNoTransport(mailer) {
+				// No transport in this installation, said on the delivery ledger
+				// rather than in a log line somebody has to notice: the notice stays
+				// and stays readable in the application, and the mail it asked for is
+				// recorded as suppressed with the reason a reader can act on. The
+				// outbox does not retry what no retry can fix.
+				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+					"this installation has no mail server: set mail.host")
+			}
 			// The tenant's own sender, read in this transaction — the same one the
 			// notice's decision read, so the mail leaves as the tenant the person's
 			// settings were applied to. Nil is the deployment's own configured
