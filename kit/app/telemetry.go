@@ -1,34 +1,12 @@
 package app
 
-// This file is where the process's two providers are chosen and installed, which
-// is the brief's own home for them: one TracerProvider and one MeterProvider, in
-// kit/app. Nothing else in the kernel may install one — kit/httpx, kit/db,
-// kit/events and kit/jobs make spans and record numbers through the OpenTelemetry
-// API and kit/telemetry's vocabulary, and never import this file's packages.
-//
-// The install happens once per *started* application, at the end of Start, and the
-// half of it that survives is a fact about OpenTelemetry rather than a preference:
-// each global delegates to the provider installed *first*, and a later install
-// changes only what a provider lookup answers and the tracers made after it. The
-// kernel's tracers are taken as each span opens (telemetry.Tracer), so a span
-// answers to the provider that was installed when it opened; its meter was taken
-// once, when kit/telemetry was first used, so the instruments of the process answer
-// to the first provider installed here and to no later one. Either way a second
-// install in this package would buy a process two answers to one question and use
-// the first — which is why a composition that is refused gets no vote. Installing is
-// the one change a boot makes in its process that no release gives back: the pool,
-// the store, the transport and the event shapes a composition declares all come back
-// on a refused boot or a Close, and otel.SetTracerProvider has no undo worth doing,
-// because a "previous" provider is only the last one somebody else installed. So it
-// belongs where the boot stops being refusable, and a plan carries the decision from
-// the gate that reads the configuration to the call that installs it (telemetryPlan).
-//
-// Tracing and metrics are off when telemetry.otlp_endpoint is empty, and "off"
-// here means *no provider is installed*: the global's default provider is already the
-// no-op one, so installing a no-op would buy nothing and would spend the one
-// install a process gets — which is what lets a test, or an embedding application,
-// install a recorder of its own instead. The propagator is still installed, because
-// a process that exports nothing still carries the trace it was handed.
+// This file is where the process's two providers are chosen and installed: one
+// TracerProvider and one MeterProvider, in kit/app. Nothing else in the kernel may
+// install one — kit/httpx, kit/db, kit/events and kit/jobs make spans and record
+// numbers through the OpenTelemetry API and kit/telemetry's vocabulary, and never
+// import this file's packages. Why the install happens once per started
+// application, at the end of Start, and what "off" means for a process are in
+// README.md, section "Choosing the telemetry providers".
 
 import (
 	"context"
@@ -370,27 +348,16 @@ func installTelemetry(ctx context.Context, cfg config.Telemetry, log *slog.Logge
 
 // resource is the trace's and the metric's origin: service.name always, and
 // pkit.client when the deployment named one. The SDK's own attributes and whatever
-// OTEL_RESOURCE_ATTRIBUTES says stay; this overrides only the name — except for the
-// two keys a tenant owns, which are refused below.
+// OTEL_RESOURCE_ATTRIBUTES says stay; the two keys a tenant owns are refused below.
 //
-// No tenant, and no client either when the installation is shared. A resource
-// describes the process, and this process serves many tenants — so the tenant
-// arrives on the spans, where a request put it, and not here. kit/telemetry's
-// package comment carries the argument; this is where it is enforced, against the
-// environment as well as against this file.
+// A resource describes the process and this process serves many tenants, so no
+// tenant, and no client either when the installation is shared, belongs here: the
+// tenant arrives on the spans, where a request put it (kit/telemetry's package
+// comment carries the argument; this is where it is enforced).
 //
-// The environment is the part that needs saying. Both providers merge
-// resource.Environment() into whatever they are handed — sdk/trace's and
-// sdk/metric's WithResource both do it inside the option — so a tenant key in
-// OTEL_RESOURCE_ATTRIBUTES reaches every span and number this process exports no
-// matter what this function builds, and the only way to hold the promise with the
-// SDK as it is pinned would be to edit this process's environment behind its owner.
-// So a reserved key named at boot stops the boot, the way a value of
-// telemetry.otlp_endpoint that no exporter can use stops it: a configuration that
-// would attribute one tenant's data to a process that serves many is wrong in a way
-// no operator should discover in the backend, and the message says which key and what
-// to do instead. Every other key the environment names — a deployment environment, a
-// cluster, a pod — arrives unchanged.
+// Both providers merge resource.Environment() into what they are handed, so a
+// reserved key named in OTEL_RESOURCE_ATTRIBUTES stops the boot rather than
+// attribute one tenant's data to a process that serves many.
 func resource(cfg config.Telemetry) (*sdkresource.Resource, error) {
 	attrs := []attribute.KeyValue{attribute.String("service.name", cfg.ServiceName)}
 	if cfg.Client != "" {
@@ -432,22 +399,17 @@ func reservedTenantKeys(res *sdkresource.Resource) []string {
 	return keys
 }
 
-// collector is the endpoint as the exporters are given it — and the check that
+// collector is the endpoint as the exporters are given it, and the check that
 // refuses a value they could not use, so a typo in a key that decides where spans
 // go stops the boot instead of leaving a process half-traced.
 //
 // A bare host:port is normalised to its http:// URL rather than refused, because it
-// is the same collector with the scheme left off, and it is the form both
-// config.example.yaml and config.Telemetry's own comment print — the ordinary answer
-// for a collector on a network that needs no TLS. Refusing it would make the file an
-// operator copies describe a configuration that does not start. http is what an
-// address without a scheme means: WithEndpointURL reads any scheme but https as "no
-// transport security", which is the sentence the two documents use for host:port.
-//
-// The normalised value is what the exporters are handed and what the log line names,
-// so what was asked for, what was understood and what is dialed are one string. A
-// value no URL can be — a scheme that is not this exporter's, credentials, a query,
-// an address inside the scheme where the host should be — is still refused.
+// is the same collector with the scheme left off and it is the form both
+// config.example.yaml and config.Telemetry's own comment print. The normalised
+// value is what the exporters are handed and what the log line names, so what was
+// asked for, what was understood and what is dialed are one string. Anything no
+// exporter can use — a scheme that is not this exporter's, credentials, a query —
+// is still refused.
 func collector(raw string) (string, error) {
 	if !strings.Contains(raw, "://") {
 		raw = "http://" + raw

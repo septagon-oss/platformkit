@@ -15,23 +15,17 @@ import (
 
 // buffer is a response that has not been sent yet.
 //
-// A 200 written before the commit is a lie whenever the commit can still fail,
-// and it can: a DEFERRABLE INITIALLY DEFERRED constraint is checked at COMMIT,
-// a serialization failure is raised there, and so is the settings re-read
-// kit/db does. Holding the response costs one copy of the body and turns those
-// into the 500 they are.
+// A 200 written before the commit is a lie whenever the commit can still fail, and it
+// can: a DEFERRABLE INITIALLY DEFERRED constraint is checked at COMMIT, a serialization
+// failure is raised there, and so is the settings re-read kit/db does. Holding the
+// response costs one copy of the body and turns those into the 500 they are.
 //
-// A handler that calls Flush is streaming and knows what it is doing: from that
-// call on this is a passthrough, and its response reaches the wire before the
-// commit like any other streaming response. A huma StreamResponse that never
-// calls Flush is not streaming in any sense the network can see: it is buffered
-// whole, like every other response, and it is bounded like every other response.
-//
-// The bound is maxBuffer. Holding a response costs one copy of it, and a
-// download that is larger than that is a response nobody should be copying:
-// past the limit the buffer sends what it holds and becomes a passthrough, with
-// the same honest consequence as Flush — the bytes are on the wire before the
-// commit, and a commit that then fails is a log line rather than a 500.
+// A handler that calls Flush is streaming and knows what it is doing: from that call on
+// this is a passthrough. A huma StreamResponse that never calls Flush is buffered whole,
+// like every other response, and bounded like every other response. Past maxBuffer the
+// buffer sends what it holds and becomes a passthrough, with the same honest consequence:
+// the bytes are on the wire before the commit, and a commit that then fails is a log line
+// rather than a 500.
 type buffer struct {
 	http.ResponseWriter
 	// header is what the response headers were when the buffer was built, so

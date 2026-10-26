@@ -39,22 +39,18 @@ const StreamAddress = "/api/v1/app/stream"
 // type is the handler's to write.
 func StreamedResponse() (string, any) { return StreamedResponseExtension, true }
 
-// CanStream reports whether a response could actually be streamed: whether the
-// writer at the bottom of this chain — the one the bytes would reach — can flush.
+// CanStream reports whether a response could actually be streamed: whether the writer at the
+// bottom of this chain — the one the bytes would reach — can flush. It writes nothing and asks
+// nothing of the response, so a handler can ask it before it has committed to an answer, and
+// a refusal is still a normal answer rather than a half-written one.
 //
-// It writes nothing and asks nothing of the response, so a handler can ask it before
-// it has committed to an answer, and a refusal is still a normal answer rather than a
-// half-written one.
-//
-// The question is asked of the base writer and not of the wrappers above it, because
-// that is where the difference between the two answers lies. The two writers this
-// package installs between a handler and the connection both implement Flush, and one
-// implements FlushError: they do their own work and then ask the writer underneath, so
-// a chain whose base cannot flush is a chain whose topmost Flush would be called and
-// would return nothing — and a stream served over it would believe its frames arrived.
-// A response that cannot be flushed is a deployment fault, a proxy or a wrapper that
-// buffers whole answers in front of this process, and the answer to it is the 500 that
-// names it, before a single byte of a lie goes out.
+// The question is asked of the base writer and not of the wrappers above it, because that is
+// where the two answers differ: both writers this package installs implement Flush, do their
+// own work and then ask the writer underneath, so a chain whose base cannot flush is a chain
+// whose topmost Flush would be called and return nothing — and a stream served over it would
+// believe its frames arrived. A response that cannot be flushed is a deployment fault, a proxy
+// or a wrapper buffering whole answers in front of this process, and the answer to it is the
+// 500 that names it, before a single byte of a lie goes out.
 func CanStream(w http.ResponseWriter) bool {
 	if w == nil {
 		return false

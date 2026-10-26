@@ -450,7 +450,7 @@ func deliver(t *testing.T, transport Transport, seen <-chan Event, name string) 
 	}
 }
 
-// TestTwoWorkersShareOneDurable is the review's finding about scaling out: the
+// TestTwoWorkersShareOneDurable holds the rule about scaling out: the
 // boot log recommends running more than one worker, and a second one could not
 // start. A push consumer with no deliver group belongs to one subscriber, and
 // the second subscription is refused —
@@ -559,7 +559,7 @@ func TestADriftedStreamIsReconciled(t *testing.T) {
 // close(release) lets it return on the worker's own schedule, and the transaction that
 // carries the child event is *that* delivery's, not the pass's — so the commit lands
 // whenever the session that has been waiting on a channel gets to finish, and a single
-// read of the table races it. Measured on 2026-10-09 at 13:35:01Z, `make check` with 33
+// read of the table races it. `make check` with 33
 // packages booting schemas beside this one answered `committed child events=0, want 1:
 // <nil>` — no error from the read, and no dead-letter row, because the handler never
 // failed, it was simply not finished — while the same case with the package to itself

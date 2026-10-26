@@ -249,8 +249,8 @@ func (m member) Allowed(_ context.Context, _ tenancy.Tenant, want tenancy.Grant)
 	return m[want.Permission], nil
 }
 
-// TestTheResourceClosuresCarryTheirOwnAuthorization is the E4 review's critical
-// finding: a page that holds a Resource calls its closures directly, so a
+// TestTheResourceClosuresCarryTheirOwnAuthorization holds the rule a page that
+// reads past the Authorizer would break: a page that holds a Resource calls its closures directly, so a
 // closure that does not ask the Authorizer is a page that reads past the
 // permission whenever whoever wrote it forgot to. The dashboard forgot.
 //
@@ -476,9 +476,9 @@ func TestValuesPreserveTypedListElementsAndClearLists(t *testing.T) {
 	}
 }
 
-// TestFieldErrorsMatchesAFieldNameAndNotASubstringOfOne is the E4 review's
-// substring finding: a message about one field marked another's control, which
-// is the wrong control with the right message.
+// TestFieldErrorsMatchesAFieldNameAndNotASubstringOfOne holds the matching rule: a
+// message about one field must not mark another's control, which is the wrong
+// control with the right message.
 func TestFieldErrorsMatchesAFieldNameAndNotASubstringOfOne(t *testing.T) {
 	t.Parallel()
 	fields := []crud.Field{{Name: "title"}, {Name: "subtitle"}, {Name: "status"}}
@@ -548,8 +548,8 @@ func TestFaultKeepsUniqueAndBusinessConflictsDistinct(t *testing.T) {
 	}
 }
 
-// TestDisplayIsTheOneWayAValueIsShown is the E4 review's consistency finding:
-// an enum was humanized in a form's options and raw in a cell, and a boolean
+// TestDisplayIsTheOneWayAValueIsShown holds the consistency rule: an
+// enum was humanized in a form's options and raw in a cell, and a boolean
 // was the word true in both.
 
 func TestFieldErrorsReadsViolationsWithoutParsingProse(t *testing.T) {
