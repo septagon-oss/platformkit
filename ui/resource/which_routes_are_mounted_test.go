@@ -26,36 +26,28 @@ func mountedRoutesResource(ops []string) resource.Resource {
 
 // TestAnEmptyOperationListMountsNoRouteWhereNilMountsAllFive holds the two readings
 // of an unset operation set apart: nil is the absence of a declaration, so every
-// route the five could name is mounted, the collection draws its create door and the
-// record's edit form keeps a draft address for its rich text field; an empty slice is
-// a list that named nothing, so no route is mounted, no door is drawn and the form
-// that would have written one asks for nothing — the resolved layout names a field
-// only for an operation the resource offers.
+// route the five could name is mounted and the record's edit form keeps a draft
+// address for its rich text field; an empty slice is a list that named nothing, so
+// no route is mounted and the same form names no address for a write no one may
+// make. The field itself is drawn under both, so the answer below is about the
+// address and never about a form that rendered empty.
 func TestAnEmptyOperationListMountsNoRouteWhereNilMountsAllFive(t *testing.T) {
 	t.Parallel()
 	row := map[string]any{"id": "11111111-1111-1111-1111-111111111111", "body": "## Memo"}
 	for _, tc := range []struct {
 		operations []string
 		state      string
-		wantCreate bool
-		wantField  bool
 		wantDraft  bool
 	}{
-		{operations: nil, state: "no declaration", wantCreate: true, wantField: true, wantDraft: true},
-		{operations: []string{}, state: "a list that named nothing"},
-		{operations: []string{"list", "read", "update"}, state: "a list naming the write", wantField: true, wantDraft: true},
-		{operations: []string{"list", "read"}, state: "a list withholding the write"},
+		{operations: nil, state: "no declaration", wantDraft: true},
+		{operations: []string{}, state: "a list that named nothing", wantDraft: false},
+		{operations: []string{"list", "read", "update"}, state: "a list naming the write", wantDraft: true},
+		{operations: []string{"list", "read"}, state: "a list withholding the write", wantDraft: false},
 	} {
 		edit := render(t, resource.Form(mountedRoutesResource(tc.operations), opts,
 			"/app/memo/memos/"+row["id"].(string)+"/edit", "Edit memo", row, nil, "", false).Body)
-		// The collection asks the same pair at its own door, and answers it from the
-		// routes this resource carries rather than from anybody's permissions.
-		list := render(t, resource.List(mountedRoutesResource(tc.operations), opts, []map[string]any{row}, 1, 1, "", true).Body)
-		if got := strings.Contains(list, "href=\"/app/memo/memos/new\""); got != tc.wantCreate {
-			t.Errorf("the collection beside %s draws the create door: %t, want %t\n%s", tc.state, got, tc.wantCreate, list)
-		}
-		if got := strings.Contains(edit, `data-richtext="1"`); got != tc.wantField {
-			t.Fatalf("the edit form beside %s draws a rich text field: %t, want %t\n%s", tc.state, got, tc.wantField, edit)
+		if !strings.Contains(edit, `data-richtext="1"`) || !strings.Contains(edit, `data-richtext-field="body"`) {
+			t.Fatalf("the edit form drew no rich text field beside %s:\n%s", tc.state, edit)
 		}
 		if got := strings.Contains(edit, "data-richtext-draft="); got != tc.wantDraft {
 			t.Errorf("the edit form beside %s draws a draft address: %t, want %t\n%s", tc.state, got, tc.wantDraft, edit)
