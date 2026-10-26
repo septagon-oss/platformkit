@@ -35,26 +35,20 @@ const (
 	noSniff        = "nosniff"
 )
 
-// htmlPolicy is the policy a document is served under. Everything comes from
-// this origin; nothing frames it; images may also be data: URLs, which is what
-// an inline SVG icon and a generated chart are.
+// htmlPolicy is the policy a document is served under. Everything comes from this origin;
+// nothing frames it; images may also be data: URLs, which is what an inline SVG icon and a
+// generated chart are.
 //
-// script-src carries the request's nonce rather than 'unsafe-inline', so the
-// one inline script in the application — modules/admin's theme snippet, which
-// has to run before the first paint or the page flashes white — runs and
-// anything a body smuggled in does not.
+// script-src carries the request's nonce rather than 'unsafe-inline', so the one inline
+// script in the application — modules/admin's theme snippet, which has to run before the
+// first paint or the page flashes white — runs and anything a body smuggled in does not.
+// style-src carries 'unsafe-inline', the one concession: ui/components emits style
+// attributes for a table column's width and for a hidden element, and a nonce cannot cover
+// a style attribute. The exposure is CSS, not script.
 //
-// style-src carries 'unsafe-inline', and it is the one concession: ui/components
-// emits style attributes for a table column's width (table.go) and for an element
-// that is hidden (modal.go), and a nonce cannot cover a style
-// attribute — CSP nonces apply to elements, and 'unsafe-hashes' would mean
-// listing every width anybody ever writes. The exposure is CSS, not script.
-//
-// base-uri and form-action are the two the review found missing, and they are
-// the two that make the rest hold. Without base-uri an injected <base> retargets
-// every relative URL on the page, so 'self' stops meaning this origin; without
-// form-action an injected form posts what a person typed to somebody else, and
-// no source list covers where a form goes.
+// base-uri and form-action are what make the rest hold: without base-uri an injected
+// <base> retargets every relative URL on the page, so 'self' stops meaning this origin,
+// and without form-action an injected form posts what a person typed to somebody else.
 const htmlPolicy = "default-src 'self'; script-src 'self' 'nonce-%'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 // wasmUnsafeEval is the one token a document may ask this file to add to its own
@@ -117,26 +111,19 @@ type claims struct{ wasm bool }
 
 type claimsKey struct{}
 
-// AllowWASM declares that the document of the response the ctx belongs to
-// instantiates WebAssembly. kit/httpx adds 'wasm-unsafe-eval' to that response's
-// script-src — to that response's, to none other, and to nothing else in it: the
-// nonce, every other directive and the whole policy of a page that said nothing
-// stay as they are.
+// AllowWASM declares that the document of the response the ctx belongs to instantiates
+// WebAssembly. kit/httpx adds 'wasm-unsafe-eval' to that response's script-src — to that
+// response's, to none other, and to nothing else in it: the nonce, every other directive
+// and the whole policy of a page that said nothing stay as they are.
 //
-// The shape is the nonce's (Nonce): a per-request value the middleware creates,
-// carried on the request, reachable through one exported function. A declaration
-// outside a request is a no-op, as it is for the nonce.
+// The shape is the nonce's (Nonce): a per-request value the middleware creates, carried on
+// the request, reachable through one exported function, and a no-op outside a request.
+// Declare before the status is written: the policy is composed at the first byte of the
+// response, so a page that flushed, or streamed past the response buffer, keeps today's
+// policy and its WebAssembly.instantiate is still refused.
 //
-// Declare before the status is written. The policy is composed at the first byte
-// of the response, so a page that flushed, or streamed past the response buffer,
-// keeps today's policy and its WebAssembly.instantiate is still refused — the
-// browser says so in a console, and this file cannot say it after the fact.
-//
-// A handler that set a Content-Security-Policy of its own keeps it: this
-// declaration may widen the kernel's default and never a handler's stricter one.
-// ui/page's View.RunsWASM is the field a module author writes against, and Serve
-// calls this for it, for the rendered view only — a refusal page and a redirect
-// instantiate nothing, so neither carries the token.
+// A handler that set a Content-Security-Policy of its own keeps it: this may widen the
+// kernel's default and never a handler's stricter one.
 func AllowWASM(ctx context.Context) {
 	c, _ := ctx.Value(claimsKey{}).(*claims)
 	if c != nil {
@@ -240,28 +227,19 @@ func (s *secured) policy(status int) {
 	s.caching(status)
 }
 
-// caching is the difference between a face and a workspace, stated once:
+// caching is the difference between a face and a workspace, stated once: the workspace and
+// the control plane are never cacheable, a JSON answer as much as a page, because a proxy in
+// front of a workspace would otherwise hold one tenant's list of users and hand it to the
+// next person through; the public face is cacheable by default — public, one minute — on the
+// safe methods and a success, because a public page that cannot be cached is served from this
+// process forever and a cached 404 is a refusal nobody recovers from without a hard reload.
 //
-//   - The workspace and the control plane are never cacheable, and that now
-//     covers a JSON answer as much as a page. Leaving the JSON uncached was a
-//     gap rather than a decision: a proxy in front of a workspace would happily
-//     hold one tenant's list of users and hand it to the next person through,
-//     and the response carried nothing to stop it.
-//   - The public face is cacheable by default — public, one minute — on the
-//     safe methods and a success, because a public page that cannot be cached
-//     is a public page served from this process forever, and a 404 that a
-//     cache may keep is a refusal nobody can recover from without a hard
-//     reload.
-//
-// A handler that said something about caching first is believed only in the
-// direction of less caching (docs/cache.md). On the public face it knows whether
-// its bytes are somebody's own and this function does not. On the workspace and
-// the control plane every answer sits under a session, so a handler may add to
-// no-store and never take it away: a value without no-store — `public, max-age=…`
-// from a module that meant well — would let a shared cache hand one tenant's page
-// to the next person through. That value is replaced, and the replacement is logged
-// with the route, because a contradiction of the policy is a finding and not a
-// preference. The kernel's own asset tree answers under the static row instead.
+// A handler that said something about caching first is believed only in the direction of less
+// caching (docs/cache.md): on the public face it knows whether its bytes are somebody's own
+// and this function does not, and on the workspace every answer sits under a session, so a
+// module's `public, max-age=…` would let a shared cache hand one tenant's page to the next
+// person through. Such a value is replaced and the replacement logged with the route — a
+// contradiction of the policy is a finding, not a preference.
 func (s *secured) caching(status int) {
 	if h := s.Header(); h.Get("Cache-Control") != "" {
 		if s.surface == SurfacePublic || s.static || storesNothing(h.Get("Cache-Control")) {
