@@ -36,8 +36,8 @@ func resolvedAddress(media string) string {
 
 // resolvedMedia are the two spellings that response is answered in: the JSON a generated
 // client reads, and the exact-int64 spelling for a client that cannot hold a 64-bit
-// integer. The composition publishes a document per spelling, each naming its own
-// `required` for every node, so each document is reviewed against its own list.
+// integer. A document names its own `required` for every node, so each document is
+// reviewed against the list of every spelling that document publishes.
 const (
 	resolvedMediaJSON  = "application/json"
 	resolvedMediaInt64 = "application/vnd.platformkit.int64+json"
@@ -61,8 +61,8 @@ const (
 )
 
 // wireRequirednessAllowances are the reviewed moves of the composition's resolved members
-// from required to optional, one record per member and per node that publishes it, in the
-// one media type a document is published in.
+// from required to optional, one record per member and per node that publishes it, at the
+// one media spelling a document answers in — the reference document holds both at once.
 func wireRequirednessAllowances(media string) []wiregate.RequirednessAllowance {
 	const reviewed = "2026-10-25"
 	none := func(what string) string {
@@ -77,6 +77,8 @@ func wireRequirednessAllowances(media string) []wiregate.RequirednessAllowance {
 		{resolvedCommandNode, "confirmation", "confirmation for a command that asks nothing first"},
 		{resolvedFieldNode, "choice", "choice for a field that offers no answers"},
 		{resolvedCommandFieldNode, "choice", "choice for a field that offers no answers"},
+		{resolvedFieldNode + " .choice »#/components/schemas/ResolvedChoice", "maximum", "maximum for a choice that caps nothing"},
+		{resolvedCommandFieldNode + " .choice »#/components/schemas/ResolvedChoice", "maximum", "maximum for a choice that caps nothing"},
 		{resolvedFieldNode, "reference", "reference for a field whose author guessed no relationship"},
 		{resolvedCommandFieldNode, "reference", "reference for a field whose author guessed no relationship"},
 		{resolvedFieldNode + resolvedReadingNode, "money", "money reading for a field that holds no amount"},
