@@ -41678,6 +41678,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/a_rolled_back_handoff_leaves_no_link_behind_test.go",
+   "id": "modules/auth/internal/a_rolled_back_handoff_leaves_no_link_behind_test.go#TestAHandoffThatRolledBackLeavesNoLinkAndTheRedeliveryLeavesOne",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAHandoffThatRolledBackLeavesNoLinkAndTheRedeliveryLeavesOne",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/a_window_that_closed_opens_no_sign_in_test.go",
    "id": "modules/auth/internal/a_window_that_closed_opens_no_sign_in_test.go#TestAWindowThatClosedOpensNoSignInBeforeTheSweepTakesIt",
    "kind": "go",
@@ -83423,7 +83442,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2256,
+  "files": 2257,
   "forge_runs": [
    408,
    413,
@@ -83457,7 +83476,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3606,
+   "behaviour": 3607,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83476,9 +83495,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4228,
+  "rows": 4229,
   "tiers": {
-   "merge": 2605,
+   "merge": 2606,
    "nightly": 110,
    "push": 1513
   },
@@ -83486,13 +83505,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2011,
+   "keep": 2012,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3842,
+   "keep": 3843,
    "keep-rewrite": 170,
    "merge": 216
   }
