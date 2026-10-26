@@ -232,6 +232,10 @@ func scalarText(raw any) string {
 		return strconv.FormatInt(n, 10)
 	case int:
 		return strconv.Itoa(n)
+	case uint, uint8, uint16, uint32, uint64:
+		// An unsigned count is printed from its own digits: past MaxInt64 it is no
+		// int64, and read through a float it prints the nearest one.
+		return fmt.Sprintf("%d", n)
 	case time.Time:
 		return n.Format(time.RFC3339Nano)
 	}

@@ -39,11 +39,11 @@ func (r Resource) policy(o Options) Resource {
 	if r.Resolved == nil || r.Resolved.PolicyVersion != present.PolicyVersion {
 		schema := r.Schema
 		schema.Fields = words.Fields(schema.Fields)
-		// A word is the resource's own, in the reader's language: the entity's declared
-		// hints, then the two words the resource declaration carries, then the store's
-		// name for the entity. Nothing appends a letter here — a plural with no source
-		// is answered by the singular, which is the rule this package follows wherever
-		// a count meets a noun.
+		// The entry's declared hints, read in the reader's language, with the two words
+		// its declaration carries behind them. A set with no plural from either is
+		// answered by its own singular: nothing here appends a letter for a language
+		// this package does not speak, which is the rule every count in this renderer
+		// follows. The resolver's English name for the entity is the last answer.
 		hints := words.Entry(r.Present)
 		hints.Singular = cmp.Or(hints.Singular, r.Name.One, strings.ToLower(display.Humanize(schema.Entity)))
 		hints.Plural = cmp.Or(hints.Plural, r.Name.Other, hints.Singular)
@@ -55,7 +55,7 @@ func (r Resource) policy(o Options) Resource {
 		if o.Locale != nil {
 			language = o.Locale.Language
 		}
-		policy := present.Resolve(present.Input{Schema: schema, Hints: hints, Immutable: r.Immutable,
+		policy := present.Resolve(present.Input{Schema: schema, Hints: hints, Name: r.Name, Immutable: r.Immutable,
 			Singleton: r.Singleton, CommandsOnly: r.CommandsOnly, Operations: r.Operations, Commands: commands, Language: language,
 			Text: PolicyText(func(key, fallback string) string { return o.Text(key, fallback, []any{}...) })})
 		r.Resolved = &policy

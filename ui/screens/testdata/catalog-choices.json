@@ -53,12 +53,16 @@
           "widget": "tiles"
         }
       ],
+      "name": {
+        "one": "Note",
+        "other": "Notes"
+      },
       "resolved": {
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "note",
-          "plural": "notes",
+          "singular": "Note",
+          "plural": "Notes",
           "description": "",
           "emptyDescription": "",
           "icon": "",
@@ -392,12 +396,16 @@
           "widget": "chips"
         }
       ],
+      "name": {
+        "one": "Note",
+        "other": "Notes"
+      },
       "resolved": {
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "note",
-          "plural": "notes",
+          "singular": "Note",
+          "plural": "Notes",
           "description": "",
           "emptyDescription": "",
           "icon": "",
@@ -731,12 +739,16 @@
           "widget": "swatch"
         }
       ],
+      "name": {
+        "one": "Note",
+        "other": "Notes"
+      },
       "resolved": {
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "note",
-          "plural": "notes",
+          "singular": "Note",
+          "plural": "Notes",
           "description": "",
           "emptyDescription": "",
           "icon": "",
@@ -1080,12 +1092,16 @@
           }
         }
       ],
+      "name": {
+        "one": "Note",
+        "other": "Notes"
+      },
       "resolved": {
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "note",
-          "plural": "notes",
+          "singular": "Note",
+          "plural": "Notes",
           "description": "",
           "emptyDescription": "",
           "icon": "",

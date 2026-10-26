@@ -102,8 +102,8 @@
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "note",
-          "plural": "notes",
+          "singular": "Note",
+          "plural": "Notes",
           "description": "",
           "emptyDescription": "",
           "icon": "",

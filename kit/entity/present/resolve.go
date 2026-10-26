@@ -17,6 +17,12 @@ type Input struct {
 	// translated by the caller.
 	Schema entity.Schema
 	Hints  entity.EntryHints
+	// Name is the entity's own two words as its declaration gives them, used for
+	// the reading only when the entry declared no hints of its own. It arrives
+	// beside Hints because a catalogue document and a schema describe the words
+	// differently, and the reader of one must not be named by a rule the other
+	// one's reader never saw.
+	Name entity.Name
 	// Immutable names the fields a command owns, read-only in an update form.
 	Immutable []string
 	// Singleton resolves no list: a tenant has one record, at the path itself.
@@ -86,9 +92,12 @@ func (in Input) offers(op string) bool {
 
 func identity(in Input) ResolvedIdentity {
 	h := in.Hints
-	singular := cmp.Or(h.Singular, strings.ToLower(display.Humanize(in.Schema.Entity)))
+	// A word is the resource's own, in the language of the reader: the entry's
+	// declared hints, then the two words its declaration carries, then the store's
+	// name for the entity.
+	singular := cmp.Or(h.Singular, in.Name.One, strings.ToLower(display.Humanize(in.Schema.Entity)))
 	out := ResolvedIdentity{
-		Singular: singular, Plural: cmp.Or(h.Plural, display.Plural(singular)),
+		Singular: singular, Plural: cmp.Or(h.Plural, in.Name.Other, display.Plural(singular)),
 		Description: h.Description, EmptyDescription: h.EmptyDescription,
 		Order: h.Order,
 	}

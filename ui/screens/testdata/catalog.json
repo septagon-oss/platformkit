@@ -64,8 +64,8 @@
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "note",
-          "plural": "notes",
+          "singular": "Note",
+          "plural": "Notes",
           "description": "",
           "emptyDescription": "",
           "icon": "",
@@ -693,8 +693,8 @@
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "tag",
-          "plural": "tags",
+          "singular": "Tag",
+          "plural": "Tags",
           "description": "",
           "emptyDescription": "",
           "icon": "",
@@ -1250,8 +1250,8 @@
         "policyVersion": 1,
         "language": "en",
         "identity": {
-          "singular": "setting",
-          "plural": "settings",
+          "singular": "Setting",
+          "plural": "Settings",
           "description": "",
           "emptyDescription": "",
           "icon": "",

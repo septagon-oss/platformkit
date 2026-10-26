@@ -3,6 +3,7 @@ package screens
 import (
 	"context"
 	"maps"
+	"net/http"
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -52,6 +53,12 @@ type Pictures struct {
 // `writable` promises a door no route answers.
 type Entry struct {
 	entity.Schema
+	// Name is the resource's own two words — the singular and the plural its author
+	// declared — carried so a shell that is not a browser can label a shelf of rows
+	// with the words the resource answers with rather than the entity's code name.
+	// Printed only when both words are declared: a singular beside three rows is the
+	// wrong word, and no word is better than a wrong one.
+	Name *entity.Name `json:"name,omitempty"`
 	// Presentation carries optional declared hints beside Resolved for older readers.
 	// Absent hints retain their documented defaults; it grants no capabilities.
 	Presentation *EntryPresentation `json:"presentation,omitempty"`
@@ -100,7 +107,18 @@ type Command struct {
 	Description string            `json:"description,omitempty"`
 	Collection  bool              `json:"collection,omitempty"`
 	Path        string            `json:"path,omitempty"`
-	Fields      []entity.Field    `json:"fields,omitempty"`
+	// Method is the verb the Path above answers, printed on the same rule as Path
+	// itself: absent means POST, which is what every command kit/rest mounts answers
+	// with and what a build that predates this key already sends. A command mounted
+	// with another verb — a replace at its resource's own address — says which,
+	// because a shell that posted to it would meet a 405 at an address this document
+	// just promised it.
+	Method string `json:"method,omitempty"`
+	// Self says the command writes the caller's own row, so a device that has the
+	// person's token and nothing else knows it may offer it: the same fact kit/httpx
+	// declares on its own command, carried here unchanged.
+	Self   bool           `json:"self,omitempty"`
+	Fields []entity.Field `json:"fields,omitempty"`
 	// Presentation carries optional declared hints beside Resolved for older readers.
 	// Absent hints retain their documented defaults; it grants no capabilities.
 	Presentation *CommandPresentation `json:"presentation,omitempty"`
@@ -144,6 +162,19 @@ func DescribeIn(ctx context.Context, resources []httpx.Resource, text Text, lang
 			continue
 		}
 		if !r.Readable(ctx) {
+			// A caller who may use one of this resource's commands is told the resource
+			// exists even where its rows stay unreadable: CommandsFor asks each command's
+			// guard, not the resource's, and an account command (rest.CommandOptions.Self)
+			// is the case where that answer is yes while the rows are none of the caller's
+			// business. What such a caller is given is the name and those commands, and
+			// nothing else — see commandsNotRows.
+			if len(r.Commands) == 0 {
+				continue
+			}
+			// The row schema names fields of rows this caller may not look at, and the
+			// screen is the list of them: both go before the resource is translated.
+			r.Schema.Fields, r.Immutable = nil, nil
+			out.Resources = append(out.Resources, commandsNotRows(Localise(r, text), text, language))
 			continue
 		}
 		r = Localise(r, text)
@@ -160,6 +191,21 @@ func DescribeIn(ctx context.Context, resources []httpx.Resource, text Text, lang
 func commandsOnly(r httpx.Resource, text Text, language string) Entry {
 	e := DescribeEntry(r, false, text, language)
 	e.Screen = ""
+	return e
+}
+
+// commandsNotRows is the entry a caller is given for a readable resource whose rows
+// this caller is refused: it names no screen, describes no row and offers no
+// operation, so a shell draws the commands and no list or form. The policy it does
+// carry is resolved in the request's language, as every other entry is.
+//
+// The operation list prints empty rather than absent for the one reason that
+// matters to a build in a pocket: an absent list means all five, so leaving it out of
+// an entry the document carries for a command's sake would hand the shell five doors
+// to draw on the very routes that answer this caller nothing.
+func commandsNotRows(r httpx.Resource, text Text, language string) Entry {
+	e := commandsOnly(r, text, language)
+	e.Operations = []string{}
 	return e
 }
 
@@ -208,12 +254,18 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 	if writable {
 		e.WritePath = r.WritePath
 	}
+	// Both words or neither: a shelf labelled with a singular at three rows is the
+	// wrong word, and no word is better than a wrong one — see the field's rule.
+	if r.Name.One != "" && r.Name.Other != "" {
+		name := r.Name
+		e.Name = &name
+	}
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
 			Bindings: maps.Clone(c.Bindings), Undo: authorizedUndo(r.Commands, c.Undo), HasResult: c.HasResult, Output: c.Output,
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
-			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
-			Presentation: commandDeviations(c.Present),
+			Collection: c.Collection, Path: derived(r, c), Method: verb(c), Self: c.Self,
+			Fields: c.Fields, Presentation: commandDeviations(c.Present),
 		})
 	}
 	e.Resolved = resolve(r, text, language)
@@ -227,11 +279,22 @@ func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 		commands = append(commands, present.CommandInput{Fields: c.Fields, Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
 	}
 	resolved := present.Resolve(present.Input{
-		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
+		Schema: r.Schema, Hints: r.Present, Name: r.Name, Immutable: r.Immutable, Singleton: r.Singleton,
 		CommandsOnly: r.CommandsOnly, Operations: r.OperationWords(), Commands: commands,
 		Language: language, Text: resource.PolicyText(resource.Text(text)),
 	})
 	return &resolved
+}
+
+// verb is the command's method as the document states it: nothing for the one
+// every command already answers with, and the verb itself for the rare one that
+// does not — the same economy as derived below, so an entry a shell could read
+// before this key existed is byte-for-byte what it was.
+func verb(c httpx.Command) string {
+	if c.Method == "" || c.Method == http.MethodPost {
+		return ""
+	}
+	return c.Method
 }
 
 // derived is the command's address when a shell could not work it out itself,

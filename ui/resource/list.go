@@ -183,7 +183,7 @@ func listCell(r Resource, o Options, row map[string]any, c components.TableColum
 	if read.err != nil {
 		return invalid(read.err)
 	}
-	title := present.Title(r.Resolved.Titles.ListCandidates, row, display.Text(row["id"]), r.Resolved.Titles.EmptyTitle)
+	title := present.Title(r.Resolved.Titles.ListCandidates, r.spelledRow(o, row), display.Text(row["id"]), r.Resolved.Titles.EmptyTitle)
 	definition, _ := fieldFor(r.Schema.Fields, c.Key)
 	definition.Present = f.Kind
 	// A choice reads its selection whatever the value, an empty one included; a
@@ -194,12 +194,42 @@ func listCell(r Resource, o Options, row map[string]any, c components.TableColum
 		}
 	}
 	if c.Primary {
-		return components.RowLink(components.LinkProps{Label: title, Href: r.Screen + "/" + display.Text(row["id"])})
+		// The leading cell is the row's only link, so its accessible name is what the
+		// row is called by: a field the entity names rows off when one has a value, and
+		// otherwise the reading of the cell itself — a count leads a list whose entity
+		// has nothing else to be called by, and "12,345" is that name where the reader
+		// groups digits with a comma. A dash is how this screen spells a field nobody
+		// filled in, so it names nothing and gives way to the id.
+		label := present.Title(r.Resolved.Titles.ListCandidates, r.spelledRow(o, row), "", "")
+		if label == "" || label == f.Reading.Missing {
+			label = read.text
+		}
+		if label == "" || label == f.Reading.Missing {
+			label = title
+		}
+		return components.RowLink(components.LinkProps{Label: label, Href: r.Screen + "/" + display.Text(row["id"])})
 	}
 	if read.node != nil {
 		return read.node
 	}
 	return g.Text(read.text)
+}
+
+// spelledRow is the row with each filled field's reading in its value's place, and a
+// field nobody filled in left as it was. A list takes the row's name — its leading
+// link's accessible name — off the row rather than off one column, and this is what
+// makes that name agree with the cells beside it: a set led by a count links as
+// "12,345" where the reader groups digits that way.
+func (r Resource) spelledRow(o Options, row map[string]any) map[string]any {
+	out := make(map[string]any, len(row))
+	for name, raw := range row {
+		if raw == nil || scalarText(raw) == "" {
+			out[name] = raw
+			continue
+		}
+		out[name] = value(r.field(name), row, o).text
+	}
+	return out
 }
 
 func columnless(p components.DataListProps, slots components.DataListSlots) g.Node {
