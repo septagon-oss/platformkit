@@ -39,7 +39,12 @@ language reads the same files and must reach the same document.
   and `true`; everything else defaults to nothing.
 - `expected.page` is keyed by the state's `name`, so map order never enters a
   hash. Each entry is the Page the builder writes for that state, compared as a
-  subset of what the case is about. `{"refused": "<member>"}` is an expectation
+  subset of what the case is about. A state marked `"whole": true` is compared
+  as the exact marshalled bytes instead: member order, key presence, the null
+  discipline and every value spelling are pinned there and nowhere else.
+- The rows reach `view.Build` decoded with numbers kept whole, as the platform's
+  own reader decodes a document, so an integer stays an integer and a row's
+  write counter survives the trip. `{"refused": "<member>"}` is an expectation
   too, and the honest one where the resource answers no route for that page or no
   row exists to show: a commands-only resource has no page, a singleton is never
   a list, and a record page from no row is a fiction.

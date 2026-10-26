@@ -1,0 +1,190 @@
+{
+    "name": "whole-record",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-26",
+      "inputHash": "sha256:4562654eb5c51e642a355cf24efaa9bedcd687273065be6ef3607f2439da5c50",
+      "expectedHash": "sha256:c8093802ee30fbc0949a6ce52548b8c81df93139a65dde10f4e5ef1faacf945c"
+    },
+    "input": {
+      "hints": {},
+      "language": "en",
+      "rows": [
+        {
+          "done": false,
+          "id": "t1",
+          "title": "Write"
+        }
+      ],
+      "schema": {
+        "entity": "task",
+        "fields": [
+          {
+            "name": "id",
+            "readOnly": true,
+            "type": "uuid"
+          },
+          {
+            "name": "title",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "done",
+            "type": "bool"
+          },
+          {
+            "name": "createdAt",
+            "readOnly": true,
+            "type": "time"
+          }
+        ],
+        "module": "m",
+        "path": "/api/v1/m/task"
+      },
+      "state": [
+        {
+          "home": "Workspace",
+          "kind": "record",
+          "name": "record",
+          "now": "2026-10-26T09:00:00Z",
+          "whole": true,
+          "writable": true
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "record": {
+          "pageVersion": 1,
+          "kind": "record",
+          "builtAt": "2026-10-26T09:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/task",
+            "id": "t1"
+          },
+          "title": "Write",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "tasks",
+              "ref": {
+                "resource": "m/task",
+                "id": ""
+              }
+            },
+            {
+              "label": "Write",
+              "ref": {
+                "resource": "m/task",
+                "id": "t1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [
+            {
+              "kind": "update",
+              "verb": "update",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/task",
+                "id": "t1"
+              },
+              "primary": false,
+              "destructive": false,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            },
+            {
+              "kind": "delete",
+              "verb": "delete",
+              "label": "",
+              "scope": "record",
+              "target": {
+                "resource": "m/task",
+                "id": "t1"
+              },
+              "primary": false,
+              "destructive": true,
+              "undo": "",
+              "hasResult": false,
+              "confirm": {
+                "title": "",
+                "body": "",
+                "confirmLabel": ""
+              },
+              "inputs": []
+            }
+          ],
+          "sections": [
+            {
+              "key": "information",
+              "label": "",
+              "fields": [
+                {
+                  "name": "done",
+                  "label": "Done",
+                  "help": "",
+                  "text": "No",
+                  "tone": "",
+                  "reference": "",
+                  "valueKind": "boolean",
+                  "elem": "",
+                  "value": false
+                },
+                {
+                  "name": "createdAt",
+                  "label": "Created at",
+                  "help": "",
+                  "text": "—",
+                  "tone": "",
+                  "reference": "",
+                  "valueKind": "absent",
+                  "elem": "",
+                  "value": null
+                }
+              ]
+            }
+          ],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "",
+            "controls": [],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        }
+      }
+    }
+}

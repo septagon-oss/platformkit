@@ -1,0 +1,167 @@
+{
+    "name": "whole-form-422",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-26",
+      "inputHash": "sha256:91d3f664f022d5387add0e254854b134329707ab8379eeaef4f7a66ccb20511c",
+      "expectedHash": "sha256:67b156ed9f9ae85b8483365643bc25a0f288431b1106d4689843704d24b3a6ff"
+    },
+    "input": {
+      "hints": {},
+      "language": "en",
+      "rows": [
+        {
+          "done": false,
+          "id": "t1",
+          "revision": 7,
+          "title": "Write"
+        }
+      ],
+      "schema": {
+        "entity": "task",
+        "fields": [
+          {
+            "name": "id",
+            "readOnly": true,
+            "type": "uuid"
+          },
+          {
+            "name": "title",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "done",
+            "type": "bool"
+          },
+          {
+            "name": "createdAt",
+            "readOnly": true,
+            "type": "time"
+          }
+        ],
+        "module": "m",
+        "path": "/api/v1/m/task"
+      },
+      "state": [
+        {
+          "detail": "Two answers need fixing before this task can be saved.",
+          "formTitle": "Edit task",
+          "home": "Workspace",
+          "kind": "form",
+          "name": "form-update",
+          "now": "2026-10-26T09:00:00Z",
+          "violations": {
+            "done": "Tick or clear the box.",
+            "title": "Choose another title: one task already carries it."
+          },
+          "whole": true,
+          "writable": true
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-update": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-26T09:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/task",
+            "id": "t1"
+          },
+          "title": "Edit task",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "tasks",
+              "ref": {
+                "resource": "m/task",
+                "id": ""
+              }
+            },
+            {
+              "label": "Edit task",
+              "ref": {
+                "resource": "m/task",
+                "id": "t1"
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": false,
+            "title": "Edit task",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "Write",
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "done",
+                "label": "Done",
+                "help": "",
+                "control": "checkbox",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "boolean",
+                "elem": "",
+                "value": false,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [
+              {
+                "field": "done",
+                "message": "Tick or clear the box."
+              },
+              {
+                "field": "title",
+                "message": "Choose another title: one task already carries it."
+              }
+            ],
+            "detail": "Two answers need fixing before this task can be saved.",
+            "expectedRevision": 7
+          }
+        }
+      }
+    }
+}

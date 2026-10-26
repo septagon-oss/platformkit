@@ -2,9 +2,9 @@
     "name": "null-and-false",
     "provenance": {
       "author": "platform worker, unreviewed",
-      "date": "2026-10-25",
+      "date": "2026-10-26",
       "inputHash": "sha256:d6ff84a5b82f7826ca8aa98b76b7e367dcee5e322a934369766175bab2fd3a96",
-      "expectedHash": "sha256:9665d25d3f70d8b719864582acb7abe7bc678ada584ac3767e2d2f08d1f43bc6"
+      "expectedHash": "sha256:9079474c50ce30be5483cd97b5248de187a37958ce9d12550c3e70eb6fbba2e8"
     },
     "input": {
       "hints": {},
@@ -420,9 +420,9 @@
                     "label": "Count",
                     "text": "0",
                     "tone": "",
-                    "valueKind": "decimal",
+                    "valueKind": "integer",
                     "elem": "",
-                    "value": "0"
+                    "value": 0
                   }
                 ]
               }
@@ -648,4 +648,4 @@
         }
       }
     }
-  }
+}

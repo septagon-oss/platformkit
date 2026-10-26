@@ -1,0 +1,146 @@
+{
+    "name": "whole-form-create",
+    "provenance": {
+      "author": "platform worker, unreviewed",
+      "date": "2026-10-26",
+      "inputHash": "sha256:af278e87a76a60d607f8caa6e07b12c4597ff7f052c1fa67871ea13d85ae5fc0",
+      "expectedHash": "sha256:46723dc3c34222133e38ecb69dd85441851f9db7266c9095e2f9fdd94f270bed"
+    },
+    "input": {
+      "hints": {},
+      "language": "en",
+      "rows": [
+        {
+          "done": false,
+          "id": "t1",
+          "title": "Write"
+        }
+      ],
+      "schema": {
+        "entity": "task",
+        "fields": [
+          {
+            "name": "id",
+            "readOnly": true,
+            "type": "uuid"
+          },
+          {
+            "name": "title",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "done",
+            "type": "bool"
+          },
+          {
+            "name": "createdAt",
+            "readOnly": true,
+            "type": "time"
+          }
+        ],
+        "module": "m",
+        "path": "/api/v1/m/task"
+      },
+      "state": [
+        {
+          "create": true,
+          "formTitle": "New task",
+          "home": "Workspace",
+          "kind": "form",
+          "name": "form-create",
+          "now": "2026-10-26T09:00:00Z",
+          "whole": true,
+          "writable": true
+        }
+      ]
+    },
+    "expected": {
+      "page": {
+        "form-create": {
+          "pageVersion": 1,
+          "kind": "form",
+          "builtAt": "2026-10-26T09:00:00Z",
+          "language": "en",
+          "zone": "UTC",
+          "ref": {
+            "resource": "m/task",
+            "id": ""
+          },
+          "title": "New task",
+          "breadcrumbs": [
+            {
+              "label": "Workspace",
+              "ref": {
+                "resource": "",
+                "id": ""
+              }
+            },
+            {
+              "label": "tasks",
+              "ref": {
+                "resource": "m/task",
+                "id": ""
+              }
+            }
+          ],
+          "empty": "",
+          "actions": [],
+          "sections": [],
+          "table": {
+            "columns": [],
+            "rows": [],
+            "window": {
+              "offset": 0,
+              "limit": 0
+            },
+            "total": 0,
+            "counted": false,
+            "sort": "",
+            "defaultSort": "",
+            "sorts": [],
+            "filters": []
+          },
+          "form": {
+            "create": true,
+            "title": "New task",
+            "controls": [
+              {
+                "name": "title",
+                "label": "Title",
+                "help": "",
+                "control": "text",
+                "readOnly": false,
+                "required": true,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "string",
+                "elem": "",
+                "value": "Write",
+                "options": [],
+                "keys": []
+              },
+              {
+                "name": "done",
+                "label": "Done",
+                "help": "",
+                "control": "checkbox",
+                "readOnly": false,
+                "required": false,
+                "maxLength": 0,
+                "default": "",
+                "valueKind": "boolean",
+                "elem": "",
+                "value": false,
+                "options": [],
+                "keys": []
+              }
+            ],
+            "violations": [],
+            "detail": "",
+            "expectedRevision": 0
+          }
+        }
+      }
+    }
+}
