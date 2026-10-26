@@ -44807,6 +44807,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/an_accepted_account_email_door_files_the_events_its_refused_doors_withhold_test.go",
+   "id": "modules/auth/internal/an_accepted_account_email_door_files_the_events_its_refused_doors_withhold_test.go#TestAnAcceptedAccountEmailDoorFilesTheEventsItsRefusedDoorsWithhold",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnAcceptedAccountEmailDoorFilesTheEventsItsRefusedDoorsWithhold",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/an_account_email_door_answers_alike_with_and_without_a_recorder_test.go",
    "id": "modules/auth/internal/an_account_email_door_answers_alike_with_and_without_a_recorder_test.go#TestAnAccountEmailDoorAnswersTheSameWithAndWithoutAMailRecorder",
    "kind": "go",
@@ -86387,7 +86406,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2352,
+  "files": 2353,
   "forge_runs": [
    408,
    413,
@@ -86421,7 +86440,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3753,
+   "behaviour": 3754,
    "composition": 495,
    "contract": 24,
    "journey": 110
@@ -86440,9 +86459,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4382,
+  "rows": 4383,
   "tiers": {
-   "merge": 2688,
+   "merge": 2689,
    "nightly": 110,
    "push": 1584
   },
@@ -86450,13 +86469,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2107,
+   "keep": 2108,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3996,
+   "keep": 3997,
    "keep-rewrite": 170,
    "merge": 216
   }
