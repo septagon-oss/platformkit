@@ -425,7 +425,7 @@ terms of a token, which is the whole reason to have themes (`design/design.go:11
 web standard, not a dependency.
 
 **How the tenant crosses it.** It does not. The theme is chosen once, at
-composition (`Theme: design.Default()`, `apps/platformkit/app.go:167`), one
+composition (`Theme: design.Default()`, `apps/platformkit/app.go:163`), one
 stylesheet serves every tenant, and no theme reads a row: isolation lives in the
 database, and a stylesheet adds none of it.
 
@@ -435,8 +435,8 @@ one stylesheet per pair rather than recomposing per request
 
 **How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
 own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
-line is `apps/platformkit/fault.go:110`: `ui.Compose(design.Default())`, the same
-pair the composition hands the shell at `apps/platformkit/app.go:167`. A client's
+line is `apps/platformkit/fault.go:104`: `ui.Compose(design.Default())`, the same
+pair the composition hands the shell at `apps/platformkit/app.go:163`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
 a role.
 
@@ -594,8 +594,8 @@ and a second factor offered without its first
 **Where it lives.** `kit/locale` — `Messages` (`kit/locale/locale.go:9`),
 `Formatter` (`:16`), `Locale` (`:21`), `SelectLocale` (`:29`) — with one
 adapter, `kit/locale/providers/xtext`: `Load` builds a catalogue from ordered
-sources (`kit/locale/providers/xtext/load.go:57`), `Catalog` and `Source`
-describe what goes in (`:131`, `:138`), and `FromCatalog` hands back a
+sources (`kit/locale/providers/xtext/load.go:33`), `Catalog` and `Source`
+describe what goes in (`:107`, `:114`), and `FromCatalog` hands back a
 `locale.Messages` (`kit/locale/providers/xtext/catalog.go:16`).
 
 **Builds on.** `golang.org/x/text` v0.42.0 (BSD-3-Clause) for language matching
@@ -619,7 +619,7 @@ answer in a language this tenant refused. The declaration is a row
 **How an app extends it.** Append an `xtext.Source` to the ordered list
 `catalogues()` builds (`apps/platformkit/catalog.go:40`); the order *is* the merge
 rule, and the comment above that function says why each source sits where it does
-(`apps/platformkit/catalog.go:22-38`). Owner modules ship their own
+(`apps/platformkit/catalog.go:26-39`). Owner modules ship their own
 `messages/<tag>.json`; `modules/notification` deliberately ships none, because its
 words belong to the module that raised the notice. A reader who asks in a language
 its tenant never declared is not served in that language and is not refused for
@@ -646,7 +646,7 @@ its only dependency is the kernel.
 **How it is traced and audited.** Two trails, and the distinction is the point.
 The *write* is the owner's: an accepted proposal is applied through the subject's
 `Save` (`modules/change/contracts/change.go:254-266`), which the composition
-implements over the owner's own service (`apps/platformkit/change.go:164-172`),
+implements over the owner's own service (`apps/platformkit/change.go:157-165`),
 so the domain audit row is the owner's event — `site.settings_updated` for the
 reference subject (`modules/site/contracts/events.go:15`). The
 *decision* is this module's, one event per transition and no fifth name
@@ -660,9 +660,9 @@ waits for `change.proposal_applied` in the trail and checks whose name it credit
 the other, and a save that fails publishes nothing: the write errors out before the
 event is built (`modules/change/internal/service.go:296-300`). No span of its own.
 
-**How an app extends it.** Implement `Subject` and bind it: `changeSubjects`
-(`apps/platformkit/change.go:188`) and the one line that calls it
-(`apps/platformkit/product.go:200`) are the whole of what the reference product
+**How an app extends it.** Implement `Subject` and bind it: `siteSubjectBinding`
+(`apps/platformkit/change.go:185`) and the one line that calls it
+(`apps/platformkit/product.go:359`) are the whole of what the reference product
 adds. A refusal carries the owner module's answer in `Refusal`
 (`modules/change/contracts/change.go:284`), which is why this module needs no
 vocabulary of its own.
@@ -707,8 +707,8 @@ those two members and says nothing about correlation (`:63-70`; the column is
 **How an app extends it.** Declare in the manifest — `Declared` and
 `Subscriptions` ([Module](kit/module/module.go)) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
-(`apps/platformkit/product.go:227`), in the function the application calls the one
-place it names an event provider (`:226`). `kit/app` selects by name and imports
+(`apps/platformkit/product.go:213`), in the function the application calls the one
+place it names an event provider (`:212`). `kit/app` selects by name and imports
 no provider ([Transports.constructor](kit/app/app.go) and
 [App.transport](kit/app/dependencies.go)). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
@@ -746,7 +746,7 @@ process names a host, port and from-address, the mailbox when not (`:60-62`), an
 the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
 (`apps/platformkit/main.go:84`). A refusal a person must see raises a `Notice`
-(`apps/platformkit/product.go:292`). A nil lookup writes every row and sends no
+(`apps/platformkit/product.go:281`). A nil lookup writes every row and sends no
 mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
@@ -788,12 +788,12 @@ rule (`:51-52`).
 
 ### Cache: kit/cache over Valkey
 
-**Where it lives.** `kit/cache`: `Scope` (`kit/cache/cache.go:98`), built only by
-`Of` (`:112`) or `Shared` (`:128`), `Key` (`:154`), `Cache` (`:186`) and `Value`
-(`:240`); the adapter is `kit/cache/providers/valkey` (`New`
-`kit/cache/providers/valkey/valkey.go:67`, `Connect` `:78`). What may be cached at
+**Where it lives.** `kit/cache`: `Scope` (`kit/cache/cache.go:87`), built only by
+`Of` (`:101`) or `Shared` (`:117`), `Key` (`:143`), `Cache` (`:175`) and `Value`
+(`:226`); the adapter is `kit/cache/providers/valkey` (`New`
+`kit/cache/providers/valkey/valkey.go:56`, `Connect` `:67`). What may be cached at
 all is the package comment: values a replica may recompute, and never sessions,
-permission grants or entitlements (`kit/cache/cache.go:22-27`).
+permission grants or entitlements (`kit/cache/cache.go:12-14`).
 
 **Builds on.** `github.com/redis/go-redis/v9` v9.22.0 (BSD-2-Clause) against
 `valkey/valkey:8-alpine` run with `--maxmemory-policy noeviction`
@@ -816,7 +816,7 @@ another is reproducible from the failure message alone.
 
 **How an app extends it.** Add a field to [app.Caches](kit/app/app.go),
 selected by [validateDeployment](kit/app/construct.go); the reference composition names `valkey.Connect` and nothing
-else (`apps/platformkit/product.go:235`, in `caches()` at `:234`). A selected
+else (`apps/platformkit/product.go:221`, in `caches()` at `:220`). A selected
 adapter with no constructor is refused before anything opens
 ([Caches.constructor](kit/app/app.go)). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
@@ -826,12 +826,12 @@ fault, not a caller's.
 ### Metrics and traces: OpenTelemetry
 
 **Where it lives.** `kit/telemetry` names the attributes and the instruments and
-holds no provider: `Scope` (`kit/telemetry/telemetry.go:68`), `Tracer` (`:88`),
-the attribute names (`:94-97`), `WithRequestID` and `RequestID` (`:136`, `:153`),
-`SpanAttrs` (`:160`), `MetricAttrs` (`:188`), `RefusalClass` (`:212`), and
+holds no provider: `Scope` (`kit/telemetry/telemetry.go:31`), `Tracer` (`:47`),
+the attribute names (`:53-56`), `WithRequestID` and `RequestID` (`:85`, `:102`),
+`SpanAttrs` (`:109`), `MetricAttrs` (`:137`), `RefusalClass` (`:161`), and
 `Instruments` (`kit/telemetry/instruments.go:34`). `kit/trace` carries the
-context — `Context` (`kit/trace/trace.go:59`), `Parent` (`:70`), `Parse` (`:100`) —
-with the header names written once (`:27-31`). `kit/app` installs the one
+context — `Context` (`kit/trace/trace.go:56`), `Parent` (`:67`), `Parse` (`:97`) —
+with the header names written once (`:24-28`). `kit/app` installs the one
 `TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:302`, `:303`).
 
 **Builds on.** `go.opentelemetry.io/otel` v1.46.0 (Apache-2.0) and its OTLP/gRPC
@@ -841,16 +841,16 @@ collector is a separate program (`compose.yaml:86`).
 **How the tenant crosses it.** Every span and number is stamped from the context:
 `SpanAttrs` puts `pkit.tenant` — the slug a person recognises — and
 `pkit.tenant.id` on a span, with `pkit.request.id` on spans only
-(`kit/telemetry/telemetry.go:94-97`, `:160`), and `MetricAttrs` is the same list
+(`kit/telemetry/telemetry.go:53-56`, `:109`), and `MetricAttrs` is the same list
 without the request id, because a value unique per request makes one series per
-request (`:188`, `:174-186`). The tenant is never a resource attribute: one
+request (`:137`, `:123-135`). The tenant is never a resource attribute: one
 process serves many tenants, as `## Follow a request` says.
 
 **How it is traced and audited.** This pillar *is* the trace: the transport span
 (`kit/httpx/traced.go:44`), named after the operation id (`:80`), the transaction
 span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:109`, `:134`),
 the relay batch ([relay batches](kit/events/relay.go)), and the job run with one span per
-tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
+tenant (`kit/jobs/jobs.go:194`, `:313`). The audit row stores `traceparent`
 verbatim and indexes the trace out of it, as the audit section below explains.
 The instruments are the three named at `kit/telemetry/instruments.go:61-69`,
 with latency buckets that run to a minute because the work slow enough to matter
