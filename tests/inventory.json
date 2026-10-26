@@ -33767,6 +33767,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/drawing_and_title_each_named_in_the_trail_test.go",
+   "id": "kit/rest/drawing_and_title_each_named_in_the_trail_test.go#TestABoardDrawnAndRetitledNamesEveryFieldItMoved",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestABoardDrawnAndRetitledNamesEveryFieldItMoved",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/drawing_change_named_in_its_own_event_test.go",
    "id": "kit/rest/drawing_change_named_in_its_own_event_test.go#TestAClearedDrawingSaysWhichStrokesItTookAway",
    "kind": "go",
@@ -86416,7 +86435,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2350,
+  "files": 2351,
   "forge_runs": [
    408,
    413,
@@ -86450,7 +86469,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3758,
+   "behaviour": 3759,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86469,9 +86488,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4384,
+  "rows": 4385,
   "tiers": {
-   "merge": 2685,
+   "merge": 2686,
    "nightly": 110,
    "push": 1589
   },
@@ -86479,13 +86498,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2105,
+   "keep": 2106,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3998,
+   "keep": 3999,
    "keep-rewrite": 170,
    "merge": 216
   }
