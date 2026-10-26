@@ -50343,6 +50343,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/file/internal/a_record_that_refuses_after_the_frame_is_stored_removes_the_frame_test.go",
+   "id": "modules/file/internal/a_record_that_refuses_after_the_frame_is_stored_removes_the_frame_test.go#TestARecordThatRefusesTheRowAfterTheFrameIsStoredRemovesTheFrameItStored",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARecordThatRefusesTheRowAfterTheFrameIsStoredRemovesTheFrameItStored",
+   "needs_db": true,
+   "pkg": "modules/file/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/file/internal/a_refused_image_upload_removes_the_object_it_still_owns_test.go",
    "id": "modules/file/internal/a_refused_image_upload_removes_the_object_it_still_owns_test.go#TestAnUploadWhoseTransactionWillNotOpenRemovesTheFrameItStored",
    "kind": "go",
@@ -84974,7 +84993,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2310,
+  "files": 2311,
   "forge_runs": [
    408,
    413,
@@ -85008,7 +85027,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3683,
+   "behaviour": 3684,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -85027,9 +85046,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4309,
+  "rows": 4310,
   "tiers": {
-   "merge": 2634,
+   "merge": 2635,
    "nightly": 110,
    "push": 1565
   },
@@ -85037,13 +85056,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2065,
+   "keep": 2066,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3923,
+   "keep": 3924,
    "keep-rewrite": 170,
    "merge": 216
   }
