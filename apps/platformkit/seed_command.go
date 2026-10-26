@@ -29,10 +29,10 @@ import (
 // a shell can read is not a seed grant. So the third thing is a credential,
 // `seed.operator_email` and `seed.operator_password` (PLATFORMKIT_SEED_OPERATOR_
 // EMAIL and _PASSWORD), checked against the installation tenant's own people and
-// their roles before this command enters the tenant it was pointed at.
+// their roles before this command enters the tenant it was pointed at. The grant
+// it asks is an operator one, which only a role that names it can answer.
 //
-// A run without one of the two flags refuses, and so does one without the
-// credential: there is no mode in which the command seeds as nobody.
+// A run missing a flag or the credential refuses: the command never seeds as nobody.
 //
 // `--dry-run` prints the plan and writes nothing, and prints the same text a run
 // that writes would print: the decision is the same code either way, so a dry run
