@@ -124,24 +124,27 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 		// The object that was streamed in is named by no row once its re-encoded
 		// frame is stored, so it goes now; the daily orphan sweep catches what this
 		// process could not remove itself, which is the gap between a blob write and
-		// a transaction.
+		// a transaction. This is the last thing the arrived bytes are good for: from
+		// here the only object this upload still owns is saved.key, the one the row
+		// below would name, so every refusal after this line removes that one and a
+		// refused upload leaves no byte of either object behind.
 		_ = s.storage.Delete(ctx, scope, key)
 	}
 	// Every byte is on disk, so there is finally something to open a
 	// transaction for — and the quota is measured inside it, under the lock.
 	tx, err := open(ctx)
 	if err != nil {
-		_ = s.storage.Delete(ctx, scope, key)
+		_ = s.storage.Delete(ctx, scope, saved.key)
 		return nil, err
 	}
 	if err := s.charge(ctx, tx, saved.size); err != nil {
-		_ = s.storage.Delete(ctx, scope, key)
+		_ = s.storage.Delete(ctx, scope, saved.key)
 		return nil, err
 	}
 
 	f, err := s.record(ctx, tx, up, saved)
 	if err != nil {
-		_ = s.storage.Delete(ctx, scope, key)
+		_ = s.storage.Delete(ctx, scope, saved.key)
 		return nil, err
 	}
 	return f, events.Publish(ctx, tx, contracts.EventUploaded, contracts.Uploaded{
