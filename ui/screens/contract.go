@@ -32,17 +32,6 @@ func declaredViews(r httpx.Resource) []screen.View {
 	return resource.ScreenViews(resolvedResource(r, Options{}))
 }
 
-// mountedOperations is the route table the adapter mounts, in the form the
-// resource itself carries its offered verbs in.
-func mountedOperations(r httpx.Resource) []httpx.CRUD {
-	words := screenOperations(r)
-	out := make([]httpx.CRUD, 0, len(words))
-	for _, word := range words {
-		out = append(out, httpx.CRUD(word))
-	}
-	return out
-}
-
 func describedCommand(r httpx.Resource, c httpx.Command, at string) resource.Command {
 	return resource.Command{Bindings: c.Bindings, Verb: c.Verb, Label: c.Summary, Description: c.Description,
 		Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,

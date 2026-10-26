@@ -387,15 +387,6 @@
           {
             "name": "field",
             "path": [
-              "assigneeId"
-            ],
-            "control": "entity-picker",
-            "editable": false,
-            "interactions": []
-          },
-          {
-            "name": "field",
-            "path": [
               "dueAt"
             ],
             "control": "datetime",
@@ -414,6 +405,15 @@
             "interactions": [
               "committed"
             ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "assigneeId"
+            ],
+            "control": "entity-picker",
+            "editable": false,
+            "interactions": []
           },
           {
             "name": "field",

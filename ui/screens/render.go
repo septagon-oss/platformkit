@@ -66,6 +66,17 @@ func writeAvailable(r httpx.Resource, verb httpx.CRUD) bool {
 	return false
 }
 
+// mountedOperations is that same route table in the form the resource carries its
+// offered verbs in, so a policy resolved from it is resolved from what answers.
+func mountedOperations(r httpx.Resource) []httpx.CRUD {
+	words := screenOperations(r)
+	out := make([]httpx.CRUD, 0, len(words))
+	for _, word := range words {
+		out = append(out, httpx.CRUD(word))
+	}
+	return out
+}
+
 // screenOperations keeps an explicit empty set distinct from the all-verbs default.
 func screenOperations(r httpx.Resource) []string {
 	out := make([]string, 0, 5)
@@ -90,6 +101,12 @@ func screenOperations(r httpx.Resource) []string {
 // what the renderer needs to build an action without knowing how paths are derived.
 func view(r httpx.Resource, ctx context.Context, at string, o Options) resource.Resource {
 	r.Commands = r.CommandsFor(ctx)
+	// A mounted screen is resolved against the routes this adapter mounts, not
+	// against everything the resource declares: a verb whose closure is unwired or
+	// whose guard is undeclared answers no page, so a form that asked for it could
+	// never be submitted and a door in front of it is a refusal with a button on it.
+	// An exported screen has no routes at all and keeps the declared reading.
+	r.Operations = mountedOperations(r)
 	v := resolvedResource(r, o)
 	v.Commands = commands(r, r.Commands, at)
 	return v
