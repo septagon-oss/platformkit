@@ -167,15 +167,16 @@ func (c deviceContract) resolvedPolicies(t *testing.T) []map[string]any {
 }
 
 // resolvedTestbed is one served resolved policy, re-read each time so a check below owns
-// the only difference between the shapes it asks about.
-func (c deviceContract) resolvedTestbed(t *testing.T) map[string]any {
+// the only difference between the shapes it asks about. With a path it answers an entry
+// that prints something above that member, so a list is not asked where it holds none.
+func (c deviceContract) resolvedTestbed(t *testing.T, path ...string) map[string]any {
 	t.Helper()
 	for _, policy := range c.resolvedPolicies(t) {
-		if len(wireMap(policy["identity"])) > 0 && len(wireSlice(policy["fields"])) > 0 {
+		if len(wireMap(policy["identity"])) > 0 && len(wireSlice(policy["fields"])) > 0 && len(resolvedHolders(policy, path)) > 0 {
 			return policy
 		}
 	}
-	t.Fatal("no served entry carries a resolved policy with an identity and a field to read through")
+	t.Fatalf("no served resolved policy carries an identity, a field and something above %v, so this case would say nothing", path)
 	return nil
 }
 
@@ -264,8 +265,8 @@ func resolvedMemberIsOptional(t *testing.T, contract deviceContract, path []stri
 		{name: "printed as null", admits: false},
 	}
 	for _, shape := range shapes {
-		policy := contract.resolvedTestbed(t)
-		for _, holder := range resolvedHolders(t, policy, path) {
+		policy := contract.resolvedTestbed(t, path...)
+		for _, holder := range resolvedHolders(policy, path) {
 			if shape.remove {
 				delete(holder, member)
 				continue
@@ -278,12 +279,12 @@ func resolvedMemberIsOptional(t *testing.T, contract deviceContract, path []stri
 	}
 }
 
-// resolvedHolders walks the path to one member and answers the objects that hold it, so
-// a member below a list is asked at every entry that prints it.
-func resolvedHolders(t *testing.T, policy map[string]any, path []string) []map[string]any {
-	t.Helper()
+// resolvedHolders walks the path to one member and answers the objects that hold it, so a
+// member below a list is asked at every entry that prints one. An empty path asks the
+// policy itself, and a body that prints nothing at the path answers none.
+func resolvedHolders(policy map[string]any, path []string) []map[string]any {
 	holders := []map[string]any{policy}
-	for _, step := range path[:len(path)-1] {
+	for _, step := range path[:max(len(path)-1, 0)] {
 		var next []map[string]any
 		for _, holder := range holders {
 			switch value := holder[step].(type) {
@@ -298,9 +299,6 @@ func resolvedHolders(t *testing.T, policy map[string]any, path []string) []map[s
 			}
 		}
 		holders = next
-	}
-	if len(holders) == 0 {
-		t.Fatalf("the served resolved policy holds nothing at %v, so this case would say nothing", path)
 	}
 	return holders
 }
