@@ -15,7 +15,7 @@ explains the boundaries; this page maps the packages and the rules the gates enf
 | [ui](ui.go) | `Compose`, `Sheet`, `Controllers`, `Assets`: what a shell serves. | design, ui/style, ui/components. |
 | [ui/forms](forms/README.md) | Portable entity forms without a router or a database. | kit/entity, ui/components, ui/components/examples. |
 | [ui/document](document/document.go) | Chrome, a plain Request, View, `Document`, `Render`, the recovery notices: an HTML document as values. | kit/locale, ui, ui/components/examples. |
-| [ui/resource](resource/resource.go) | List, detail and form screens rendered from an entity schema and plain rows. | kit/entity, kit/entity/display, ui/forms, ui/document. |
+| [ui/resource](resource/README.md) | List, detail and form screens rendered from resolved policy and plain rows. | kit/entity, kit/entity/display, kit/entity/present, ui/forms, ui/document. |
 | [ui/page](page/README.md) | The typed Request, `Serve`, `Render` into an `httpx.Page`, navigation, the locale seam; aliases the document types. | kit/httpx, ui/document. |
 | [ui/screens](screens/render.go) | The screens of an `httpx.Resource` behind `page.Serve` — up to the seven of a collection, fewer where its operation set withholds a verb, the two of a resource that is not one, and one POST per declared command — and the resource catalog; aliases the renderers. | kit/rest, ui/page, ui/resource. |
 | [ui/export](export/README.md) | Snapshots, DTCG tokens, proposals, the Storybook composition. | ui, ui/components/examples. |
@@ -47,7 +47,7 @@ and refuses growth beyond these recorded closures:
 - `ui/forms` reaches kit/entity, design, ui/css, ui/style, ui/icon,
   ui/components, ui/components/examples and gomponents, nothing else.
 - `ui/document` adds kit/locale and `ui` to that list; `ui/resource` adds
-  kit/entity/display, ui/forms and ui/document. Neither reaches kit/db,
+  kit/entity/display, kit/entity/present, ui/forms and ui/document. Neither reaches kit/db,
   net/http or a module: a document is values, and a screen is a schema plus
   the rows a caller read.
 - `ui/page` and `ui/screens` are the adapters and are gated at the adapter
@@ -170,9 +170,10 @@ were drawn here, so the cure is here too.
 
 ## Generated command controls
 
-Generated resource commands use outline buttons so the toolbar's Edit or New
-action remains the screen's filled action; each command retains its named native
-POST form and submit button.
+Generated resource commands follow the [resolved policy](resource/README.md):
+the primary command is filled, destructive commands use danger tone, and ordinary
+commands use outline buttons. New/Edit become secondary when a primary command
+is present. Each command retains its named native POST form and submit button.
 
 Each argument has a deterministic DOM ID scoped to its command action (including
 the record path), locale and field name. In `resource.commandFormFor`, the format
