@@ -253,6 +253,12 @@ markup and computed style alone, since a `file://` document cannot fetch the she
 it links. `make check` therefore judges the port; the gate runs when a caller names
 where its files are.
 
+`go test ./ui` holds this paragraph to the tree: a door named here must still be read
+out of the environment by a test or journey that starts a process in the same file, and a
+door naming where the gate lives must hand that process the value the environment gave it,
+not a path written out by hand in its place. Both checks read one file at a time, so a
+change that moves the spawn into a helper of its own moves the read along with it.
+
 **Reused** — the port, `shell_design_floor_test.go`'s rendered run of the reference
 app's five pages, the loop's gate behind those three variables, and the journey that
 already judges eight pages by it. **Added** — the
