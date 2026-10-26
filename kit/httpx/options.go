@@ -274,8 +274,8 @@ type WriteLimiter interface {
 // A request body with a schema is huma's business: it decodes one and it bounds
 // one, at op.MaxBodyBytes, which is a megabyte unless a route says otherwise.
 // A route that reads the request itself has no such bound, and there is exactly
-// one of those — the file upload. A review trickled a body into it at a byte a
-// second and nothing anywhere said stop.
+// one of those — the file upload, whose body is read off the connection rather
+// than decoded, so a caller that sends slowly is stopped by nothing at all.
 //
 // So every request gets an http.MaxBytesReader before it reaches a handler: a
 // megabyte, or MaxUpload plus an envelope for the route that streams. The

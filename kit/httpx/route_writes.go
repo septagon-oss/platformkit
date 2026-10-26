@@ -1,27 +1,19 @@
 package httpx
 
-// route_writes.go bounds what an authenticated caller may submit, on the
-// operations that say their writes are counted: per person and per tenant, in a
-// window, refused with 429 and a Retry-After.
+// route_writes.go bounds what an authenticated caller may submit, on the operations that say
+// their writes are counted: per person and per tenant, in a window, refused with 429 and a
+// Retry-After.
 //
-// It is a sibling of public_writes.go and not a generalisation of it. The
-// anonymous arm counts an address because an anonymous visitor has nothing else
-// to count, it runs ahead of the transaction because it must not need one, and it
-// fails open because a public form that stops working over a counters hiccup is a
-// broken form. An authenticated route has a person, a permission and a body that
-// has not been read yet, and a key naming an address would count the office proxy
-// rather than the caller. Both arms use the same counting, both answer with
-// Retry-After, and neither one's reasoning is the other's.
+// It is a sibling of public_writes.go and not a generalisation of it. The anonymous arm
+// counts an address because an anonymous visitor has nothing else to count, and runs ahead of
+// the transaction because it must not need one; an authenticated route has a person, a
+// permission and a body not yet read, and a key naming an address would count the office
+// proxy rather than the caller. Both count the same way and both answer with Retry-After.
 //
-// Two counters per operation, evaluated in the order declared and stopping at the
-// first spent one, so a caller already over their own allowance does not also
-// spend the tenant's shared bucket. The actor entry is skipped when the request
-// carries no principal: an anonymous write is the other arm's subject, and a
-// counter keyed on "nobody" would gather every stranger into one bucket.
-//
-// A limiter that cannot answer lets the request through and logs, for the reason
-// the anonymous arm gives verbatim: the honest failure mode of a limit is the
-// traffic it lets through, not the refusals it invents.
+// Two counters per operation, evaluated in the order declared and stopping at the first spent
+// one, so a caller already over their own allowance does not also spend the tenant's bucket;
+// the actor entry is skipped when the request carries no principal. A limiter that cannot
+// answer lets the request through and logs, for the reason the anonymous arm gives.
 
 import (
 	"context"
