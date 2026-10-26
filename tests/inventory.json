@@ -45828,6 +45828,25 @@
   },
   {
    "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/auth/internal/two_refused_handoffs_leave_two_records_that_say_the_same_word_test.go",
+   "id": "modules/auth/internal/two_refused_handoffs_leave_two_records_that_say_the_same_word_test.go#TestTwoRefusedHandoffsLeaveTwoRecordsThatSayTheSameWord",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTwoRefusedHandoffsLeaveTwoRecordsThatSayTheSameWord",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
    "assertions_in_file": 20,
    "evidence": "reaches nothing its sibling first_half_test.go does not reach",
    "file": "modules/auth/internal/two_tabs_answering_one_code_test.go",
@@ -83518,7 +83537,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2261,
+  "files": 2262,
   "forge_runs": [
    408,
    413,
@@ -83552,7 +83571,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3611,
+   "behaviour": 3612,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83571,9 +83590,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4233,
+  "rows": 4234,
   "tiers": {
-   "merge": 2610,
+   "merge": 2611,
    "nightly": 110,
    "push": 1513
   },
@@ -83581,13 +83600,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2016,
+   "keep": 2017,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3847,
+   "keep": 3848,
    "keep-rewrite": 170,
    "merge": 216
   }
