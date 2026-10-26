@@ -133,3 +133,11 @@ and caches are all empty is described as readily as a full one.
 What cannot be promised is stated rather than papered over: a build function is
 the module's own code and this package cannot bound it, so this is a call into
 your own composition, not an untrusted-code sandbox.
+
+## Reused, Added, Made reusable
+
+**Reused** — the ADRs this page cites rather than restates: ADR 0022 for what pkit
+is, and kit/app for the engine. **Added** — this file, because pkit held no `.md`
+at all and the engine's rules had nowhere to live except a package doc, which is
+how they reached forty lines. **Made reusable** — a home for engine prose that a
+later round can put rules into instead of growing a doc comment.

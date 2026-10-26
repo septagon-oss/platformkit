@@ -154,27 +154,16 @@ const table = "platformkit_idempotency"
 const effectTable = "platformkit_command_effect"
 
 const (
-	// effectLockTakeSQL and effectLockTrySQL are the two ends of one advisory lock,
-	// named after the effect row it guards. The transaction that marks that row takes
-	// it before it writes (Mark), and the attempt that would read the mark's absence
-	// tries for it first (resolveEffect). The lock is what turns an absent mark into
-	// evidence.
+	// The two ends of one key share one advisory lock: the attempt about to write
+	// takes it, and so does the attempt that arrives while it is held. Postgres
+	// releases a transaction-level advisory lock only once its commit is visible,
+	// so the attempt that gets the lock is looking at a database the first write
+	// either reached or did not — which is what turns an absent mark into evidence
+	// rather than a race. A plain read sees nothing and does not wait.
 	//
-	// A COMMIT still executing holds the lock taken inside it: Postgres releases a
-	// transaction-level advisory lock at the end of the transaction, after the commit
-	// record is written and after that commit became visible to a new snapshot — the
-	// same ordering this repository relies on wherever it serializes with an advisory
-	// lock. So the attempt that gets the lock is looking at a database the write has
-	// either reached or not. It is the only thing that can say so: a plain read of the
-	// row sees the version before an uncommitted mark and does not wait for it.
-	//
-	// The lock does not cover a transaction that has not reached Mark yet — a command
-	// still running past its lease. The fence does: such a transaction finds the row
-	// re-named by the takeover and is refused at Mark (see Store.Mark).
-	//
-	// hashtextextended over 64 bits, as modules/user's administration lock does: two
-	// unrelated records colliding in that space cost one refusal that one more press
-	// clears, never a second run of a command.
+	// The lock covers nothing that has not reached Store.Mark yet; the lease fence
+	// answers that one. The key is hashtextextended over 64 bits, and a collision
+	// costs one refusal, never a second run of the write.
 	effectLockTakeSQL = "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))"
 	effectLockTrySQL  = "SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))"
 )
@@ -195,15 +184,10 @@ const (
 	// about to be refused, so a database that has stopped answering must cost the
 	// caller this much and an error, never a request that never ends.
 	//
-	// The number is five seconds because the two it replaced was wrong in a way
-	// that reads as a store outage. `make check` of 2026-10-08 ran 90 packages that
-	// all create a database at once and measured statements at 1.7s and 2.5s; a
-	// Claim then came back `idempotency: claim: timeout: context deadline exceeded`
-	// on a cluster that was slow and perfectly healthy, and an unreadable record is
-	// a write this package must refuse (503) rather than risk duplicating. That
-	// bound was refusing real writes because other packages were migrating. The
-	// stall it exists to catch is still bounded; see kit/limit/limit.go's budget, which
-	// carries the same measurement for the same reason.
+	// Five seconds, not two: a claim that reads a record this package must refuse
+	// rather than duplicate can cost a slow-but-healthy database its whole budget
+	// and come back as an outage, so the bound is a stall detector and not a
+	// queueing deadline. See kit/limit/limit.go's budget for the same reasoning.
 	budget = 5 * time.Second
 
 	// lease is how long a claim may be held without an answer. It is the window
