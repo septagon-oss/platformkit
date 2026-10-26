@@ -79,7 +79,7 @@ func sayLockout(ctx context.Context, d contracts.Decision, refused bool) {
 	})
 }
 
-func handleLogin(svc contracts.Service, cookies Cookies) func(context.Context, *loginInput) (*sessionOutput, error) {
+func handleLogin(svc contracts.PasswordLogin, cookies Cookies) func(context.Context, *loginInput) (*sessionOutput, error) {
 	return func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
 		// The verdict first, the sleep second, the transaction third, and that
 		// order is the whole point of this being three statements.
@@ -132,7 +132,7 @@ func handleLogin(svc contracts.Service, cookies Cookies) func(context.Context, *
 	}
 }
 
-func handleLogout(svc contracts.Service, cookies Cookies) func(context.Context, *struct{}) (*clearOutput, error) {
+func handleLogout(svc contracts.SessionEnder, cookies Cookies) func(context.Context, *struct{}) (*clearOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*clearOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -149,7 +149,7 @@ func handleLogout(svc contracts.Service, cookies Cookies) func(context.Context, 
 	}
 }
 
-func handleIdentity(svc contracts.Service) func(context.Context, *struct{}) (*identityOutput, error) {
+func handleIdentity(svc contracts.IdentityReader) func(context.Context, *struct{}) (*identityOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*identityOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -176,7 +176,7 @@ func handleIdentity(svc contracts.Service) func(context.Context, *struct{}) (*id
 	}
 }
 
-func handleChangePassword(svc contracts.Service) func(context.Context, *changeInput) (*doneOutput, error) {
+func handleChangePassword(svc contracts.PasswordChanger) func(context.Context, *changeInput) (*doneOutput, error) {
 	return func(ctx context.Context, in *changeInput) (*doneOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -197,7 +197,7 @@ func handleChangePassword(svc contracts.Service) func(context.Context, *changeIn
 	}
 }
 
-func handleForgotPassword(svc contracts.Service) func(context.Context, *forgotInput) (*doneOutput, error) {
+func handleForgotPassword(svc contracts.ResetRequester) func(context.Context, *forgotInput) (*doneOutput, error) {
 	return func(ctx context.Context, in *forgotInput) (*doneOutput, error) {
 		// The cap is on the address making the request and is checked before
 		// the transaction, for the reason the login delay is: a public route
@@ -221,7 +221,7 @@ func handleForgotPassword(svc contracts.Service) func(context.Context, *forgotIn
 	}
 }
 
-func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Context, *resetInput) (*clearOutput, error) {
+func handleResetPassword(svc contracts.PasswordResetter, cookies Cookies) func(context.Context, *resetInput) (*clearOutput, error) {
 	return func(ctx context.Context, in *resetInput) (*clearOutput, error) {
 		// Asking for a link is capped and so is spending one, before the
 		// transaction and for the same reason: a public route that a stranger
@@ -274,7 +274,7 @@ func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Co
 // permission and no argument: who is asking comes from the principal the kernel
 // resolved, and the sessions that come back are that person's own — which is a
 // row-level-security fact, not a filter written here.
-func handleListSessions(svc contracts.Service) func(context.Context, *struct{}) (*sessionsOutput, error) {
+func handleListSessions(svc contracts.SessionReader) func(context.Context, *struct{}) (*sessionsOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*sessionsOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -299,7 +299,7 @@ func handleListSessions(svc contracts.Service) func(context.Context, *struct{}) 
 // sessions are the only ones the command can see, so a ref copied from another
 // person's list is a 404 here and not a 403 — the refusal does not confirm that
 // the ref was somebody's.
-func handleRevokeSession(svc contracts.Service) func(context.Context, *revokeSessionInput) (*doneOutput, error) {
+func handleRevokeSession(svc contracts.SessionRevoker) func(context.Context, *revokeSessionInput) (*doneOutput, error) {
 	return func(ctx context.Context, in *revokeSessionInput) (*doneOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -319,7 +319,7 @@ func handleRevokeSession(svc contracts.Service) func(context.Context, *revokeSes
 // handleRevokeAllSessions ends everything and clears the cookie: the caller
 // asked for every machine out, and a browser left holding a session that has
 // just been deleted is a page that 403s instead of signing in again.
-func handleRevokeAllSessions(svc contracts.Service, cookies Cookies) func(context.Context, *struct{}) (*clearOutput, error) {
+func handleRevokeAllSessions(svc contracts.AllSessionsRevoker, cookies Cookies) func(context.Context, *struct{}) (*clearOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*clearOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -338,7 +338,7 @@ func handleRevokeAllSessions(svc contracts.Service, cookies Cookies) func(contex
 	}
 }
 
-func handleListRoles(svc contracts.Service) func(context.Context, *struct{}) (*rolesOutput, error) {
+func handleListRoles(svc contracts.RoleReader) func(context.Context, *struct{}) (*rolesOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*rolesOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -354,7 +354,7 @@ func handleListRoles(svc contracts.Service) func(context.Context, *struct{}) (*r
 	}
 }
 
-func handleSetRole(svc contracts.Service, surfaces httpx.Surfaces) func(context.Context, *roleInput) (*roleOutput, error) {
+func handleSetRole(svc contracts.RoleWriter, surfaces httpx.Surfaces) func(context.Context, *roleInput) (*roleOutput, error) {
 	return func(ctx context.Context, in *roleInput) (*roleOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {

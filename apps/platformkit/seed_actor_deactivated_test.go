@@ -37,7 +37,7 @@ func TestASeedRunRefusesToWriteAsADeactivatedPerson(t *testing.T) {
 
 	const goneEmail, stayingEmail = "gone@gone-actor.localhost", "staying@gone-actor.localhost"
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		created, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "gone-actor", Name: "Gone", Host: "gone-actor.localhost",
 		})
 		if err != nil {
@@ -47,15 +47,15 @@ func TestASeedRunRefusesToWriteAsADeactivatedPerson(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if _, err := c.users.Provision(ctx, system, created.ID, stayingEmail, "Staying", "a long credential of my own", roles); err != nil {
+		if _, err := c.testUsers().Provision(ctx, system, created.ID, stayingEmail, "Staying", "a long credential of my own", roles); err != nil {
 			return err
 		}
-		gone, err := c.users.Provision(ctx, system, created.ID, goneEmail, "Gone", "a long credential of my own", roles)
+		gone, err := c.testUsers().Provision(ctx, system, created.ID, goneEmail, "Gone", "a long credential of my own", roles)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, created.Tenancy(), func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			person, err := c.users.Deactivate(ctx, tx, gone.ID)
+			person, err := c.testUsers().Deactivate(ctx, tx, gone.ID)
 			if err != nil {
 				return err
 			}
@@ -64,14 +64,14 @@ func TestASeedRunRefusesToWriteAsADeactivatedPerson(t *testing.T) {
 			}
 			// The person is still there, still holding the roles, and still the
 			// address the run would name. What has gone is the right to act.
-			if _, err := seedActor(ctx, c.users, tx, goneEmail); err == nil {
+			if _, err := seedActor(ctx, c.testUsers(), tx, goneEmail); err == nil {
 				t.Errorf("seedActor named a deactivated person as this run's author; want the run refused")
 			} else if !strings.Contains(err.Error(), "active person") {
 				t.Errorf("seedActor refused with %q; want it to say the person is not active", err)
 			}
 			// The other person, active and holding the same roles, is still an
 			// actor: this is a rule about a status and not a broken lookup.
-			if _, err := seedActor(ctx, c.users, tx, stayingEmail); err != nil {
+			if _, err := seedActor(ctx, c.testUsers(), tx, stayingEmail); err != nil {
 				t.Errorf("seedActor of the active person = %v; want a principal", err)
 			}
 			return nil

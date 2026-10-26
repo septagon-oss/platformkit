@@ -57,7 +57,7 @@ func TestALocaleSetCannotReportCompleteSuccessWhenInvalidationFails(t *testing.T
 	store.refused.Store(true)
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 		Caches: app.Caches{Valkey: func(context.Context, config.Cache) (cache.Cache, error) { return store, nil }},
 	})

@@ -14,6 +14,12 @@ values in `product`.
 
 ## Composition
 
+Identity authorization is provided by `auth.Grants` independently of session
+construction. User builds next, then Auth; the resolver checks these typed edges
+before opening resources. App commands retain `Lister`, `HostLookup`, provider
+readers, `Bootstrapper`, `LocaleSetter`, `SystemProvisioner`, `AddressLookup`,
+`SeedWriter`, `PermissionReader` and `RoleRepairer` outputs from the plan.
+
 The whole of it is `pkit.NewApp("platformkit")` and the words after it. `Use`
 names every module this application is made of, in the order the composition is
 built in, and each of them wires itself: an edge between two modules is a contract
@@ -23,7 +29,7 @@ first in the list and needs nobody — it is what this installation decides and 
 module may (`file.Local(dir)`, the rego policy, the flag that gates a settings
 write, the plan feature the trail is sold under, the two addresses the public site
 links, the sign-in form the shell posts to, the languages a locale may be set to,
-the roles a new tenant is seeded with, and the empty grant-check holder). `access`
+the roles a new tenant is seeded with). `access`
 is second to last because it is the first thing here that can name a person, a
 notice, an authorizer and a site at once: the reach a refusal's ask has here, and
 the one subject this product puts under change control. `media` sits immediately
@@ -32,7 +38,7 @@ the files and the chrome it is drawn in is this installation's. `admin` declares
 `After(Everything)` and is last, because it generates a screen for every resource
 the modules above it mounted.
 
-**Reused** — `auth.Module`, `user.Module`, `tenant.Module`,
+**Reused** — `auth.Grants`, `auth.Module`, `user.Module`, `tenant.Module`,
 `notification.Module`, `file.Module`, `task.Module`, `billing.Module`,
 `content.Module`, `site.Module`, `web.Module`, `audit.Module`,
 `change.Module` and `admin.Module`, each of which builds its own manifest from

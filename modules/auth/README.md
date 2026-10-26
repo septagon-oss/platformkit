@@ -1,5 +1,26 @@
 # Auth module
 
+## Composition
+
+Compose `auth.Grants` before `user.Module` and `auth.Module` in the application's
+`Use` list. The resolver orders the independent `authgrants` provider before both
+consumers. It publishes `contracts.GrantAuthorizer` and `contracts.PermissionReader`,
+`usercontracts.Granting` and `usercontracts.Administration`; it opens no resources
+and owns no migrations. The role tables remain in Auth's migration set.
+
+**Reused** — `kit/tenancy`, the existing role queries, `usercontracts.CheckedAdministration`,
+request transactions and pkit's typed declarations carry the policy and composition.
+**Added** — [the grant decision](contracts/grants.go) separates permission decisions
+from session construction, which previously prevented User from constructing independently.
+**Made reusable** — provider-owned [capabilities](contracts/capabilities.go), a shared
+fake/SQL grant suite and `RepairSeededRolesWith` let consumers request only their operations.
+
+`New` accepts `Authorization` and `Permissions` together; omitting both creates the
+same independent policy locally for compatible callers, while a partial pair panics.
+The policy reads the explicit tenant transaction, honors a non-nil credential ceiling,
+and requires explicit permissions for operator grants. `Service` and `Auth` remain
+deprecated aggregates. Registration providers request only their chosen User capability.
+
 `modules/auth` is signing in: sessions and passwords, single sign-on through
 each tenant's own OpenID Connect or SAML provider (the installation may name one
 of its own over OIDC, and a tenant's row names another of either kind), the roles

@@ -16,7 +16,7 @@ decided that shape; `migrations/000046_subject_requests.up.sql` is its bookkeepi
 
 * **Reused**: `kit/personaldata` (the contract, the `Subject`, the scrub every owner
   shares), `pkit.Needs[[]personaldata.Part]` and `pkit.All` for the collection of
-  contributions, `usercontracts.Service` for the one read across the boundary,
+  contributions, `usercontracts.RetainedLookup` for the one read across the boundary,
   `kit/events` for the outbox write, `kit/crud`'s refusals and `crud.Classify`,
   `kit/jobs.PerTenant` for the walk, `file.Service` for a bundle's bytes and its
   retention hold, `notification.Service` for the person's inbox.
@@ -34,7 +34,17 @@ decided that shape; `migrations/000046_subject_requests.up.sql` is its bookkeepi
 
 ## Composition
 
-`pkit.Needs[[]personaldata.Part]()`, `pkit.Needs[usercontracts.Service]()`,
+`Deps.Subjects` takes a `usercontracts.RetainedLookup` and takes precedence over
+deprecated `Deps.People`. Both export and erasure retain access to soft-deleted people.
+
+**Reused** — User's retained-row lookup and the existing personal-data contributions
+continue to supply the person's export and erasure.
+**Added** — `Subjects` is a compatible narrow input because replacing the public
+`People` field's type would break existing callers.
+**Made reusable** — Subject constructs from a single retained-person read without
+receiving account mutation capabilities.
+
+`pkit.Needs[[]personaldata.Part]()`, `pkit.Needs[usercontracts.RetainedLookup]()`,
 `pkit.Needs[filecontracts.Service]()`, `pkit.Needs[notificationcontracts.Service]()`,
 `pkit.Needs[jobs.TenantLister]()`, `pkit.Provides[subjectcontracts.Service]()`. The
 resolver builds this module after every contributor, which is the ordering that is
