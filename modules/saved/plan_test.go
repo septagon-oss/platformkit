@@ -131,6 +131,9 @@ func TestCompositionRefusesADeclarationItCouldNotHonour(t *testing.T) {
 		{[]contracts.Savable{{Module: "example", Kind: "thing",
 			Words:  contracts.Words{Save: strings.Repeat("word ", 60)},
 			Source: &savedtest.Source{}}}, "word"},
+		{[]contracts.Savable{{Module: "example", Kind: "thing",
+			Words:  contracts.Words{Saved: " \t"},
+			Source: &savedtest.Source{}}}, "word"},
 	} {
 		uses := []*pkit.Module{authority("desk_fixture"), saved.Module}
 		for i, one := range tc.named {

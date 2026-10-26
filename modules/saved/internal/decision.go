@@ -9,22 +9,20 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	picture "github.com/septagon-oss/platformkit/modules/picture/contracts"
 	"github.com/septagon-oss/platformkit/modules/saved/contracts"
 )
 
-var slug = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
-
 // ValidRef checks structural identity without changing a source's canonical key.
 func ValidRef(ref contracts.Ref) error {
-	if !slug.MatchString(ref.Module) || !slug.MatchString(ref.Kind) || !text(ref.Key, 512) {
+	if !entity.ValidSavingSlug(ref.Module) || !entity.ValidSavingSlug(ref.Kind) || !text(ref.Key, 512) {
 		return contracts.ErrInvalid
 	}
 	return nil
@@ -62,16 +60,16 @@ func ValidDeclarations(savables []contracts.Savable) error {
 	seen := map[string]bool{}
 	for _, declared := range savables {
 		pair := declared.Module + "|" + declared.Kind
-		if !slug.MatchString(declared.Module) || !slug.MatchString(declared.Kind) {
+		if !entity.ValidSavingSlug(declared.Module) || !entity.ValidSavingSlug(declared.Kind) {
 			return fmt.Errorf("%w: savable %q/%q is not a slug pair", contracts.ErrInvalid, declared.Module, declared.Kind)
 		}
 		if declared.Source == nil {
 			return fmt.Errorf("%w: savable %q/%q names no source", contracts.ErrInvalid, declared.Module, declared.Kind)
 		}
 		for _, word := range []string{declared.Words.Save, declared.Words.Saved, declared.Words.Remove, declared.Words.ListTitle} {
-			// An empty word is not a bad one: it selects the fallback the composition's
-			// own catalogue answers with.
-			if word != "" && !text(word, 256) {
+			// An empty word is not a bad one: it selects the fallback the
+			// composition's own catalogue answers with.
+			if !entity.ValidSavingWord(word) {
 				return fmt.Errorf("%w: savable %q/%q declares a word no screen can print", contracts.ErrInvalid, declared.Module, declared.Kind)
 			}
 		}
@@ -150,7 +148,9 @@ func DecideUnsave(prior *contracts.Item, expected int64) (bool, error) {
 
 // PageBounds refuses unsupported limits and filters rather than silently widening.
 func PageBounds(q contracts.Query) (int, error) {
-	if q.Offset < 0 || q.Limit < 0 || q.Limit > 100 || (q.Module != "" && !slug.MatchString(q.Module)) || (q.Kind != "" && !slug.MatchString(q.Kind)) {
+	if q.Offset < 0 || q.Limit < 0 || q.Limit > 100 ||
+		(q.Module != "" && !entity.ValidSavingSlug(q.Module)) ||
+		(q.Kind != "" && !entity.ValidSavingSlug(q.Kind)) {
 		return 0, contracts.ErrInvalid
 	}
 	if q.Limit == 0 {

@@ -35,12 +35,18 @@ func TestSavingValidAcceptsASlugPairNamingTwoFieldsAndFourWords(t *testing.T) {
 func TestSavingValidRefusesTheDeclarationNoScreenCouldDraw(t *testing.T) {
 	t.Parallel()
 	tooLong := strings.Repeat("a", 257)
+	// The bound counts bytes of UTF-8, not runes: 200 two-byte characters are 400
+	// bytes, and no card has that much line.
+	wideLong := strings.Repeat("é", 200)
 	for name, edit := range map[string]func(*entity.SavingHints){
 		"module is not a slug":   func(h *entity.SavingHints) { h.Module = "My Looks" },
 		"kind is not a slug":     func(h *entity.SavingHints) { h.Kind = "" },
 		"key field is blank":     func(h *entity.SavingHints) { h.KeyField = "   " },
 		"version field is blank": func(h *entity.SavingHints) { h.VersionField = "" },
 		"a word is over a line":  func(h *entity.SavingHints) { h.Words.Save = tooLong },
+		"a word is over that many bytes of accented characters": func(h *entity.SavingHints) {
+			h.Words.Save = wideLong
+		},
 		"a word carries a control character": func(h *entity.SavingHints) {
 			h.Words.ListTitle = "My\nlookbook"
 		},

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -214,9 +215,24 @@ type SavingHints struct {
 // contribution that answers it cannot drift apart.
 var savingSlug = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
 
-// ValidSavingSlug reports whether s is one lower-case slug. The empty string is
-// invalid: a pair is named by an author who meant to name one.
+// ValidSavingSlug reports whether s is one lower-case slug of at most 40
+// characters. The empty string is invalid: a pair is named by an author who meant
+// to name one. The saving service asks this of the pair a source contributes to
+// it, so the declaration in a catalogue and the contribution behind it are held
+// to one grammar rather than to two that happen to agree today.
 func ValidSavingSlug(s string) bool { return savingSlug.MatchString(s) }
+
+// ValidSavingWord reports whether word can be printed as one declared saving
+// word: at most 256 UTF-8 bytes of valid UTF-8, no control character, and not
+// nothing but spaces. The empty word is valid, because an empty word selects the
+// fallback the resolver answers with rather than a word the author got wrong; the
+// bound says only what a printed word may never be. The saving service applies it
+// to the words a source contributes, so a declaration the mount gate accepts is
+// never a contribution the service refuses over the same word.
+func ValidSavingWord(word string) bool {
+	return word == "" || (len(word) <= 256 && utf8.ValidString(word) &&
+		strings.TrimSpace(word) != "" && !strings.ContainsFunc(word, unicode.IsControl))
+}
 
 // SavingValid asks the shape questions of a declaration: a slug pair, the two
 // fields it names, and four words a screen can print. It is the whole bound a
@@ -234,13 +250,7 @@ func SavingValid(h *SavingHints) error {
 		return errors.New("entity: savable " + h.Module + "/" + h.Kind + " names no key or version field")
 	}
 	for _, word := range []string{h.Words.Save, h.Words.Saved, h.Words.Remove, h.Words.ListTitle} {
-		// An empty word is not a bad one: it selects the fallback. A word with a
-		// control character in it, or longer than a card's line, is.
-		if word == "" {
-			continue
-		}
-		if !utf8.ValidString(word) || utf8.RuneCountInString(word) > 256 || strings.TrimSpace(word) != word ||
-			strings.IndexFunc(word, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		if !ValidSavingWord(word) {
 			return errors.New("entity: savable " + h.Module + "/" + h.Kind + " declares a word no screen can print")
 		}
 	}
