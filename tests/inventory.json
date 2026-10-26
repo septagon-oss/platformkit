@@ -33824,6 +33824,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/drawing_floor_refused_at_every_writing_door_test.go",
+   "id": "kit/rest/drawing_floor_refused_at_every_writing_door_test.go#TestEveryDrawingDoorRefusesTheFloorOfTheSquare",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryDrawingDoorRefusesTheFloorOfTheSquare",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/drawing_refusal_names_the_limit_it_broke_test.go",
    "id": "kit/rest/drawing_refusal_names_the_limit_it_broke_test.go#TestEveryDrawingDoorNamesTheLimitItRefused",
    "kind": "go",
@@ -86492,7 +86511,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2354,
+  "files": 2355,
   "forge_runs": [
    408,
    413,
@@ -86526,7 +86545,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3762,
+   "behaviour": 3763,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86545,9 +86564,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4388,
+  "rows": 4389,
   "tiers": {
-   "merge": 2689,
+   "merge": 2690,
    "nightly": 110,
    "push": 1589
   },
@@ -86555,13 +86574,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2109,
+   "keep": 2110,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4002,
+   "keep": 4003,
    "keep-rewrite": 170,
    "merge": 216
   }
