@@ -1,0 +1,142 @@
+{
+    "expected": {
+        "page": {
+            "list": {
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "list",
+                "ref": {
+                    "id": "",
+                    "resource": "m/note"
+                },
+                "table": {
+                    "counted": true,
+                    "rows": [
+                        {
+                            "cells": [
+                                {
+                                    "elem": "",
+                                    "field": "title",
+                                    "text": "Old",
+                                    "tone": "",
+                                    "value": "Old",
+                                    "valueKind": "string"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "status",
+                                    "text": "archived",
+                                    "tone": "neutral",
+                                    "value": "archived",
+                                    "valueKind": "string"
+                                }
+                            ],
+                            "id": "",
+                            "title": "Old"
+                        }
+                    ],
+                    "total": 1,
+                    "window": {
+                        "limit": 50,
+                        "offset": 0
+                    }
+                },
+                "title": "notes",
+                "zone": "UTC"
+            },
+            "record": {
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "record",
+                "ref": {
+                    "id": "",
+                    "resource": "m/note"
+                },
+                "sections": [
+                    {
+                        "fields": [
+                            {
+                                "elem": "",
+                                "name": "status",
+                                "text": "archived",
+                                "tone": "neutral",
+                                "value": "archived",
+                                "valueKind": "string"
+                            }
+                        ],
+                        "key": "overview"
+                    }
+                ],
+                "title": "Old",
+                "zone": "UTC"
+            }
+        }
+    },
+    "input": {
+        "hints": {
+            "PrimaryField": "title",
+            "Singular": "note",
+            "StatusField": "status"
+        },
+        "language": "en",
+        "rows": [
+            {
+                "status": "archived",
+                "title": "Old"
+            }
+        ],
+        "schema": {
+            "entity": "note",
+            "fields": [
+                {
+                    "name": "title",
+                    "type": "string"
+                },
+                {
+                    "enum": [
+                        "open",
+                        "done"
+                    ],
+                    "name": "status",
+                    "presentation": {
+                        "enumLabels": {
+                            "open": "Open now"
+                        },
+                        "enumTones": {
+                            "done": "warning",
+                            "open": "success"
+                        }
+                    },
+                    "type": "string"
+                }
+            ],
+            "module": "m",
+            "path": "/api/v1/m/note"
+        },
+        "state": [
+            {
+                "home": "Workspace",
+                "kind": "record",
+                "name": "record",
+                "now": "2026-11-03T09:00:00Z"
+            },
+            {
+                "counted": true,
+                "home": "Workspace",
+                "kind": "list",
+                "name": "list",
+                "now": "2026-11-03T09:00:00Z",
+                "total": 1,
+                "window": {
+                    "limit": 50,
+                    "offset": 0
+                }
+            }
+        ]
+    },
+    "name": "undeclared-enum-value",
+    "provenance": {
+        "author": "platform worker, unreviewed",
+        "date": "2026-10-26",
+        "expectedHash": "sha256:513ebe5c889c70a060a81aececa3b67dca4ba9e23177f6368547ff8e8f7ca205",
+        "inputHash": "sha256:641985cf1a540f7f2ac1dcdc6f9af9f09bbcda1e0bbd09c2a3ee47aa3447acfe"
+    }
+}

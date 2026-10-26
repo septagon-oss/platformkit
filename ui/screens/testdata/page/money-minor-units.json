@@ -1,0 +1,261 @@
+{
+    "expected": {
+        "page": {
+            "form-update": {
+                "builtAt": "2026-11-03T09:00:00Z",
+                "form": {
+                    "controls": [
+                        {
+                            "control": "number",
+                            "elem": "",
+                            "name": "total",
+                            "value": {
+                                "currency": "EUR",
+                                "minorUnits": "-50",
+                                "scale": 2
+                            },
+                            "valueKind": "money"
+                        },
+                        {
+                            "control": "number",
+                            "elem": "",
+                            "name": "debt",
+                            "value": {
+                                "currency": "EUR",
+                                "minorUnits": "-9007199254740993",
+                                "scale": 2
+                            },
+                            "valueKind": "money"
+                        },
+                        {
+                            "control": "number",
+                            "elem": "",
+                            "name": "yen",
+                            "value": {
+                                "currency": "JPY",
+                                "minorUnits": "1200",
+                                "scale": 0
+                            },
+                            "valueKind": "money"
+                        },
+                        {
+                            "control": "text",
+                            "elem": "",
+                            "name": "currency",
+                            "value": "EUR",
+                            "valueKind": "string"
+                        },
+                        {
+                            "control": "text",
+                            "elem": "",
+                            "name": "yencurrency",
+                            "value": "JPY",
+                            "valueKind": "string"
+                        },
+                        {
+                            "control": "number",
+                            "elem": "",
+                            "name": "stray",
+                            "value": {
+                                "currency": "",
+                                "minorUnits": "70",
+                                "scale": 2
+                            },
+                            "valueKind": "money"
+                        }
+                    ],
+                    "create": false,
+                    "expectedRevision": 0,
+                    "title": "Edit",
+                    "violations": []
+                },
+                "kind": "form",
+                "ref": {
+                    "id": "",
+                    "resource": "m/order"
+                },
+                "title": "Edit",
+                "zone": "UTC"
+            },
+            "record": {
+                "actions": [
+                    {
+                        "inputs": [],
+                        "kind": "update",
+                        "scope": "record"
+                    },
+                    {
+                        "inputs": [],
+                        "kind": "delete",
+                        "scope": "record"
+                    }
+                ],
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "record",
+                "ref": {
+                    "id": "",
+                    "resource": "m/order"
+                },
+                "sections": [
+                    {
+                        "fields": [
+                            {
+                                "elem": "",
+                                "name": "total",
+                                "text": "-50",
+                                "tone": "",
+                                "value": {
+                                    "currency": "EUR",
+                                    "minorUnits": "-50",
+                                    "scale": 2
+                                },
+                                "valueKind": "money"
+                            },
+                            {
+                                "elem": "",
+                                "name": "debt",
+                                "text": "-9007199254740993",
+                                "tone": "",
+                                "value": {
+                                    "currency": "EUR",
+                                    "minorUnits": "-9007199254740993",
+                                    "scale": 2
+                                },
+                                "valueKind": "money"
+                            },
+                            {
+                                "elem": "",
+                                "name": "yen",
+                                "text": "1200",
+                                "tone": "",
+                                "value": {
+                                    "currency": "JPY",
+                                    "minorUnits": "1200",
+                                    "scale": 0
+                                },
+                                "valueKind": "money"
+                            },
+                            {
+                                "elem": "",
+                                "name": "yencurrency",
+                                "text": "JPY",
+                                "tone": "",
+                                "value": "JPY",
+                                "valueKind": "string"
+                            },
+                            {
+                                "elem": "",
+                                "name": "stray",
+                                "text": "70",
+                                "tone": "",
+                                "value": {
+                                    "currency": "",
+                                    "minorUnits": "70",
+                                    "scale": 2
+                                },
+                                "valueKind": "money"
+                            }
+                        ],
+                        "key": "information"
+                    }
+                ],
+                "title": "EUR",
+                "zone": "UTC"
+            }
+        }
+    },
+    "input": {
+        "hints": {
+            "PrimaryField": "currency",
+            "Singular": "order"
+        },
+        "language": "en",
+        "rows": [
+            {
+                "currency": "EUR",
+                "debt": -9007199254740993,
+                "stray": 70,
+                "total": -50,
+                "yen": 1200,
+                "yencurrency": "JPY"
+            }
+        ],
+        "schema": {
+            "entity": "order",
+            "fields": [
+                {
+                    "name": "total",
+                    "presentation": {
+                        "money": {
+                            "currencyField": "currency",
+                            "scale": 2
+                        }
+                    },
+                    "type": "int"
+                },
+                {
+                    "name": "debt",
+                    "presentation": {
+                        "money": {
+                            "currencyField": "currency",
+                            "scale": 2
+                        }
+                    },
+                    "type": "int"
+                },
+                {
+                    "name": "yen",
+                    "presentation": {
+                        "money": {
+                            "currencyField": "yencurrency",
+                            "scale": 0
+                        }
+                    },
+                    "type": "int"
+                },
+                {
+                    "name": "currency",
+                    "type": "string"
+                },
+                {
+                    "name": "yencurrency",
+                    "type": "string"
+                },
+                {
+                    "name": "stray",
+                    "presentation": {
+                        "money": {
+                            "currencyField": "gone",
+                            "scale": 2
+                        }
+                    },
+                    "type": "int"
+                }
+            ],
+            "module": "m",
+            "path": "/api/v1/m/order"
+        },
+        "state": [
+            {
+                "home": "Workspace",
+                "kind": "record",
+                "name": "record",
+                "now": "2026-11-03T09:00:00Z"
+            },
+            {
+                "formTitle": "Edit",
+                "home": "Workspace",
+                "kind": "form",
+                "name": "form-update",
+                "now": "2026-11-03T09:00:00Z"
+            }
+        ]
+    },
+    "name": "money-minor-units",
+    "provenance": {
+        "author": "platform worker, unreviewed",
+        "date": "2026-10-26",
+        "expectedHash": "sha256:4b6db8729ca682f7f17505aa7b7e49ceb4e42ac00443141e6cf74ea104465c82",
+        "inputHash": "sha256:a450f755e9d410c1865dd9f9efe5f4dc51f03275e5725582bd73d615e8021dbb"
+    }
+}

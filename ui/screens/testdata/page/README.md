@@ -53,3 +53,10 @@ language reads the same files and must reach the same document.
   `"author": "platform worker, unreviewed"` because no person has reviewed them
   yet: the page a person should see is the one their reviewed policy resolves to,
   and re-review is what replaces that author.
+- Five cases name no parity case at all — `large-integers`, `money-minor-units`,
+  `null-false-empty`, `instant-and-date`, `undeclared-enum-value` — because they hold
+  the value domain itself, both signs: their `input` is their own, so their
+  `inputHash` is the hash of that input and nothing else.
+- A Page fixture states only what JSON can carry. A number with no JSON spelling
+  (`NaN`, `±Inf`) and a calendar day cut in a zone the state does not name are pinned
+  in `kit/entity/view`'s own value cases, which hand the builder both directly.

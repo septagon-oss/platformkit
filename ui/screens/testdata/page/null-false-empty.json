@@ -1,0 +1,257 @@
+{
+    "expected": {
+        "page": {
+            "list": {
+                "actions": [
+                    {
+                        "inputs": [],
+                        "kind": "create",
+                        "scope": "collection"
+                    }
+                ],
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "list",
+                "ref": {
+                    "id": "",
+                    "resource": "m/note"
+                },
+                "table": {
+                    "counted": true,
+                    "rows": [
+                        {
+                            "cells": [
+                                {
+                                    "elem": "",
+                                    "field": "title",
+                                    "text": "Kinds",
+                                    "tone": "",
+                                    "value": "Kinds",
+                                    "valueKind": "string"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "blank",
+                                    "text": "",
+                                    "tone": "",
+                                    "value": "",
+                                    "valueKind": "string"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "off",
+                                    "text": "nope",
+                                    "tone": "",
+                                    "value": false,
+                                    "valueKind": "boolean"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "on",
+                                    "text": "yep",
+                                    "tone": "",
+                                    "value": true,
+                                    "valueKind": "boolean"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "absent",
+                                    "text": "none here",
+                                    "tone": "",
+                                    "value": null,
+                                    "valueKind": "absent"
+                                },
+                                {
+                                    "elem": "string",
+                                    "field": "tags",
+                                    "text": "",
+                                    "tone": "",
+                                    "value": [],
+                                    "valueKind": "list"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "meta",
+                                    "text": "{}",
+                                    "tone": "",
+                                    "value": {},
+                                    "valueKind": "map"
+                                }
+                            ],
+                            "id": "",
+                            "title": "Kinds"
+                        }
+                    ],
+                    "total": 1,
+                    "window": {
+                        "limit": 50,
+                        "offset": 0
+                    }
+                },
+                "title": "notes",
+                "zone": "UTC"
+            },
+            "record": {
+                "actions": [
+                    {
+                        "inputs": [],
+                        "kind": "update",
+                        "scope": "record"
+                    },
+                    {
+                        "inputs": [],
+                        "kind": "delete",
+                        "scope": "record"
+                    }
+                ],
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "record",
+                "ref": {
+                    "id": "",
+                    "resource": "m/note"
+                },
+                "sections": [
+                    {
+                        "fields": [
+                            {
+                                "elem": "",
+                                "name": "blank",
+                                "text": "",
+                                "tone": "",
+                                "value": "",
+                                "valueKind": "string"
+                            },
+                            {
+                                "elem": "",
+                                "name": "off",
+                                "text": "nope",
+                                "tone": "",
+                                "value": false,
+                                "valueKind": "boolean"
+                            },
+                            {
+                                "elem": "",
+                                "name": "on",
+                                "text": "yep",
+                                "tone": "",
+                                "value": true,
+                                "valueKind": "boolean"
+                            },
+                            {
+                                "elem": "",
+                                "name": "absent",
+                                "text": "none here",
+                                "tone": "",
+                                "value": null,
+                                "valueKind": "absent"
+                            },
+                            {
+                                "elem": "string",
+                                "name": "tags",
+                                "text": "",
+                                "tone": "",
+                                "value": [],
+                                "valueKind": "list"
+                            },
+                            {
+                                "elem": "",
+                                "name": "meta",
+                                "text": "{}",
+                                "tone": "",
+                                "value": {},
+                                "valueKind": "map"
+                            }
+                        ],
+                        "key": "information"
+                    }
+                ],
+                "title": "Kinds",
+                "zone": "UTC"
+            }
+        }
+    },
+    "input": {
+        "hints": {
+            "PrimaryField": "title",
+            "Singular": "note"
+        },
+        "language": "en",
+        "rows": [
+            {
+                "blank": "",
+                "meta": {},
+                "off": false,
+                "on": true,
+                "tags": [],
+                "title": "Kinds"
+            }
+        ],
+        "schema": {
+            "entity": "note",
+            "fields": [
+                {
+                    "name": "title",
+                    "type": "string"
+                },
+                {
+                    "name": "blank",
+                    "type": "string"
+                },
+                {
+                    "name": "off",
+                    "type": "bool"
+                },
+                {
+                    "name": "on",
+                    "type": "bool"
+                },
+                {
+                    "name": "absent",
+                    "type": "string"
+                },
+                {
+                    "elem": "string",
+                    "name": "tags",
+                    "type": "list"
+                },
+                {
+                    "name": "meta",
+                    "type": "map"
+                }
+            ],
+            "module": "m",
+            "path": "/api/v1/m/note"
+        },
+        "state": [
+            {
+                "home": "Workspace",
+                "kind": "record",
+                "name": "record",
+                "now": "2026-11-03T09:00:00Z"
+            },
+            {
+                "counted": true,
+                "home": "Workspace",
+                "kind": "list",
+                "name": "list",
+                "now": "2026-11-03T09:00:00Z",
+                "total": 1,
+                "window": {
+                    "limit": 50,
+                    "offset": 0
+                }
+            }
+        ],
+        "translations": {
+            "present.false": "nope",
+            "present.missing": "none here",
+            "present.true": "yep"
+        }
+    },
+    "name": "null-false-empty",
+    "provenance": {
+        "author": "platform worker, unreviewed",
+        "date": "2026-10-26",
+        "expectedHash": "sha256:1d018818064d7732fab9ca4de4eabfef514bddfdb56f1a0d251979147ef0aa9b",
+        "inputHash": "sha256:19dbe274074cd10c4974e0f40fce3bd37957f5a7ba0969c8379ca44c3826bff7"
+    }
+}

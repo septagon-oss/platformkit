@@ -1,0 +1,106 @@
+{
+    "expected": {
+        "page": {
+            "record": {
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "record",
+                "ref": {
+                    "id": "",
+                    "resource": "m/moment"
+                },
+                "sections": [
+                    {
+                        "fields": [
+                            {
+                                "elem": "",
+                                "name": "at",
+                                "text": "2026-11-02 23:30",
+                                "tone": "",
+                                "value": "2026-11-02T23:30:00.000000Z",
+                                "valueKind": "instant"
+                            },
+                            {
+                                "elem": "",
+                                "name": "day",
+                                "text": "2026-11-02 23:30",
+                                "tone": "",
+                                "value": "2026-11-02",
+                                "valueKind": "date"
+                            },
+                            {
+                                "elem": "",
+                                "name": "soon",
+                                "text": "2026-11-02 23:30",
+                                "tone": "",
+                                "value": "2026-11-02T23:30:00.000000Z",
+                                "valueKind": "instant"
+                            }
+                        ],
+                        "key": "information"
+                    }
+                ],
+                "title": "Late",
+                "zone": "UTC"
+            }
+        }
+    },
+    "input": {
+        "hints": {
+            "PrimaryField": "label",
+            "Singular": "moment"
+        },
+        "language": "en",
+        "rows": [
+            {
+                "at": "2026-11-02T23:30:00Z",
+                "day": "2026-11-02T23:30:00Z",
+                "label": "Late",
+                "soon": "2026-11-02T23:30:00Z"
+            }
+        ],
+        "schema": {
+            "entity": "moment",
+            "fields": [
+                {
+                    "name": "label",
+                    "type": "string"
+                },
+                {
+                    "name": "at",
+                    "type": "time"
+                },
+                {
+                    "name": "day",
+                    "presentation": {
+                        "format": "date"
+                    },
+                    "type": "time"
+                },
+                {
+                    "name": "soon",
+                    "presentation": {
+                        "format": "relative"
+                    },
+                    "type": "time"
+                }
+            ],
+            "module": "m",
+            "path": "/api/v1/m/moment"
+        },
+        "state": [
+            {
+                "home": "Workspace",
+                "kind": "record",
+                "name": "record",
+                "now": "2026-11-03T09:00:00Z"
+            }
+        ]
+    },
+    "name": "instant-and-date",
+    "provenance": {
+        "author": "platform worker, unreviewed",
+        "date": "2026-10-26",
+        "expectedHash": "sha256:dca374894a9a3afa33091264d573f071c7916e5d570c272e3a55717b550098d1",
+        "inputHash": "sha256:ecdeae892c46ad31003b602d0b98682dcf9a74f8024ee91b0c40e94973c5eff6"
+    }
+}

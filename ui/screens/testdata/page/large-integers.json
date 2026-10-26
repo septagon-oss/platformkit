@@ -1,0 +1,204 @@
+{
+    "expected": {
+        "page": {
+            "list": {
+                "actions": [
+                    {
+                        "inputs": [],
+                        "kind": "create",
+                        "scope": "collection"
+                    }
+                ],
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "list",
+                "ref": {
+                    "id": "",
+                    "resource": "m/digit"
+                },
+                "table": {
+                    "columns": [
+                        {
+                            "field": "over"
+                        },
+                        {
+                            "field": "maxsafe"
+                        },
+                        {
+                            "field": "under"
+                        },
+                        {
+                            "field": "minsafe"
+                        }
+                    ],
+                    "counted": true,
+                    "rows": [
+                        {
+                            "cells": [
+                                {
+                                    "elem": "",
+                                    "field": "over",
+                                    "text": "9007199254740993",
+                                    "tone": "",
+                                    "value": "9007199254740993",
+                                    "valueKind": "bigInteger"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "maxsafe",
+                                    "text": "9007199254740991",
+                                    "tone": "",
+                                    "value": 9007199254740991,
+                                    "valueKind": "integer"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "under",
+                                    "text": "-9007199254740993",
+                                    "tone": "",
+                                    "value": "-9007199254740993",
+                                    "valueKind": "bigInteger"
+                                },
+                                {
+                                    "elem": "",
+                                    "field": "minsafe",
+                                    "text": "-9007199254740991",
+                                    "tone": "",
+                                    "value": -9007199254740991,
+                                    "valueKind": "integer"
+                                }
+                            ],
+                            "id": "",
+                            "title": "9007199254740993"
+                        }
+                    ],
+                    "total": 1,
+                    "window": {
+                        "limit": 50,
+                        "offset": 0
+                    }
+                },
+                "title": "digits",
+                "zone": "UTC"
+            },
+            "record": {
+                "actions": [
+                    {
+                        "inputs": [],
+                        "kind": "update",
+                        "scope": "record"
+                    },
+                    {
+                        "inputs": [],
+                        "kind": "delete",
+                        "scope": "record"
+                    }
+                ],
+                "builtAt": "2026-11-03T09:00:00Z",
+                "kind": "record",
+                "ref": {
+                    "id": "",
+                    "resource": "m/digit"
+                },
+                "sections": [
+                    {
+                        "fields": [
+                            {
+                                "elem": "",
+                                "name": "maxsafe",
+                                "text": "9007199254740991",
+                                "tone": "",
+                                "value": 9007199254740991,
+                                "valueKind": "integer"
+                            },
+                            {
+                                "elem": "",
+                                "name": "under",
+                                "text": "-9007199254740993",
+                                "tone": "",
+                                "value": "-9007199254740993",
+                                "valueKind": "bigInteger"
+                            },
+                            {
+                                "elem": "",
+                                "name": "minsafe",
+                                "text": "-9007199254740991",
+                                "tone": "",
+                                "value": -9007199254740991,
+                                "valueKind": "integer"
+                            }
+                        ],
+                        "key": "information"
+                    }
+                ],
+                "title": "9007199254740993",
+                "zone": "UTC"
+            }
+        }
+    },
+    "input": {
+        "hints": {
+            "PrimaryField": "over",
+            "Singular": "digit"
+        },
+        "language": "en",
+        "rows": [
+            {
+                "maxsafe": 9007199254740991,
+                "minsafe": -9007199254740991,
+                "over": 9007199254740993,
+                "under": -9007199254740993
+            }
+        ],
+        "schema": {
+            "entity": "digit",
+            "fields": [
+                {
+                    "name": "over",
+                    "type": "int"
+                },
+                {
+                    "name": "maxsafe",
+                    "type": "int"
+                },
+                {
+                    "name": "under",
+                    "type": "int"
+                },
+                {
+                    "name": "minsafe",
+                    "type": "int"
+                }
+            ],
+            "module": "m",
+            "path": "/api/v1/m/digit"
+        },
+        "state": [
+            {
+                "counted": true,
+                "home": "Workspace",
+                "kind": "list",
+                "name": "list",
+                "now": "2026-11-03T09:00:00Z",
+                "sort": "",
+                "total": 1,
+                "window": {
+                    "limit": 50,
+                    "offset": 0
+                }
+            },
+            {
+                "home": "Workspace",
+                "kind": "record",
+                "name": "record",
+                "now": "2026-11-03T09:00:00Z"
+            }
+        ]
+    },
+    "name": "large-integers",
+    "provenance": {
+        "author": "platform worker, unreviewed",
+        "date": "2026-10-26",
+        "expectedHash": "sha256:c849373665a9fb57f466e70bbad03f769f6ee74fa3419d47bc321b3be070e22b",
+        "inputHash": "sha256:c3215ec8408df8cb0e2574f3cb066fbdf7acf7a371240671f89ca95bd552ca24"
+    }
+}
