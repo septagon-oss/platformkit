@@ -75082,6 +75082,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/history_restore_form_keeps_its_count_and_its_question_apart_test.go",
+   "id": "ui/resource/history_restore_form_keeps_its_count_and_its_question_apart_test.go#TestTheRestoreFormPostsTheWriteCountAndNotTheQuestionItAsks",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheRestoreFormPostsTheWriteCountAndNotTheQuestionItAsks",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/instant_title_matches_datetime_test.go",
    "id": "ui/resource/instant_title_matches_datetime_test.go#TestAnInstantsTitleIsTheSameUTCInstantItsDatetimeCarries",
    "kind": "go",
@@ -85297,7 +85316,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2321,
+  "files": 2322,
   "forge_runs": [
    408,
    413,
@@ -85331,7 +85350,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3700,
+   "behaviour": 3701,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -85350,23 +85369,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4326,
+  "rows": 4327,
   "tiers": {
    "merge": 2631,
    "nightly": 110,
-   "push": 1585
+   "push": 1586
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2076,
+   "keep": 2077,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3940,
+   "keep": 3941,
    "keep-rewrite": 170,
    "merge": 216
   }
