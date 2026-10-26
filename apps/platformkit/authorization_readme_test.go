@@ -42,6 +42,13 @@ var authorizationQuestions = []string{
 // that grows a README-less sibling still fails here.
 var declaredElsewhere = map[string]string{
 	"product":           "README.md",
+	// `saving` and `keeping` are this application's half of the saved surface,
+	// written in saved.go: the authority read and the pairs worth keeping, and the
+	// page they are kept from. Neither declares a permission of its own — the
+	// grants are modules/saved's — so what they enforce about who may keep a copy
+	// belongs beside the sentence that composes them.
+	"saving":            "README.md",
+	"keeping":           "README.md",
 	"workspace":         "README.md",
 	"access":            "README.md",
 	"media":             "README.md",

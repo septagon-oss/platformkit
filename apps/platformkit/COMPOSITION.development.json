@@ -483,6 +483,35 @@
       ]
     },
     {
+      "name": "saving",
+      "provides": [
+        "savedcontracts.Access",
+        "savedcontracts.Clock"
+      ],
+      "needs": [
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        },
+        {
+          "contract": "taskcontracts.Reader",
+          "from": "task"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "savedcontracts.Savable",
+          "to": [
+            "saved"
+          ]
+        }
+      ],
+      "after": [
+        "auth",
+        "task"
+      ]
+    },
+    {
       "name": "access",
       "provides": [
         "changecontracts.Notifier",
@@ -573,6 +602,41 @@
       ]
     },
     {
+      "name": "saved",
+      "provides": [
+        "savedcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "savedcontracts.Access",
+          "from": "saving"
+        },
+        {
+          "contract": "savedcontracts.Clock",
+          "from": "saving"
+        }
+      ],
+      "takes": [
+        {
+          "contract": "savedcontracts.Savable",
+          "from": [
+            "saving"
+          ]
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
+      "after": [
+        "saving"
+      ]
+    },
+    {
       "name": "change",
       "provides": [
         "changecontracts.Service"
@@ -640,6 +704,27 @@
       "after": [
         "tenant",
         "file"
+      ]
+    },
+    {
+      "name": "keeping",
+      "provides": [
+        "resource.SavingReader",
+        "saved.Keeping"
+      ],
+      "needs": [
+        {
+          "contract": "savedcontracts.Service",
+          "from": "saved"
+        },
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        }
+      ],
+      "after": [
+        "auth",
+        "saved"
       ]
     },
     {
@@ -755,6 +840,7 @@
             "file",
             "history",
             "task",
+            "saved",
             "translation",
             "content",
             "audit",
@@ -772,6 +858,7 @@
         "file",
         "history",
         "task",
+        "saved",
         "translation",
         "content",
         "audit",
@@ -805,6 +892,10 @@
           "from": "product"
         },
         {
+          "contract": "resource.SavingReader",
+          "from": "keeping"
+        },
+        {
           "contract": "admincontracts.Locale",
           "from": "product"
         },
@@ -821,7 +912,8 @@
         "product",
         "user",
         "tenant",
-        "auth"
+        "auth",
+        "keeping"
       ],
       "runsLast": true
     }
@@ -831,7 +923,9 @@
       "name": "coordinator",
       "grants": [
         "task:read",
-        "task:update"
+        "task:update",
+        "saved:read",
+        "saved:write"
       ]
     },
     {

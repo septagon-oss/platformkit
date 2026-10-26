@@ -41,6 +41,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/history"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/saved"
 	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
@@ -271,7 +272,7 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 // binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
 // different value to name, and sentences is what everybody else calls.
 func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace, *summaryFace) {
-	ask, shell, provision, grants, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}
+	ask, shell, provision, grants, face, capability := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}, &keptSurface{}
 	counts := &summaryFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
@@ -293,6 +294,16 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 			file.Module,
 			history.Module,
 			task.Module,
+			// A person's own copies of the records they may read: this product's
+			// answer to "who is asking" and "which of our records are worth keeping",
+			// then the capability that keeps them, then the screens they are kept
+			// from. The three are named together because the first and the last are
+			// nothing without the middle one, and the order is the order they are
+			// built in: the service is made out of the authority read and the pairs
+			// on the table before it, and a screen reads the service after it.
+			saving(),
+			saved.Module,
+			keeping(shell, capability),
 			billing.Module,
 			// The translations of the module below: one table, no routes and no
 			// permissions of its own. It is named before content because content
@@ -321,7 +332,7 @@ func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pki
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
-		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount, counts.mount))
+		WorkspaceCatalog(workspaceFace(workspaceCatalog(capability), face.mount, counts.mount))
 	return a, ask, shell, provision, grants, face, counts
 }
 

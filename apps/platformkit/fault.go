@@ -171,10 +171,12 @@ func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 // the renderer while the shipped binary publishes another. The renderer's type is
 // carried on the call, so the OpenAPI document names the fields a shell parses
 // rather than an empty object — see app.WorkspaceCatalogRoute.
-func workspaceCatalog() func(api *httpx.API) {
+func workspaceCatalog(surface *keptSurface) func(api *httpx.API) {
 	// The gate is built here, one per composition, and not at file scope: see
-	// referenceGate.
-	return app.WorkspaceCatalogRoute(documentBuilder(new(documentGate)))
+	// referenceGate. It carries the capability question because this is the one
+	// place both halves meet: the document is where a savable declaration becomes a
+	// promise, and only this composition knows whether it kept anything to honour it.
+	return app.WorkspaceCatalogRoute(documentBuilder(&documentGate{surface: surface}))
 }
 
 // documentBuilder is the body of that mount: the same catalogues read once, the
@@ -221,7 +223,7 @@ func documentBuilder(gate *documentGate) func(context.Context, []httpx.Resource)
 		var text screens.Text = func(key, fallback string) string {
 			return selected.Formatter.Text(key, fallback)
 		}
-		document := screens.DescribeIn(ctx, resources, text, selected.Language)
+		document := screens.DescribeInstalled(ctx, resources, text, selected.Language, gate.installed())
 		// Where a record's picture lives, said once for the whole document rather
 		// than once per field that holds a file id. The address is the file
 		// module's — it mounts the door — and the document is the kernel's, so this
@@ -252,6 +254,15 @@ func documentBuilder(gate *documentGate) func(context.Context, []httpx.Resource)
 type documentGate struct {
 	once  sync.Once
 	fault error
+	// surface is what this composition answered about its own optional capabilities
+	// at the moment the document was built; nil is a gate built without a
+	// composition standing behind it, which answers "nothing installed".
+	surface *keptSurface
+}
+
+// installed is the capability answer the document is written with.
+func (g *documentGate) installed() screens.Installed {
+	return g.surface.installed()
 }
 
 // check asks the questions the first time it is called and remembers the answer.

@@ -261,7 +261,7 @@ func installationArgs(path string) []string {
 func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Options) {
 	t.Helper()
 	if opts.WorkspaceCatalog == nil {
-		opts.WorkspaceCatalog = workspaceCatalog()
+		opts.WorkspaceCatalog = workspaceCatalog(&keptSurface{saving: keepsCopies(mods)})
 	}
 	// Same for the installation's host: the control plane is served where the
 	// installation is reached, and a test that left it out would be starting a

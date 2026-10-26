@@ -2838,6 +2838,64 @@
       "summary": "Every tenant's delivery of platformkit.operation_outcome.",
       "title": "platformkit.operation_outcome"
     },
+    "saved.saved": {
+      "address": "platformkit.*.saved.saved",
+      "description": "Published at platformkit.{tenantId}.saved.saved; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "saved.saved": {
+          "contentType": "application/json",
+          "name": "saved.saved",
+          "payload": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "revision"
+            ],
+            "type": "object"
+          },
+          "summary": "saved — saved.saved",
+          "title": "saved.saved"
+        }
+      },
+      "summary": "Every tenant's delivery of saved.saved.",
+      "title": "saved.saved"
+    },
+    "saved.unsaved": {
+      "address": "platformkit.*.saved.unsaved",
+      "description": "Published at platformkit.{tenantId}.saved.unsaved; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
+      "messages": {
+        "saved.unsaved": {
+          "contentType": "application/json",
+          "name": "saved.unsaved",
+          "payload": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "revision"
+            ],
+            "type": "object"
+          },
+          "summary": "saved — saved.unsaved",
+          "title": "saved.unsaved"
+        }
+      },
+      "summary": "Every tenant's delivery of saved.unsaved.",
+      "title": "saved.unsaved"
+    },
     "scim.group_changed": {
       "address": "platformkit.*.scim.group_changed",
       "description": "Published at platformkit.{tenantId}.scim.group_changed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -6422,6 +6480,40 @@
       "tags": [
         {
           "name": "platformkit"
+        }
+      ]
+    },
+    "saved.saved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saved.saved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/saved.saved/messages/saved.saved"
+        }
+      ],
+      "summary": "The saved module publishes saved.saved.",
+      "tags": [
+        {
+          "name": "saved"
+        }
+      ]
+    },
+    "saved.unsaved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saved.unsaved"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/saved.unsaved/messages/saved.unsaved"
+        }
+      ],
+      "summary": "The saved module publishes saved.unsaved.",
+      "tags": [
+        {
+          "name": "saved"
         }
       ]
     },

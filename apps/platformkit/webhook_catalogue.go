@@ -27,6 +27,7 @@ import (
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	savedcontracts "github.com/septagon-oss/platformkit/modules/saved/contracts"
 	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	subjectcontracts "github.com/septagon-oss/platformkit/modules/subject/contracts"
@@ -39,6 +40,11 @@ import (
 
 // webhookCatalogue is the whole list, by the module that emits each name.
 var webhookCatalogue = emittedEvents{
+	// A person's own copies: the two names the saving service emits, each in the
+	// transaction that writes or withdraws the copy. A product that composes the
+	// capability and not these two would emit events no subscriber could be told
+	// about.
+	savedcontracts.EventSaved, savedcontracts.EventUnsaved,
 	// auth, and the two names its registration add-on emits.
 	authcontracts.EventLoggedIn, authcontracts.EventLoggedOut, authcontracts.EventLoginFailed,
 	authcontracts.EventResetRequested, authcontracts.EventPasswordReset,

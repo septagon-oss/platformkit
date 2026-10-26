@@ -129,6 +129,20 @@ var Spec = rest.Spec[*contracts.Task]{
 				{Field: "dueAt", Op: "lt", Value: "tomorrow"},
 			},
 		},
+		// A person may keep a copy of a task. What this entity owns is the pair of
+		// fields a kept copy quotes — its own id and its own write counter — and the
+		// four words its control shows; which installation keeps copies at all, and
+		// which pairs its service may capture, are the composition's, and `savable`
+		// resolves to null where it composed none. The pair of slugs is the entity's
+		// own address because a copy of a task is a copy of a task in every product
+		// that composes this one.
+		Saving: &entity.SavingHints{
+			Module: "task", Kind: "task", KeyField: "id", VersionField: "revision",
+			Words: entity.SavingWords{
+				Save: "Save task", Saved: "Saved to your tasks",
+				Remove: "Remove from saved", ListTitle: "My saved tasks",
+			},
+		},
 	},
 }
 

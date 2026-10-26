@@ -5,11 +5,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 24 modules · role `all`.
+App `platformkit` · environment `development` · 27 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 24 modules.
+pkit: platformkit in development builds 27 modules.
 pkit: cloud profile local in development.
 pkit: seam storage runs local-disk (default).
 pkit: seam cache runs in-process (default).
@@ -19,7 +19,7 @@ pkit: seam policy runs rego-in-process (kernel; not a cloud seam).
 pkit: seam telemetry runs none (default).
 pkit: seam identity runs password-only (default).
 pkit: seam flags runs configuration (kernel; not a cloud seam).
-pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
+pkit: a tenant of platformkit begins as coordinator, holding task:read, task:update, saved:read and saved:write.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: a tenant of platformkit begins as subject_officer, holding subject:export and subject:erase.
 pkit: product.Module needs no other module.
@@ -122,6 +122,10 @@ pkit: scim.Module defines the permission scim:provision.
 pkit: scim.Module emits scim.group_created, scim.group_changed, scim.group_removed, scim.mapping_changed and scim.user_changed.
 pkit: media.Module is built after auth.Module.
 pkit: media.Module needs authcontracts.Auth from auth.Module.
+pkit: saving.Module is built after auth.Module and task.Module.
+pkit: saving.Module needs authcontracts.Auth from auth.Module.
+pkit: saving.Module needs taskcontracts.Reader from task.Module.
+pkit: saving.Module contributes one savedcontracts.Savable to saved.Module.
 pkit: access.Module is built after product.Module, user.Module, notification.Module, auth.Module and site.Module.
 pkit: access.Module needs usercontracts.Service from user.Module.
 pkit: access.Module needs notificationcontracts.Service from notification.Module.
@@ -139,6 +143,13 @@ pkit: file.Module contributes one personaldata.Part to subject.Module.
 pkit: file.Module defines the permission file:read, file:manage, file:erase and file:retain.
 pkit: file.Module emits file.uploaded, file.deleted, file.retained, file.released, file.erased, file.visibility and file.altered.
 pkit: file.Module handles file.deleted.
+pkit: saved.Module is built after saving.Module.
+pkit: saved.Module needs savedcontracts.Access from saving.Module.
+pkit: saved.Module needs savedcontracts.Clock from saving.Module.
+pkit: saved.Module takes every savedcontracts.Savable from saving.Module.
+pkit: saved.Module contributes one personaldata.Part to subject.Module.
+pkit: saved.Module defines the permission saved:read and saved:write.
+pkit: saved.Module emits saved.saved and saved.unsaved.
 pkit: change.Module is built after product.Module and access.Module.
 pkit: change.Module takes every changecontracts.SubjectBinding from product.Module and access.Module.
 pkit: change.Module uses changecontracts.Notifier from access.Module.
@@ -153,6 +164,9 @@ pkit: history.Module needs rest.FileUses from file.Module.
 pkit: history.Module needs jobs.TenantLister from tenant.Module.
 pkit: history.Module contributes one personaldata.Part to subject.Module.
 pkit: history.Module emits history.restored.
+pkit: keeping.Module is built after auth.Module and saved.Module.
+pkit: keeping.Module needs savedcontracts.Service from saved.Module.
+pkit: keeping.Module needs authcontracts.Auth from auth.Module.
 pkit: content.Module is built after file.Module, history.Module and translation.Module.
 pkit: content.Module needs richtext.Files from file.Module.
 pkit: content.Module needs rest.FileUses from file.Module.
@@ -169,8 +183,8 @@ pkit: web.Module needs richtext.Files from file.Module.
 pkit: web.Module uses webcontracts.Links from product.Module.
 pkit: web.Module uses rest.Translations from translation.Module.
 pkit: web.Module uses rest.TranslationSource from product.Module.
-pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, scim.Module, file.Module, history.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
-pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, scim.Module, file.Module, history.Module, task.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, scim.Module, file.Module, history.Module, task.Module, saved.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
+pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, scim.Module, file.Module, history.Module, task.Module, saved.Module, translation.Module, content.Module, audit.Module, webhook.Module and change.Module.
 pkit: subject.Module needs usercontracts.Service from user.Module.
 pkit: subject.Module needs filecontracts.Service from file.Module.
 pkit: subject.Module needs notificationcontracts.Service from notification.Module.
@@ -182,6 +196,7 @@ pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
 pkit: admin.Module uses usercontracts.Service from user.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
 pkit: admin.Module uses admincontracts.Pictures from product.Module.
+pkit: admin.Module uses resource.SavingReader from keeping.Module.
 pkit: admin.Module uses admincontracts.Locale from product.Module.
 pkit: admin.Module could use admincontracts.Storybook; platformkit composes no provider, so it will not.
 pkit: admin.Module uses admincontracts.PrimaryAction from product.Module.
@@ -191,7 +206,6 @@ pkit: product.Module provides secrets.Keys; no module in platformkit needs it.
 pkit: tenant.Module provides httpx.TenantLoader; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Service; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Creator; no module in platformkit needs it.
-pkit: task.Module provides taskcontracts.Reader; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.LockedReader; no module in platformkit needs it.
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.
 pkit: auth.Module provides httpx.Authorizer; no module in platformkit needs it.
@@ -199,6 +213,7 @@ pkit: auth.Module provides pkit.Authenticator; no module in platformkit needs it
 pkit: scim.Module provides scimcontracts.Service; no module in platformkit needs it.
 pkit: change.Module provides changecontracts.Service; no module in platformkit needs it.
 pkit: history.Module provides historycontracts.Service; no module in platformkit needs it.
+pkit: keeping.Module provides saved.Keeping; no module in platformkit needs it.
 pkit: subject.Module provides subjectcontracts.Service; no module in platformkit needs it.
 
 ## What the application answers the kernel

@@ -153,6 +153,18 @@ func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 		}
 		out.Sections = sections
 	}
+	if p.Saving != nil {
+		// The four words of a save control are the entry's own copy, read under the
+		// entry's own key, because "Save task" is written by the author who wrote
+		// "task" and is translated in the same table. The pair of slugs and the two
+		// field names it quotes are identifiers a screen draws and never words.
+		saving := *p.Saving
+		saving.Words.Save = w.say("saving.save", p.Saving.Words.Save)
+		saving.Words.Saved = w.say("saving.saved", p.Saving.Words.Saved)
+		saving.Words.Remove = w.say("saving.remove", p.Saving.Words.Remove)
+		saving.Words.ListTitle = w.say("saving.listTitle", p.Saving.Words.ListTitle)
+		out.Saving = &saving
+	}
 	return out
 }
 

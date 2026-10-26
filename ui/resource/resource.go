@@ -15,6 +15,7 @@
 package resource
 
 import (
+	"context"
 	"fmt"
 
 	g "maragu.dev/gomponents"
@@ -83,6 +84,49 @@ type Resource struct {
 	// left out of Commands by the adapter, so the panel is the one place a person
 	// restores from. ui/screens fills this in from httpx.Resource.History.
 	History *HistoryPanel
+	// Saving is this caller's standing against the row this screen shows: whether
+	// they already kept a copy, what they may do about it, and the addresses the
+	// two forms post to. ui/screens fills it in by asking Options.Saving once, in
+	// the request's own transaction, for the row it is about to render; nil is
+	// every row nobody may keep — no declaration, no capability, a standing that
+	// could not be read — and draws no control.
+	Saving *SavingControl
+}
+
+// SavingControl is one caller's standing against one row, in plain values: the
+// pressed state a read answered, the two grants that decide which form is drawn,
+// and the mounted addresses those forms post to. It is a value and not a port for
+// the reason Options.PictureSource is a template: this package may not name the
+// module behind a kept copy, so the composition that has met both hands the answer
+// over rather than a renderer guessing at it.
+type SavingControl struct {
+	// Pressed is the caller's own read of "have I kept this row", never a cookie,
+	// a client flag or anything the browser remembers.
+	Pressed bool
+	// CanSave and CanRemove are this caller's two grants as of this read. Neither
+	// is authority — the command behind the form rechecks both — only the answer to
+	// "is there a control worth drawing".
+	CanSave   bool
+	CanRemove bool
+	// SaveURL and UnsaveURL are the mounted addresses of the two commands; a
+	// renderer derives no address. UnsaveURL carries the kept copy's own id.
+	SaveURL   string
+	UnsaveURL string
+	// ListURL is the kept list of this pair, empty when this installation serves
+	// none; ItemID and Revision name the copy the removal form quotes.
+	ListURL  string
+	ItemID   string
+	Revision int64
+}
+
+// SavingReader answers the one question a generated screen asks about saving:
+// where this caller stands against this row. The row is named by the pair its own
+// declaration carries and the key that declaration names the record publishing, so
+// a reader is asked about nothing a screen invented. Implementations answer in the
+// caller's transaction and recheck the caller's grants; an error leaves the row
+// drawn with no control rather than failing the page over it.
+type SavingReader interface {
+	SavingState(ctx context.Context, module, kind, key string) (*SavingControl, error)
 }
 
 // PerPage is a screenful, and the page the list renders and links. kit/crud's
@@ -127,6 +171,14 @@ type Options struct {
 	// no verdict — a design export, a shell drawing the writer's own line — and draws
 	// what it drew before this field existed.
 	Refusal *Refusal
+	// Saving is this installation's saving capability as the generated screens know
+	// it: one question about the row being rendered. It arrives from the composition
+	// that has met the saving service and the surface these screens mounted on, and
+	// nil — every composition that named none — is the record screen drawn exactly as
+	// it was before a copy could be kept: no control, and a `savable` the policy
+	// resolves to null. The two halves are one field on purpose, so no shell can
+	// draw a heart over a service nobody wired.
+	Saving SavingReader
 }
 
 // Refusal is one verdict as a form shows it: what the refusal page calls it, and how

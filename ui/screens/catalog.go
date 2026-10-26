@@ -216,6 +216,29 @@ func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text
 // every entry's `resolved.language` names the tag the strings were resolved for.
 // An empty tag is the declaration as written, printed as English.
 func DescribeIn(ctx context.Context, resources []httpx.Resource, text Text, language string) Catalog {
+	return DescribeInstalled(ctx, resources, text, language, Installed{})
+}
+
+// Installed is what an installation knows about itself that no registration
+// says: which optional capability this composition actually built. It is said
+// once per document because a declaration on a read is a promise about a door —
+// `savable` names a control a person may press — and a door nobody wired is a
+// button over nothing. A composition that names no capability here gets the
+// document it got before the capability existed: the key stays null, the control
+// stays undrawn, and the reads are unchanged.
+type Installed struct {
+	// Saving says this composition built a saving service, so a declared savable
+	// entry has something behind it. False is every composition that named none:
+	// `present.Resolve` answers no `savable` for any entry, whatever it declares.
+	Saving bool
+}
+
+// DescribeInstalled is DescribeIn told which optional capabilities this
+// installation composed. The language and the copy seam are the same ones; only
+// the resolved policy's `savable` reads the extra argument, which is why the
+// document an installation with nothing installed publishes is byte-identical to
+// the one DescribeIn writes.
+func DescribeInstalled(ctx context.Context, resources []httpx.Resource, text Text, language string, installed Installed) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
 		// r is this loop's copy, so narrowing its commands to the ones this
@@ -223,7 +246,7 @@ func DescribeIn(ctx context.Context, resources []httpx.Resource, text Text, lang
 		r.Commands = r.CommandsFor(ctx)
 		if r.CommandsOnly {
 			if len(r.Commands) > 0 {
-				out.Resources = append(out.Resources, commandsOnly(Localise(r, text), text, language))
+				out.Resources = append(out.Resources, commandsOnly(Localise(r, text), text, language, installed))
 			}
 			continue
 		}
@@ -231,7 +254,7 @@ func DescribeIn(ctx context.Context, resources []httpx.Resource, text Text, lang
 			continue
 		}
 		r = Localise(r, text)
-		out.Resources = append(out.Resources, DescribeEntry(r, r.Writable(ctx), text, language))
+		out.Resources = append(out.Resources, describeEntry(r, r.Writable(ctx), text, language, installed))
 	}
 	return out
 }
@@ -241,8 +264,8 @@ func DescribeIn(ctx context.Context, resources []httpx.Resource, text Text, lang
 // names no screen and offers no operation, so a shell draws the commands and no
 // list or form; the caller is told the resource exists because a door on it is
 // theirs.
-func commandsOnly(r httpx.Resource, text Text, language string) Entry {
-	e := DescribeEntry(r, false, text, language)
+func commandsOnly(r httpx.Resource, text Text, language string, installed Installed) Entry {
+	e := describeEntry(r, false, text, language, installed)
 	e.Screen = ""
 	return e
 }
@@ -279,7 +302,7 @@ func Localise(r httpx.Resource, text Text) httpx.Resource {
 // is asking, the set says whether anything here answers a write at all, and
 // `writable` is what this caller may *do*. See Entry.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	return DescribeEntry(r, writable, nil, "")
+	return describeEntry(r, writable, nil, "", Installed{})
 }
 
 // DescribeEntry is Describe1 for one request: the resource is already localised
@@ -287,6 +310,10 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 // name the tag printed as `resolved.language`. A nil text and an empty language
 // are Describe1.
 func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) Entry {
+	return describeEntry(r, writable, text, language, Installed{})
+}
+
+func describeEntry(r httpx.Resource, writable bool, text Text, language string, installed Installed) Entry {
 	command := slices.ContainsFunc(r.Commands, func(c httpx.Command) bool {
 		return c.Run != nil && c.Auth.Declared()
 	})
@@ -306,12 +333,13 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 			Presentation: commandDeviations(c.Present),
 		})
 	}
-	e.Resolved = resolve(r, text, language)
+	e.Resolved = resolve(r, text, language, installed.Saving)
 	return e
 }
 
-// resolve is the entry's presentation policy for the commands this caller may call.
-func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
+// resolve is the entry's presentation policy for the commands this caller may
+// call, and for whether this installation can honour a savable declaration.
+func resolve(r httpx.Resource, text Text, language string, saving bool) *present.Resolved {
 	commands := make([]present.CommandInput, 0, len(r.Commands))
 	for _, c := range r.Commands {
 		commands = append(commands, present.CommandInput{Fields: c.Fields, Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
@@ -319,7 +347,7 @@ func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 	resolved := present.Resolve(present.Input{
 		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
 		CommandsOnly: r.CommandsOnly, Operations: r.OperationWords(), Commands: commands,
-		Language: language, Text: policyText(text),
+		Language: language, Text: policyText(text), SavingAvailable: saving,
 	})
 	return &resolved
 }

@@ -30,6 +30,7 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
 // Roles is what the shell needs of the auth module to administer roles. See
@@ -86,6 +87,14 @@ type Deps struct {
 	PictureSource string
 	// ComposedSource is the composed-picture address with a {reference} placeholder.
 	ComposedSource string
+
+	// Saving is this installation's saving capability, read off the composition
+	// that built one: the generated record screen draws its keep-a-copy control from
+	// it, and nil — every composition that wired none — draws the record it drew
+	// before a copy could be kept. This module names no saving service and mounts no
+	// page of its own; it hands the value to the screens it mounts, which is the
+	// same reason it hands them the picture door.
+	Saving resource.SavingReader
 
 	// Registration is the composition saying that a person with no account may
 	// make one. Nil — the default — means the sign-in page shows the password
@@ -193,6 +202,7 @@ func New(deps Deps) module.Module {
 				SignIn:         deps.SignIn,
 				PictureSource:  deps.PictureSource,
 				ComposedSource: deps.ComposedSource,
+				Saving:         deps.Saving,
 				Registration:   deps.Registration,
 			})
 		},

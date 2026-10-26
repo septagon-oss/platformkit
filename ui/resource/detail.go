@@ -50,6 +50,10 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
 		}
 	}
+	// Beside Edit rather than under it: keeping a copy is something a person does
+	// to the record they are looking at, and a control they may hold without any
+	// right to edit the record would be buried by a slot it does not belong to.
+	actions = append(actions, savingControl(r, o, row)...)
 	body := []g.Node{
 		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
@@ -61,6 +65,61 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
 	return document.View{Title: named, Body: body}
+}
+
+// savingControl is the keep-a-copy control, its standing, and the link to the
+// pair's kept list. Both halves of the answer have to be in hand: the entry's own
+// declaration (`nil` for every resource that declares no savable pair, so nothing
+// is drawn whatever the installation composed) and this caller's standing against
+// this row (`nil` where this installation wired no saving service, where the copy
+// could not be read, or where neither grant is held). A control that would be
+// refused, and a control that posts a key the record never published, are both
+// drawn as nothing.
+//
+// The two commands are two forms and never one ambiguous toggle: the pressed
+// button saves again — which the service answers with the one copy it already
+// holds — and removal is a separate form whose post quotes the copy's own
+// revision. Both are plain POSTs that answer 303 back to the record, so the state
+// a person reads after pressing is the state a read answered.
+func savingControl(r Resource, o Options, row map[string]any) []g.Node {
+	if r.Resolved == nil || r.Saving == nil {
+		return nil
+	}
+	d, s := r.Resolved.Saving, r.Saving
+	if !(s.CanSave || (s.Pressed && s.CanRemove)) {
+		return nil
+	}
+	key, version := display.Text(row[d.KeyField]), display.Text(row[d.VersionField])
+	if key == "" || version == "" {
+		return nil
+	}
+	out := []g.Node{components.Form(components.FormProps{Action: s.SaveURL, Label: d.Words.Save},
+		h.Input(h.Type("hidden"), h.Name("module"), h.Value(d.Module)),
+		h.Input(h.Type("hidden"), h.Name("kind"), h.Value(d.Kind)),
+		h.Input(h.Type("hidden"), h.Name("key"), h.Value(key)),
+		h.Input(h.Type("hidden"), h.Name("expectedSourceVersion"), h.Value(version)),
+		// The name never changes with the state: `aria-pressed` carries it, which is
+		// the one way this control says "kept" to a screen reader without saying a
+		// different sentence every time it is reached.
+		components.Button(components.ButtonProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{
+				"aria-pressed": strconv.FormatBool(s.Pressed),
+			}},
+			Label: d.Words.Save, Type: "submit", Size: "md",
+		}))}
+	if s.Pressed {
+		out = append(out, h.P(h.ID("saving-standing"), h.Aria("live", "polite"), g.Text(d.Words.Saved)))
+		if s.CanRemove && s.UnsaveURL != "" {
+			out = append(out, components.Form(components.FormProps{Action: s.UnsaveURL, Label: d.Words.Remove},
+				h.Input(h.Type("hidden"), h.Name("expectedRevision"),
+					h.Value(strconv.FormatInt(s.Revision, 10))),
+				components.Button(components.ButtonProps{Label: d.Words.Remove, Type: "submit", Tone: "danger", Size: "md"})))
+		}
+	}
+	if s.ListURL != "" {
+		out = append(out, components.Link(components.LinkProps{Label: d.Words.ListTitle, Href: s.ListURL}))
+	}
+	return out
 }
 
 // offeredCommands is the commands to draw a form for: every one this caller may

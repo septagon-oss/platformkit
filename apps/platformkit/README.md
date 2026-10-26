@@ -138,34 +138,48 @@ rather than finding out at the first login.
 ## Authorization
 
 Decision 0011 asks every composed module's README the same six questions. This one
-answers for the three modules this application declares in `product.go`, because no
-`modules/<name>/README.md` exists to answer them. [authorization_readme_test.go](authorization_readme_test.go)
+answers for the modules this application declares itself — `product.go`'s `product`,
+`workspace`, `access` and `media`, and `saved.go`'s `saving` and `keeping` — because
+no `modules/<name>/README.md` exists to answer them. [authorization_readme_test.go](authorization_readme_test.go)
 reads this section against their manifests, the same way it reads the kernel
 modules'.
 
 ### Permissions
 
-None of `product`, `workspace`, `access` or `media` declares a permission: a manifest with no
-grant to hand out. Every permission the running application offers belongs to the module
+None of `product`, `workspace`, `access`, `media`, `saving` or `keeping` declares a
+permission: a manifest with no
+grant to hand out. `saving` and `keeping` answer to grants in the strongest sense —
+`saving` implements `saved`'s `Access` port, so it is where `saved:read` and
+`saved:write` are read — but the keys themselves belong to `modules/saved`, and a
+module that hands out another's grant would be two answers to who may keep a copy. Every permission the running application offers belongs to the module
 that owns the subject it governs — `user` for people and roles, `content` for
 pages, `billing` for plans — and this application adds none.
 
 ### Object scope
 
-All four work inside one tenant and never across two. `product` hands out values that
+All six work inside one tenant and never across two. `product` hands out values that
 are read once at composition — the session cookie, the rate buckets, the storage
 bucket, the scheduler cadence — and joins that are constructed from a `db.Tx`
 carrying the tenant the request resolved, which is where tenancy is enforced here.
 `workspace` hands out one value, the shell a module's own page is drawn in, and
 reads nothing. `access` joins a person, a notice and a site to decide who may be let in, and every
-row it reads is behind that same transaction. `media` reads nothing: it hands
+row it reads is behind that same transaction. `saving` answers the keeper's
+identity out of `tenancy.PrincipalFrom` and the grants `auth` holds for that
+principal, inside the caller's transaction rather than from the principal the request
+carries, because a save may have waited on the source's row first; a bearer key's own
+list is then applied as a ceiling. `keeping` holds no state but the addresses its own
+mount answered with. `media` reads nothing: it hands
 `file.Module` the shell the library is drawn in and the authorizer that decides
 which of the page's two write controls a person is shown — the check itself is
 `kit/httpx`'s, on the route.
 
 ### Duties the module enforces itself
 
-None enforces anything. They provide no route of their own, no duty and no check:
+`saving` enforces one thing and it is the one thing no other party can: that the
+person asking is the person the copy will belong to, and that the grants they hold are
+the ones their roles hold right now. `keeping` enforces nothing; it mounts and reads.
+The rest enforce nothing. `product`, `workspace`, `access` and `media` provide no route
+of their own, no duty and no check:
 `product` answers contracts, `workspace` names the chrome and mounts nothing,
 `access` fills the reach an ask has here and the
 authorizer the sign-in page asks, and `media` hands the library its chrome — the
@@ -175,7 +189,11 @@ by the router. The enforcement is the modules' whose services they join, and
 
 ### Public faces
 
-No face of its own. The two pages an unauthenticated visitor sees — the ask page
+`keeping` mounts the three faces of a person's own copies: the grid of what they kept,
+the save a record screen's control posts, and the give-back of one copy. They are
+mounted on the tenant's app surface under this module's own namespace, and the
+addresses the drawn control posts to come from the mount itself rather than from a
+guess made at the renderer. The rest have no face of its own. The two pages an unauthenticated visitor sees — the ask page
 and the signed-out page — are mounted by `app.go` with `AskForAccess` and
 `page.MountAccess`, drawn in the fault shell this application writes in `fault.go`;
 the sign-in screen belongs to `admin`.
@@ -189,6 +207,8 @@ them ambiguous.
 
 ### Provisioning
 
+`saving` provisions nothing: a person's first copy is what creates their first row, and
+the grants that let them ask are seeded with the roles in `roles.go`.
 `product` provisions no subject either: a new tenant's people, roles and seeded
 content are provisioned by `user`, `auth` and `site` when the tenant is created,
 and `roles.go` is the list of who the first person is. What `product` decides at

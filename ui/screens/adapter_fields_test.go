@@ -75,6 +75,10 @@ var callerScoped = map[string]string{
 	// has the same shape as Commands: two registered resources cannot be compared
 	// without the caller whose series one of them holds.
 	"History": "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
+	// Whether a row may be kept as a copy is the caller's standing against it, so
+	// two registered resources cannot answer it either: the reader is asked inside
+	// the request, in the caller's own transaction.
+	"Saving": "TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes in apps/platformkit/saved_surface_test.go",
 }
 
 // shapesFor is one field in both its shapes, beside the screen that has to notice

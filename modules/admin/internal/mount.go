@@ -105,6 +105,11 @@ type Shell struct {
 	PictureSource string
 	// ComposedSource is the composed-picture address with a {reference} placeholder.
 	ComposedSource string
+	// Saving is this installation's saving capability, handed to the generated
+	// record screen that draws the control. Nil is every composition that wired no
+	// saving service: the record screen is drawn without one and resolves no
+	// `savable`, which is an answer and not a missing half.
+	Saving resource.SavingReader
 	// Registration is the composition saying a stranger may make an account
 	// here. Nil offers no way in but the password, which is the answer for
 	// every composition that wired no registration service.
@@ -222,6 +227,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		Workspace: a.workspace.at, Home: "Dashboard",
 		PictureSource:  sh.PictureSource,
 		ComposedSource: sh.ComposedSource,
+		Saving:         sh.Saving,
 	}
 	resources := s.Resources()
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Screen < resources[j].Screen })

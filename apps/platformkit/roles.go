@@ -57,6 +57,9 @@ import (
 var initialRoles = []authcontracts.Role{
 	{Name: "coordinator", Grants: authcontracts.Permissions{
 		taskcontracts.PermissionTaskRead, taskcontracts.PermissionTaskUpdate,
+		// The two doors of a person's own copies: the desk coordinator is this
+		// application's fixture person, and a heart nobody in it may press would be
+		// a control no case in this repository could ever press either.
 	}},
 	{Name: "observer", Grants: authcontracts.Permissions{taskcontracts.PermissionTaskRead}},
 	// The officer who answers a person's request on the tenant's behalf. The two grants

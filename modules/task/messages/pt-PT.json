@@ -142,5 +142,41 @@
     "plural": {
       "": "Crie uma tarefa para definir o próximo passo do trabalho."
     }
+  },
+  "hints.task/task.saving.save": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Guardar tarefa",
+    "plural": {
+      "": "Guardar tarefa"
+    }
+  },
+  "hints.task/task.saving.saved": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Guardada nas suas tarefas",
+    "plural": {
+      "": "Guardada nas suas tarefas"
+    }
+  },
+  "hints.task/task.saving.remove": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Remover dos guardados",
+    "plural": {
+      "": "Remover dos guardados"
+    }
+  },
+  "hints.task/task.saving.listTitle": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "As minhas tarefas guardadas",
+    "plural": {
+      "": "As minhas tarefas guardadas"
+    }
   }
 }

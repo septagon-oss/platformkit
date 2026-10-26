@@ -15,6 +15,7 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
 
 // Module is the shell as the resolver sees it, for an application that names it
@@ -38,6 +39,10 @@ var Module = pkit.NewModule("admin", wire,
 	pkit.Optional[usercontracts.Service](),
 	pkit.Optional[admincontracts.Signin](),
 	pkit.Optional[admincontracts.Pictures](),
+	// Optional, not Needs: a composition with no saving service has no standing to
+	// answer, and the record screens it generates are then drawn exactly as they
+	// were before a copy could be kept.
+	pkit.Optional[resource.SavingReader](),
 	pkit.Optional[admincontracts.Locale](),
 	pkit.Optional[admincontracts.Storybook](),
 	pkit.Optional[admincontracts.PrimaryAction](),
@@ -75,6 +80,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// A generated picture cell fetches through the file module's door, which this
 		// shell does not mount and so cannot name: the composition that published that
 		// door to the workspace catalogue hands it here as the same string.
+		Saving:         pkit.Get[resource.SavingReader](w),
 		PictureSource:  pkit.Get[admincontracts.Pictures](w).Source,
 		ComposedSource: pkit.Get[admincontracts.Pictures](w).ComposedSource,
 		// The form on the shell's login page posts to the auth module's door, and

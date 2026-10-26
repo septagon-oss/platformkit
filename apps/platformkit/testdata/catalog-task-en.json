@@ -1,41 +1,82 @@
 {
-  "module": "task",
+  "commands": [
+    {
+      "description": "Makes somebody responsible, and acknowledges an open task. Assigning the same person again changes nothing.",
+      "fields": [
+        {
+          "doc": "The user who becomes responsible",
+          "name": "assigneeId",
+          "presentation": {
+            "label": "Assignee"
+          },
+          "type": "uuid"
+        }
+      ],
+      "presentation": {
+        "label": "Assign"
+      },
+      "summary": "Assign a task",
+      "verb": "assign"
+    },
+    {
+      "description": "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused.",
+      "fields": [
+        {
+          "doc": "How the task was resolved",
+          "maxLength": 4000,
+          "name": "resolution",
+          "type": "string"
+        }
+      ],
+      "presentation": {
+        "label": "Resolve"
+      },
+      "summary": "Resolve a task",
+      "verb": "resolve"
+    },
+    {
+      "description": "Records a breach if the deadline has passed with the task unresolved. Records at most one.",
+      "presentation": {
+        "system": true
+      },
+      "summary": "Check a task's SLA",
+      "verb": "check-sla"
+    }
+  ],
   "entity": "task",
-  "path": "/api/v1/task/tasks",
   "fields": [
     {
       "name": "id",
-      "type": "uuid",
-      "readOnly": true
+      "readOnly": true,
+      "type": "uuid"
     },
     {
       "name": "createdAt",
-      "type": "time",
-      "readOnly": true
+      "readOnly": true,
+      "type": "time"
     },
     {
       "name": "updatedAt",
-      "type": "time",
-      "readOnly": true
+      "readOnly": true,
+      "type": "time"
     },
     {
-      "name": "title",
-      "type": "string",
+      "doc": "Short summary of the task",
       "maxLength": 200,
+      "name": "title",
       "required": true,
-      "doc": "Short summary of the task"
+      "type": "string"
     },
     {
+      "doc": "Detailed description of the task",
+      "hideList": true,
       "name": "description",
       "type": "text",
-      "widget": "textarea",
-      "hideList": true,
-      "doc": "Detailed description of the task"
+      "widget": "textarea"
     },
     {
-      "name": "status",
-      "type": "string",
-      "widget": "select",
+      "default": "open",
+      "doc": "Lifecycle state",
       "enum": [
         "open",
         "acknowledged",
@@ -43,33 +84,32 @@
         "resolved",
         "closed"
       ],
-      "default": "open",
-      "doc": "Lifecycle state",
+      "name": "status",
       "presentation": {
+        "doneValues": [
+          "resolved"
+        ],
         "enumTones": {
           "acknowledged": "info",
           "closed": "neutral",
           "in_progress": "warning",
           "open": "info",
           "resolved": "success"
-        },
-        "doneValues": [
-          "resolved"
-        ]
-      }
+        }
+      },
+      "type": "string",
+      "widget": "select"
     },
     {
-      "name": "priority",
-      "type": "string",
-      "widget": "select",
+      "default": "normal",
+      "doc": "Task priority",
       "enum": [
         "low",
         "normal",
         "high",
         "critical"
       ],
-      "default": "normal",
-      "doc": "Task priority",
+      "name": "priority",
       "presentation": {
         "enumTones": {
           "critical": "danger",
@@ -77,113 +117,106 @@
           "low": "neutral",
           "normal": "neutral"
         }
-      }
+      },
+      "type": "string",
+      "widget": "select"
     },
     {
-      "name": "source",
-      "type": "string",
       "doc": "Origin of the task",
+      "name": "source",
       "presentation": {
         "visibility": "hidden"
-      }
+      },
+      "type": "string"
     },
     {
-      "name": "sourceRef",
-      "type": "string",
       "doc": "Reference into the source system",
+      "name": "sourceRef",
       "presentation": {
         "visibility": "hidden"
-      }
+      },
+      "type": "string"
     },
     {
-      "name": "assigneeId",
-      "type": "uuid",
-      "widget": "entity-picker",
       "doc": "User responsible for the task",
+      "name": "assigneeId",
       "presentation": {
         "label": "Assignee",
-        "visibility": "detail",
         "reference": {
           "resource": "user/user"
-        }
-      }
+        },
+        "visibility": "detail"
+      },
+      "type": "uuid",
+      "widget": "entity-picker"
     },
     {
-      "name": "dueAt",
-      "type": "time",
-      "widget": "datetime",
       "doc": "Soft target completion time",
+      "name": "dueAt",
       "presentation": {
         "label": "Due"
-      }
+      },
+      "type": "time",
+      "widget": "datetime"
     },
     {
-      "name": "slaDeadline",
-      "type": "time",
-      "widget": "datetime",
       "doc": "Hard SLA deadline; a breach is measured against this",
+      "name": "slaDeadline",
       "presentation": {
         "label": "Response due"
-      }
+      },
+      "type": "time",
+      "widget": "datetime"
     },
     {
-      "name": "slaBreached",
-      "type": "bool",
-      "widget": "checkbox",
       "default": "false",
       "doc": "True once the deadline elapsed with the task unresolved",
+      "name": "slaBreached",
       "presentation": {
         "label": "Response overdue"
-      }
+      },
+      "type": "bool",
+      "widget": "checkbox"
     },
     {
-      "name": "resolvedAt",
-      "type": "time",
-      "widget": "datetime",
-      "hideList": true,
       "doc": "When the task was resolved",
+      "hideList": true,
+      "name": "resolvedAt",
       "presentation": {
         "label": "Resolved"
-      }
+      },
+      "type": "time",
+      "widget": "datetime"
     },
     {
+      "doc": "How the task was resolved",
+      "hideList": true,
       "name": "resolution",
       "type": "text",
-      "widget": "textarea",
-      "hideList": true,
-      "doc": "How the task was resolved"
+      "widget": "textarea"
     },
     {
+      "doc": "This row's own write count, from 1",
       "name": "revision",
-      "type": "int",
-      "doc": "This row's own write count, from 1"
+      "type": "int"
     }
   ],
+  "immutable": [
+    "assigneeId",
+    "slaBreached",
+    "resolvedAt",
+    "resolution"
+  ],
+  "module": "task",
+  "path": "/api/v1/task/tasks",
   "presentation": {
-    "singular": "task",
-    "plural": "tasks",
     "description": "Set priorities, assign work and keep track of what is due.",
-    "icon": "task",
+    "emptyDescription": "Create a task to give the work a clear next step.",
     "group": {
       "key": "work",
       "label": "Work"
     },
-    "primaryField": "title",
-    "previewField": "description",
-    "summaryFields": [
-      "priority",
-      "dueAt",
-      "slaBreached"
-    ],
-    "statusField": "status",
-    "emptyDescription": "Create a task to give the work a clear next step.",
-    "sortable": [
-      "title",
-      "dueAt",
-      "updatedAt"
-    ],
     "highlight": {
-      "label": "Due today",
       "filter": [
         {
           "field": "dueAt",
@@ -195,45 +228,667 @@
           "op": "lt",
           "value": "tomorrow"
         }
-      ]
+      ],
+      "label": "Due today"
     },
+    "icon": "task",
+    "plural": "tasks",
+    "previewField": "description",
+    "primaryField": "title",
+    "singular": "task",
+    "sortable": [
+      "title",
+      "dueAt",
+      "updatedAt"
+    ],
+    "statusField": "status",
+    "summaryFields": [
+      "priority",
+      "dueAt",
+      "slaBreached"
+    ],
     "trendField": "createdAt"
   },
   "resolved": {
-    "policyVersion": 1,
-    "language": "en",
+    "commands": [
+      {
+        "confirmation": null,
+        "destructive": false,
+        "fields": [
+          {
+            "choice": null,
+            "control": "text",
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "figure": null,
+            "help": "The user who becomes responsible",
+            "kind": "text",
+            "label": "Assignee",
+            "name": "assigneeId",
+            "onList": false,
+            "onRecord": false,
+            "options": [],
+            "reading": {
+              "false": "",
+              "format": "",
+              "missing": "\u2014",
+              "money": null,
+              "precision": null,
+              "time": null,
+              "true": ""
+            },
+            "reference": null,
+            "section": ""
+          }
+        ],
+        "label": "Assign",
+        "primary": false,
+        "successMessage": "",
+        "system": false,
+        "verb": "assign",
+        "visible": true
+      },
+      {
+        "confirmation": null,
+        "destructive": false,
+        "fields": [
+          {
+            "choice": null,
+            "control": "text",
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "figure": null,
+            "help": "How the task was resolved",
+            "kind": "text",
+            "label": "Resolution",
+            "name": "resolution",
+            "onList": false,
+            "onRecord": false,
+            "options": [],
+            "reading": {
+              "false": "",
+              "format": "",
+              "missing": "\u2014",
+              "money": null,
+              "precision": null,
+              "time": null,
+              "true": ""
+            },
+            "reference": null,
+            "section": ""
+          }
+        ],
+        "label": "Resolve",
+        "primary": false,
+        "successMessage": "",
+        "system": false,
+        "verb": "resolve",
+        "visible": true
+      },
+      {
+        "confirmation": null,
+        "destructive": false,
+        "fields": [],
+        "label": "Check a task's SLA",
+        "primary": false,
+        "successMessage": "",
+        "system": true,
+        "verb": "check-sla",
+        "visible": false
+      }
+    ],
+    "deck": null,
+    "fields": [
+      {
+        "choice": null,
+        "control": "text",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "",
+        "kind": "text",
+        "label": "Id",
+        "name": "id",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "datetime",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "",
+        "kind": "instant",
+        "label": "Created at",
+        "name": "createdAt",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "datetime",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "datetime",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "",
+        "kind": "instant",
+        "label": "Updated at",
+        "name": "updatedAt",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "datetime",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "text",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Short summary of the task",
+        "kind": "text",
+        "label": "Title",
+        "name": "title",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "textarea",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Detailed description of the task",
+        "kind": "longtext",
+        "label": "Description",
+        "name": "description",
+        "onList": false,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "select",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Lifecycle state",
+        "kind": "enum",
+        "label": "Status",
+        "name": "status",
+        "onList": true,
+        "onRecord": true,
+        "options": [
+          {
+            "done": false,
+            "group": "",
+            "label": "Open",
+            "noPreference": false,
+            "picture": null,
+            "tone": "info",
+            "value": "open"
+          },
+          {
+            "done": false,
+            "group": "",
+            "label": "Acknowledged",
+            "noPreference": false,
+            "picture": null,
+            "tone": "info",
+            "value": "acknowledged"
+          },
+          {
+            "done": false,
+            "group": "",
+            "label": "In progress",
+            "noPreference": false,
+            "picture": null,
+            "tone": "warning",
+            "value": "in_progress"
+          },
+          {
+            "done": true,
+            "group": "",
+            "label": "Resolved",
+            "noPreference": false,
+            "picture": null,
+            "tone": "success",
+            "value": "resolved"
+          },
+          {
+            "done": false,
+            "group": "",
+            "label": "Closed",
+            "noPreference": false,
+            "picture": null,
+            "tone": "neutral",
+            "value": "closed"
+          }
+        ],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "select",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Task priority",
+        "kind": "enum",
+        "label": "Priority",
+        "name": "priority",
+        "onList": true,
+        "onRecord": true,
+        "options": [
+          {
+            "done": false,
+            "group": "",
+            "label": "Low",
+            "noPreference": false,
+            "picture": null,
+            "tone": "neutral",
+            "value": "low"
+          },
+          {
+            "done": false,
+            "group": "",
+            "label": "Normal",
+            "noPreference": false,
+            "picture": null,
+            "tone": "neutral",
+            "value": "normal"
+          },
+          {
+            "done": false,
+            "group": "",
+            "label": "High",
+            "noPreference": false,
+            "picture": null,
+            "tone": "warning",
+            "value": "high"
+          },
+          {
+            "done": false,
+            "group": "",
+            "label": "Critical",
+            "noPreference": false,
+            "picture": null,
+            "tone": "danger",
+            "value": "critical"
+          }
+        ],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "text",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Origin of the task",
+        "kind": "text",
+        "label": "Source",
+        "name": "source",
+        "onList": false,
+        "onRecord": false,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "text",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Reference into the source system",
+        "kind": "text",
+        "label": "Source ref",
+        "name": "sourceRef",
+        "onList": false,
+        "onRecord": false,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "entity-picker",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "User responsible for the task",
+        "kind": "reference",
+        "label": "Assignee",
+        "name": "assigneeId",
+        "onList": false,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": {
+          "resource": "user/user"
+        },
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "datetime",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Soft target completion time",
+        "kind": "instant",
+        "label": "Due",
+        "name": "dueAt",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "datetime",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "datetime",
+        "editable": {
+          "create": true,
+          "update": true
+        },
+        "figure": null,
+        "help": "Hard SLA deadline; a breach is measured against this",
+        "kind": "instant",
+        "label": "Response due",
+        "name": "slaDeadline",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "datetime",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "checkbox",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "True once the deadline elapsed with the task unresolved",
+        "kind": "boolean",
+        "label": "Response overdue",
+        "name": "slaBreached",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "No",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": "Yes"
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "datetime",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "When the task was resolved",
+        "kind": "instant",
+        "label": "Resolved",
+        "name": "resolvedAt",
+        "onList": false,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "datetime",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": {
+            "kind": "instant",
+            "relative": false
+          },
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "textarea",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "How the task was resolved",
+        "kind": "longtext",
+        "label": "Resolution",
+        "name": "resolution",
+        "onList": false,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": null,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      },
+      {
+        "choice": null,
+        "control": "number",
+        "editable": {
+          "create": false,
+          "update": false
+        },
+        "figure": null,
+        "help": "This row's own write count, from 1",
+        "kind": "number",
+        "label": "Revision",
+        "name": "revision",
+        "onList": true,
+        "onRecord": true,
+        "options": [],
+        "reading": {
+          "false": "",
+          "format": "",
+          "missing": "\u2014",
+          "money": null,
+          "precision": 0,
+          "time": null,
+          "true": ""
+        },
+        "reference": null,
+        "section": ""
+      }
+    ],
     "identity": {
-      "singular": "task",
-      "plural": "tasks",
       "description": "Set priorities, assign work and keep track of what is due.",
       "emptyDescription": "Create a task to give the work a clear next step.",
-      "icon": "task",
       "group": {
         "key": "work",
         "label": "Work"
       },
-      "order": 0
+      "icon": "task",
+      "order": 0,
+      "plural": "tasks",
+      "singular": "task"
     },
-    "titles": {
-      "listCandidates": [
-        "title"
-      ],
-      "recordCandidates": [
-        "title",
-        "description",
-        "resolution"
-      ],
-      "emptyTitle": "—",
-      "preview": "description",
-      "status": "status",
-      "cover": "",
-      "thumbnail": "",
-      "summary": [
-        "priority",
-        "dueAt",
-        "slaBreached"
-      ]
-    },
+    "language": "en",
     "layout": {
       "columns": [
         "title",
@@ -242,11 +897,13 @@
         "slaBreached",
         "status"
       ],
-      "overview": [
+      "create": [
+        "title",
+        "description",
         "status",
         "priority",
         "dueAt",
-        "slaBreached"
+        "slaDeadline"
       ],
       "information": [
         "createdAt",
@@ -258,15 +915,13 @@
         "resolution",
         "revision"
       ],
-      "sections": [],
-      "create": [
-        "title",
-        "description",
+      "overview": [
         "status",
         "priority",
         "dueAt",
-        "slaDeadline"
+        "slaBreached"
       ],
+      "sections": [],
       "update": [
         "title",
         "description",
@@ -276,798 +931,184 @@
         "slaDeadline"
       ]
     },
-    "fields": [
-      {
-        "choice": null,
-        "figure": null,
-        "name": "id",
-        "label": "Id",
-        "help": "",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "text",
-        "kind": "text",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "createdAt",
-        "label": "Created at",
-        "help": "",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "datetime",
-        "kind": "instant",
-        "reading": {
-          "format": "datetime",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": {
-            "kind": "instant",
-            "relative": false
-          },
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "updatedAt",
-        "label": "Updated at",
-        "help": "",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "datetime",
-        "kind": "instant",
-        "reading": {
-          "format": "datetime",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": {
-            "kind": "instant",
-            "relative": false
-          },
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "title",
-        "label": "Title",
-        "help": "Short summary of the task",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "text",
-        "kind": "text",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "description",
-        "label": "Description",
-        "help": "Detailed description of the task",
-        "section": "",
-        "onList": false,
-        "onRecord": true,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "textarea",
-        "kind": "longtext",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "status",
-        "label": "Status",
-        "help": "Lifecycle state",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "select",
-        "kind": "enum",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "open",
-            "label": "Open",
-            "tone": "info",
-            "done": false
-          },
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "acknowledged",
-            "label": "Acknowledged",
-            "tone": "info",
-            "done": false
-          },
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "in_progress",
-            "label": "In progress",
-            "tone": "warning",
-            "done": false
-          },
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "resolved",
-            "label": "Resolved",
-            "tone": "success",
-            "done": true
-          },
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "closed",
-            "label": "Closed",
-            "tone": "neutral",
-            "done": false
-          }
-        ],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "priority",
-        "label": "Priority",
-        "help": "Task priority",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "select",
-        "kind": "enum",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "low",
-            "label": "Low",
-            "tone": "neutral",
-            "done": false
-          },
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "normal",
-            "label": "Normal",
-            "tone": "neutral",
-            "done": false
-          },
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "high",
-            "label": "High",
-            "tone": "warning",
-            "done": false
-          },
-          {
-            "picture": null,
-            "group": "",
-            "noPreference": false,
-            "value": "critical",
-            "label": "Critical",
-            "tone": "danger",
-            "done": false
-          }
-        ],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "source",
-        "label": "Source",
-        "help": "Origin of the task",
-        "section": "",
-        "onList": false,
-        "onRecord": false,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "text",
-        "kind": "text",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "sourceRef",
-        "label": "Source ref",
-        "help": "Reference into the source system",
-        "section": "",
-        "onList": false,
-        "onRecord": false,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "text",
-        "kind": "text",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "assigneeId",
-        "label": "Assignee",
-        "help": "User responsible for the task",
-        "section": "",
-        "onList": false,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "entity-picker",
-        "kind": "reference",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": {
-          "resource": "user/user"
-        }
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "dueAt",
-        "label": "Due",
-        "help": "Soft target completion time",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "datetime",
-        "kind": "instant",
-        "reading": {
-          "format": "datetime",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": {
-            "kind": "instant",
-            "relative": false
-          },
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "slaDeadline",
-        "label": "Response due",
-        "help": "Hard SLA deadline; a breach is measured against this",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": true,
-          "update": true
-        },
-        "control": "datetime",
-        "kind": "instant",
-        "reading": {
-          "format": "datetime",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": {
-            "kind": "instant",
-            "relative": false
-          },
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "slaBreached",
-        "label": "Response overdue",
-        "help": "True once the deadline elapsed with the task unresolved",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "checkbox",
-        "kind": "boolean",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "Yes",
-          "false": "No",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "resolvedAt",
-        "label": "Resolved",
-        "help": "When the task was resolved",
-        "section": "",
-        "onList": false,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "datetime",
-        "kind": "instant",
-        "reading": {
-          "format": "datetime",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": {
-            "kind": "instant",
-            "relative": false
-          },
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "resolution",
-        "label": "Resolution",
-        "help": "How the task was resolved",
-        "section": "",
-        "onList": false,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "textarea",
-        "kind": "longtext",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      },
-      {
-        "choice": null,
-        "figure": null,
-        "name": "revision",
-        "label": "Revision",
-        "help": "This row's own write count, from 1",
-        "section": "",
-        "onList": true,
-        "onRecord": true,
-        "editable": {
-          "create": false,
-          "update": false
-        },
-        "control": "number",
-        "kind": "number",
-        "reading": {
-          "format": "",
-          "missing": "—",
-          "true": "",
-          "false": "",
-          "precision": 0,
-          "time": null,
-          "money": null
-        },
-        "options": [],
-        "reference": null
-      }
-    ],
     "list": {
       "defaultSort": "-createdAt",
-      "sorts": [
-        {
-          "query": "title",
-          "label": "Title",
-          "field": "title",
-          "desc": false
-        },
-        {
-          "query": "-title",
-          "label": "Title",
-          "field": "title",
-          "desc": true
-        },
-        {
-          "query": "dueAt",
-          "label": "Due",
-          "field": "dueAt",
-          "desc": false
-        },
-        {
-          "query": "-dueAt",
-          "label": "Due",
-          "field": "dueAt",
-          "desc": true
-        },
-        {
-          "query": "updatedAt",
-          "label": "Updated at",
-          "field": "updatedAt",
-          "desc": false
-        },
-        {
-          "query": "-updatedAt",
-          "label": "Updated at",
-          "field": "updatedAt",
-          "desc": true
-        }
-      ],
       "filters": [
         {
           "field": "status",
-          "label": "Status",
           "kind": "enum",
+          "label": "Status",
           "values": [
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "open",
               "label": "Open",
+              "noPreference": false,
+              "picture": null,
               "tone": "info",
-              "done": false
+              "value": "open"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "acknowledged",
               "label": "Acknowledged",
+              "noPreference": false,
+              "picture": null,
               "tone": "info",
-              "done": false
+              "value": "acknowledged"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "in_progress",
               "label": "In progress",
+              "noPreference": false,
+              "picture": null,
               "tone": "warning",
-              "done": false
+              "value": "in_progress"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "resolved",
               "label": "Resolved",
+              "noPreference": false,
+              "picture": null,
               "tone": "success",
-              "done": false
+              "value": "resolved"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "closed",
               "label": "Closed",
+              "noPreference": false,
+              "picture": null,
               "tone": "neutral",
-              "done": false
+              "value": "closed"
             }
           ]
         },
         {
           "field": "priority",
-          "label": "Priority",
           "kind": "enum",
+          "label": "Priority",
           "values": [
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "low",
               "label": "Low",
+              "noPreference": false,
+              "picture": null,
               "tone": "neutral",
-              "done": false
+              "value": "low"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "normal",
               "label": "Normal",
+              "noPreference": false,
+              "picture": null,
               "tone": "neutral",
-              "done": false
+              "value": "normal"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "high",
               "label": "High",
+              "noPreference": false,
+              "picture": null,
               "tone": "warning",
-              "done": false
+              "value": "high"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "critical",
               "label": "Critical",
+              "noPreference": false,
+              "picture": null,
               "tone": "danger",
-              "done": false
+              "value": "critical"
             }
           ]
         },
         {
           "field": "slaBreached",
-          "label": "Response overdue",
           "kind": "bool",
+          "label": "Response overdue",
           "values": [
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "true",
               "label": "Yes",
+              "noPreference": false,
+              "picture": null,
               "tone": "neutral",
-              "done": false
+              "value": "true"
             },
             {
-              "picture": null,
+              "done": false,
               "group": "",
-              "noPreference": false,
-              "value": "false",
               "label": "No",
+              "noPreference": false,
+              "picture": null,
               "tone": "neutral",
-              "done": false
+              "value": "false"
             }
           ]
         }
+      ],
+      "sorts": [
+        {
+          "desc": false,
+          "field": "title",
+          "label": "Title",
+          "query": "title"
+        },
+        {
+          "desc": true,
+          "field": "title",
+          "label": "Title",
+          "query": "-title"
+        },
+        {
+          "desc": false,
+          "field": "dueAt",
+          "label": "Due",
+          "query": "dueAt"
+        },
+        {
+          "desc": true,
+          "field": "dueAt",
+          "label": "Due",
+          "query": "-dueAt"
+        },
+        {
+          "desc": false,
+          "field": "updatedAt",
+          "label": "Updated at",
+          "query": "updatedAt"
+        },
+        {
+          "desc": true,
+          "field": "updatedAt",
+          "label": "Updated at",
+          "query": "-updatedAt"
+        }
       ]
     },
-    "commands": [
-      {
-        "fields": [
-          {
-            "choice": null,
-            "figure": null,
-            "name": "assigneeId",
-            "label": "Assignee",
-            "help": "The user who becomes responsible",
-            "section": "",
-            "onList": false,
-            "onRecord": false,
-            "editable": {
-              "create": true,
-              "update": false
-            },
-            "control": "text",
-            "kind": "text",
-            "reading": {
-              "format": "",
-              "missing": "—",
-              "true": "",
-              "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
-            },
-            "options": [],
-            "reference": null
-          }
-        ],
-        "verb": "assign",
-        "label": "Assign",
-        "visible": true,
-        "system": false,
-        "primary": false,
-        "destructive": false,
-        "confirmation": null,
-        "successMessage": ""
-      },
-      {
-        "fields": [
-          {
-            "choice": null,
-            "figure": null,
-            "name": "resolution",
-            "label": "Resolution",
-            "help": "How the task was resolved",
-            "section": "",
-            "onList": false,
-            "onRecord": false,
-            "editable": {
-              "create": true,
-              "update": false
-            },
-            "control": "text",
-            "kind": "text",
-            "reading": {
-              "format": "",
-              "missing": "—",
-              "true": "",
-              "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
-            },
-            "options": [],
-            "reference": null
-          }
-        ],
-        "verb": "resolve",
-        "label": "Resolve",
-        "visible": true,
-        "system": false,
-        "primary": false,
-        "destructive": false,
-        "confirmation": null,
-        "successMessage": ""
-      },
-      {
-        "fields": [],
-        "verb": "check-sla",
-        "label": "Check a task's SLA",
-        "visible": false,
-        "system": true,
-        "primary": false,
-        "destructive": false,
-        "confirmation": null,
-        "successMessage": ""
+    "policyVersion": 1,
+    "savable": {
+      "keyField": "id",
+      "kind": "task",
+      "module": "task",
+      "versionField": "revision",
+      "words": {
+        "listTitle": "My saved tasks",
+        "remove": "Remove from saved",
+        "save": "Save task",
+        "saved": "Saved to your tasks"
       }
-    ],
-    "deck": null,
+    },
     "summary": {
       "highlight": {
-        "label": "Due today",
         "filter": [
           {
             "field": "dueAt",
@@ -1079,62 +1120,32 @@
             "op": "lt",
             "value": "tomorrow"
           }
-        ]
+        ],
+        "label": "Due today"
       },
       "trendField": "createdAt"
     },
-    "savable": null
+    "titles": {
+      "cover": "",
+      "emptyTitle": "\u2014",
+      "listCandidates": [
+        "title"
+      ],
+      "preview": "description",
+      "recordCandidates": [
+        "title",
+        "description",
+        "resolution"
+      ],
+      "status": "status",
+      "summary": [
+        "priority",
+        "dueAt",
+        "slaBreached"
+      ],
+      "thumbnail": ""
+    }
   },
   "screen": "/app/task/tasks",
-  "immutable": [
-    "assigneeId",
-    "slaBreached",
-    "resolvedAt",
-    "resolution"
-  ],
-  "writable": true,
-  "commands": [
-    {
-      "verb": "assign",
-      "summary": "Assign a task",
-      "description": "Makes somebody responsible, and acknowledges an open task. Assigning the same person again changes nothing.",
-      "fields": [
-        {
-          "name": "assigneeId",
-          "type": "uuid",
-          "doc": "The user who becomes responsible",
-          "presentation": {
-            "label": "Assignee"
-          }
-        }
-      ],
-      "presentation": {
-        "label": "Assign"
-      }
-    },
-    {
-      "verb": "resolve",
-      "summary": "Resolve a task",
-      "description": "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused.",
-      "fields": [
-        {
-          "name": "resolution",
-          "type": "string",
-          "maxLength": 4000,
-          "doc": "How the task was resolved"
-        }
-      ],
-      "presentation": {
-        "label": "Resolve"
-      }
-    },
-    {
-      "verb": "check-sla",
-      "summary": "Check a task's SLA",
-      "description": "Records a breach if the deadline has passed with the task unresolved. Records at most one.",
-      "presentation": {
-        "system": true
-      }
-    }
-  ]
+  "writable": true
 }

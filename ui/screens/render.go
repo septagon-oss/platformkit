@@ -57,7 +57,8 @@ func described(r httpx.Resource, o Options) resource.Resource {
 		language = o.Locale.Language
 		text = func(key, fallback string) string { return o.Locale.Text(key, fallback) }
 	}
-	return resource.Resource{Resolved: resolve(Localise(r, text), text, language), Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
+	return resource.Resource{Resolved: resolve(Localise(r, text), text, language, o.Saving != nil),
+		Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
 		Screen: r.Screen, Operations: screenOperations(r), Present: r.Present, API: r.Path}
 }
 
@@ -180,7 +181,32 @@ func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row
 	}
 	v := view(r, ctx, at, o)
 	v.History = historyPanel(r, ctx, o, at, row)
+	v.Saving = savingStanding(ctx, o, v, row)
 	return resource.DetailRichText(v, o, row, writable, rendered, locales), nil
+}
+
+// savingStanding is where the caller stands against the row about to be drawn,
+// read in the request's own transaction, and nil for every case that has no
+// control to draw: an installation that wired no saving service, an entry that
+// declares no savable pair, a row publishing no key, and a standing that could not
+// be read at all. The last of those leaves the record on its own rather than
+// failing the page over the copy: the row is what the person came for, and a heart
+// is a door they can ask for again — the same rule historyPanel follows. It is
+// asked here, and never by the renderer, because the renderer has no transaction.
+func savingStanding(ctx context.Context, o Options, v resource.Resource, row map[string]any) *resource.SavingControl {
+	saving, reader := v.Resolved.Saving, o.Saving
+	if saving == nil || reader == nil {
+		return nil
+	}
+	key := display.Text(row[saving.KeyField])
+	if key == "" {
+		return nil
+	}
+	state, err := reader.SavingState(ctx, saving.Module, saving.Kind, key)
+	if err != nil || state == nil {
+		return nil
+	}
+	return state
 }
 
 // localeStates is the one language question the record screen asks, asked of the

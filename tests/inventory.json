@@ -1182,6 +1182,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/a_person_reading_a_record_is_told_they_may_keep_it_test.go",
+   "id": "apps/platformkit/a_person_reading_a_record_is_told_they_may_keep_it_test.go#TestTheReferenceCompositionTellsAPersonWhichOfItsRecordsTheyMayKeep",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheReferenceCompositionTellsAPersonWhichOfItsRecordsTheyMayKeep",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/a_record_written_without_a_translation_port_test.go",
    "id": "apps/platformkit/a_record_written_without_a_translation_port_test.go#TestARecordWrittenThroughASpecWithNoPortIsWrittenAndRemoved",
    "kind": "go",
@@ -6366,6 +6385,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/saved_surface_test.go",
+   "id": "apps/platformkit/saved_surface_test.go#TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
    "verdict": "keep"
   },
   {
@@ -88450,7 +88488,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2396,
+  "files": 2398,
   "forge_runs": [
    408,
    413,
@@ -88485,7 +88523,7 @@
   ],
   "layers": {
    "behaviour": 3857,
-   "composition": 497,
+   "composition": 499,
    "contract": 24,
    "journey": 111
   },
@@ -88503,9 +88541,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4489,
+  "rows": 4491,
   "tiers": {
-   "merge": 2727,
+   "merge": 2729,
    "nightly": 111,
    "push": 1651
   },
@@ -88513,13 +88551,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2151,
+   "keep": 2153,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4103,
+   "keep": 4105,
    "keep-rewrite": 170,
    "merge": 216
   }
