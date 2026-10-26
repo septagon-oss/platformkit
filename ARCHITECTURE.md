@@ -425,7 +425,7 @@ terms of a token, which is the whole reason to have themes (`design/design.go:11
 web standard, not a dependency.
 
 **How the tenant crosses it.** It does not. The theme is chosen once, at
-composition (`Theme(design.Default())`, `apps/platformkit/app.go:317`), one
+composition (`Theme(design.Default())`, `apps/platformkit/app.go:322`), one
 stylesheet serves every tenant, and no theme reads a row: isolation lives in the
 database, and a stylesheet adds none of it.
 
@@ -436,7 +436,7 @@ one stylesheet per pair rather than recomposing per request
 **How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
 own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
 line is `apps/platformkit/fault.go:113`: `ui.Compose(design.Default())`, the same
-pair the composition hands the shell at `apps/platformkit/app.go:317`. A client's
+pair the composition hands the shell at `apps/platformkit/app.go:322`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
 a role.
 
