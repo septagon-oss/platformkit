@@ -382,8 +382,9 @@ frame, a joined nested `Run` and an opened `Pending` alike; `Detached` with `Wit
 for the context handed an action; `ErrNoTransactionToDefer` for its refusal. **Added:** a second
 queue on `Pending` and `openTx`, and `ending` — `end` naming the outcome it confirmed instead of
 leaving `finalise` to infer one. `AfterCommit` runs on a commit and nothing else, and an effect run
-on an unknown outcome would delete behind committed rows. **Made reusable:** the `ending` every
-outcome reports through, and a rollback-side hand-off no caller has to wrap a `ConnPool` to get.
+on an unknown outcome would delete behind committed rows. **Made reusable:** inside the
+package, one place that decides which outcome happened, which `finalise` reads instead of
+inferring one; for a caller, a rollback-side hand-off no one has to wrap a `ConnPool` to get.
 
 | Ending | The commit queue | The rollback queue | The caller is answered |
 |---|---|---|---|
@@ -405,7 +406,11 @@ effect that must not be lost needs a row and a sweep. Actions run before `Run` o
 returns, so their latency is the caller's, on a context detached from the transaction, no longer
 cancelled by the owner and bounded by five seconds. What an action needs from the database it reads
 before registering: a nested `SAVEPOINT`/`ROLLBACK TO` can un-name a row in between. A system
-transaction, a `Pending` nobody opened, a transaction already ended and a nil action are refused.
+transaction, a `Pending` nobody opened, a transaction already ended and a nil action are refused —
+and so is a registration on the frame a `Run` handler kept past its transaction's ending, because a
+queue that ending took runs nothing whatever still points at it. Work an ending dropped is the
+outcome's own decision, but it is memory and its transaction is over, so its count and the ending
+that dropped it are written to the log before they go.
 
 ## An effect that waits for the commit
 

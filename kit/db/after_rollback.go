@@ -25,9 +25,10 @@ const rollbackGrace = 5 * time.Second
 // an owner that had already ended is known whatever that ROLLBACK answered.
 //
 // Refused with ErrNoTransactionToDefer when ctx carries no tenant transaction that could
-// run it: none, one that never opened, one already ended, a system one, or a nil action.
-// The action gets the context AfterCommit hands its own, carrying the pool it ran on, no
-// longer cancelled by the owner and bounded by five seconds. Its error is logged and
+// run it: none, one that never opened, one whose ending has been decided — the frame a Run
+// handler keeps past Run's return names a queue that ending took — a system one, or a nil
+// action. The action gets the context AfterCommit hands its own, carrying the pool it ran
+// on, no longer cancelled by the owner and bounded by five seconds. Its error is logged and
 // changes nothing Rollback or Run returns.
 func AfterRollback(ctx context.Context, action func(context.Context) error) error {
 	if action == nil {
@@ -37,7 +38,9 @@ func AfterRollback(ctx context.Context, action func(context.Context) error) erro
 	if !ok || cur.system || cur.rollbacks == nil {
 		return ErrNoTransactionToDefer
 	}
-	cur.rollbacks.add(afterAction{ctx: ctx, fn: action})
+	if !cur.rollbacks.add(afterAction{ctx: ctx, fn: action}) {
+		return ErrNoTransactionToDefer
+	}
 	return nil
 }
 

@@ -480,15 +480,18 @@ type ending struct {
 // they run here and nowhere else: each ending runs its own work and drops the other one's.
 func (p *Pending) finalise(keep bool) error {
 	e := p.end(keep)
-	// Outside the mutex, because a queue is somebody else's code and an action that
-	// opens a transaction of its own must not have to wait for this Pending.
+	// The queues are drained here, outside the mutex, because a queue is somebody
+	// else's code and an action that opens a transaction of its own must not have to
+	// wait for this Pending.
+	commits, rollbacks := e.commits.drain(), e.rollbacks.drain()
+	e.logUndone(p.owner, commits, rollbacks)
 	if e.rollbackConfirmed {
-		runRollbacks(p.conn, e.rollbacks.drain())
+		runRollbacks(p.conn, rollbacks)
 	}
 	if e.err != nil || !e.committed {
 		return e.err
 	}
-	return runAfter(p.conn, e.commits.drain())
+	return runAfter(p.conn, commits)
 }
 
 // end commits or rolls back the open transaction and reports which outcome the database
@@ -500,6 +503,11 @@ func (p *Pending) end(keep bool) ending {
 	defer p.mu.Unlock()
 	gtx, span, commits, rollbacks := p.gtx, p.span, p.commits, p.rollbacks
 	p.gtx, p.span, p.commits, p.rollbacks = nil, nil, nil, nil
+	// Both queues are taken before anything else happens to them: from here the
+	// transaction is over, so a registration that still reaches one — through a frame
+	// its handler kept — is refused rather than dropped in silence.
+	commits.take()
+	rollbacks.take()
 	if gtx == nil {
 		return ending{}
 	}
@@ -535,6 +543,30 @@ func (p *Pending) end(keep bool) ending {
 		return ending{commits: commits, rollbacks: rollbacks, err: err}
 	}
 	return ending{committed: true, commits: commits, rollbacks: rollbacks}
+}
+
+// logUndone writes the deferred actions this ending will not run. Each outcome runs one
+// queue and drops the other, and an outcome the database left in doubt drops both: that is
+// the decision, not an accident. The actions are memory and their transaction is over, so
+// without this line work that was registered and never happened leaves no trace at all.
+// owner is the transaction's, which an ending may well outlive: the line is written under
+// it, not against it.
+func (e ending) logUndone(owner context.Context, commits, rollbacks []afterAction) {
+	dropped := len(commits) + len(rollbacks)
+	if e.committed {
+		dropped = len(rollbacks)
+	} else if e.rollbackConfirmed {
+		dropped = len(commits)
+	}
+	if dropped == 0 {
+		return
+	}
+	attrs := []any{"effects", dropped, "committed", e.committed, "rolled_back", e.rollbackConfirmed}
+	if e.err != nil {
+		attrs = append(attrs, "error", e.err)
+	}
+	slog.WarnContext(context.WithoutCancel(owner),
+		"db: the transaction ended without the effects deferred to it", attrs...)
 }
 
 // sealed refuses to commit a transaction that ends under different settings

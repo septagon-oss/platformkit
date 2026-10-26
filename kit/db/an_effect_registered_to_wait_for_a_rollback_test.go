@@ -273,8 +273,9 @@ func TestARollbackEffectThatFailsIsLoggedAndChangesNothingTheCallerIsTold(t *tes
 	}
 }
 
-// Registration racing the ending is honest either way — the action is in the queue when the
-// ending takes it, or it never runs — but it never runs twice.
+// A registration racing the ending is honest on both sides of it: whatever the ending let
+// in runs, and runs once, and whatever arrives after it was taken is refused. The count
+// of accepted registrations is therefore the count of runs at any speed.
 func TestAnEffectRegisteredAsTheTransactionEndsRunsAtMostOnce(t *testing.T) {
 	_, app, acme := acmeThings(t)
 	for range 30 {
@@ -282,19 +283,85 @@ func TestAnEffectRegisteredAsTheTransactionEndsRunsAtMostOnce(t *testing.T) {
 		if _, err := p.Tx(ctx); err != nil {
 			t.Fatal(err)
 		}
-		var ran atomic.Int32
+		var ran, accepted atomic.Int32
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
 			for range 20 {
-				_ = db.AfterRollback(ctx, func(context.Context) error { ran.Add(1); return nil })
+				if db.AfterRollback(ctx, func(context.Context) error { ran.Add(1); return nil }) == nil {
+					accepted.Add(1)
+				}
 			}
 		}()
 		_ = p.Rollback()
 		_ = p.Commit()
 		<-done
-		if n := ran.Load(); n > 1 {
-			t.Fatalf("one rolled back transaction ran its effect %d times, want at most once", n)
+		if n, ok := ran.Load(), accepted.Load(); n != ok || n > 1 {
+			t.Fatalf("one rolled back transaction ran %d of the %d effects it accepted, want every one of them once", n, ok)
+		}
+	}
+}
+
+// Work left behind by an ending is dropped on purpose — each outcome runs one queue and
+// drops the other — but the work is memory and its transaction is over, so what vanished,
+// and the ending that did it, are written down.
+func TestAnEffectTheEndingDroppedIsNamedInTheLog(t *testing.T) {
+	_, app, acme := acmeThings(t)
+	ctx, p, _ := lazy(t, app, acme)
+	insertThrough(t, ctx, p, acme, "rolled back")
+	mustDefer(t, ctx, db.AfterCommit, func(context.Context) error { return nil })
+	var logs strings.Builder
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	if err := p.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	out := logs.String()
+	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "ended without the effects deferred to it") ||
+		!strings.Contains(out, "effects=1") || !strings.Contains(out, "rolled_back=true") {
+		t.Errorf("the log does not name the dropped effect and the ending that dropped it: %s", out)
+	}
+}
+
+// A Run handler's context names the transaction it was handed by value, queue pointers
+// and all, so a registration made once Run has returned reaches a queue that ending took.
+// It is refused: the caller is told the work will not run, rather than being answered nil
+// for work no ending can reach. A frame held that long is nothing a running application
+// does, which is why the promise needs a case of its own.
+func TestARegistrationOnTheFrameRunHandedItsHandlerIsRefusedOnceThatFrameEnded(t *testing.T) {
+	_, app, acme := acmeThings(t)
+	refused := errors.New("the work was refused")
+	for _, keep := range []bool{true, false} {
+		ending := "a rollback"
+		if keep {
+			ending = "a commit"
+		}
+		var ran int
+		var held context.Context
+		err := db.Run(tenancy.WithTenant(t.Context(), acme), app, func(ctx context.Context, _ db.Tx[db.Tenant]) error {
+			held = ctx
+			if keep {
+				return nil
+			}
+			return refused
+		})
+		if keep && err != nil {
+			t.Fatalf("the ending that was to commit answered %v, want nil", err)
+		}
+		if !keep && !errors.Is(err, refused) {
+			t.Fatalf("the ending that was to roll back answered %v, want its own refusal", err)
+		}
+		for name, ask := range map[string]func(context.Context, func(context.Context) error) error{
+			"AfterRollback": db.AfterRollback,
+			"AfterCommit":   db.AfterCommit,
+		} {
+			if err := ask(held, func(context.Context) error { ran++; return nil }); !errors.Is(err, db.ErrNoTransactionToDefer) {
+				t.Errorf("%s on a frame ended by %s answered %v, want %v", name, ending, err, db.ErrNoTransactionToDefer)
+			}
+		}
+		if ran != 0 {
+			t.Errorf("%d effects registered after %s ran", ran, ending)
 		}
 	}
 }
