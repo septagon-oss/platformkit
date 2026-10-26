@@ -149,11 +149,13 @@ func numericAttributeValue(e *element, root bool, k, v string, budget *int) erro
 		case "width", "height", "rx", "ry", "r":
 			lo = 0
 		}
-		if ns[0] < lo || ns[0] > hi {
-			return errors.New("number outside the permitted interval")
-		}
+		// The canvas rule is weighed first: a negative root width is outside both
+		// intervals, and the sentence that names the canvas is the actionable one.
 		if root && (k == "width" || k == "height") && (ns[0] <= 0 || ns[0] > 8192) {
 			return errors.New("dimension must be positive and at most 8192")
+		}
+		if ns[0] < lo || ns[0] > hi {
+			return errors.New("number outside the permitted interval")
 		}
 	}
 	return nil

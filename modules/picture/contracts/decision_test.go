@@ -128,6 +128,15 @@ func TestGeometryGrammarRejectsInvalidShapes(t *testing.T) {
 			t.Errorf("invalid root attribute admitted %s", attr)
 		}
 	}
+	// A negative root dimension is outside both rules that reach it: the interval
+	// every length takes and the rule that a canvas is positive and at most 8192.
+	// The sentence about the canvas is the one its author is handed.
+	for _, attr := range []string{`width="-1"`, `height="-1"`} {
+		bad := strings.Replace(root(""), "viewBox=", attr+" viewBox=", 1)
+		if _, err := contracts.Compile("fixture", bad); err == nil || !strings.Contains(err.Error(), "dimension must be positive") {
+			t.Errorf("root %s refused with %v, want the canvas sentence", attr, err)
+		}
+	}
 	if _, err := contracts.Compile(strings.Repeat("\"", 80), root("<"+strings.Repeat("x", 2000)+"/>")); err == nil || len(err.Error()) > 256 {
 		t.Fatalf("unbounded diagnostic: %v", err)
 	}
