@@ -38,7 +38,8 @@ type PrimaryAction module.NavEntry
 // speak of; Registration nil is the password door alone, which is what the
 // empty field always meant.
 type Signin struct {
-	// OperationID must name Address's mounted operation; empty values panic in Views.
+	// OperationID must name Address's mounted operation. Empty is the shell with no
+	// auth module: Views then declares the sign-in page with no door to post through.
 	OperationID string
 	// Address is where the sign-in form posts.
 	Address string

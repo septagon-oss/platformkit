@@ -12,13 +12,15 @@ func Screen(name string) screen.ViewRef {
 	return ref
 }
 
-// Views returns fresh immutable descriptors for the composed shell providers.
-// Empty or invalid target names panic; composition checks the mounted operations.
+// Views returns fresh immutable descriptors for the composed shell providers. The
+// sign-in anchors bind to the door the composition named: a shell with no auth
+// module declares its sign-in page and no door. An invalid name panics.
 func Views(signin Signin, roles, sessions bool) []screen.View {
-	login := []screen.AnchorSpec{
-		field("email", "email", signin.OperationID), field("password", "password", signin.OperationID),
-		submit("submit", signin.OperationID), navigate("forgot", "forgot"),
+	var login []screen.AnchorSpec
+	if signin.OperationID != "" {
+		login = append(login, field("email", "email", signin.OperationID), field("password", "password", signin.OperationID), submit("submit", signin.OperationID))
 	}
+	login = append(login, navigate("forgot", "forgot"))
 	out := []screen.View{
 		custom("dashboard", navigate("health", "health")), custom("health"), custom("tenants"), custom("gallery"),
 		custom("forgot", field("email", "email", "auth-password-forgot"), submit("submit", "auth-password-forgot"), navigate("back", "login")),
