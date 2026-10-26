@@ -35,6 +35,22 @@ ADVISORIES = (
         "parent": "jspdf",
     },
     {
+        "package": "dompurify",
+        "since": None,
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"),
+        "severity": "high",
+        "parent": "jspdf",
+    },
+    {
+        "package": "dompurify",
+        "since": (3, 4, 4),
+        "upto": (3, 4, 16),
+        "ids": ("GHSA-cg2g-xh64-v4q7",),
+        "severity": "critical",
+        "parent": "jspdf",
+    },
+    {
         # A peer dependency rather than a nested one: `@ai-sdk/provider-utils` declares
         # `zod ^3.25.76 || ^4.1.8`, so `npm ci` installs it at the top of the tree and
         # `--omit=dev` audits it, because omitting dev-dependencies does not omit a peer.

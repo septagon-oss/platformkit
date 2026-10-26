@@ -198,7 +198,7 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	return a.finishRuntime(ctx, conn, store, handler)
+	return a.finishRuntime(ctx, api, conn, store, handler)
 }
 
 // Handler is this composition's HTTP surface, role by role: for web and all the

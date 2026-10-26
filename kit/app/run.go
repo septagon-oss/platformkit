@@ -7,6 +7,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/health"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
 // flushTelemetry exports buffered measurements at most once per App, after
@@ -63,7 +64,11 @@ func (a *App) Run(ctx context.Context) error {
 
 // probes is the worker's whole HTTP surface: liveness and readiness, on the
 // same address the web role listens on, so one orchestrator manifest describes
-// both roles. kit/health owns the shape, so the two roles answer alike.
-func (a *App) probes(conn *db.Conn) http.Handler {
-	return health.Mux(a.log, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
+// both roles. kit/health owns the shape, so the two roles answer alike — which
+// includes the shape of a refused probe: the API this composition already built
+// is handed over rather than a worker that answers an outage with a body of its
+// own. The worker role builds the API on the way through Start whatever role it
+// serves, so this costs no second one.
+func (a *App) probes(api *httpx.API, conn *db.Conn) http.Handler {
+	return health.MuxWithFaults(a.log, api.Siteless, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
 }

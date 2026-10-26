@@ -1,0 +1,12 @@
+-- A set-password credential is offered in a transaction that ends before the mail
+-- carrying it is handed over, so a process that stops in between leaves a row no
+-- recipient ever got. The five-minute resend cooldown cannot key on created_at:
+-- that row would hold the cooldown down and the retry would send nothing.
+-- sent_at records the delivery the transport accepted, which is the only fact the
+-- cooldown and the retry both need.
+--
+-- This is modules/auth/000050's sentence one column further along, because
+-- password_tokens and verification_tokens are mailed by one shape of code: the
+-- link is written ahead of the message that carries it, and the message may not
+-- arrive.
+ALTER TABLE password_tokens ADD COLUMN sent_at timestamptz;

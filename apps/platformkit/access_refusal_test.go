@@ -39,7 +39,12 @@ const (
 // TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted walks the
 // journey named above in one boot of the reference application.
 func TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted(t *testing.T) {
+	// The mailbox these cases read is not asked for by name: a development
+	// deployment that names no mail server is answered by the notification
+	// module's simulated mailbox. A server in this configuration would move the
+	// pick to SMTP and leave the memory these cases read empty.
 	path, cfg := configure(t)
+	path, cfg = keepMailInTheProcess(t, path, cfg)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
