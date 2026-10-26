@@ -191,10 +191,14 @@ func (a productAccess) Current(ctx context.Context, tx db.Tx[db.Tenant], permiss
 }
 
 // heldBy is the grant test both halves ask, written once because the two answers
-// must be one test rather than two that happen to agree.
+// must be one test rather than two that happen to agree. The wildcard is a grant the
+// role holds rather than a word a person typed: auth seeds a tenant's administrator
+// with it precisely so that a module composed later needs no re-seed, and a check
+// that compared text would deny that person the door every other guard in the
+// composition opens for them.
 func heldBy(granted []string, permission string) bool {
 	for _, g := range granted {
-		if g == permission {
+		if g == permission || g == authcontracts.Wildcard {
 			return true
 		}
 	}

@@ -69,7 +69,12 @@ func TestTheReferenceTaskCatalogueReadsWellInEnglishAndPortuguese(t *testing.T) 
 	task := resourceAt(t, "task", "task")
 	for _, language := range []string{"en", "pt-PT"} {
 		text := words(t, language)
-		entry := screens.DescribeEntry(screens.Localise(task, text), true, text, language)
+		// The reference composition composes the saving capability, so this golden
+		// is described with it installed: `resolved.savable` is then the same value
+		// the served document answers, rather than the null an installation without
+		// the capability answers.
+		entry := screens.DescribeEntryInstalled(screens.Localise(task, text), true, text, language,
+			screens.Installed{Saving: true})
 		got, err := json.MarshalIndent(entry, "", "  ")
 		if err != nil {
 			t.Fatal(err)

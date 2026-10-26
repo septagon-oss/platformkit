@@ -30,12 +30,16 @@ func TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
 		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
-	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
+	// The tenant's own administrator keeps the copy: no persona this application
+	// seeds is granted the two doors of a person's copies, and the administrator's
+	// role is the one that holds every tenant-scoped grant the composition defines,
+	// so it is the person a case can press the control as. A coordinator may read
+	// the very same task and keeps nothing — which is the second half of what this
+	// case checks.
+	keeper := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 	title := "Repaint the loading bay"
-	id := newTask(t, cfg, admin, title, "normal")
-	provisionAs(t, cfg, c, acmeTenant(t, cfg), "keeper@acme.localhost", "admin")
-	provisionAs(t, cfg, c, acmeTenant(t, cfg), "watcher@acme.localhost", "observer")
-	keeper := signIn(t, cfg, acmeHost, "keeper@acme.localhost", adminPass)
+	id := newTask(t, cfg, keeper, title, "normal")
+	provisionAs(t, cfg, c, acmeTenant(t, cfg), "watcher@acme.localhost", "coordinator")
 	watcher := signIn(t, cfg, acmeHost, "watcher@acme.localhost", adminPass)
 	record := "/app/task/tasks/" + id
 
@@ -80,9 +84,10 @@ func TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes(t *testing.T) {
 	}
 	giveBack := drawnAddress(t, list, "/remove")
 
-	// A second person of the same tenant, who may read that very task, is shown
-	// neither the pressed state nor the copy: what the list holds is their own, and
-	// their own record page says nothing about a copy kept by someone else.
+	// A second person of the same tenant, a coordinator who may read that very task
+	// and holds neither door over copies, is shown neither the pressed state nor the
+	// kept card: what the list holds is their own, and their own record page says
+	// nothing about a copy somebody else kept.
 	if other := servedPage(t, cfg, watcher, acmeHost, record); strings.Contains(other, `aria-pressed="true"`) ||
 		strings.Contains(other, "Saved to your tasks") {
 		t.Error("a person who kept nothing is shown another person's pressed control")
@@ -93,7 +98,7 @@ func TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes(t *testing.T) {
 	}
 
 	// Another tenant, at its own host: the same addresses, and nothing of this one.
-	code, body := do(t, cfg, admin, http.MethodPost, acmeHost, tenantPath,
+	code, body := do(t, cfg, keeper, http.MethodPost, acmeHost, tenantPath,
 		`{"slug":"globex","name":"Globex","host":"`+globexHost+`"}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s for globex = %d %s, want the tenant created", tenantPath, code, body)

@@ -310,7 +310,15 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 // name the tag printed as `resolved.language`. A nil text and an empty language
 // are Describe1.
 func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) Entry {
-	return describeEntry(r, writable, text, language, Installed{})
+	return DescribeEntryInstalled(r, writable, text, language, Installed{})
+}
+
+// DescribeEntryInstalled is DescribeEntry for an installation that says which
+// optional capability it built: an entry that declares a savable pair resolves it
+// only where the composition can honour it, so this is how a product documents the
+// document it serves rather than the one a bare kernel would.
+func DescribeEntryInstalled(r httpx.Resource, writable bool, text Text, language string, installed Installed) Entry {
+	return describeEntry(r, writable, text, language, installed)
 }
 
 func describeEntry(r httpx.Resource, writable bool, text Text, language string, installed Installed) Entry {
