@@ -326,9 +326,16 @@ check-applied-migrations: ## Fail when a migration file the base carries was edi
 # the map says it. So a claim said twice — a sentence copied into a summary while the section that
 # wrote it keeps its own — aims that case at the summary and leaves the citation behind it
 # unread, and the pin below refuses the document in that shape.
-check-pillars: ## Fail when the implementation map drifts: a pillar citation outside its file, or a composition claim said twice
+# That pin lifts its claims out of the case's own row table with a pattern anchored on how a row
+# is typeset today, so it carries a second copy of that table's shape: reflow one row onto two
+# lines, or lift a claim into a named constant, and the case still asserts thirteen claims while
+# the guard reads twelve and still answers that each of them is said once. The pin after it counts
+# the rows a second way, by tokenising the table's strings and braces, and refuses the two readings
+# disagreeing. Neither opens anything; together they cost a fifth of a second.
+check-pillars: ## Fail when the implementation map drifts: a pillar citation outside its file, a composition claim said twice, or a claim the guard no longer reads
 	python3 -B scripts/architecture_pillars_test.py
 	bash scripts/a_claim_the_composition_case_reads_is_said_once_in_the_implementation_map_test.sh
+	bash scripts/the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh
 
 # The rehearsal and the public-API comparison, both of which existed as steps
 # nobody was forced to run: `make rehearse` needed an operator who remembered it,

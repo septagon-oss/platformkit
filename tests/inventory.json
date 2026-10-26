@@ -88898,6 +88898,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh",
+   "id": "scripts/the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/the_inventory_lists_a_javascript_test_test.sh",
    "id": "scripts/the_inventory_lists_a_javascript_test_test.sh",
    "kind": "shell_pin",
@@ -90925,7 +90945,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2502,
+  "files": 2503,
   "forge_runs": [
    408,
    413,
@@ -90960,7 +90980,7 @@
   ],
   "layers": {
    "behaviour": 3958,
-   "composition": 515,
+   "composition": 516,
    "contract": 24,
    "journey": 121
   },
@@ -90978,23 +90998,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4618,
+  "rows": 4619,
   "tiers": {
    "merge": 2833,
    "nightly": 121,
-   "push": 1664
+   "push": 1665
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2257,
+   "keep": 2258,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4232,
+   "keep": 4233,
    "keep-rewrite": 170,
    "merge": 216
   }
