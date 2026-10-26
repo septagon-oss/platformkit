@@ -73488,6 +73488,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/forms/sketch_editor_copy_states_each_ceiling_as_its_own_whole_number_test.go",
+   "id": "ui/forms/sketch_editor_copy_states_each_ceiling_as_its_own_whole_number_test.go#TestEachSketchEditorSentenceStatesItsCeilingAsAWholeNumberOfItsOwn",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEachSketchEditorSentenceStatesItsCeilingAsAWholeNumberOfItsOwn",
+   "needs_db": false,
+   "pkg": "ui/forms",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/forms/sketch_limits_named_in_the_editors_own_copy_test.go",
    "id": "ui/forms/sketch_limits_named_in_the_editors_own_copy_test.go#TestTheSketchEditorHandsTheBrowserTheCeilingsTheValueDeclares",
    "kind": "go",
@@ -86606,7 +86625,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2359,
+  "files": 2360,
   "forge_runs": [
    408,
    413,
@@ -86640,7 +86659,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3768,
+   "behaviour": 3769,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86659,23 +86678,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4394,
+  "rows": 4395,
   "tiers": {
    "merge": 2693,
    "nightly": 110,
-   "push": 1591
+   "push": 1592
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2114,
+   "keep": 2115,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4008,
+   "keep": 4009,
    "keep-rewrite": 170,
    "merge": 216
   }
