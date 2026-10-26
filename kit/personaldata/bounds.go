@@ -1,29 +1,19 @@
 package personaldata
 
-// This file answers one question about the columns a scrub is about to rewrite: how
-// much room each of them holds. The scrub needs the answer because its own replacement
-// can make a value longer than the identifier it removed — Subject.Token is seventeen
-// characters and a person's name is often shorter — so a row that already fills its
-// column has nowhere for the extra characters to go, the server refuses the statement,
-// and the whole erasure dies with it, leaving the person named in every row the
-// transaction did not reach. Knowing the room is what lets the rewrite stay inside it.
+// This file answers one question about the columns a scrub is about to rewrite:
+// how much room each holds. The scrub needs it because its own replacement can
+// make a value longer than the identifier it removed — Subject.Token is seventeen
+// characters and a person's name is often shorter — so a row already filling its
+// column has nowhere for the extra characters, the statement is refused, and the
+// erasure dies leaving the person named in every row it did not reach.
 //
-// The answer comes from the server rather than from a claim beside the scrub, for the
-// reason a claimed width goes stale: the migration that widens a column moves the
+// The answer comes from the server rather than a claim beside the scrub, for the
+// reason a claimed width goes stale: a migration that widens a column moves the
 // ceiling and leaves the claim behind, and a stale ceiling truncates text that no
-// longer needs truncating. The server is asked twice, because it keeps the room of one
-// column in two places.
-//
-//   - Its own type, for a column declared varchar(n) or char(n).
-//   - A CHECK constraint, for a column the schema left unbounded and capped by rule
-//     instead — the shape contents.body is in, whose char_length and octet_length
-//     ceiling arrived in 000042 long after its type was written. A width nobody reads
-//     from the row is a width the scrub cannot honour, and a content body that fills it
-//     would refuse the erasure of the person named in it.
-//
-// What is not read is named at its reader below: a bound the server does not state as a
-// length comparison of one column, this file cannot see, and an erasure of such a row at
-// its ceiling fails loudly rather than silently.
+// longer needs it. The server keeps one column's room in two places — its own
+// type, and a CHECK constraint where the schema left the type unbounded — so it is
+// asked twice. A bound it states no other way this file cannot see, and such an
+// erasure fails loudly rather than silently.
 
 import (
 	"context"

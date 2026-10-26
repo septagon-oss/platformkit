@@ -7,12 +7,10 @@
 // over, which one means the message was refused, and which one means nothing at
 // all about the device.
 //
-// Device.Token for this platform is the browser's serialised PushSubscription:
-// the JSON a service worker hands out as `{"endpoint":"https://…",
-// "keys":{"auth":"…","p256dh":"…"}}`. This package, and only this package,
-// knows that. It is also why a send posts to a URL that arrived inside the
-// stored token, and why an adapter can be driven against a stand-in over the
-// loopback interface with no seam in the library at all.
+// Device.Token for this platform is the browser's serialised PushSubscription,
+// the JSON a service worker hands out, and this package alone knows that. It is
+// why a send posts to a URL that arrived inside a stored token, and why an
+// adapter can be driven against a stand-in on loopback with no seam in it.
 package webpush
 
 import (
