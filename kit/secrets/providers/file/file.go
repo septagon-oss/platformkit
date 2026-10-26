@@ -121,19 +121,17 @@ func (s *store) path(ref secrets.Ref) (string, error) {
 // stat is the one door a read passes, and it answers ErrNotFound rather than a
 // permission or a traversal sentence for everything it refuses.
 //
-// The refusal of a symlink is the subtle half. A mounted Secret volume *is*
-// symlinks — every data file points through `..data` at a timestamped directory, so
-// an adapter that refused every symlink would refuse the deployment this package
-// exists for. So what is refused is not the link but where it lands: the resolved
-// path has to stay inside this store's own directory, which is the property that
-// actually matters, because a name that escaped it is the one thing an operator did
-// not mount. kit/secrets' grammar already refuses a name with a slash or a leading
-// dot in it, so the only escape available is one somebody wrote into the directory
-// — and a directory whose contents an attacker may write is not a store this
-// adapter can protect, only a store this adapter can refuse to walk out of.
+// The refusal of a symlink is the subtle half: a mounted Secret volume *is*
+// symlinks — every data file points through `..data` — so refusing links would
+// refuse the deployment this package exists for. What is refused is where a link
+// lands: the resolved path has to stay inside this store's own directory, which
+// is the property that matters, because a name that escaped it is the one thing
+// an operator did not mount. kit/secrets' grammar already refuses a name with a
+// slash or a leading dot, so the only escape left is one somebody wrote into the
+// directory, and this adapter refuses to walk out of it.
 //
-// A directory, a socket, a device and a dangling link are all misses for the same
-// reason: none of them is a secret this deployment mounted.
+// A directory, a socket, a device and a dangling link are all misses: none of
+// them is a secret this deployment mounted.
 func (s *store) stat(path string) (os.FileInfo, error) {
 	// The store itself first: a directory that is not there is not a name that is
 	// not there, and an unmounted volume whose every secret read answered

@@ -1,27 +1,17 @@
 // Package porttest is the conformance harness a port's suite is written in: the
 // description a module writes about its port, the cases this package generates
 // from that description, and the assertions a module's own hand-written case
-// reuses. The plumbing a module's fake embeds is in fake.go.
+// reuses. The plumbing a module's fake embeds is in fake.go. It is not a
+// capability module: no tenant, no entity, no migration and no module.go, and
+// its home is beside kit/db/dbtest, the kernel's other test-support package.
 //
-// It is not a capability module. It has no tenant, no entity, no migration and
-// no module.go; its home is beside kit/db/dbtest, the kernel's other
-// test-support package.
-//
-// # Why a description and not a generator
-//
-// Every question the harness asks of a port is asked through a closure the
-// module wrote, in Go, beside the port it is about: no string this package
-// parses, no struct tag, no expression tree and no generated file. What that
-// buys is the four refusals every mutating operation owes — an unknown row, a
-// caller with no grant, a revision that moved, another tenant's row — asserted
-// structurally instead of whenever an author remembered them, given Op.Mutates.
-//
-// What it deliberately cannot express is a sequence: a description rich enough
-// to generate "gather the service, its figures, their reviews, ask the register,
-// then write the supersession and two events" would be a second language, less
-// legible than the decision function a reader can read today. A case the
-// description cannot express goes in Suite.Own with the reason it is written by
-// hand, and the harness refuses a suite that leaves the reason out.
+// Every question the harness asks of a port is asked through a closure the module
+// wrote, in Go, beside the port it is about: no string this package parses, no
+// struct tag and no generated file. What that buys is the four refusals every
+// mutating operation owes — unknown row, no grant, moved revision, another
+// tenant's row — asserted structurally rather than whenever an author remembered
+// them. What it cannot express is a sequence: the README names what goes to
+// Suite.Own instead, and the harness requires the reason to be said.
 package porttest
 
 import (
@@ -485,22 +475,17 @@ func (s Suite[W]) refused(rep reporter, op Op[W], r Refusal[W], w W) {
 
 // snapshotSeesTheRow is the harness asking the description's Snapshot whether it
 // can tell the row this case seeded from a row nobody ever seeded. Every "writes
-// nothing" assertion in the retry and in every refusal compares two renderings of
-// that one function, so a Snapshot that renders the same string for both makes
-// them assertions about nothing: a fake can lose the row, the whole port can lose
-// the row, and the suite stays green behind it. This is the hole 32aee9b closed
-// for an answer that rendered nothing — the empty Call made the retry compare two
-// empty strings — in the field that actually carries the assertion, and it is said
-// on every case whose assertion rests on the rendering.
+// nothing" assertion compares two renderings of that one function, so a Snapshot
+// that renders the same string for both makes them assertions about nothing: a
+// fake can lose the row and the suite stays green behind it. The check is
+// sensitive to the row argument by design — a Snapshot that renders the whole
+// world is refused here too, and the correction is to render the row, because a
+// rendering that cannot name one row cannot show a refused call left it alone.
 //
 // A row Ready does not name has no identity for a Snapshot to look at — a
-// per-tenant singleton's snapshot has no row argument to read — and is not asked. What that
-// exemption leaves unasked is asked in the success case, which reads this same closure either
-// side of a call the description records as a write: see success.
-// The check is sensitive to the row argument by design: a Snapshot that renders
-// the whole world rather than the row would be refused here too, and the
-// correction it is told is to render the row, because a rendering that cannot
-// name one row cannot show that a refused call left it alone.
+// per-tenant singleton's snapshot has no row argument to read — and is not
+// asked. What that leaves unasked is asked in the success case, which reads this
+// same closure either side of a recorded write: see success.
 func (s Suite[W]) snapshotSeesTheRow(rep reporter, op Op[W], w W, row uuid.UUID) {
 	rep.Helper()
 	if op.Snapshot == nil || row == uuid.Nil {
