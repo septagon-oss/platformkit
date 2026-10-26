@@ -1,57 +1,16 @@
-// Package crud is the five operations every tenant-owned resource needs.
-// Entity definitions and schemas are owned by kit/entity, with aliases here
-// for existing callers. The three refusal sentinels are owned by kit/fault, and
-// aliased here for the same reason.
-//
-// A module writes a struct with an embedded Base and gets read, list, create,
+// Package crud is the five operations every tenant-owned resource needs: a
+// module writes a struct with an embedded Base and gets read, list, create,
 // update and delete, each refusing what row-level security would refuse anyway.
-// What it does not write is a repository, a DTO or a mapper.
 //
-// # This half links no web server
+// This half links no web server: kit/rest owns routes, PATCH merging and OpenAPI
+// and imports this storage adapter. Instantiate with the pointer type —
+// crud.Get[*Task](tx, id) — so the kernel can stamp the tenant.
 //
-// Existing module contracts may import this package for Base. A caller that
-// needs only entity definitions or field metadata can instead import kit/entity
-// without linking a database driver. HTTP routes, PATCH merging and OpenAPI
-// declarations belong to kit/rest, which imports this storage adapter.
-//
-// # A page and its total answer one question
-//
-// [Query] narrows a read two ways: [Query.Filter] compares a field for equality,
-// [Query.Where] compares it with an operator — an order, a membership, an absence, a
-// folded case. Both are ANDed with the lifecycle clause, every name is checked
-// against the entity's schema so none reaches a statement from a caller, and the
-// total [ListCtx] reports is counted over the conditions the page was cut with.
-// [CountWhere] asks the same question of predicates alone, with no page and no
-// equality map beside it: a caller holding a map writes its keys as OpEq
-// predicates, which is the walk a page's Filter takes anyway.
-//
-// # Instantiate with the pointer type
-//
-// Entity requires a pointer so the kernel can stamp its tenant: use
-// crud.Get[*Task](tx, id), and List returns []*Task.
-//
-// # The tenant is never a parameter
-//
-// Create takes the tenant from the transaction, and Update refuses an entity
-// carrying a different one. That is defense in depth rather than the boundary:
-// row-level security refuses the same write in the database, whatever Go
-// believes. See docs/adr/0003.
-//
-// # A context is the caller's own ending
-//
-// [GetCtx], [CountCtx], [ListCtx], [SoftDelete] and [DeleteRow] take the caller's
-// context and ask it before they send a statement: a caller that has ended is
-// refused with an error wrapping its own cause, not with a row that is not there.
-// None of them rebinds the statement — [db.Tx] already hands each operation a handle
-// bound to that caller, so a second context would only replace the transaction's, and
-// the handle these five doors send comes from [begin], which never hands the caller's
-// context to a statement. [Get], [Count], [List] and [Delete] are the same doors for a
-// caller with nothing to cancel, and are deprecated in favour of these. [Create] and
-// [Update] ask nothing: their ctx reaches the entity's own Validate and nothing else, so
-// an ended caller still writes through them until their own task gives them a guard.
-//
-// The [Get] example reads a row through an explicit tenant transaction.
-// The [List] example reads a page and total from a tenant-isolated PostgreSQL fixture.
+// The tenant is never a parameter: Create takes it from the transaction and
+// Update refuses an entity carrying a different one, which is defence in depth
+// over the boundary the database enforces (docs/adr/0003). Which family of door to
+// call, and what each asks of its caller, is in README.md; the [Get] and [List]
+// examples call the two reads from inside a tenant transaction of their own.
 package crud
 
 import (
@@ -312,22 +271,19 @@ func Create[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T) error {
 	return nil
 }
 
-// RecheckTenant is the tenant-scope recheck Update performs on the row before it
-// writes it: an entity carrying a tenant that is not the transaction's is not
-// this caller's row, and is answered ErrNotFound, the only thing the API may say
-// about it. A row carrying no tenant is the transaction's to stamp, which is what
-// Update then does with it. Nothing at all is answered ErrInvalid, the answer
-// Create and Update give for nothing to act on: the non-nil precondition cannot
-// be a sentence in the doc of an exported door, because the caller the export
-// exists for has no Update above it to pass the guard first.
+// RecheckTenant is the tenant-scope recheck Update performs before it writes: an
+// entity carrying a tenant that is not the transaction's is not this caller's row
+// and is answered ErrNotFound, the only thing the API may say about it. A row with
+// no tenant is the transaction's to stamp, which is what Update then does with it.
+// Nothing is answered ErrInvalid, the answer for nothing to act on: an exported
+// door cannot state a non-nil precondition its callers do not have.
 //
 // It is exported for a caller that read a row under the lock and then decided to
-// write nothing, which is where row-level security stops being the backstop. On a
-// table whose read policy shows one shared list to every tenant — the catalogue
-// shape of docs/adr/0008 — GetForUpdate answers a row the request may read and
-// may not write, and a write that never happens is one WITH CHECK never gets to
-// refuse. A patch body that names no column is that write, and the answer it gets
-// has to be the answer the same row gives a body that names a column.
+// write nothing, which is where row-level security stops being the backstop: on a
+// table whose read policy shows one shared list to every tenant (docs/adr/0008),
+// GetForUpdate answers a row a request may read and may not write, and a write
+// that never happens is one WITH CHECK never gets to refuse. A patch naming no
+// column is that write.
 func RecheckTenant(tx db.Tx[db.Tenant], e Entity) error {
 	if isNil(e) {
 		return fmt.Errorf("%w: there is nothing to recheck", ErrInvalid)
@@ -342,24 +298,20 @@ func RecheckTenant(tx db.Tx[db.Tenant], e Entity) error {
 	return nil
 }
 
-// Update writes an existing row back. It refuses an entity carrying another
-// tenant, which row-level security would refuse too; reporting it as not found
-// is the same answer the read would have given.
+// Update writes an existing row back, refusing an entity that carries another
+// tenant — which row-level security would refuse too, and not found is the answer
+// the read would have given.
 //
-// columns names the database columns to write, and no columns means all of
-// them. The distinction is what makes two concurrent PATCHes of different
-// fields both survive: writing every column means the second request writes the
-// first one's fields back to what they were when it read them, so a change to a
-// field nobody touched is lost. Spec.Mount passes exactly the columns the patch
-// body named. crud.Schema is the only thing that produces these names; a caller
-// that invents one gets whatever GORM makes of it.
+// columns names the database columns to write; no columns means all of them. The
+// distinction is what lets two concurrent PATCHes of different fields both
+// survive: writing every column writes the first request's fields back to what
+// they were when it read them, losing a change nobody touched. Spec.Mount passes
+// exactly the columns the patch named, and crud.Schema is the only producer of
+// those names.
 //
-// Read with GetForUpdate before merging or validating stored state; acquiring
-// a lock only at this write cannot correct an earlier decision on a stale row.
-//
-// A failed write aborts the whole transaction, in Postgres as everywhere: a
-// caller that means to try something else after a conflict needs a new
-// transaction, which for an HTTP handler means a new request.
+// Read with GetForUpdate before merging or validating stored state: a lock taken
+// only at the write cannot correct a decision made on a stale row. A failed write
+// aborts the transaction, so a retry needs a new one.
 func Update[T Entity](ctx context.Context, tx db.Tx[db.Tenant], e T, columns ...string) error {
 	if isNil(e) {
 		return fmt.Errorf("%w: there is nothing to update", ErrInvalid)

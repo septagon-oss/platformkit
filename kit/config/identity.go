@@ -73,9 +73,14 @@ type OIDC struct {
 // Enabled reports whether a provider is configured.
 func (o OIDC) Enabled() bool { return o.Issuer != "" }
 
-// Mail configures the outgoing SMTP server. An empty Host disables SMTP;
-// Username is optional, while an enabled server requires From. The carrier
-// reads its password through kit/secrets when dialing, so this holds no credential.
+// Mail configures the outgoing SMTP server. An empty Host disables SMTP, and
+// there is no default stand-in for one: a command whose promise is a message
+// refuses with a reasoned 503 and writes nothing, and a notice that asks for mail
+// is recorded as suppressed. What a development deployment gets instead is the
+// notification module's simulated mailbox, which the resolver refuses to pick
+// outside development. Username is optional, while an enabled server requires
+// From. The carrier reads its password through kit/secrets when dialing, so this
+// holds no credential.
 type Mail struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`

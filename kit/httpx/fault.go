@@ -1,25 +1,17 @@
 package httpx
 
-// This file is about one question the kernel kept answering twice by accident: when a
+// This file answers one question the kernel kept answering twice by accident: when a
 // request fails, what does the client get?
 //
-// Before it, the kernel wrote an RFC 9457 JSON body at every refusal it made itself —
-// the cross-site guard, the panic recoverer — while a page handler that refused got a
-// real document from ui/page. Same verdict, two shapes, and the one a person saw
-// depended on which line noticed them. A browser navigation that a guard refused showed
-// the person a JSON blob in a window: technically correct, unusable, and with a request
-// id nobody could copy.
-//
-// The rule now: the verdict is always a *problem.Problem; the *shape* is decided by the
-// client that asked. A request that came to be looked at gets whatever document the
-// presentation layer registered; everything else keeps the JSON, byte for byte as
-// before, because API clients and every existing test read it.
+// The rule: the verdict is always a *problem.Problem; the *shape* is decided by the client
+// that asked. A request that came to be looked at gets whatever document the presentation
+// layer registered, and everything else keeps the RFC 9457 JSON body byte for byte,
+// because API clients and every existing test read it.
 //
 // The kernel may not build that document itself. kit/httpx knows nothing about styles,
-// chrome or the shell, and ui/* must not be imported from here — so the document arrives
-// as a function the application registers at composition, exactly like Tenants,
-// Authorize and Entitle. An application that registers nothing behaves precisely as it
-// did before this file existed.
+// chrome or the shell, and ui/* must not be imported from here — so the document arrives as
+// a function the application registers at composition, exactly like Tenants, Authorize and
+// Entitle. An application that registers nothing answers as it did before this file.
 
 import (
 	"net/http"
@@ -28,6 +20,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
@@ -60,10 +53,31 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 		countRefusal(r.Context(), status)
 	}
 	id := requestIDFrom(r.Context())
-	if a.show(w, r, id, status, detail) {
+	if a.show(w, r, id, problem.New(status, detail), false) {
 		return
 	}
 	writeProblem(w, status, id, detail)
+}
+
+// Siteless answers a failure of the process itself to a request that names no site: the
+// two probes, which kit/health reaches through the one-method port it declares. It is
+// fail minus the host lookup — the one query a probe must never make, whose outage
+// kit/health's package comment tells — and so the page it renders has no tenant for the
+// same reason its JSON answer never had one. A route with a host to resolve calls fail.
+//
+// The refusal arrives as a *problem.Problem, not a status and a sentence, because its
+// two readers are owed different words: Detail, which names an internal check, is what
+// a monitor diffs and the log quotes; Public is what the person is shown instead.
+//
+// Withholding the instance member and the encoder's trailing newline is the one place
+// the machine-readable answer is not fail's: those bytes are what a readiness stanza has
+// compared since it existed — see writeProbeProblem.
+func (a *API) Siteless(w http.ResponseWriter, r *http.Request, refused *problem.Problem) {
+	id := requestIDFrom(r.Context())
+	if a.show(w, r, id, refused, true) {
+		return
+	}
+	writeProbeProblem(w, refused.Status, refused.Detail)
 }
 
 // show asks the registered renderer for a page and reports whether it answered.
@@ -77,41 +91,40 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 // place the question can be asked without being asked twice: it is the only branch that
 // renders a page, and a page has a language. A refusal handed to a program is a code,
 // the same in every language, and owes no lookup.
-func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int, detail string) bool {
-	if a.opts.Fault == nil || !wantsDocument(r) {
+func (a *API) show(w http.ResponseWriter, r *http.Request, id string, refused *problem.Problem, siteless bool) bool {
+	if a.opts.Fault == nil || !WantsDocument(r) {
 		return false
 	}
-	r = a.withHostTenant(r)
-	p := problem.New(status, detail)
-	if id != "" {
-		p.Instance = "urn:request:" + id
+	// The mint sits behind the negotiation on purpose. A page is the only answer
+	// that shows a reference, and a request that asked for a value is owed the
+	// bytes it always got — no new header, no instance member. Everything except
+	// the two probes already has an id by here, because the id middleware runs
+	// ahead of every route; a probe is the request that reaches this line without
+	// one, and the page it renders is worthless without a reference to quote.
+	if id == "" {
+		id = uuid.NewString()
+		w.Header().Set(RequestIDHeader, id)
 	}
-	return a.opts.Fault(w, r, p)
+	if !siteless {
+		r = a.withHostTenant(r)
+	}
+	refused.Instance = "urn:request:" + id
+	return a.opts.Fault(w, r, refused)
 }
 
-// refuse is fail for the guards that run inside the huma chain: the authorization
-// denial, the public write limit, the host and control-plane gates, the transaction
-// that could not be opened or did not commit.
+// refuse is fail for the guards that run inside the huma chain: the authorization denial,
+// the public write limit, the host and control-plane gates, the transaction that could not
+// be opened or did not commit.
 //
 // Those guards hold a huma.Context where the ones above hold a ResponseWriter, and one
-// thing follows that the one-line version of this fix — unwrap and call fail — gets
-// wrong, which is a 500 where a refusal was meant to be. The transaction middleware
-// decides commit or rollback on the status this response carries, and a refusal that
-// reached only the writer leaves that verdict at zero: an undecided response is rolled
-// back and replaced, so the refusal the caller was shown disappears and an outage takes
-// its place. declared is what carries the verdict to both places, and ctx.SetStatus is
-// the same call the anonymous-caller branch of authorize makes when it answers 303.
+// thing follows that "unwrap and call fail" gets wrong, which is a 500 where a refusal was
+// meant to be: the transaction middleware decides commit or rollback on the status this
+// response carries, and a refusal that reached only the writer leaves that verdict at zero,
+// so the refusal the caller was shown disappears under a rolled-back replacement — declared
+// carries the verdict to both places.
 //
-// The document is written by writeProblem, the one encoder this package has, and not by
-// huma's writer. That substitution is the reason this function is not just fail: huma's
-// writer answers this shape its own way — a "$schema" member inside the body and a Link
-// response header — so a refusal of an address that *is* served here would arrive in a
-// different shape, another Content-Length and one more header, from the refusal of an
-// address that is not served at all. kit/problem promises one error shape and README.md
-// promises that the control plane's 404 cannot be told from a never-mounted address; both
-// promises are this line, and a second encoder of the same body is what broke them. The
-// answer a client that asked for a value gets from the guards is therefore now the
-// shorter one, and it is the one every kernel-side refusal has always written.
+// writeProblem writes the document, not huma's writer, which adds a "$schema" member and a
+// Link header: kit/problem promises one error shape either way.
 func (a *API) refuse(ctx huma.Context, status int, detail string) {
 	// No count here. Every refusal this writes is an answer of the mounted API, and
 	// respond counts those once, from the status the client was finally given, after
@@ -124,13 +137,13 @@ func (a *API) refuse(ctx huma.Context, status int, detail string) {
 	// reach past the huma context and it panics on a foreign one.
 	r, w := humachi.Unwrap(ctx)
 	id := requestIDFrom(r.Context())
-	if wantsDocument(r) {
+	if WantsDocument(r) {
 		// The verdict is stated before the page is asked for, because a page the
 		// renderer wrote never passed through a writer that states one. A renderer
 		// that declines has written nothing, which is what lets the document below
 		// answer in the same buffer.
 		ctx.SetStatus(status)
-		if a.show(w, r, id, status, detail) {
+		if a.show(w, r, id, problem.New(status, detail), false) {
 			return
 		}
 	}
@@ -150,40 +163,98 @@ type declared struct {
 
 func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 
-// wantsDocument reports whether the client asked to be *shown* the answer rather than
-// handed a value.
+// WantsValue reports the mirror half of the same negotiation: a client that named a
+// JSON media type more generously than any markup is asking to be *handed* the answer.
+// It is exported for ui/page, which mounts a page as an ordinary operation and so must
+// decide the same question when one of its own handlers refuses.
 //
-// Only an explicit text/html (or its XHTML sibling) counts. `Accept: */*` deliberately
-// does not: that is what curl, health checks, SDKs and monitoring send, and answering
-// them with a page would break exactly the clients that need the machine-readable body.
+// The two halves are not one question, deliberately. WantsDocument asks "did this
+// caller ask to be shown something", where only an explicit text/html counts, because
+// a guard asks it ahead of routing and the answer a curl or an SDK expects is the
+// machine-readable one. WantsValue asks "did this caller refuse the page", where only
+// an explicit JSON media type counts, because the caller asking it owns a page: one
+// that named nothing has no opinion to honour, and the page is the answer this route
+// exists to give.
 //
-// An htmx request does not count either, which is the half of this rule that reads
-// backwards — htmx asks with `Accept: text/html,*/*`. It does not ask to be *shown*
-// anything: it is a controller in a page, and this composition's controller
-// (ui/assets/js/htmx-config.js) configures htmx to swap nothing for a 4xx
-// (`{code: "[45]..", swap: false, error: true}`) and then reads the refusal's code out
-// of the problem document to choose the recovery notice and to keep the form's unsaved
-// input. Answering it with a page throws the body away in the library and leaves the
-// person with a form that silently did nothing; the journeys in
-// e2e/session-recovery.spec.ts are what that was built for. A swapped fragment is still
-// what htmx gets on a success (see Redirect and Page), so this says only that a
-// refusal goes to the caller that parses it.
-func wantsDocument(r *http.Request) bool {
-	if r.Header.Get("HX-Request") == "true" {
+// Both read the header through offered, so one weighing decides when each side wins.
+func WantsValue(r *http.Request) bool {
+	if r == nil || r.Header.Get("HX-Request") == "true" {
 		return false
 	}
-	for _, offered := range strings.Split(r.Header.Get("Accept"), ",") {
-		media, params, _ := strings.Cut(strings.TrimSpace(offered), ";")
-		if !strings.EqualFold(media, "text/html") && !strings.EqualFold(media, "application/xhtml+xml") {
-			continue
-		}
-		// `text/html;q=0` is an explicit refusal, not a preference.
-		if q, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
-			if weight, err := strconv.ParseFloat(q, 64); err == nil && weight <= 0 {
+	markup, value := offered(r)
+	return value > markup
+}
+
+// offered is the one reading of a request's Accept header this kernel has: the highest
+// weight the caller gave markup, and the highest weight it gave a machine-readable
+// value, each negative when it named nothing of that kind. Both predicates read the
+// header here so the weights are compared, not the order the caller wrote its entries
+// in: `application/json;q=0.5, text/html;q=1` and the same list reversed are one
+// preference stated twice, and a negotiation that took the first entry it liked
+// answered them with two different documents.
+//
+// `q=0` is an explicit refusal rather than a low preference, so an entry weighted to
+// zero never counts as offered; an unparsable weight falls back to 1, which is what
+// RFC 9110 says a missing weight means.
+//
+// A wildcard sits in neither set on purpose — see WantsDocument and HX-Request below.
+func offered(r *http.Request) (markup, value float64) {
+	markup, value = -1, -1
+	for _, entry := range strings.Split(r.Header.Get("Accept"), ",") {
+		media, params, _ := strings.Cut(strings.TrimSpace(entry), ";")
+		weight := 1.0
+		for _, parameter := range strings.Split(params, ";") {
+			// Only `q` carries a weight; a charset or an extension says nothing about
+			// how much the caller wants the media type. A bad weight is a missing one.
+			name, value, named := strings.Cut(parameter, "=")
+			if !named || !strings.EqualFold(strings.TrimSpace(name), "q") {
 				continue
 			}
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
+				weight = parsed
+			}
 		}
+		if weight <= 0 {
+			continue
+		}
+		switch {
+		case strings.EqualFold(media, "text/html"), strings.EqualFold(media, "application/xhtml+xml"):
+			markup = max(markup, weight)
+		case strings.EqualFold(media, "application/json"),
+			strings.EqualFold(media, problem.ContentType),
+			strings.EqualFold(media, "application/ld+json"):
+			value = max(value, weight)
+		}
+	}
+	return markup, value
+}
+
+// WantsDocument reports whether the client asked to be *shown* the answer rather than
+// handed a value. It is exported because the question is the kernel's and there is one
+// answer to it; ui/page asks the mirror, WantsValue, of a refusal its own handler made.
+//
+// Only an explicit text/html (or its XHTML sibling) counts: `Accept: */*` is what curl,
+// health checks, SDKs and monitoring send, and answering them with a page breaks the
+// clients that need the machine-readable body. offered weighs both sides when a caller
+// names both, and WantsValue is the same weighing read from the other side.
+//
+// A media type carries parameters before its weight, so `text/html;charset=utf-8;q=0.4`
+// offers markup at 0.4 and `;q=0` after a charset refuses it as plainly as on its own.
+// The weight was only ever seen when it came first, and reading the suffix as one string
+// instead of as parameters is the bug this file exists to fix.
+func WantsDocument(r *http.Request) bool {
+	if r == nil {
+		// No request means no client asked to be shown anything — which is the answer a
+		// page handler reached from a context that carried no request has always been
+		// given: render the verdict, since nothing is waiting to parse a body.
 		return true
 	}
-	return false
+	if r.Header.Get("HX-Request") == "true" {
+		// Reads backwards: htmx asks with `Accept: text/html,*/*` but is only a controller in
+		// a page, and ui/assets/js/htmx-config.js swaps nothing for a 4xx and reads the code
+		// out of the problem body to choose the recovery — a page here loses that body.
+		return false
+	}
+	markup, value := offered(r)
+	return markup >= value && markup > 0
 }

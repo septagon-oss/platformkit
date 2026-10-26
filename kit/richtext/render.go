@@ -237,24 +237,17 @@ var srcsetEntry = regexp.MustCompile(`^(/api/v1/(?:file/files/[0-9a-f-]{36}/cont
 // checkImage is the write-time gate a stored body passes through, and the reason
 // a srcset is safe to widen at all: every descriptor of every image of every body
 // is asked here, at the moment the body is accepted, so the HTML a reader is
-// served can name no address this kernel did not mount.
+// served can name no address this kernel did not mount. Four things, of every
+// descriptor:
 //
-// Four things, of every descriptor:
-//
-//  1. its URL is exactly the image's own `src`, or that same URL with `?w=` and
-//     its own width on it — never another file, another path, another host, a
-//     scheme-relative `//host` or a `data:` URL;
-//  2. its width is a positive number no larger than the frame's own — a srcset
-//     that promises more pixels than the file holds is a lie to the browser;
-//  3. no width appears twice, which is a candidate list the browser cannot read;
-//  4. exactly one descriptor carries no query, and its width is the frame's — the
-//     stored original, which is what a browser with no candidate it likes falls
-//     back to, and the reason that answer is never an image the file does not
-//     have.
-//
-// This is where TestImageProviderCannotSubstituteAnotherFile lives: a provider
-// that returned another file's URL at any width fails the write, and the body is
-// not stored.
+//  1. its URL is exactly the image's own `src`, or that URL with `?w=` and its own
+//     width on it — never another file, path or host, a scheme-relative //host or
+//     a data: URL;
+//  2. its width is positive and no larger than the frame's — a srcset promising
+//     more pixels than the file holds is a lie to the browser;
+//  3. no width appears twice, which is a list the browser cannot read;
+//  4. exactly one descriptor carries no query and its width is the frame's — the
+//     stored original, what a browser falls back to.
 func checkImage(im Image, id uuid.UUID) error {
 	if im.Width <= 0 || im.Height <= 0 || im.Width > 999999 || im.Height > 999999 {
 		return fmt.Errorf("richtext: invalid file dimensions")

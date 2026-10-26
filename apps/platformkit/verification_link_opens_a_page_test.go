@@ -11,7 +11,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 // TestTheSignUpMailsLinkOpensAPage is the brief's fourth decided rule for the
@@ -29,7 +28,7 @@ import (
 // measured in e2e/mailed-links.spec.ts, the sign-up mail still had while the
 // invitation mail did not.
 func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
@@ -37,10 +36,8 @@ func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the link out of it", c.mail)
-	}
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	_, port, err := net.SplitHostPort(cfg.Server.Addr)
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +67,14 @@ func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
 		}
 		return false
 	})
-	if want := "http://" + served + "/app/auth/verify-email?token="; !strings.HasPrefix(link, want) {
+	// The public spelling of the confirmation page, not the workspace one: the link
+	// is handed to a person with no session, which is exactly whom the public face
+	// answers (modules/auth/internal/ui/page.go, and email_link_page_test.go, which
+	// walks this address and presses the button on the page it finds). What this
+	// case is about is the host and port in front of that path — the address the
+	// sign-up was answered at, which the event carries to the worker that writes the
+	// message — and the literal prefix below still insists on both of them.
+	if want := "http://" + served + "/auth/verify-email?token="; !strings.HasPrefix(link, want) {
 		t.Errorf("the confirmation asked for at %s leads elsewhere: %s, want a link beginning %s", served, link, want)
 	}
 	u, err := url.Parse(link)

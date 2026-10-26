@@ -25,7 +25,7 @@ func TestSeedRemovesRolesNoLongerDeclared(t *testing.T) {
 		files := fstest.MapFS{"seed/starter/users.yaml": {Data: []byte(
 			"apiVersion: platformkit.seed/v1\nresource: users\nrecords:\n  - key: person@example.test\n    fields:\n      displayName: Person\n      roles: " + roles + "\n")}}
 		service, err := seed.New(seed.Deps{Files: files, Root: "seed", Clock: seedClock{},
-			Writers: []seed.Writer{userSeeder{users: c.users}}, Authorize: seedGrants{auth: c.auth}})
+			Writers: []seed.Writer{userSeeder{users: c.testUsers()}}, Authorize: seedGrants{auth: c.testAuth()}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,12 +35,12 @@ func TestSeedRemovesRolesNoLongerDeclared(t *testing.T) {
 	withoutRole := makeSeed("[]")
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			ctx, err = seedActor(ctx, c.users, tx, adminEmail)
+			ctx, err = seedActor(ctx, c.testUsers(), tx, adminEmail)
 			if err != nil {
 				return err
 			}
@@ -50,7 +50,7 @@ func TestSeedRemovesRolesNoLongerDeclared(t *testing.T) {
 			if _, err := withoutRole.Apply(ctx, tx, seed.Selection{}); err != nil {
 				return err
 			}
-			person, err := c.users.ByEmail(ctx, tx, "person@example.test")
+			person, err := c.testUsers().ByEmail(ctx, tx, "person@example.test")
 			if err != nil {
 				return err
 			}

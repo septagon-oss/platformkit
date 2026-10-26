@@ -10,30 +10,17 @@ import (
 // The cloud profile: one setting that answers the infrastructure questions a
 // deployment answers the same way every time.
 //
-// A profile is data and a step inside Load, and nothing else. It writes the
-// adapter a seam runs on and says what the deployment still has to name; it
-// never dials, never infers a vendor from a hostname, and never writes a
-// credential. The enforcement of what it demands lives in pkit, which is the
-// package that knows the environment a deployment runs in, and it is pkit that
-// prints the resolved answer.
-//
-// The precedence the profile sits in:
+// A profile is data and one step inside Load: it writes the adapter a seam runs
+// on and names what the deployment still owes. It never dials, never infers a
+// vendor from a hostname and never writes a credential; enforcement of what it
+// demands lives in pkit, which knows the environment and prints the answer.
 //
 //	file → composition Set → environment → profile fill → required keys → validation
 //
-// The fill writes only keys that are still empty, so it is the lowest layer, and
-// it writes a seam's keys all-or-nothing: a deployment that named half of a
-// seam is a deployment that is still deciding, and a profile that finished the
-// decision would hide the half-empty seam from the surface's own guard — which
-// is the sentence a person reading the boot log needs more than an adapter they
-// never asked for.
-//
-// Two absences are the design and not an oversight. No vendor endpoint literal
-// appears below: which host an object store or a collector answers at is a
-// deployment's fact and, for a shared kernel module, a specialist fact (decision
-// 0038), so a profile names the adapter and the deployment names the address.
-// And no profile writes a secret — the keys in `Required` are demanded, never
-// filled, which the table's own test walks.
+// The fill writes only keys still empty, so it is the lowest layer, and it writes
+// a seam's keys all-or-nothing: a deployment that named half of a seam is still
+// deciding, and finishing the decision for it would hide the half-empty seam from
+// the surface's own guard. No vendor endpoint appears below (decision 0038).
 
 // validate refuses a profile name the table does not hold.
 func (c Cloud) validate() error { return ValidateProfile(c.Profile) }

@@ -125,3 +125,20 @@ here is not withdrawable. That rule is checked rather than hoped for:
 document the repository publishes — a kit guide, a release note, an ADR — and refuses
 one that names a capability this tree does not hold, because a published name cannot be
 withdrawn.
+
+## The message prefix is a wire contract
+
+Each sentinel message keeps its `crud: ` prefix: that prefix names the package
+that owned these values before this one, and it is load-bearing past its own
+package. kit/rest derives the field message a client reads by trimming the literal
+`crud: invalid: ` off a problem detail (`FieldErrors`), and modules/admin asserts
+that a person is never shown the prefix. Two of the three reach a client whole when
+nothing wrapped them — a bare `ErrInvalid` is a 422 whose detail reads
+`crud: invalid`, a bare `ErrConflict` a 409 reading `crud: conflict` — while a 404
+carries kit/rest's own sentence for a row this tenant cannot see, so
+`crud: no such row` is a log line and never an answer to a client. Renaming a
+message is a wire change with consumers on the other side of it.
+
+A validator that returns violations is read by identity (`errors.As`) and reaches
+the problem document as `violations`; the prefix is parsed only for the validators
+that still return prose, and that fallback goes with the last of them.

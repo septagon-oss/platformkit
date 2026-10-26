@@ -1,39 +1,17 @@
 // roles.go is the list somebody wrote down: who a tenant of this application
 // begins as, beside the two roles auth owns.
 //
-// It used to be derived. `compose` filled `initialRoles` from `declaredRoles(mods)`
-// — every role every composed manifest declares — because the task desk's
-// coordinator is the task module's fact and this application only composes the
-// module. That worked while compose ran before the sentence and could see the
-// manifests it had just built. With the modules wiring themselves there is no
-// such moment: at the time `Roles(…)` is named the manifests do not exist, and
-// the one module that sees them is the one that runs after everything.
+// It used to be derived from the composed manifests. With the modules wiring
+// themselves there is no moment when they exist and Roles(…) has not been named, so
+// the list is written here and the derivation became a check:
+// TestEveryRoleEveryComposedModuleDeclaresIsOneThisApplicationSeeds names the omit.
 //
-// So the list is written here, and the derivation moved into a case:
-// TestEveryRoleEveryComposedModuleDeclaresIsOneThisApplicationSeeds reads the
-// roles off the resolved composition and names the one this list omits. Same
-// assertion, one direction round, and now over what the application actually
-// resolved rather than over a slice a composition function happened to fill.
+// The admin and member roles are auth's own, and a module that adds two doors of its
+// own is answered by those two: admin holds every tenant-scoped permission, and the
+// task personas are the task module's, granted to match what it declares.
 //
-// The admin role (everything but the operator's) and the member role (nothing
-// until somebody grants it) are auth's own and are not repeated here. A module
-// that adds two doors of its own — webhook:read and webhook:update are the newest —
-// is answered by that pair and not by a line here: admin holds every tenant-scoped
-// permission, which is how a tenant administrator registers an endpoint on day one,
-// and these two personas are the task module's, declared and granted to match what
-// that module declares. Adding webhook words to them would be a grant nobody asked
-// for and a persona test that can no longer refuse anything. What each
-// persona may do, and what each is refused, is the persona table's; which task
-// a coordinator may resolve is policy/task.rego's, not a grant's.
-//
-// What is *not* in this file is the operator half of a new administrator's grants.
-// That used to be a two-element literal here, naming two permissions this
-// application happened to compose the owners of, which is the defect: a product
-// built from this sentence without the module owning one seeded the grant and
-// could not exercise it, and only the hourly sweep said so, an hour late, forever.
-// seedRoles reads those grants off the manifests of the modules this application
-// actually composes, and an initial role naming a permission no composed module
-// defines is refused where it used to be written.
+// The operator half of a new administrator's grants is not here either: seedRoles
+// reads it off the composed manifests and refuses a permission none defines.
 package main
 
 import (

@@ -276,6 +276,14 @@ type (
 	// sends its mail exactly as it did before the record existed and leaves no
 	// trace of the attempt, which is the bug rather than a mode to preserve.
 	MailLedger = notificationcontracts.MailLedger
+
+	// MailDelivery is the notification module's own answer to whether this
+	// installation's sender attempts a message, named here the way Mailer, Hosts
+	// and MailLedger are so that Deps reads as one list of capabilities. It is a
+	// separate interface rather than a method on Mailer because the frozen public
+	// line refuses a method added to an exported interface; the composition puts
+	// the one carrier under both.
+	MailDelivery = notificationcontracts.MailDelivery
 )
 
 // The mails this module sends itself, named the way every event name is named.
@@ -301,6 +309,17 @@ const (
 	MailVerificationNoLink = "auth.verification_no_link"
 )
 
+// MailDeliverable reports whether the sender a deployment composed can put a
+// message in somebody's mailbox at all. Nothing composed is one answer, and
+// notification.NoTransport is the other: a deployment that has neither a mail
+// server nor an in-process mailbox wires that value on purpose, and the commands
+// that would promise a link in a mailbox refuse on it before they write anything.
+// A row no mail will ever carry is a person left waiting for nothing, and the
+// acknowledgment that promised the post would already be out.
+func MailDeliverable(m Mailer) bool {
+	return m != nil && !notificationcontracts.IsNoTransport(m)
+}
+
 // Service is signing in, signing out, recognising a session, and resolving what
 // a set of roles may do.
 //
@@ -324,6 +343,7 @@ const (
 // Every command takes the caller's transaction rather than opening one, so the
 // session row and the event that describes it commit together — with one
 // deliberate exception, described on Login.
+// Deprecated: use the focused capability interfaces in this package.
 type Service interface {
 	// Precheck is what the limiter says about an attempt on this address from
 	// this one, before the request's transaction has been opened. It reads the
@@ -539,22 +559,9 @@ type Service interface {
 	Purge(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
 }
 
-// Grants reports whether a set of permissions satisfies a grant. It is a
-// function rather than a method so that the rule is written once and is the
-// same rule in the authorizer, in a test and in a screen.
-//
-// The rule has two halves. An ordinary permission is granted by the wildcard or
-// by naming it. An operator permission is granted only by naming it, and that
-// exception is the point: Wildcard means "everything in this tenant", and the
-// control plane is not in this tenant — it is every tenant. A customer's
-// administrator holds the wildcard by construction (auth.SeedRoles), so letting it
-// answer for an operator permission would hand every customer the installation.
-func Grants(held []string, g tenancy.Grant) bool {
-	if g.Operator {
-		return slices.Contains(held, g.Permission)
-	}
-	return slices.Contains(held, Wildcard) || slices.Contains(held, g.Permission)
-}
+// Grants reports whether held permissions satisfy the grant.
+// Deprecated: use Match.
+func Grants(held []string, g tenancy.Grant) bool { return Match(held, g) }
 
 // Auth is the whole capability main is wired with: the lifecycle in Service,
 // plus the two hooks the kernel takes.
@@ -565,6 +572,7 @@ func Grants(held []string, g tenancy.Grant) bool {
 // where kit/httpx put them. Permissions is the query underneath it, which takes
 // its arguments, so a test can ask what a role grants without building a
 // request.
+// Deprecated: use the focused capabilities and kernel authentication ports.
 type Auth interface {
 	Service
 

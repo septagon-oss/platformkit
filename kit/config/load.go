@@ -108,14 +108,18 @@ func (c *Config) applyOverrides(path string, overrides []Override) error {
 			return fmt.Errorf("config %s: %q is not an overridable key; they are %s",
 				path, o.key, strings.Join(Keys(), ", "))
 		}
-		*keys[i].field(c) = o.value
+		if err := keys[i].assign(c, o.value); err != nil {
+			return fmt.Errorf("config %s: the override %s: %w", path, o.key, err)
+		}
 	}
 	for _, k := range keys {
 		if k.env == "" {
 			continue
 		}
 		if v, ok := os.LookupEnv(k.env); ok {
-			*k.field(c) = v
+			if err := k.assign(c, v); err != nil {
+				return fmt.Errorf("config %s: the environment's %s: %w", path, k.env, err)
+			}
 		}
 	}
 

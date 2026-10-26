@@ -22,6 +22,11 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	var err error
+	e, err = s.choiceCreateRow(e)
+	if err != nil {
+		return e, err
+	}
 	if s.Create != nil {
 		return s.Create(ctx, tx, e)
 	}
@@ -76,7 +81,7 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // updateRow locks the row before merging and validating its submitted fields.
 // Responses, hooks and events therefore use the snapshot that this transaction
 // replaces, including after contention.
-func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any, ifMatch string) (T, error) {
+func (s Spec[T]) updateRowRaw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, fields []crud.Field, values map[string]any, ifMatch string) (T, error) {
 	e, err := crud.GetForUpdate[T](tx, id)
 	if err != nil {
 		return e, err
@@ -86,6 +91,10 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	before := rowCopy(e)
 	// The gate compares values, so resending an unchanged field is not a change.
 	beforeJSON, err := jsonSnapshot(e)
+	if err != nil {
+		return e, err
+	}
+	values, err = s.choicePatch(tx, e, fields, values, ifMatch)
 	if err != nil {
 		return e, err
 	}
@@ -264,7 +273,7 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 // This Spec's Gate stands here all the same, because "may these fields be written
 // directly" does not ask who is asking.
 func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
-	return s.updateRow(ctx, tx, id, crud.Fields[T](), values, "")
+	return s.updateRow(ctx, tx, id, s.choiceFields(), values, "")
 }
 
 func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
