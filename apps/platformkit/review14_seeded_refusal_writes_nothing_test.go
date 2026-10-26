@@ -58,7 +58,7 @@ func TestACompositionNamingAnUndeclaredPermissionCreatesNoTenantAndEmitsNothing(
 		{Name: "clerk", Grants: authcontracts.Permissions{"task:read", "ghost:read"}},
 	}
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		_, e := c.tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+		_, e := c.testTenants().Create(ctx, tx, tenantcontracts.NewTenant{
 			Slug: "violate", Name: "Violate", Host: "violate.localhost",
 		})
 		return e
@@ -81,7 +81,7 @@ func TestACompositionNamingAnUndeclaredPermissionCreatesNoTenantAndEmitsNothing(
 	var acme tenancy.Tenant
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		acme, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	}); err != nil {
 		t.Fatalf("read the bootstrapped tenant: %v", err)

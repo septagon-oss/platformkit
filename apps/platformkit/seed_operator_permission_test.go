@@ -41,7 +41,7 @@ func TestSeedCommandRefusesAnOperatorWhoCannotManageTenants(t *testing.T) {
 
 	nameThePage := func(title string) func(context.Context, db.Tx[db.System]) error {
 		return func(ctx context.Context, system db.Tx[db.System]) error {
-			tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+			tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 			if err != nil {
 				return err
 			}
@@ -67,19 +67,19 @@ func TestSeedCommandRefusesAnOperatorWhoCannotManageTenants(t *testing.T) {
 	// An observer of the installation tenant, with a credential of their own:
 	// the person is real, the password is right, and the grant is missing.
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			clerk, err := c.users.Invite(ctx, tx, clerkEmail, "Clerk")
+			clerk, err := c.testUsers().Invite(ctx, tx, clerkEmail, "Clerk")
 			if err != nil {
 				return err
 			}
-			if _, err := c.users.SetRoles(ctx, tx, clerk.ID, []string{"observer"}); err != nil {
+			if _, err := c.testUsers().SetRoles(ctx, tx, clerk.ID, []string{"observer"}); err != nil {
 				return err
 			}
-			return c.users.SetPassword(ctx, tx, clerk.ID, clerkPassword)
+			return c.testUsers().SetPassword(ctx, tx, clerk.ID, clerkPassword)
 		})
 	}); err != nil {
 		t.Fatal(err)

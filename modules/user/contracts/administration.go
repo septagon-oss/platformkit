@@ -341,6 +341,7 @@ type Granting interface {
 
 // GrantingFunc is the minimal adapter from a function to Granting. Take its
 // address, as with AdministrationFunc, so two Deps values stay comparable.
+// Initialize Ask before construction; late-filled and empty adapters are unsupported.
 type GrantingFunc struct {
 	Ask func(context.Context, db.Tx[db.Tenant]) (bool, error)
 }

@@ -317,7 +317,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 
@@ -726,8 +726,8 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
 		Cache:      cache.Memory("pkit"),
-		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
-		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
+		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.testTenants(), Conn: conn,
+		Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate, Log: quiet(),
 		// The installation is where the control plane is served, and this is the
 		// composition's own answer to that: the same value boot passes.
 		Installation: cfg.Server.InstallationHost,
@@ -854,8 +854,8 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
 		Cache:      cache.Memory("pkit"),
-		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
-		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
+		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.testTenants(), Conn: conn,
+		Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate, Log: quiet(),
 		Installation: cfg.Server.InstallationHost,
 	})
 	var entries []module.NavEntry
@@ -895,7 +895,7 @@ func TestWebPoolLeavesRoomForControlPlaneTransactions(t *testing.T) {
 	cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns = new(2), new(0)
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Web, Transports: transports(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
@@ -926,12 +926,12 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 	// A second tenant, and one overdue task in each.
 	var tenants []tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		if _, err := c.tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+		if _, err := c.testTenants().Create(ctx, tx, tenantcontracts.NewTenant{
 			Slug: "globex", Name: "Globex", Host: globexHost,
 		}); err != nil {
 			return err
 		}
-		all, err := c.tenants.List(ctx, tx)
+		all, err := c.testTenants().List(ctx, tx)
 		for _, one := range all {
 			tenants = append(tenants, one.Tenancy())
 		}
@@ -958,10 +958,10 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 	// A sweep every 200ms, so two ticks are half a second rather than two
 	// minutes. Everything else about the job is what production runs.
 	mods := []module.Module{task.New(task.Deps{
-		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
+		Tenants: tenantcontracts.Active{Service: c.testTenants()}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Worker, Transport: memory.New(), Log: quiet(),
 	})
 
@@ -1086,7 +1086,7 @@ func notify(t *testing.T, cfg config.Config, c composition, recipient uuid.UUID)
 
 	var acme tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		acme, err = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, err = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return err
 	})
 	if err != nil {
@@ -1174,7 +1174,7 @@ func provision(t *testing.T, cfg config.Config, tenantID uuid.UUID, email string
 	defer conn.Close()
 	c := compose(cfg)
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		_, err := c.users.Provision(ctx, tx, tenantID, email, "", adminPass, []string{authcontracts.RoleAdmin})
+		_, err := c.testUsers().Provision(ctx, tx, tenantID, email, "", adminPass, []string{authcontracts.RoleAdmin})
 		return err
 	})
 	if err != nil {
@@ -1724,7 +1724,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
@@ -2202,7 +2202,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// And the application built on that schema serves.
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 	admins := signIn(t, cfg, acmeHost, adminEmail, adminPass)
@@ -2223,7 +2223,7 @@ func TestPinnedAddresses(t *testing.T) {
 	install(t, path)
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 
@@ -2286,7 +2286,7 @@ func TestAWriteOfAResourceWrittenOnTheControlPlaneIsTurnedTowardsItsDoor(t *test
 	install(t, path)
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
-		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
+		Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans, Authenticate: c.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 	})
 

@@ -44,17 +44,17 @@ func TestDemoSeedRerunConvergesOnWorkAndFiles(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		created, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "demo-rerun", Name: "Demo", Host: "demo-rerun.localhost", Demo: true,
 		})
 		if err != nil {
 			return err
 		}
-		if _, err := c.users.Provision(ctx, system, created.ID, operator, "Operator", "an operator's own long credential", roles); err != nil {
+		if _, err := c.testUsers().Provision(ctx, system, created.ID, operator, "Operator", "an operator's own long credential", roles); err != nil {
 			return err
 		}
 		return db.InTenant(ctx, system, created.Tenancy(), func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			if ctx, err = seedActor(ctx, c.users, tx, operator); err != nil {
+			if ctx, err = seedActor(ctx, c.testUsers(), tx, operator); err != nil {
 				return err
 			}
 			if assign, err = service.Apply(ctx, tx, seed.Selection{Demo: true}); err != nil {
@@ -100,12 +100,12 @@ func TestDemoSeedRerunConvergesOnWorkAndFiles(t *testing.T) {
 // demo tenant's operator so the run holds every grant the files ask for.
 func rerunOperatorRoles(ctx context.Context, c composition, system db.Tx[db.System]) ([]string, error) {
 	var roles []string
-	tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+	tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 	if err != nil {
 		return nil, err
 	}
 	err = db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		admin, err := c.users.ByEmail(ctx, tx, adminEmail)
+		admin, err := c.testUsers().ByEmail(ctx, tx, adminEmail)
 		if err != nil {
 			return err
 		}

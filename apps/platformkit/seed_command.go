@@ -19,17 +19,17 @@ import (
 // seedCommand applies this application's embedded seed to one tenant.
 //
 // Three things carry the authority story, and only two are flags. `--tenant` names
-// which tenant: the tenant's own row decides whether demo records are its own, so an
-// operator cannot widen a run by asking. `--as` names the person the writes are
-// attributed to, and the seed's authorizer asks auth whether that person's roles hold
-// each resource's permission, for every record. Neither says who is at the terminal —
-// naming an address is not proving it — so the third is a credential,
-// seed.operator_email and seed.operator_password, checked against the installation
-// tenant's own people before this command enters the tenant it pointed at. A run
-// without either flag, or the credential, refuses: no mode seeds as nobody.
+// which tenant: its own row decides whether demo records are its own, so an operator
+// cannot widen a run by asking. `--as` names the person the writes are attributed to,
+// and the seed's authorizer asks auth, for every record, whether that person's roles
+// hold each resource's permission. Neither says who is at the terminal — naming an
+// address is not proving it — so the third is a credential, seed.operator_email and
+// seed.operator_password, asked of the installation tenant's own people, of a role
+// that names the operator grant, before this command enters its tenant. Missing one
+// and the run refuses: no mode seeds as nobody.
 //
 // `--dry-run` writes nothing and prints what a real run would, the decision being the
-// same code either way. Either way the plan prints only after the transaction commits.
+// same code either way; the plan prints only after the transaction commits.
 func seedCommand(args []string) error {
 	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
@@ -80,28 +80,17 @@ func seedCommand(args []string) error {
 		if _, ok := trace.From(ctx); !ok {
 			ctx = trace.With(ctx, trace.New())
 		}
-		tenants, err := c.tenants.List(ctx, system)
+		target, err := seedTenant(ctx, c.tenantList, system, *slug)
 		if err != nil {
 			return err
-		}
-		var target *tenancy.Tenant
-		for _, t := range tenants {
-			if t.Slug == *slug {
-				found := t.Tenancy()
-				target = &found
-				break
-			}
-		}
-		if target == nil {
-			return fmt.Errorf("seed: no tenant %s in this installation", *slug)
 		}
 		// The operator is proven in the installation tenant's own scope, in this
 		// same transaction, before the target tenant is entered.
 		if err := seedOperator(ctx, c, system, cfg); err != nil {
 			return err
 		}
-		return db.InTenant(ctx, system, *target, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			ctx, err = seedActor(ctx, c.users, tx, *as)
+		return db.InTenant(ctx, system, target, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			ctx, err = seedActor(ctx, c.addresses, tx, *as)
 			if err != nil {
 				return err
 			}
@@ -130,6 +119,19 @@ func seedCommand(args []string) error {
 	return nil
 }
 
+func seedTenant(ctx context.Context, tenants tenantcontracts.Lister, tx db.Tx[db.System], slug string) (tenancy.Tenant, error) {
+	all, err := tenants.List(ctx, tx)
+	if err != nil {
+		return tenancy.Tenant{}, err
+	}
+	for _, tenant := range all {
+		if tenant.Slug == slug {
+			return tenant.Tenancy(), nil
+		}
+	}
+	return tenancy.Tenant{}, fmt.Errorf("seed: no tenant %s in this installation", slug)
+}
+
 // seedOperator asks the installation tenant's own user and role services three
 // questions: is the person behind the credential who they say they are, can that
 // person still sign in, and does that person hold tenant:manage where the
@@ -147,12 +149,12 @@ func seedOperator(ctx context.Context, c composition, system db.Tx[db.System], c
 	if cfg.Server.InstallationHost == "" {
 		return errors.New("seed: server.installation_host names no tenant to authenticate an operator against")
 	}
-	installation, err := c.tenants.ByHost(ctx, system, cfg.Server.InstallationHost)
+	installation, err := c.hostLookup.ByHost(ctx, system, cfg.Server.InstallationHost)
 	if err != nil {
 		return fmt.Errorf("seed: no installation tenant at %s to authenticate an operator at: %w", cfg.Server.InstallationHost, err)
 	}
 	return db.InTenant(ctx, system, installation, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		person, err := c.users.ByEmail(ctx, tx, cfg.Seed.OperatorEmail)
+		person, err := c.addresses.ByEmail(ctx, tx, cfg.Seed.OperatorEmail)
 		if err != nil {
 			return fmt.Errorf("seed: the operator %s is not a person of the installation tenant: %w", cfg.Seed.OperatorEmail, err)
 		}
@@ -169,11 +171,11 @@ func seedOperator(ctx context.Context, c composition, system db.Tx[db.System], c
 		if !person.CanSignIn() {
 			return fmt.Errorf("seed: %s is not an active person of the installation tenant, so this run names no operator", cfg.Seed.OperatorEmail)
 		}
-		held, err := c.auth.Permissions(ctx, tx, []string(person.Roles))
+		held, err := c.permissions.Permissions(ctx, tx, []string(person.Roles))
 		if err != nil {
 			return err
 		}
-		if !authcontracts.Grants(held, tenancy.Grant{Permission: tenantcontracts.PermissionTenantManage}) {
+		if !authcontracts.Grants(held, tenancy.Grant{Permission: tenantcontracts.PermissionTenantManage, Operator: true}) {
 			return fmt.Errorf("seed: %s holds no %s at the installation tenant, so this run names no operator",
 				cfg.Seed.OperatorEmail, tenantcontracts.PermissionTenantManage)
 		}
