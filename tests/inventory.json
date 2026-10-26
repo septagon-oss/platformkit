@@ -82420,6 +82420,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/resolved-noun-reads-as-a-label.spec.ts",
+   "id": "e2e/resolved-noun-reads-as-a-label.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "a resolved noun starts a line with its own capital and stays the noun inside a sentence",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/resolved-time-policy.spec.ts",
    "id": "e2e/resolved-time-policy.spec.ts",
    "kind": "playwright",
@@ -88047,7 +88067,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2385,
+  "files": 2386,
   "forge_runs": [
    408,
    413,
@@ -88084,7 +88104,7 @@
    "behaviour": 3836,
    "composition": 497,
    "contract": 24,
-   "journey": 112
+   "journey": 113
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -88100,23 +88120,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4469,
+  "rows": 4470,
   "tiers": {
    "merge": 2713,
-   "nightly": 112,
+   "nightly": 113,
    "push": 1644
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2140,
+   "keep": 2141,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4083,
+   "keep": 4084,
    "keep-rewrite": 170,
    "merge": 216
   }
