@@ -234,15 +234,16 @@ them, and [the boundary cases](testdata/design_floor_cases.mjs) — what
 `go test ./ui` asserts — refuse a port that drifted from them. They cannot refuse a
 gate that moved them: the gate sits outside this repository and no test here reads
 it, so the two sets of numbers agree only while someone reads both. Three
-doors run the gate itself instead of the port, and each is opt-in because it reads
-files outside this repository. `PLATFORMKIT_SHELL_DESIGN_GATE=<path to
+routes run the gate itself instead of the port, behind four opt-in
+doors, each of them opt-in because it reads files outside this repository.
+`PLATFORMKIT_SHELL_DESIGN_GATE=<path to
 design_gate.py>` makes that reference-app test run the gate by URL at
 `--widths 390,1440` on the five pages it measures with the port.
 `PLATFORMKIT_PICTURE_DESIGN_GATE=<path to design_gate.py>` makes
 [the composed-picture test](../apps/platformkit/composed_picture_test.go) run the
 same gate, at the same widths, through a proxy that carries the administrator's
 session, on `/app/picturefixture/pictures` — the generated list page whose row opens
-a composed picture door, which neither of the other two doors reaches.
+a composed picture door, which neither of the other two routes reaches.
 `DESIGN_GATE_DIR=<directory holding the gate>` and `DESIGN_GATE_OUT=<directory for
 its dumps>` make [the generated-page journey](../e2e/generated-pages-design-gate.spec.ts)
 — `./scripts/e2e.sh generated-pages-design-gate` — judge six framed pages fetched
@@ -254,13 +255,15 @@ it links. `make check` therefore judges the port; the gate runs when a caller na
 where its files are.
 
 `go test ./ui` holds this paragraph to the tree: a door named here must still be read
-out of the environment by a test or journey that starts a process in the same file, and a
-door naming where the gate lives must hand that process the value the environment gave it,
-not a path written out by hand in its place. Both checks read one file at a time, so a
-change that moves the spawn into a helper of its own moves the read along with it.
+out of the environment by a test or journey that starts a process in the same file, a
+door naming where the gate lives must hand that process the value the environment gave
+it rather than a path written out by hand in its place, and a door naming where the
+gate's dumps go must hand a file write a path built from the value it read. Each check
+reads one file at a time, so a change that moves the spawn or the write into a helper of
+its own moves the read along with it.
 
 **Reused** — the port, `shell_design_floor_test.go`'s rendered run of the reference
-app's five pages, the loop's gate behind those three variables, and the journey that
+app's five pages, the loop's gate behind the doors named above, and the journey that
 already judges eight pages by it. **Added** — the
 naming of those variables where the floor is documented: no README, Makefile line or
 CI file carried them, so the gate behind the port was runnable only by someone who
