@@ -73422,6 +73422,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/components/sidebar_foreground_test.go",
+   "id": "ui/components/sidebar_foreground_test.go#TestTheSidebarColumnNamesTheInkItsDescendantsInherit",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheSidebarColumnNamesTheInkItsDescendantsInherit",
+   "needs_db": false,
+   "pkg": "ui/components",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/components/sidebar_inner_width_test.go",
    "id": "ui/components/sidebar_inner_width_test.go#TestTheSidebarColumnFillsTheAsideThatCarriesItsWidth",
    "kind": "go",
@@ -90418,7 +90437,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3934,
+   "behaviour": 3935,
    "composition": 511,
    "contract": 24,
    "journey": 121
@@ -90437,11 +90456,11 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4590,
+  "rows": 4591,
   "tiers": {
    "merge": 2808,
    "nightly": 121,
-   "push": 1661
+   "push": 1662
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
@@ -90453,7 +90472,7 @@
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4204,
+   "keep": 4205,
    "keep-rewrite": 170,
    "merge": 216
   }
