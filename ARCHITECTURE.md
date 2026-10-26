@@ -425,7 +425,7 @@ terms of a token, which is the whole reason to have themes (`design/design.go:11
 web standard, not a dependency.
 
 **How the tenant crosses it.** It does not. The theme is chosen once, at
-composition (`Theme(design.Default())`, `apps/platformkit/app.go:322`), one
+composition (`Theme(design.Default())`, `apps/platformkit/app.go:325`), one
 stylesheet serves every tenant, and no theme reads a row: isolation lives in the
 database, and a stylesheet adds none of it.
 
@@ -436,7 +436,7 @@ one stylesheet per pair rather than recomposing per request
 **How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
 own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
 line is `apps/platformkit/fault.go:113`: `ui.Compose(design.Default())`, the same
-pair the composition hands the shell at `apps/platformkit/app.go:322`. A client's
+pair the composition hands the shell at `apps/platformkit/app.go:325`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
 a role.
 
@@ -544,7 +544,7 @@ only non-test importer is `modules/auth/internal/passkeys.go`, the soft
 authenticator that exercises it being a test fixture that speaks the SDK's own
 CBOR at that seam (`modules/auth/internal/passkey_authenticator_test.go`), so
 CBOR and COSE reach no handler, no event and no contract
-(`modules/auth/README.md:199-201`).
+(`modules/auth/README.md:220-222`).
 
 **How the tenant crosses it.** `sessions.tenant_id` under row-level security
 (`modules/auth/migrations/000008_auth.up.sql:15`, `:41-48`) and the same for
@@ -553,7 +553,7 @@ CBOR and COSE reach no handler, no event and no contract
 secret column is sealed rather than hashed, because verification needs the value
 and a backup must not carry a spendable factor (`:24-31`), and only the
 deployment's key opens it — `svc.EnableFactors([]byte(deps.FactorKey))`,
-`modules/auth/module.go:265`. Without a key the TOTP and recovery-code doors
+`modules/auth/module.go:270`. Without a key the TOTP and recovery-code doors
 answer 503 rather than the routes going missing (`Deps.FactorKey`, `:120`). The
 passkey tables carry the same column and the same policy —
 `passkey_credentials`, `passkey_challenges`, and the usernameless door's own
@@ -561,7 +561,7 @@ passkey tables carry the same column and the same policy —
 (`modules/auth/migrations/000035_passkeys.up.sql:20`, `:76`, `:144`, `:103`,
 `:109`, `:152`) — and nothing in them is sealed, because a public key is public
 and those doors mount whether or not a factor key exists
-(`modules/auth/module.go:267-278`).
+(`modules/auth/module.go:272-283`).
 
 **How it is traced and audited.** Enrolment and withdrawal are events —
 `auth.factor_enrolled` and `auth.factor_withdrawn`
@@ -577,7 +577,7 @@ router's.
 here: a passkey answers the second factor, `github.com/go-webauthn/webauthn`
 plus its CBOR/COSE tree priced as a module dependency in its own `build(budget)`
 commit, written down beside what stays out
-(`modules/auth/README.md:192-194`, `:227-230`). What the library leaves to
+(`modules/auth/README.md:213-215`, `:248-251`). What the library leaves to
 the relying party is decided where it is enforced: the config is
 built per request from the host that already chose the tenant, so a credential
 minted at one tenant's host cannot answer at another's (`:205-208`), and whether
@@ -662,7 +662,7 @@ event is built (`modules/change/internal/service.go:296-300`). No span of its ow
 
 **How an app extends it.** Implement `Subject` and bind it: `siteSubjectBinding`
 (`apps/platformkit/change.go:185`) and the one line that calls it
-(`apps/platformkit/product.go:359`) are the whole of what the reference product
+(`apps/platformkit/product.go:334`) are the whole of what the reference product
 adds. A refusal carries the owner module's answer in `Refusal`
 (`modules/change/contracts/change.go:284`), which is why this module needs no
 vocabulary of its own.
@@ -707,8 +707,8 @@ those two members and says nothing about correlation (`:63-70`; the column is
 **How an app extends it.** Declare in the manifest — `Declared` and
 `Subscriptions` ([Module](kit/module/module.go)) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
-(`apps/platformkit/product.go:406`), in the function the application calls the one
-place it names an event provider (`:405`). `kit/app` selects by name and imports
+(`apps/platformkit/product.go:382`), in the function the application calls the one
+place it names an event provider (`:381`). `kit/app` selects by name and imports
 no provider ([Transports.constructor](kit/app/app.go) and
 [App.transport](kit/app/dependencies.go)). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
@@ -746,7 +746,7 @@ process names a host, port and from-address, the mailbox when not (`:60-62`), an
 the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
 (`apps/platformkit/main.go:96-102`). A refusal a person must see raises a
-`Notice` (`apps/platformkit/product.go:496`). A nil lookup writes every row and sends no
+`Notice` (`apps/platformkit/product.go:473`). A nil lookup writes every row and sends no
 mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
@@ -816,7 +816,7 @@ another is reproducible from the failure message alone.
 
 **How an app extends it.** Add a field to [app.Caches](kit/app/app.go),
 selected by [validateDeployment](kit/app/construct.go); the reference composition names `valkey.Connect` and nothing
-else (`apps/platformkit/product.go:433`, in `caches()` at `:432`). A selected
+else (`apps/platformkit/product.go:409`, in `caches()` at `:408`). A selected
 adapter with no constructor is refused before anything opens
 ([Caches.constructor](kit/app/app.go)). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as

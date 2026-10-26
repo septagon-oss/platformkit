@@ -47,8 +47,8 @@ func TestReferenceSignInUsesIsolatedNegotiatedTranslations(t *testing.T) {
 				return page.View{}, problem.New(http.StatusForbidden, "English refusal")
 			})
 	}})
-	start(t, cfg, c.modules, app.Options{Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans,
-		Authenticate: c.auth.Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
+	start(t, cfg, c.modules, app.Options{Tenants: c.testTenants(), Authorize: c.testAuth(), Entitle: c.plans,
+		Authenticate: c.testAuth().Authenticate, Role: app.All, Transport: memory.New(), Log: quiet()})
 	for _, tc := range []struct {
 		path, accepted, language, text string
 		status                         int

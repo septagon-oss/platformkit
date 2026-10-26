@@ -74,32 +74,9 @@ func bootstrap(args []string) error {
 	ctx := context.Background()
 	c := composeReference(cfg, environment(*env))
 	err = app.Bootstrap(ctx, cfg, c.plan().Modules(), func(ctx context.Context, tx db.Tx[db.System]) error {
-		t, err := tenant.Bootstrap(ctx, tx, c.tenants, tenantcontracts.NewTenant{
+		return c.bootstrapIdentity(ctx, tx, tenantcontracts.NewTenant{
 			Slug: *slug, Name: *name, Host: *host,
-		})
-		if err != nil {
-			return err
-		}
-		// The roles this administrator is about to be granted were seeded by
-		// the hook inside Create, in this same transaction. See modules.go.
-		_, err = c.users.Provision(ctx, tx, t.ID, *email, "", password,
-			[]string{authcontracts.RoleAdmin})
-		if err != nil {
-			return err
-		}
-		// Which languages the first tenant is served in is a deployment's own
-		// answer, and this is where it can say it: the module's create writes the
-		// one language its copy is written in and nothing else, because a tenant's
-		// set is a declaration and a create carries none. Said here rather than
-		// written to the table afterwards, so an installation is still whole or
-		// untouched, and through the module's own command rather than a second
-		// INSERT, so the set is the one the installation has copy for.
-		if len(spoken) > 0 {
-			_, err = c.tenants.SetLocale(ctx, tx, t.ID, tenantcontracts.SetLocale{
-				Default: t.DefaultLocale, Supported: spoken,
-			})
-		}
-		return err
+		}, *email, password, spoken)
 	})
 	if err != nil {
 		return err
@@ -113,6 +90,23 @@ func bootstrap(args []string) error {
 		fmt.Fprintf(os.Stderr, "\n  password for %s: %s\n  It is not stored and will not be shown again.\n\n", *email, password)
 	}
 	return nil
+}
+
+func (c composition) bootstrapIdentity(ctx context.Context, tx db.Tx[db.System], in tenantcontracts.NewTenant, email, password string, languages []string) error {
+	first, err := tenant.BootstrapWith(ctx, tx, c.bootstrap, in)
+	if err != nil {
+		return err
+	}
+	if _, err := c.provisioner.Provision(ctx, tx, first.ID, email, "", password, []string{authcontracts.RoleAdmin}); err != nil {
+		return err
+	}
+	if len(languages) == 0 {
+		return nil
+	}
+	_, err = c.locale.SetLocale(ctx, tx, first.ID, tenantcontracts.SetLocale{
+		Default: first.DefaultLocale, Supported: languages,
+	})
+	return err
 }
 
 // languagesFlag is a repeatable --language: the flag package appends through Set

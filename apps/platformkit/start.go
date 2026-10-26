@@ -38,8 +38,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
-	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
-	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -94,14 +92,9 @@ func startApp(args []string) error {
 		return err
 	}
 	err = app.Bootstrap(ctx, cfg, c.plan().Modules(), func(ctx context.Context, tx db.Tx[db.System]) error {
-		t, err := tenant.Bootstrap(ctx, tx, c.tenants, tenantcontracts.NewTenant{
+		return c.bootstrapIdentity(ctx, tx, tenantcontracts.NewTenant{
 			Slug: startTenant, Name: "PlatformKit", Host: startHost,
-		})
-		if err != nil {
-			return err
-		}
-		_, err = c.users.Provision(ctx, tx, t.ID, startAdmin, "", password, []string{authcontracts.RoleAdmin})
-		return err
+		}, startAdmin, password, nil)
 	})
 	switch {
 	case err == nil:

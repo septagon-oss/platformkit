@@ -126,11 +126,11 @@ func (c composition) describe(ctx context.Context) (*screens.Connection, error) 
 	// which is also what a provider whose secret cannot be resolved reads as: the
 	// column names where a secret lives, never the secret, so this document can
 	// not leak one even by describing a half-configured provider.
-	oidc, _, err := c.tenants.OIDCOf(ctx, tx)
+	oidc, _, err := c.oidcSettings.OIDCOf(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	saml, _, err := c.tenants.SAMLSettingsOf(ctx, tx)
+	saml, _, err := c.samlSettings.SAMLSettingsOf(ctx, tx)
 	if err != nil {
 		return nil, err
 	}

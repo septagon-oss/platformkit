@@ -1,19 +1,7 @@
 package main
 
-// product.go says the reference application's own share of its composition, in the
-// resolver's words: `Use` names the kernel modules, and two here name the product's.
-//
-// `product` is first because it needs nobody: it holds the values this installation
-// decides and no module can derive — where uploads go, which flag gates a settings
-// write, the object-scope policy, the plan feature the trail is sold under, the
-// public addresses, the sign-in form, the languages, the seeded roles and the empty
-// grant-check holder auth fills.
-//
-// `access` is second to last because it is the first thing that can name a person, a
-// notice and a site; its two joins belong to no module.
-//
-// The one edge neither declares is the user module's promotion check, answered by
-// auth: declaring it would be the cycle user → auth → user.
+// product.go declares the reference application's own share of its composition.
+// Role-backed answers come from auth's grants provider, built before User and Auth.
 
 import (
 	"context"
@@ -43,7 +31,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy/providers/opa"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	auditcontracts "github.com/septagon-oss/platformkit/modules/audit/contracts"
-	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/change"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
@@ -91,8 +78,6 @@ func productPictures(cfg config.Config, grants *lateCatalogue, pictures admincon
 // declarations as the reference composition. The caller owns the adapter.
 func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures admincontracts.Pictures, policy tenancy.Policy) *pkit.Module {
 	decls := []pkit.Declaration{
-		pkit.Provides[usercontracts.Administration](),
-		pkit.Provides[usercontracts.Granting](),
 		pkit.Provides[filecontracts.Storage](),
 		// The door to the deployment's secrets, opened once here: which store it is
 		// — the environment, a mounted directory, an OpenBao — is secrets.adapter's
@@ -139,16 +124,6 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		if err != nil {
 			return module.Module{}, err
 		}
-		// auth.AdministeringRoles is what makes "the last person who can still
-		// administer this tenant" answerable at all: the user module owns who
-		// holds a role, the auth module owns what a role grants, and neither reads
-		// the other's rows. This is where the two meet, and the only line in this
-		// application that decides administration is made of roles.
-		pkit.Put[usercontracts.Administration](w, &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles})
-		// The empty holder. user reads it and auth fills its Ask — the one edge in
-		// this application that is late-bound rather than built, and product puts
-		// it precisely because it needs nobody and so is built first.
-		pkit.Put[usercontracts.Granting](w, &usercontracts.GrantingFunc{})
 		pkit.Put[filecontracts.Storage](w, store)
 		// The secret store, opened once and put under both halves of the port;
 		// `store` above is the object store, and the why sits with the Provides.
@@ -330,7 +305,7 @@ func workspace() *pkit.Module {
 // so the application reads it off the resolved plan rather than a module.
 func access(ask *accessReach) *pkit.Module {
 	return pkit.NewModule("access", func(w *pkit.Wiring) (module.Module, error) {
-		users, notices := pkit.Get[usercontracts.Service](w), pkit.Get[notificationcontracts.Service](w)
+		users, notices := pkit.Get[usercontracts.RoleHolders](w), pkit.Get[notificationcontracts.Service](w)
 		sites := pkit.Get[sitecontracts.Service](w)
 		// Recipients joins the two modules that each own half the answer. Tell
 		// writes one notice through the notification module — the bell in the
@@ -342,7 +317,7 @@ func access(ask *accessReach) *pkit.Module {
 		// address the kernel composed for the user resource. It carries the person,
 		// not a token, so forwarding the notice grants nothing — the form behind it
 		// is guarded by the same door the API is.
-		*ask = accessReach{users: users, notify: notices, may: pkit.Get[usercontracts.Granting](w).May}
+		*ask = accessReach{users: users, notify: notices, may: pkit.Get[usercontracts.Granting](w).May, administration: pkit.Get[usercontracts.Administration](w)}
 		// The site settings the shell writes are the subject this module contributes:
 		// a subject is a row, and this is the first module in the composition with a
 		// site service to read one with. The flag that gates that write is this
@@ -372,16 +347,17 @@ func access(ask *accessReach) *pkit.Module {
 		// than the one the routes are mounted on.
 		pkit.Put[*change.ReviewChrome](w, &change.ReviewChrome{
 			Shell:     reviewShell(catalogues()),
-			Authorize: pkit.Get[authcontracts.Auth](w),
+			Authorize: pkit.Get[httpx.Authorizer](w),
 		})
 		return module.Module{Name: "access"}, nil
 	},
-		pkit.Needs[usercontracts.Service](),
+		pkit.Needs[usercontracts.RoleHolders](),
 		pkit.Needs[notificationcontracts.Service](),
 		pkit.Needs[sitecontracts.Service](),
 		pkit.Needs[sitecontracts.LockedReader](),
 		pkit.Needs[usercontracts.Granting](),
-		pkit.Needs[authcontracts.Auth](),
+		pkit.Needs[usercontracts.Administration](),
+		pkit.Needs[httpx.Authorizer](),
 		pkit.Provides[changecontracts.Notifier](),
 		pkit.Provides[changecontracts.ProposalPage](),
 		pkit.Provides[*change.ReviewChrome](),
@@ -475,8 +451,9 @@ func operatorStorybook(dir string) func(context.Context) (export.Storybook, erro
 // accessReach is httpx.AskForAccess for this product, filled by the access module
 // once the two services it joins exist.
 type accessReach struct {
-	users  usercontracts.Service
-	notify notificationcontracts.Service
+	users          usercontracts.RoleHolders
+	administration usercontracts.Administration
+	notify         notificationcontracts.Service
 	// may is the composition's own way of asking the same question the kernel
 	// asks a request: may this caller manage roles. A request carries a principal
 	// and asks the authorizer; a caller with no principal on its context is not a
@@ -485,7 +462,7 @@ type accessReach struct {
 }
 
 func (a accessReach) Recipients(ctx context.Context, tx db.Tx[db.Tenant]) ([]uuid.UUID, error) {
-	roles, err := auth.AdministeringRoles(ctx, tx)
+	roles, err := a.administration.Administering(ctx, tx)
 	if err != nil {
 		return nil, err
 	}

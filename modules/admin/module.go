@@ -106,7 +106,11 @@ type Deps struct {
 
 	// Tenants is the control plane, for the switcher. It is the one cross-tenant
 	// read in this module, and it needs the token Routes is handed.
+	// Deprecated: use TenantList.
 	Tenants tenantcontracts.Service
+
+	// TenantList lists control-plane tenants; when present it takes precedence over Tenants.
+	TenantList tenantcontracts.Lister
 
 	// Roles is the auth module's role administration, for the screen that
 	// module's nav entry names. It is the same value main hands the kernel as
@@ -181,7 +185,7 @@ func New(deps Deps) module.Module {
 				Nav:       navigation(deps.Modules),
 				Primary:   deps.Primary,
 				Authorize: deps.Authorize,
-				Tenants:   deps.Tenants,
+				Tenants:   tenantList(deps),
 				Roles:     deps.Roles,
 				Sessions:  deps.Sessions,
 				People:    deps.People,

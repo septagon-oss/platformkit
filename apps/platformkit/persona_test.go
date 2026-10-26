@@ -190,7 +190,7 @@ func provisionAs(t *testing.T, cfg config.Config, c composition, tenantID uuid.U
 	}
 	defer conn.Close()
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-		_, err := c.users.Provision(ctx, tx, tenantID, email, "", adminPass, []string{role})
+		_, err := c.testUsers().Provision(ctx, tx, tenantID, email, "", adminPass, []string{role})
 		return err
 	})
 	if err != nil {

@@ -206,7 +206,7 @@ func (p *Provider) oauth(cfg OIDC, provider *oidc.Provider, host string) *oauth2
 // are registered only when a provider is configured: a route that would answer
 // "this application has no identity provider" is a route with nothing to say,
 // and the boot gate counts what is mounted rather than what might have been.
-func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users contracts.Users, provisioner contracts.Provisioner, p *Provider) {
+func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.SessionOpener, users contracts.Users, provisioner contracts.Provisioner, p *Provider) {
 	app := surfaces.App
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-start",
