@@ -21,7 +21,9 @@
 // folded case. Both are ANDed with the lifecycle clause, every name is checked
 // against the entity's schema so none reaches a statement from a caller, and the
 // total [ListCtx] reports is counted over the conditions the page was cut with.
-// [CountWhere] asks the same question with no page beside it.
+// [CountWhere] asks the same question of predicates alone, with no page and no
+// equality map beside it: a caller holding a map writes its keys as OpEq
+// predicates, which is the walk a page's Filter takes anyway.
 //
 // # Instantiate with the pointer type
 //
@@ -123,8 +125,17 @@ type Validator = entity.Validator
 type Query struct {
 	Limit, Offset int
 	Sort          string
-	Filter        map[string]any
-	Where         Where
+
+	// Filter is one value per field name, each read as that column's own Go type by
+	// the rule Predicate states: any integer kind for a count, any float or integer
+	// kind for an amount, and exactly string, bool, time.Time or uuid.UUID for a
+	// word, a flag, a moment and an id. A value of another shape refuses the whole
+	// question with ErrInvalid before a statement is sent; none of it is coerced.
+	Filter map[string]any
+
+	// Where is the comparisons of the same question, narrowed with Filter and bound
+	// by the same rule on an operand's shape.
+	Where Where
 }
 
 // The page and operand bounds. A caller that asks for nothing gets a screenful; a

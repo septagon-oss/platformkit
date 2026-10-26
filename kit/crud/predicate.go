@@ -104,9 +104,20 @@ var orderOps = map[Op]bool{OpLt: true, OpLte: true, OpGt: true, OpGte: true}
 // already read as the field's own type — a time.Time for a timestamp, an int64
 // for a count — because the coercion belongs to whoever checked the declaration,
 // not to the statement.
+//
+// The operand's Go type has to be the column's own. A count takes any integer kind
+// and an amount any float or integer kind, because those are widths of one number
+// and the wider reading of it is exact; a word, a flag, a moment and an id are read
+// only as string, bool, time.Time and uuid.UUID, so a named type over one of them —
+// a `type Status string` — is refused rather than reinterpreted. The refusal names
+// the operand's type and sends no statement: the conversion is the caller's, and
+// nothing here guesses at a spelling of a value.
 type Predicate struct {
 	Field string
 	Op    Op
+
+	// Value is the operand: none at all for is_null and not_null, a slice or array
+	// for in, and the column's own type for every other operator.
 	Value any
 }
 
@@ -118,8 +129,12 @@ type Where []Predicate
 
 // fragment is one WHERE condition and the values it takes. The two travel
 // together because a comparison takes one value and a membership test takes as
-// many as it names: a builder that paired clause i with argument i would bind the
-// first value of a list and drop the rest, widening the set it meant to narrow.
+// many as it names. Pairing clause i with argument i instead breaks the question
+// where the first list sits — one placeholder sent against a clause that lists
+// several is a syntax error Postgres refuses — and panics before that on a clause
+// with no operand at all, the empty list's `1 = 0`. Both statements come from one
+// list of these, so the failure lands on the total and the page together, loudly
+// and never as two sets that disagree.
 type fragment struct {
 	sql  string
 	args []any
@@ -255,7 +270,11 @@ func operandFault(f Field, op Op, v any) error {
 
 // holds is whether one Go value can be sent as this column's own type. An integer
 // column takes any Go integer kind and a float column takes those and the float
-// kinds: widening up is exact and the reverse is not.
+// kinds, because those are widths of one number and the wider reading of one is
+// exact. A word, a flag, a moment and an id are read by type and not by kind — the
+// kind of a moment is a struct and of an id an array, and neither says what it holds
+// — so a named type over either is refused rather than converted. Predicate states
+// the rule where whoever writes an operand reads it.
 func holds(f Field, v any) bool {
 	switch f.Type {
 	case TypeString, TypeText:
@@ -315,17 +334,17 @@ func listValues(v any) ([]any, bool) {
 
 // fragments is the question one read asks: every equality key of a filter map and
 // every predicate, ANDed. The lifecycle clause belongs to the door that asks —
-// deleted_at IS NULL is added there and no predicate can name it, because
-// deletedAt is no field of any schema.
+// deleted_at IS NULL is added there and no predicate can name it, because deletedAt
+// is no field of any schema.
 //
-// Filter keys come first in sorted field order and predicates follow in the order
-// they were written, so a query that is unanswerable two ways refuses with one
-// sentence every time rather than whichever one a map walk reached first. A field
+// Filter keys come first in sorted field order and predicates follow as written, so
+// a question unanswerable two ways refuses with one sentence every time. A field
 // named twice is narrowed twice, never overwritten: the AND is what the caller wrote.
 //
-// Both doors build through here — CountWhere, and the count and the page of ListCtx
-// together — which is what makes a narrowed total and a narrowed page answers about
-// one set of rows, and what binds MaxQueryValues at both doors at once.
+// Both doors build through here — CountWhere, and the count and the page of ListCtx —
+// so a narrowed total and a narrowed page answer one set and MaxQueryValues binds at
+// both doors at once. The next read door in this package takes its conditions, its
+// pairing and its operand budget from here; nothing outside it builds a condition.
 func fragments(fields []Field, filter map[string]any, w Where) ([]fragment, error) {
 	asked := make(Where, 0, len(filter)+len(w))
 	for _, name := range slices.Sorted(maps.Keys(filter)) {
@@ -410,6 +429,11 @@ func Resolve(fields []Field, named []entity.EntryPredicate, asOf time.Time) (Whe
 // same lifecycle predicate Count does, so a narrowed total and the whole one are
 // answers about the same set of rows, and it builds its conditions through the same
 // fragments the page is built from, so the two cannot disagree about the question.
+//
+// It takes predicates and no equality map: a caller holding a map writes its keys as
+// OpEq predicates, which is exactly the walk fragments does for a page's Filter, so
+// the two forms reach the same conditions and one door stays as narrow as the
+// question it answers.
 func CountWhere[T Entity](tx db.Tx[db.Tenant], w Where) (int64, error) {
 	clauses, err := fragments(Fields[T](), nil, w)
 	if err != nil {
