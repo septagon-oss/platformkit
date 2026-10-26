@@ -425,7 +425,7 @@ terms of a token, which is the whole reason to have themes (`design/design.go:11
 web standard, not a dependency.
 
 **How the tenant crosses it.** It does not. The theme is chosen once, at
-composition (`Theme: design.Default()`, `apps/platformkit/app.go:163`), one
+composition (`Theme(design.Default())`, `apps/platformkit/app.go:317`), one
 stylesheet serves every tenant, and no theme reads a row: isolation lives in the
 database, and a stylesheet adds none of it.
 
@@ -435,8 +435,8 @@ one stylesheet per pair rather than recomposing per request
 
 **How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
 own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
-line is `apps/platformkit/fault.go:104`: `ui.Compose(design.Default())`, the same
-pair the composition hands the shell at `apps/platformkit/app.go:163`. A client's
+line is `apps/platformkit/fault.go:113`: `ui.Compose(design.Default())`, the same
+pair the composition hands the shell at `apps/platformkit/app.go:317`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
 a role.
 
@@ -707,8 +707,8 @@ those two members and says nothing about correlation (`:63-70`; the column is
 **How an app extends it.** Declare in the manifest — `Declared` and
 `Subscriptions` ([Module](kit/module/module.go)) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
-(`apps/platformkit/product.go:213`), in the function the application calls the one
-place it names an event provider (`:212`). `kit/app` selects by name and imports
+(`apps/platformkit/product.go:406`), in the function the application calls the one
+place it names an event provider (`:405`). `kit/app` selects by name and imports
 no provider ([Transports.constructor](kit/app/app.go) and
 [App.transport](kit/app/dependencies.go)). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
@@ -745,8 +745,8 @@ it has (`FromDeployment`, `modules/notification/provider.go:40-43`): SMTP when t
 process names a host, port and from-address, the mailbox when not (`:60-62`), and
 the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
-(`apps/platformkit/main.go:84`). A refusal a person must see raises a `Notice`
-(`apps/platformkit/product.go:281`). A nil lookup writes every row and sends no
+(`apps/platformkit/main.go:94-100`). A refusal a person must see raises a
+`Notice` (`apps/platformkit/product.go:496`). A nil lookup writes every row and sends no
 mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
@@ -790,8 +790,8 @@ rule (`:51-52`).
 
 **Where it lives.** `kit/cache`: `Scope` (`kit/cache/cache.go:87`), built only by
 `Of` (`:101`) or `Shared` (`:117`), `Key` (`:143`), `Cache` (`:175`) and `Value`
-(`:226`); the adapter is `kit/cache/providers/valkey` (`New`
-`kit/cache/providers/valkey/valkey.go:56`, `Connect` `:67`). What may be cached at
+(`:243`); the adapter is `kit/cache/providers/valkey` (`New`
+`kit/cache/providers/valkey/valkey.go:57`, `Connect` `:71`). What may be cached at
 all is the package comment: values a replica may recompute, and never sessions,
 permission grants or entitlements (`kit/cache/cache.go:12-14`).
 
@@ -816,7 +816,7 @@ another is reproducible from the failure message alone.
 
 **How an app extends it.** Add a field to [app.Caches](kit/app/app.go),
 selected by [validateDeployment](kit/app/construct.go); the reference composition names `valkey.Connect` and nothing
-else (`apps/platformkit/product.go:221`, in `caches()` at `:220`). A selected
+else (`apps/platformkit/product.go:433`, in `caches()` at `:432`). A selected
 adapter with no constructor is refused before anything opens
 ([Caches.constructor](kit/app/app.go)). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
