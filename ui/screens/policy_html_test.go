@@ -26,6 +26,14 @@ type webExpectation struct {
 	EmptyTitle                                 string
 }
 
+// webUnasserted names every fixture of the shared corpus whose rendered HTML this
+// companion does not assert, with what does assert it today. A fixture absent here
+// and absent from the companion refuses: the corpus grows one fixture at a time,
+// and a screen nobody renders has to be a named decision rather than a skip line.
+var webUnasserted = map[string]string{
+	"choice-axes-command": "its resolved model and rows are asserted by the resolver's own fixture run",
+}
+
 func TestEveryParityFixtureRendersItsSemanticModel(t *testing.T) {
 	var companions struct{ Cases map[string]webExpectation }
 	raw, err := os.ReadFile("testdata/parity/web/expectations.json")
@@ -37,14 +45,20 @@ func TestEveryParityFixtureRendersItsSemanticModel(t *testing.T) {
 	}
 	fixtures := readParity(t)
 	asserted := make(map[string]bool, len(fixtures))
+	corpus := make(map[string]bool, len(fixtures))
 	for _, fixture := range fixtures {
+		corpus[fixture.Name] = true
 		want, ok := companions.Cases[fixture.Name]
 		if !ok {
-			// The reviewed corpus is shared and grows one fixture at a time; a
-			// fixture with no companion of its own is skipped by name rather than
-			// passing as asserted, and its source keeps its own reviewer's hashes.
+			why, named := webUnasserted[fixture.Name]
+			if !named {
+				t.Errorf("fixture %s has no web companion and no name in the list of unasserted screens", fixture.Name)
+				continue
+			}
+			// A named screen is skipped rather than passing as asserted, and its
+			// source keeps the hashes its own author wrote.
 			t.Run(fixture.Name, func(t *testing.T) {
-				t.Skipf("%s: no web companion, its HTML is unasserted", fixture.Name)
+				t.Skipf("%s: no web companion, its HTML is unasserted: %s", fixture.Name, why)
 			})
 			continue
 		}
@@ -92,6 +106,14 @@ func TestEveryParityFixtureRendersItsSemanticModel(t *testing.T) {
 	for name := range companions.Cases {
 		if !asserted[name] {
 			t.Errorf("web companion %s names no fixture of the corpus", name)
+		}
+	}
+	for name := range webUnasserted {
+		if !corpus[name] {
+			t.Errorf("unasserted screen %s names no fixture of the corpus", name)
+		}
+		if _, isCompanion := companions.Cases[name]; isCompanion {
+			t.Errorf("unasserted screen %s names a fixture the companion asserts", name)
 		}
 	}
 }

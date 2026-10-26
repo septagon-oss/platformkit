@@ -51,8 +51,8 @@ adds hand-written column labels, sort labels and explicitly synthetic probes for
 values the original fixture leaves unspecified. Each companion pins the reviewed
 source input/expected hashes. Its author and pending independent review are stated
 separately; it does not replace or claim ownership of the reviewed corpus. The
-corpus is shared, so a fixture no companion names is reported by name as HTML
-unasserted, and a companion that names no fixture of the corpus is refused.
+corpus is shared, so the test names each fixture whose HTML it leaves unasserted
+and refuses any other gap, or a companion naming no fixture of the corpus.
 
 The tests compare titles, membership, field and option order, command copy/flags,
 query values, pill tones and picture references. Supplemental value, mounted-query
