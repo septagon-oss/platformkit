@@ -32519,6 +32519,82 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/guided_answer_and_retraction_test.go",
+   "id": "kit/rest/guided_answer_and_retraction_test.go#TestAGuidedCommandAnswersNoReceiptTheSessionDoesNotHold",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedCommandAnswersNoReceiptTheSessionDoesNotHold",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/guided_answer_and_retraction_test.go",
+   "id": "kit/rest/guided_answer_and_retraction_test.go#TestAGuidedScreenRefusesAReadTheModuleRetracts",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedScreenRefusesAReadTheModuleRetracts",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/guided_answer_and_retraction_test.go",
+   "id": "kit/rest/guided_answer_and_retraction_test.go#TestAGuidedNativeFormRecordsASetOnce",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedNativeFormRecordsASetOnce",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/guided_answer_and_retraction_test.go",
+   "id": "kit/rest/guided_answer_and_retraction_test.go#TestAGuidedSessionIsCataloguedWithBothCommands",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedSessionIsCataloguedWithBothCommands",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/guided_session_test.go",
    "id": "kit/rest/guided_session_test.go#TestGuidedCompletionAndPartialFinishShareProviderCases",
    "kind": "go",
@@ -83376,7 +83452,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2259,
+  "files": 2260,
   "forge_runs": [
    408,
    413,
@@ -83410,7 +83486,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3604,
+   "behaviour": 3608,
    "composition": 489,
    "contract": 22,
    "journey": 110
@@ -83429,9 +83505,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4225,
+  "rows": 4229,
   "tiers": {
-   "merge": 2602,
+   "merge": 2606,
    "nightly": 110,
    "push": 1513
   },
@@ -83439,13 +83515,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2014,
+   "keep": 2015,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3839,
+   "keep": 3843,
    "keep-rewrite": 170,
    "merge": 216
   }
