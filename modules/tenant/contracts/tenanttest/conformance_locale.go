@@ -150,7 +150,7 @@ func refuseSupersededLocale(t *testing.T, f Fixture) {
 	}); err != nil {
 		t.Fatalf("SetLocale: %v", err)
 	}
-	stale := born
+	stale := contracts.LocaleRevision(born)
 	row, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, contracts.SetLocale{
 		Default: "en", Supported: []string{"pt-PT"}, ExpectedRevision: &stale,
 	})

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -232,6 +233,28 @@ const (
 	CodeLanguageTag      = "LANGUAGE_TAG"
 )
 
+// LocaleRevision counts the language declarations one tenant has had, which is the
+// number a declaration brings back to say what it was read at.
+//
+// It is a type with its own JSON codec rather than a plain 64-bit member for one
+// reason: kit/httpx documents a request body that holds a 64-bit integer member as
+// a derived component of its own, and the body this member belongs to — SetLocale —
+// is a component the released document already names and a client already parses.
+// The number of one tenant's language saves is nowhere near the range where a
+// caller can lose a digit, so the published member stays an ordinary JSON integer.
+type LocaleRevision int64
+
+// UnmarshalJSON binds one revision counter from a JSON integer token. A quoted
+// number, a fraction, a word or a magnitude outside int64 is refused.
+func (r *LocaleRevision) UnmarshalJSON(data []byte) error {
+	value, err := strconv.ParseInt(string(data), 10, 64)
+	if err != nil {
+		return errors.New("expected an exact revision counter")
+	}
+	*r = LocaleRevision(value)
+	return nil
+}
+
 // SetLocale is what saying which languages one tenant is served in takes: the
 // default, the list the negotiation may choose from, and — for a declaration read
 // from a page — the revision it was read at.
@@ -258,7 +281,7 @@ type SetLocale struct {
 	// one command's argument, and `Tenant.LocaleRevision` carries `json:"-"` for the
 	// same reason — the number a caller compares is read from the command that owns
 	// the count, not written back into a row.
-	ExpectedRevision *int64 `json:"expectedRevision,omitempty" doc:"The revision this declaration was read at; a changed pair brought from a superseded one conflicts"`
+	ExpectedRevision *LocaleRevision `json:"expectedRevision,omitempty" doc:"The revision this declaration was read at; a changed pair brought from a superseded one conflicts"`
 }
 
 // Locale is the tenant's own declaration of the languages it is served in, with the

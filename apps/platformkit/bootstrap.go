@@ -95,8 +95,9 @@ func bootstrap(args []string) error {
 		// untouched, and through the module's own command rather than a second
 		// INSERT, so the set is the one the installation has copy for.
 		if len(spoken) > 0 {
+			born := tenantcontracts.LocaleRevision(t.LocaleRevision)
 			_, err = c.tenants.SetLocale(ctx, tx, t.ID, tenantcontracts.SetLocale{
-				Default: t.DefaultLocale, Supported: spoken, ExpectedRevision: &t.LocaleRevision,
+				Default: t.DefaultLocale, Supported: spoken, ExpectedRevision: &born,
 			})
 		}
 		return err

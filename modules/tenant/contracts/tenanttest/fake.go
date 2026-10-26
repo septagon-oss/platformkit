@@ -329,7 +329,7 @@ func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, 
 		return nil, crud.ErrNotFound
 	}
 	changed := t.DefaultLocale != wanted[0] || !slices.Equal(t.Locales, wanted[1:])
-	if changed && in.ExpectedRevision != nil && *in.ExpectedRevision != t.LocaleRevision {
+	if changed && in.ExpectedRevision != nil && *in.ExpectedRevision != contracts.LocaleRevision(t.LocaleRevision) {
 		// The same refusal as the tenant's own door, on the same counter: an operator
 		// who read the set before somebody else saved it is refused, and the fake that
 		// let it through would be the fake a product's page was tested against.

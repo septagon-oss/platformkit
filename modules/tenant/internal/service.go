@@ -766,7 +766,7 @@ func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 	// or not at all, so an intent cannot splice two declarations. It is not what a
 	// screen brings. A page always has the revision under its feet, because the read
 	// that drew the set is the read that reported the count.
-	if in.ExpectedRevision != nil && *in.ExpectedRevision != t.LocaleRevision {
+	if in.ExpectedRevision != nil && *in.ExpectedRevision != contracts.LocaleRevision(t.LocaleRevision) {
 		return nil, fmt.Errorf("%w: this declaration was read at revision %d and the tenant is on revision %d",
 			crud.ErrConflict, *in.ExpectedRevision, t.LocaleRevision)
 	}
