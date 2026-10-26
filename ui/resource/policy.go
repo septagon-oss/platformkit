@@ -127,6 +127,14 @@ func schemaFieldNamed(fields []entity.Field, name string) (entity.Field, bool) {
 	return entity.Field{}, false
 }
 
+// entryWroteWords reports whether the entry declared its own two words. It is asked
+// here because this file is the one that reads the raw hints: a count either uses the
+// pair the author wrote, already in the reader's language, or the resource name's own
+// catalogue key, and nothing in between.
+func (r Resource) entryWroteWords() bool {
+	return r.Present.Singular != "" || r.Present.Plural != ""
+}
+
 func (r Resource) field(name string) present.ResolvedField {
 	for _, f := range r.Resolved.Fields {
 		if f.Name == name {

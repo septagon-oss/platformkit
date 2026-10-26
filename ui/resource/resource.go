@@ -173,7 +173,7 @@ func (o Options) plural(key string, count int64, one, other string, args ...any)
 // having a letter appended here.
 func (o Options) noun(r Resource, count int64) string {
 	reading := r.Resolved.Identity
-	if r.Present.Singular != "" || r.Present.Plural != "" {
+	if r.entryWroteWords() {
 		if count == 1 {
 			return reading.Singular
 		}

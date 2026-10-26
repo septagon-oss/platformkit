@@ -31,15 +31,6 @@ func value(f present.ResolvedField, row map[string]any, o Options) reading {
 		out.text = f.Reading.Missing
 		return out
 	}
-	if f.Kind == "number" && f.Reading.Money == nil {
-		// A measured value is written differently in each language: English groups
-		// 12,345 with a comma and Portuguese with a space, and the row carries
-		// neither. The two keys, not one, because a count and a measurement are
-		// written with different verbs — "%g" over an integer answers
-		// "%!g(int=…)", which a person then reads on the page.
-		out.text = o.numberText(raw)
-		return out
-	}
 	switch {
 	case f.Reading.Money != nil:
 		var err error
@@ -64,6 +55,15 @@ func value(f present.ResolvedField, row map[string]any, o Options) reading {
 			return timeValue(f, at, o)
 		}
 	case f.Reading.Precision != nil:
+		// A count is written differently in each language — English groups 12,345
+		// with a comma and Portuguese with a space, and the row carries neither — so
+		// the digits are asked of the request's catalogue. What may not be asked is
+		// the exactness: a value that is not an exact int64 is refused here rather
+		// than rounded into a shape the reader cannot tell from a real amount.
+		if text, ok := o.exactNumber(raw); ok {
+			out.text = text
+			break
+		}
 		n, err := exactInteger(raw)
 		if err != nil {
 			out.err = fmt.Errorf("resource: %s: %w", f.Name, err)
@@ -127,6 +127,17 @@ func money(raw any, currency string, scale int) (string, error) {
 // numberText is one measured value in the layout this request's language counts
 // in. A value that is not a number, and a render with no catalogue, are what
 // kit/entity/display prints.
+// exactNumber is a whole number in the layout the request's language writes counts
+// in, and whether this is a whole number at all: anything else — a float, a string,
+// a time — is left to the caller's exactness check, which refuses what it cannot read.
+func (o Options) exactNumber(raw any) (string, bool) {
+	switch raw.(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return o.Text("screens.integer", "%d", raw), true
+	}
+	return "", false
+}
+
 func (o Options) numberText(v any) string {
 	if o.Locale == nil {
 		return display.Display(entity.Field{}, v)
