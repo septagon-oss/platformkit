@@ -23,6 +23,13 @@ An absent block or unknown version resolves the original declarations once;
 individual missing fields never fall back to raw hints. Invalid supported
 references return an HTML render error. Inputs are immutable for the render.
 
+Resolved nouns are printed as the policy holds them. Where a noun begins a line
+— a list's heading, its table region's name, a record's collection crumb — the
+page supplies the letter that starts a sentence; inside a sentence, as in the
+result count and the empty-state description, the word stays exactly as its
+author wrote it. `ui/resource` owns that line-initial form;
+`kit/entity/present` resolves the noun and re-spells nothing.
+
 Columns, overview, declared sections and record information retain policy order.
 Equal labels do not identify fields. Empty columns keep the successful count and
 pagination without inventing a table; empty detail values retain their labels.
