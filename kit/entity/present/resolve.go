@@ -53,7 +53,6 @@ type CommandInput struct {
 func Resolve(in Input) Resolved {
 	r := Resolved{
 		PolicyVersion: PolicyVersion,
-		Views:         views(in),
 		Language:      cmp.Or(in.Language, "en"),
 		Identity:      identity(in),
 		Fields:        []ResolvedField{},
@@ -64,13 +63,16 @@ func Resolve(in Input) Resolved {
 	if in.CommandsOnly {
 		r.Titles = ResolvedTitles{EmptyTitle: in.word("present.emptyTitle", "—"), ListCandidates: []string{}, RecordCandidates: []string{}, Summary: []string{}}
 		r.Layout = emptyLayout()
+		r.Fields = []ResolvedField{}
 		r.List = ResolvedList{Sorts: []ResolvedSortOption{}, Filters: []ResolvedFilter{}}
+		r.Views = views(in, r.Layout, r.Fields)
 		return r
 	}
 	r.Titles = titles(in)
 	r.Layout = layout(in, r.Titles)
 	r.Fields = fields(in)
 	r.List = list(in)
+	r.Views = views(in, r.Layout, r.Fields)
 	return r
 }
 

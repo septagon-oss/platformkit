@@ -11,46 +11,33 @@ import (
 	g "maragu.dev/gomponents"
 )
 
-func (r Resource) presentation(writable bool) present.Resolved {
-	ops := r.Operations
-	if !writable {
-		if ops == nil {
-			ops = []string{"list", "read"}
-		}
-		ops = slices.DeleteFunc(slices.Clone(ops), func(op string) bool { return op != "list" && op != "read" })
-	}
-	commands := make([]present.CommandInput, 0, len(r.Commands))
-	for _, c := range r.Commands {
-		commands = append(commands, c.input())
-	}
-	return present.Resolve(present.Input{Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable,
-		Singleton: r.Singleton, Operations: ops, Commands: commands})
-}
-
-func (c Command) input() present.CommandInput {
-	return present.CommandInput{Verb: c.Verb, Summary: c.Label, Hints: c.Present,
-		Fields: c.Fields, Bindings: c.Bindings, Collection: c.Collection, Repeated: c.Repeated}
-}
-
+// resolvedView is the control decision the resolved policy already made for one
+// screen. A caller who may not write is shown no door that would refuse them: the
+// routes are the resource's, and this is where the person's half comes off.
 func (r Resource) resolvedView(kind string, writable bool) present.ResolvedView {
-	for _, v := range r.presentation(writable).Views {
-		if v.Kind == kind {
-			return v
+	for _, v := range r.Resolved.Views {
+		if v.Kind != kind {
+			continue
 		}
-	}
-	if kind == "create" || kind == "edit" {
-		input := present.Input{Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Operations: []string{"create", "update"}}
-		for _, v := range present.Resolve(input).Views {
-			if v.Kind == kind {
-				return v
-			}
+		if !writable {
+			v.Controls = slices.DeleteFunc(slices.Clone(v.Controls), func(c present.ResolvedControl) bool {
+				return c.Name == "action.create" || c.Name == "action.edit" || c.Name == "action.delete"
+			})
 		}
+		return v
 	}
 	return present.ResolvedView{Kind: kind, Cardinality: screen.One}
 }
 
 func hasControl(v present.ResolvedView, name string) bool {
 	return slices.ContainsFunc(v.Controls, func(c present.ResolvedControl) bool { return c.Name == name })
+}
+
+// input is the command as the resolver sees it: its words, and the arguments and
+// shape that decide which controls its view names.
+func (c Command) input(hints entity.CommandHints) present.CommandInput {
+	return present.CommandInput{Verb: c.Verb, Summary: c.Label, Hints: hints,
+		Fields: c.Fields, Bindings: c.Bindings, Collection: c.Collection, Repeated: c.Repeated}
 }
 
 func (r Resource) ref(kind, verb string) screen.ViewRef {
@@ -79,14 +66,18 @@ func (r Resource) viewBody(kind string, body []g.Node) []g.Node {
 	return body
 }
 
-// ScreenViews derives immutable descriptors from the same control decisions
-// the renderer consumes. ScreenOwner must name the declaring module.
+// ScreenViews derives immutable descriptors from the same control decisions the
+// renderer consumes: the resolved policy named them, and ScreenOwner names the
+// module that declared them. A resource that carries no supported policy resolves
+// its own declarations first, so the publication is the composition's contract and
+// never one language's or one caller's.
 func ScreenViews(r Resource) []screen.View {
 	if r.ScreenOwner == "" {
 		return nil
 	}
-	out := []screen.View{}
-	for _, v := range r.presentation(true).Views {
+	r = r.policy(Options{})
+	out := make([]screen.View, 0, len(r.Resolved.Views))
+	for _, v := range r.Resolved.Views {
 		out = append(out, r.descriptor(v))
 	}
 	return out

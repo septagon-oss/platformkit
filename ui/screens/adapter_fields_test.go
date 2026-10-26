@@ -70,11 +70,13 @@ func TestTheAdapterCarriesEveryFieldTheRenderersRead(t *testing.T) {
 // exported trio below deliberately renders no commands, so a design export or a golden
 // file cannot show doors nobody authorized.
 var callerScoped = map[string]string{
+	"Resolved": "TestMountedListUsesTheResolvedQueryAndCommands",
 	"Commands": "TestACommandIsADoorOnTheScreenThatShowsTheRow in kit/rest/screens_commands_test.go",
 	// A version series is read per request, behind the record's read guard, so it
 	// has the same shape as Commands: two registered resources cannot be compared
 	// without the caller whose series one of them holds.
-	"History": "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
+	"History":  "TestAVersionedDetailOffersAHistoryDisclosure in modules/history/history_disclosure_test.go",
+	"Selected": "TestMountedListUsesTheResolvedQueryAndCommands",
 }
 
 // shapesFor is one field in both its shapes, beside the screen that has to notice
@@ -134,6 +136,12 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 		b.Path = "/elsewhere/note/notes"
 		return a, b, func(r httpx.Resource) string {
 			return renderView(screens.Form(r, opts, "/app/note/notes/11111111-1111-1111-1111-111111111111/edit", "Edit", row, nil, "", false))
+		}, true
+	case "CommandsOnly":
+		a, b := base(), base()
+		b.CommandsOnly = true
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.Form(r, opts, "/notes", "Edit", row, nil, "", false))
 		}, true
 	case "Singleton":
 		a, b := base(), base()

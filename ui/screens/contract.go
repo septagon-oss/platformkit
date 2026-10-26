@@ -14,30 +14,44 @@ func screenRef(r httpx.Resource, kind, verb string) screen.ViewRef {
 	return ref
 }
 
+// declaredViews are the screens this resource's own declarations describe, with
+// every command it registered that can actually be called, and read against the
+// routes this adapter mounts: a verb whose closure is unwired or whose guard is
+// undeclared answers no page, so no screen of this resource may publish a control
+// for it. The inventory is structure, not one language, so no request's locale
+// enters it.
 func declaredViews(r httpx.Resource) []screen.View {
-	// The inventory is structure, not one language: no request's locale enters it, so
-	// it resolves with no Options at all.
-	v := described(r, Options{})
+	callable := make([]httpx.Command, 0, len(r.Commands))
 	for _, c := range r.Commands {
-		if c.Run == nil || c.Present.System {
-			continue
+		if c.Run != nil {
+			callable = append(callable, c)
 		}
-		v.Commands = append(v.Commands, describedCommand(r, c, r.Screen))
 	}
-	return resource.ScreenViews(v)
+	r.Commands = callable
+	r.Operations = mountedOperations(r)
+	return resource.ScreenViews(resolvedResource(r, Options{}))
+}
+
+// mountedOperations is the route table the adapter mounts, in the form the
+// resource itself carries its offered verbs in.
+func mountedOperations(r httpx.Resource) []httpx.CRUD {
+	words := screenOperations(r)
+	out := make([]httpx.CRUD, 0, len(words))
+	for _, word := range words {
+		out = append(out, httpx.CRUD(word))
+	}
+	return out
 }
 
 func describedCommand(r httpx.Resource, c httpx.Command, at string) resource.Command {
-	label := c.Present.Label
-	if label == "" {
-		label = c.Summary
-	}
-	return resource.Command{Bindings: c.Bindings, Verb: c.Verb, Label: label, Description: c.Description,
+	return resource.Command{Bindings: c.Bindings, Verb: c.Verb, Label: c.Summary, Description: c.Description,
 		Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,
 		ScreenOwner: r.Module, Entity: r.Entity, Repeated: r.History != nil && r.History.RestoreVerb == c.Verb}
 }
 
-func commandResponse(c httpx.Command) string {
+// commandResponseKind names what a command route answers with: the record it
+// changed, or the result the command was asked to compute.
+func commandResponseKind(c httpx.Command) string {
 	if c.HasResult {
 		return "result"
 	}

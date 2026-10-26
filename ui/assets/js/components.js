@@ -216,12 +216,39 @@
     if (now - at >= HOUR) return say.format(-Math.round((now - at) / HOUR), 'hour');
     return say.format(-Math.round((now - at) / MINUTE), 'minute');
   }
-  function tellTime(el) {
+  function policyTime(el, at, now, lang) {
+    if (typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function') return;
+    const kind = el.dataset.timeKind;
+    const zone = el.dataset.timeZone || undefined;
+    const offset = el.dataset.timeOffset;
+    const displayAt = offset === undefined ? at : new Date(at.getTime() + Number(offset) * 1000);
+    const format = new Intl.DateTimeFormat('en-CA', {
+      timeZone: offset === undefined ? zone : 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+    const parts = Object.fromEntries(format.formatToParts(displayAt).map(p => [p.type, p.value]));
+    const day = `${parts.year}-${parts.month}-${parts.day}`;
+    const minute = `${day} ${parts.hour}:${parts.minute}`;
+    el.title = `${minute} ${zone || format.resolvedOptions().timeZone}`;
+    if (kind === 'date') { el.textContent = day; return; }
+    if (el.dataset.timeRelative !== 'true') { el.textContent = minute; return; }
+    if (typeof Intl.RelativeTimeFormat !== 'function') return;
+    const delta = at.getTime() - now, distance = Math.abs(delta);
+    const [unit, divisor] = distance < MINUTE ? ['second', 1000] :
+      distance < HOUR ? ['minute', MINUTE] : distance < DAY ? ['hour', HOUR] : ['day', DAY];
+    const count = Math.trunc(delta / divisor);
+    el.dataset.timeUnit = unit;
+    el.dataset.timeCount = String(count);
+    el.textContent = count === 0 ? el.dataset.timeNow :
+      new Intl.RelativeTimeFormat(el.dataset.timeLanguage || lang, { numeric: 'always', style: 'long' }).format(count, unit);
+  }
+  function tellTime(el, now) {
     const raw = el.getAttribute('datetime');
     if (!raw) return;
     const at = new Date(raw);
     if (isNaN(at.getTime())) return; // The server's words stand for a value that is no instant.
-    const now = Date.now(), lang = language();
+    const lang = language();
+    if (el.dataset.timePolicy === '1') { policyTime(el, at, now, lang); return; }
     // The title is the exact moment read where the person is: date, time and zone name.
     const precise = said(at, { dateStyle: 'full', timeStyle: 'long' }, lang);
     if (precise !== null) el.title = precise;
@@ -257,6 +284,7 @@
   }
 
   function init() {
+    const now = Date.now();
     for (const el of document.querySelectorAll('time[datetime]')) {
       // One pass per element: a page left open keeps the now it was read at, rather than
       // every interval rewriting a sentence the person is in the middle of reading.
@@ -264,7 +292,7 @@
       told.add(el);
       // No catch on purpose: `language` answers an unparseable lang as none, and nothing else
       // here throws. A guard is what let a broken formatter read as a browser without Intl.
-      tellTime(el);
+      tellTime(el, now);
     }
     for (const close of document.querySelectorAll('[data-alert-close]')) close.hidden = false;
     initSelections();

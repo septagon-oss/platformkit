@@ -16,12 +16,12 @@ import (
 )
 
 // readerTimeHarness is the least DOM components.js needs to run its init once: a
-// document that is already loaded, one <time> element, and every other query
-// answering nothing. It prints the element's text and title after init.
+// document that is already loaded, one <time> element carrying the marks the
+// server gives it, and nothing else answering a query. It prints the element's
+// text and title after init.
 const readerTimeHarness = `
-const fs = require('fs');
-const at = new Date(Date.now() + Number(process.argv[3]) * 60000).toISOString();
-const el = { textContent: 'SERVER TEXT', title: 'SERVER TITLE',
+const fs = require('fs'), at = new Date(Date.now() + Number(process.argv[3]) * 60000).toISOString();
+const el = { textContent: 'SERVER TEXT', title: 'SERVER TITLE', dataset: Number(process.argv[3]) < 0 ? { timePolicy: '1', timeKind: 'instant', timeRelative: 'true', timeNow: 'now' } : { timePolicy: '1', timeKind: 'date' },
   getAttribute: name => name === 'datetime' ? at : null };
 globalThis.document = {
   readyState: 'complete',

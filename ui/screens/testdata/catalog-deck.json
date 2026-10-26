@@ -249,15 +249,6 @@
               {
                 "name": "field",
                 "path": [
-                  "status"
-                ],
-                "control": "select",
-                "editable": false,
-                "interactions": []
-              },
-              {
-                "name": "field",
-                "path": [
                   "rank"
                 ],
                 "control": "number",
@@ -287,6 +278,15 @@
                 "interactions": [
                   "committed"
                 ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": false,
+                "interactions": []
               },
               {
                 "name": "action.submit",

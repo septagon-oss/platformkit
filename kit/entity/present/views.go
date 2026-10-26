@@ -26,7 +26,11 @@ type ResolvedView struct {
 	Controls    []ResolvedControl  `json:"controls"`
 }
 
-func views(in Input) []ResolvedView {
+// views are the control decisions of the screens this entry offers. A form view
+// names the controls in the order the form draws them — the resolved layout, then
+// the columns it shows read-only — so the published view and the drawn page are
+// one decision rather than two that have to agree.
+func views(in Input, l ResolvedLayout, resolved []ResolvedField) []ResolvedView {
 	out := []ResolvedView{}
 	if in.CommandsOnly {
 		return out
@@ -52,10 +56,10 @@ func views(in Input) []ResolvedView {
 		add("detail", controls)
 	}
 	if in.offers("create") {
-		add("create", formControls(in, true))
+		add("create", formControls(in, l.Create, nil))
 	}
 	if in.offers("update") {
-		add("edit", formControls(in, false))
+		add("edit", formControls(in, l.Update, readOnlyFormFields(in, l.Update, resolved)))
 	}
 	for _, c := range in.Commands {
 		if c.Hints.System || c.Collection && !in.offers("list") || !c.Collection && !in.offers("read") || in.Singleton {
@@ -76,16 +80,39 @@ func action(name string, submission bool) ResolvedControl {
 	return c
 }
 
-func formControls(in Input, create bool) []ResolvedControl {
-	out := []ResolvedControl{}
-	for _, f := range in.Schema.Fields {
-		immutable := slices.Contains(in.Immutable, f.Name)
-		if entity.ServerOwned(f) || create && immutable || f.Widget == "hidden" || f.Presentation.Hidden() && !(f.Required && f.Default == "") {
+// formControls are the form's controls in drawing order: the layout's asked-for
+// fields, then the columns the update form carries but keeps still, then the two
+// buttons. A create form asks for nothing it will not take.
+func formControls(in Input, names []string, readOnly []entity.Field) []ResolvedControl {
+	out := make([]ResolvedControl, 0, len(names)+2)
+	for _, name := range names {
+		f, ok := entity.FieldNamed(in.Schema.Fields, name)
+		if !ok || f.Widget == "hidden" {
 			continue
 		}
-		out = append(out, fieldControls(f, !immutable)...)
+		out = append(out, fieldControls(f, true)...)
+	}
+	for _, f := range readOnly {
+		out = append(out, fieldControls(f, false)...)
 	}
 	return append(out, action("submit", true), action("cancel", false))
+}
+
+// readOnlyFormFields are the columns an update form draws without letting this
+// write change them: a field a command owns, shown so the row reads whole.
+func readOnlyFormFields(in Input, names []string, resolved []ResolvedField) []entity.Field {
+	out := []entity.Field{}
+	for _, p := range resolved {
+		if !p.OnRecord || p.Editable.Update || slices.Contains(names, p.Name) {
+			continue
+		}
+		f, ok := entity.FieldNamed(in.Schema.Fields, p.Name)
+		if !ok || f.Widget == "hidden" || entity.ServerOwned(f) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 func fieldControls(f entity.Field, editable bool) []ResolvedControl {

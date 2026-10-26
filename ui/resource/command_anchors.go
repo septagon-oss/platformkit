@@ -32,7 +32,7 @@ func (c Command) fieldAnchor(path ...string) screen.AnchorRef {
 	if ref == "" {
 		return ""
 	}
-	for _, control := range present.CommandView(c.input()).Controls {
+	for _, control := range present.CommandView(c.input(c.Present)).Controls {
 		if control.Name == "field" && slices.Equal(control.Path, path) {
 			anchor, err := ref.Anchor("field", path...)
 			if err != nil {
@@ -51,7 +51,7 @@ func (c Command) formField(words Words, f entity.Field, o Options) forms.Field {
 }
 
 func (c Command) submitAttrs() map[string]string {
-	if c.viewRef() == "" || present.CommandView(c.input()).Cardinality == screen.Many {
+	if c.viewRef() == "" || present.CommandView(c.input(c.Present)).Cardinality == screen.Many {
 		return nil
 	}
 	ref, err := c.viewRef().Anchor("command", c.Verb)
