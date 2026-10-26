@@ -14,12 +14,10 @@ func screenRef(r httpx.Resource, kind, verb string) screen.ViewRef {
 	return ref
 }
 
-// declaredViews are the screens this resource's own declarations describe, with
-// every command it registered that can actually be called, and read against the
-// routes this adapter mounts: a verb whose closure is unwired or whose guard is
-// undeclared answers no page, so no screen of this resource may publish a control
-// for it. The inventory is structure, not one language, so no request's locale
-// enters it.
+// declaredViews are the screens this resource's own declarations describe, with every
+// command it registered that can actually be called, read against mountedOperations
+// for the reason view states. The inventory is structure, not one language, so no
+// request's locale enters it.
 func declaredViews(r httpx.Resource) []screen.View {
 	callable := make([]httpx.Command, 0, len(r.Commands))
 	for _, c := range r.Commands {

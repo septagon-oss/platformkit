@@ -1,6 +1,8 @@
 package page
 
 import (
+	"cmp"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/screen"
@@ -15,11 +17,7 @@ func screenOperation(r *httpx.Router, s Shell, rt Route) huma.Operation {
 	op := pageOperation(s, rt)
 	contract := screen.ResponseSet{Exception: rt.Exception, Reason: rt.Reason, Targets: rt.Targets}
 	if rt.View != "" {
-		kind := rt.Response
-		if kind == "" {
-			kind = "input"
-		}
-		contract.Responses = []screen.Response{{View: rt.View, Kind: kind}}
+		contract.Responses = []screen.Response{{View: rt.View, Kind: cmp.Or(rt.Response, "input")}}
 	}
 	r.DescribePage(&op, contract)
 	return op

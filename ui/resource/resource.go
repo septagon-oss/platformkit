@@ -5,6 +5,7 @@ package resource
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -125,17 +126,12 @@ func (o Options) Text(key, fallback string, args ...any) string {
 }
 
 // deleteForm is the destructive action: a real form, so it works without
-// JavaScript, carrying the attribute confirm.js opens the dialog on.
-func deleteForm(o Options, item, entity string, anchors ...map[string]string) g.Node {
-	attrs := map[string]string{}
-	for _, values := range anchors {
-		for name, value := range values {
-			attrs[name] = value
-		}
-	}
+// JavaScript, carrying the attribute confirm.js opens the dialog on. anchor names
+// the record's published view, empty for a standalone render.
+func deleteForm(o Options, item, entity string, anchor map[string]string) g.Node {
 	remove := o.Text("screens.delete", "Delete")
-	attrs["data-confirm"] = o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity)
-	attrs["data-confirm-label"] = remove
+	attrs := map[string]string{"data-confirm": o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity), "data-confirm-label": remove}
+	maps.Copy(attrs, anchor)
 	return components.Form(components.FormProps{Action: item + "/delete", Label: o.Text("screens.delete_this", "Delete this %s", entity)},
 		components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: attrs},

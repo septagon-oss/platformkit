@@ -10,14 +10,7 @@ import (
 )
 
 func (c Command) viewRef() screen.ViewRef {
-	if c.ScreenOwner == "" {
-		return ""
-	}
-	ref, err := screen.Generic("app", c.ScreenOwner, c.Entity, "command", c.Verb)
-	if err != nil {
-		panic(err)
-	}
-	return ref
+	return genericRef(c.ScreenOwner, c.Entity, "command", c.Verb)
 }
 
 func (c Command) viewAttrs() map[string]string {

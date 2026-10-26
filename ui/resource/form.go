@@ -95,7 +95,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	if err := r.validatePolicy(); err != nil {
 		return examples.Example{Node: invalid(err)}
 	}
-	resolved := r.resolvedView(kind, true)
+	resolved := r.resolvedView(kind)
 	// The form asks in the order its published view names, so the control it draws
 	// and the anchor the screen declared are one decision. A field's own words come
 	// from the resolved policy, which names its appearance. The one field this loop

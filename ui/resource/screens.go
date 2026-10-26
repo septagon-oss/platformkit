@@ -1,7 +1,7 @@
 package resource
 
 import (
-	"slices"
+	"cmp"
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -11,20 +11,18 @@ import (
 	g "maragu.dev/gomponents"
 )
 
-// resolvedView is the control decision the resolved policy already made for one
-// screen. A caller who may not write is shown no door that would refuse them: the
-// routes are the resource's, and this is where the person's half comes off.
-func (r Resource) resolvedView(kind string, writable bool) present.ResolvedView {
+// resolvedView is the control decision the resolved policy made for one screen, or
+// the record's own form where its route holds no screen.
+func (r Resource) resolvedView(kind string) present.ResolvedView {
 	for _, v := range r.Resolved.Views {
-		if v.Kind != kind {
-			continue
+		if v.Kind == kind {
+			return v
 		}
-		if !writable {
-			v.Controls = slices.DeleteFunc(slices.Clone(v.Controls), func(c present.ResolvedControl) bool {
-				return c.Name == "action.create" || c.Name == "action.edit" || c.Name == "action.delete"
-			})
+	}
+	if verb, isForm := formVerb[kind]; isForm {
+		if v := r.recordForm(kind, verb); v.Kind != "" {
+			return v
 		}
-		return v
 	}
 	return present.ResolvedView{Kind: kind, Cardinality: screen.One}
 }
@@ -36,15 +34,22 @@ func (c Command) input(hints entity.CommandHints) present.CommandInput {
 		Fields: c.Fields, Bindings: c.Bindings, Collection: c.Collection, Repeated: c.Repeated}
 }
 
-func (r Resource) ref(kind, verb string) screen.ViewRef {
-	if r.ScreenOwner == "" {
+// genericRef is the screen a module's own entity names, and nothing for a render
+// that declares no screen owner. A ref that cannot be spelled is a bug in the module
+// that declared it, never a request's mistake.
+func genericRef(owner, entityName, kind, verb string) screen.ViewRef {
+	if owner == "" {
 		return ""
 	}
-	ref, err := screen.Generic("app", r.ScreenOwner, r.Schema.Entity, kind, verb)
+	ref, err := screen.Generic("app", owner, entityName, kind, verb)
 	if err != nil {
 		panic(err)
 	}
 	return ref
+}
+
+func (r Resource) ref(kind, verb string) screen.ViewRef {
+	return genericRef(r.ScreenOwner, r.Schema.Entity, kind, verb)
 }
 
 func (r Resource) anchor(kind, name string) map[string]string {
@@ -79,6 +84,10 @@ func ScreenViews(r Resource) []screen.View {
 	return out
 }
 
+// formVerb names the write a form view posts, which is not the kind's own name: an
+// edit form posts update. Any other view posts the verb it is named for.
+var formVerb = map[string]string{"create": "create", "edit": "update"}
+
 func (r Resource) descriptor(v present.ResolvedView) screen.View {
 	ref := r.ref(v.Kind, v.Verb)
 	spec := screen.ViewSpec{Ref: ref, Cardinality: v.Cardinality}
@@ -92,13 +101,7 @@ func (r Resource) descriptor(v present.ResolvedView) screen.View {
 		spec.Hosts = []screen.ViewRef{r.ref(host, "")}
 	}
 	op := "screen-" + r.ScreenOwner + "-" + r.Schema.Entity + "-"
-	operation := op + v.Verb
-	if v.Kind == "create" {
-		operation = op + "create"
-	}
-	if v.Kind == "edit" {
-		operation = op + "update"
-	}
+	operation := op + cmp.Or(formVerb[v.Kind], v.Verb)
 	for _, c := range v.Controls {
 		name := c.Name
 		var binding screen.Binding

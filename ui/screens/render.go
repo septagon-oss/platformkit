@@ -101,11 +101,10 @@ func screenOperations(r httpx.Resource) []string {
 // what the renderer needs to build an action without knowing how paths are derived.
 func view(r httpx.Resource, ctx context.Context, at string, o Options) resource.Resource {
 	r.Commands = r.CommandsFor(ctx)
-	// A mounted screen is resolved against the routes this adapter mounts, not
-	// against everything the resource declares: a verb whose closure is unwired or
-	// whose guard is undeclared answers no page, so a form that asked for it could
-	// never be submitted and a door in front of it is a refusal with a button on it.
-	// An exported screen has no routes at all and keeps the declared reading.
+	// A mounted screen is resolved against the routes this adapter mounts, not against
+	// everything the resource declares: an unwired closure or an undeclared guard
+	// answers no page, so a door in front of one is a refusal with a button on it. An
+	// exported screen has no routes at all and keeps the declared reading.
 	r.Operations = mountedOperations(r)
 	v := resolvedResource(r, o)
 	v.Commands = commands(r, r.Commands, at)

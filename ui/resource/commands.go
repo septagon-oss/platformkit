@@ -21,8 +21,8 @@ import (
 type Command struct {
 	// Resolved supplies command copy and flags after authority has been narrowed.
 	Resolved *present.ResolvedCommand
-	// ScreenOwner names the module whose screens this command's anchors live on;
-	// Repeated marks a view whose controls no single form can be pointed at.
+	// ScreenOwner names the module whose screens these anchors live on; Repeated marks
+	// a view whose controls no single form can be pointed at.
 	ScreenOwner, Entity string
 	Repeated            bool
 	// Bindings fills hidden arguments from the displayed row, never a fresh read.
@@ -174,13 +174,8 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 
 // mapKeyControl renders one named map argument. Revision keys quote the
 // supplied locale's observed revision; other keys begin empty to avoid rewriting
-// values the person did not submit. An anchor names the key within the command's
-// published view, where one exists.
-func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState, anchors ...screen.AnchorRef) g.Node {
-	var anchor screen.AnchorRef
-	if len(anchors) != 0 {
-		anchor = anchors[0]
-	}
+// values the person did not submit. An anchor names the key in the published view.
+func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState, anchor screen.AnchorRef) g.Node {
 	key := entity.Field{
 		Name:   f.Name + "[" + k.Name + "]",
 		Type:   f.Elem,
