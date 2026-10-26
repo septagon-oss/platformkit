@@ -29,10 +29,6 @@ func (r Resource) resolvedView(kind string, writable bool) present.ResolvedView 
 	return present.ResolvedView{Kind: kind, Cardinality: screen.One}
 }
 
-func hasControl(v present.ResolvedView, name string) bool {
-	return slices.ContainsFunc(v.Controls, func(c present.ResolvedControl) bool { return c.Name == name })
-}
-
 // input is the command as the resolver sees it: its words, and the arguments and
 // shape that decide which controls its view names.
 func (c Command) input(hints entity.CommandHints) present.CommandInput {

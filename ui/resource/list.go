@@ -37,7 +37,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	// The New button is drawn for a caller who may write *and* a resource that
 	// offers a create: the two questions are different, and the second is
 	// answered by the mounted routes rather than by anybody's permissions.
-	if hasControl(r.resolvedView("list", writable), "action.create") {
+	if writable && r.offers("create") {
 		actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("list", "action.create")}, Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new", Variant: r.primaryAction(true)})}
 	}
 	pager := components.PaginationProps{

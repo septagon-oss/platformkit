@@ -38,7 +38,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	named := present.Title(r.Resolved.Titles.RecordCandidates, row, display.Text(row["id"]), r.Resolved.Titles.EmptyTitle)
 	var actions []g.Node
 	if writable {
-		if hasControl(r.resolvedView("detail", writable), "action.edit") {
+		if r.offers("update") {
 			actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("detail", "action.edit")}, Label: o.Text("screens.edit", "Edit"), Href: item + "/edit", Variant: r.primaryAction(false)})}
 		}
 		// A singleton is not created and not removed, whatever Create and Delete
@@ -47,7 +47,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		// closure and wrong for a door: a refusal is a sentence about a mistake
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
-		if hasControl(r.resolvedView("detail", writable), "action.delete") {
+		if !r.Singleton && r.offers("delete") {
 			actions = append(actions, deleteForm(o, item, r.Schema.Entity, r.anchor("detail", "action.delete")))
 		}
 	}
