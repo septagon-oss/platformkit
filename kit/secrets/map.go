@@ -5,21 +5,20 @@ import (
 	"fmt"
 )
 
-// Map returns the store an in-process map is: the composition of a test, and the
-// double every module's own test runs on so that a test of a reader never has to
+// Map returns the store an in-process map is: the composition of a test, and
+// the double every module's own test runs on so a test of a reader never has to
 // import an adapter.
 //
-// It is not a fourth adapter and it is not a cache — it is what kit/cache's
-// in-process store is for that port, with the same duty here: the conformance
-// suite runs over it first, so a green local run is evidence about the port rather
-// than theatre about a map. The two arguments are the caller's own maps, kept by
-// reference, so a test that puts a secret in after building the store is a test
-// that rotates it; two handles built from one pair of maps are two replicas of one
-// store, which is what the sharing cases in the suite ask of an adapter.
+// It is not a fourth adapter and not a cache — it is what kit/cache's
+// in-process store is for that port. The conformance suite runs over it first,
+// so a green local run is evidence about the port rather than theatre about a
+// map. The two arguments are the caller's own maps, kept by reference: putting
+// a secret in after the store is built is a rotation, and two handles over one
+// pair of maps are two replicas of one store, which is what the suite's sharing
+// cases ask of an adapter.
 //
-// A key's material is spelled here as it is in the file and env stores — base64 of
-// exactly 32 bytes — so a test that gets the width wrong is refused in the same
-// sentence its deployment would use.
+// Key material is spelled as in the file and env stores — base64 of exactly 32
+// bytes — so a wrong width is refused in the deployment's own sentence.
 func Map(secrets map[Ref]Secret, keys map[Ref][]byte) Store {
 	return Trace("map", &inMemory{secrets: secrets, keys: keys})
 }

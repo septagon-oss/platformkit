@@ -1,31 +1,16 @@
-// Package health is the two probes an orchestrator calls, and the checks
-// behind the second one.
+// Package health is the two probes an orchestrator calls, and the checks behind
+// the second. GET /health is liveness and runs no check of its own: a probe that
+// fails while the database is briefly unreachable gets the process killed
+// instead of the database fixed. GET /ready runs every registered check and
+// answers 503 with the names that failed, so a deploy holds traffic off an
+// instance that cannot serve it yet.
 //
-// GET /health is liveness: it runs no check of its own, because a probe that
-// fails when the database is briefly unreachable gets the process killed
-// instead of getting the database fixed.
-//
-// GET /ready is readiness: it runs every registered check and answers 503 with
-// the names that failed, so a rolling deploy holds traffic off an instance that
-// cannot serve it yet.
-//
-// # One mux, both roles
-//
-// The probes are a plain net/http mux, mounted beside the API in the web role
-// and served alone in the worker role. They are not operations: a probe has no
-// tenant, no session and nothing to declare, and the API's middleware chain
-// resolves a tenant from the request host before any of it runs — a real query,
-// with a two second budget, that never hits the cache for a pod address because
-// only a successful resolution is cached. Liveness went through that lookup,
-// so a probe with a two second timeout failed while the database was
-// unreachable and the kubelet restarted every replica during the outage
-// instead of after it.
-//
-// So the two probes bypass the resolver entirely (httpx.API.Probes). Nothing
-// else does: a public route is still tenant-scoped, because a page served at a
-// customer's host is that customer's page whether or not a session is behind
-// it. The exception is exactly the two routes that are addressed to the
-// process rather than to a site.
+// Both are a plain net/http mux, beside the API in the web role and alone in the
+// worker, and they bypass the tenant resolver (httpx.API.Probes): a probe has no
+// tenant and no session, and resolving the host is a real query on a two second
+// budget that no cache answers for a pod address. Nothing else bypasses it — a
+// public route is still tenant-scoped — because the exception is exactly the two
+// routes addressed to the process rather than to a site.
 package health
 
 import (

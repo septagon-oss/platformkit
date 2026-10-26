@@ -12,12 +12,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 func TestADevelopmentTenantsEmailLinkNamesTheListeningPort(t *testing.T) {
-	path, cfg := configure(t)
-	path, cfg = keepMailInTheProcess(t, path, cfg)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	_, port, err := net.SplitHostPort(cfg.Server.Addr)
 	if err != nil {
@@ -32,10 +30,6 @@ func TestADevelopmentTenantsEmailLinkNamesTheListeningPort(t *testing.T) {
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T", c.mail)
-	}
 	const address = "tenant-link-port@acme.test"
 	const password = "the-tenant-mail-link-must-reach-this-port"
 	body, err := json.Marshal(map[string]any{
@@ -52,7 +46,7 @@ func TestADevelopmentTenantsEmailLinkNamesTheListeningPort(t *testing.T) {
 
 	var mail string
 	eventually(t, "the tenant's verification email arrives", func() bool {
-		for _, sent := range box.Sent() {
+		for _, sent := range relay.Sent() {
 			if sent.To == address && strings.Contains(sent.Body, contracts.VerifyEmailPath) {
 				mail = sent.Body
 				return true

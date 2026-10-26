@@ -8,7 +8,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 // TestAMailedLinkCarriesTheAddressTheTenantIsServedAt is the brief's fourth
@@ -21,7 +20,7 @@ import (
 // The person asks for a link at acme's name on the port this process listens on;
 // the link they are mailed has to come back to that same address.
 func TestAMailedLinkCarriesTheAddressTheTenantIsServedAt(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
@@ -29,10 +28,8 @@ func TestAMailedLinkCarriesTheAddressTheTenantIsServedAt(t *testing.T) {
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the link out of it", c.mail)
-	}
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	_, port, err := net.SplitHostPort(cfg.Server.Addr)
 	if err != nil {
 		t.Fatalf("the listener address %q: %v", cfg.Server.Addr, err)

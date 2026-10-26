@@ -144,22 +144,18 @@ func startConfig(data, addr string, pgPort int) config.Config {
 }
 
 // startWebhookKey is the key the start command wraps every endpoint's signing
-// secret with, and the value config.example.yaml carries for `make run`:
-// a test reads that file and refuses the two
-// spellings once they disagree, because an installation that migrated its
-// endpoints under one key and restarted with the other cannot open the secrets it
-// already wrapped. modules/webhook refuses to be composed without a key, and this
-// command has no secret store in front of it, so it carries the laptop's own —
-// the value is not a secret and is not meant to be one, for the reason the
-// database password in the two URLs above is not: it is this machine's default,
-// and a key anybody can read protects nothing anybody cares about.
+// secret with, and the value config.example.yaml carries for `make run`: a
+// test reads that file and refuses the two spellings once they disagree, because
+// an installation that migrated its endpoints under one key and restarted with the
+// other cannot open the secrets it already wrapped. modules/webhook refuses to be
+// composed without a key and this command has no secret store in front of it, so it
+// carries the laptop's own — not a secret and not meant to be one, for the reason
+// the database password in the two URLs above is not.
 //
 // It is read from nowhere else, not even the environment kit/config hands out for
 // it: a command whose whole configuration is written here would otherwise hold one
-// field that came from outside the file, and a reader would have to know which.
-// A deployment does not run this command; it has a config.yaml of its own, its key
-// in PLATFORMKIT_WEBHOOK_SECRET_KEY, and whoever can read that can also restore the
-// database the key opens.
+// field from outside the file. A deployment does not run this command; it has a
+// config.yaml of its own, its key in PLATFORMKIT_WEBHOOK_SECRET_KEY.
 const startWebhookKey = "0123456789abcdef0123456789abcdef"
 
 // startPostgres runs PostgreSQL 16 — the version the Compose stack runs — with
