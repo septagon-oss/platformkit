@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
-	kitfault "github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -32,11 +31,6 @@ type Shell struct {
 	Tag       string
 	Back      string
 	BackLabel string
-	// BackKey names the catalogue entry BackLabel is worded under, so the way out of
-	// a refusal arrives in the reader's language. It is named by the composition that
-	// ships the copy for it, the way a module's refusal names its own sentence
-	// (kit/fault.Reason). Empty, and the label is shown as written.
-	BackKey string
 	// Messages is composed once from the participating modules' catalogs.
 	// Nil keeps the existing untranslated shell. Do not mutate it while serving.
 	Messages Messages
@@ -57,6 +51,10 @@ type Shell struct {
 	// address and its confirmation). Empty leaves no ask control on a refusal: a
 	// button whose action nobody mounted is a lie about a door.
 	Ask string
+	// BackKey names the catalogue entry BackLabel is worded under, so the way out of a
+	// page reads in the reader's language rather than the language whoever wired the
+	// shell writes. Empty leaves the label exactly as the shell wrote it.
+	BackKey string
 }
 
 // Granter is the shell's answer to "who can give me this".
@@ -124,23 +122,32 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 				applyPrivacy(out, v.Sensitive)
 				return out, nil
 			}
-			status, detail, reason := refusal(err)
-			if status >= http.StatusInternalServerError {
+			why := refusal(err)
+			if why.Status >= http.StatusInternalServerError {
 				// The page says what could not be loaded and offers the address again; the
 				// reason stays here, with the caller who can fix it.
 				slog.ErrorContext(ctx, "page: the read behind this page failed",
-					"path", r.Path, "status", status, "error", err)
+					"path", r.Path, "status", why.Status, "error", err)
 			}
-			// Handler refusals use the same localized fault view as guard failures, worded
-			// through the locale this shell just negotiated. The refusal's own sentence
-			// travels with it (`reason`) when the writer named one, which is what lets a
-			// module's rule be answered in the reader's language without this package
-			// learning what the rule was; `fault` claims a language only over a sentence it
-			// replaced, so a verdict no catalogue speaks stays English and says so — and the
-			// reference is empty here because a handler's own 4xx carries no request id of
-			// its own. Sensitivity carries over from the refused view.
-			refused := fault(verdict{status: status, detail: detail, reason: reason, loc: r.Locale,
-				back: s.Back, backLabel: s.BackLabel, backKey: s.BackKey, path: r.Path, sub: rt.Subject})
+			asked, _ := httpx.RequestFrom(ctx)
+			if httpx.WantsValue(asked) {
+				// The client named a JSON media type and refused markup, so the refusal of a
+				// page route is the same problem document every other refusal of this address
+				// would have been, written by the kernel's one encoder — the rule
+				// kit/httpx/fault.go states for a guard's refusal, asked of the same file
+				// rather than copied. A client that named nothing has no opinion to honour and
+				// gets the page this route exists to give.
+				return nil, err
+			}
+			// Handler refusals use the same localized fault view as guard failures.
+			// Preserve sensitivity from the refused view. The reference is the request's own
+			// id, which is why a handler's refusal is quotable at all: the id middleware ran
+			// before this handler was reached, and the problem body the same refusal takes to
+			// a program carries it as its instance (kit/httpx's stampRequestID).
+			refused := fault(verdict{status: why.Status, detail: shown(why), key: why.Key,
+				reference: httpx.RequestID(ctx), loc: r.Locale, sub: rt.Subject,
+				back: s.Back, backLabel: s.BackLabel, path: r.Path,
+				ask: asked, signIn: s.Chrome.SignIn})
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -181,7 +188,20 @@ func pageOperation(s Shell, rt Route) huma.Operation {
 	return op
 }
 
-func readPageRequest(ctx context.Context, s Shell) Request { return s.Request(ctx) }
+func readPageRequest(ctx context.Context, s Shell) Request {
+	r := read(ctx, s.Chrome)
+	if s.Messages != nil {
+		var preferred, accepted string
+		if s.Locale != nil {
+			preferred = s.Locale(ctx, r)
+		}
+		if req, ok := httpx.RequestFrom(ctx); ok {
+			accepted = req.Header.Get("Accept-Language")
+		}
+		r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
+	}
+	return r
+}
 
 func renderPageView(ctx context.Context, s Shell, r Request, v View) (*httpx.Page, error) {
 	var err error
@@ -243,30 +263,6 @@ func applyPrivacy(out *httpx.Page, sensitive bool) {
 	}
 }
 
-// Request is the caller of one request as every page through this shell sees
-// them: the tenant, the principal, the path, and the language the shell answers
-// in. Serve builds it for every page it mounts; a handler that renders a document
-// of its own rather than a View — the gallery preview, which cannot arrive inside
-// the shell's frame because a modal in an iframe owns that frame's focus — asks
-// for the same value. It is exported because a second negotiation, written where
-// the first one is not visible, is how one screen starts answering in two
-// languages: the tenant's ceiling, the account preference and the order of the
-// caller's own quality values are all decided here and nowhere else.
-func (s Shell) Request(ctx context.Context) Request {
-	r := read(ctx, s.Chrome)
-	if s.Messages != nil {
-		var preferred, accepted string
-		if s.Locale != nil {
-			preferred = s.Locale(ctx, r)
-		}
-		if req, ok := httpx.RequestFrom(ctx); ok {
-			accepted = req.Header.Get("Accept-Language")
-		}
-		r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
-	}
-	return r
-}
-
 // read is the one place a page learns about its caller.
 func read(ctx context.Context, c Chrome) Request {
 	var r Request
@@ -283,21 +279,6 @@ func read(ctx context.Context, c Chrome) Request {
 		r.Inline = []g.Node{InlineScript(ctx, beforePaint)}
 	}
 	return r
-}
-
-// backLabel is the shell's way out, in the language this request is answered in.
-//
-// The rule is the one the refusal page applies to the same shell, so a link a person
-// follows from a refusal and the way out the frame offers are the same words in the
-// same language: see shellWay.
-func (s Shell) backLabel(loc *Locale) string { return shellWay(loc, s.BackKey, s.BackLabel) }
-
-// WayBack is the address and the words of this shell's way out, in the language
-// this request is answered in. A renderer outside this package that draws a page
-// of its own asks this rather than reading BackLabel itself, because a link a
-// person follows from a refusal is the sentence the refusal is worth having.
-func (s Shell) WayBack(loc *Locale) (href, label string) {
-	return s.Back, s.backLabel(loc)
 }
 
 // regionRequested says the fetch in hand is a region asking for its own contents:
@@ -345,13 +326,31 @@ func regionAddress(ctx context.Context, r Request) string {
 	return r.Path
 }
 
-// refusal is an error's status, detail and — when the writer of the refusal named
-// its own sentence, which is what carries the catalogue key a page asks that
-// sentence under — that sentence itself: a problem's own, or a 500.
-func refusal(err error) (int, string, *kitfault.Reason) {
+// refusal is a handler's error read as the verdict it is: its own problem, or the 500
+// standing in for anything else. The verdict is handed over whole rather than flattened to
+// a status and a sentence, because the two fields a person's page needs are precisely the
+// two the problem document does not carry (problem.Problem's Key and Diagnostic), and both
+// doors read them through shown and fault below. So the two shapes of one refusal cannot
+// disagree about what a browser may be shown.
+func refusal(err error) *problem.Problem {
 	var p *problem.Problem
 	if errors.As(err, &p) {
-		return p.Status, p.Detail, p.Refusal
+		return p
 	}
-	return http.StatusInternalServerError, "", nil
+	return problem.New(http.StatusInternalServerError, "")
 }
+
+// WayBack is this shell's way out: its address and its words in the reader's
+// language, for a caller that draws the link itself rather than through Serve.
+func (s Shell) WayBack(loc *Locale) (href, label string) {
+	if s.BackKey == "" {
+		return s.Back, s.BackLabel
+	}
+	return s.Back, shellWord(loc, s.BackKey, s.BackLabel)
+}
+
+// Request is the caller of one request as every page through this shell sees it, read
+// from the context a handler already runs in. Serve reads this same value for the
+// pages it mounts; a module that draws a page outside Serve asks for it here rather
+// than rebuilding it and drifting from the chrome, the tenant and the language.
+func (s Shell) Request(ctx context.Context) Request { return read(ctx, s.Chrome) }

@@ -30,13 +30,12 @@ import (
 // catalogues is this application's one message catalog: every copy source the
 // composition holds, merged in the order the layers own their words.
 //
-// Kernel layers first, then the modules, then anything this product writes of its
-// own, then a client's — xtext.Load lets a later source answer for a key an
-// earlier one carried, so the order is the merge rule and there is no second place
-// where precedence is decided. `ui/page` claims the `fault.` prefix as it is read,
-// which is what keeps a product's catalogue from re-wording what a kernel refusal
-// says; `ui/resource` claims nothing, so re-labelling "Delete" is a product's
-// ordinary decision and not a pull request into the foundation.
+// Kernel layers first, then the modules, then what this product writes of its own,
+// then a client's — xtext.Load lets a later source answer for a key an earlier one
+// carried, so the order is the merge rule and precedence is decided nowhere else.
+// ui/page claims the `fault.` prefix as it is read, which keeps a product's
+// catalogue from re-wording a kernel refusal; ui/resource claims nothing, so
+// re-labelling "Delete" is a product's decision and not a pull request upstream.
 //
 // "en" is the source language: the sentences in the Go code are English, so no
 // layer ships an English file, and an unsupported browser language is answered in

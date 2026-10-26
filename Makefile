@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-comments check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-complexity generate check-generated check-packages check-gucs check-comments check-fixtures check-richtext-bundle richtext-bundle check-e2e-guards check-pillars check-versions check-applied-migrations check-support-record check-rehearse-supported fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover inference-conformance
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -148,7 +148,8 @@ vet: ## Run go vet
 	go vet ./...
 
 run: config.yaml ## Run the reference app; a missing config.yaml is created from the example
-	cd apps/platformkit && go run . --config ../../config.yaml
+	cd apps/platformkit && PLATFORMKIT_MAIL_HOST=127.0.0.1 PLATFORMKIT_MAIL_PORT=$(PLATFORMKIT_MAILPIT_SMTP_PORT) \
+	  PLATFORMKIT_MAIL_FROM=platformkit@localhost go run . --config ../../config.yaml
 
 # A first run has no config.yaml, and the example is the development
 # configuration `make up` matches, so the first run gets a copy of it. The rule
@@ -319,8 +320,22 @@ check-applied-migrations: ## Fail when a migration file the base carries was edi
 # Python file, which would leave the one gate that reads those citations to be run by
 # whoever remembered it. python3 is already a `check` prerequisite through
 # check-apidiff, so this costs a second and no new dependency.
-check-pillars: ## Fail when the pillar section drifts or one of its citations lands outside its file
+# The implementation map's own goal. The pillar test reads the pillar section's citations and
+# asks only that a cited number sit inside the file it names; the composition sentences are held
+# to the call they name by a case in kit/fault, which meets each of its claims at the first place
+# the map says it. So a claim said twice — a sentence copied into a summary while the section that
+# wrote it keeps its own — aims that case at the summary and leaves the citation behind it
+# unread, and the pin below refuses the document in that shape.
+# That pin lifts its claims out of the case's own row table with a pattern anchored on how a row
+# is typeset today, so it carries a second copy of that table's shape: reflow one row onto two
+# lines, or lift a claim into a named constant, and the case still asserts thirteen claims while
+# the guard reads twelve and still answers that each of them is said once. The pin after it counts
+# the rows a second way, by tokenising the table's strings and braces, and refuses the two readings
+# disagreeing. Neither opens anything; together they cost a fifth of a second.
+check-pillars: ## Fail when the implementation map drifts: a pillar citation outside its file, a composition claim said twice, or a claim the guard no longer reads
 	python3 -B scripts/architecture_pillars_test.py
+	bash scripts/a_claim_the_composition_case_reads_is_said_once_in_the_implementation_map_test.sh
+	bash scripts/the_composition_citation_guard_reads_one_claim_for_every_row_of_its_table_test.sh
 
 # The rehearsal and the public-API comparison, both of which existed as steps
 # nobody was forced to run: `make rehearse` needed an operator who remembered it,
@@ -349,6 +364,33 @@ APIDIFF_RECORD ?= scripts/baselines/public-api-v2.0.0-candidate.json
 
 check-rehearse: ## Apply this tree's pending migrations to a copy of the previous release's database
 	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
+
+# The release form of the same step: one case per installation this release promises to
+# upgrade from, which is the support record's list and not this file's, plus the record's
+# refusals asked for their reason and the exported-surface comparison beside the data.
+# `check-rehearse` stays the single-source diagnostic a contributor runs in a minute;
+# nothing is published from one case, and scripts/check_pin_rehearsal.sh --strict refuses a
+# receipt that measured one. It costs a second base build and a second copied database, so
+# it is the merge tier's and not every pull request's.
+check-rehearse-supported: ## Certify this tree against every installation the release promises to upgrade from
+	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh --supported
+
+# The support record decides which installations a release undertakes to upgrade from, and
+# the release is certified from that same file, so the cases that read it are the promise's
+# own coverage check rather than extra tests of a helper: which revisions the record may
+# name, which it may not narrow away, which applied bytes it owes, and what a failed
+# migration leaves behind. `go tool gotestsum --packages='./...'` sees no shell script, so a
+# case nobody names in a recipe line is a case nothing runs, and a gate nobody runs is prose.
+#
+# Two of the five want the stack, and refuse without it rather than skipping: a gate that
+# passes because the machine had no database would certify the retry and the byte refusal
+# on a checkout where neither ran.
+check-support-record: ## Fail when the support record, its promise anchor, the applied bytes or the migration retry stop holding
+	bash scripts/supported_sources_test.sh
+	bash scripts/a_narrowed_support_record_is_not_a_new_baseline_test.sh
+	bash scripts/migration_retry_test.sh
+	bash scripts/applied_bytes_refusal_test.sh
+	bash scripts/a_case_whose_evidence_denies_its_own_receipt_is_refused_test.sh
 
 # The line record names the revision the exported surface is frozen at: the published
 # tag once the owner cuts it, the frozen commit until then. No list of accepted breaks
@@ -399,7 +441,7 @@ inference-conformance: ## Run the inference port's suite against operator-named 
 check-push: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
 	./scripts/check_push_tier.sh
 
-check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
+check-merge: check-rehearse check-rehearse-supported check ## The merge tier: the whole suite, the rehearsal against a populated database, the whole supported matrix, the journeys in the suite
 
 check-nightly: ## The nightly tier: the journeys, and the reports the inventory's duration and flake columns read
 	$(MAKE) e2e
@@ -567,7 +609,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-support-record check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an

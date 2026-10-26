@@ -14,20 +14,21 @@ import (
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
 
-// Form is the create and edit screen: one control per writable field, derived
-// from the field's type and its ui:"widget:" tag, with the fields a command
-// owns shown read-only so a person can see them and not change them here. errs
-// and detail are a refused write's, and a form carrying a detail is a 422: the
-// kernel rolls the transaction back past 400, and htmx swaps a 422 in place
-// rather than treating it as an error nobody sees.
+// Form renders the resolved create or update layout with submitted values.
+// Nonempty detail marks a refused write and returns status 422; errs names
+// individual controls. Invalid supported policy returns an HTML render error.
 func Form(r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) document.View {
+	r = r.policy(o)
+	if err := r.validatePolicy(); err != nil {
+		return document.View{Body: []g.Node{invalid(err)}}
+	}
 	at := r.Screen
 	status := 0
 	if detail != "" {
 		status = statusUnprocessableEntity
 	}
-	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
-		breadcrumb(o, o.heading(r), at, title),
+	return document.View{Title: title, Language: r.Resolved.Language, Status: status, Modules: richtextModules(r), Body: []g.Node{
+		breadcrumb(o, r.collectionName(o), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
@@ -43,8 +44,8 @@ const richtextModule = "js/richtext.js"
 // rich text is immutable is read-only chrome and no editor, and the page that
 // draws one costs the same as the page that draws none.
 func richtextModules(r Resource) []string {
-	for _, f := range readable(r.Schema.Fields) {
-		if f.Widget == "richtext" && !slices.Contains(r.Immutable, f.Name) {
+	for _, f := range r.Resolved.Fields {
+		if f.Control == "richtext" && (f.Editable.Create || f.Editable.Update) {
 			return []string{richtextModule}
 		}
 	}
@@ -65,19 +66,8 @@ const fileUploadRoute = "/api/v1/file/files"
 // reason: the browser is handed addresses, never a rule for making one.
 const fileImageSrc = "/api/v1/file/files/{file}/content"
 
-// richtextEditor is the server's answer to "what may this field's editor do, and
-// where". An author who is writing has no record yet, so there is nothing to keep
-// a draft under: the draft key appears with the record's id and nowhere else. No
-// write address is offered beside it, because this form is the write: it posts the
-// field and quotes the row's own write count as the condition on that post. A
-// browser handed the same address would PATCH the field as the person types, move
-// the row off the revision the form still carries, and refuse the Save pressed a
-// moment later — keeping no draft in which unsaved words would then live.
-//
-// submitted says this render is the answer to a write that was refused: its
-// controls carry the person's own post rather than the record's text. Nothing
-// compares a kept draft against that text — a refused write saves nothing, and the
-// copy on the device is the only place unsaved words live.
+// richtextEditor scopes an existing record draft without enabling autosave.
+// submitted preserves unsaved text after a refused write; create has no draft key.
 func richtextEditor(r Resource, row map[string]any, create bool, name string, submitted bool) forms.Editor {
 	editor := forms.Editor{FileUpload: fileUploadRoute, ImageSrc: fileImageSrc, Submitted: submitted}
 	if create || row == nil || r.Singleton || r.API == "" {
@@ -96,50 +86,51 @@ func richtextEditor(r Resource, row map[string]any, create bool, name string, su
 // because a renderer of values links no HTTP server.
 const statusUnprocessableEntity = 422
 
-// FormExample captures the same form body that Form serves, without its page
-// chrome. Supply an owner-local example ID and synthetic row/error inputs for
-// design export. Children retain Core's typed contracts and named slots; fields
-// use "field/" plus their schema name so actions and errors cannot shadow them.
-// Property edits produce presentation candidates, not schema or database writes.
-// Native editor support and interactive flow behavior require separate evidence.
-//
-// The form's DOM scope comes from action, not from id: two screens of one entity
-// (create and edit) post to different addresses and so own different scopes, and
-// the refused POST that swaps errors back in is answered at the address the form
-// was drawn from, so the swap still finds its target.
+// FormExample captures the same form body as Form for offline design export.
+// id names the example; action scopes control identities across instances and
+// refusal swaps. Inputs are synthetic values, not persistence operations.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	// The form asks for every field its author did not keep off every screen:
-	// `hidden` is the one visibility off this screen too, because a control for a
-	// field no screen may name is a question nobody may answer, and `detail` stays
-	// on it — a required field a form cannot ask for is a record nobody can
-	// create. See readable. The one field added after this loop is the edit form's
-	// own write condition, below, so the capacity holds room for it.
-	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
-	words := o.Words(r.Schema)
-	// A render carrying a refusal line is the form redrawn over a write that was
-	// refused, with the person's own words in its controls.
-	refused := detail != ""
-	for _, field := range readable(r.Schema.Fields) {
-		f := formField(words, field)
+	r = r.policy(o)
+	if err := r.validatePolicy(); err != nil {
+		return examples.Example{Node: invalid(err)}
+	}
+	fields := make([]forms.Field, 0, len(r.Resolved.Fields)+1)
+	immutable := []string{}
+	choiceValues := map[string][]string{}
+	names := r.Resolved.Layout.Update
+	if create {
+		names = r.Resolved.Layout.Create
+	}
+	for _, name := range names {
+		field, _ := fieldFor(r.Schema.Fields, name)
+		f := resolvedFormField(field, r.field(name), o)
+		// A choice answers from the row's own selection, or from the refused
+		// write's, which arrives here in the same row map.
+		if field.Choices != nil {
+			if value, exists := row[field.Name]; exists {
+				choiceValues[field.Name] = readChoiceIDs(field, value)
+			}
+		}
 		if f.Definition.Widget == "richtext" {
-			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
+			f.Editor = richtextEditor(r, row, create, name, detail != "")
 		}
 		fields = append(fields, f)
 	}
+	if !create {
+		for _, field := range r.Resolved.Fields {
+			f, _ := fieldFor(r.Schema.Fields, field.Name)
+			if field.OnRecord && !field.Editable.Update && !entity.ServerOwned(f) && !slices.Contains(names, field.Name) {
+				immutable = append(immutable, field.Name)
+				fields = append(fields, resolvedFormField(f, field, o))
+			}
+		}
+	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
-		values[name] = display.Text(value)
+		values[name] = scalarText(value)
 	}
-	// An edit carries the row's write count back as a hidden value, so the write it
-	// posts can be refused against a row that moved since the person read it. It is a
-	// hidden value and not a control for two reasons that are one: nobody may type the
-	// number of a row's writes (kit/rest refuses a body that names the field), and a
-	// form whose hidden machinery is drawn as a control is a form that invites people to
-	// break its own safety. A create quotes nothing: there is no row to have read.
-	//
-	// The value is the number as the row has it, which is also what a refused write gives
-	// back — the person who is told their deadline is invalid resubmits against the
-	// revision they were already quoting, not against one they never saw.
+	// An edit carries the observed revision, including after a refused write.
+	// A create has no observed row and quotes nothing.
 	if condition, quoted := revisionCondition(r, row, create); quoted {
 		fields = append(fields, forms.Field{Definition: entity.Field{
 			Name: entity.RevisionCondition, Type: entity.TypeString, Widget: "hidden",
@@ -147,17 +138,17 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		}})
 		values[entity.RevisionCondition] = condition
 	}
-	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
-		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
-		ChooseLabel: chooseWord(words),
+	return forms.MustExample(id, forms.Model{ChoiceValues: choiceValues, Fields: fields, Values: values, Errors: errs,
+		Immutable: immutable, Detail: detail, Create: create}, forms.Options{
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
 		Action:    action, CancelURL: r.Screen, Title: title,
-		// The words on the two buttons and the heading of the refusal this form
-		// answers with are asked here because the form builder is one layer below the
-		// catalogue and the language, and left to itself it prints its own English.
-		// A Portuguese form whose every field the module had translated would
-		// otherwise report its refused save in English under a Portuguese heading.
+		// The two buttons and the empty option of a select are this package's words to
+		// give, because the form builder one layer below the catalogue prints its own
+		// English when nobody hands it theirs: a Portuguese form whose every field the
+		// module translated would otherwise report its refused save and its own buttons
+		// in English under a Portuguese heading.
+		ChooseLabel: chooseWord(o.Words(r.Schema)),
 		CancelLabel: o.Label("screens.cancel", "Cancel"),
 		SubmitLabel: o.Label("screens.save", "Save"),
 		Notes:       o.notes(),
@@ -167,19 +158,18 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 			}
 			return o.Locale.Text(key, fallback)
 		},
+		// The verdict's own name and tone, from the caller that looked them up. A render
+		// that names none keeps "That could not be saved" and the fault tone it kept
+		// before either field existed.
 		// The heading a refusal is drawn under is the verdict's own name where the caller
-		// looked one up (ui/page words the verdicts no writer wrote a sentence for), and
-		// this catalogue's words for a failed save where it named none. Either way it is
-		// read in the request's language; the tone comes from the same verdict, so a plan
-		// exclusion is announced quietly, and a render that names neither keeps the plain
-		// notice it drew before either field existed.
+		// looked one up, and this catalogue's words for a failed save where it named
+		// none. Either way it is read in the request's language.
 		FailureTitle: cmp.Or(refusalHeading(o), o.Label("screens.failure_title", "")),
 		DetailTone:   refusalTone(o),
 	})
 }
 
-// refusalHeading and refusalTone are the two parts of the verdict a form draws, read
-// from a render that named none as the empty pair they were drawn from before.
+// refusalHeading keeps the form's default heading when no refusal was supplied.
 func refusalHeading(o Options) string {
 	if o.Refusal == nil {
 		return ""
@@ -194,12 +184,8 @@ func refusalTone(o Options) string {
 	return o.Refusal.Tone
 }
 
-// revisionCondition is the edit form's condition on the write: the row's own write count,
-// and whether this form may quote one at all. A resource whose entity keeps no count,
-// and a form that is not editing a row it read, quote nothing — and the door they post to
-// writes as plainly as it always did. A singleton is the second case by declaration: its
-// API is a PUT with no tag to quote (kit/rest carries If-Match on the patch and the delete
-// alone), so its screen carries a condition its route would not honour.
+// revisionCondition quotes a declared revision from a read or refused form.
+// Creates and singleton PUTs have no supported revision condition.
 func revisionCondition(r Resource, row map[string]any, create bool) (string, bool) {
 	if create || r.Singleton || row == nil {
 		return "", false
@@ -211,12 +197,10 @@ func revisionCondition(r Resource, row map[string]any, create bool) (string, boo
 		}
 	}
 	if !counts {
-		// A row that arrived with a revision no field of this schema declares is not this
-		// renderer's to speak for; it quotes nothing, and the write is the plain one.
 		return "", false
 	}
 	if count, has := row[entity.RevisionField]; has {
-		return display.Text(count), true
+		return scalarText(count), true
 	}
 	if carried, has := row[entity.RevisionCondition]; has {
 		return display.Text(carried), true
@@ -227,15 +211,16 @@ func revisionCondition(r Resource, row map[string]any, create bool) (string, boo
 // Control adapts an entity field to the portable form control, preserving the
 // generated screens' existing labels, choices and name-derived DOM identity.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return controlWords(Words{}, f, value, fieldErr, immutable)
+	return controlIn("", Words{}, f, value, fieldErr, immutable)
 }
 
-// controlWords is Control with one thing added: the words a request's language
-// chose, which is what a command's argument controls need and what the exported
-// Control has no request to read. ui/forms stays this package's only owner of the
-// control itself.
-func controlWords(words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return controlIn("", words, f, value, fieldErr, immutable)
+// Control is one field's control as this screen would draw it inside a form: the
+// field's own label, help and enum words, and the empty option's sentence. A caller
+// that draws a single control outside a whole screen — a command's argument, a filter
+// above a table — asks this rather than assembling forms.Control itself, which is how
+// a second vocabulary of untranslated controls starts.
+func (o Options) Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
+	return controlIn("", o.words(), f, value, fieldErr, immutable)
 }
 
 // controlIn draws one control under a DOM identity the caller owns — a command's
@@ -243,20 +228,27 @@ func controlWords(words Words, f entity.Field, value, fieldErr string, immutable
 // one page stay two controls — with the words the request is read in. Empty id leaves
 // the identity to the form, which is what a control drawn inside a generated screen
 // asks. Both routes build their props here, so a control cannot be addressed by one
-// caller and untranslated by another.
+// caller and left untranslated by another.
 func controlIn(id string, words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{ID: id, Field: formField(words, f), Value: value, Error: fieldErr,
-		Immutable: immutable, ChooseLabel: chooseWord(words), Notes: words.notes()})
+	return forms.Control(forms.ControlProps{ID: id, Field: formField(words, f, Options{}), Value: value,
+		Error: fieldErr, Immutable: immutable, ChooseLabel: chooseWord(words), Notes: words.notes()})
+}
+
+// chooseWord is the empty option's own sentence — the row a reader picks to take a
+// choice back — addressed outside any one resource, because every select of every
+// entity shows it: `screens.choose`, the prefix the New, Edit and Save buttons live
+// under.
+func chooseWord(words Words) string {
+	if words.text == nil {
+		return "Choose…"
+	}
+	return words.text("screens.choose", "Choose…")
 }
 
 // notes are ui/forms' three sentences about a control — why a value is read-only
 // here, that an identifier has no picker, how a list is typed in — in the language
-// these words are read in. The generated form passes them as a set (see
-// Options.notes); a control drawn on its own, which is every command argument's
-// control, has to ask the same three or ui/forms answers them from its own English
-// and a page declared Portuguese carries one English sentence in the middle of it.
-// The fallback is empty rather than the sentence on purpose: with no seam this is
-// the form layer's English, which is what a form without a catalogue has said.
+// these words are read in. The fallback is empty on purpose: with no seam this is the
+// form layer's own English, which is what a form without a catalogue has always said.
 func (w Words) notes() forms.Notes {
 	if w.text == nil {
 		return forms.Notes{}
@@ -268,29 +260,7 @@ func (w Words) notes() forms.Notes {
 	}
 }
 
-// chooseWord is the empty option's own sentence — the row a reader picks to take a
-// choice back, and the one word a select shows that no field's label covers. It is
-// addressed outside any one resource, because every select of every entity shows it:
-// `screens.choose`, the same prefix the New, Edit and Save buttons live under.
-func chooseWord(words Words) string {
-	if words.text == nil {
-		return "Choose…"
-	}
-	return words.text("screens.choose", "Choose…")
-}
-
-// Control is one field's control as this screen would draw it inside a form: the
-// field's own label, help and enum words, and the empty option's sentence. A caller
-// that draws a single control outside a whole screen — a command's argument, a
-// filter above a table — asks this rather than assembling forms.Control itself, which
-// is how a second vocabulary of untranslated controls starts.
-func (o Options) Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return controlWords(o.words(), f, value, fieldErr, immutable)
-}
-
-// notes are the sentences a control says about itself — why a value cannot be
-// edited, that a field holds another record's id, how a list of values is typed —
-// which the form layer cannot write in the reader's language because it is copy.
+// notes are the same three sentences for a caller holding the request's options.
 func (o Options) notes() forms.Notes {
 	return forms.Notes{
 		Immutable:      o.Label("screens.immutable_note", ""),
@@ -299,18 +269,7 @@ func (o Options) notes() forms.Notes {
 	}
 }
 
-// formField projects display words at the screen boundary. The portable form
-// owns controls; the value words keep their owner in kit/entity/display, and
-// `words` is what puts them in the request's language — the zero Words reads
-// each of them exactly as written.
-func formField(words Words, f entity.Field) forms.Field {
-	options := make([]components.SelectOption, 0, len(f.Enum))
-	for _, value := range f.Enum {
-		options = append(options, components.SelectOption{Label: words.EnumWord(f, value), Value: value})
-	}
-	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
+// formField resolves a standalone field for compatibility controls and commands.
+func formField(words Words, f entity.Field, o Options) forms.Field {
+	return resolvedFormField(f, words.field(f), o)
 }
-
-// table is the list screen's rows: the field a row is known by first, as the
-// link into it, then every other field the schema does not hide.
-//

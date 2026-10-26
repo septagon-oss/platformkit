@@ -1,211 +1,47 @@
 {
-  "screens.count": {
-    "translation": "%d %s",
+  "conflict.rest.unique": {
+    "references": [
+      "kit/rest/rest.go"
+    ],
+    "translation": "Um registo já usa um destes valores. Altere o valor duplicado e tente novamente.",
     "plural": {
-      "one": "%d %s",
-      "other": "%d %s"
+      "": "Um registo já usa um destes valores. Altere o valor duplicado e tente novamente."
     }
   },
-  "screens.new": {
-    "translation": "Criar: %s",
+  "invalid.rest.form.listItem": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s contém um %s inválido",
     "plural": {
-      "": "Criar: %s"
+      "": "%s contém um %s inválido"
     }
   },
-  "screens.edit_item": {
+  "invalid.rest.form.number": {
     "references": [
-      "ui/screens/screens.go"
+      "kit/rest/screens.go"
     ],
-    "translation": "Editar %s",
+    "translation": "%s não é um número",
     "plural": {
-      "": "Editar %s"
+      "": "%s não é um número"
     }
   },
-  "screens.edit": {
+  "invalid.rest.form.routeOfItsOwn": {
     "references": [
-      "ui/resource/resource.go"
+      "kit/rest/screens.go"
     ],
-    "translation": "Editar",
+    "translation": "%s pertence a uma rota própria, não a este formulário",
     "plural": {
-      "": "Editar"
+      "": "%s pertence a uma rota própria, não a este formulário"
     }
   },
-  "screens.delete": {
+  "invalid.rest.form.time": {
     "references": [
-      "ui/resource/resource.go"
+      "kit/rest/screens.go"
     ],
-    "translation": "Eliminar",
+    "translation": "%s não é uma data e hora",
     "plural": {
-      "": "Eliminar"
-    }
-  },
-  "screens.delete_this": {
-    "translation": "Eliminar: %s",
-    "plural": {
-      "": "Eliminar: %s"
-    }
-  },
-  "screens.delete_confirm": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Isto elimina %s. Não é possível anular.",
-    "plural": {
-      "": "Isto elimina %s. Não é possível anular."
-    }
-  },
-  "screens.empty": {
-    "translation": "Ainda sem %s.",
-    "plural": {
-      "": "Ainda sem %s."
-    }
-  },
-  "screens.pagination": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Paginação",
-    "plural": {
-      "": "Paginação"
-    }
-  },
-  "screens.previous": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Página anterior",
-    "plural": {
-      "": "Página anterior"
-    }
-  },
-  "screens.next": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Próxima página",
-    "plural": {
-      "": "Próxima página"
-    }
-  },
-  "screens.page": {
-    "references": ["ui/resource/resource.go"],
-    "translation": "Ir para a página %s",
-    "plural": { "": "Ir para a página %s" }
-  },
-  "screens.current_page": {
-    "references": ["ui/resource/resource.go"],
-    "translation": "Página %s, atual",
-    "plural": { "": "Página %s, atual" }
-  },
-  "screens.breadcrumb": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Caminho",
-    "plural": {
-      "": "Caminho"
-    }
-  },
-  "screens.choose": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Escolher…",
-    "plural": {
-      "": "Escolher…"
-    }
-  },
-  "screens.cancel": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Cancelar",
-    "plural": {
-      "": "Cancelar"
-    }
-  },
-  "screens.save": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Guardar",
-    "plural": {
-      "": "Guardar"
-    }
-  },
-  "screens.home": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Painel",
-    "plural": {
-      "": "Painel"
-    }
-  },
-  "screens.datetime": {
-    "translation": "02/01/2006 15:04"
-  },
-  "screens.boolean_true": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Sim"
-  },
-  "screens.boolean_false": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Não"
-  },
-  "screens.integer": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "%d",
-    "plural": {
-      "": "%d"
-    }
-  },
-  "screens.number": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "%g"
-  },
-  "screens.failure_title": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Não foi possível guardar",
-    "plural": {
-      "": "Não foi possível guardar"
-    }
-  },
-  "screens.immutable_note": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Alterado por um comando próprio, não por este formulário.",
-    "plural": {
-      "": "Alterado por um comando próprio, não por este formulário."
-    }
-  },
-  "screens.related_record": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "O identificador do registo relacionado. Ainda não existe um seletor para ele.",
-    "plural": {
-      "": "O identificador do registo relacionado. Ainda não existe um seletor para ele."
-    }
-  },
-  "screens.comma_separated": {
-    "references": [
-      "ui/resource/resource.go"
-    ],
-    "translation": "Separados por vírgula.",
-    "plural": {
-      "": "Separados por vírgula."
+      "": "%s não é uma data e hora"
     }
   },
   "invalid.rest.form.unreadable": {
@@ -226,15 +62,6 @@
       "": "%s não é um número inteiro"
     }
   },
-  "invalid.rest.revision.shape": {
-    "references": [
-      "kit/rest/screens.go"
-    ],
-    "translation": "não é uma revisão",
-    "plural": {
-      "": "não é uma revisão"
-    }
-  },
   "invalid.rest.revision.number": {
     "references": [
       "kit/rest/screens.go"
@@ -244,49 +71,86 @@
       "": "não é uma revisão inteira em que a linha possa estar"
     }
   },
-  "invalid.rest.form.number": {
+  "invalid.rest.revision.shape": {
     "references": [
       "kit/rest/screens.go"
     ],
-    "translation": "%s não é um número",
+    "translation": "não é uma revisão",
     "plural": {
-      "": "%s não é um número"
+      "": "não é uma revisão"
     }
   },
-  "invalid.rest.form.time": {
+  "screens.boolean_false": {
     "references": [
-      "kit/rest/screens.go"
+      "ui/resource/resource.go"
     ],
-    "translation": "%s não é uma data e hora",
+    "translation": "Não"
+  },
+  "screens.boolean_true": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Sim"
+  },
+  "screens.breadcrumb": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Caminho",
     "plural": {
-      "": "%s não é uma data e hora"
+      "": "Caminho"
     }
   },
-  "invalid.rest.form.listItem": {
+  "screens.cancel": {
     "references": [
-      "kit/rest/screens.go"
+      "ui/resource/resource.go"
     ],
-    "translation": "%s contém um %s inválido",
+    "translation": "Cancelar",
     "plural": {
-      "": "%s contém um %s inválido"
+      "": "Cancelar"
     }
   },
-  "invalid.rest.form.routeOfItsOwn": {
+  "screens.choose": {
     "references": [
-      "kit/rest/screens.go"
+      "ui/resource/resource.go"
     ],
-    "translation": "%s pertence a uma rota própria, não a este formulário",
+    "translation": "Escolher…",
     "plural": {
-      "": "%s pertence a uma rota própria, não a este formulário"
+      "": "Escolher…"
     }
   },
-  "conflict.rest.unique": {
+  "screens.comma_separated": {
     "references": [
-      "kit/rest/rest.go"
+      "ui/resource/resource.go"
     ],
-    "translation": "Um registo já usa um destes valores. Altere o valor duplicado e tente novamente.",
+    "translation": "Separados por vírgula.",
     "plural": {
-      "": "Um registo já usa um destes valores. Altere o valor duplicado e tente novamente."
+      "": "Separados por vírgula."
+    }
+  },
+  "screens.command_saved": {
+    "references": [
+      "ui/screens/command_output.go"
+    ],
+    "translation": "A alteração foi guardada.",
+    "plural": {
+      "": "A alteração foi guardada."
+    }
+  },
+  "screens.continue": {
+    "references": [
+      "ui/screens/command_output.go"
+    ],
+    "translation": "Continuar",
+    "plural": {
+      "": "Continuar"
+    }
+  },
+  "screens.count": {
+    "translation": "%d %s",
+    "plural": {
+      "one": "%d %s",
+      "other": "%d %s"
     }
   },
   "screens.created_at": {
@@ -298,13 +162,64 @@
       "": "Criado em"
     }
   },
-  "screens.updated_at": {
+  "screens.current_page": {
     "references": [
-      "ui/resource/hints.go"
+      "ui/resource/resource.go"
     ],
-    "translation": "Atualizado em",
+    "translation": "Página %s, atual",
     "plural": {
-      "": "Atualizado em"
+      "": "Página %s, atual"
+    }
+  },
+  "screens.datetime": {
+    "translation": "02/01/2006 15:04"
+  },
+  "screens.delete": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Eliminar",
+    "plural": {
+      "": "Eliminar"
+    }
+  },
+  "screens.delete_confirm": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Isto elimina %s. Não é possível anular.",
+    "plural": {
+      "": "Isto elimina %s. Não é possível anular."
+    }
+  },
+  "screens.delete_this": {
+    "translation": "Eliminar: %s",
+    "plural": {
+      "": "Eliminar: %s"
+    }
+  },
+  "screens.edit": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Editar",
+    "plural": {
+      "": "Editar"
+    }
+  },
+  "screens.edit_item": {
+    "references": [
+      "ui/screens/screens.go"
+    ],
+    "translation": "Editar %s",
+    "plural": {
+      "": "Editar %s"
+    }
+  },
+  "screens.empty": {
+    "translation": "Ainda sem %s.",
+    "plural": {
+      "": "Ainda sem %s."
     }
   },
   "screens.empty_collection": {
@@ -314,6 +229,33 @@
     "translation": "Ainda sem %s.",
     "plural": {
       "": "Ainda sem %s."
+    }
+  },
+  "screens.empty_title": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "—",
+    "plural": {
+      "": "—"
+    }
+  },
+  "screens.failure_title": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Não foi possível guardar",
+    "plural": {
+      "": "Não foi possível guardar"
+    }
+  },
+  "screens.false": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "Não",
+    "plural": {
+      "": "Não"
     }
   },
   "screens.history": {
@@ -361,22 +303,31 @@
       "": "Nenhum campo alterado."
     }
   },
-  "screens.command_saved": {
+  "screens.home": {
     "references": [
-      "ui/screens/command_output.go"
+      "ui/resource/resource.go"
     ],
-    "translation": "A alteração foi guardada.",
+    "translation": "Painel",
     "plural": {
-      "": "A alteração foi guardada."
+      "": "Painel"
     }
   },
-  "screens.continue": {
+  "screens.immutable_note": {
     "references": [
-      "ui/screens/command_output.go"
+      "ui/resource/resource.go"
     ],
-    "translation": "Continuar",
+    "translation": "Alterado por um comando próprio, não por este formulário.",
     "plural": {
-      "": "Continuar"
+      "": "Alterado por um comando próprio, não por este formulário."
+    }
+  },
+  "screens.integer": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "%d",
+    "plural": {
+      "": "%d"
     }
   },
   "screens.missing": {
@@ -388,6 +339,234 @@
       "": "—"
     }
   },
+  "screens.new": {
+    "translation": "Criar: %s",
+    "plural": {
+      "": "Criar: %s"
+    }
+  },
+  "screens.next": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Próxima página",
+    "plural": {
+      "": "Próxima página"
+    }
+  },
+  "screens.now": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "agora",
+    "plural": {
+      "": "agora"
+    }
+  },
+  "screens.number": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "%g"
+  },
+  "screens.page": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Ir para a página %s",
+    "plural": {
+      "": "Ir para a página %s"
+    }
+  },
+  "screens.pagination": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Paginação",
+    "plural": {
+      "": "Paginação"
+    }
+  },
+  "screens.previous": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Página anterior",
+    "plural": {
+      "": "Página anterior"
+    }
+  },
+  "screens.related_record": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "O identificador do registo relacionado. Ainda não existe um seletor para ele.",
+    "plural": {
+      "": "O identificador do registo relacionado. Ainda não existe um seletor para ele."
+    }
+  },
+  "screens.relative.day_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d dia",
+    "plural": {
+      "": "dentro de %d dia"
+    }
+  },
+  "screens.relative.day_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d dia",
+    "plural": {
+      "": "há %d dia"
+    }
+  },
+  "screens.relative.days_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d dias",
+    "plural": {
+      "": "dentro de %d dias"
+    }
+  },
+  "screens.relative.days_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d dias",
+    "plural": {
+      "": "há %d dias"
+    }
+  },
+  "screens.relative.hour_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d hora",
+    "plural": {
+      "": "dentro de %d hora"
+    }
+  },
+  "screens.relative.hour_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d hora",
+    "plural": {
+      "": "há %d hora"
+    }
+  },
+  "screens.relative.hours_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d horas",
+    "plural": {
+      "": "dentro de %d horas"
+    }
+  },
+  "screens.relative.hours_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d horas",
+    "plural": {
+      "": "há %d horas"
+    }
+  },
+  "screens.relative.minute_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d minuto",
+    "plural": {
+      "": "dentro de %d minuto"
+    }
+  },
+  "screens.relative.minute_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d minuto",
+    "plural": {
+      "": "há %d minuto"
+    }
+  },
+  "screens.relative.minutes_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d minutos",
+    "plural": {
+      "": "dentro de %d minutos"
+    }
+  },
+  "screens.relative.minutes_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d minutos",
+    "plural": {
+      "": "há %d minutos"
+    }
+  },
+  "screens.relative.second_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d segundo",
+    "plural": {
+      "": "dentro de %d segundo"
+    }
+  },
+  "screens.relative.second_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d segundo",
+    "plural": {
+      "": "há %d segundo"
+    }
+  },
+  "screens.relative.seconds_future": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "dentro de %d segundos",
+    "plural": {
+      "": "dentro de %d segundos"
+    }
+  },
+  "screens.relative.seconds_past": {
+    "references": [
+      "ui/resource/value.go"
+    ],
+    "translation": "há %d segundos",
+    "plural": {
+      "": "há %d segundos"
+    }
+  },
+  "screens.remove_filter": {
+    "references": [
+      "ui/resource/list.go"
+    ],
+    "translation": "Remover filtro %s",
+    "plural": {
+      "": "Remover filtro %s"
+    }
+  },
+  "screens.save": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Guardar",
+    "plural": {
+      "": "Guardar"
+    }
+  },
   "screens.true": {
     "references": [
       "ui/screens/catalog.go"
@@ -397,22 +576,13 @@
       "": "Sim"
     }
   },
-  "screens.false": {
+  "screens.updated_at": {
     "references": [
-      "ui/screens/catalog.go"
+      "ui/resource/hints.go"
     ],
-    "translation": "Não",
+    "translation": "Atualizado em",
     "plural": {
-      "": "Não"
-    }
-  },
-  "screens.empty_title": {
-    "references": [
-      "ui/screens/catalog.go"
-    ],
-    "translation": "—",
-    "plural": {
-      "": "—"
+      "": "Atualizado em"
     }
   }
 }

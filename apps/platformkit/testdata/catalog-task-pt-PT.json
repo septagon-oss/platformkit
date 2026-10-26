@@ -309,6 +309,8 @@
     },
     "fields": [
       {
+        "choice": null,
+        "figure": null,
         "name": "id",
         "label": "Id",
         "help": "",
@@ -334,6 +336,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "createdAt",
         "label": "Created at",
         "help": "",
@@ -362,6 +366,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "updatedAt",
         "label": "Updated at",
         "help": "",
@@ -390,6 +396,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "title",
         "label": "Título",
         "help": "Resumo da tarefa",
@@ -415,6 +423,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "description",
         "label": "Descrição",
         "help": "Descrição detalhada da tarefa",
@@ -440,6 +450,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "status",
         "label": "Estado",
         "help": "Estado do ciclo de vida",
@@ -463,30 +475,45 @@
         },
         "options": [
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "open",
             "label": "Aberta",
             "tone": "info",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "acknowledged",
             "label": "Aceite",
             "tone": "info",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "in_progress",
             "label": "Em curso",
             "tone": "warning",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "resolved",
             "label": "Resolvida",
             "tone": "success",
             "done": true
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "closed",
             "label": "Fechada",
             "tone": "neutral",
@@ -496,6 +523,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "priority",
         "label": "Prioridade",
         "help": "Prioridade da tarefa",
@@ -519,24 +548,36 @@
         },
         "options": [
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "low",
             "label": "Baixa",
             "tone": "neutral",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "normal",
             "label": "Normal",
             "tone": "neutral",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "high",
             "label": "Alta",
             "tone": "warning",
             "done": false
           },
           {
+            "picture": null,
+            "group": "",
+            "noPreference": false,
             "value": "critical",
             "label": "Crítica",
             "tone": "danger",
@@ -546,6 +587,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "source",
         "label": "Source",
         "help": "Origin of the task",
@@ -571,6 +614,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "sourceRef",
         "label": "Source ref",
         "help": "Reference into the source system",
@@ -596,6 +641,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "assigneeId",
         "label": "Responsável",
         "help": "User responsible for the task",
@@ -623,6 +670,8 @@
         }
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "dueAt",
         "label": "Prazo",
         "help": "Meta suave de conclusão",
@@ -651,6 +700,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "slaDeadline",
         "label": "Resposta devida",
         "help": "Prazo rígido do SLA, contra o qual se mede o incumprimento",
@@ -679,6 +730,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "slaBreached",
         "label": "Resposta atrasada",
         "help": "True once the deadline elapsed with the task unresolved",
@@ -704,6 +757,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "resolvedAt",
         "label": "Resolvida",
         "help": "When the task was resolved",
@@ -732,6 +787,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "resolution",
         "label": "Resolution",
         "help": "How the task was resolved",
@@ -757,6 +814,8 @@
         "reference": null
       },
       {
+        "choice": null,
+        "figure": null,
         "name": "revision",
         "label": "Revision",
         "help": "This row's own write count, from 1",
@@ -829,30 +888,45 @@
           "kind": "enum",
           "values": [
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "open",
               "label": "Aberta",
               "tone": "info",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "acknowledged",
               "label": "Aceite",
               "tone": "info",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "in_progress",
               "label": "Em curso",
               "tone": "warning",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "resolved",
               "label": "Resolvida",
               "tone": "success",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "closed",
               "label": "Fechada",
               "tone": "neutral",
@@ -866,24 +940,36 @@
           "kind": "enum",
           "values": [
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "low",
               "label": "Baixa",
               "tone": "neutral",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "normal",
               "label": "Normal",
               "tone": "neutral",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "high",
               "label": "Alta",
               "tone": "warning",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "critical",
               "label": "Crítica",
               "tone": "danger",
@@ -897,12 +983,18 @@
           "kind": "bool",
           "values": [
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "true",
               "label": "Sim",
               "tone": "neutral",
               "done": false
             },
             {
+              "picture": null,
+              "group": "",
+              "noPreference": false,
               "value": "false",
               "label": "Não",
               "tone": "neutral",
@@ -914,6 +1006,35 @@
     },
     "commands": [
       {
+        "fields": [
+          {
+            "choice": null,
+            "figure": null,
+            "name": "assigneeId",
+            "label": "Responsável",
+            "help": "The user who becomes responsible",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          }
+        ],
         "verb": "assign",
         "label": "Atribuir",
         "visible": true,
@@ -924,6 +1045,35 @@
         "successMessage": ""
       },
       {
+        "fields": [
+          {
+            "choice": null,
+            "figure": null,
+            "name": "resolution",
+            "label": "Resolution",
+            "help": "How the task was resolved",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null,
+              "time": null,
+              "money": null
+            },
+            "options": [],
+            "reference": null
+          }
+        ],
         "verb": "resolve",
         "label": "Resolver",
         "visible": true,
@@ -934,6 +1084,7 @@
         "successMessage": ""
       },
       {
+        "fields": [],
         "verb": "check-sla",
         "label": "Check a task's SLA",
         "visible": false,

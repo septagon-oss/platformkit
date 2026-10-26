@@ -30,6 +30,7 @@ import (
 // fact the module already holds, and one the author could simply forget to
 // write. The door asks the module by verb instead — Spec.Gate says how.
 type CommandOptions struct {
+	Choices *entity.ChoiceFields
 	// MintsCredential prevents retained responses in JSON and generated forms.
 	// Undoable commands also declare this automatically for their rewind token.
 	MintsCredential bool
@@ -274,6 +275,13 @@ func commandInputs[I any, T crud.Entity](
 	if err != nil {
 		panic("rest: " + err.Error())
 	}
+	fields, err = entity.WithChoices(fields, opts.Choices)
+	if err == nil {
+		err = choiceTypes(reflect.TypeFor[I](), fields)
+	}
+	if err != nil {
+		panic("rest: command " + verb + ": " + err.Error())
+	}
 	prepare, emptyFault, err := commandDefaults[I](fields)
 	if err != nil {
 		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + err.Error())
@@ -349,7 +357,7 @@ func mountCommand[I any, T crud.Entity, O any](
 	if result {
 		responseOptions.CacheControl = "private, no-store"
 	}
-	if len(bindings) > 0 || slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
+	if hasChoices(fields) || len(bindings) > 0 || slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
 		mountDefaultCommand(router, op, auth, opts.Collection, prepare, answer, responseOptions)
 		return
 	}

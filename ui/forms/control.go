@@ -15,6 +15,7 @@ import (
 // leaving it empty uses the component's historical name-derived default. Enclosing
 // forms should use Example, which supplies a distinct identity to every control.
 type ControlProps struct {
+	ChoiceValues     []string
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
@@ -65,6 +66,9 @@ var widgetInputType = map[string]string{
 // Its capture retains "field/" plus the schema name and Core's Props contract.
 func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
+	if f.Choices != nil || entity.ChoiceAppearance(f.Widget) {
+		return choiceControl(p)
+	}
 	word := func(key, fallback string) string {
 		if p.Text == nil {
 			return fallback
@@ -79,27 +83,8 @@ func Control(p ControlProps) g.Node {
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {
-	case len(f.Enum) > 0 || f.Widget == "select":
-		options := slices.Clone(p.Field.Options)
-		if options == nil {
-			options = make([]components.SelectOption, 0, len(f.Enum))
-			for _, value := range f.Enum {
-				options = append(options, components.SelectOption{Label: value, Value: value})
-			}
-		}
-		// The empty option's words are always the page's. This used to build its
-		// own sentence — "Choose a " plus a lower-cased label — whenever the field
-		// declared no default, which put a half-translated prompt ("Choose a
-		// prioridade") on a page whose every other word the catalogue had answered.
-		// Whether that option exists at all is components.Select's decision, taken
-		// from Required; the words in it are never this package's to invent.
-		placeholder := p.ChooseLabel
-		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
-			Name:           name, Label: label, Value: p.Value, Error: p.Error,
-			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText, FullWidth: true,
-		}, components.Select).Node
+	case f.Widget == "select" || f.Widget == "" && len(f.Enum) > 0:
+		return selectControl(p, base)
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
@@ -131,7 +116,7 @@ func Control(p ControlProps) g.Node {
 		// it: with no JavaScript the field is the plain textarea above with the
 		// guidance below it, and the submitted value is the same either way.
 		return richtextChrome(p, area, help)
-	case f.Widget == "checkbox" || f.Type == entity.TypeBool:
+	case f.Widget == "checkbox" || f.Widget == "" && f.Type == entity.TypeBool:
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: "true", Checked: p.Value == "true",
@@ -142,21 +127,7 @@ func Control(p ControlProps) g.Node {
 	case f.Type == entity.TypeList:
 		base.HelpText = hint(base.HelpText, p.Notes.commaSeparated())
 	}
-	// The input type is what the widget named, and only then what the Go type
-	// implies. A widget that names one wins over the type because that is what
-	// the tag is for: `datetime` on a string holding an instant and the same
-	// widget on its time.Time neighbour now draw the same control, where the
-	// name used to be discarded and the string became a plain text box.
-	switch named, byType := widgetInputType[f.Widget]; {
-	case byType:
-		base.Type = named
-	case f.Type == entity.TypeTime:
-		base.Type = "datetime-local"
-	case f.Type == entity.TypeInt:
-		base.Type, base.Step = "number", "1"
-	case f.Type == entity.TypeFloat:
-		base.Type, base.Step = "number", "any"
-	}
+	base.Type, base.Step = inputType(f)
 	// datetime-local carries no seconds and no zone, so a stored instant is cut
 	// to the minute the control can actually show. The value is not reformatted:
 	// what a form submits is what the field's own validation will read.
@@ -164,4 +135,51 @@ func Control(p ControlProps) g.Node {
 		base.Value = base.Value[:16]
 	}
 	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
+}
+
+func inputType(f entity.Field) (string, string) {
+	kind, step := widgetInputType[f.Widget], ""
+	if kind == "" {
+		switch f.Type {
+		case entity.TypeTime:
+			kind = "datetime-local"
+		case entity.TypeInt, entity.TypeFloat:
+			kind = "number"
+		default:
+			kind = "text"
+		}
+	}
+	if kind == "number" {
+		if f.Type == entity.TypeFloat {
+			step = "any"
+		} else if f.Type == entity.TypeInt {
+			step = "1"
+		}
+	}
+	return kind, step
+}
+
+func selectControl(p ControlProps, base components.InputProps) g.Node {
+	f := p.Field.Definition
+	name, label := base.Name, base.Label
+	options := slices.Clone(p.Field.Options)
+	if options == nil {
+		options = make([]components.SelectOption, 0, len(f.Enum))
+		for _, value := range f.Enum {
+			options = append(options, components.SelectOption{Label: value, Value: value})
+		}
+	}
+	// The empty option's words are always the page's: this layer used to build
+	// "Choose a " plus a lower-cased label, which put a half-translated prompt
+	// ("Choose a prioridade") on a page whose every other word the catalogue had
+	// answered. Whether that option exists is components.Select's decision from
+	// Required; its words are never this package's to invent. Empty keeps the
+	// component's own fallback, which is what a form without a catalog says.
+	placeholder := p.ChooseLabel
+	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
+		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+		Name:           name, Label: label, Value: p.Value, Error: p.Error,
+		Required: f.Required, Options: options, Placeholder: placeholder,
+		HelpText: base.HelpText, FullWidth: true,
+	}, components.Select).Node
 }

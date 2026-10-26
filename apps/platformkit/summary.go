@@ -1,35 +1,19 @@
 package main
 
 // summary.go is the composition's answer to "what does this hold?" — one number
-// per resource the caller may read, at one instant, at /api/v1/app/summary.
+// per resource the caller may read, at one instant, at /api/v1/app/summary. The
+// address is the kernel's and the body is ui's, which makes the mount the
+// composition's: no module may compose the module-less /api/v1/app prefix, and only
+// the composition holds the whole registered list, read through the closure each
+// resource carries — the one the generated screens call, behind the same guard.
 //
-// The address is the kernel's and the body is ui's, which makes the mount the
-// composition's: no module may compose the module-less /api/v1/app prefix, and a
-// module could not answer this question anyway — it would have to reach the
-// resources of three other modules. The composition is the one place that holds
-// the whole registered list, and it reads each one through the closures the
-// resource itself carries, which are the same closures the generated screens and
-// the dashboard card call, behind the same read guard.
-//
-// Three rules hold here and nowhere else, and each is stated with what would
-// break it:
-//
-//   - A cached total is never handed to a caller the read guard would refuse,
-//     because the guard is asked — through Resource.Readable — before the key is
-//     formed. The cache is sound for a tenant-wide read grant; an authorizer that
-//     ever decided per row would make a per-tenant count the wrong answer, and
-//     that key would have to name the grant set or go uncached.
-//   - Absence is never stored. A count that was refused, or a resource that
-//     carries no count at all, leaves its entry with no number and writes
-//     nothing: a stored absence reads back as a decision, and the card would wear
-//     a zero it was never given. A statement the database *refused* is the one
-//     failure this loop cannot answer with an absent number, because it aborts the
-//     transaction every later count would be asked in: there the loop stops and
-//     says so once, and the request ends as a database failure.
-//   - Nothing here is a word. The body carries integers and dates and no copy, so
-//     it is the same bytes in every language, no Vary names a header that changes
-//     them, and the cache key names no language either. A key that ever becomes a
-//     word takes the header and the language into the key in the same commit.
+// Three rules hold here and nowhere else. A cached total is never handed to a caller
+// the guard would refuse, because Readable is asked before the key is formed; an
+// authorizer that decided per row would make a per-tenant count wrong, and that key
+// would name the grant set or go uncached. Absence is never stored — a refused count
+// leaves no number, since a stored absence reads back as a decision — except a
+// statement the database refused, which stops the loop and fails the request. And
+// nothing here is a word, so no Vary and no key names a language.
 
 import (
 	"context"

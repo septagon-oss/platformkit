@@ -19,21 +19,19 @@ type World[W any] struct {
 	Classify func(error) Class
 }
 
-// Refused runs a step that must be refused, and asserts the three things a refusal
-// owes that this harness has a channel for: the error is the refusal this case names
-// (and, when the case names a class, that the error is in it), the snapshot did not
-// move, and the event list is the one the call found, event for event (saidNothing). House rule 9's first two clauses as one
-// assertion, so no suite has to remember them.
+// Refused runs a step that must be refused and asserts the things a refusal owes
+// that this harness has a channel for: the error is the refusal this case names
+// (and, when the case names a class, that the error is in it), the snapshot did
+// not move, and the event list is the one the call found, event for event. House
+// rule 9's first two clauses as one assertion, so no suite has to remember them.
 //
-// The rule's third clause — a refusal returns no stale row — is not one of them, and
-// claiming it here was the defect: Refusal.Call answers the error alone, so whatever
-// a refused call handed back to its caller reaches no comparison in this package.
-// "Writes nothing" is asserted of the store and of the events, and "returns no stale
-// row" is asserted of neither. The three converted ports answer nil beside the error
-// (sitetest.Save answers no row at all), so nothing shipped is unasserted; the channel
-// would be Op.Call's rendering on the refusal side too, and a pin assigns a
-// func(W, uuid.UUID) error to that field, which the harness takes unchanged. So the
-// clause is named here and in README, not asserted.
+// The rule's third clause — a refusal returns no stale row — is not one of them:
+// Refusal.Call answers the error alone, so whatever a refused call handed back
+// reaches no comparison here. "Writes nothing" is asserted of the store and of
+// the events, and "returns no stale row" of neither; the converted ports answer
+// nil beside the error, so nothing shipped is unasserted. The channel would be
+// Op.Call's rendering on the refusal side, which a pin assigns by hand, and the
+// README names the clause too.
 func (w World[W]) Refused(is func(error) bool, class Class, snapshot func() string, step func() error) {
 	rep := w.report()
 	rep.Helper()

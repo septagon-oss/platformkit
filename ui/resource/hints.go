@@ -8,64 +8,9 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 )
 
-// hints.go is the one place a *declared* reading string — a field label, an
-// entry's singular, a command's confirmation — is put through the copy seam.
-//
-// The rule behind the whole file is that an author writes words once, in their
-// own English, in the declaration itself: `Present:` on a Spec, a `ui:"…"` tag on
-// a field. No second table of keys sits beside it, because a key spelled beside a
-// string that is already written is a second copy of that string and a typo that
-// nothing checks. So the key is *derived* from the declaration's own address:
-//
-//	hints.<module>/<entity>.<aspect>
-//
-// where `<module>/<entity>` is the resource address `rest.resourceAddress` keys
-// the registry by (and `reference:` spells a target), and `<aspect>` names the
-// declaration: `singular`, `plural`, `description`, `emptyDescription`,
-// `group.<key>`, `section.<key>`, `highlight.label`, `field.<name>.label`,
-// `field.<name>.help`, `enum.<field>.<value>`, `command.<verb>.label`,
-// `command.<verb>.confirmation.<title|body|confirmLabel>`,
-// `command.<verb>.successMessage`, and a command argument's
-// `command.<verb>.field.<name>.label` / `.help`, and `deck.<direction>.label`.
-//
-// A word nobody declared — the label computed off a field's name, the field's own
-// `doc:` sentence, an enum value's own spelling, a command's Summary and Description —
-// is copy a person reads just the same, so it is keyed by what it is addressed by
-// rather than by a declaration: `field.<module>.<entity>.<field>` and
-// `…<field>.help`, `enum.<module>.<entity>.<value>`,
-// `command.<module>.<entity>.<verb>` and `…<verb>.description`. A field's or an enum's
-// entity-less form (`field.<field>`, `enum.<value>`) sits behind the entity's own as
-// the older half of every module's copy; a command's verb is not asked that way,
-// because two entities' "publish" are two sentences. The computed word is the fallback
-// of every one of them, so a module that ships no copy of its own reads exactly as it
-// did before these keys existed. Words.schemaWord and Words.RouteWords are the two
-// lookups.
-//
-// One consequence of keying an undeclared word by address rather than by the sentence:
-// two commands of one entity that take an argument of the same name ask one key, and
-// the catalogue holds one sentence for it. `lang` on the four translation doors is that
-// case; the entry those four share is the one rule they state.
-//
-// What is *not* resolved is the rest of the vocabulary, and the reason is one
-// sentence: `icon`, `group.key`, `section.key`, `order`, `primaryField`,
-// `previewField`, `statusField`, `summaryFields`, `sortable`, `visibility`,
-// `format`, `money`, `reference`, `enumTones`, `system`, `primary`,
-// `destructive`, `verb`, `trendField` and a highlight's `filter` are names a
-// screen draws, not words a person reads — translating `warning` or `detail` would
-// be a bug, not a localisation, and a translated predicate would count a different
-// set of rows than the one its author asked about.
-//
-// The declared literal is always the fallback, which is why no `en.json` exists
-// anywhere: the sentence the code author wrote is the English (decision 0012 rule
-// 2, the same rule `ui/page`'s fault copy and every module's permission label
-// follow). A translation is therefore only ever written for the second language.
-// What refuses a declaration shipped without that half is not the loader: an
-// `xtext` parity gate compares the locales one source file carries, and a module
-// that ships one translated file has no second locale to be compared with. Here
-// the completeness check belongs to the composition that reads the table —
-// `TestEveryDeclaredHintStringIsAnsweredInPortuguese` in `apps/platformkit`
-// resolves every key this scheme can derive against `pt-PT` — so a missing answer
-// fails that test rather than arriving as a screen drawn in two languages.
+// Declared words are localized before policy resolution. Keys use
+// hints.<module>/<entity>.<aspect>; machine names and values stay unchanged.
+// See README.md for the vocabulary and fallback contract.
 
 // Text is the seam a declared string is resolved through: the same shape
 // Options.Text already is, seen from the side that has a schema and no
@@ -79,11 +24,9 @@ type Text func(key, fallback string) string
 type Words struct {
 	schema entity.Schema
 	text   Text
-	// phrase asks for the layout a value is written in — a count, a measurement,
-	// an instant. It is a second seam beside text because those strings take an
-	// argument and a label does not; kit/locale's Formatter answers both shapes, so
-	// one language serves both and this type keeps the two calls apart. Nil with no
-	// catalogue: a value prints the digits it carries.
+	// phrase is the same catalogue seen from the side that interpolates: a count, a
+	// measurement or an instant is copy in its layout as well as its words. A nil
+	// phrase leaves every number and instant as kit/entity/display writes it.
 	phrase func(key, fallback string, args ...any) string
 	// prefix holds an aspect path inside the resource: empty for the resource's
 	// own declarations, `command.assign.` for one command's. It is why a command
@@ -131,68 +74,10 @@ func (w Words) say(aspect, declared string) string {
 	if declared == "" || w.text == nil {
 		return declared
 	}
-	return orSaid(w.text(w.Key(aspect), declared), declared)
-}
-
-// orSaid is the one answer rule: what the catalogue said, or the word the caller
-// brought when it said nothing.
-func orSaid(said, fallback string) string {
-	if said != "" {
-		return said
+	if out := w.text(w.Key(aspect), declared); out != "" {
+		return out
 	}
-	return fallback
-}
-
-// schemaWord asks for a word the schema carries without anyone declaring it — a
-// label computed off the field's name, a `doc:` sentence, an enum value's own
-// spelling. A declared word is keyed by the declaration that holds it; an undeclared
-// one is computed at this boundary, so the screen that prints it as computed answers a
-// Portuguese reader in the language the module was written in. It is therefore asked
-// of the catalogue at the entity's own key first (`field.task.task.title`,
-// `enum.task.task.critical`) and at the bare key behind it (`field.title`,
-// `enum.draft`). The entity's key comes first because `field.title` is one key in one
-// catalogue and several modules define a title: the module that filled that key would
-// otherwise answer the others' forms with its own sentence, in English. The bare key
-// is where every module's copy has always lived, so an entity with no copy of its own
-// reads exactly as it did before the entity key existed, and the computed word is the
-// answer of last resort — no catalogue, or neither key held, is the schema's own
-// English. An entity this renderer cannot name (no module, no entity) asks the bare
-// key alone, which is the lookup this package always made.
-//
-// The bare key is asked only when the entity's own did not answer, because a key a
-// renderer asks and nobody can answer is a line on the translators' worklist that no
-// translator can clear: `field.title` is not missing from the catalogue that holds
-// `field.task.task.title`, and a worklist holding both sends a reader looking for a
-// key that was never the one at fault.
-func (w Words) schemaWord(kind, name, computed string) string {
-	if computed == "" || w.text == nil {
-		return computed
-	}
-	if w.schema.Module == "" || w.schema.Entity == "" {
-		return orSaid(w.text(kind+"."+name, computed), computed)
-	}
-	scoped := kind + "." + w.schema.Module + "." + w.schema.Entity + "." + name
-	if said := w.text(scoped, computed); said != computed {
-		return said
-	}
-	return orSaid(w.text(kind+"."+name, computed), computed)
-}
-
-// RouteWords are a command's own two words: the Summary written beside the route,
-// which is the word on the button, and the Description, which names the form. Neither
-// is a `presentation` declaration, so this file's `command.<verb>.` keys never reach
-// them, and a form that printed them as written named the action in the language the
-// API was declared in. They are asked at the entity's own command key
-// (`command.task.task.assign`) and behind it the sentence the module wrote for that
-// verb (`command.assign`) is not asked: two entities' "publish" are two sentences, and
-// the second key is how one module's copy would answer another's button.
-func (w Words) RouteWords(verb, summary, description string) (string, string) {
-	if w.text == nil || w.schema.Module == "" || w.schema.Entity == "" {
-		return summary, description
-	}
-	at := "command." + w.schema.Module + "." + w.schema.Entity + "." + verb
-	return orSaid(w.text(at, summary), summary),
-		orSaid(w.text(at+".description", description), description)
+	return declared
 }
 
 // Entry returns declared entry words in this request's language.
@@ -239,35 +124,6 @@ func (w Words) Entry(p entity.EntryHints) entity.EntryHints {
 	return out
 }
 
-// kernelWords are the two columns a generated screen labels and no entity declares:
-// the two timestamps ride on every entity's base, and a label written there would
-// put a `presentation` block on the catalog document of every resource, hinted or
-// not (ui/screens' own "an entry nobody hinted is byte-for-byte unchanged"). So the
-// layer that draws the column owns the two words, and asks them at the moment it
-// draws — the document a shell parses keeps the bytes it had.
-type word struct{ key, text string }
-
-var kernelWords = map[string]word{
-	"createdAt": {"screens.created_at", "Created at"},
-	"updatedAt": {"screens.updated_at", "Updated at"},
-}
-
-// sayLayer asks one of this package's own words under its unqualified key — the
-// shape ui/screens uses for `screens.new` — rather than under this resource's
-// `hints.` prefix. The difference is who wrote the word: a resource's declared
-// label belongs to that resource and may be translated differently for each one,
-// and a column heading this layer gives every table is the installation's, chosen
-// once. An untranslated key answers the fallback, as `say` does.
-func (w Words) sayLayer(named word) string {
-	if w.text == nil {
-		return named.text
-	}
-	if out := w.text(named.key, named.text); out != "" {
-		return out
-	}
-	return named.text
-}
-
 // Fields is a schema with every declared word on it read in the request's
 // language, and every non-word left exactly as the schema holds it. The slice
 // and the two maps are copied; the caller's schema is never written to.
@@ -287,6 +143,23 @@ func (w Words) Fields(fields []entity.Field) []entity.Field {
 				words[value] = w.say("enum."+f.Name+"."+value, word)
 			}
 			f.Presentation.EnumLabels = words
+		}
+		if f.Choices != nil {
+			f.Choices = f.Choices.Clone()
+			prefix := "choice." + f.Name + "."
+			for i := range f.Choices.Options {
+				option := &f.Choices.Options[i]
+				option.Label = w.say(prefix+option.ID+".label", option.Label)
+				if option.Group != nil {
+					option.Group.Label = w.say(prefix+"group."+option.Group.Key+".label", option.Group.Label)
+				}
+			}
+			if f.Choices.Empty.Message != "" {
+				f.Choices.Empty.Message = w.say(prefix+"empty", f.Choices.Empty.Message)
+			}
+			if m := f.Choices.Maximum; m != nil && m.Message != "" {
+				m.Message = w.say(prefix+"maximum", m.Message)
+			}
 		}
 		out = append(out, f)
 	}
@@ -315,10 +188,9 @@ func (w Words) Command(verb string, p entity.CommandHints) entity.CommandHints {
 	return out
 }
 
-// FieldLabel is what a control, a header and a term call this field, in this
-// request's language: the declared label translated, and the words
-// display.FieldLabel computes (Humanize of the name) left alone, because nobody
-// wrote a string here to translate.
+// FieldLabel returns the resolved label for one field.
+//
+// Deprecated: pass Resource.Resolved to the screen renderer.
 func (w Words) FieldLabel(f entity.Field) string {
 	if f.Presentation.Label == "" {
 		if named, ok := kernelWords[f.Name]; ok {
@@ -326,117 +198,54 @@ func (w Words) FieldLabel(f entity.Field) string {
 		}
 		return w.schemaWord("field", f.Name, display.FieldLabel(f))
 	}
-	return w.say("field."+f.Name+".label", f.Presentation.Label)
+	return w.field(f).Label
 }
 
-// FieldHelp is the line under a control, in this request's language. An undeclared
-// help line is the field's own Doc: a sentence its author wrote for the API, which is
-// what the screen prints and therefore copy a reader's language has to reach — asked
-// under `field.<module>.<entity>.<field>.help`, with the field's bare
-// `field.<field>.help` behind it.
+// FieldHelp returns the resolved help for one field.
+//
+// Deprecated: pass Resource.Resolved to the screen renderer.
 func (w Words) FieldHelp(f entity.Field) string {
 	if f.Presentation.Help == "" {
 		return w.schemaWord("field", f.Name+".help", display.FieldHelp(f))
 	}
-	return w.say("field."+f.Name+".help", f.Presentation.Help)
+	return w.field(f).Help
 }
 
-// EnumWord is one enum value in this request's language: the word its field's author
-// named it by under `enumLabels`, or — where none was declared — the value's own
-// spelling asked of the catalogue at `enum.<module>.<entity>.<value>`. The tone that
-// value carries is not a word and is never translated.
-func (w Words) EnumWord(f entity.Field, value string) string {
-	word := f.Presentation.EnumLabels[value]
-	if word == "" {
-		return w.schemaWord("enum", value, display.EnumWord(f, value))
-	}
-	return w.say("enum."+f.Name+"."+value, word)
-}
-
-// Value is a field's value as a screen shows it, in this request's language: the
-// reading of an enum value (its declared `enumLabels` word, or the value's own
-// spelling where the author declared none), and the layout a boolean, a measured
-// number or an instant is written in — the words and the layouts a catalogue holds,
-// which is why a Portuguese row reads "12 345" where an English one reads "12,345".
-// Everything else is display.Display: a value no language writes differently is that
-// value, and an absent value is the dash every other empty cell on this screen says.
+// EnumWord returns a resolved option label, or the unknown raw value.
 //
-// An enumerated field goes through the word seam whether or not its author declared
-// `enumLabels`: the values themselves are the vocabulary a screen must be able to
-// answer in the reader's language, and which of the two paths answers one is not the
-// screen's concern.
+// Deprecated: pass Resource.Resolved to the screen renderer.
+func (w Words) EnumWord(f entity.Field, value string) string {
+	for _, option := range w.field(f).Options {
+		if option.Value == value {
+			return option.Label
+		}
+	}
+	return value
+}
+
+// Value renders one scalar without sibling values or a clock.
+//
+// Deprecated: use resource.Value with a resolved field, row and Options.
 func (w Words) Value(f entity.Field, v any) string {
 	if v != nil {
 		switch f.Type {
 		case entity.TypeTime:
-			return w.moment(f, v)
+			return w.moment(v)
 		case entity.TypeBool:
-			return w.boolean(f, v)
+			return w.boolean(v)
 		case entity.TypeInt, entity.TypeFloat:
-			return w.number(f, v)
+			return w.number(v)
 		}
 	}
 	if w.text == nil || len(f.Enum) == 0 {
-		return display.Display(f, v)
+		return value(w.field(f), map[string]any{f.Name: v}, Options{}).text
 	}
-	return display.DisplayWord(f, v, w.EnumWord)
+	return w.schemaWord("enum", display.Text(v), display.EnumWord(f, display.Text(v)))
 }
 
-// boolean is the one word a screen writes over a value that has two answers. The
-// record says yes or no; the page says it in the reader's language, which is the
-// difference between data and copy — and "Yes" printed under pt-PT is copy that
-// stopped being true when the page changed language.
-func (w Words) boolean(f entity.Field, v any) string {
-	on, ok := v.(bool)
-	if !ok || w.text == nil {
-		return display.Display(f, v)
-	}
-	if on {
-		return w.text("screens.boolean_true", "Yes")
-	}
-	return w.text("screens.boolean_false", "No")
-}
-
-// number is one measured value in the layout this request's language counts in:
-// English writes 12,345 with a comma and Portuguese with a space, and the row carries
-// neither. A count and a measurement take two keys because they are written with two
-// different verbs — "%g" prints a float and answers an integer with "%!g(int=…)",
-// which a person then reads on the page — and a language that groups both alike says
-// so twice in its copy rather than having this file decide its punctuation.
-func (w Words) number(f entity.Field, v any) string {
-	if w.phrase == nil {
-		return display.Display(f, v)
-	}
-	switch n := v.(type) {
-	case float64:
-		return w.phrase("screens.number", "%g", n)
-	case float32:
-		return w.phrase("screens.number", "%g", float64(n))
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return w.phrase("screens.integer", "%d", n)
-	default:
-		return display.Display(f, v)
-	}
-}
-
-// moment is one instant under the layout the request's language writes instants in:
-// Portuguese puts the day before the month and English does not, so the order is copy
-// and not a branch in the renderer. A value that is not an instant, and a render with
-// no catalogue, are what kit/entity/display has always printed.
-func (w Words) moment(f entity.Field, v any) string {
-	if w.text != nil {
-		if layout := w.text("screens.datetime", display.DateTimeLayout); layout != display.DateTimeLayout {
-			if at, err := time.Parse(time.RFC3339, display.Text(v)); err == nil {
-				return at.UTC().Format(layout)
-			}
-		}
-	}
-	return display.Display(f, v)
-}
-
-// CommandLabel is the word on this command's button, in this request's
-// language; undeclared, the route's own Summary, which is what ui/screens
-// reads today because nothing else existed.
+// CommandLabel localizes an explicitly declared label, returning empty otherwise.
+//
+// Deprecated: read the command's label from Resource.Resolved.
 func (w Words) CommandLabel(verb string, p entity.CommandHints) string {
 	if p.Label == "" {
 		return ""
@@ -450,10 +259,122 @@ func (w Words) CommandFields(verb string, fields []entity.Field) []entity.Field 
 	return w.forCommand(verb).Fields(fields)
 }
 
-// words is the scope this Options names for itself, for a caller that draws one
-// control outside a whole screen. See Options.Module and Options.Entity.
-func (o Options) words() Words {
-	return o.Words(entity.Schema{Module: o.Module, Entity: o.Entity})
+// schemaWord asks the catalogue for a word nobody declared — the label computed off
+// a field's name, a field's own doc sentence, an enum value's own spelling — so copy
+// a screen invents is translatable too. The scoped key comes first:
+// `field.<module>.<entity>.<field>`, with the field's bare `field.<field>` behind it,
+// because two entities' "title" are two words. The computed string is the fallback of
+// both, which is what a module that ships no copy of its own reads as today.
+func (w Words) schemaWord(kind, name, computed string) string {
+	if computed == "" || w.text == nil {
+		return computed
+	}
+	said := func(key string) string {
+		out := w.text(key, computed)
+		if out == "" {
+			return computed
+		}
+		return out
+	}
+	if w.schema.Module == "" || w.schema.Entity == "" {
+		return said(kind + "." + name)
+	}
+	if out := said(kind + "." + w.schema.Module + "." + w.schema.Entity + "." + name); out != computed {
+		return out
+	}
+	return said(kind + "." + name)
+}
+
+// RouteWords are a command's own two words: the Summary written beside the route,
+// which is the word on the button, and the Description, which names the form. Neither
+// is a `presentation` declaration, so this file's `command.<verb>.` keys never reach
+// them, and a form that printed them as written named the action in the language the
+// API was declared in.
+func (w Words) RouteWords(verb, summary, description string) (string, string) {
+	if w.text == nil || w.schema.Module == "" || w.schema.Entity == "" {
+		return summary, description
+	}
+	at := "command." + w.schema.Module + "." + w.schema.Entity + "." + verb
+	say := func(key, declared string) string {
+		if out := w.text(key, declared); out != "" && out != declared {
+			return out
+		}
+		return declared
+	}
+	return say(at, summary), say(at+".description", description)
+}
+
+// layerWord is one of this package's own words: its key and the English it falls back to.
+type layerWord struct{ key, text string }
+
+// kernelWords are the two columns a generated screen labels and no entity declares:
+// the timestamps on every entity's base. A `presentation` label written there would
+// put a word on the catalogue document of every resource, hinted or not, so the layer
+// that draws the column owns the two words and asks them as it draws.
+var kernelWords = map[string]layerWord{
+	"createdAt": {"screens.created_at", "Created at"},
+	"updatedAt": {"screens.updated_at", "Updated at"},
+}
+
+// sayLayer asks one of this package's own words under its unqualified key rather than
+// under this resource's `hints.` prefix: the difference is who wrote the word. An
+// untranslated key answers the fallback, as say does.
+func (w Words) sayLayer(named layerWord) string {
+	if w.text == nil {
+		return named.text
+	}
+	if out := w.text(named.key, named.text); out != "" {
+		return out
+	}
+	return named.text
+}
+
+// boolean is the one word a screen writes over a value with two answers: the record
+// says yes or no, and the page says it in the reader's language.
+func (w Words) boolean(v any) string {
+	on, ok := v.(bool)
+	if !ok || w.text == nil {
+		return display.Display(entity.Field{}, v)
+	}
+	if on {
+		return w.text("screens.boolean_true", "Yes")
+	}
+	return w.text("screens.boolean_false", "No")
+}
+
+// number is one measured value in the layout this request's language counts in:
+// English writes 12,345 with a comma and Portuguese with a space, and the row carries
+// neither. A count and a measurement take two keys because they are written with two
+// different verbs — "%g" printed over an integer answers "%!g(int=…)", which a person
+// then reads on the page.
+func (w Words) number(v any) string {
+	if w.phrase == nil {
+		return display.Display(entity.Field{}, v)
+	}
+	switch n := v.(type) {
+	case float64:
+		return w.phrase("screens.number", "%g", n)
+	case float32:
+		return w.phrase("screens.number", "%g", float64(n))
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return w.phrase("screens.integer", "%d", n)
+	default:
+		return display.Display(entity.Field{}, v)
+	}
+}
+
+// moment is one instant under the layout the request's language writes instants in:
+// Portuguese puts the day before the month and English does not, so the order is copy
+// and not a branch in the renderer.
+func (w Words) moment(v any) string {
+	if w.text != nil {
+		if layout := w.text("screens.datetime", display.DateTimeLayout); layout != display.DateTimeLayout {
+			if at, err := time.Parse(time.RFC3339, display.Text(v)); err == nil {
+				return at.UTC().Format(layout)
+			}
+		}
+	}
+	return display.Display(entity.Field{}, v)
 }
 
 // Words is this resource's declared reading in the screen's language: nil
@@ -468,4 +389,10 @@ func (o Options) Words(schema entity.Schema) Words {
 	}, phrase: func(key, fallback string, args ...any) string {
 		return selected.Text(key, fallback, args...)
 	}}
+}
+
+// words is the scope this Options names for a caller that draws one control rather
+// than a whole screen. See Options.Module and Options.Entity.
+func (o Options) words() Words {
+	return o.Words(entity.Schema{Module: o.Module, Entity: o.Entity})
 }

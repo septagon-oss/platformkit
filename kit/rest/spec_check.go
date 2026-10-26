@@ -22,6 +22,9 @@ func (s Spec[T]) check() {
 	s.checkSource()
 	bad := nameFault(s.Name)
 	if bad == "" {
+		bad = s.choiceFault()
+	}
+	if bad == "" {
 		bad = s.identityFault()
 	}
 	if bad == "" {
@@ -34,7 +37,7 @@ func (s Spec[T]) check() {
 		bad = s.gateFault()
 	}
 	if bad == "" {
-		bad = widgetFault(crud.Fields[T]())
+		bad = widgetFault(s.choiceFields())
 	}
 	if bad == "" {
 		bad = s.translationFault()
@@ -43,7 +46,7 @@ func (s Spec[T]) check() {
 		bad = s.richTextFault()
 	}
 	if bad == "" {
-		bad = presentationFault(crud.Fields[T]())
+		bad = presentationFault(s.choiceFields())
 	}
 	if bad == "" {
 		bad = s.pictureFault()
@@ -52,13 +55,13 @@ func (s Spec[T]) check() {
 		bad = s.entryHintFault()
 	}
 	if bad == "" {
-		bad = fieldHintFault(s.Entity, crud.Fields[T](), s.Present)
+		bad = fieldHintFault(s.Entity, s.choiceFields(), s.Present)
 	}
 	if bad == "" {
-		bad = displayFieldFault(crud.Fields[T]())
+		bad = displayFieldFault(s.choiceFields())
 	}
 	if bad == "" {
-		bad = conditionFault(crud.Fields[T]())
+		bad = conditionFault(s.choiceFields())
 	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
@@ -199,7 +202,7 @@ func (s Spec[T]) identityFault() string {
 		if bad != "" {
 			break
 		}
-		if _, ok := crud.FieldNamed(crud.Fields[T](), name); !ok {
+		if _, ok := crud.FieldNamed(s.choiceFields(), name); !ok {
 			bad = fmt.Sprintf("Immutable names %q, which is not a field of the entity", name)
 		}
 	}
@@ -208,7 +211,7 @@ func (s Spec[T]) identityFault() string {
 
 func (s *Spec[T]) richTextFault() string {
 	var bad string
-	for _, field := range crud.Fields[T]() {
+	for _, field := range s.choiceFields() {
 		if field.Widget != "richtext" {
 			continue
 		}
@@ -234,7 +237,7 @@ func (s *Spec[T]) richTextFault() string {
 
 func (s Spec[T]) pictureFault() string {
 	var bad string
-	for _, f := range crud.Fields[T]() {
+	for _, f := range s.choiceFields() {
 		if f.Type == entity.TypePicture && (s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate)) && !slices.Contains(s.Immutable, f.Name) {
 			bad = fmt.Sprintf("picture field %q must be Immutable", f.Name)
 			break

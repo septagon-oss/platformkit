@@ -71,6 +71,17 @@ func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
 // of its own rather than on the application's configuration surface.
 type OIDC = internal.OIDC
 
+// Pages is the chrome of the one page this module writes for itself: the page
+// the address in a verification email opens (see internal/ui/page.go).
+//
+// The page is the module's — it is the credential, the state and the command
+// that spends them — and its chrome is not: the palette, where the stylesheet is
+// served and where a person who has just confirmed an address is sent are facts
+// about the installation, so the composition writes them here. A composition
+// that turns emailed registration on and leaves Pages zero mails a link that
+// opens nothing.
+type Pages = internal.Pages
+
 // Deps is what this module cannot make for itself.
 type Deps struct {
 	// Users is how a password login finds the person an address belongs to,
@@ -123,6 +134,16 @@ type Deps struct {
 	// sends exactly as it did before the record existed and leaves no trace of the
 	// attempt — which is the bug this closes, not a mode to preserve.
 	Mails contracts.MailLedger
+
+	// MailDelivery is whether the sender above attempts what it is handed. It is
+	// required, and it is fail-closed: nil reads as "nothing is delivered", the
+	// same answer a deployment with no mail host gives, because a port nobody
+	// wired is not evidence that mail goes out.
+	//
+	// The doors that would promise a person an email — sign-up, resend
+	// verification, forgotten password — refuse when it says no, and a composition
+	// that composes auth is refused at the plan unless something answers it.
+	MailDelivery contracts.MailDelivery
 
 	// Tenants is how the hourly sweep reaches every tenant, to delete the
 	// sessions and tokens that have expired.
@@ -203,6 +224,11 @@ type Deps struct {
 	// browser refuses a Secure cookie over http://localhost, so a development
 	// machine would be a development machine nobody could sign in to.
 	PublicHost string
+
+	// Pages is the chrome of the page the verification link opens. Only the
+	// emailed-verification lifecycle has such a page, so only that lifecycle
+	// reads it; see Pages.
+	Pages Pages
 }
 
 // LinkPages names the pages a mailed link opens, as paths on the host the tenant
@@ -279,6 +305,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
 		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
+		MailDelivery:    deps.MailDelivery,
 		SetPasswordPage: deps.LinkPages.SetPassword, ConfirmEmailPage: deps.LinkPages.ConfirmEmail,
 		AccountRequests: deps.AccountRequests,
 	})
@@ -326,31 +353,35 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 		// Two subscriptions, and they are the same fact from two directions:
 		// somebody who cannot sign in has to be sent a link they can use.
 		//
-		// Both are subscriptions rather than calls inside the request, and for
-		// two different reasons. The invitation one, because sending mail is
-		// somebody else's machine and a request that waited on one would hold a
-		// transaction open across it. The reset one, because the request may
-		// not look the address up at all: a public route that took longer for
-		// an address somebody has is an account enumeration oracle with a
-		// stopwatch, so the lookup happens here, where nobody is timing it.
+		// Both are subscriptions rather than calls inside the request, for two
+		// different reasons. The invitation one, because sending mail is somebody
+		// else's machine and a request that waited on one would hold a transaction
+		// open across it. The reset one, because the request may not look the
+		// address up at all: a public route that took longer for an address
+		// somebody has is an enumeration oracle with a stopwatch, so the lookup
+		// happens here, where nobody is timing it.
+		//
+		// A refused send is acknowledged rather than retried, on every entry below:
+		// the record of the refusal is written in this transaction, so only a commit
+		// lets anybody read it. The rule is internal.AcknowledgeRefusedDelivery.
 		Subscriptions: []events.Subscription{{
 			Module: "auth", Name: usercontracts.EventInvited,
-			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+			Handler: internal.AcknowledgeRefusedDelivery(func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
 				var invited usercontracts.Invited
 				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
 				return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
-			},
+			}),
 		}, {
 			Module: "auth", Name: contracts.EventResetRequested,
-			Handler: func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
+			Handler: internal.AcknowledgeRefusedDelivery(func(ctx context.Context, tx db.Tx[db.Tenant], ev events.Event) error {
 				var asked contracts.ResetRequested
 				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 					return fmt.Errorf("auth: read the reset request: %w", err)
 				}
 				return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
-			},
+			}),
 		}},
 		Routes: func(s httpx.Surfaces) {
 			// The catalogue, taken at the one moment the kernel has it and this
@@ -397,6 +428,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			}
 			if deps.EmailRegistration != nil {
 				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
+				internal.MountVerifyEmailPage(s, svc, *deps.EmailRegistration, deps.Pages)
 			}
 			// The gate is "can any tenant here reach a provider", which is the
 			// installation's issuer or the port that resolves one per tenant —

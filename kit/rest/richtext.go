@@ -22,21 +22,12 @@ import (
 // names and the ones a picture field holds. columns is nil for create; PATCH only
 // prepares fields the request submitted.
 //
-// A picture is walked with a body because the two differ in nothing the ledger
-// cares about: both are file ids this record shows, and a use filed for one and
-// not the other is a sweep deleting a cover out from under a page that still
-// names it. The difference is only in where the ids come from — a parse for a
-// body, one column for a picture.
-//
-// Handing the references to the file module is the second half of this, and it
-// happens here for one reason: this is the moment the record's own body has been
-// accepted and its row is locked, in the transaction that is about to write it.
-// A use recorded afterwards, in a subscriber, is a use that exists a commit later
-// than the body that created it — long enough for a sweep to have already decided
-// nobody was reading the file, and the file would be gone from under a published
-// page. An id is read off the entity because both doors stamp it before they
-// write: createRow chooses the id a create will answer with, and an update reads
-// the row under its lock, so a body is always filed under the record it became.
+// A picture is walked with a body because both are ids this record shows, and a use
+// filed for one and not the other is a sweep deleting a cover out from under a page
+// that still names it. The filing happens here rather than in a subscriber because
+// this is the moment the body has been accepted and the row locked, in the
+// transaction about to write it: a use recorded a commit later is one a sweep could
+// already have decided nobody was reading. Both doors stamp the id before they write.
 func (s Spec[T]) prepareFiles(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
 	value := reflect.ValueOf(e).Elem()
 	// Asked once per write, and once there is anything to ask for: the audience is a
@@ -266,9 +257,9 @@ func (s Spec[T]) clearFileUses(ctx context.Context, tx db.Tx[db.Tenant], e T) er
 // find it: the moment a sweep exists that releases a file nobody reads, a
 // resource left on this port is a resource whose images that sweep is entitled
 // to delete out from under a published page. Mount logs it once, naming the
-// module and the entity, and the day the sweep lands is the day this default
-// becomes the mount-time refusal SPECIFY.md §4.4 asked for — which is why this
-// is a named type and not a nil check.
+// module and the entity, and the day the sweep lands is the day mounting a
+// resource on this port becomes a refusal rather than a logged default — which
+// is why this is a named type and not a nil check.
 type RecordNoUses struct{}
 
 func (RecordNoUses) SetUses(ctx context.Context, tx db.Tx[db.Tenant], in UsesInput) error {
