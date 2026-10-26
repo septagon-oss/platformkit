@@ -14710,6 +14710,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/crud/too_wide_operand_refuses_the_whole_question_test.go",
+   "id": "kit/crud/too_wide_operand_refuses_the_whole_question_test.go#TestATooWideOperandRefusesTheWholeQuestionWhicheverSpellingAskedIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestATooWideOperandRefusesTheWholeQuestionWhicheverSpellingAskedIt",
+   "needs_db": true,
+   "pkg": "kit/crud",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/db/a_closed_transaction_runs_its_effect_once_test.go",
    "id": "kit/db/a_closed_transaction_runs_its_effect_once_test.go#TestAClosedTransactionRunsItsEffectOnceHoweverOftenItIsClosed",
    "kind": "go",
@@ -87608,7 +87627,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2368,
+  "files": 2369,
   "forge_runs": [
    408,
    413,
@@ -87642,7 +87661,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3815,
+   "behaviour": 3816,
    "composition": 497,
    "contract": 24,
    "journey": 110
@@ -87661,9 +87680,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4446,
+  "rows": 4447,
   "tiers": {
-   "merge": 2723,
+   "merge": 2724,
    "nightly": 110,
    "push": 1613
   },
@@ -87671,13 +87690,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2123,
+   "keep": 2124,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4060,
+   "keep": 4061,
    "keep-rewrite": 170,
    "merge": 216
   }
