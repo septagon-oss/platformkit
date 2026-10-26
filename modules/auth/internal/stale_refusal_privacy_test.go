@@ -22,6 +22,10 @@ type refusingOneMailbox struct {
 	box     notification.Mailer
 }
 
+// Available says this transport dials: it rejects one recipient at RCPT and takes
+// every other, which is an outage of one address and not a deployment with no mail.
+func (refusingOneMailbox) Available() bool { return true }
+
 func (m refusingOneMailbox) Send(ctx context.Context, message notification.Message) error {
 	if message.To == m.refused {
 		return errors.New("550 mailbox unavailable")

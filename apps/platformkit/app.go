@@ -212,11 +212,16 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		access:   ask,
 		// The words a refusal is allowed to use: the label of the grant that
 		// gates role management, read off the manifest that defines it.
-		granter:      refusalGrant(p.Skin()),
-		passkeys:     auth.NewPasskeyDoor(),
-		links:        value[webcontracts.Links](p),
-		signin:       value[admincontracts.Signin](p),
-		recoveryMail: cfg.Mail.Enabled(),
+		granter:  refusalGrant(p.Skin()),
+		passkeys: auth.NewPasskeyDoor(),
+		links:    value[webcontracts.Links](p),
+		signin:   value[admincontracts.Signin](p),
+		// Whether a person can be promised a mail is the carrier's own answer, read
+		// off the plan — the one reading the API's doors act on, so the page and the
+		// door cannot disagree about the same installation. A composition with no
+		// notification module has no deliverable mail either, and an absent answer is
+		// read as false rather than through `value`, which panics.
+		recoveryMail: mailDelivers(p),
 		connection:   face,
 	}
 	// The mailer is read without the panic every other value gets, because nil is
@@ -383,6 +388,14 @@ func value[T any](p *pkit.Planned) T {
 		panic("platformkit: the composition resolves with no " + fmt.Sprintf("%T", v) + " to read")
 	}
 	return v
+}
+
+// mailDelivers is whether this installation's sender attempts a message, which is
+// the answer the connection screen shows and the auth doors act on. A composition
+// that provides no answer mails nothing, so absence reads as unavailable.
+func mailDelivers(p *pkit.Planned) bool {
+	delivery, ok := pkit.Value[notificationcontracts.MailDelivery](p)
+	return ok && delivery != nil && delivery.Available()
 }
 
 // refusalGrant is who a refusal says may hand out what it refused, as a role and
