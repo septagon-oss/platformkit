@@ -1,27 +1,19 @@
 package main
 
-// product.go is the reference application's share of its own composition, said
-// once, in the resolver's words.
+// product.go says the reference application's own share of its composition, in the
+// resolver's words: `Use` names the kernel modules, and two here name the product's.
 //
-// `Use` names the kernel modules; two modules here name what is this product's
-// rather than any module's. `product` is first in the list because it needs
-// nobody: it is the values this installation decides and no module can derive —
-// where uploads go, which flag gates a settings write, the object-scope policy,
-// the plan feature the trail is sold under, the two addresses the public site
-// links, the sign-in form the shell posts to, the languages a locale may be set
-// to, the roles a new tenant is seeded with, and the empty grant-check holder the
-// auth module fills. Before this file they were thirteen `Deps` literals in a
-// composition file that ran before the resolver did.
+// `product` is first because it needs nobody: it holds the values this installation
+// decides and no module can derive — where uploads go, which flag gates a settings
+// write, the object-scope policy, the plan feature the trail is sold under, the
+// public addresses, the sign-in form, the languages, the seeded roles and the empty
+// grant-check holder auth fills.
 //
-// `access` is second to last, because it is the first thing in the application
-// that can name a person, a notice and a site: the reach a refusal's ask has
-// here, and the one subject this product puts under change control. Both are
-// joins across modules this product composes, and neither belongs in any of them.
+// `access` is second to last because it is the first thing that can name a person, a
+// notice and a site; its two joins belong to no module.
 //
-// The one edge neither module declares is the user module's promotion check,
-// answered by the auth service. Declaring it would be the cycle user → auth →
-// user, which is a fact about the graph; the holder `product` puts and `auth`
-// fills is the mechanism pkit tests for exactly that case.
+// The one edge neither declares is the user module's promotion check, answered by
+// auth: declaring it would be the cycle user → auth → user.
 
 import (
 	"context"
@@ -126,6 +118,7 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[admincontracts.PrimaryAction](),
 		pkit.Provides[tenantcontracts.Languages](),
+		pkit.Provides[authcontracts.ConfirmationChrome](),
 		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
@@ -190,22 +183,16 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		// The two addresses the public site links and does not serve. They are
 		// written here because they are this product's facts: which shell it
 		// composed, and which door of which module answers for a file a visitor may
-		// see. A module that named them would be naming a surface it does not serve,
-		// and a composition that writes one is pinning an address the kernel
-		// composed — which is only safe because a test asks the running server: the
-		// way in by TestThePublicFrameLinksOnlyTheWorkspaceRoot, and the logo's file
-		// by TestThePublicPageLinksOnlyAddressesTheInstallationServes, which uploads
-		// a public file, sets it as the tenant's logo, reads the src back off the
-		// public home page and fetches it.
+		// see. A module that named them would name a surface it does not serve, and a
+		// composition that writes one pins an address the kernel composed — safe only
+		// because a test asks the running server what it actually answers.
 		//
 		// The way in is the workspace root, not the sign-in page below it.
-		// pinnedSignIn stays the address the guard turns a refused caller towards,
-		// and the fault chrome keeps linking it; this line is what an anonymous
-		// visitor on a tenant's own host is offered, and a public frame may offer no
-		// address deeper into a workspace than its root. The root asks no permission
-		// of its own — httpx.SignedIn guards it — so the workspace decides whether
-		// the visitor gets a page or the form, and returns them to the root once
-		// they have signed in.
+		// pinnedSignIn stays the address the guard turns a refused caller towards, and
+		// the fault chrome keeps linking it; this is what an anonymous visitor on a
+		// tenant's own host is offered, and a public frame may offer no address deeper
+		// into a workspace than its root. The root asks no permission of its own, so
+		// the workspace decides whether the visitor gets a page or the form.
 		pkit.Put[webcontracts.Links](w, webcontracts.Links{
 			SignIn:     pinnedWorkspace,
 			PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
@@ -248,6 +235,16 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 		// exists before the operator narrows it, so a page can answer a person in
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
+		// The two addresses the sheet a mailed confirmation link opens has to link.
+		// They are written here because every part of them is this product's fact:
+		// which mount hands out the stylesheet, and which sign-in page a person who
+		// has just confirmed their address is sent to. The module names the port and
+		// never an address — TestTheEmailedLinkOpensAPageThatConfirms asks the running
+		// application that the page the link opens answers, links the sheet named
+		// here, and returns the person to the page named here.
+		pkit.Put[authcontracts.ConfirmationChrome](w, authcontracts.ConfirmationChrome{
+			Assets: pinnedAssets, SignIn: pinnedSignIn,
+		})
 		pkit.Put[tenantcontracts.Hook](w, seedRoles(grants.grants))
 		// Which event names may be put on a webhook endpoint is this file's fact:
 		// the modules that emit them are composed by this file, and the module that
@@ -274,20 +271,17 @@ func productWithPolicy(cfg config.Config, grants *lateCatalogue, pictures adminc
 // objectStore is this product's reading of files.store: the directory the kernel
 // has always wired, or the object store the deployment named an address for.
 //
-// It branches on the setting and never on cloud.profile. A profile exists to pick
+// It branches on the setting and never on cloud.profile: a profile exists to pick
 // adapters for a deployment that did not write this line, and a product that
-// branched on the profile would be a product with a vendor in it — and one that
-// disagreed with its own configuration whenever an operator overrode the profile.
+// branched on it would have a vendor in it and would disagree with its own
+// configuration whenever an operator overrode the profile. What it refuses is the
+// input its adapter cannot build without — an endpoint and a bucket. It asks
+// nothing of the network: construction is not readiness, and whether the address
+// answers is what the first Put finds out.
 //
-// What it refuses is the input its adapter cannot build without: an endpoint and a
-// bucket. It asks nothing of the network — construction is not readiness, and
-// whether the address answers is what the first Put finds out, or /ready once the
-// installation asks it.
-//
-// An empty scheme means https, which is what config.Load already settled; http is
-// the one spelling that has to be written down on purpose, because a store inside a
-// private network is real and a store on the public internet reached in plain text
-// is not.
+// An empty scheme means https, as config.Load already settled; http is the one
+// spelling that must be written down on purpose, because a store inside a private
+// network is real and one on the public internet in plain text is not.
 func objectStore(files config.Files) (filecontracts.Storage, error) {
 	if files.Store != config.StoreS3 {
 		return file.Local(files.Dir), nil
@@ -443,8 +437,14 @@ func caches() app.Caches {
 // inputs for. It is not an edge and it names no module: the key list is what
 // makes an implementation choosable (pkit refuses one whose inputs are absent),
 // and the values it runs on are read from the typed section by the module that
-// picked it. The one thing that can go wrong here is the pair disagreeing with
-// cfg.Mail.Enabled(); the composition tests refuse that.
+// picked it. Mail is the only port with three implementations, so this is the one
+// place the state a server answers for is named in the resolver's words; naming
+// nothing at all leaves the mail-less choice to the module itself — its simulated
+// mailbox in a development deployment, the sender that refuses every send
+// anywhere else. What can go wrong here is the list disagreeing with what
+// kit/config loaded, and the composition tests refuse that: one boots a running
+// production application that names no mail server, and every case that reads a
+// link out of this process's memory boots the development one that does not.
 func deploymentInputs(cfg config.Config) map[string]string {
 	if !cfg.Mail.Enabled() {
 		return nil

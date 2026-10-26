@@ -6,7 +6,6 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
-	"strings"
 )
 
 // Break identifies one refused change. Message preserves the B1–B6 diagnostics.
@@ -56,14 +55,7 @@ func compareWire(golden, current []byte, allowances []AuthorizationAllowance, re
 		})
 		return problems
 	}
-	seen := map[[2]string]bool{}
-	for i, a := range allowances {
-		pair := [2]string{a.From, a.To}
-		if a.From == "" || a.To == "" || a.From == a.To || !wireDate(a.ReviewedOn) || strings.TrimSpace(a.Reason) == "" || seen[pair] {
-			add("B6", "$allowances", fmt.Sprintf("#%d", i), fmt.Sprintf("B6 (breaking): invalid authorization allowance #%d", i))
-		}
-		seen[pair] = true
-	}
+	checkAllowances(allowances, add)
 	if len(problems) > 0 {
 		return finish()
 	}
@@ -85,53 +77,18 @@ func compareWire(golden, current []byte, allowances []AuthorizationAllowance, re
 		return finish()
 	}
 	oldOps, updated := wireOperations(oldDoc), wireOperations(newDoc)
-	wireOperationBreaks(oldOps, updated, allowances, add)
-	// Associate shape records with their operation without parsing diagnostic text.
-	addresses := map[string]string{}
-	for _, op := range oldOps {
-		addresses[op.operationID] = op.key
-	}
-	shapePath := func(key string) string {
-		if path, ok := addresses[wireOperationOf(key)]; ok {
-			return path
-		}
-		return asyncStructuralPath(oldDoc, key)
-	}
+	compareOperations(oldOps, updated, allowances, add)
 	oldRead, newRead := wireShapes(oldDoc), wireShapes(newDoc)
-	oldShapes, newShapes := oldRead.shapes, newRead.shapes
+	shapes := newShapeIndex(oldDoc, oldOps)
 	// A requiredness list that no reviewer signed record by record, or that could carry
 	// more than the one move it names, is refused and forgives nothing: the rules below
 	// still read the whole pair, so a bad review never hides a break beside it.
-	if refused := reviewRequiredness(required, oldShapes, newShapes); len(refused) > 0 {
+	if refused := reviewRequiredness(required, oldRead.shapes, newRead.shapes); len(refused) > 0 {
 		problems = append(problems, refused...)
 		required = nil
 	}
-	for _, key := range sortedKeys(oldShapes) {
-		fresh, ok := newShapes[key]
-		switch {
-		case !ok:
-			if requirednessRelaxation(required, key) {
-				continue
-			}
-			add("B3", shapePath(key), key, fmt.Sprintf("B3 (breaking): %s is gone", key))
-		default:
-			if problem := enumMove(key, oldShapes[key], fresh); problem != "" {
-				add("B5", shapePath(key), key, problem)
-			} else if fresh != oldShapes[key] {
-				add("B3", shapePath(key), key, fmt.Sprintf("B3 (breaking): %s changed from %q to %q", key, oldShapes[key], fresh))
-			}
-		}
-	}
-	for _, key := range sortedKeys(newShapes) {
-		if _, old := oldShapes[key]; old {
-			continue
-		}
-		if _, announced := addresses[wireOperationOf(key)]; !announced || !strings.Contains(key, " request ") || !strings.Contains(key, " requires ") {
-			continue
-		}
-		add("B4", shapePath(key), key, fmt.Sprintf("B4 (breaking): %s is asked for and an older client never sends it", key))
-	}
-	problems = append(problems, incompleteReads(oldRead, newRead, shapePath)...)
+	compareShapes(shapes, oldRead.shapes, newRead.shapes, required, add)
+	problems = append(problems, incompleteReads(oldRead, newRead, shapes.path)...)
 	return finish()
 }
 
@@ -157,31 +114,6 @@ func incompleteReads(oldRead, newRead wireAnalysis, shapePath func(string) strin
 
 func authorizationsWiden(from, to string, allowances []AuthorizationAllowance) bool {
 	return slices.ContainsFunc(allowances, func(a AuthorizationAllowance) bool { return a.From == from && a.To == to })
-}
-
-// wireOperationBreaks states what moved between the two documents' operations: an
-// address that went away or changed hands (B2), an operationId no route answers (B1),
-// and a door that authorizes someone it did not (B6) beyond what a reviewed pair covers.
-func wireOperationBreaks(oldOps, updated wireRoutes, allowances []AuthorizationAllowance, add func(rule, path, member, message string)) {
-	known := map[string]bool{}
-	for _, op := range updated {
-		known[op.operationID] = true
-	}
-	for _, old := range oldOps {
-		fresh, ok := updated.find(old.key)
-		switch {
-		case !ok:
-			add("B2", old.key, "route", fmt.Sprintf("B2 (breaking): %s is no longer in the document", old.key))
-		case fresh.operationID != old.operationID:
-			add("B2", old.key, "route", fmt.Sprintf("B2 (breaking): %s is answered by %q, which used to be %q", old.key, fresh.operationID, old.operationID))
-		}
-		if ok && fresh.auth != old.auth && !authorizationsWiden(old.auth, fresh.auth, allowances) {
-			add("B6", old.key, "x-platformkit-auth", fmt.Sprintf("B6 (breaking): %s (%s) is authorized %s where it was %s", old.key, old.operationID, fresh.auth, old.auth))
-		}
-		if !known[old.operationID] {
-			add("B1", old.key, "operationId", fmt.Sprintf("B1 (breaking): operationId %q is no longer in the document", old.operationID))
-		}
-	}
 }
 
 func wireOperations(doc map[string]any) wireRoutes {

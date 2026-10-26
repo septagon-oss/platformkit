@@ -8,20 +8,16 @@ import (
 // one entry per paragraph, heading, list, blockquote, figure, table, and one
 // entry per fenced code block as a whole.
 //
-// It exists for the translation module's stale diff, and the reason it is here
-// rather than a blank-line split in the module that needs it is that a GFM table
-// and a fenced code block both contain lines that are blank in the source and
-// are not paragraph breaks. A split that mis-reads one reports a changed
-// document where nothing changed, and the reviewer's confidence in every other
-// highlight goes with it. So the same AST the renderer walks decides where a
-// block begins and ends, over the canonical text the hash is taken of — which
-// means two spellings of one document agree about both the digest and the
-// paragraphs, and the diff can only ever light up on a difference the hash
-// already noticed.
+// It exists for the translation module's stale diff, and it is here rather than a
+// blank-line split in that module because a GFM table and a fenced code block both
+// contain blank lines that are not paragraph breaks: a split that mis-reads one
+// reports a changed document where nothing changed, and the reviewer's confidence
+// in every other highlight goes with it. So the same AST the renderer walks
+// decides where a block begins, over the canonical text the hash is taken of, and
+// the diff can only light up on a difference the hash already noticed.
 //
-// An empty or whitespace-only document has no paragraphs at all, including no
-// empty one: "nothing" and "a paragraph of nothing" are the same text and must
-// diff the same way.
+// An empty or whitespace-only document has no paragraphs at all: "nothing" and "a
+// paragraph of nothing" are the same text and must diff the same way.
 func Paragraphs(source string) ([]string, error) {
 	normal, err := Normalise(source)
 	if err != nil {

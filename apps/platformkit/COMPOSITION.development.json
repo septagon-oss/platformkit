@@ -23,6 +23,7 @@
         "admincontracts.Locale",
         "admincontracts.PrimaryAction",
         "tenantcontracts.Languages",
+        "authcontracts.ConfirmationChrome",
         "webhookcontracts.Catalogue"
       ],
       "contributes": [
@@ -192,6 +193,7 @@
         "notificationcontracts.Service",
         "authcontracts.Notifier",
         "notificationcontracts.Mailer",
+        "notificationcontracts.MailDelivery",
         "notificationcontracts.MailLedger"
       ],
       "needs": [
@@ -237,7 +239,8 @@
         "config.Server"
       ],
       "implementation": {
-        "name": "mailbox"
+        "name": "mailbox",
+        "simulated": true
       }
     },
     {
@@ -385,6 +388,10 @@
           "from": "notification"
         },
         {
+          "contract": "notificationcontracts.MailDelivery",
+          "from": "notification"
+        },
+        {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
         },
@@ -413,6 +420,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "authcontracts.ConfirmationChrome",
+          "from": "product"
         },
         {
           "contract": "auth.LinkPages",

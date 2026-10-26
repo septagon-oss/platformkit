@@ -1,23 +1,18 @@
 package main
 
 // webhook_catalogue.go is this composition's answer to the one question
-// modules/webhook cannot ask itself: which events can *this* application emit?
+// modules/webhook cannot ask itself: which events can *this* application emit? An
+// endpoint's event list is only checkable against what the composition can deliver,
+// and no module that is not built last can enumerate that — the emitting modules are
+// composed by this file, so this file writes the answer. It is a literal, beside the
+// literal `catalogues()` writes, for the same reason: an installation that ships
+// words for a language writes them out, and one that emits events names them.
 //
-// An endpoint's event list is only checkable against what the composition can
-// actually deliver, and no module that is not built last can enumerate that — the
-// modules that emit are composed by this file, so this file writes the answer. It
-// is a literal, beside the literal `catalogues()` writes for the same reason: an
-// installation that ships words for a language writes them out, and an installation
-// that emits events names them.
-//
-// The names are the emitting modules' own constants rather than strings typed by
-// hand, so a rename moves the list with the compiler and not through a reviewer.
-// What that cannot catch is a *module* — a whole module's worth of names missing
-// from the list — and that is what
-// TestTheWebhookCatalogueNamesWhatTheCompositionEmits asks the resolved composition
-// rather than this file. A stale entry is not a broken delivery: it is an option a
-// screen offers that never fires, because delivery never consults the catalogue. It
-// never refuses a socket on the strength of a name having left the list.
+// The names are the emitting modules' own constants, so a rename moves the list with
+// the compiler. What that cannot catch is a whole module's worth of names missing,
+// which is what TestTheWebhookCatalogueNamesWhatTheCompositionEmits asks the resolved
+// composition rather than this file. A stale entry is an option a screen offers that
+// never fires, because delivery never consults the catalogue.
 
 import (
 	"github.com/septagon-oss/platformkit/kit/httpx"

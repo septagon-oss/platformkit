@@ -63,7 +63,7 @@ func renderedHookNames(t *testing.T, src []byte) []string {
 // them. The check runs with ui/ as its directory, so a package is named by the
 // last element of its path and renderedHooks' repo-relative file names lose
 // their ui/ prefix to be read.
-var kernelMarkupDirs = []string{"document", "page", "resource", "export"}
+var kernelMarkupDirs = []string{"document", "page", "resource", "export", "forms"}
 
 func TestEveryKernelHookRenderedOutsideComponentsIsListed(t *testing.T) {
 	t.Parallel()
@@ -97,7 +97,7 @@ func TestEveryKernelHookRenderedOutsideComponentsIsListed(t *testing.T) {
 func TestRenderedHooksNameTheFileThatRendersThem(t *testing.T) {
 	t.Parallel()
 	for hook, file := range renderedHooks {
-		body, err := os.ReadFile(strings.TrimPrefix(file, "ui/"))
+		body, err := os.ReadFile(filepath.Join("..", file))
 		if err != nil {
 			t.Errorf("renderedHooks attributes %s to %s, which this check cannot read: %v", hook, file, err)
 			continue

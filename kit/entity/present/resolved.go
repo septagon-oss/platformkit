@@ -85,9 +85,13 @@ type ResolvedLayout struct {
 // ResolvedOption is one value of an enum with its words and tone. Tone is always a name
 // entity.Tones admits; "neutral" when the author named none.
 type ResolvedOption struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
-	Tone  string `json:"tone"`
+	// Picture is absent for an option the author drew with no artwork.
+	Picture      *entity.ChoicePicture `json:"picture,omitempty"`
+	Group        string                `json:"group"`
+	NoPreference bool                  `json:"noPreference"`
+	Value        string                `json:"value"`
+	Label        string                `json:"label"`
+	Tone         string                `json:"tone"`
 	// Done marks a value the author declared finished; only a status field has any.
 	Done bool `json:"done"`
 }
@@ -138,9 +142,12 @@ type ResolvedEditable struct {
 
 // ResolvedField is one schema field's policy.
 type ResolvedField struct {
-	Name  string `json:"name"`
-	Label string `json:"label"`
-	Help  string `json:"help"`
+	// Choice is absent for a field that offers no answers to choose.
+	Choice *ResolvedChoice     `json:"choice,omitempty"`
+	Figure entity.ChoiceFigure `json:"figure"`
+	Name   string              `json:"name"`
+	Label  string              `json:"label"`
+	Help   string              `json:"help"`
 	// Section is a declared section key, or "".
 	Section string `json:"section"`
 	// OnList and OnRecord are the effective surface membership, after
@@ -194,12 +201,13 @@ type ResolvedConfirmation struct {
 // ResolvedCommand is one command the caller may call, as a button reads. A command
 // the caller may not call is not listed.
 type ResolvedCommand struct {
-	Verb        string `json:"verb"`
-	Label       string `json:"label"`
-	Visible     bool   `json:"visible"`
-	System      bool   `json:"system"`
-	Primary     bool   `json:"primary"`
-	Destructive bool   `json:"destructive"`
+	Fields      []ResolvedField `json:"fields"`
+	Verb        string          `json:"verb"`
+	Label       string          `json:"label"`
+	Visible     bool            `json:"visible"`
+	System      bool            `json:"system"`
+	Primary     bool            `json:"primary"`
+	Destructive bool            `json:"destructive"`
 	// Confirmation is absent when the command asks nothing first.
 	Confirmation   *ResolvedConfirmation `json:"confirmation,omitempty"`
 	SuccessMessage string                `json:"successMessage"`

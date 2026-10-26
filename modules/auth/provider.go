@@ -43,6 +43,11 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.Provisioner](),
 	pkit.Needs[authcontracts.Notifier](),
 	pkit.Needs[authcontracts.Mailer](),
+	// Whether that sender delivers. Needed rather than Optional with a default of
+	// "yes": a composition that composes auth and forgets notification is a defect
+	// in the composition, and the plan refuses it at boot rather than booting a
+	// server that refuses every sign-up forever.
+	pkit.Needs[authcontracts.MailDelivery](),
 	pkit.Needs[authcontracts.Hosts](),
 	pkit.Needs[authcontracts.MailLedger](),
 	pkit.Needs[authcontracts.OIDCProviders](),
@@ -53,6 +58,7 @@ var Module = pkit.NewModule("auth", wire,
 	// no SAML leg at all rather than three doors that answer 404 for everybody.
 	pkit.Optional[authcontracts.SAMLProviders](),
 	pkit.Optional[authcontracts.RegistrationMode](),
+	pkit.Optional[authcontracts.ConfirmationChrome](),
 	pkit.Optional[LinkPages](),
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[httpx.Authorizer](),
@@ -75,7 +81,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// without it becoming a row first: a set-password link belongs in the
 		// mail and in nothing else.
 		Mailer: pkit.Get[authcontracts.Mailer](w),
-		Hosts:  pkit.Get[authcontracts.Hosts](w),
+		// The same carrier's own answer, so that "a mailer is wired" cannot be read
+		// as "a mail will go out".
+		MailDelivery: pkit.Get[authcontracts.MailDelivery](w),
+		Hosts:        pkit.Get[authcontracts.Hosts](w),
 		// The same service Notify is resolved from, under the ledger's own key:
 		// the record of the two mails this module sends itself, so that a send
 		// leaves a row before the mail can be read back at the delivery door.
@@ -119,18 +128,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		LinkPages:  pkit.Get[LinkPages](w),
 		PublicHost: server.PublicHost,
 	}
-	// Which public signup door this installation mounted is a composed module of
-	// its own (Registration, EmailRegistration, ApprovalRegistration), because
-	// three mutually exclusive Deps fields were one decision written three ways.
-	// None composed means no door, which is what the empty field always meant.
-	switch mode := pkit.Get[authcontracts.RegistrationMode](w).(type) {
-	case authcontracts.EmailRegistrationMode:
-		deps.EmailRegistration = mode.Policy
-	case authcontracts.ApprovalRegistrationMode:
-		deps.ApprovalRegistration = mode.Policy
-	case authcontracts.PasswordRegistration:
-		deps.Registration = mode.Users
-	}
+	mailedLinksOpen(&deps, w)
 	// A file-borne budget the counter cannot keep is the plan's refusal, not
 	// New's panic: the loader checked presence, and only the counter knows its
 	// horizon.
@@ -149,6 +147,35 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put[pkit.Authenticator](w, svc.Authenticate)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
+}
+
+// mailedLinksOpen writes the two Deps fields whose value is not a service the
+// composition resolved but a choice this installation made: the page a mailed link
+// opens, whose two addresses come from the composition — the only party that knows
+// what it mounted — and whose colours and words come from the skin the resolved
+// composition answered with, the same value the admin shell and the public site
+// draw themselves from; and which public signup door this installation mounted,
+// which is a composed module of its own (Registration, EmailRegistration,
+// ApprovalRegistration) because three mutually exclusive Deps fields were one
+// decision written three ways. Both halves are optional, and an installation that
+// named neither gets what an empty Deps field always gave: a bare document, and no
+// door.
+func mailedLinksOpen(deps *Deps, w *pkit.Wiring) {
+	chrome := pkit.Get[authcontracts.ConfirmationChrome](w)
+	if chrome.Assets != "" || chrome.SignIn != "" {
+		skin := w.Skin()
+		deps.Pages = Pages{
+			Theme: skin.Theme, Assets: chrome.Assets, SignIn: chrome.SignIn, Messages: skin.Copy,
+		}
+	}
+	switch mode := pkit.Get[authcontracts.RegistrationMode](w).(type) {
+	case authcontracts.EmailRegistrationMode:
+		deps.EmailRegistration = mode.Policy
+	case authcontracts.ApprovalRegistrationMode:
+		deps.ApprovalRegistration = mode.Policy
+	case authcontracts.PasswordRegistration:
+		deps.Registration = mode.Users
+	}
 }
 
 // fillGranting writes the one field of the composition's Granting holder that

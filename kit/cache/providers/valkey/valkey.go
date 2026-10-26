@@ -1,28 +1,17 @@
 // Package valkey is the shared store behind kit/cache's port.
 //
-// One process every replica can reach is the whole requirement. A value that a
-// suspension cannot reach is not a cache — it is a stale answer with an owner who
-// cannot find it, which is the failure this kernel exists to close. This is the
-// one adapter kit/cache ships: the four commands its Backend port asks for and
-// nothing else, because everything the invalidation depends on — the generation
-// an entry is written under, the envelope that carries it, the budget on every
-// call, the refusal of an entry with no lifetime — lives in kit/cache and is
-// therefore not re-derivable wrongly here. The adapter runs the same conformance
-// suite as the in-process store (cachetest.Conformance) for exactly that reason.
+// One process every replica can reach is the whole requirement: a value a
+// suspension cannot reach is a stale answer with an owner who cannot find it.
+// This is the one adapter kit/cache ships — the four commands its Backend port
+// asks for and nothing else, because the generation an entry is written under,
+// the envelope that carries it, the budget on every call and the refusal of an
+// entry with no lifetime live in kit/cache and run the same conformance suite
+// (cachetest.Conformance) as the in-process store.
 //
 // The commands are MGET, SET with an expiry, DEL of exact keys and INCR of one
-// counter. No KEYS, no SCAN, no prefix delete, no FLUSHDB, no pub/sub and no
-// client-side caching: a scan's cost grows with everything the installation has
-// ever stored, and an invalidation that works by matching a prefix is an
-// invalidation that can match somebody else's key. A Move here is one INCR of a
-// key named in full by kit/cache.
-//
-// One server-side promise this adapter cannot make for an operator: the counter a
-// Move raises is written with no TTL, and the store must never evict it. An absent
-// counter reads as generation 0, which believes again the entries written before the
-// first move — so maxmemory-policy has to be noeviction, or maxmemory left unset.
-// docs/cache.md holds the sentence, and compose.yaml names the policy for the store
-// `make up` starts.
+// counter. No KEYS, SCAN, prefix delete, FLUSHDB, pub/sub or client-side caching:
+// a scan's cost grows with everything ever stored, and invalidation by matching a
+// prefix is invalidation that can match somebody else's key.
 package valkey
 
 import (

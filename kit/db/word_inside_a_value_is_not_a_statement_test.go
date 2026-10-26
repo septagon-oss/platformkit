@@ -166,8 +166,8 @@ CREATE INDEX probe_note_idx ON probe (note)`)},
 	// The ledger this case counts has to be created by a run nothing refuses. The guard
 	// answers from the files inside `readMigrations`, before the pool opens, so the run
 	// this case asks for leaves no `schema_migrations` to query at all — the leg that read
-	// it until an earlier ruling held it superseded (decision 0008's amendment of
-	// 2026-09-23, case 3) could only be satisfied by the defect it reports, which is a
+	// it until a ruling later superseded (decision 0008's amendment of an earlier
+	// case) could only be satisfied by the defect it reports, which is a
 	// proof that cannot pass. Its sibling legs at :115 and :140 ask `pg_class` for the
 	// same reason, and `kit/db/contention_err_contended_under_budget_deployment_named_test.go` requires that a refused
 	// composition leave the runner's own two tables uncreated.

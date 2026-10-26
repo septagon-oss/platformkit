@@ -81,31 +81,19 @@ func (d roleNames) HasRole(ctx context.Context, tx db.Tx[db.Tenant], name string
 	return false, nil
 }
 
-// holderGrants is the adapter between the scim module's question about its caller
-// and the two tables that answer it: the person's roles are modules/user's row,
-// and what those roles grant is auth's.
+// holderGrants is the adapter between the scim module's question about its caller and
+// the two tables that answer it: the person's roles are modules/user's row, and what
+// those roles grant is auth's.
 //
 // It reads, and never caches, for the reason roleNames does above: a mapping is a
-// grant decided in advance, and the day a role stops being held or starts granting
-// something has to be the day the answer changes — not the day somebody restarts a
-// process. It resolves the person's roles from the row rather than from whatever
-// the principal claims, because that row is what the session this principal came
-// from was built from (auth.Identify reads it on every request) and reading it here
-// means a caller cannot be its own authority by naming its own roles.
+// grant decided in advance, and the day a role stops being held has to be the day the
+// answer changes, not the day somebody restarts a process. Roles come from the row,
+// so a caller cannot be its own authority by naming its own roles.
 //
-// A credential that carries its own ceiling is answered from that ceiling, by the
-// kernel's own rule and in the same words auth's authorizer uses: a scoped key was
-// minted narrower than its holder on purpose, and resolving the holder's roles here
-// would answer a question about the person instead of about the caller. The
-// intersection the key carries is already that recomputation, done when the request
-// resolved the key.
-//
-// Nobody is refused, not failed: a write that names no caller, or names a person
-// this tenant has no active row for, has no authority to ask about, and the write
-// that needs it is refused for the ordinary reason. An error is left for what is
-// actually an outage — a database that cannot be read — because the module reads an
-// error as "this write cannot be decided" and refuses, and laundering a denial into
-// one would make an outage read as a policy.
+// A credential that carries its own ceiling is answered from that ceiling, in the
+// words auth's authorizer uses: a scoped key was minted narrower on purpose, and the
+// intersection it carries is already the recomputation. Nobody is refused, not failed:
+// an error is left for an outage, since a denial laundered into one reads as policy.
 type holderGrants struct {
 	users usercontracts.Service
 	auth  authcontracts.Auth

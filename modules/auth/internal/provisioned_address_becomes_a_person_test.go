@@ -53,7 +53,8 @@ func mountProvision(t *testing.T, providers contracts.OIDCProviders, secrets con
 	})
 	svc, authModule := auth.New(auth.Deps{
 		Users: users, Notify: &authtest.Notices{}, Mailer: &authtest.Mailbox{},
-		Hosts: authtest.Host(host), OIDCProviders: providers, Secrets: secrets,
+		MailDelivery: authtest.Delivers,
+		Hosts:        authtest.Host(host), OIDCProviders: providers, Secrets: secrets,
 		Provisioner: makes, PublicHost: host,
 	})
 	seed(t, conn, acme)

@@ -5,46 +5,15 @@ import (
 	"strings"
 )
 
-// aliases.go is the one release in which an old address still means something.
+// aliases.go is the one release in which an old address still means something: a person
+// with a bookmark, an installed native build or a link somebody emailed all still hold
+// the address the surfaces moved off. Each row below answers it with a redirect.
 //
-// The surfaces moved the generated shell from /admin to /app and the catalog
-// from /api/v1/admin/resources to /api/v1/app/resources, and the public face
-// took its own prefix under the API. A person with a bookmark, a native build
-// already installed, and a link somebody emailed all still hold the old
-// address. Each row below answers it with a redirect and nothing else.
-//
-// Two rules hold the table honest:
-//
-//   - An alias is a redirect, never a second mount. A screen served at two
-//     addresses gives one form two namespaces (ui/forms.Namespace is derived
-//     from the path), which is how a controller starts writing to the wrong
-//     page — so the alias is spent ahead of the router, and no route exists at
-//     the old path to serve a body from.
-//   - Never a 301. A permanent redirect a browser caches outlives the release
-//     that removes the row, and the person then gets a 404 from a cached answer
-//     with nothing in the application left to fix. 302 for a safe method and
-//     307 for the rest, so the method and the body survive and nothing is
-//     remembered past this visit.
-//
-// Removal: every row here is deleted in v1.3.0, one release after they shipped,
-// as README.md and CHANGELOG.md say. Two tests hold the table, one per half of
-// what a row claims: §TestTheAliasRedirectsAndNeverServes, in this package,
-// checks that every row redirects the way the table says and that nothing is
-// served at the old address besides the redirect. The other half belongs to the
-// composition and no fixture here can prove it — the doors an alias aims at are
-// mounted by modules this package may not import — so
-// §TestEveryAliasRowOfTheReferenceApplicationLeadsSomewhereThatAnswers asks the
-// reference application's running server, row by row, whether the address each
-// row points at actually answers. Without that half a row can name an address
-// nothing serves, and the person holding the bookmark gets a redirect into a 404
-// — which is what makes a row about an optional door a decision rather than a
-// detail, and why the rows below say which composition they are written for.
-//
-// What is deliberately absent: /api/v1/tenant/tenants. Those routes moved to the
-// control plane, and a control plane does not announce its new address by
-// keeping the old one open — the old path answers 404 at a tenant host because
-// nothing is mounted there, and 404 at the installation host because the alias
-// table does not vouch for it either.
+// An alias is a redirect and never a second mount, never a 301, and a row names the
+// composition it is written for: the doors a row aims at are mounted by modules this
+// package may not import, so a row about an optional door is a decision rather than a
+// detail. README.md, "One release of the old addresses" holds both rules, the removal
+// release, what is deliberately absent and how each row is proven to lead somewhere.
 
 // aliasTable is the migration table: an old address, or an old subtree, and
 // where it goes. Longest prefix wins, so a specific row is not shadowed by a

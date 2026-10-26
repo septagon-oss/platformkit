@@ -14,26 +14,18 @@ import (
 // template, which is what a case asking for a clone of one then reports.
 var readyTemplate string
 
-// Clone gives one test a database of its own holding a copy of what the package's TestMain
-// prepared, and returns the same two URLs URLs hands a test — an owner URL and the unprivileged
-// application role's — both landing in a namespace of the test's own.
+// Clone gives one test a database of its own holding a copy of what the package's
+// TestMain prepared, and returns the two URLs URLs hands a test — an owner URL and
+// the unprivileged application role's — landing in a namespace of the test's own.
 //
-// It is the sibling of URLsFor for a package that installs the same thing in every case: the copy
-// is the server copying files, so the migration, the ledger and whatever else the preparation wrote
-// arrive without being replayed, and the copy carries the row-level security policies and the
-// grants the preparation granted, because they are in the files.
+// The copy is the server copying files, so the migration and the ledger arrive
+// without being replayed, and it carries the row-level security policies and the
+// grants, because they are in the files. The template is never among the URLs a case
+// is given and cannot be asked for by name, so nothing a case writes reaches the next
+// one. The namespace inside the copy is renamed to one derived from the test, which
+// is what application_name and Role would otherwise answer for every case at once.
 //
-// The template is never among the URLs a case is given and a case cannot ask for it by name, so
-// nothing a case writes can reach the next one: its writes land in a database dropped when it ends.
-//
-// The namespace inside the copy is renamed to a name derived from the test, so a case's schema
-// stays its own — that name is what the application_name carries in pg_stat_activity and what Role
-// names a role after, and both would otherwise answer for every case in the package at once.
-//
-// It fails the case rather than skipping when the environment names no database, when the package's
-// TestMain named no template, or when the copy is refused — which happens while a session stands in
-// the template, and means a pool somewhere in this process was never closed. A refused copy is not
-// retried: the server is right, and waiting on it would hide the leak.
+// It fails the case when no database is configured or the copy is refused.
 func Clone(t testing.TB) (adminURL, appURL string) {
 	t.Helper()
 	if readyTemplate == "" {

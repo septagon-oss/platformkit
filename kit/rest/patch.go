@@ -9,6 +9,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/internal/jsonbody"
 )
 
 // merge applies a PATCH body to an entity, field by field, through the schema,
@@ -38,13 +39,9 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 		case entity.ServerOwned(f):
 			return nil, serverOwnedRefusal(name)
 		}
-		// Round-tripping through JSON is what makes this the same decoder the
-		// request body went through: one set of rules for "3" as an int and for
-		// null as an empty pointer.
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
-		}
+		// Binding through the private codec is what makes this the same decoder the
+		// request body went through: one set of rules for "3" as an int, for null as
+		// an empty pointer, and for the digits of an int64.
 		field := target
 		for _, index := range f.Index {
 			if field.Kind() == reflect.Pointer {
@@ -58,7 +55,7 @@ func merge(e any, fields []crud.Field, immutable []string, patch map[string]any)
 			}
 			field = field.Field(index)
 		}
-		if err := json.Unmarshal(encoded, field.Addr().Interface()); err != nil {
+		if err := jsonbody.Bind(value, field.Addr().Interface()); err != nil {
 			return nil, fmt.Errorf("%w: %s: %s", crud.ErrInvalid, name, err)
 		}
 		columns = append(columns, f.Column)

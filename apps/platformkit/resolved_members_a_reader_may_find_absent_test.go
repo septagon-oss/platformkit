@@ -25,37 +25,77 @@ import (
 	wiregate "github.com/septagon-oss/platformkit/kit/wire"
 )
 
-// resolvedUnderCatalog reaches the resolved object through the published document: the
-// entry's `resolved` member, one component deep, as the comparison addresses a node.
-const resolvedUnderCatalog = "app-resources response 200 application/json" +
-	" »#/components/schemas/Catalog .resources []" +
-	" »#/components/schemas/Entry .resolved »#/components/schemas/Resolved"
-
-// resolvedUnder is the resolved object read through one of its own members, so each
-// record names the node it moved a member out of rather than a name found in two places.
-// The member is spelled as the comparison addresses it, with the [] of a list.
-func resolvedUnder(member, component string) string {
-	return resolvedUnderCatalog + " ." + member + " »#/components/schemas/" + component
+// resolvedAddress reaches the resolved object of one entry through one media type of the
+// published document: the entry's `resolved` member, one component deep, as the
+// comparison addresses a node.
+func resolvedAddress(media string) string {
+	return "app-resources response 200 " + media +
+		" »#/components/schemas/Catalog .resources []" +
+		" »#/components/schemas/Entry .resolved »#/components/schemas/Resolved"
 }
 
-// wireRequirednessAllowances are the reviewed moves of the composition's resolved
-// members from required to optional, one record per member.
-func wireRequirednessAllowances() []wiregate.RequirednessAllowance {
+// resolvedMedia are the two spellings that response is answered in: the JSON a generated
+// client reads, and the exact-int64 spelling for a client that cannot hold a 64-bit
+// integer. The composition publishes a document per spelling, each naming its own
+// `required` for every node, so each document is reviewed against its own list.
+const (
+	resolvedMediaJSON  = "application/json"
+	resolvedMediaInt64 = "application/vnd.platformkit.int64+json"
+)
+
+// The nodes below the resolved object that publish one of its members, spelled as the
+// comparison addresses them, with the [] of a list. A resolved field is published twice —
+// the entry's own list, and the fields a command asks for — and an option sits below each
+// of those and below the list's filters.
+const (
+	resolvedIdentityNode     = " .identity »#/components/schemas/ResolvedIdentity"
+	resolvedSummaryNode      = " .summary »#/components/schemas/ResolvedSummary"
+	resolvedCommandNode      = " .commands [] »#/components/schemas/ResolvedCommand"
+	resolvedFieldNode        = " .fields [] »#/components/schemas/ResolvedField"
+	resolvedCommandFieldNode = resolvedCommandNode + resolvedFieldNode
+	resolvedReadingNode      = " .reading »#/components/schemas/ResolvedReading"
+	resolvedOptionNode       = " .options [] »#/components/schemas/ResolvedOption"
+	resolvedFilterOptionNode = " .list »#/components/schemas/ResolvedList" +
+		" .filters [] »#/components/schemas/ResolvedFilter" +
+		" .values [] »#/components/schemas/ResolvedOption"
+)
+
+// wireRequirednessAllowances are the reviewed moves of the composition's resolved members
+// from required to optional, one record per member and per node that publishes it, in the
+// one media type a document is published in.
+func wireRequirednessAllowances(media string) []wiregate.RequirednessAllowance {
 	const reviewed = "2026-10-25"
-	field := resolvedUnder("fields []", "ResolvedField")
-	reading := field + " .reading »#/components/schemas/ResolvedReading"
 	none := func(what string) string {
 		return "The resolution prints no " + what + "; a client generated from the document refused the body the kernel serves"
 	}
-	return []wiregate.RequirednessAllowance{
-		{Record: resolvedUnderCatalog + " requires deck", ReviewedOn: reviewed, Reason: none("deck for an entry that declares no swipe deck")},
-		{Record: resolvedUnder("identity", "ResolvedIdentity") + " requires group", ReviewedOn: reviewed, Reason: none("group for an entry outside navigation")},
-		{Record: reading + " requires money", ReviewedOn: reviewed, Reason: none("money reading for a field that holds no amount")},
-		{Record: reading + " requires time", ReviewedOn: reviewed, Reason: none("time reading for a field that holds no date")},
-		{Record: field + " requires reference", ReviewedOn: reviewed, Reason: none("reference for a field whose author guessed no relationship")},
-		{Record: resolvedUnder("commands []", "ResolvedCommand") + " requires confirmation", ReviewedOn: reviewed, Reason: none("confirmation for a command that asks nothing first")},
-		{Record: resolvedUnder("summary", "ResolvedSummary") + " requires highlight", ReviewedOn: reviewed, Reason: none("highlight for a card with no declared sub-count")},
+	// One row per member and the node that publishes it: the record is that node's address
+	// plus ` requires <member>`, which is how the comparison names the requirement.
+	moves := []struct{ node, member, declares string }{
+		{"", "deck", "deck for an entry that declares no swipe deck"},
+		{resolvedIdentityNode, "group", "group for an entry outside navigation"},
+		{resolvedSummaryNode, "highlight", "highlight for a card with no declared sub-count"},
+		{resolvedCommandNode, "confirmation", "confirmation for a command that asks nothing first"},
+		{resolvedFieldNode, "choice", "choice for a field that offers no answers"},
+		{resolvedCommandFieldNode, "choice", "choice for a field that offers no answers"},
+		{resolvedFieldNode, "reference", "reference for a field whose author guessed no relationship"},
+		{resolvedCommandFieldNode, "reference", "reference for a field whose author guessed no relationship"},
+		{resolvedFieldNode + resolvedReadingNode, "money", "money reading for a field that holds no amount"},
+		{resolvedCommandFieldNode + resolvedReadingNode, "money", "money reading for a field that holds no amount"},
+		{resolvedFieldNode + resolvedReadingNode, "time", "time reading for a field that holds no date"},
+		{resolvedCommandFieldNode + resolvedReadingNode, "time", "time reading for a field that holds no date"},
+		{resolvedFieldNode + resolvedOptionNode, "picture", "picture for an option drawn with no artwork"},
+		{resolvedCommandFieldNode + resolvedOptionNode, "picture", "picture for an option drawn with no artwork"},
+		{resolvedFilterOptionNode, "picture", "picture for an option drawn with no artwork"},
 	}
+	out := make([]wiregate.RequirednessAllowance, 0, len(moves))
+	for _, move := range moves {
+		out = append(out, wiregate.RequirednessAllowance{
+			Record:     resolvedAddress(media) + move.node + " requires " + move.member,
+			ReviewedOn: reviewed,
+			Reason:     none(move.declares),
+		})
+	}
+	return out
 }
 
 // resolvedOptionalMembers are the members a reader of the resolved object may find

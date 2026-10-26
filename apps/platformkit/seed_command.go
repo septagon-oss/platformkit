@@ -18,27 +18,18 @@ import (
 
 // seedCommand applies this application's embedded seed to one tenant.
 //
-// Three things carry the whole authority story, and only two of them are flags.
-// `--tenant` names which tenant, and nothing else about it: the tenant's own row
-// is what decides whether demo records are its own, so an operator cannot widen
-// a run by asking. `--as` names the person the writes are attributed to — an
-// address the user module resolves inside that tenant's transaction — and the
-// seed's authorizer asks the auth module whether that person's roles hold each
-// resource's permission, for every record. Neither of those says who is standing
-// at the terminal: naming an address is not proving it, and the database account
-// a shell can read is not a seed grant. So the third thing is a credential,
-// `seed.operator_email` and `seed.operator_password` (PLATFORMKIT_SEED_OPERATOR_
-// EMAIL and _PASSWORD), checked against the installation tenant's own people and
-// their roles before this command enters the tenant it was pointed at.
+// Three things carry the authority story, and only two are flags. `--tenant` names
+// which tenant: the tenant's own row decides whether demo records are its own, so an
+// operator cannot widen a run by asking. `--as` names the person the writes are
+// attributed to, and the seed's authorizer asks auth whether that person's roles hold
+// each resource's permission, for every record. Neither says who is at the terminal —
+// naming an address is not proving it — so the third is a credential,
+// seed.operator_email and seed.operator_password, checked against the installation
+// tenant's own people before this command enters the tenant it pointed at. A run
+// without either flag, or the credential, refuses: no mode seeds as nobody.
 //
-// A run without one of the two flags refuses, and so does one without the
-// credential: there is no mode in which the command seeds as nobody.
-//
-// `--dry-run` prints the plan and writes nothing, and prints the same text a run
-// that writes would print: the decision is the same code either way, so a dry run
-// that lied would be caught by the run it predicted. In both cases the plan is
-// printed only after the transaction has committed, because a plan printed and
-// then rolled back is a claim about rows that do not exist.
+// `--dry-run` writes nothing and prints what a real run would, the decision being the
+// same code either way. Either way the plan prints only after the transaction commits.
 func seedCommand(args []string) error {
 	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
@@ -143,18 +134,15 @@ func seedCommand(args []string) error {
 // questions: is the person behind the credential who they say they are, can that
 // person still sign in, and does that person hold tenant:manage where the
 // installation lives. All three are reads of rows, in the transaction the command
-// already opened, through the modules that own those rows — the same three reads
-// kit/httpx makes of a request, with the request replaced by a credential no shell
-// history holds.
+// already opened, through the modules that own those rows.
 //
-// tenant:manage is the permission the command is actually exercising: it acts on
-// a tenant other than the operator's own. A tenant's administrator is not by
-// that fact an operator of the installation, which is why the check is made in
-// the installation tenant's scope and not in the target's: `--as` answers "whose
-// rows do these writes name", and nothing answers "who asked" but the credential.
+// tenant:manage is the permission the command is actually exercising: it acts on a
+// tenant other than the operator's own, and a tenant's administrator is not by that
+// fact an operator of the installation. The check is therefore made in the
+// installation tenant's scope: `--as` answers whose rows the writes name, and nothing
+// answers "who asked" but the credential.
 //
-// A refusal says no more than that. A wrong password is not reported as a wrong
-// password for the named address, and nothing here prints or echoes one.
+// A refusal says no more than that, and nothing here echoes a credential.
 func seedOperator(ctx context.Context, c composition, system db.Tx[db.System], cfg config.Config) error {
 	if cfg.Server.InstallationHost == "" {
 		return errors.New("seed: server.installation_host names no tenant to authenticate an operator against")

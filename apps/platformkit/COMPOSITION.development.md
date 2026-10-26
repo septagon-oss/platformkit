@@ -100,6 +100,7 @@ pkit: auth.Module needs authcontracts.Users from user.Module.
 pkit: auth.Module needs authcontracts.Provisioner from user.Module.
 pkit: auth.Module needs authcontracts.Notifier from notification.Module.
 pkit: auth.Module needs notificationcontracts.Mailer from notification.Module.
+pkit: auth.Module needs notificationcontracts.MailDelivery from notification.Module.
 pkit: auth.Module needs notificationcontracts.HostLookup from tenant.Module.
 pkit: auth.Module needs notificationcontracts.MailLedger from notification.Module.
 pkit: auth.Module needs authcontracts.OIDCProviders from tenant.Module.
@@ -107,6 +108,7 @@ pkit: auth.Module needs jobs.TenantLister from tenant.Module.
 pkit: auth.Module needs usercontracts.Granting from product.Module.
 pkit: auth.Module uses authcontracts.SAMLProviders from tenant.Module.
 pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Module.
+pkit: auth.Module uses authcontracts.ConfirmationChrome from product.Module.
 pkit: auth.Module could use auth.LinkPages; platformkit composes no provider, so it will not.
 pkit: auth.Module reads config.Auth.
 pkit: auth.Module reads config.Server.

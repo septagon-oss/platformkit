@@ -158,6 +158,8 @@
         },
         "fields": [
           {
+            "choice": null,
+            "figure": null,
             "name": "id",
             "label": "Id",
             "help": "",
@@ -180,6 +182,8 @@
             "options": []
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "createdAt",
             "label": "Created at",
             "help": "",
@@ -206,6 +210,8 @@
             "options": []
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
             "help": "",
@@ -232,6 +238,8 @@
             "options": []
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "title",
             "label": "Title",
             "help": "What this note is about",
@@ -254,6 +262,8 @@
             "options": []
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "body",
             "label": "Body",
             "help": "",
@@ -276,6 +286,8 @@
             "options": []
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "status",
             "label": "Status",
             "help": "",
@@ -297,12 +309,18 @@
             },
             "options": [
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "open",
                 "label": "Open",
                 "tone": "neutral",
                 "done": false
               },
               {
+                "picture": null,
+                "group": "",
+                "noPreference": false,
                 "value": "done",
                 "label": "Done",
                 "tone": "neutral",
@@ -311,6 +329,8 @@
             ]
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "rank",
             "label": "Rank",
             "help": "",
@@ -333,6 +353,8 @@
             "options": []
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "pinned",
             "label": "Pinned",
             "help": "",
@@ -355,6 +377,8 @@
             "options": []
           },
           {
+            "choice": null,
+            "figure": null,
             "name": "tags",
             "label": "Tags",
             "help": "",
@@ -400,12 +424,18 @@
               "kind": "enum",
               "values": [
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "open",
                   "label": "Open",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "done",
                   "label": "Done",
                   "tone": "neutral",
@@ -419,12 +449,18 @@
               "kind": "bool",
               "values": [
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "true",
                   "label": "Yes",
                   "tone": "neutral",
                   "done": false
                 },
                 {
+                  "picture": null,
+                  "group": "",
+                  "noPreference": false,
                   "value": "false",
                   "label": "No",
                   "tone": "neutral",
@@ -436,6 +472,7 @@
         },
         "commands": [
           {
+            "fields": [],
             "verb": "publish",
             "label": "Publish",
             "visible": true,
@@ -445,6 +482,7 @@
             "successMessage": ""
           },
           {
+            "fields": [],
             "verb": "archive",
             "label": "Archive",
             "visible": true,
@@ -454,6 +492,7 @@
             "successMessage": ""
           },
           {
+            "fields": [],
             "verb": "later",
             "label": "Later",
             "visible": true,
