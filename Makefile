@@ -1153,6 +1153,15 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# this goal and extracts the Go case from the pin it judges, so the two cannot drift apart. One
 	# dry run and two `go test` runs of one small package, 2 s, no stack and no browser.
 	bash scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh
+	# scripts/a_served_page_names_no_write_door_behind_a_route_it_does_not_mount_test.sh asks the
+	# question those two leave: ui/screens decides which write routes a mounted resource answers,
+	# ui/resource draws the doors, and the two read different files — so a served page that named a
+	# New button, an Edit link or a Delete form behind a route nobody mounted would publish an anchor
+	# to a view the composition published nowhere. The pin injects one Go case into ui/screens over
+	# Go's build overlay, asks it of this tree, and refuses a copy of the renderer that answers from
+	# what the resource declares instead of what the adapter mounts. Two `go test` runs of one small
+	# package, 2 s, no stack and no browser.
+	bash scripts/a_served_page_names_no_write_door_behind_a_route_it_does_not_mount_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
