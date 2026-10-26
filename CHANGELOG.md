@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**A rolled-back transaction runs the work that waited for the rollback.** `db.AfterRollback` registers an
+effect on the tenant transaction its context is inside, and only an ending the database confirmed runs it:
+never a COMMIT that returned an error, whose outcome is unknown, and never a system transaction.
+
 **A deployment names its account-request budget.** `auth.account_requests.quota`
 and `auth.account_requests.window` set how many account requests — a sign-up, a
 verification resend, a forgotten-password link — one address may make in a window.

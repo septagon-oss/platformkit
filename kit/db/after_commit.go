@@ -45,24 +45,25 @@ type afterAction struct {
 	fn  func(context.Context) error
 }
 
-// commitQueue is the actions one transaction will run after it commits. It is
-// reached through the Pending that will end the work, so an action registered by a
-// nested Run joins the commit rather than the frame that registered it.
-type commitQueue struct {
+// afterQueue is the actions one transaction will run after one of its two outcomes:
+// AfterCommit fills commits, AfterRollback fills rollbacks, and the ending that already
+// decides which outcome happened decides which queue runs. It is reached through the
+// Pending that will end the work, so an action a nested Run registers joins that ending.
+type afterQueue struct {
 	mu      sync.Mutex
 	actions []afterAction
 }
 
-func (q *commitQueue) add(a afterAction) {
+func (q *afterQueue) add(a afterAction) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.actions = append(q.actions, a)
 }
 
 // drain takes the whole queue, so a transaction that is closed twice — Close is
-// idempotent — runs its actions once. A rollback drops them rather than deferring
-// them to a commit that will not come.
-func (q *commitQueue) drain() []afterAction {
+// idempotent — runs its actions once. The outcome that does not use a queue drops it
+// rather than holding it for an ending that will not come.
+func (q *afterQueue) drain() []afterAction {
 	if q == nil {
 		return nil
 	}
@@ -77,7 +78,7 @@ func (q *commitQueue) drain() []afterAction {
 // has committed, before Run (or the request holding the transaction) returns. It
 // runs on a successful commit and on nothing else: a handler error, a failed commit,
 // a refused settings re-read, a rolled-back request or a panic runs none of the
-// queue. An effect that must survive a rollback does not belong here.
+// queue. An effect that must survive a rollback belongs to AfterRollback instead.
 //
 // The action is handed a context and no handle: whatever it needs from the database
 // it reads inside the transaction before registering, and a query it must make
@@ -92,10 +93,10 @@ func AfterCommit(ctx context.Context, action func(context.Context) error) error 
 		return fmt.Errorf("%w: a nil action would be dropped without ever being noticed", ErrNoTransactionToDefer)
 	}
 	cur, ok := current(ctx)
-	if !ok || cur.system || cur.hooks == nil {
+	if !ok || cur.system || cur.commits == nil {
 		return ErrNoTransactionToDefer
 	}
-	cur.hooks.add(afterAction{ctx: ctx, fn: action})
+	cur.commits.add(afterAction{ctx: ctx, fn: action})
 	return nil
 }
 
