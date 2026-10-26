@@ -57345,6 +57345,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/saved/internal/saved_table_first_version_upgrade_test.go",
+   "id": "modules/saved/internal/saved_table_first_version_upgrade_test.go#TestAnInstallationThatAppliedTheSavedTableUnderItsFirstVersionStillUpgrades",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnInstallationThatAppliedTheSavedTableUnderItsFirstVersionStillUpgrades",
+   "needs_db": true,
+   "pkg": "modules/saved/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/saved/internal/service_conformance_sql_test.go",
    "id": "modules/saved/internal/service_conformance_sql_test.go#TestSQLServiceConforms",
    "kind": "go",
@@ -88507,7 +88526,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2399,
+  "files": 2400,
   "forge_runs": [
    408,
    413,
@@ -88541,7 +88560,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3858,
+   "behaviour": 3859,
    "composition": 499,
    "contract": 24,
    "journey": 111
@@ -88560,9 +88579,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4492,
+  "rows": 4493,
   "tiers": {
-   "merge": 2730,
+   "merge": 2731,
    "nightly": 111,
    "push": 1651
   },
@@ -88570,13 +88589,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2154,
+   "keep": 2155,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4106,
+   "keep": 4107,
    "keep-rewrite": 170,
    "merge": 216
   }

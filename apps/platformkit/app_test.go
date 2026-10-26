@@ -1975,8 +1975,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		t.Fatalf("the release before this one: %v", err)
 	}
 	admin := dbtest.Open(t, cfg.Database.MigrateURL)
-	before := map[int64]string{}
-	ledger := func(into map[int64]string, query string) {
+	// The ledger's key is the pair (owner, version) — kit/db/migration_history.go — so
+	// that is what the maps below are keyed by: keyed by the version alone, a version
+	// two owners hold is one row and the database's own row order decides the answer.
+	before := map[string]string{}
+	ledger := func(into map[string]string, query string) {
 		t.Helper()
 		rows, err := admin.QueryContext(t.Context(), query)
 		if err != nil {
@@ -1984,18 +1987,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var version int64
-			var value string
-			if err := rows.Scan(&version, &value); err != nil {
+			var key, value string
+			if err := rows.Scan(&key, &value); err != nil {
 				t.Fatalf("read the ledger: %v", err)
 			}
-			into[version] = value
+			into[key] = value
 		}
 		if err := rows.Err(); err != nil {
 			t.Fatalf("read the ledger: %v", err)
 		}
 	}
-	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
+	ledger(before, "SELECT version::text, applied_at::text FROM schema_migrations")
 	// The number is the point of the assertion: an upgrade fixture that silently
 	// stopped counting a migration would pass while upgrading a real installation
 	// past a file it should have applied, so the files the release holds have to
@@ -2014,7 +2016,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
-	// Every version is one file across the composition, kernel and modules alike.
+	// One owner holds one file per version, and two owners may hold one version.
 	// A new file continues past the highest number anywhere in the composition,
 	// whichever owner ships it: modules/file's retention hold and erasure proof is
 	// 000040 for that reason, and not the 30 it was written as when no owner held
@@ -2049,8 +2051,9 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// below rather than restated here — the old layout's ledger against the files at
 	// or beneath the adopted ceiling, and the upgraded ledger against every file the
 	// release ships. What the census used to enumerate is the part worth keeping: the
-	// release repeats six numbers, each above the ceiling so the flattening below
-	// never meets them — 35 is modules/audit's audit_context beside modules/auth's
+	// release repeats numbers above the ceiling, one row per owner each — 75 is the
+	// foundation's delivery-effects ledger beside modules/saved's retained copies, 35 is
+	// modules/audit's audit_context beside modules/auth's
 	// passkeys, 43 is the kernel's tenant-app columns beside modules/translation's
 	// field copy, 44 is modules/file's image dimensions beside modules/notification's
 	// mail ledger and modules/webhook's endpoint table, 45 is modules/file's file uses
@@ -2124,10 +2127,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		t.Fatalf("the migration behind the drain: %v", err)
 	}
 
-	owners := map[int64]string{}
-	ledger(owners, "SELECT version, owner FROM schema_migrations")
-	after := map[int64]string{}
-	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
+	owners := map[string]string{}
+	ledger(owners, "SELECT owner || '/' || version::text, name FROM schema_migrations")
+	after := map[string]string{}
+	ledger(after, "SELECT version::text, applied_at::text FROM schema_migrations")
 	// The upgrade re-owns the old rows and applies the files that postdate them,
 	// so the ledger grows by exactly the new files and by nothing else: a fixture
 	// that re-ran an old file would be caught below by applied_at, and one that
@@ -2135,16 +2138,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 
 	for version, when := range before {
 		if after[version] != when {
-			t.Errorf("version %d was applied again: %s became %s", version, when, after[version])
+			t.Errorf("version %s was applied again: %s became %s", version, when, after[version])
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
 	// release ships is in the ledger, which is where the files above the adopted
-	// ceiling have to be accounted for. Both maps below are keyed by version, so a
-	// version two owners hold is one key in each of them: the comparison is between
-	// the ledger and the sources the composition names, never against a count carried
-	// in this comment.
-	want := map[int64]string{}
+	// ceiling have to be accounted for. Both maps hold the ledger's pair and the name it
+	// recorded, because a release that renames a file it shipped leaves that row naming
+	// a file nobody ships and every installed database refusing to boot: the comparison
+	// is between the ledger and the sources the composition names, never against a count
+	// carried in this comment.
+	want := map[string]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
@@ -2155,15 +2159,15 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 			if err != nil {
 				t.Fatalf("%s is not <version>_<name>.up.sql", entry.Name())
 			}
-			want[version] = source.Owner
+			want[fmt.Sprintf("%s/%d", source.Owner, version)] = entry.Name()
 		}
 	}
 	if len(owners) != len(want) {
 		t.Fatalf("the upgrade left %d applied files, want the %d this release ships", len(owners), len(want))
 	}
-	for version, owner := range want {
-		if owners[version] != owner {
-			t.Errorf("version %d reads as %q, want %q", version, owners[version], owner)
+	for pair, name := range want {
+		if owners[pair] != name {
+			t.Errorf("%s reads as %q, want the file %q", pair, owners[pair], name)
 		}
 	}
 	// And the application built on that schema serves.

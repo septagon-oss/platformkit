@@ -19,11 +19,11 @@ var schema embed.FS
 // three indexes — owned as "saved". A test composes the schema it needs beside
 // the foundation with dbtest.Schema(t, saved.Migrations).
 //
-// The file carries the first version number the foundation's own history had not
-// taken when this table was composed. A version is the migrator's key: two owners
-// at one number means the second one's SQL is never applied, and the applied
-// census then reads the first owner's name where the second's table stands.
-// Composing this module is what made the collision visible.
+// Its number, 75, is the first the foundation's history had not taken when this
+// table was composed, and the foundation holds its own file at that number: the
+// ledger keys on (owner, version), so two owners may hold one version. What no
+// release may do is stop listing a file it shipped under "saved" — the migrator
+// refuses an applied file its source no longer names, and history keeps its name.
 var Migrations = db.MigrationSource{
 	Owner: "saved",
 	Files: db.Sub(schema, "migrations"),

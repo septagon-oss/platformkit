@@ -161,8 +161,10 @@ revision in its own transaction; neither a card nor an earlier Check authorizes 
 Use the request's `db.Tx[db.Tenant]` throughout. No second transaction, system
 scope, raw GUC or mutation via generic CRUD. Every table enables and forces RLS
 with both `USING` and `WITH CHECK` using the existing tenant helper/policy pattern.
-Migration owner is `saved`; its one version is `000076_saved.up.sql`, added
-transactionally, with no down file and no edit to another owner's migration.
+Migration owner is `saved`; its one version is `000075_saved.up.sql`, which the
+foundation's own `000075` shares because the ledger keys on `(owner, version)`,
+added transactionally, with no down file and no edit to another owner's
+migration.
 
 For mutations, the service obtains current authority, then serializes the
 person/source tuple with a transaction advisory lock over an encoding whose
