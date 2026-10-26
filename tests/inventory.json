@@ -84330,6 +84330,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/resolved-noun-begins-a-form-page-trail.spec.ts",
+   "id": "e2e/resolved-noun-begins-a-form-page-trail.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "the noun that begins a page",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/resolved-noun-reads-as-a-label.spec.ts",
    "id": "e2e/resolved-noun-reads-as-a-label.spec.ts",
    "kind": "playwright",
@@ -90097,7 +90117,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2469,
+  "files": 2470,
   "forge_runs": [
    408,
    413,
@@ -90134,7 +90154,7 @@
    "behaviour": 3921,
    "composition": 510,
    "contract": 24,
-   "journey": 120
+   "journey": 121
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -90150,23 +90170,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4575,
+  "rows": 4576,
   "tiers": {
    "merge": 2797,
-   "nightly": 120,
+   "nightly": 121,
    "push": 1658
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2224,
+   "keep": 2225,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4189,
+   "keep": 4190,
    "keep-rewrite": 170,
    "merge": 216
   }
