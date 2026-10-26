@@ -840,6 +840,14 @@
    "coverage": "",
    "round_named": 0
   },
+  "modules/tenant/contracts": {
+   "ci_fails": 0,
+   "ci_max_s": null,
+   "ci_med_s": null,
+   "ci_runs": 0,
+   "coverage": "",
+   "round_named": 0
+  },
   "modules/tenant/contracts/tenanttest": {
    "ci_fails": 0,
    "ci_max_s": null,
@@ -60559,6 +60567,44 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/tenant/contracts/locale_revision_test.go",
+   "id": "modules/tenant/contracts/locale_revision_test.go#TestLocaleRevisionBindsOnlyAnExactInteger",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestLocaleRevisionBindsOnlyAnExactInteger",
+   "needs_db": false,
+   "pkg": "modules/tenant/contracts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/tenant/contracts/locale_revision_test.go",
+   "id": "modules/tenant/contracts/locale_revision_test.go#TestADeclarationThatNamesNoRevisionLeavesItAbsent",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestADeclarationThatNamesNoRevisionLeavesItAbsent",
+   "needs_db": false,
+   "pkg": "modules/tenant/contracts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/tenant/contracts/tenanttest/fake_test.go",
    "id": "modules/tenant/contracts/tenanttest/fake_test.go#TestFakeConforms",
    "kind": "go",
@@ -88746,7 +88792,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2453,
+  "files": 2454,
   "forge_runs": [
    408,
    413,
@@ -88780,7 +88826,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3843,
+   "behaviour": 3845,
    "composition": 526,
    "contract": 24,
    "journey": 113
@@ -88799,23 +88845,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4506,
+  "rows": 4508,
   "tiers": {
    "merge": 2771,
    "nightly": 113,
-   "push": 1622
+   "push": 1624
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2208,
+   "keep": 2209,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4120,
+   "keep": 4122,
    "keep-rewrite": 170,
    "merge": 216
   }
