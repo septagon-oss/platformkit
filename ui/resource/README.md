@@ -73,10 +73,10 @@ formatting. Their removal requires a later public API migration.
 
 ## Verification and limits
 
-[HTML parity](../screens/policy_html_test.go) reads all reviewed resolver fixtures
-and [literal web companions](../screens/testdata/parity/web/expectations.json).
-The companions pin source hashes and await independent review. Browser boundary
-cases live in [resolved-time-policy](../../e2e/resolved-time-policy.spec.ts).
+[HTML parity](../screens/policy_html_test.go) renders each reviewed fixture that
+has a [literal web companion](../screens/testdata/parity/web/expectations.json) and
+reports a fixture without one by name as unasserted. Companions pin source hashes
+and await independent review. Browser cases: [resolved-time-policy](../../e2e/resolved-time-policy.spec.ts).
 Run `go test ./ui/resource ./ui/screens ./ui/forms ./ui/components ./kit/rest`.
 These proofs do not certify mobile rendering, RLS or transactional command
 invariants; those remain the existing capability suites and application journeys.
