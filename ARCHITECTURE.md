@@ -425,7 +425,7 @@ terms of a token, which is the whole reason to have themes (`design/design.go:11
 web standard, not a dependency.
 
 **How the tenant crosses it.** It does not. The theme is chosen once, at
-composition (`Theme(design.Default())`, `apps/platformkit/app.go:322`), one
+composition (`Theme(design.Default())`, `apps/platformkit/app.go:332`), one
 stylesheet serves every tenant, and no theme reads a row: isolation lives in the
 database, and a stylesheet adds none of it.
 
@@ -436,7 +436,7 @@ one stylesheet per pair rather than recomposing per request
 **How an app extends it.** Hand `ui.Compose` ([ui/ui.go](ui/ui.go)) a `Pair` of its
 own, plus a `ui.Extra` ([ui/ui.go](ui/ui.go)) for rules. The reference product's own
 line is `apps/platformkit/fault.go:113`: `ui.Compose(design.Default())`, the same
-pair the composition hands the shell at `apps/platformkit/app.go:322`. A client's
+pair the composition hands the shell at `apps/platformkit/app.go:332`. A client's
 colours go into that one pair; everything above the tokens is written in terms of
 a role.
 
@@ -607,7 +607,7 @@ hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
 ([ui/page/serve.go](ui/page/serve.go), `ui/page/locale.go:61`). Why a refusal may not answer in
-an undeclared language is the comment at `kit/httpx/tenant.go:262-275` — a page
+an undeclared language is the comment at `kit/httpx/tenant.go:329-342` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
 (`migrations/000029_tenant_locale.up.sql:1`).
@@ -707,8 +707,8 @@ those two members and says nothing about correlation (`:63-70`; the column is
 **How an app extends it.** Declare in the manifest — `Declared` and
 `Subscriptions` ([Module](kit/module/module.go)) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
-(`apps/platformkit/product.go:406`), in the function the application calls the one
-place it names an event provider (`:405`). `kit/app` selects by name and imports
+(`apps/platformkit/product.go:450`), in the function the application calls the one
+place it names an event provider (`:449`). `kit/app` selects by name and imports
 no provider ([Transports.constructor](kit/app/app.go) and
 [App.transport](kit/app/dependencies.go)). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
@@ -746,7 +746,7 @@ process names a host, port and from-address, the mailbox when not (`:60-62`), an
 the mailbox is no stub — "it keeps every message and logs each one" (`:24-26`) —
 so a deployment without mail records everything and says what it would have sent
 (`apps/platformkit/main.go:94-100`). A refusal a person must see raises a
-`Notice` (`apps/platformkit/product.go:496`). A nil lookup writes every row and sends no
+`Notice` (`apps/platformkit/product.go:540`). A nil lookup writes every row and sends no
 mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
@@ -816,7 +816,7 @@ another is reproducible from the failure message alone.
 
 **How an app extends it.** Add a field to [app.Caches](kit/app/app.go),
 selected by [validateDeployment](kit/app/construct.go); the reference composition names `valkey.Connect` and nothing
-else (`apps/platformkit/product.go:433`, in `caches()` at `:432`). A selected
+else (`apps/platformkit/product.go:477`, in `caches()` at `:476`). A selected
 adapter with no constructor is refused before anything opens
 ([Caches.constructor](kit/app/app.go)). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as

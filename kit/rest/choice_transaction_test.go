@@ -47,7 +47,7 @@ func choiceWorld(t *testing.T) (http.Handler, *sql.DB, *choiceCaller) {
 	t.Helper()
 	caller := &choiceCaller{other: tenancy.Tenant{ID: uuid.New(), Slug: "other"}}
 	caller.allowed.Store(true)
-	s := rest.Spec[*choiceRecord]{Module: "shapes", Entity: "selection", Path: "/selections", Read: "shape:read", Write: "shape:write", Choices: &entity.ChoiceFields{Fields: []entity.ChoiceField{{Name: "shapes", Choices: entity.ChoiceSet{Cardinality: "many", Options: []entity.ChoiceOption{{ID: "round", Label: "Round"}, {ID: "square", Label: "Square"}, {ID: "triangle", Label: "Triangle"}}, Empty: entity.ChoiceEmpty{Mode: "refuse", Message: "Keep a shape."}, Maximum: &entity.ChoiceMaximum{Count: 2, Behaviour: "replace-oldest"}}}}}}
+	s := rest.Spec[*choiceRecord]{Name: rest.Name{One: "Selection", Other: "Selections"}, Module: "shapes", Entity: "selection", Path: "/selections", Read: "shape:read", Write: "shape:write", Choices: &entity.ChoiceFields{Fields: []entity.ChoiceField{{Name: "shapes", Choices: entity.ChoiceSet{Cardinality: "many", Options: []entity.ChoiceOption{{ID: "round", Label: "Round"}, {ID: "square", Label: "Square"}, {ID: "triangle", Label: "Triangle"}}, Empty: entity.ChoiceEmpty{Mode: "refuse", Message: "Keep a shape."}, Maximum: &entity.ChoiceMaximum{Count: 2, Behaviour: "replace-oldest"}}}}}}
 	_, handler, admin := mountAs(t, s, caller)
 	_, err := admin.ExecContext(t.Context(), `CREATE TABLE rest_choice_records (
  id uuid PRIMARY KEY, tenant_id uuid NOT NULL, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, deleted_at timestamptz,

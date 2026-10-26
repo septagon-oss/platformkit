@@ -326,6 +326,87 @@
       "": "(request"
     }
   },
+  "fault.request.anonymous.title": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "Sign-in required",
+    "plural": {
+      "": "Sign-in required"
+    }
+  },
+  "fault.request.anonymous.message": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "Keep this page open to retain your input. Sign in in another tab, then return and try again. Nothing is retried automatically.",
+    "plural": {
+      "": "Keep this page open to retain your input. Sign in in another tab, then return and try again. Nothing is retried automatically."
+    }
+  },
+  "fault.request.denied.title": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "You don't have access",
+    "plural": {
+      "": "You don't have access"
+    }
+  },
+  "fault.request.denied.message": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "Keep this page open to retain your input. Ask an administrator for the access this needs.",
+    "plural": {
+      "": "Keep this page open to retain your input. Ask an administrator for the access this needs."
+    }
+  },
+  "fault.request.changed.title": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "Account changed",
+    "plural": {
+      "": "Account changed"
+    }
+  },
+  "fault.request.changed.message": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.",
+    "plural": {
+      "": "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input."
+    }
+  },
+  "fault.request.uncertain.title": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "We couldn't confirm whether your changes were saved.",
+    "plural": {
+      "": "We couldn't confirm whether your changes were saved."
+    }
+  },
+  "fault.request.uncertain.message": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "Keep this page open and check whether the action completed before trying again.",
+    "plural": {
+      "": "Keep this page open and check whether the action completed before trying again."
+    }
+  },
+  "fault.request.sign_in": {
+    "references": [
+      "ui/document/document.go"
+    ],
+    "translation": "Sign in (opens a new tab)",
+    "plural": {
+      "": "Sign in (opens a new tab)"
+    }
+  },
   "fault.request_reference": {
     "references": [
       "ui/page/fault.go"

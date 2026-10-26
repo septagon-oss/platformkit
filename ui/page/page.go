@@ -18,6 +18,8 @@
 package page
 
 import (
+	"net/http"
+
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -133,8 +135,16 @@ func Fault(status int, detail, back, backLabel string) View {
 }
 
 // FaultIn is Fault in the reader's language: the verdict's name asked of that
-// language's catalogue, with net/http's name for a shell that ships none.
+// language's catalogue, with that catalogue's own source words behind it.
+//
+// A nil locale is the published call, and it is headed with net/http's name for the
+// verdict as it always was: a caller that hands over no language has no catalogue in
+// front of it, and rewording a verdict for nobody would be the kernel's invention. The
+// kernel's own refusal page is another caller and keeps statusTitle.
 func FaultIn(loc *Locale, status int, detail, back, backLabel string) View {
+	if loc == nil {
+		return document.Fault(status, http.StatusText(status), detail, back, backLabel)
+	}
 	return document.Fault(status, faultTitleName(loc, status), detail, back, backLabel)
 }
 
