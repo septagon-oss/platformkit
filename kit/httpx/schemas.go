@@ -354,7 +354,9 @@ func (a *API) RegisterResource(r Resource) {
 // carries: the read guard for the typed query and for count/list/get, the write
 // guard for the three writes. The same pairing the routes declare, read through
 // the same methods a page and the catalogue ask, so a resource cannot guard its
-// routes one way and its closures another.
+// routes one way and its closures another. The two narrowed counts ask what the
+// total asks, wrapped here for Count's own reason: a Resource built anywhere else
+// is unguarded until it is registered.
 //
 // The pair is computed here and stored in the value's own ReadBy and WriteBy,
 // rather than recomputed by every later reader of Read and Write and the two
@@ -389,8 +391,6 @@ func (a *API) guard(r Resource) Resource {
 			return list(ctx, q)
 		}
 	}
-	// The two narrowed counts ask what the total asks, wrapped here for Count's
-	// own reason: a Resource built anywhere else is unguarded until registered.
 	if narrowed := r.CountFiltered; narrowed != nil {
 		r.CountFiltered = func(ctx context.Context, w crud.Where) (int64, error) {
 			if err := a.mayDeclare(ctx, read); err != nil {
