@@ -13,7 +13,7 @@ import (
 
 func mountCollectionRead(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string, read httpx.Auth) {
 	if res.Offers(httpx.CRUDRead) {
-		page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity,
+		page.Serve(router, s, page.Route{View: screenRef(res, "detail", ""), ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity,
 			Subject: subject(res, o, at, true)}, read,
 			func(ctx context.Context, req page.Request, in *readInput) (page.View, error) {
 				if in.ID == "new" {

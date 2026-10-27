@@ -19,7 +19,7 @@ func mountCollectionList(router *httpx.Router, shell page.Shell, o Options, res 
 	if !res.Offers(httpx.CRUDList) {
 		return
 	}
-	page.Serve(router, shell, page.Route{ID: id + "list", Method: http.MethodGet, Path: res.Path, Summary: "The " + res.Entity + " list",
+	page.Serve(router, shell, page.Route{View: screenRef(res, "list", ""), ID: id + "list", Method: http.MethodGet, Path: res.Path, Summary: "The " + res.Entity + " list",
 		Subject: subject(res, o, res.Screen, false)}, res.ReadAuth(),
 		func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
 			o := localized(o, req)

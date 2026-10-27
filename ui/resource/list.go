@@ -38,7 +38,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	// offers a create: the two questions are different, and the second is
 	// answered by the mounted routes rather than by anybody's permissions.
 	if writable && r.offers("create") {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new", Variant: r.primaryAction(true)})}
+		actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("list", "action.create")}, Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new", Variant: r.primaryAction(true)})}
 	}
 	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
@@ -55,7 +55,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		// Generated CRUD does not gain selected-row writes from a UI control.
 		Footer: CommandForms(r, o, at, true, nil),
 	})}
-	return document.View{Title: title, Language: r.Resolved.Language, Body: body}
+	return document.View{Title: title, Language: r.Resolved.Language, Body: r.viewBody("list", body)}
 }
 func listURL(at, sort string, filters map[string]string) string {
 	query := url.Values{}

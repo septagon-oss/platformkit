@@ -31,6 +31,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -238,7 +239,9 @@ type App struct {
 	// registrations left it, and nil exactly when no registration of this composition
 	// has run yet. registeredRoutes and registrationsAgree are its whole life: the
 	// first registration writes it and each of the other three is judged against it.
-	declaredRoutes []string
+	declaredRoutes  []string
+	declaredScreens []byte
+	screenInventory screen.Inventory
 
 	// declared is every event these manifests promise, with the payload type each
 	// one named, and declaredRelease is this composition's receipt for putting them

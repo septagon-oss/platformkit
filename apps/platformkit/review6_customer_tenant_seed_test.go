@@ -59,16 +59,16 @@ func TestACustomerTenantIsSeededTheWildcardAndNoOperatorGrant(t *testing.T) {
 	var operator, customer tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		operator, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		operator, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		if e != nil {
 			return e
 		}
-		if _, e = c.tenants.Create(ctx, tx, tenantcontracts.NewTenant{
+		if _, e = c.testTenants().Create(ctx, tx, tenantcontracts.NewTenant{
 			Slug: "globex", Name: "Globex", Host: globexHost,
 		}); e != nil {
 			return e
 		}
-		customer, e = c.tenants.ByHost(ctx, tx, globexHost)
+		customer, e = c.testTenants().ByHost(ctx, tx, globexHost)
 		return e
 	})
 	if err != nil {
@@ -92,7 +92,7 @@ func TestACustomerTenantIsSeededTheWildcardAndNoOperatorGrant(t *testing.T) {
 		out := map[string][]string{}
 		err := db.Run(httpx.WithConn(tenancy.WithTenant(t.Context(), tenant), conn), conn,
 			func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				held, e := c.auth.Roles(ctx, tx)
+				held, e := c.testAuth().Roles(ctx, tx)
 				if e != nil {
 					return e
 				}
