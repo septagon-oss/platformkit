@@ -102,7 +102,11 @@ name, with no reason: the reason a module sits where it sits is the table above
 read against the measured graph in
 [docs/MODULE-GRAPH.md](../../docs/MODULE-GRAPH.md). A `<->` row is the single
 exception the file may carry — two modules whose production imports run both ways,
-with the reason both stay. A row naming a module of another repository, an unknown
+with the reason both stay. Both sides of that row name modules of the repository
+whose file it is: no build measures a pair spanning two repositories, because Go
+reports packages for the main module alone, so a pair that spans two is nobody's to
+justify and each repository justifies only its own. A row naming a module of another
+repository, an unknown
 layer name, a duplicate, a subpackage, traversal or a `<->` row without a reason
 returns status 2 with `file:line`: that is an unreadable declaration, never a
 verdict. A **missing** file declares nothing, which is not an exemption.
@@ -114,7 +118,7 @@ Four rules read the map, and every refusal names both full package paths:
 | `module-layer-missing` | a module this build reaches with no row — own modules from Go's package list, so a module that imports nothing is still counted, and a dependency's modules from production import targets. The remedy names the owning repository's file: a map pinned before its own map is corrected upstream or by a new pin |
 | `module-layer-upward` | a `production` edge whose source module ranks below the target's |
 | `module-layer-cycle-undeclared` | a reciprocal production pair with no `<->` row |
-| `module-layer-cycle-unused` | a `<->` row for a pair that is not reciprocal in production here, so the list can only shrink |
+| `module-layer-cycle-unused` | a `<->` row whose pair does not import each other in production here. The sweep reads the rows rather than the measured pairs, so a pair that holds no production edge in either direction is refused as well and the list can only shrink |
 
 A declared port **prevents** an upward import; it never excuses one. The gate sees
 a port as the absence of an edge — `kit/jobs.TenantLister` is provided by
@@ -131,6 +135,18 @@ reason for every foreign constructor a suite composes; a layer rule over test
 source would need an exemption for a row of this repository's own file. An unused
 assignment row is announced, not refused, exactly as an unused integration grant
 is: a build context that excludes a module is legitimate.
+
+**Reused** — the `graph` `normalize` already builds, the readable-declaration shape of
+[grants.go](grants.go) and [baseline.go](baseline.go) with its parse-time refusals,
+`decide`'s refusal set and remedy table, `edgeReport`'s JSON conventions, and the
+`.gitattributes` + `make check-generated` guard that keeps a written file equal to
+what its writer produces.
+**Added** — the rank table, one repository's assignments and its justification rows,
+and the four rules above: no data in this repository held a module layer before.
+**Made reusable** — `--modules` and the `platformkit.module-graph.v1` report, so a
+repository renders its own measured graph instead of keeping a map by hand, and the
+order itself, so the catalogue and a product checkout rank their modules by the one
+table rather than by a copy.
 
 `kit/`, `pkit/`, `ui/`, `design/` and `apps/` hold no `modules/<name>` owner, so
 the layer rule cannot rank them: `pkit` and `kit` sit under every layer, and those

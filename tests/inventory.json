@@ -71093,6 +71093,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/command_test.go",
+   "id": "tools/importgate/command_test.go#TestModuleGraphModeNamesOneReportAndOutlivesARefusal",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestModuleGraphModeNamesOneReportAndOutlivesARefusal",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/committed_contract_baseline_test.go",
    "id": "tools/importgate/committed_contract_baseline_test.go#TestEveryCommittedContractBaselineRowIsCarriedByTheRealGraph",
    "kind": "go",
@@ -71212,6 +71231,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestIncompleteGraphIsRefused",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
+   "file": "tools/importgate/justification_row_without_its_pair_test.go",
+   "id": "tools/importgate/justification_row_without_its_pair_test.go#TestJustificationRowNamingNoProductionPairIsRefused",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestJustificationRowNamingNoProductionPairIsRefused",
    "needs_db": false,
    "pkg": "tools/importgate",
    "round_named": false,
@@ -71364,6 +71402,44 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestReciprocalProductionPairNeedsItsReason",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
+   "file": "tools/importgate/layers_test.go",
+   "id": "tools/importgate/layers_test.go#TestJustificationRowNamesModulesOfOneRepository",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestJustificationRowNamesModulesOfOneRepository",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
+   "file": "tools/importgate/layers_test.go",
+   "id": "tools/importgate/layers_test.go#TestAssignmentOfAModuleThisBuildExcludesIsAnnounced",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAssignmentOfAModuleThisBuildExcludesIsAnnounced",
    "needs_db": false,
    "pkg": "tools/importgate",
    "round_named": false,
@@ -91990,7 +92066,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2528,
+  "files": 2529,
   "forge_runs": [
    408,
    413,
@@ -92024,7 +92100,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4001,
+   "behaviour": 4005,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92043,23 +92119,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4674,
+  "rows": 4678,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1683
+   "push": 1687
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2283,
+   "keep": 2284,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4288,
+   "keep": 4292,
    "keep-rewrite": 170,
    "merge": 216
   }

@@ -140,6 +140,15 @@ layer_rows catalog "$temporary/catalog"
 printf 'example.test/catalog/modules/a sideways\n' > "$temporary/catalog/scripts/imports-layers.txt"
 refuses_with 'dependency invents a layer name' 2 'is not one the gate knows' "${imports[@]}"
 layer_rows catalog "$temporary/catalog"
+# A pair is justifiable only in the repository holding both of its modules: Go
+# reports packages for the main module alone, so no build measures a pair spanning two
+# repositories and no file may claim one.
+printf 'example.test/catalog/modules/a <-> example.test/product/modules/a Both repositories claim this pair.\n' >> "$temporary/catalog/scripts/imports-layers.txt"
+refuses_with 'dependency justifies a pair spanning two repositories' 2 'the repository that holds both of its modules' "${imports[@]}"
+layer_rows catalog "$temporary/catalog"
+printf '%s\n' 'example.test/product/modules/a <-> example.test/foundation/modules/a The kernel and the product import each other.' >> "$repo/scripts/imports-layers.txt"
+refuses_with 'consumer justifies a pair with a dependency module' 2 'the repository that holds both of its modules' "${imports[@]}"
+layer_rows product "$repo"
 
 # Only the actual foundation module grants the direct kit/db exemption. A
 # consumer cannot gain it by creating a same-named directory or a subpackage.

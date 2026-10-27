@@ -10,12 +10,17 @@ set -euo pipefail
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "${1:-$(dirname "$scripts")}" && pwd)" || exit 2
 
-if ! json="$(cd "$repo" && env GOWORK=off GOFLAGS=-buildvcs=false go run ./tools/importgate --modules . 2>/dev/null)"; then
+measured="$(mktemp)" && rendered="$(mktemp)" && refused="$(mktemp)" || exit 2
+trap 'rm -f "$measured" "$rendered" "$refused"' EXIT
+# The gate's own diagnostics reach the reader. `--modules` answers a policy refusal
+# with the report and status 0, so a nonzero status here is a reading failure — a
+# malformed map, a dependency whose tree holds no declaration — whose cause only the
+# gate names, and which this script cannot restate.
+if ! json="$(cd "$repo" && env GOWORK=off GOFLAGS=-buildvcs=false go run ./tools/importgate --modules . 2>"$refused")"; then
+	cat "$refused" >&2
 	echo 'module graph: the import gate could not measure this repository' >&2
 	exit 2
 fi
-measured="$(mktemp)" && rendered="$(mktemp)" || exit 2
-trap 'rm -f "$measured" "$rendered"' EXIT
 printf '%s\n' "$json" > "$measured"
 python3 - "$measured" <<'PY' > "$rendered"
 import json, sys
@@ -84,8 +89,10 @@ rows(
     "Imports between modules",
     "Package-level imports aggregated by module owner: ordinary source, `contracts/` "
     "and `internal/`. The gate judges the layer rule over `production` contexts alone, "
-    "so an `upward` row whose contexts are all test contexts is a granted test "
-    "composition in `scripts/imports-integration.txt`, not a refusal.",
+    "so an `upward` row whose contexts are all test contexts is not a refusal: test "
+    "source may read a peer's `contracts/` tree with no row, and "
+    "`scripts/imports-integration.txt` is what names the foreign constructors a suite "
+    "may compose.",
 )
 rows(
     graph["constructions"],

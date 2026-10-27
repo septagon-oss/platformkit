@@ -133,7 +133,9 @@ func decide(g *graph, grants map[string]*grant, baseline map[baselineKey]*baseli
 // layers judges the module layer rules over the same edges the direct rules
 // judged. Only production source is measured: a test composition already names
 // its exact foreign constructors and its reason in scripts/imports-integration.txt,
-// and a rule over test source would need an exemption for a granted row.
+// and a rule over test source would need an exemption for a granted row. Every
+// justification row of the declaration is judged, whether or not the graph still
+// holds the pair it names, so a map's exceptions can only shrink.
 func (g *graph) layers(refused map[refusal]bool, spent map[string]bool, justified map[layerPair]bool, declared *layerDeclaration) {
 	required := map[string]bool{}
 	for _, owner := range g.owned {
@@ -182,27 +184,36 @@ func (g *graph) layers(refused map[refusal]bool, spent map[string]bool, justifie
 		refused[refusal{edge{owner, g.root(owner) + layerFileSuffix, owner, "layer", ""}, "module-layer-missing", ""}] = true
 	}
 	for pair, edges := range pairEdges {
-		reciprocal := len(pairSides[pair]) > 1
-		if reciprocal {
-			justified[pair] = true
-		}
-		row := declared.justifications[pair]
-		if row == nil {
-			if !reciprocal {
-				continue
-			}
-			// Two modules that import each other are one unit of composition whatever
-			// their layer, so the pair has to say why neither direction moves.
-			for _, e := range edges {
-				refused[refusal{e, "module-layer-cycle-undeclared", ""}] = true
-			}
+		if len(pairSides[pair]) < 2 {
+			// One direction only is a dependency the order admits, or a row the sweep
+			// below judges.
 			continue
 		}
-		if !reciprocal {
-			// The row outlived its reciprocation: one direction moved behind a port, or
-			// the two modules never imported each other in production at all.
-			refused[refusal{edge{pair.a, pair.b, pair.a, "layer", ""}, "module-layer-cycle-unused", row.reason}] = true
+		justified[pair] = true
+		if declared.justifications[pair] != nil {
+			continue
 		}
+		// Two modules that import each other are one unit of composition whatever
+		// their layer, so the pair has to say why neither direction moves.
+		for _, e := range edges {
+			refused[refusal{e, "module-layer-cycle-undeclared", ""}] = true
+		}
+	}
+	// The exception is judged from the declaration rather than from the measured
+	// pairs, as an unused contract baseline row is: a row whose pair holds no
+	// production edge in either direction never enters the edge set above, and a rule
+	// that could not see it would leave the one exception a map may carry free to grow
+	// instead of shrink. Only a pair of the checked repository's own modules is judged
+	// here, because Go reports packages for the main module alone: a row read from a
+	// dependency's file is reciprocal or stale in that repository's own build, which is
+	// where its gate judges it.
+	for pair, row := range declared.justifications {
+		if justified[pair] || g.root(pair.a) != g.self || g.root(pair.b) != g.self {
+			continue
+		}
+		// The row outlived its reciprocation: one direction moved behind a port, or
+		// the two modules never imported each other in production at all.
+		refused[refusal{edge{pair.a, pair.b, pair.a, "layer", ""}, "module-layer-cycle-unused", row.reason}] = true
 	}
 }
 

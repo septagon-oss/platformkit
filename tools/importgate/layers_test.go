@@ -269,6 +269,49 @@ func TestReciprocalProductionPairNeedsItsReason(t *testing.T) {
 	}
 }
 
+// TestJustificationRowNamesModulesOfOneRepository checks where a pair's row lives.
+// Go reports packages for the main module alone, so no build measures a pair whose
+// two modules sit in two repositories, and a row spanning them is an exception no
+// gate could ever judge: the parser refuses it as an unreadable declaration, from
+// either side's file.
+func TestJustificationRowNamesModulesOfOneRepository(t *testing.T) {
+	g := fixtureGraph()
+	for _, row := range []struct{ file, rootPath, text string }{
+		{"product-layers", product, product + "/modules/a <-> " + dependency + "/modules/b Both repositories claim this pair."},
+		{"foundation-layers", dependency, dependency + "/modules/a <-> " + product + "/modules/b The same pair from the other side."},
+	} {
+		if err := parseLayers(row.file, row.text, g, row.rootPath, newLayerDeclaration()); err == nil ||
+			!strings.Contains(err.Error(), "the repository that holds both of its modules") {
+			t.Errorf("%s accepted a pair spanning two repositories: %v", row.file, err)
+		}
+	}
+	declared := layersFixture(t, g, product, product+"/modules/a platform\n"+product+"/modules/b platform\n"+
+		product+"/modules/a <-> "+product+"/modules/b Both contract trees name each other's values.\n")
+	if len(declared.justifications) != 1 {
+		t.Fatalf("a pair of one repository's own modules could not be justified: %+v", declared.justifications)
+	}
+}
+
+// TestAssignmentOfAModuleThisBuildExcludesIsAnnounced checks the half of the
+// declaration the graph cannot answer: a module of the repository that no package of
+// this build context reaches keeps its row as a fact about the repository, so its
+// state is announced and no refusal follows — a build context that excludes a module
+// is legitimate.
+func TestAssignmentOfAModuleThisBuildExcludesIsAnnounced(t *testing.T) {
+	g := fixtureGraph()
+	g.owned = []string{product + "/modules/a"}
+	declared := layersFixture(t, g, product, product+"/modules/a platform\n"+product+"/modules/b identity\n")
+	got := decide(g, nil, nil, declared)
+	if len(got.refused) != 0 {
+		t.Fatalf("a row outside this build context refused: %+v", got.refused)
+	}
+	notice := declared.notices(got.spent, got.justified)
+	if !strings.Contains(notice, product+"/modules/a is platform; assigned in this build context") ||
+		!strings.Contains(notice, product+"/modules/b is identity; holds no package in this build context") {
+		t.Fatalf("notice = %s", notice)
+	}
+}
+
 func TestLayerRuleJudgesOnlyProductionSource(t *testing.T) {
 	source, target := product+"/modules/a_test", product+"/modules/b/contracts"
 	for _, context := range []string{"internal-test", "external-test"} {

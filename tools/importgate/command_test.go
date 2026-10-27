@@ -308,3 +308,35 @@ esac
 		t.Fatalf("default foundation: %s; %v", output, err)
 	}
 }
+
+// TestModuleGraphModeNamesOneReportAndOutlivesARefusal checks the aggregate report
+// through the command: the two report modes describe different graphs, so naming both
+// is a configuration error, and the module report is a measurement rather than a
+// verdict — scripts/module_graph.sh renders it over a tree the policy refuses, and a
+// module the build holds with no row stays listed as unassigned.
+func TestModuleGraphModeNamesOneReportAndOutlivesARefusal(t *testing.T) {
+	root := t.TempDir()
+	p := packageFixture("modules/a")
+	p.Dir, p.Module.Dir = filepath.Join(root, "modules/a"), root
+	p.Imports = []string{product + "/modules/b"}
+	stream := jsonStream(t, p)
+	var both bytes.Buffer
+	if status := run(t.Context(), []string{"--edges", "--modules", root}, &both, &both, fakeCommand(t, root, stream)); status != 2 ||
+		!strings.Contains(both.String(), "name one") {
+		t.Fatalf("two reports named together returned status %d: %s", status, &both)
+	}
+	var stdout, stderr bytes.Buffer
+	if status := run(t.Context(), []string{"--modules", root}, &stdout, &stderr, fakeCommand(t, root, stream)); status != 0 ||
+		!strings.Contains(stderr.String(), "module-layer-missing") || strings.Contains(stdout.String(), "satisfy") {
+		t.Fatalf("status %d, stdout %s, stderr %s", status, &stdout, &stderr)
+	}
+	var graph moduleReport
+	if err := json.Unmarshal(stdout.Bytes(), &graph); err != nil || len(graph.Nodes) != 2 {
+		t.Fatalf("invalid module report: %v; %s", err, &stdout)
+	}
+	for _, node := range graph.Nodes {
+		if node.Layer != layerUnassigned {
+			t.Errorf("module %s is reported in layer %s with no row naming it", node.Module, node.Layer)
+		}
+	}
+}

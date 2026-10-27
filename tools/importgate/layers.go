@@ -197,10 +197,12 @@ func parseLayerAssignment(fields []string, g *graph, rootPath, file string) (str
 	return owner, fields[1], nil
 }
 
-// parseLayerPair reads `<owner> <-> <owner> <reason>`. At least one side must be
-// a module of the repository whose file this is, so a dependency cannot justify a
-// consumer's reciprocal pair. The reason keeps its own wording because this row is
-// the exception, and an exception nobody can read is not reviewable.
+// parseLayerPair reads `<owner> <-> <owner> <reason>`. Both sides must be modules
+// of the repository whose file this is: no build measures a pair that spans two
+// repositories, because Go reports packages for the main module alone, so neither
+// side's gate could judge such a row and no repository owns it. The reason keeps
+// its own wording because this row is the exception, and an exception nobody can
+// read is not reviewable.
 func parseLayerPair(row string, fields []string, g *graph, rootPath, file string) (layerPair, string, error) {
 	if len(fields) < 4 {
 		return layerPair{}, "", fmt.Errorf("expected two module owners and a nonempty reason in %s", file)
@@ -216,8 +218,8 @@ func parseLayerPair(row string, fields []string, g *graph, rootPath, file string
 	if one == two {
 		return layerPair{}, "", fmt.Errorf("pair %s names one module twice", one)
 	}
-	if g.root(one) != rootPath && g.root(two) != rootPath {
-		return layerPair{}, "", fmt.Errorf("pair %s <-> %s names no module of %s; a file justifies only pairs its own repository is in", one, two, rootPath)
+	if g.root(one) != rootPath || g.root(two) != rootPath {
+		return layerPair{}, "", fmt.Errorf("pair %s <-> %s names a module outside %s; a pair is justifiable only in the repository that holds both of its modules", one, two, rootPath)
 	}
 	reason := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(row, fields[0])), "<->")), fields[2]))
 	if reason == "" {

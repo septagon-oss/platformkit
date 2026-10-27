@@ -48,7 +48,7 @@ assigns only its own modules, in its own `scripts/imports-layers.txt`.
 
 ## Imports between modules
 
-Package-level imports aggregated by module owner: ordinary source, `contracts/` and `internal/`. The gate judges the layer rule over `production` contexts alone, so an `upward` row whose contexts are all test contexts is a granted test composition in `scripts/imports-integration.txt`, not a refusal.
+Package-level imports aggregated by module owner: ordinary source, `contracts/` and `internal/`. The gate judges the layer rule over `production` contexts alone, so an `upward` row whose contexts are all test contexts is not a refusal: test source may read a peer's `contracts/` tree with no row, and `scripts/imports-integration.txt` is what names the foreign constructors a suite may compose.
 
 | From | To | Layers | Direction | Contexts | Source | Justified |
 | --- | --- | --- | --- | --- | --- | --- |
