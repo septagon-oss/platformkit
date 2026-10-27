@@ -45631,6 +45631,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/the_walks_refusal_stands_alone_in_every_declaration_order_test.go",
+   "id": "modules/audit/the_walks_refusal_stands_alone_in_every_declaration_order_test.go#TestTheWalksRefusalStandsAloneInEveryDeclarationOrder",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheWalksRefusalStandsAloneInEveryDeclarationOrder",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go",
    "id": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go#TestNewRefusesALinkPageThatIsNotAnAbsolutePath",
    "kind": "go",
@@ -92481,7 +92500,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2549,
+  "files": 2550,
   "forge_runs": [
    408,
    413,
@@ -92515,7 +92534,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4026,
+   "behaviour": 4027,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92534,9 +92553,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4699,
+  "rows": 4700,
   "tiers": {
-   "merge": 2896,
+   "merge": 2897,
    "nightly": 121,
    "push": 1682
   },
@@ -92544,13 +92563,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2304,
+   "keep": 2305,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4313,
+   "keep": 4314,
    "keep-rewrite": 170,
    "merge": 216
   }
