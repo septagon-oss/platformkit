@@ -110,10 +110,13 @@ func savingControl(r Resource, o Options, row map[string]any) []g.Node {
 	if s.Pressed {
 		out = append(out, h.P(h.ID("saving-standing"), h.Aria("live", "polite"), g.Text(d.Words.Saved)))
 		if s.CanRemove && s.UnsaveURL != "" {
+			// The give-back is quiet for the same reason the keep control is: drawn in
+			// the delete's filled danger it would leave the person who kept a copy with
+			// two identical buttons, one of which destroys the record.
 			out = append(out, components.Form(components.FormProps{Action: s.UnsaveURL, Label: d.Words.Remove},
 				h.Input(h.Type("hidden"), h.Name("expectedRevision"),
 					h.Value(strconv.FormatInt(s.Revision, 10))),
-				components.Button(components.ButtonProps{Label: d.Words.Remove, Type: "submit", Tone: "danger", Size: "md"})))
+				components.Button(components.ButtonProps{Label: d.Words.Remove, Type: "submit", Variant: "outline", Size: "md"})))
 		}
 	}
 	if s.ListURL != "" {

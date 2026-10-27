@@ -3898,6 +3898,25 @@
   },
   {
    "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/keep_form_lands_on_its_own_kept_list_test.go",
+   "id": "apps/platformkit/keep_form_lands_on_its_own_kept_list_test.go#TestTheKeepFormLandsOnThisInstallationsOwnKeptList",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheKeepFormLandsOnThisInstallationsOwnKeptList",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
    "assertions_in_file": 18,
    "evidence": "only file in its package reaching /api/v1/auth/factors/recovery/rotate, /api/v1/auth/roles/admin, /api/v1/auth/sessions",
    "file": "apps/platformkit/key_that_opens_no_door_is_not_a_credential_test.go",
@@ -5272,6 +5291,25 @@
    "kind": "go",
    "layer": "composition",
    "name": "TestAReadOnlyResourceHasNoFormEvenForTheAdministrator",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/record_with_a_kept_copy_one_filled_action_test.go",
+   "id": "apps/platformkit/record_with_a_kept_copy_one_filled_action_test.go#TestTheRecordWithAKeptCopyDrawsOneFilledAction",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheRecordWithAKeptCopyDrawsOneFilledAction",
    "needs_db": true,
    "pkg": "apps/platformkit",
    "round_named": false,
@@ -88545,7 +88583,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2401,
+  "files": 2403,
   "forge_runs": [
    408,
    413,
@@ -88580,7 +88618,7 @@
   ],
   "layers": {
    "behaviour": 3859,
-   "composition": 500,
+   "composition": 502,
    "contract": 24,
    "journey": 111
   },
@@ -88598,9 +88636,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4494,
+  "rows": 4496,
   "tiers": {
-   "merge": 2732,
+   "merge": 2734,
    "nightly": 111,
    "push": 1651
   },
@@ -88608,13 +88646,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2156,
+   "keep": 2158,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4108,
+   "keep": 4110,
    "keep-rewrite": 170,
    "merge": 216
   }
