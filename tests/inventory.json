@@ -74873,6 +74873,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/guided_sheet_keeps_its_year_without_anything_of_its_own_buyer_test.go",
+   "id": "ui/screens/guided_sheet_keeps_its_year_without_anything_of_its_own_buyer_test.go#TestAGuidedSheetKeepsItsYearWithoutAnythingOfItsOwnBuyer",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedSheetKeepsItsYearWithoutAnythingOfItsOwnBuyer",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/hints_test.go",
    "id": "ui/screens/hints_test.go#TestEveryHintSerialisesToTheFrozenJSON",
    "kind": "go",
@@ -84022,7 +84041,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2287,
+  "files": 2288,
   "forge_runs": [
    408,
    413,
@@ -84056,7 +84075,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3637,
+   "behaviour": 3638,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84075,9 +84094,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4259,
+  "rows": 4260,
   "tiers": {
-   "merge": 2632,
+   "merge": 2633,
    "nightly": 110,
    "push": 1517
   },
@@ -84085,13 +84104,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2042,
+   "keep": 2043,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3873,
+   "keep": 3874,
    "keep-rewrite": 170,
    "merge": 216
   }
