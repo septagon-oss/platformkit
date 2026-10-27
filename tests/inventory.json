@@ -19072,6 +19072,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/view/amount_handed_over_as_an_integer_keeps_its_digits_in_a_page_test.go",
+   "id": "kit/entity/view/amount_handed_over_as_an_integer_keeps_its_digits_in_a_page_test.go#TestAnAmountHandedOverAsAnIntegerKeepsItsDigitsInAPage",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnAmountHandedOverAsAnIntegerKeepsItsDigitsInAPage",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/view/concurrent_viewers_test.go",
    "id": "kit/entity/view/concurrent_viewers_test.go#TestBuildIsSafeForConcurrentViewers",
    "kind": "go",
@@ -87014,7 +87033,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2350,
+  "files": 2351,
   "forge_runs": [
    408,
    413,
@@ -87048,7 +87067,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3789,
+   "behaviour": 3790,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87067,23 +87086,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4415,
+  "rows": 4416,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1633
+   "push": 1634
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2104,
+   "keep": 2105,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4028,
+   "keep": 4029,
    "keep-rewrite": 170,
    "merge": 217
   }
