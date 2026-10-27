@@ -24016,6 +24016,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/each_half_of_a_declaration_runs_no_module_work_for_a_request_with_no_tenant_test.go",
+   "id": "kit/httpx/each_half_of_a_declaration_runs_no_module_work_for_a_request_with_no_tenant_test.go#TestEachHalfOfADeclarationRunsNoModuleWorkForARequestWithNoTenant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEachHalfOfADeclarationRunsNoModuleWorkForARequestWithNoTenant",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/example_test.go",
    "id": "kit/httpx/example_test.go#ExampleRegister",
    "kind": "go",
@@ -87119,7 +87138,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2386,
+  "files": 2387,
   "forge_runs": [
    408,
    413,
@@ -87153,7 +87172,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3795,
+   "behaviour": 3796,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87172,9 +87191,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4421,
+  "rows": 4422,
   "tiers": {
-   "merge": 2718,
+   "merge": 2719,
    "nightly": 110,
    "push": 1593
   },
@@ -87182,13 +87201,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2141,
+   "keep": 2142,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4035,
+   "keep": 4036,
    "keep-rewrite": 170,
    "merge": 216
   }
