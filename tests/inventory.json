@@ -34723,6 +34723,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/the_write_doors_answer_the_rows_own_tenant_about_a_quoted_tag_test.go",
+   "id": "kit/rest/the_write_doors_answer_the_rows_own_tenant_about_a_quoted_tag_test.go#TestTheWriteDoorsAnswerTheRowsOwnTenantAboutAQuotedTag",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheWriteDoorsAnswerTheRowsOwnTenantAboutAQuotedTag",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/translated_patch_document_test.go",
    "id": "kit/rest/translated_patch_document_test.go#TestTranslatedPatchDocumentationPreservesTheLocaleWriteBoundary",
    "kind": "go",
@@ -84099,7 +84118,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2286,
+  "files": 2287,
   "forge_runs": [
    408,
    413,
@@ -84133,7 +84152,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3641,
+   "behaviour": 3642,
    "composition": 489,
    "contract": 22,
    "journey": 111
@@ -84152,9 +84171,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4263,
+  "rows": 4264,
   "tiers": {
-   "merge": 2642,
+   "merge": 2643,
    "nightly": 111,
    "push": 1510
   },
@@ -84162,13 +84181,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2041,
+   "keep": 2042,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3877,
+   "keep": 3878,
    "keep-rewrite": 170,
    "merge": 216
   }
