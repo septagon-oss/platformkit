@@ -76545,6 +76545,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/served_panel_quotes_accented_words_as_fully_as_unaccented_ones_test.go",
+   "id": "ui/screens/served_panel_quotes_accented_words_as_fully_as_unaccented_ones_test.go#TestTheServedPanelQuotesAccentedWordsAsFullyAsUnaccentedOnes",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheServedPanelQuotesAccentedWordsAsFullyAsUnaccentedOnes",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/served_record_page_compares_each_version_against_the_one_before_it_test.go",
    "id": "ui/screens/served_record_page_compares_each_version_against_the_one_before_it_test.go#TestTheServedRecordPageComparesEachVersionAgainstTheOneBeforeIt",
    "kind": "go",
@@ -85487,7 +85506,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2331,
+  "files": 2332,
   "forge_runs": [
    408,
    413,
@@ -85521,7 +85540,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3710,
+   "behaviour": 3711,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -85540,9 +85559,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4336,
+  "rows": 4337,
   "tiers": {
-   "merge": 2639,
+   "merge": 2640,
    "nightly": 110,
    "push": 1587
   },
@@ -85550,13 +85569,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2086,
+   "keep": 2087,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3950,
+   "keep": 3951,
    "keep-rewrite": 170,
    "merge": 216
   }
