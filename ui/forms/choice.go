@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
@@ -43,7 +44,9 @@ func choiceModelValues(m Model, f entity.Field) []string {
 	return nil
 }
 
-func choiceControl(p ControlProps) g.Node {
+// choiceControl draws one choice's editing surface. anchor names the composed
+// screen's own control for this field; empty leaves a standalone form unmarked.
+func choiceControl(p ControlProps, anchor screen.AnchorRef) g.Node {
 	if err := validateChoiceField(p.Field); err != nil {
 		return g.NodeFunc(func(io.Writer) error { return err })
 	}
@@ -96,7 +99,7 @@ func choiceControl(p ControlProps) g.Node {
 	} else {
 		content = append(content, chips)
 	}
-	return h.FieldSet(content...)
+	return h.FieldSet(append(content, anchorNodes(anchor)...)...)
 }
 
 func choiceItems(p ControlProps, errorText string, word func(string, string) string) g.Node {

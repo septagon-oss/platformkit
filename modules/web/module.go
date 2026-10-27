@@ -20,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	"github.com/septagon-oss/platformkit/modules/web/contracts"
 	"github.com/septagon-oss/platformkit/modules/web/internal"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -82,6 +83,7 @@ func New(deps Deps) module.Module {
 	}
 	return module.Module{
 		Name:          "web",
+		Views:         contracts.Views(),
 		Permissions:   nil,
 		Declared:      nil,
 		Jobs:          nil,

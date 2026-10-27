@@ -16,6 +16,7 @@ package module
 
 import (
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"io/fs"
 	"regexp"
 	"slices"
@@ -103,6 +104,8 @@ type Module struct {
 
 	// Nav is where this module appears in navigation.
 	Nav []NavEntry
+	// Views are immutable custom-screen descriptors, checked again after Routes.
+	Views []screen.View
 
 	// There is no Health. Nothing in three repositories ever contributed a
 	// check, and /ready is the one question a probe can act on — is this

@@ -154,9 +154,9 @@ func (a *API) Surfaces(module string) Surfaces {
 	a.known[module] = true
 	a.mu.Unlock()
 	s := Surfaces{api: a}
-	s.Public = &Router{surface: SurfacePublic, module: module, api: a}
-	s.App = &Router{surface: SurfaceApp, module: module, api: a}
-	s.Ops = &Router{surface: SurfaceOps, module: module, api: a}
+	s.Public = &Router{surface: SurfacePublic, module: module, screenOwner: module, api: a}
+	s.App = &Router{surface: SurfaceApp, module: module, screenOwner: module, api: a}
+	s.Ops = &Router{surface: SurfaceOps, module: module, screenOwner: module, api: a}
 	return s
 }
 

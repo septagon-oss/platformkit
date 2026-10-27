@@ -3,6 +3,7 @@ package components
 // checkbox.go renders the checkbox, its label and the error it announces.
 
 import (
+	"maps"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -50,6 +51,11 @@ func Checkbox(p CheckboxProps) g.Node {
 		root = append(root, g.Attr("hidden"))
 	}
 
+	// The visible label owns the anchor; the native input is visually hidden.
+	if anchor := p.Attrs["data-screen-anchor"]; anchor != "" {
+		root = append(root, g.Attr("data-screen-anchor", anchor))
+	}
+
 	box := checkboxInputAttrs(p, id)
 	root = append(root, h.Input(box...), checkboxIndicator(p, state))
 	if p.Label != "" {
@@ -80,7 +86,9 @@ func checkboxInputAttrs(p CheckboxProps, id string) []g.Node {
 	if p.Name != "" {
 		box = append(box, h.Name(p.Name))
 	}
-	box = append(box, attrPairs(p.Attrs)...)
+	attrs := maps.Clone(p.Attrs)
+	delete(attrs, "data-screen-anchor")
+	box = append(box, attrPairs(attrs)...)
 	if p.Value != "" {
 		box = append(box, h.Value(p.Value))
 	}

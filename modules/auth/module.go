@@ -318,6 +318,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
 		Name:       "auth",
+		Views:      contracts.Views(deps.EmailRegistration != nil),
 		Migrations: Migrations.Files,
 		Adopts:     Migrations.Adopts,
 		RulesFrom:  Migrations.RulesFrom,

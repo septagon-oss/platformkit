@@ -85,6 +85,7 @@ func New(deps Deps) module.Module {
 	}
 	return module.Module{
 		Name:       "change",
+		Views:      contracts.Views(deps.Reviews.Read != nil),
 		Migrations: Migrations.Files,
 		PersonalData: personaldata.Implements(personaldata.Table{
 			Name:      "change_proposals",
