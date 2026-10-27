@@ -81191,6 +81191,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/served_floor_door_vocabulary_basis_test.go",
+   "id": "ui/served_floor_door_vocabulary_basis_test.go#TestTheDoorVocabularyGuardSearchesForWhatItNames",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheDoorVocabularyGuardSearchesForWhatItNames",
+   "needs_db": false,
+   "pkg": "ui",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/served_floor_door_vocabulary_test.go",
    "id": "ui/served_floor_door_vocabulary_test.go#TestTheDoorChecksOfThisPackageReadOneSectionAndOneDoorPattern",
    "kind": "go",
@@ -90650,7 +90669,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2492,
+  "files": 2493,
   "forge_runs": [
    408,
    413,
@@ -90684,7 +90703,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3948,
+   "behaviour": 3949,
    "composition": 511,
    "contract": 24,
    "journey": 121
@@ -90703,23 +90722,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4604,
+  "rows": 4605,
   "tiers": {
    "merge": 2808,
    "nightly": 121,
-   "push": 1675
+   "push": 1676
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2247,
+   "keep": 2248,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4218,
+   "keep": 4219,
    "keep-rewrite": 170,
    "merge": 216
   }
