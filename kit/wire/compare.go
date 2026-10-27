@@ -18,6 +18,9 @@ func checkAllowances(allowances []AuthorizationAllowance, add func(rule, path, m
 	}
 }
 
+// compareOperations states what moved between the two documents' operations: an address
+// that went away or changed hands (B2), an operationId no route answers (B1), and a door
+// that authorizes someone it did not (B6) beyond what a reviewed pair covers.
 func compareOperations(oldOps, updated wireRoutes, allowances []AuthorizationAllowance, add func(rule, path, member, message string)) {
 	known := map[string]bool{}
 	for _, op := range updated {
@@ -74,12 +77,17 @@ func (s shapeIndex) announces(key string) bool {
 // compareShapes states every difference between two documents' shape records: a record that
 // vanished or changed is B3, an enum that moved is B5, and a member a request newly requires
 // that an older client never sends is B4. A record neither walk read is no difference; the
-// caller reports the read that stopped instead.
-func compareShapes(shapes shapeIndex, oldShapes, newShapes map[string]string, add func(rule, path, member, message string)) {
+// caller reports the read that stopped instead. `required` is the caller's reviewed
+// requiredness list, honoured for the one vanished requirement it names verbatim; a list the
+// caller did not hold at the gate arrives here empty.
+func compareShapes(shapes shapeIndex, oldShapes, newShapes map[string]string, required []RequirednessAllowance, add func(rule, path, member, message string)) {
 	for _, key := range sortedKeys(oldShapes) {
 		fresh, ok := newShapes[key]
 		switch {
 		case !ok:
+			if requirednessRelaxation(required, key) {
+				continue
+			}
 			add("B3", shapes.path(key), key, fmt.Sprintf("B3 (breaking): %s is gone", key))
 		default:
 			if problem := enumMove(key, oldShapes[key], fresh); problem != "" {

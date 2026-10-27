@@ -375,7 +375,6 @@
           "description": "",
           "emptyDescription": "",
           "icon": "",
-          "group": null,
           "order": 0
         },
         "titles": {
@@ -431,7 +430,6 @@
         },
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "id",
             "label": "Id",
@@ -450,15 +448,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "createdAt",
             "label": "Created at",
@@ -481,14 +475,11 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "updatedAt",
             "label": "Updated at",
@@ -511,14 +502,11 @@
               "time": {
                 "kind": "instant",
                 "relative": false
-              },
-              "money": null
+              }
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "title",
             "label": "Title",
@@ -537,15 +525,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "body",
             "label": "Body",
@@ -564,15 +548,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "status",
             "label": "Status",
@@ -591,13 +571,10 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
             "options": [
               {
-                "picture": null,
                 "group": "",
                 "noPreference": false,
                 "value": "open",
@@ -606,7 +583,6 @@
                 "done": false
               },
               {
-                "picture": null,
                 "group": "",
                 "noPreference": false,
                 "value": "done",
@@ -614,11 +590,9 @@
                 "tone": "neutral",
                 "done": false
               }
-            ],
-            "reference": null
+            ]
           },
           {
-            "choice": null,
             "figure": null,
             "name": "rank",
             "label": "Rank",
@@ -637,15 +611,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "pinned",
             "label": "Pinned",
@@ -664,15 +634,11 @@
               "missing": "—",
               "true": "Yes",
               "false": "No",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "tags",
             "label": "Tags",
@@ -691,12 +657,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "list": {
@@ -722,7 +685,6 @@
               "kind": "enum",
               "values": [
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "open",
@@ -731,7 +693,6 @@
                   "done": false
                 },
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "done",
@@ -747,7 +708,6 @@
               "kind": "bool",
               "values": [
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "true",
@@ -756,7 +716,6 @@
                   "done": false
                 },
                 {
-                  "picture": null,
                   "group": "",
                   "noPreference": false,
                   "value": "false",
@@ -777,7 +736,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           },
           {
@@ -788,7 +746,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           },
           {
@@ -799,7 +756,6 @@
             "system": false,
             "primary": false,
             "destructive": false,
-            "confirmation": null,
             "successMessage": ""
           }
         ],
@@ -845,7 +801,6 @@
           }
         },
         "summary": {
-          "highlight": null,
           "trendField": ""
         }
       },

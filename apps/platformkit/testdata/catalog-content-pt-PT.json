@@ -658,7 +658,6 @@
     },
     "fields": [
       {
-        "choice": null,
         "figure": null,
         "name": "id",
         "label": "Id",
@@ -677,15 +676,11 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "createdAt",
         "label": "Created at",
@@ -708,14 +703,11 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "updatedAt",
         "label": "Updated at",
@@ -738,14 +730,11 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "slug",
         "label": "Nome do endereço",
@@ -764,15 +753,11 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "title",
         "label": "Title",
@@ -791,15 +776,11 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "body",
         "label": "Body",
@@ -818,15 +799,11 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "coverImageId",
         "label": "Capa",
@@ -845,15 +822,11 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "kind",
         "label": "Tipo",
@@ -872,13 +845,10 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
-            "picture": null,
             "group": "",
             "noPreference": false,
             "value": "page",
@@ -887,7 +857,6 @@
             "done": false
           },
           {
-            "picture": null,
             "group": "",
             "noPreference": false,
             "value": "post",
@@ -895,11 +864,9 @@
             "tone": "neutral",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
-        "choice": null,
         "figure": null,
         "name": "status",
         "label": "Status",
@@ -918,13 +885,10 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
-            "picture": null,
             "group": "",
             "noPreference": false,
             "value": "draft",
@@ -933,7 +897,6 @@
             "done": false
           },
           {
-            "picture": null,
             "group": "",
             "noPreference": false,
             "value": "published",
@@ -942,7 +905,6 @@
             "done": false
           },
           {
-            "picture": null,
             "group": "",
             "noPreference": false,
             "value": "archived",
@@ -950,11 +912,9 @@
             "tone": "neutral",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
-        "choice": null,
         "figure": null,
         "name": "publishedAt",
         "label": "Publicada",
@@ -977,14 +937,11 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
-        "choice": null,
         "figure": null,
         "name": "author",
         "label": "Author",
@@ -1003,9 +960,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [],
         "reference": {
@@ -1013,7 +968,6 @@
         }
       },
       {
-        "choice": null,
         "figure": null,
         "name": "revision",
         "label": "Revision",
@@ -1032,12 +986,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": 0,
-          "time": null,
-          "money": null
+          "precision": 0
         },
-        "options": [],
-        "reference": null
+        "options": []
       }
     ],
     "list": {
@@ -1087,7 +1038,6 @@
           "kind": "enum",
           "values": [
             {
-              "picture": null,
               "group": "",
               "noPreference": false,
               "value": "page",
@@ -1096,7 +1046,6 @@
               "done": false
             },
             {
-              "picture": null,
               "group": "",
               "noPreference": false,
               "value": "post",
@@ -1112,7 +1061,6 @@
           "kind": "enum",
           "values": [
             {
-              "picture": null,
               "group": "",
               "noPreference": false,
               "value": "draft",
@@ -1121,7 +1069,6 @@
               "done": false
             },
             {
-              "picture": null,
               "group": "",
               "noPreference": false,
               "value": "published",
@@ -1130,7 +1077,6 @@
               "done": false
             },
             {
-              "picture": null,
               "group": "",
               "noPreference": false,
               "value": "archived",
@@ -1146,7 +1092,6 @@
       {
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "version",
             "label": "Version",
@@ -1165,15 +1110,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "locale",
             "label": "Locale",
@@ -1192,15 +1133,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "expectedRevision",
             "label": "Expected revision",
@@ -1219,12 +1156,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": 0,
-              "time": null,
-              "money": null
+              "precision": 0
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "verb": "restore",
@@ -1243,7 +1177,6 @@
       {
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "lang",
             "label": "Lang",
@@ -1262,15 +1195,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "values",
             "label": "Values",
@@ -1289,15 +1218,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "expected",
             "label": "Expected",
@@ -1316,12 +1241,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "verb": "translate",
@@ -1330,13 +1252,11 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "lang",
             "label": "Lang",
@@ -1355,15 +1275,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "fields",
             "label": "Fields",
@@ -1382,12 +1298,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "verb": "review-translation",
@@ -1396,13 +1309,11 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "lang",
             "label": "Lang",
@@ -1421,15 +1332,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "fields",
             "label": "Fields",
@@ -1448,12 +1355,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "verb": "suggest-translation",
@@ -1462,13 +1366,11 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
         "fields": [
           {
-            "choice": null,
             "figure": null,
             "name": "lang",
             "label": "Lang",
@@ -1487,15 +1389,11 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           },
           {
-            "choice": null,
             "figure": null,
             "name": "fields",
             "label": "Fields",
@@ -1514,12 +1412,9 @@
               "missing": "—",
               "true": "",
               "false": "",
-              "precision": null,
-              "time": null,
-              "money": null
+              "precision": null
             },
-            "options": [],
-            "reference": null
+            "options": []
           }
         ],
         "verb": "untranslate",
@@ -1528,7 +1423,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -1539,7 +1433,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -1550,7 +1443,6 @@
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
@@ -1603,7 +1495,6 @@
       }
     },
     "summary": {
-      "highlight": null,
       "trendField": ""
     }
   },
