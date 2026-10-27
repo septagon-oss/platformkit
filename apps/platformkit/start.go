@@ -6,11 +6,10 @@ package main
 //
 // It runs its own PostgreSQL — downloaded once into the user's cache, its data
 // under ./data — creates the application role, migrates, bootstraps the first
-// tenant and administrator when there is none, and serves on 127.0.0.1:8080, so
-// nothing outside the machine can reach it unless --addr says otherwise. Nothing
-// has to be installed but Go, and nothing has to be written down: the
-// configuration is the development one config.example.yaml documents, with the
-// database's port filled in.
+// tenant and administrator when there is none, and serves on 127.0.0.1:8080:
+// nothing outside this machine reaches it unless --addr says otherwise. Nothing
+// has to be installed but Go and nothing has to be written down: the
+// configuration is the development one config.example.yaml documents.
 //
 // NATS is not needed: the combined role carries events in memory, which is
 // what kit/app does for it anyway. A deployment never runs this; a deployment
