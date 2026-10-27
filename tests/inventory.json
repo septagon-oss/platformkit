@@ -57882,6 +57882,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/notification/every_wired_channel_carries_its_event_or_answers_a_refusal_test.go",
+   "id": "modules/notification/every_wired_channel_carries_its_event_or_answers_a_refusal_test.go#TestEveryChannelADeploymentCanWireCarriesItsEventOrIsRefusedByName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryChannelADeploymentCanWireCarriesItsEventOrIsRefusedByName",
+   "needs_db": false,
+   "pkg": "modules/notification",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/notification/internal/absent_channel_provider_test.go",
    "id": "modules/notification/internal/absent_channel_provider_test.go#TestAnAbsentProviderClosesItsChannelAsSuppressed",
    "kind": "go",
@@ -92386,7 +92405,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2545,
+  "files": 2546,
   "forge_runs": [
    408,
    413,
@@ -92420,7 +92439,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4021,
+   "behaviour": 4022,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92439,23 +92458,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4694,
+  "rows": 4695,
   "tiers": {
    "merge": 2892,
    "nightly": 121,
-   "push": 1681
+   "push": 1682
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2300,
+   "keep": 2301,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4308,
+   "keep": 4309,
    "keep-rewrite": 170,
    "merge": 216
   }
