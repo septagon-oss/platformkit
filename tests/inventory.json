@@ -81153,6 +81153,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/served_floor_door_advice_test.go",
+   "id": "ui/served_floor_door_advice_test.go#TestEveryDoorGuardRefusalNamesACallThatStillExists",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEveryDoorGuardRefusalNamesACallThatStillExists",
+   "needs_db": false,
+   "pkg": "ui",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/served_floor_door_declaration_test.go",
    "id": "ui/served_floor_door_declaration_test.go#TestTheDoorVocabularyOfThisPackageStaysInTwoFiles",
    "kind": "go",
@@ -90707,7 +90726,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2495,
+  "files": 2496,
   "forge_runs": [
    408,
    413,
@@ -90741,7 +90760,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3951,
+   "behaviour": 3952,
    "composition": 511,
    "contract": 24,
    "journey": 121
@@ -90760,23 +90779,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4607,
+  "rows": 4608,
   "tiers": {
    "merge": 2808,
    "nightly": 121,
-   "push": 1678
+   "push": 1679
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2250,
+   "keep": 2251,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4221,
+   "keep": 4222,
    "keep-rewrite": 170,
    "merge": 216
   }
