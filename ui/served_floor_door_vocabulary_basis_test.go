@@ -133,6 +133,22 @@ func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 		}
 	}
 
+	// The reach above counts the two routes apart and prints one count for each, so the two counts must come from
+	// two markers. Only a source that takes both routes is refused today, where a single marker answering to both
+	// would print a line under a route it does not take.
+	guideLine := "\tread, err := os.ReadFile(" + readmePathQuoted() + ")"
+	doorLine := "var doors = regexp.MustCompile(`" + pattern + "`)"
+	plainLine := "\tmeasure := width * 2 / 3"
+	if !strings.Contains(guideLine, readmePathQuoted()) || declaresDoorPattern(guideLine, core) {
+		t.Errorf("the line %q opens the guide and is read as a door pattern as well, so the reach above counts one route where it prints two", guideLine)
+	}
+	if !declaresDoorPattern(doorLine, core) || strings.Contains(doorLine, readmePathQuoted()) {
+		t.Errorf("the line %q repeats the door pattern and is read as naming the guide as well, so the reach above counts one route where it prints two", doorLine)
+	}
+	if strings.Contains(plainLine, readmePathQuoted()) || declaresDoorPattern(plainLine, core) {
+		t.Errorf("the line %q takes neither route and is read as one, so the reach above would refuse a source that confines nothing", plainLine)
+	}
+
 	// A copy of the pattern and a copy of it narrowed at the far end are both recognised, while a compiled pattern
 	// that names no door is not.
 	shared := `var shared = regexp.MustCompile(` + "`" + pattern + "`" + `)`
