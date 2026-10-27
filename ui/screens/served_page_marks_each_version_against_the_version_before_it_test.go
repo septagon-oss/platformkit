@@ -31,6 +31,8 @@ func TestTheServedPageMarksEachVersionAgainstTheVersionBeforeIt(t *testing.T) {
 		Module: "note", Entity: "note", Path: "/notes", Screen: at,
 		Schema: entity.Schema{Module: "note", Entity: "note", Path: "/notes",
 			Fields: []entity.Field{{Name: "title", Type: entity.TypeString}}},
+		ReadBy:   httpx.SignedIn(),
+		Commands: []httpx.Command{panelRestoreCommand("restore")},
 		History: &httpx.History{RestoreVerb: "restore",
 			Versions: func(context.Context, uuid.UUID) ([]httpx.Version, error) {
 				return []httpx.Version{
@@ -45,7 +47,8 @@ func TestTheServedPageMarksEachVersionAgainstTheVersionBeforeIt(t *testing.T) {
 	}
 	row := map[string]any{"id": id.String(), "title": "Buy bread today", entity.RevisionField: float64(14)}
 
-	served, err := detailView(versioned, context.Background(),
+	mounted, ctx := historyServedTo(t, versioned)
+	served, err := detailView(mounted, ctx,
 		Options{Workspace: "/app", Home: "Workspace"}, at, row, true)
 	if err != nil {
 		t.Fatalf("the record page of a resource whose History answers would not render: %v", err)
