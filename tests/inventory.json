@@ -32671,6 +32671,44 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/guided_rest_page_without_a_script_test.go",
+   "id": "kit/rest/guided_rest_page_without_a_script_test.go#TestTheRestPageWithoutAScriptSaysTheSecondTheCountdownRunsTo",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheRestPageWithoutAScriptSaysTheSecondTheCountdownRunsTo",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/guided_rest_page_without_a_script_test.go",
+   "id": "kit/rest/guided_rest_page_without_a_script_test.go#TestTheRestPageStopsAddingSecondsAtADay",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheRestPageStopsAddingSecondsAtADay",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/guided_rest_screen_between_sets_test.go",
    "id": "kit/rest/guided_rest_screen_between_sets_test.go#TestTheRestScreenCountsDownFromTheSetItFollows",
    "kind": "go",
@@ -83642,7 +83680,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2268,
+  "files": 2269,
   "forge_runs": [
    408,
    413,
@@ -83676,7 +83714,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3617,
+   "behaviour": 3619,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83695,9 +83733,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4239,
+  "rows": 4241,
   "tiers": {
-   "merge": 2616,
+   "merge": 2618,
    "nightly": 110,
    "push": 1513
   },
@@ -83705,13 +83743,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2023,
+   "keep": 2024,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3853,
+   "keep": 3855,
    "keep-rewrite": 170,
    "merge": 216
   }
