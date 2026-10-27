@@ -56,12 +56,13 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// adapter: the shell asks about the caller by id and gets back the two words
 		// a header can say, not a row. Eight lines, and they are the whole of what
 		// this module knows about the user module.
-		People:    callerOf(pkit.Get[usercontracts.Lookup](w)),
-		Theme:     skin.Theme,
-		Messages:  skin.Copy,
-		Locale:    pkit.Get[admincontracts.Locale](w),
-		Storybook: pkit.Get[admincontracts.Storybook](w),
-		SignIn:    signin.Address,
+		People:            callerOf(pkit.Get[usercontracts.Lookup](w)),
+		Theme:             skin.Theme,
+		Messages:          skin.Copy,
+		Locale:            pkit.Get[admincontracts.Locale](w),
+		Storybook:         pkit.Get[admincontracts.Storybook](w),
+		SignIn:            signin.Address,
+		SignInOperationID: signin.OperationID,
 		// A generated picture cell fetches through the file module's door, which this
 		// shell does not mount and so cannot name: the composition that published that
 		// door to the workspace catalogue hands it here as the same string.
@@ -130,7 +131,7 @@ func registration(in *admincontracts.Registration) *Registration {
 	if in == nil {
 		return nil
 	}
-	out := &Registration{Address: in.Address}
+	out := &Registration{Address: in.Address, OperationID: in.OperationID}
 	switch in.Kind {
 	case admincontracts.KindEmail:
 		out.Kind = RegistrationKindEmail

@@ -20,11 +20,13 @@ import (
 	"sync"
 )
 
-// ErrNoTransactionToDefer is returned by AfterCommit when the context carries no
-// tenant transaction that could run the action: none at all, or a system one. A
-// system transaction is refused rather than supported because only kit/ mints the
-// token that opens one, so an effect deferred from it would be a kernel effect on
-// one tenant's data, decided by code that has no business deciding it.
+// ErrNoTransactionToDefer is returned by AfterCommit and AfterRollback when the
+// context carries no tenant transaction that could run the action: none at all, a
+// system one, or one whose ending has already been decided — reached either through
+// a Pending that has since ended or through a transaction frame a caller still
+// holds. A system transaction is refused rather than supported because only kit/
+// mints the token that opens one, so an effect deferred from it would be a kernel
+// effect on one tenant's data, decided by code that has no business deciding it.
 var ErrNoTransactionToDefer = errors.New("db: no tenant transaction to wait for")
 
 // ErrEffectNotRun says the transaction committed and one of the effects deferred
@@ -45,24 +47,51 @@ type afterAction struct {
 	fn  func(context.Context) error
 }
 
-// commitQueue is the actions one transaction will run after it commits. It is
-// reached through the Pending that will end the work, so an action registered by a
-// nested Run joins the commit rather than the frame that registered it.
-type commitQueue struct {
+// afterQueue is the actions one transaction will run after one of its two outcomes:
+// AfterCommit fills commits, AfterRollback fills rollbacks, and the ending that already
+// decides which outcome happened decides which queue runs. It is reached through the
+// Pending that will end the work, so an action a nested Run registers joins that ending.
+type afterQueue struct {
 	mu      sync.Mutex
 	actions []afterAction
+	// taken says this queue's transaction has had its ending, which took the actions
+	// with it. It is what lets a nil answer from a registration keep meaning "this
+	// transaction will run your effect": a frame names its queues by pointer, so
+	// without it a caller holding one past the ending would be answered nil for work
+	// no ending will ever reach.
+	taken bool
 }
 
-func (q *commitQueue) add(a afterAction) {
+// add joins the queue and reports whether an ending can still reach it. False is the
+// queue's own share of ErrNoTransactionToDefer: the transaction that would run the
+// action has already ended, and nothing a caller is still holding changes that.
+func (q *afterQueue) add(a afterAction) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.taken {
+		return false
+	}
 	q.actions = append(q.actions, a)
+	return true
+}
+
+// take marks the queue as held by the ending in progress, so from that moment every
+// registration on it is refused. The ending calls it for both queues at once, under
+// the Pending's mutex, before any of the outcome runs: what it takes is what it runs
+// or drops, and the transaction that owns them is over from here.
+func (q *afterQueue) take() {
+	if q == nil {
+		return
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.taken = true
 }
 
 // drain takes the whole queue, so a transaction that is closed twice — Close is
-// idempotent — runs its actions once. A rollback drops them rather than deferring
-// them to a commit that will not come.
-func (q *commitQueue) drain() []afterAction {
+// idempotent — runs its actions once. The outcome that does not use a queue drops it
+// rather than holding it for an ending that will not come.
+func (q *afterQueue) drain() []afterAction {
 	if q == nil {
 		return nil
 	}
@@ -74,15 +103,15 @@ func (q *commitQueue) drain() []afterAction {
 }
 
 // AfterCommit registers action to run once the tenant transaction now open on ctx
-// has committed, before Run (or the request holding the transaction) returns. It
-// runs on a successful commit and on nothing else: a handler error, a failed commit,
-// a refused settings re-read, a rolled-back request or a panic runs none of the
-// queue. An effect that must survive a rollback does not belong here.
+// has committed, before Run (or the request holding the transaction) returns. It runs
+// on a successful commit and nothing else: a handler error, a failed commit, a refused
+// settings re-read, a rolled-back request or a panic runs none of the queue. An effect
+// that must survive a rollback belongs to AfterRollback instead; a transaction whose
+// ending is decided — by its Pending or the frame a handler kept — refuses both.
 //
-// The action is handed a context and no handle: whatever it needs from the database
-// it reads inside the transaction before registering, and a query it must make
-// afterwards opens its own with db.Run on db.Detached(ctx), on the pool that
-// transaction ran on — which db.ConnFrom carries.
+// The action is handed a context and no handle: what it needs from the database it
+// reads inside the transaction before registering, and a later query opens its own with
+// db.Run on db.Detached(ctx) — db.ConnFrom carries the pool that transaction ran on.
 //
 // An action's error cannot undo the commit, which is nothing a function can do
 // after the fact. It comes back from Close wrapping ErrEffectNotRun; every action
@@ -92,10 +121,12 @@ func AfterCommit(ctx context.Context, action func(context.Context) error) error 
 		return fmt.Errorf("%w: a nil action would be dropped without ever being noticed", ErrNoTransactionToDefer)
 	}
 	cur, ok := current(ctx)
-	if !ok || cur.system || cur.hooks == nil {
+	if !ok || cur.system || cur.commits == nil {
 		return ErrNoTransactionToDefer
 	}
-	cur.hooks.add(afterAction{ctx: ctx, fn: action})
+	if !cur.commits.add(afterAction{ctx: ctx, fn: action}) {
+		return ErrNoTransactionToDefer
+	}
 	return nil
 }
 

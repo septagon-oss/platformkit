@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/forms"
 )
@@ -20,6 +21,10 @@ import (
 type Command struct {
 	// Resolved supplies command copy and flags after authority has been narrowed.
 	Resolved *present.ResolvedCommand
+	// ScreenOwner names the module whose screens these anchors live on; Repeated marks
+	// a view whose controls no single form can be pointed at.
+	ScreenOwner, Entity string
+	Repeated            bool
 	// Bindings fills hidden arguments from the displayed row, never a fresh read.
 	Bindings    map[string]string
 	Verb        string
@@ -89,16 +94,7 @@ func commandFormsIn(o Options, words Words, commands []Command, item string, col
 // only a read of this row in this language can supply. That is the whole test: it
 // is a fact the command declared about its own arguments, and not a verb this
 // package has learned to recognise.
-func carriesRevisions(c Command) bool {
-	for _, f := range c.Fields {
-		for _, k := range f.Keys {
-			if k.From == entity.KeyFromRevision {
-				return true
-			}
-		}
-	}
-	return false
-}
+func carriesRevisions(c Command) bool { return present.RepeatedFields(c.Fields) }
 
 // commandFormFor renders policy copy and arguments at the command's route.
 // Locale and revision bindings use only values already read for this page.
@@ -150,7 +146,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 		}
 		if len(f.Keys) > 0 {
 			for _, k := range f.Keys {
-				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale))
+				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale, c.fieldAnchor(f.Name, k.Name)))
 			}
 			continue
 		}
@@ -159,7 +155,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			f.Widget, value = "hidden", locale.Locale
 		}
 		controls = append(controls, forms.Control(forms.ControlProps{
-			Field: formField(arguments, f, o), ID: id, Value: value, ChoiceValues: choiceDefault(f),
+			Field: c.formField(arguments, f, o), ID: id, Value: value, ChoiceValues: choiceDefault(f),
 		}))
 	}
 	variant, tone := "outline", ""
@@ -169,14 +165,17 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	if policy.Destructive {
 		tone = "danger"
 	}
-	controls = append(controls, components.Button(components.ButtonProps{Label: button, Type: "submit", Variant: variant, Tone: tone, Size: "md"}))
-	return components.Form(components.FormProps{Action: c.Action(item), Label: label}, controls...)
+	controls = append(controls, components.Button(components.ButtonProps{
+		ComponentProps: components.ComponentProps{Attrs: c.submitAttrs()},
+		Label:          button, Type: "submit", Variant: variant, Tone: tone, Size: "md",
+	}))
+	return components.Form(components.FormProps{ComponentProps: components.ComponentProps{Attrs: c.viewAttrs()}, Action: c.Action(item), Label: label}, controls...)
 }
 
 // mapKeyControl renders one named map argument. Revision keys quote the
 // supplied locale's observed revision; other keys begin empty to avoid rewriting
-// values the person did not submit.
-func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState) g.Node {
+// values the person did not submit. An anchor names the key in the published view.
+func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState, anchor screen.AnchorRef) g.Node {
 	key := entity.Field{
 		Name:   f.Name + "[" + k.Name + "]",
 		Type:   f.Elem,
@@ -188,7 +187,7 @@ func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.Loc
 		value = strconv.FormatInt(locale.Revisions[k.Name], 10)
 	}
 	return forms.Control(forms.ControlProps{
-		Field: forms.Field{Definition: key, Label: k.Label},
+		Field: forms.Field{Definition: key, Label: k.Label, Anchor: anchor},
 		ID:    id, Value: value,
 	})
 }

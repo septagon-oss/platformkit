@@ -1,6 +1,7 @@
 package present
 
 import (
+	"cmp"
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -27,6 +28,15 @@ func fields(in Input) []ResolvedField {
 		out = append(out, rf)
 	}
 	return out
+}
+
+// ControlKind is the effective form widget for a declared field. Unknown
+// declarations are refused by the schema gate; scalar/list fallbacks use text.
+func ControlKind(f entity.Field) string {
+	if f.Widget == "" && (f.Type == entity.TypeText || f.Type == entity.TypeUUID) && len(f.Enum) == 0 {
+		return "text"
+	}
+	return cmp.Or(control(f), "text")
 }
 
 func control(f entity.Field) string {

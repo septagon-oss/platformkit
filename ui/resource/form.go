@@ -1,8 +1,6 @@
 package resource
 
 import (
-	"slices"
-
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -89,40 +87,54 @@ const statusUnprocessableEntity = 422
 // id names the example; action scopes control identities across instances and
 // refusal swaps. Inputs are synthetic values, not persistence operations.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
+	kind := "edit"
+	if create {
+		kind = "create"
+	}
 	r = r.policy(o)
 	if err := r.validatePolicy(); err != nil {
 		return examples.Example{Node: invalid(err)}
 	}
-	fields := make([]forms.Field, 0, len(r.Resolved.Fields)+1)
+	resolved := r.resolvedView(kind)
+	// The form asks in the order its published view names, so the control it draws
+	// and the anchor the screen declared are one decision. A field's own words come
+	// from the resolved policy, which names its appearance. The one field this loop
+	// does not draw is the edit form's own write condition.
+	fields := make([]forms.Field, 0, len(resolved.Controls)+1)
 	immutable := []string{}
 	choiceValues := map[string][]string{}
-	names := r.Resolved.Layout.Update
-	if create {
-		names = r.Resolved.Layout.Create
-	}
-	for _, name := range names {
-		field, _ := fieldFor(r.Schema.Fields, name)
-		f := resolvedFormField(field, r.field(name), o)
+	words := o.Words(r.Schema)
+	for _, control := range resolved.Controls {
+		if control.Name != "field" {
+			continue
+		}
+		// A map argument's key is a control of its own, drawn from its own
+		// declaration; a plain field is drawn from the policy the caller resolved.
+		var f forms.Field
+		if len(control.Path) > 1 {
+			f = formField(words, controlField(r.Schema, control), o)
+		} else {
+			field, _ := entity.FieldNamed(r.Schema.Fields, control.Path[0])
+			f = resolvedFormField(field, r.field(control.Path[0]), o)
+		}
+		if ref := r.ref(kind, ""); ref != "" {
+			f.Anchor, _ = ref.Anchor("field", control.Path...)
+		}
+		if !control.Editable {
+			immutable = append(immutable, control.Path[0])
+		}
 		// A choice answers from the row's own selection, or from the refused
 		// write's, which arrives here in the same row map.
+		field := f.Definition
 		if field.Choices != nil {
 			if value, exists := row[field.Name]; exists {
 				choiceValues[field.Name] = readChoiceIDs(field, value)
 			}
 		}
 		if f.Definition.Widget == "richtext" {
-			f.Editor = richtextEditor(r, row, create, name, detail != "")
+			f.Editor = richtextEditor(r, row, create, control.Path[0], detail != "")
 		}
 		fields = append(fields, f)
-	}
-	if !create {
-		for _, field := range r.Resolved.Fields {
-			f, _ := fieldFor(r.Schema.Fields, field.Name)
-			if field.OnRecord && !field.Editable.Update && !entity.ServerOwned(f) && !slices.Contains(names, field.Name) {
-				immutable = append(immutable, field.Name)
-				fields = append(fields, resolvedFormField(f, field, o))
-			}
-		}
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
@@ -141,6 +153,7 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		Immutable: immutable, Detail: detail, Create: create}, forms.Options{
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
+		View:      r.ref(kind, ""),
 		Action:    action, CancelURL: r.Screen, Title: title,
 		Text: func(key, fallback string) string {
 			if o.Locale == nil {

@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -21,6 +22,7 @@ func (p pages) mountStorybook(app *httpx.Router) {
 	op := huma.Operation{OperationID: "admin-storybook-file", Method: http.MethodGet,
 		Path: p.at.gallery.rel + "/storybook/*", Tags: []string{"admin"}, Hidden: true}
 	httpx.SignIn(&op, p.at.login.at)
+	app.DescribePage(&op, screen.ResponseSet{Exception: "preview", Reason: "Storybook serves isolated component preview files."})
 	httpx.HTML(app, op, httpx.Permission("gallery:read"), func(ctx context.Context, in *struct {
 		File string `path:"*" maxLength:"500"`
 	}) (*httpx.Page, error) {

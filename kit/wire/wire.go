@@ -41,6 +41,10 @@ func Compare(golden, current []byte) []Break {
 // CompareWithAllowances applies the caller's explicit policy without retaining or
 // modifying inputs. Read-only calls are safe to run concurrently.
 func CompareWithAllowances(golden, current []byte, allowances []AuthorizationAllowance) []Break {
+	return compareWire(golden, current, allowances, nil)
+}
+
+func compareWire(golden, current []byte, allowances []AuthorizationAllowance, required []RequirednessAllowance) []Break {
 	var problems []Break
 	add := func(rule, path, member, message string) {
 		problems = append(problems, Break{rule, path, member, message})
@@ -76,7 +80,14 @@ func CompareWithAllowances(golden, current []byte, allowances []AuthorizationAll
 	compareOperations(oldOps, updated, allowances, add)
 	oldRead, newRead := wireShapes(oldDoc), wireShapes(newDoc)
 	shapes := newShapeIndex(oldDoc, oldOps)
-	compareShapes(shapes, oldRead.shapes, newRead.shapes, add)
+	// A requiredness list that no reviewer signed record by record, or that could carry
+	// more than the one move it names, is refused and forgives nothing: the rules below
+	// still read the whole pair, so a bad review never hides a break beside it.
+	if refused := reviewRequiredness(required, oldRead.shapes, newRead.shapes); len(refused) > 0 {
+		problems = append(problems, refused...)
+		required = nil
+	}
+	compareShapes(shapes, oldRead.shapes, newRead.shapes, required, add)
 	problems = append(problems, incompleteReads(oldRead, newRead, shapes.path)...)
 	return finish()
 }

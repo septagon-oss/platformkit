@@ -179,8 +179,7 @@ var permissions = []module.Permission{
 // should take.
 func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Storage == nil {
-		// A wiring mistake fails where it is written rather than as a nil
-		// dereference on the first upload.
+		// Storage is required before any route can accept an upload.
 		panic("file.Module: Deps.Storage is required; wire file.Local(dir) to keep the bytes on disk")
 	}
 	if len(deps.Retention) > 0 && deps.Tenants == nil {
@@ -237,6 +236,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	}
 	return svc, module.Module{
 		Name:       "file",
+		Views:      contracts.Views(deps.Library != nil, true, true),
 		Migrations: Migrations.Files,
 		// Bytes go, rows stay, and the certificate names both a subject and an actor.
 		PersonalData: personaldata.Implements(
