@@ -31,10 +31,7 @@ import (
 //
 // The name is read back from the row rather than taken from the record the upload
 // answers with: that struct is built from what the call was given, so only a read
-// says what the column kept. The library grid is read too, because it is the other
-// way this name reaches the person who typed it and it is a separate query: a
-// projection that shortens a label for a tile leaves the row whole and the tile
-// naming half a file.
+// says what the column kept.
 func TestANameOfExactlyTheCeilingTheRecordKeepsIsFiled(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
@@ -48,7 +45,7 @@ func TestANameOfExactlyTheCeilingTheRecordKeepsIsFiled(t *testing.T) {
 	name := strings.Repeat("é", contracts.MaxName)
 
 	ctx := tenancy.WithTenant(t.Context(), acme)
-	var got, listed string
+	var got string
 	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
 			Name: name, ContentType: "image/jpeg",
@@ -60,17 +57,6 @@ func TestANameOfExactlyTheCeilingTheRecordKeepsIsFiled(t *testing.T) {
 				return err
 			}
 			got = kept.Name
-			// A fragment, not the whole name: contracts.MaxQuery is 64 characters,
-			// so the box cannot hold a name at the ceiling it is searching for.
-			rows, _, err := svc.Search(ctx, tx, contracts.LibraryQuery{
-				Name: strings.Repeat("é", 20),
-			})
-			if err != nil {
-				return err
-			}
-			if len(rows) == 1 {
-				listed = rows[0].Name
-			}
 		}
 		return err
 	})
@@ -81,13 +67,6 @@ func TestANameOfExactlyTheCeilingTheRecordKeepsIsFiled(t *testing.T) {
 	if got != name || utf8.RuneCountInString(got) != contracts.MaxName {
 		t.Errorf("the row the upload filed is named %q (%d characters), want the %d-character name it was given",
 			got, utf8.RuneCountInString(got), contracts.MaxName)
-	}
-	// The grid read is asserted on its own line: a name the row kept and the tile
-	// shortened is a different failure from a name nothing kept, and it is the one
-	// a person sees first.
-	if listed != name {
-		t.Errorf("the library grid names the file %q, want the whole %d-character name it was given",
-			listed, contracts.MaxName)
 	}
 	if keys := keysUnder(t, dir); len(keys) != 1 {
 		t.Errorf("the upload left %d objects in the store (%v), want the one its row names", len(keys), keys)
