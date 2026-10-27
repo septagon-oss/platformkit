@@ -9,6 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -27,6 +28,10 @@ import (
 // measures in characters, and a tenant that does not write English spells a
 // 255-character name in more bytes than that. Measured in bytes the module would
 // refuse a name its own error message says is allowed.
+//
+// The name is read back from the row rather than taken from the record the upload
+// answers with: that struct is built from what the call was given, so only a read
+// says what the column kept.
 func TestANameOfExactlyTheCeilingTheRecordKeepsIsFiled(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
@@ -47,7 +52,11 @@ func TestANameOfExactlyTheCeilingTheRecordKeepsIsFiled(t *testing.T) {
 			Body: bytes.NewReader(picture.Bytes()), Declared: int64(picture.Len()),
 		})
 		if f != nil {
-			got = f.Name
+			kept, err := crud.Get[*contracts.File](tx, f.ID)
+			if err != nil {
+				return err
+			}
+			got = kept.Name
 		}
 		return err
 	})
