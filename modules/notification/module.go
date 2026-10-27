@@ -164,7 +164,9 @@ func streamedTopics() []string {
 // not depend on Go's map iteration. A provider is a channel this deployment
 // sends, and a channel it sends has to have somebody listening, so both halves
 // — this list and the decision that opens a ledger row — come from
-// contracts.Providers.Active over the same Deps value and cannot disagree.
+// contracts.Providers.Active over the same Deps value and cannot disagree. A
+// wired channel no worker is asked for answers as the refusal of the wiring, the
+// module's own or the carrier's, before any subscription is handed to the plan.
 func subscriptions(deps Deps) ([]events.Subscription, error) {
 	subs := []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)}
 	for _, c := range deps.Providers.Active() {
@@ -176,7 +178,11 @@ func subscriptions(deps Deps) ([]events.Subscription, error) {
 			// delivery, so it fails at the wiring rather than in the worker.
 			return nil, errors.New("notification.Module: Deps.Providers carries a channel this module carries itself: " + string(c))
 		}
-		subs = append(subs, internal.Carrier(p, deps.Hosts, deps.Secure))
+		carrier, err := internal.Carrier(p, deps.Hosts, deps.Secure)
+		if err != nil {
+			return nil, err
+		}
+		subs = append(subs, carrier)
 	}
 	return subs, nil
 }

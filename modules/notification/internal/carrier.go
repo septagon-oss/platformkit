@@ -15,6 +15,8 @@ import (
 )
 
 // Carrier is the subscription that asks one wired provider to carry one channel.
+// It answers as an error the channel no worker is ever asked for, so the manifest
+// that wires it refuses the composition by name instead of stopping the boot.
 //
 // It exists because "this deployment has a push adapter" is a fact about the
 // composition, and a fact about the composition that opens a `requested` row and
@@ -44,15 +46,15 @@ import (
 // nothing to address this person returns contracts.Permanent with that sentence,
 // which is a terminal `failed` row and an acknowledged event, not a retry ladder
 // for a fact no retry will change.
-func Carrier(p contracts.Provider, hosts contracts.HostLookup, secure bool) events.Subscription {
+func Carrier(p contracts.Provider, hosts contracts.HostLookup, secure bool) (events.Subscription, error) {
 	ch := p.Channel()
 	name, ok := contracts.RequestedEvent[ch]
 	if !ok {
 		// The composition wired a carrier for a channel no worker is ever asked
 		// for — in-app, which is the row itself, or mail, which this module's own
-		// subscription carries. It fails here, naming the channel, rather than as
+		// subscription carries. It answers here, naming the channel, rather than as
 		// two subscriptions on one event name.
-		panic("notification: Carrier: no worker is asked for the channel " + string(ch))
+		return events.Subscription{}, errors.New("notification: Carrier: no worker is asked for the channel " + string(ch))
 	}
 	return events.Subscription{
 		Module: "notification", Name: name,
@@ -100,7 +102,7 @@ func Carrier(p contracts.Provider, hosts contracts.HostLookup, secure bool) even
 			}
 			return record(tx, row.ID, string(ch), OutcomeSent, "")
 		},
-	}
+	}, nil
 }
 
 // absolute is the notice's link as a URL a client outside the application can
