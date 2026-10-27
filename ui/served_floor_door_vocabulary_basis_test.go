@@ -17,7 +17,9 @@ import (
 // Both halves have a passing branch today: the joined path is a file of this package, and the cut core is a strict
 // prefix of the expression it is cut from, ending at the word a door name is expected to hold. A copy of the door
 // pattern is then recognised whatever it adds or drops at either end, which is what the guard beside this one
-// claims, and refuses the day either basis moves.
+// claims, and refuses the day either basis moves. The two shapes that guard is asked about are held to be two
+// shapes here first: the expression must carry text beyond the cut, closed by the far end a narrowed copy drops,
+// or the copy said to be narrowed would be the copy and one question would be asked twice.
 func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	// The path the vocabulary guard searches for, with the quotes that delimit a Go literal either side, must
 	// name a file of this package: the guards read this guide to ask about the doors it documents.
@@ -48,8 +50,19 @@ func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 		t.Errorf("the door vocabulary guard cuts its mark of a copy at %q, which does not end at the word a door name holds: the word left servedDoor's expression and the guard now compares text no door is named by", core)
 	}
 
-	// And the cut must still do its work on the shapes it is asked about: a copy of the pattern and a copy of it
-	// narrowed at the far end are both recognised, while a compiled pattern that names no door is not.
+	// And the cut must still do its work on the shapes it is asked about — which needs those shapes to be two.
+	// The expression must hold text beyond the cut, and must still close with the class part and word boundary a
+	// copy narrowed at its far end drops. An expression that ended at the cut, or closed with other text, leaves
+	// the narrowed copy equal to the copy below, and the question asked of it asked twice about one shape.
+	if at := strings.Index(pattern, core); at >= 0 && at+len(core) == len(pattern) {
+		t.Errorf("the pattern these checks name doors with (%q) ends where the guard cuts its mark of a copy, so a copy narrowed at the far end is the same text as a copy of the whole, and no check beside these says the narrowing stopped being one", pattern)
+	}
+	if trimmed := strings.TrimSuffix(pattern, doorPatternFarEnd()); trimmed == pattern {
+		t.Errorf("the far end a narrowed door pattern is made by dropping is no part of the pattern these checks name doors with (%q), so the case below compares one shape under two names", pattern)
+	}
+
+	// A copy of the pattern and a copy of it narrowed at the far end are both recognised, while a compiled pattern
+	// that names no door is not.
 	shared := `var shared = regexp.MustCompile(` + "`" + pattern + "`" + `)`
 	if !declaresDoorPattern(shared, core) {
 		t.Errorf("a byte for byte copy of the door pattern is not recognised as one by the mark %q, so a third declaration of it agrees with no one and no check says so", core)
@@ -62,4 +75,11 @@ func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	if declaresDoorPattern(aside, core) {
 		t.Errorf("a compiled pattern that names no door is refused as a copy of the door pattern by the mark %q, so the guard confines compiled patterns rather than the vocabulary", core)
 	}
+}
+
+// doorPatternFarEnd names the close of a door name's expression — the repeated class part and the word boundary
+// that end it — which is what a door pattern narrowed at its far end drops. It is the text the case above trims,
+// named once here so that a change to how the checks' expression closes is said to be that change.
+func doorPatternFarEnd() string {
+	return `(?:_[A-Z0-9]+)*\b`
 }
