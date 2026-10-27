@@ -139,8 +139,10 @@ func TestASpecMountedBothWaysMountsTheSameCommand(t *testing.T) {
 // Options answers its guard or its collection route differently from the field
 // above it. Those two facts decide which route exists, so a declaration answering
 // them two ways is a command whose route two readers could disagree about — and it
-// is refused before a route exists. A CommandSpec whose Options agrees is a command
-// stated once, and TestACommandSpecStatingItsRouteInEitherFieldMountsIt holds that.
+// is refused before a route exists. A CommandSpec whose two fields answer the same is
+// one statement of one fact, whichever field an author wrote it in:
+// TestACommandSpecStatingItsGuardInEitherFieldMountsIt and
+// TestACommandSpecStatingItsCollectionRouteInBothFieldsMountsIt mount those.
 func TestACommandSpecNamingItsRouteTwiceRefusesToMount(t *testing.T) {
 	for _, twice := range []struct {
 		name string
@@ -198,8 +200,8 @@ func publishesItsOwnRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 // to Mount and keeps the CommandOptions they already wrote has not stated anything
 // twice — which is why the rule for a guard is agreement rather than silence about
 // the deprecated field. The collection route is not among these three because a bool
-// cannot say "nothing" differently from "the row's route", and its refusal is held
-// above.
+// cannot say "nothing" differently from "the row's route": the pair that cannot be
+// told apart is refused above, and the pair that agrees is mounted below.
 func TestACommandSpecStatingItsGuardInEitherFieldMountsIt(t *testing.T) {
 	const doc = "Makes the note visible to the tenant."
 	spoken := rest.CommandOptions{Auth: httpx.SignedIn()}
@@ -260,6 +262,92 @@ func TestACommandSpecStatingItsGuardInEitherFieldMountsIt(t *testing.T) {
 		for _, i := range []int{0, 1} {
 			if !reflect.DeepEqual(shape[i], first[i]) {
 				t.Errorf("the command spelled %s is not the command mounted at the top level:\n%#v\nagainst\n%#v",
+					name, shape[i], first[i])
+			}
+		}
+	}
+}
+
+// claimsAnOpenTask is the collection command both spellings below mount. The caller
+// names no row, so it takes the oldest open task and writes the note it was given; a
+// run handed a row id means the command was mounted at a row's address.
+func claimsAnOpenTask(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in publishBody) (*Task, error) {
+	if id != uuid.Nil {
+		return nil, crud.ErrInvalid
+	}
+	rows, _, err := crud.List[*Task](tx, crud.Query{Limit: 1, Sort: "title"})
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, crud.ErrNotFound
+	}
+	task := rows[0]
+	task.Done, task.Notes = true, in.Note
+	return task, crud.Update(ctx, tx, task, "done", "notes")
+}
+
+// TestACommandSpecStatingItsCollectionRouteInBothFieldsMountsIt mounts one collection
+// command twice: with CommandSpec.Collection naming the route, and with that same
+// fact also written in the deprecated Options.Collection, which is what an author
+// moving from rest.Command and copying their whole CommandOptions block ends up with.
+// Each states one route, so each mounts one command at the collection's address and
+// none at a row's. An author who moves the fact and clears the old one is refused by
+// the case above: only the pair that agrees is one statement.
+func TestACommandSpecStatingItsCollectionRouteInBothFieldsMountsIt(t *testing.T) {
+	const doc = "Takes the oldest open task and writes the note it was given."
+	oneCommand := map[string][2]any{}
+	for _, spelled := range []struct {
+		name string
+		cmd  rest.CommandSpec[publishBody]
+	}{
+		{"named by the declaration alone", rest.CommandSpec[publishBody]{
+			Verb: "claim", Summary: "Claim a task", Doc: doc, Collection: true,
+		}},
+		{"named by both fields, answering the same", rest.CommandSpec[publishBody]{
+			Verb: "claim", Summary: "Claim a task", Doc: doc,
+			Collection: true, Options: rest.CommandOptions{Collection: true},
+		}},
+	} {
+		t.Run(spelled.name, func(t *testing.T) {
+			rowID := uuid.New()
+			api, router, admin := mountAs(t, spec, member{"task:read": true, "task:write": true},
+				func(api *httpx.API) {
+					rest.Mount(api.Surfaces(spec.Module), spec, spelled.cmd, claimsAnOpenTask)
+				})
+			if _, err := admin.ExecContext(t.Context(),
+				"INSERT INTO rest_tasks (id, tenant_id, title) VALUES ($1, $2, $3)", rowID, acme.ID, "oldest"); err != nil {
+				t.Fatal(err)
+			}
+			op := recorded(t, api, "tasks-task-claim")
+			if op == nil {
+				t.Fatal("the command mounted no route")
+			}
+			commands := api.Resources()[0].Commands
+			if len(commands) != 1 {
+				t.Fatalf("the resource records %d commands, want the one", len(commands))
+			}
+			mounted := commands[0]
+			if !mounted.Collection || mounted.Endpoint != "/api/v1/tasks/task/claim" {
+				t.Errorf("the command is mounted at %s with Collection %t, want the collection's route",
+					mounted.Endpoint, mounted.Collection)
+			}
+			if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task/claim",
+				`{"note":"claimed without a row"}`); code != http.StatusOK || !strings.Contains(body, "claimed without a row") {
+				t.Fatalf("POST the collection's route = %d %s, want 200 and the row the command chose", code, body)
+			}
+			if code, body := call(t, router, http.MethodPost, "/api/v1/tasks/task/"+rowID.String()+"/claim", `{"note":"written at a row"}`); code != http.StatusNotFound {
+				t.Errorf("POST a row's route = %d %s, want %d: the command was mounted once, at the collection", code, body, http.StatusNotFound)
+			}
+			mounted.Execute, mounted.Run = nil, nil
+			oneCommand[spelled.name] = [2]any{*op, mounted}
+		})
+	}
+	first := oneCommand["named by the declaration alone"]
+	for name, shape := range oneCommand {
+		for _, i := range []int{0, 1} {
+			if !reflect.DeepEqual(shape[i], first[i]) {
+				t.Errorf("the command whose route %s names is not the command the declaration names alone:\n%#v\nagainst\n%#v",
 					name, shape[i], first[i])
 			}
 		}
