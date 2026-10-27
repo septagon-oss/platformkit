@@ -34377,6 +34377,44 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/a_command_guard_stated_only_in_the_deprecated_field_still_picks_its_router_test.go",
+   "id": "kit/rest/a_command_guard_stated_only_in_the_deprecated_field_still_picks_its_router_test.go#TestACommandGuardStatedOnlyInTheDeprecatedFieldStillPutsItOnTheOperatorsRouter",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACommandGuardStatedOnlyInTheDeprecatedFieldStillPutsItOnTheOperatorsRouter",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/a_command_guard_stated_only_in_the_deprecated_field_still_picks_its_router_test.go",
+   "id": "kit/rest/a_command_guard_stated_only_in_the_deprecated_field_still_picks_its_router_test.go#TestACommandGuardWhoseTwoFieldsDifferOnlyByAPlanFeatureRefusesToMount",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACommandGuardWhoseTwoFieldsDifferOnlyByAPlanFeatureRefusesToMount",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/a_command_that_names_its_own_route_mounts_the_same_command_either_way_test.go",
    "id": "kit/rest/a_command_that_names_its_own_route_mounts_the_same_command_either_way_test.go#TestACommandNamingItsOwnGuardAndRouteMountsTheSameCommandEitherWay",
    "kind": "go",
@@ -91914,7 +91952,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2532,
+  "files": 2533,
   "forge_runs": [
    408,
    413,
@@ -91948,7 +91986,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3997,
+   "behaviour": 3999,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -91967,9 +92005,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4670,
+  "rows": 4672,
   "tiers": {
-   "merge": 2878,
+   "merge": 2880,
    "nightly": 121,
    "push": 1671
   },
@@ -91977,13 +92015,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2287,
+   "keep": 2288,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4284,
+   "keep": 4286,
    "keep-rewrite": 170,
    "merge": 216
   }
