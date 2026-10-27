@@ -1217,6 +1217,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/a_records_stepped_form_is_not_read_as_a_fields_editability_test.go",
+   "id": "apps/platformkit/a_records_stepped_form_is_not_read_as_a_fields_editability_test.go#TestARecordsSteppedFormIsNotReadAsAFieldsEditability",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestARecordsSteppedFormIsNotReadAsAFieldsEditability",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/absent_form_or_refused_form_test.go",
    "id": "apps/platformkit/absent_form_or_refused_form_test.go#TestAFormThePersonMayNotUseIsRefusedAndAFormNobodyDeclaredIsNotFound",
    "kind": "go",
@@ -94138,7 +94157,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2607,
+  "files": 2608,
   "forge_runs": [
    408,
    413,
@@ -94173,7 +94192,7 @@
   ],
   "layers": {
    "behaviour": 4099,
-   "composition": 540,
+   "composition": 541,
    "contract": 24,
    "journey": 123
   },
@@ -94191,9 +94210,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4786,
+  "rows": 4787,
   "tiers": {
-   "merge": 2966,
+   "merge": 2967,
    "nightly": 123,
    "push": 1697
   },
@@ -94201,13 +94220,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2362,
+   "keep": 2363,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4400,
+   "keep": 4401,
    "keep-rewrite": 170,
    "merge": 216
   }
