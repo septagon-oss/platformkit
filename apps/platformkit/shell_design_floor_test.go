@@ -29,6 +29,14 @@ func TestTheReferenceShellAndGeneratedPagesMeetTheDesignFloor(t *testing.T) {
 		t.Fatalf("create the measured task: %d %s", code, body)
 	}
 	id := field(t, body, "id")
+	// The record is measured as the person who kept a copy of it returns to it. The
+	// composition draws a keep control there, so pressing it changes what the page
+	// offers to do, and a record nobody kept would leave that pressed state unseen
+	// and the floor never asked of it.
+	record := servedPage(t, cfg, who, acmeHost, "/app/task/tasks/"+id)
+	if code, _, fault := askForm(t, cfg, who, acmeHost, drawnAddress(t, record, "/saved/save"), saveForm(t, record, id)); code != http.StatusSeeOther {
+		t.Fatalf("keep a copy of the measured task: %d (%s)", code, fault)
+	}
 	target, err := url.Parse("http://" + cfg.Server.Addr)
 	if err != nil {
 		t.Fatal(err)
