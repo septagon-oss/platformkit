@@ -42441,6 +42441,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/tour/an_operation_name_is_refused_exactly_when_the_screen_rule_refuses_it_test.go",
+   "id": "kit/tour/an_operation_name_is_refused_exactly_when_the_screen_rule_refuses_it_test.go#TestAnOperationNameIsRefusedExactlyWhenTheScreenRuleRefusesIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnOperationNameIsRefusedExactlyWhenTheScreenRuleRefusesIt",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/tour/an_operation_name_is_refused_for_every_shape_its_sentence_names_test.go",
    "id": "kit/tour/an_operation_name_is_refused_for_every_shape_its_sentence_names_test.go#TestAnOperationNameIsRefusedForEveryShapeItsSentenceNames",
    "kind": "go",
@@ -93267,7 +93286,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2570,
+  "files": 2571,
   "forge_runs": [
    408,
    413,
@@ -93301,7 +93320,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4059,
+   "behaviour": 4060,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93320,23 +93339,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4740,
+  "rows": 4741,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1703
+   "push": 1704
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2325,
+   "keep": 2326,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4354,
+   "keep": 4355,
    "keep-rewrite": 170,
    "merge": 216
   }
