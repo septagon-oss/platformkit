@@ -12,12 +12,14 @@ repo="$(cd "${1:-$(dirname "$scripts")}" && pwd)" || exit 2
 
 measured="$(mktemp)" && rendered="$(mktemp)" && refused="$(mktemp)" || exit 2
 trap 'rm -f "$measured" "$rendered" "$refused"' EXIT
-# The gate's own diagnostics reach the reader. `--modules` answers a policy refusal
+# The gate's own diagnostics reach the reader, and only the gate's own: `go run`
+# appends a bare `exit status N` line of its own to stderr, which names nothing and
+# would sit between the reader and the cause. `--modules` answers a policy refusal
 # with the report and status 0, so a nonzero status here is a reading failure — a
 # malformed map, a dependency whose tree holds no declaration — whose cause only the
 # gate names, and which this script cannot restate.
 if ! json="$(cd "$repo" && env GOWORK=off GOFLAGS=-buildvcs=false go run ./tools/importgate --modules . 2>"$refused")"; then
-	cat "$refused" >&2
+	sed -e '$ { /^exit status [0-9][0-9]*$/d; }' "$refused" >&2
 	echo 'module graph: the import gate could not measure this repository' >&2
 	exit 2
 fi
