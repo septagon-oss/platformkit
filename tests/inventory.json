@@ -42289,6 +42289,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/tour/a_step_that_waits_on_a_completion_is_refused_by_the_rule_it_delegates_to_for_every_name_it_generates_test.go",
+   "id": "kit/tour/a_step_that_waits_on_a_completion_is_refused_by_the_rule_it_delegates_to_for_every_name_it_generates_test.go#TestAStepThatWaitsOnACompletionIsRefusedByTheRuleItDelegatesToForEveryNameItGenerates",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAStepThatWaitsOnACompletionIsRefusedByTheRuleItDelegatesToForEveryNameItGenerates",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/tour/a_tour_declaration_is_refused_for_the_one_thing_wrong_with_it_test.go",
    "id": "kit/tour/a_tour_declaration_is_refused_for_the_one_thing_wrong_with_it_test.go#TestAValidTourDeclaresItselfWithoutProblem",
    "kind": "go",
@@ -93305,7 +93324,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2572,
+  "files": 2573,
   "forge_runs": [
    408,
    413,
@@ -93339,7 +93358,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4061,
+   "behaviour": 4062,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93358,23 +93377,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4742,
+  "rows": 4743,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1705
+   "push": 1706
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2327,
+   "keep": 2328,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4356,
+   "keep": 4357,
    "keep-rewrite": 170,
    "merge": 216
   }
