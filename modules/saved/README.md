@@ -418,7 +418,7 @@ pressed, and Remove as the removal description. This preserves a stable toggle
 name and exposes both state and the next effect. Icon is decorative. Enter/Space
 work natively, focus stays visible, hit area is at least 24px and targets 44px.
 No CSS-only color state, hover-only action or animation required to understand it.
-With JavaScript disabled, POST/303 returns to a validated local detail URL. With
+With JavaScript disabled, POST/303 returns to a validated local kept list. With
 enhancement, serialize requests per control, update after success, preserve
 focus and announce status via a stable polite region. Failure keeps the prior
 state and offers retry. No optimistic offline queue. Reduced motion remains
