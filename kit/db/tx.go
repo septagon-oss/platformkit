@@ -545,13 +545,15 @@ func (p *Pending) end(keep bool) ending {
 	return ending{committed: true, commits: commits, rollbacks: rollbacks}
 }
 
-// logUndone writes the deferred actions this ending will not run. Each outcome runs one
-// queue and drops the other, and an outcome the database left in doubt drops both: that is
-// the decision, not an accident. The actions are memory and their transaction is over, so
-// without this line work that was registered and never happened leaves no trace at all.
-// owner is the transaction's, which an ending may well outlive: the line is written under
-// it, not against it.
+// logUndone writes the deferred actions this ending will not run, at the level its own answer
+// decides. Every ending the database confirmed drops the queue that never waited for it, which is
+// what that outcome promises and what every ordinary commit does; only the ending the database
+// left without an answer loses work the caller may never hear about, and that one warns. Either
+// way the actions are memory and their transaction is over, so without this line work that was
+// registered and never happened leaves no trace at all. owner is the transaction's, which an
+// ending may well outlive: the line is written under it, not against it.
 func (e ending) logUndone(owner context.Context, commits, rollbacks []afterAction) {
+	known := e.committed || e.rollbackConfirmed
 	dropped := len(commits) + len(rollbacks)
 	if e.committed {
 		dropped = len(rollbacks)
@@ -565,7 +567,11 @@ func (e ending) logUndone(owner context.Context, commits, rollbacks []afterActio
 	if e.err != nil {
 		attrs = append(attrs, "error", e.err)
 	}
-	slog.WarnContext(context.WithoutCancel(owner),
+	level := slog.LevelWarn
+	if known {
+		level = slog.LevelDebug
+	}
+	slog.Log(context.WithoutCancel(owner), level,
 		"db: the transaction ended without the effects deferred to it", attrs...)
 }
 

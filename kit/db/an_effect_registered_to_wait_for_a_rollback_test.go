@@ -273,9 +273,11 @@ func TestARollbackEffectThatFailsIsLoggedAndChangesNothingTheCallerIsTold(t *tes
 	}
 }
 
-// A registration racing the ending is honest on both sides of it: whatever the ending let
-// in runs, and runs once, and whatever arrives after it was taken is refused. The count
-// of accepted registrations is therefore the count of runs at any speed.
+// A registration racing the ending is honest on both sides of it: whatever the ending let in
+// runs, and runs once, and whatever arrives after it was taken is refused. The count of accepted
+// registrations is therefore the count of runs — a promise about an ending the database answered,
+// so that answer is read first: leave the outcome unknown and running nothing is correct, and the
+// count would accuse an ending that did nothing wrong.
 func TestAnEffectRegisteredAsTheTransactionEndsRunsAtMostOnce(t *testing.T) {
 	_, app, acme := acmeThings(t)
 	for range 30 {
@@ -293,34 +295,104 @@ func TestAnEffectRegisteredAsTheTransactionEndsRunsAtMostOnce(t *testing.T) {
 				}
 			}
 		}()
-		_ = p.Rollback()
-		_ = p.Commit()
+		rollbackErr := p.Rollback()
+		commitErr := p.Commit()
 		<-done
-		if n, ok := ran.Load(), accepted.Load(); n != ok || n > 1 {
+		if rollbackErr != nil {
+			t.Fatalf("the ending refused the ROLLBACK this test asked for: %v", rollbackErr)
+		}
+		if commitErr != nil {
+			t.Fatalf("the ending after the rollback answered %v, want the no-op of a transaction already ended", commitErr)
+		}
+		if n, ok := ran.Load(), accepted.Load(); n != ok {
 			t.Fatalf("one rolled back transaction ran %d of the %d effects it accepted, want every one of them once", n, ok)
 		}
 	}
 }
 
-// Work left behind by an ending is dropped on purpose — each outcome runs one queue and
-// drops the other — but the work is memory and its transaction is over, so what vanished,
-// and the ending that did it, are written down.
-func TestAnEffectTheEndingDroppedIsNamedInTheLog(t *testing.T) {
-	_, app, acme := acmeThings(t)
-	ctx, p, _ := lazy(t, app, acme)
-	insertThrough(t, ctx, p, acme, "rolled back")
-	mustDefer(t, ctx, db.AfterCommit, func(context.Context) error { return nil })
+// endingLogDebug runs fn with the default logger writing to a buffer that holds debug lines,
+// and answers what that buffer holds. Debug, because the drop a confirmed ending promises is
+// written there: a line about work the ending never held has to be visible here to be refused.
+func endingLogDebug(t *testing.T, fn func()) string {
+	t.Helper()
 	var logs strings.Builder
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	if err := p.Rollback(); err != nil {
-		t.Fatal(err)
-	}
-	out := logs.String()
-	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "ended without the effects deferred to it") ||
-		!strings.Contains(out, "effects=1") || !strings.Contains(out, "rolled_back=true") {
-		t.Errorf("the log does not name the dropped effect and the ending that dropped it: %s", out)
+	fn()
+	return logs.String()
+}
+
+// Work left behind by an ending is dropped on purpose — each outcome runs one queue and drops
+// the other — but the work is memory and its transaction is over, so what vanished, and the
+// ending that did it, are written down, at the level the ending's own answer decides. A
+// confirmed ending drops the queue that never waited for it, which is what every ordinary
+// commit and rollback does; an outcome the database left in doubt drops both, and its work is
+// gone behind an answer that may never say so. An ending that dropped nothing writes nothing.
+func TestAnEffectTheEndingDroppedIsNamedInTheLog(t *testing.T) {
+	admin, app, acme := acmeThings(t)
+	const message = "ended without the effects deferred to it"
+	for _, shape := range []struct {
+		name  string
+		drive func()
+		want  []string
+	}{
+		{
+			name: "a confirmed rollback that dropped the work waiting for its commit",
+			want: []string{"level=DEBUG", "effects=1", "committed=false", "rolled_back=true"},
+			drive: func() {
+				ctx, p, _ := lazy(t, app, acme)
+				insertThrough(t, ctx, p, acme, "rolled back")
+				mustDefer(t, ctx, db.AfterCommit, func(context.Context) error { return nil })
+				if err := p.Rollback(); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "a confirmed rollback with no work waiting at all",
+			drive: func() {
+				ctx, p, _ := lazy(t, app, acme)
+				insertThrough(t, ctx, p, acme, "rolled back")
+				if err := p.Rollback(); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "a COMMIT whose answer never came",
+			want: []string{"level=WARN", "effects=1", "committed=false", "rolled_back=false"},
+			drive: func() {
+				exec(t, t.Context(), admin, `CREATE TABLE marks (tenant_id uuid, name text, UNIQUE (tenant_id, name) DEFERRABLE INITIALLY DEFERRED)`)
+				err := db.Run(tenancy.WithTenant(t.Context(), acme), app, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+					for _, twice := range []string{"twice", "twice"} {
+						if err := tx.DB().Exec("INSERT INTO marks VALUES (?, ?)", acme.ID, twice).Error; err != nil {
+							return err
+						}
+					}
+					mustDefer(t, ctx, db.AfterCommit, func(context.Context) error { return nil })
+					return nil
+				})
+				if err == nil || !strings.Contains(err.Error(), "SQLSTATE 23505") {
+					t.Fatalf("the commit answered %v, want the deferred key's refusal", err)
+				}
+			},
+		},
+	} {
+		out := endingLogDebug(t, shape.drive)
+		written, wantLines := strings.Count(out, message), 0
+		if len(shape.want) > 0 {
+			wantLines = 1
+		}
+		if written != wantLines {
+			t.Errorf("%s: %d line(s) about the effects it dropped, want %d: %s", shape.name, written, wantLines, out)
+			continue
+		}
+		for _, attr := range shape.want {
+			if !strings.Contains(out, attr) {
+				t.Errorf("%s: the line about the dropped effects does not say %s: %s", shape.name, attr, out)
+			}
+		}
 	}
 }
 

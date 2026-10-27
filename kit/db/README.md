@@ -410,7 +410,9 @@ transaction, a `Pending` nobody opened, a transaction already ended and a nil ac
 and so is a registration on the frame a `Run` handler kept past its transaction's ending, because a
 queue that ending took runs nothing whatever still points at it. Work an ending dropped is the
 outcome's own decision, but it is memory and its transaction is over, so its count and the ending
-that dropped it are written to the log before they go.
+that dropped it are written to the log before they go: at debug for the drop a confirmed ending
+always makes, as a warning for the ending whose outcome the database left in doubt — the one
+whose work is gone behind an answer that may never say so.
 
 ## An effect that waits for the commit
 

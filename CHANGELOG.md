@@ -6,7 +6,8 @@
 effect on the tenant transaction its context is inside, and only an ending the database confirmed runs it:
 never a COMMIT that returned an error, whose outcome is unknown, and never a system transaction. A
 registration whose transaction has already had its ending is refused by both halves of the seam, and work
-an ending dropped is named in one warning rather than disappearing with the transaction.
+an ending dropped is named in the log — at debug for the drop a confirmed ending always makes, as a
+warning for the ending whose outcome the database left in doubt.
 
 **A deployment names its account-request budget.** `auth.account_requests.quota`
 and `auth.account_requests.window` set how many account requests — a sign-up, a
