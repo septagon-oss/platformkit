@@ -74835,6 +74835,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/guided_rest_page_carries_its_step_countdown_scope_test.go",
+   "id": "ui/screens/guided_rest_page_carries_its_step_countdown_scope_test.go#TestTheGuidedRestPageCarriesItsStepCountdownScope",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheGuidedRestPageCarriesItsStepCountdownScope",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/guided_script_asks_only_words_the_session_answers_test.go",
    "id": "ui/screens/guided_script_asks_only_words_the_session_answers_test.go#TestTheGuidedScriptAsksOnlyWordsTheSessionAnswered",
    "kind": "go",
@@ -84098,7 +84117,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2291,
+  "files": 2292,
   "forge_runs": [
    408,
    413,
@@ -84132,7 +84151,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3641,
+   "behaviour": 3642,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84151,9 +84170,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4263,
+  "rows": 4264,
   "tiers": {
-   "merge": 2636,
+   "merge": 2637,
    "nightly": 110,
    "push": 1517
   },
@@ -84161,13 +84180,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2046,
+   "keep": 2047,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3877,
+   "keep": 3878,
    "keep-rewrite": 170,
    "merge": 216
   }
