@@ -81172,6 +81172,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/served_floor_door_route_counts_test.go",
+   "id": "ui/served_floor_door_route_counts_test.go#TestTheDoorGuardCountsEachRouteByAMarkerOfItsOwnOverEverySourceItWalks",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheDoorGuardCountsEachRouteByAMarkerOfItsOwnOverEverySourceItWalks",
+   "needs_db": false,
+   "pkg": "ui",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/served_floor_door_value_test.go",
    "id": "ui/served_floor_door_value_test.go#TestEachDocumentedDoorHandsTheGatePathToTheProcess",
    "kind": "go",
@@ -90669,7 +90688,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2493,
+  "files": 2494,
   "forge_runs": [
    408,
    413,
@@ -90703,7 +90722,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3949,
+   "behaviour": 3950,
    "composition": 511,
    "contract": 24,
    "journey": 121
@@ -90722,23 +90741,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4605,
+  "rows": 4606,
   "tiers": {
    "merge": 2808,
    "nightly": 121,
-   "push": 1676
+   "push": 1677
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2248,
+   "keep": 2249,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4219,
+   "keep": 4220,
    "keep-rewrite": 170,
    "merge": 216
   }
