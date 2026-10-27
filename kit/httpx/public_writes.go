@@ -13,45 +13,20 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// publicWrites bounds what an anonymous visitor may ask for.
+// publicWrites bounds what an anonymous visitor may ask for — the Public surface's only rate
+// limit, because that surface has no account to lock out: an anonymous form post has no
+// identity beyond the address it came from. The key names the tenant the request's own host
+// resolved to, the route asked for and the address it was asked from, so two customers never
+// share a counter and one office does not spend another's minute.
 //
-// It is the Public surface's only rate limit, and it exists because that surface
-// is the one with no account to lock out: the auth module counts sign-ins, and
-// an anonymous form post has no identity to count against beyond the address it
-// came from. So the key names three things — the tenant the request's own host
-// resolved to, the route the caller asked for, and the address they asked from —
-// and two customers therefore never share a counter, one customer's office does
-// not exhaust another's, and a machine hammering the sign-up form does not spend
-// the same minute as the password reminders beside it.
-//
-// Three things about where it runs, all load-bearing:
-//
-//   - After the tenant middleware, and ahead of the request's transaction. The
-//     first half is what puts a tenant in the key: the host lookup runs on the
-//     resolution cache and a system token of its own, so the counter knows whose
-//     door is being knocked on without the request having opened a transaction.
-//     The second half is what keeps a refused write from being a transaction that
-//     rolled back an attempt nobody made, and why the count survives the refusal
-//     that follows it: it is written on a detached context, on kit/limit's budget.
-//   - Safe methods are never counted. A crawler that reads a thousand pages is
-//     not what a limit is for, and counting reads would make the limit a
-//     function of traffic rather than of abuse.
-//   - A limiter that cannot answer is an outage of the limiter's, not a denial
-//     of the caller's: the request proceeds and one line is logged. A public
-//     form that stops working because the counters table blinked is a form that
-//     stops working, and the honest failure mode of a limit is the traffic it
-//     lets through, not the traffic it invents refusals for.
-//
-// That is row four, and the only world it applies in. An attempt the counter did
-// not record — because this key's row was still busy, or because the wall ran out
-// first — arrives as ok false with no error at all, and is refused below like any
-// other spent window. kit/limit/README.md owns the four outcomes; this comment no
-// longer restates them.
-//
-// The refusal is answered through refuse, because the caller this limit exists
-// for has no account to be locked out of and no terminal to read a code in: they
-// are at a form in a browser, and the answer they are given is a page that says
-// as much and a Retry-After that says whether to wait.
+// It runs after the tenant middleware, whose host lookup needs no request transaction, and
+// ahead of the request's own, so a refused write is not a transaction that rolled back an
+// attempt nobody made and the count survives the refusal on a detached context. Safe methods
+// are never counted, and a limiter that cannot answer fails open and logs: the honest failure
+// mode of a limit is the traffic it lets through, not the refusals it invents. An attempt the
+// counter did not record arrives as ok false with no error at all and is refused like any
+// other spent window (kit/limit/README.md owns the four outcomes), through refuse, because
+// this caller is at a form in a browser.
 func (a *API) publicWrites(ctx huma.Context, next func(huma.Context)) {
 	if a.opts.WriteLimiter == nil || SurfaceOf(ctx.Context()) != SurfacePublic || !unsafeMethod(ctx.Method()) {
 		next(ctx)

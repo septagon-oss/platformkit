@@ -47,12 +47,14 @@ func main() {
 		err = seedCommand(args)
 	case "migrate":
 		err = migrate(args)
+	case "screens":
+		err = screenCommand(args)
 	case "composition":
 		err = writeComposition(args)
 	case "repair-roles":
 		err = repairRoles(args)
 	default:
-		err = fmt.Errorf("%q is not a command; there are seven: run, bootstrap, start, seed, migrate, composition and repair-roles", command)
+		err = fmt.Errorf("%q is not a command; there are eight: run, bootstrap, start, seed, migrate, composition, screens and repair-roles", command)
 	}
 	if err != nil {
 		// The error goes to stderr rather than through the logger, because the
@@ -85,12 +87,25 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	c := composeReference(cfg, environment(*env))
-	if !cfg.Mail.Enabled() {
-		// Said out loud, because the failure it warns about is silent: every
-		// notification is still written and still visible in the application,
-		// and the ones asking for mail are logged instead of sent.
-		slog.WarnContext(ctx, "app: mail is not configured, so notifications marked for email are recorded and not sent; set mail.host")
+	deployment := environment(*env)
+	c := composeReference(cfg, deployment)
+	switch {
+	case cfg.Mail.Enabled():
+		// A server was named, which is the whole answer: whatever this application
+		// is asked to send, something outside this process sends it.
+	case deployment == pkit.Development:
+		// The other mail-less state, and it is worth one line because the two are
+		// otherwise indistinguishable from the outside: a development deployment
+		// that names no relay is answered by the notification module's simulated
+		// mailbox, so a sign-up is accepted and its link waits in this process for
+		// whoever is running it to read it.
+		slog.WarnContext(ctx, "app: mail.host is empty and this is a development deployment, so every message this application is asked to send is kept in its own process and none leaves it; set mail.host to send it")
+	default:
+		// Said out loud, because the two failures it warns about are otherwise
+		// quiet: a stranger who asks to sign up is refused with a reasoned 503 and
+		// no row is written, and a notice that asks for mail is recorded as
+		// suppressed in the delivery ledger.
+		slog.WarnContext(ctx, "app: mail is not configured, so an emailed verification link cannot be sent: sign-up by email is refused and notifications marked for email are recorded as suppressed; set mail.host to send it")
 	}
 	return c.app.Run(ctx, c.once, app.Role(*role))
 }

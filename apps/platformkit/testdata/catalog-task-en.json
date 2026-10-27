@@ -200,6 +200,330 @@
     "trendField": "createdAt"
   },
   "resolved": {
+    "views": [
+      {
+        "kind": "list",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "action.create",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "action.edit",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          },
+          {
+            "name": "action.delete",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "create",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "title"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "description"
+            ],
+            "control": "textarea",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "status"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "priority"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "dueAt"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "slaDeadline"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "action.submit",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          },
+          {
+            "name": "action.cancel",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "edit",
+        "verb": "",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "title"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "description"
+            ],
+            "control": "textarea",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "status"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "priority"
+            ],
+            "control": "select",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "dueAt"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "slaDeadline"
+            ],
+            "control": "datetime",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "field",
+            "path": [
+              "assigneeId"
+            ],
+            "control": "entity-picker",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "slaBreached"
+            ],
+            "control": "checkbox",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "resolvedAt"
+            ],
+            "control": "datetime",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "field",
+            "path": [
+              "resolution"
+            ],
+            "control": "textarea",
+            "editable": false,
+            "interactions": []
+          },
+          {
+            "name": "action.submit",
+            "path": [],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          },
+          {
+            "name": "action.cancel",
+            "path": [],
+            "control": "link",
+            "editable": false,
+            "interactions": [
+              "activated"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "assign",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "assigneeId"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "command",
+            "path": [
+              "assign"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      },
+      {
+        "kind": "command",
+        "verb": "resolve",
+        "cardinality": "one",
+        "controls": [
+          {
+            "name": "field",
+            "path": [
+              "resolution"
+            ],
+            "control": "text",
+            "editable": true,
+            "interactions": [
+              "committed"
+            ]
+          },
+          {
+            "name": "command",
+            "path": [
+              "resolve"
+            ],
+            "control": "button",
+            "editable": false,
+            "interactions": [
+              "activated",
+              "submitted"
+            ]
+          }
+        ]
+      }
+    ],
     "policyVersion": 1,
     "language": "en",
     "identity": {
@@ -278,6 +602,7 @@
     },
     "fields": [
       {
+        "figure": null,
         "name": "id",
         "label": "Id",
         "help": "",
@@ -295,14 +620,12 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "createdAt",
         "label": "Created at",
         "help": "",
@@ -324,13 +647,12 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "updatedAt",
         "label": "Updated at",
         "help": "",
@@ -352,13 +674,12 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "title",
         "label": "Title",
         "help": "Short summary of the task",
@@ -376,14 +697,12 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "description",
         "label": "Description",
         "help": "Detailed description of the task",
@@ -401,14 +720,12 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "status",
         "label": "Status",
         "help": "Lifecycle state",
@@ -426,45 +743,53 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
+            "group": "",
+            "noPreference": false,
             "value": "open",
             "label": "Open",
             "tone": "info",
             "done": false
           },
           {
+            "group": "",
+            "noPreference": false,
             "value": "acknowledged",
             "label": "Acknowledged",
             "tone": "info",
             "done": false
           },
           {
+            "group": "",
+            "noPreference": false,
             "value": "in_progress",
             "label": "In progress",
             "tone": "warning",
             "done": false
           },
           {
+            "group": "",
+            "noPreference": false,
             "value": "resolved",
             "label": "Resolved",
             "tone": "success",
             "done": true
           },
           {
+            "group": "",
+            "noPreference": false,
             "value": "closed",
             "label": "Closed",
             "tone": "neutral",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
+        "figure": null,
         "name": "priority",
         "label": "Priority",
         "help": "Task priority",
@@ -482,39 +807,45 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [
           {
+            "group": "",
+            "noPreference": false,
             "value": "low",
             "label": "Low",
             "tone": "neutral",
             "done": false
           },
           {
+            "group": "",
+            "noPreference": false,
             "value": "normal",
             "label": "Normal",
             "tone": "neutral",
             "done": false
           },
           {
+            "group": "",
+            "noPreference": false,
             "value": "high",
             "label": "High",
             "tone": "warning",
             "done": false
           },
           {
+            "group": "",
+            "noPreference": false,
             "value": "critical",
             "label": "Critical",
             "tone": "danger",
             "done": false
           }
-        ],
-        "reference": null
+        ]
       },
       {
+        "figure": null,
         "name": "source",
         "label": "Source",
         "help": "Origin of the task",
@@ -532,14 +863,12 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "sourceRef",
         "label": "Source ref",
         "help": "Reference into the source system",
@@ -557,14 +886,12 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "assigneeId",
         "label": "Assignee",
         "help": "User responsible for the task",
@@ -582,9 +909,7 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
         "options": [],
         "reference": {
@@ -592,6 +917,7 @@
         }
       },
       {
+        "figure": null,
         "name": "dueAt",
         "label": "Due",
         "help": "Soft target completion time",
@@ -613,13 +939,12 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "slaDeadline",
         "label": "Response due",
         "help": "Hard SLA deadline; a breach is measured against this",
@@ -641,13 +966,12 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "slaBreached",
         "label": "Response overdue",
         "help": "True once the deadline elapsed with the task unresolved",
@@ -665,14 +989,12 @@
           "missing": "—",
           "true": "Yes",
           "false": "No",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "resolvedAt",
         "label": "Resolved",
         "help": "When the task was resolved",
@@ -694,13 +1016,12 @@
           "time": {
             "kind": "instant",
             "relative": false
-          },
-          "money": null
+          }
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "resolution",
         "label": "Resolution",
         "help": "How the task was resolved",
@@ -718,14 +1039,12 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": null,
-          "time": null,
-          "money": null
+          "precision": null
         },
-        "options": [],
-        "reference": null
+        "options": []
       },
       {
+        "figure": null,
         "name": "revision",
         "label": "Revision",
         "help": "This row's own write count, from 1",
@@ -743,12 +1062,9 @@
           "missing": "—",
           "true": "",
           "false": "",
-          "precision": 0,
-          "time": null,
-          "money": null
+          "precision": 0
         },
-        "options": [],
-        "reference": null
+        "options": []
       }
     ],
     "list": {
@@ -798,30 +1114,40 @@
           "kind": "enum",
           "values": [
             {
+              "group": "",
+              "noPreference": false,
               "value": "open",
               "label": "Open",
               "tone": "info",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "acknowledged",
               "label": "Acknowledged",
               "tone": "info",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "in_progress",
               "label": "In progress",
               "tone": "warning",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "resolved",
               "label": "Resolved",
               "tone": "success",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "closed",
               "label": "Closed",
               "tone": "neutral",
@@ -835,24 +1161,32 @@
           "kind": "enum",
           "values": [
             {
+              "group": "",
+              "noPreference": false,
               "value": "low",
               "label": "Low",
               "tone": "neutral",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "normal",
               "label": "Normal",
               "tone": "neutral",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "high",
               "label": "High",
               "tone": "warning",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "critical",
               "label": "Critical",
               "tone": "danger",
@@ -866,12 +1200,16 @@
           "kind": "bool",
           "values": [
             {
+              "group": "",
+              "noPreference": false,
               "value": "true",
               "label": "Yes",
               "tone": "neutral",
               "done": false
             },
             {
+              "group": "",
+              "noPreference": false,
               "value": "false",
               "label": "No",
               "tone": "neutral",
@@ -883,37 +1221,84 @@
     },
     "commands": [
       {
+        "fields": [
+          {
+            "figure": null,
+            "name": "assigneeId",
+            "label": "Assignee",
+            "help": "The user who becomes responsible",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
         "verb": "assign",
         "label": "Assign",
         "visible": true,
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
+        "fields": [
+          {
+            "figure": null,
+            "name": "resolution",
+            "label": "Resolution",
+            "help": "How the task was resolved",
+            "section": "",
+            "onList": false,
+            "onRecord": false,
+            "editable": {
+              "create": true,
+              "update": false
+            },
+            "control": "text",
+            "kind": "text",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": []
+          }
+        ],
         "verb": "resolve",
         "label": "Resolve",
         "visible": true,
         "system": false,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       },
       {
+        "fields": [],
         "verb": "check-sla",
         "label": "Check a task's SLA",
         "visible": false,
         "system": true,
         "primary": false,
         "destructive": false,
-        "confirmation": null,
         "successMessage": ""
       }
     ],
-    "deck": null,
     "summary": {
       "highlight": {
         "label": "Due today",

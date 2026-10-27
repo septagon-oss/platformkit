@@ -36,7 +36,7 @@ records:
 	service, err := seed.New(seed.Deps{
 		Files: files, Root: "seed", Clock: seedClock{},
 		Writers:   []seed.Writer{&contentSeeder{svc: c.contents}},
-		Authorize: seedGrants{auth: c.auth},
+		Authorize: seedGrants{auth: c.testAuth()},
 	})
 	if err != nil {
 		t.Fatalf("the seed this case writes with: %v", err)
@@ -50,12 +50,12 @@ records:
 	run := func(applied chan<- struct{}, hold time.Duration) (seed.Plan, error) {
 		var plan seed.Plan
 		err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-			tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+			tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 			if err != nil {
 				return err
 			}
 			return db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				if ctx, err = seedActor(ctx, c.users, tx, adminEmail); err != nil {
+				if ctx, err = seedActor(ctx, c.testUsers(), tx, adminEmail); err != nil {
 					return err
 				}
 				if plan, err = service.Apply(ctx, tx, seed.Selection{}); err != nil {
@@ -102,7 +102,7 @@ records:
 		t.Errorf("the second run's plan: %s; it reconciles against the first run's committed row", secondPlan)
 	}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
+		tenant, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}

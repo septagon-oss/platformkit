@@ -58,31 +58,18 @@ type Limiter interface {
 
 	// Reserve records one event under key and reports, from the one statement that
 	// recorded it, the three numbers that statement knows: whether the window is
-	// still within limit — the limit-th event is allowed and the one after it is not
-	// — how much of limit is left in the window the event landed in, and how long
-	// that window has left.
+	// still within limit (the limit-th event is allowed, the one after it is not),
+	// how much of limit is left, and how long the window has left.
 	//
-	// One statement, and one reading, because the three answers are one fact about
-	// one row. A caller that asks the row twice gets two windows: the event it
-	// recorded and the count it read a moment later are not the same attempt, and a
-	// server that states a quota it did not decide on states a number the caller has
-	// no reason to believe. Before this method existed the decision and the reading
-	// were separate calls, and the refusal the wire carried named a quota the counter
-	// had already moved past.
+	// One statement and one reading, because the three answers are one fact about
+	// one row: a caller that asks twice gets two windows, the event it recorded and
+	// the count read a moment later are not the same attempt, and a server that
+	// states a quota it did not decide states a number nobody should believe.
 	//
-	// remaining is clamped at zero, and retryAfter is what is left of the window
-	// whichever way the answer went — the caller who was allowed is the one the
-	// number is most useful to, because it is the only moment they can back off
-	// before the refusal rather than after it.
-	//
-	// retryAfter counts down from the instant the statement wrote the row — on a
-	// contended key, the end of the wait for that row rather than its start. The row
-	// owns when its window ends, and a caller may never date a reading earlier than it.
-	//
-	// A counter busy with its key is answered the way Allow answers it — refused,
-	// the whole window, no error — because the callers of this method state a
-	// number on the wire and fail open on an error, and a busy counter is no
-	// reason to admit the traffic the counter exists to refuse.
+	// remaining is clamped at zero and retryAfter is the rest of the window either
+	// way — the allowed caller is the one that can still back off. It counts down
+	// from the instant the statement wrote the row, which on a contended key is the
+	// end of the wait rather than its start.
 	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 
 	// Count reports how many events key has in the window that is open now, and
@@ -164,30 +151,38 @@ var ErrBusy = errors.New("limit: the counter was still busy with this key, and t
 
 // Connections is where a limiter finds the pool.
 //
-// It is a parameter rather than an import for two reasons. A composition builds
-// its modules before kit/app opens the pool, so a limiter cannot be handed one
-// at construction; and a package that counts rows has no business linking a web
-// server to find out where they go — modules/auth's contracts package holds a
-// Limiter, and a contracts package is the entity and the interfaces.
+// A parameter rather than an import: a composition builds its modules before
+// kit/app opens the pool, so nothing is available at construction, and a package
+// that counts rows has no business linking a web server to find out where they go
+// — modules/auth's contracts package holds a Limiter, and a contracts package is
+// the entity and the interfaces.
 //
-// What it hands back is the pool itself, not a connection: a count is written in
-// a transaction of its own, detached from whatever request asked for it. Read it
-// from a held handle (`kit/app` composes `limit.Postgres(a.held.read)`) rather
-// than from a request context: `httpx.ConnFrom` answers nothing until the
-// middleware that opens the request's transaction has run, and the public write
-// limit counts ahead of it, so a composition built that way would find no pool on
-// every anonymous write and — the failure mode below says which way that goes —
-// admit all of them.
+// What comes back is the pool, not a connection: a count is written in a
+// transaction of its own. Read it from a held handle (`kit/app` composes
+// `limit.PostgresFor("", a.held.read)`), never from a request context —
+// `httpx.ConnFrom` answers nothing until the request's transaction exists and the
+// public write limit counts ahead of it, so built that way every anonymous write
+// would find no pool and be admitted.
 type Connections func(context.Context) (*db.Conn, bool)
 
-// Postgres returns the limiter every replica shares.
-func Postgres(conns Connections) Limiter { return postgres{conns: conns, attempt: queueRun} }
+// Postgres returns the shared limiter with unnamed application buckets.
+// Connections are acquired on operations, never during construction.
+//
+// Deprecated: Use PostgresFor with the zero appname.Name and the same Connections.
+func Postgres(conns Connections) Limiter { return PostgresFor("", conns) }
 
-// PostgresOf is Postgres for a deployment that names its app: every bucket key
-// begins with the slug, so two apps that count the same-named bucket of the same
-// tenant id spend one another's allowance. With no slug set the key is the one the
-// counters in the field already hold.
+// PostgresOf returns the shared limiter under app, acquiring conns on operations.
+//
+// Deprecated: Use PostgresFor with the same app and Connections.
 func PostgresOf(app appname.Name, conns Connections) Limiter {
+	return PostgresFor(app, conns)
+}
+
+// PostgresFor returns the limiter every replica shares, with app naming its
+// buckets. The zero name preserves unnamed buckets. Names are formed by
+// appname.RateLimitKey without additional validation. Construction opens nothing;
+// operations ask conns for a caller-owned pool and report ErrNoConnection if absent.
+func PostgresFor(app appname.Name, conns Connections) Limiter {
 	return postgres{conns: conns, app: app, attempt: queueRun}
 }
 
@@ -221,22 +216,20 @@ func queueRun(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx
 }
 
 func (p postgres) Reserve(ctx context.Context, key string, limit int, window time.Duration) (bool, int, time.Duration, error) {
-	// One statement: the row is inserted, or the open window's count is raised,
-	// or a window that has closed is started again — and the count that comes
-	// back is the one this event landed in. Two statements would be two
-	// replicas reading the same number and writing it back, and would be two
-	// answers about one attempt.
+	// One statement: the row is inserted, an open window's count is raised, or a
+	// closed window starts again — and the count that comes back is the one this
+	// event landed in. Two statements would be two replicas reading one number and
+	// writing it back, and two answers about one attempt.
 	//
-	// Which window the event landed in is asked of the transaction's own instant, so the
-	// two CASEs cannot disagree about it and the row is anchored at that instant. The
-	// countdown is asked of the clock instead, because another writer of this key can
-	// hold the row's lock and this statement waits for it: the transaction's instant is
-	// then earlier than the event by the wait, and a countdown taken from it is that
-	// wait added back on — every caller of the key told to sit out a window longer than
-	// the row holds. `clock_timestamp()` is the instant the event landed.
+	// Which window the event landed in is asked of the transaction's own instant, so
+	// the two CASEs cannot disagree and the row is anchored there. The countdown is
+	// asked of clock_timestamp() instead: another writer can hold this row's lock and
+	// this statement waits for it, so the transaction's instant is earlier than the
+	// event by that wait and a countdown taken from it would tell every caller of the
+	// key to sit out longer than the row holds.
 	//
-	// A refused event is counted too, so the count stops at the column's maximum
-	// (MaxQuota + 1) rather than overflowing into an error a caller fails open on.
+	// A refused event is counted too, so the count stops at MaxQuota + 1 rather than
+	// overflowing into an error a caller fails open on.
 	const q = `INSERT INTO ` + table + ` (key, window_start, count) VALUES (?, now(), 1)
 		ON CONFLICT (key) DO UPDATE SET
 			count = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN LEAST(` + table + `.count, ?) + 1 ELSE 1 END,
@@ -395,20 +388,12 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 }
 
 // askedAgain reports the one answer that is nobody's verdict: the bare
-// driver.ErrBadConn — that error and no other in its chain, with nothing
-// wrapping it — arriving with the attempt's wall still standing. The bare
-// form is the sql layer's own giving-up signal, its words for "no connection
-// ever took this statement; a fresh one might"; an error that reaches the
-// sentinel through somebody's wrapper is kit/db answering with a bad
-// connection from inside a transaction it opened, which is the store's own
-// verdict and keeps its error while the wall stands (the pair of cases for the attempt wall). It is the same answer a pool with nothing
-// free gives one step later than the wait for the row's lock, and the timing
-// the burst case carries from CI says it arrives both sides of the wall —
-// measured behind it (see wallPassed) and,
-// on a starved runner, two milliseconds ahead of it. A store that is down
-// answers this wait in kind and at once — a refused connect, a closed
-// database — and none of those errors is the sentinel, so they keep their
-// error while the wall stands, exactly as before.
+// driver.ErrBadConn — that error and nothing wrapping it — arriving with the
+// attempt's wall still standing. The bare form is sql's own giving-up signal, its
+// words for "no connection ever took this statement; a fresh one might". An error
+// that reaches the sentinel through somebody's wrapper is kit/db answering from
+// inside a transaction it opened, and that is the store's verdict: it keeps its
+// error while the wall stands.
 func askedAgain(err error, attempt context.Context) bool {
 	return errors.Is(err, driver.ErrBadConn) && errors.Unwrap(err) == nil && !wallPassed(attempt)
 }
@@ -431,21 +416,14 @@ func classified(err error, attempt context.Context) error {
 	return fmt.Errorf("limit: %w", err)
 }
 
-// waited reports the answers that say this attempt never got what it asked for
-// while the store is still there: the server stopped the wait for the row's
-// lock, which is SQLSTATE 55P03 and the code lock_timeout raises, or this
-// attempt's own wall expired, which is what a store that answers nothing — and a
-// pool with nothing free, which is the same wait one level up — leaves behind.
-// A wait for a connection that expired says so only through the wall: the pool's
-// driver answers it with a bare driver.ErrBadConn and drops the deadline from
-// the error, so whose verdict this is, the wall answers rather than the text — and
-// it answers from the deadline, because the cancellation that would have said so
-// arrives a goroutine late (see wallPassed).
-// A store that is down is different in kind and in time: it answers, and it
-// answers at once, with a refused connection, a closed database, a denied
-// permission. Those keep their error while the wall still stands, because ADR
-// 0010 is right that the caller decides about an outage and that a lockout must
-// not close during one.
+// classified reports the answers that mean this attempt never got what it asked
+// for while the store was there: 55P03 lock_timeout, or the attempt's own wall —
+// the pool's driver answers a connection wait with a bare driver.ErrBadConn and
+// drops the deadline with it, so the wall answers, not the text.
+//
+// A store that is down answers at once and in kind, and keeps its error while the
+// wall stands: docs/adr/0010 puts the outage decision with the caller, and a
+// lockout must not be able to close during an outage.
 func waited(err error, attempt context.Context) bool {
 	if pg, isPostgres := errors.AsType[*pgconn.PgError](err); isPostgres && pg.Code == "55P03" {
 		return true

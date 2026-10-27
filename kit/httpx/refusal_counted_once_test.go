@@ -60,7 +60,7 @@ func onceFixture(t *testing.T) http.Handler {
 			if h != host {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 			}
-			return tenancy.Tenant{ID: reviewTenant, Slug: "acme", Name: "Acme"}, nil
+			return tenancy.Tenant{ID: counterTenant, Slug: "acme", Name: "Acme"}, nil
 		}),
 		Authorize: authorizerFunc(func(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) {
 			return true, nil
@@ -72,12 +72,12 @@ func onceFixture(t *testing.T) http.Handler {
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
 		OperationID: "once_public_query", Method: http.MethodGet, Path: "/public-query",
-	}, httpx.Public(), func(context.Context, *reviewInput) (*struct{}, error) {
+	}, httpx.Public(), func(context.Context, *counterInput) (*struct{}, error) {
 		return &struct{}{}, nil
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
 		OperationID: "once_signed_in", Method: http.MethodGet, Path: "/query",
-	}, httpx.SignedIn(), func(context.Context, *reviewInput) (*struct{}, error) {
+	}, httpx.SignedIn(), func(context.Context, *counterInput) (*struct{}, error) {
 		return &struct{}{}, nil
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{

@@ -205,7 +205,7 @@ func (s Singleton[T]) resource() httpx.Resource {
 		Get: func(ctx context.Context, _ uuid.UUID) (map[string]any, error) {
 			// The id is ignored on purpose: there is one row, and a screen that
 			// asked for another would be asking about a tenant it cannot see.
-			return answeredRow(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.Load(ctx, tx) }, steppedUpdate(s.Present))
+			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) { return s.Load(ctx, tx) })
 		},
 		Create: func(context.Context, map[string]any) (map[string]any, error) { return nil, refuse() },
 		Delete: func(context.Context, uuid.UUID) error { return refuse() },

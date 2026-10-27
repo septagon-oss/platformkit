@@ -32,9 +32,9 @@ package httpx_test
 // What this case deliberately does not assert: that a 404 or a 405 the root router
 // answers at a host it *could* resolve carries a tenant. Today it carries none —
 // nothing on that path resolved one, which is the rule the README states ("a key is
-// written only where its value was learned"). REVIEW.md records as a deferred
-// finding that an operator therefore cannot ask "whose 404s are these" at all, and
-// pins nothing that would resist a change either way.
+// written only where its value was learned"). An operator therefore cannot ask
+// "whose 404s are these" today, and nothing here pins that either way: a change
+// that puts a tenant on that path is not refused by this case.
 
 import (
 	"context"
@@ -96,14 +96,14 @@ func twoTenantRouter(t *testing.T) http.Handler {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
-		OperationID: "round3_ping", Method: http.MethodGet, Path: "/ping",
+		OperationID: "twoTenants_ping", Method: http.MethodGet, Path: "/ping",
 	}, httpx.Public(), func(context.Context, *struct{}) (*struct{}, error) {
 		return &struct{}{}, nil
 	})
 	httpx.Register(api.Surfaces("probe").App, huma.Operation{
-		OperationID: "round3_secret", Method: http.MethodGet, Path: "/secret",
+		OperationID: "twoTenants_secret", Method: http.MethodGet, Path: "/secret",
 	}, httpx.Permission(deniedPermission), func(context.Context, *struct{}) (*struct{}, error) {
-		t.Errorf("the guard let a caller through to round3_secret, so the 401 below is not a refusal")
+		t.Errorf("the guard let a caller through to twoTenants_secret, so the 401 below is not a refusal")
 		return &struct{}{}, nil
 	})
 	if err := api.ValidateDeclarations(); err != nil {
@@ -120,7 +120,7 @@ var twoTenants = map[string]uuid.UUID{"acme": acmeID, "other": other}
 func TestEachTenantsNumberNamesOnlyItsOwnTenant(t *testing.T) {
 	router := twoTenantRouter(t)
 
-	lat := func(tenant uuid.UUID) uint64 { return histCount(t, "round3_ping", tenant) }
+	lat := func(tenant uuid.UUID) uint64 { return histCount(t, "twoTenants_ping", tenant) }
 	refused := func(tenant uuid.UUID) int64 { return refusalSum(t, "unauthenticated", &tenant) }
 	notFound := func() int64 { return refusalClassTotal(t, "not_found") }
 
@@ -159,7 +159,7 @@ func TestEachTenantsNumberNamesOnlyItsOwnTenant(t *testing.T) {
 	// the number the delivery promised this runtime would not publish.
 	for tenant, id := range twoTenants {
 		if got := lat(id) - beforeLat[id]; got != 1 {
-			t.Errorf("tenant %q: %s moved by %d for one served request, want exactly 1", tenant, "round3_ping", got)
+			t.Errorf("tenant %q: %s moved by %d for one served request, want exactly 1", tenant, "twoTenants_ping", got)
 		}
 	}
 	// Each guard refusal moved its own tenant's count of class unauthenticated by one and

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -17,7 +18,7 @@ import (
 )
 
 func VerificationSubscriptions(svc *Service) []events.Subscription {
-	return []events.Subscription{{
+	subs := []events.Subscription{{
 		Module: "auth", Name: user.EventRegistrationUnverified,
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], event events.Event) error {
 			var registered user.RegistrationUnverified
@@ -28,7 +29,7 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			// that asked for it is gone: the port it was answered at rides the event.
 			ctx = WithServed(ctx, registered.Served)
 			ctx = WithOrigin(ctx, event)
-			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email)
+			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email, askedAtSignUp)
 		},
 	}, {
 		Module: "auth", Name: contracts.EventNoLinkRequested,
@@ -64,9 +65,13 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			if err != nil {
 				return err
 			}
-			return svc.offerVerification(ctx, tx, found.ID, asked.Email)
+			return svc.offerVerification(ctx, tx, found.ID, asked.Email, askedForAnotherLink)
 		},
 	}}
+	for i := range subs {
+		subs[i].Handler = AcknowledgeRefusedDelivery(subs[i].Handler)
+	}
+	return subs
 }
 
 // Both rotation and consumption take this lock before touching a token row.
@@ -79,8 +84,29 @@ func verificationLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 	return nil
 }
 
-func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) error {
-	if s.mail.Hosts == nil {
+// asker names which of this module's two ways into offerVerification is asking,
+// which is what decides what the offer owes the person on the branch where no
+// link leaves.
+//
+// The public delivery door (RegisterEmailRegistrationRoutes' auth-mail-delivery)
+// answers a caller from the one record its own call caused, so every branch of an
+// ask must hand one message to the transport (no_link.go). Whether this delivery
+// is such an ask is not a fact the credential table can answer — a first delivery
+// and a redelivery of one event look identical in it — so the caller says.
+type asker int
+
+const (
+	// askedForAnotherLink is somebody at the resend form. Their ask is the one the
+	// door answers, and it is answered from the record this delivery causes.
+	askedForAnotherLink asker = iota
+	// askedAtSignUp is one account creation, which the outbox may deliver more than
+	// once under one id. The sign-up route answered its caller 202 Accepted, and the
+	// message that call is answered from is caused by the first delivery of it.
+	askedAtSignUp
+)
+
+func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string, asked asker) error {
+	if !contracts.MailDeliverable(s.mail.Mailer) || s.mail.Hosts == nil {
 		return fmt.Errorf("auth: verification delivery is unavailable")
 	}
 	if err := verificationLock(tx, id); err != nil {
@@ -121,19 +147,33 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return s.recordMail(ctx, tx, contracts.MailVerification, current.Email,
 			notification.MailSuppressed, "no mail transport is wired")
 	}
-	var recent bool
-	err = tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM verification_tokens WHERE user_id = ? AND email = ? AND created_at > clock_timestamp() - ?::interval)",
-		id, current.Email, verificationInterval).Row().Scan(&recent)
+	// The cooldown counts links that went out, not rows that were written, and this
+	// offer replaces a credential whose mail never reached the transport.
+	recent, err := s.verificationSentRecently(tx, id, current.Email)
 	if err != nil {
 		return err
 	}
 	if recent {
-		// A link this person was sent a moment ago still stands, so no second one
-		// leaves — and this call still hands one message to the transport, for the
-		// reason the branch above gives. The sentence it carries is the one the flow
-		// says on every branch: about this request, no link was sent, which is true
-		// even while an earlier one is on its way.
-		return s.noVerificationLink(ctx, tx, email)
+		// A link this person was sent a moment ago still stands, so no second one leaves.
+		return s.answerNoLink(ctx, tx, asked, email)
+	}
+	// A link of this person's that is with the transport right now is the link this
+	// person is being sent, here exactly as at the reset offer. The send leaves on the
+	// commit of the transaction that minted it, so while it is in the air the row it
+	// describes stands unmarked, the cooldown above counts no send and answers "nobody
+	// was mailed", and a mint over that row would leave the person two messages of which
+	// the single-pending write keeps one credential: the first envelope, the one already
+	// open in front of them, leads to the row the table threw away. The ask is the mail
+	// slot's, and it is asked without waiting: the message inside a taken slot is still
+	// leaving, and an offer that waited on it would be a delivery parked behind a mail
+	// server, holding this transaction's row lock and its connection with it.
+	open, err := mailSlotOpen(tx, "verification_tokens", id)
+	if err != nil {
+		return err
+	}
+	if !open {
+		// Somebody is carrying this person's link at this moment, so this ask sends none.
+		return s.answerNoLink(ctx, tx, asked, email)
 	}
 	base, err := s.baseURL(ctx, tx)
 	if err != nil {
@@ -146,40 +186,90 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return err
 	}
 	token, at := secret(), db.Now()
-	err = tx.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"+
+	if err := s.writeVerification(tx, id, current.Email, token, at); err != nil {
+		return err
+	}
+	return s.sendConfirmationLink(ctx, id, current.Email, base, token, was)
+}
+
+// answerNoLink is what a confirmation offer that sends no link answers with, whether a
+// link this person was just sent still stands or one of theirs is with the transport now.
+//
+// The public delivery door behind an ask reads its answer out of the record this call
+// caused, so a person at the resend form still hands one message to the transport — the
+// sentence that says no link was sent, which is true even while an earlier one is away.
+//
+// A delivery of the sign-up event is nobody asking again: it is the outbox's retry of one
+// account creation, and that event is raised once per account, every later ask arriving
+// as an explicit resend. The link already leaving, or already in the mailbox, is the
+// answer its call caused; a sentence saying none was sent would contradict it and record
+// a request the door has read. The retry owes nothing.
+func (s *Service) answerNoLink(ctx context.Context, tx db.Tx[db.Tenant], asked asker, email string) error {
+	if asked == askedAtSignUp {
+		return nil
+	}
+	return s.noVerificationLink(ctx, tx, email)
+}
+
+// sendConfirmationLink hands this person's confirmation message to the transport on the
+// commit that makes its row spendable — never after a rollback — and records what the
+// transport answered, which is what a refused send costs (see mailAfterCommit). The
+// recipient, the tenant's host, the row and the previous link were all read inside the
+// transaction that minted the credential, so the hand-off carries the secret and the
+// digest that names this attempt's row, and nothing read back out of the table.
+func (s *Service) sendConfirmationLink(ctx context.Context, id uuid.UUID, address, base, token string, was pendingLink) error {
+	return events.Defer(ctx, func(ctx context.Context) error {
+		return s.mailAfterCommit(ctx, linkMail{
+			table: "verification_tokens", kind: contracts.MailVerification,
+			person: id, address: address, token: token, digest: contracts.Hash(token), was: was,
+			msg: notification.Message{
+				To: address, Subject: "Verify your email address",
+				Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
+					base + s.mail.ConfirmEmailPage + "?token=" + token +
+					"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
+			},
+		})
+	})
+}
+
+// verificationSentRecently reports whether this person was sent a confirmation link
+// inside the resend interval. It counts sent_at — the links a transport took — rather
+// than the rows that were written, so an offer nobody was ever mailed holds nobody's
+// cooldown down.
+func (s *Service) verificationSentRecently(tx db.Tx[db.Tenant], id uuid.UUID, email string) (bool, error) {
+	var recent bool
+	err := tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM verification_tokens WHERE user_id = ? AND email = ?"+
+		" AND sent_at IS NOT NULL AND sent_at > clock_timestamp() - ?::interval)",
+		id, email, verificationInterval).Row().Scan(&recent)
+	return recent, err
+}
+
+// writeVerification writes this attempt's one pending confirmation row, unsent until
+// the transport takes its message. ON CONFLICT on (tenant_id, user_id) is the
+// one-link-per-person rule: asking again replaces the last link rather than adding a
+// second, so the cooldown is the only thing left bounding how many mails this causes.
+func (s *Service) writeVerification(tx db.Tx[db.Tenant], id uuid.UUID, email, token string, at time.Time) error {
+	err := tx.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at, sent_at)"+
+		" VALUES (?, ?, ?, ?, ?, ?, NULL)"+
 		" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, email = EXCLUDED.email,"+
-		" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
-		contracts.Hash(token), db.TenantOf(tx).ID, id, current.Email, at, at.Add(contracts.VerificationLifetime)).Error
+		" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at, sent_at = NULL",
+		contracts.Hash(token), db.TenantOf(tx).ID, id, email, at, at.Add(contracts.VerificationLifetime)).Error
 	if err != nil {
 		return fmt.Errorf("auth: issue email verification: %w", err)
 	}
-	err = s.mail.Mailer.Send(ctx, notification.Message{
-		To: current.Email, Subject: "Verify your email address",
-		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
-			base + s.mail.ConfirmEmailPage + "?token=" + token +
-			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
-	})
-	if err != nil {
-		// The credential goes back exactly as this attempt found it. Two wrongs are
-		// refused: leaving a live token nobody was sent, and destroying the link that
-		// person already has because a second one was refused. The resend cap then
-		// counts the link that really left, so asking again is answered rather than
-		// held for an interval nobody was mailed under.
-		//
-		// The attempt is acknowledged rather than returned as an error, because the
-		// record of it is written in this transaction and has to commit for it to
-		// exist. The transport's own words still reach the operator — redacted by
-		// contracts.RedactMailReason, into the row — and nothing credential-bearing
-		// reaches the outbox either way, which is all the sanitised error this line
-		// replaced ever protected.
-		if rerr := restoreLink(tx, "verification_tokens", id, was); rerr != nil {
-			return rerr
-		}
-		return s.recordMail(ctx, tx, contracts.MailVerification, current.Email,
-			notification.MailFailed, err.Error(), token, string(contracts.Hash(token)))
-	}
-	return s.recordMail(ctx, tx, contracts.MailVerification, current.Email, notification.MailSent, "")
+	return nil
+}
 
+// writeCredential runs one statement about one emailed credential in a transaction
+// that commits by itself, which is the only shape that lets the write survive the
+// roll back of the delivery that mailed it. Both credentials this module mails go
+// through here and through detached, because "on the pool the caller carries, outside
+// the transaction now open" is one rule and two spellings of it drift.
+func (s *Service) writeCredential(ctx context.Context, verb, kind string, stmt func(db.Tx[db.Tenant]) error) error {
+	if err := s.detached(ctx, func(_ context.Context, tx db.Tx[db.Tenant]) error { return stmt(tx) }); err != nil {
+		return fmt.Errorf("auth: %s the emailed %s credential: %w", verb, kind, err)
+	}
+	return nil
 }
 
 func (s *Service) verifyEmail(ctx context.Context, tx db.Tx[db.Tenant], users contracts.EmailRegistrar, token string) error {

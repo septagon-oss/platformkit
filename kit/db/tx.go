@@ -78,6 +78,10 @@ type openTx struct {
 	tenant tenancy.Tenant
 	span   trace.Span
 	view   *tenantView
+	// hooks is the queue the transaction that will end this one runs after it
+	// commits. It is nil for a system transaction, which defers nothing: see
+	// ErrNoTransactionToDefer.
+	hooks *commitQueue
 }
 
 type txKey struct{}
@@ -92,7 +96,7 @@ func current(ctx context.Context) (openTx, bool) {
 	// Pending it never used.
 	if p, ok := pendingOf(ctx); ok {
 		if gtx, span := p.handle(); gtx != nil {
-			return openTx{db: gtx, tenant: p.tenant, span: span}, true
+			return openTx{db: gtx, tenant: p.tenant, span: span, hooks: p.hooks}, true
 		}
 	}
 	return openTx{}, false
@@ -162,6 +166,8 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 	}
 	if cur, ok := current(ctx); ok {
 		if cur.system || cur.tenant.ID != t.ID {
+			// A nested frame that cannot join still has to say so before it defers
+			// anything of its own; AfterCommit reads the frame below, not this one.
 			return ErrScopeMismatch
 		}
 		if cur.view != nil {
@@ -182,7 +188,7 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 		return fn(ctx, tx)
 	}
 
-	p := &Pending{conn: c, tenant: t, owner: ctx}
+	p := newPending(c, t, ctx)
 	tx, err := p.Tx(ctx)
 	if err != nil {
 		return err
@@ -190,17 +196,17 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 	// A panic must not leave the transaction open on the pooled connection.
 	defer func() {
 		if r := recover(); r != nil {
-			_ = p.Close(false)
+			_ = p.Rollback()
 			panic(r)
 		}
 	}()
 	// A nested join clones the shared handle, never this caller's operation handle.
 	gtx, span := p.handle()
-	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: gtx, tenant: t, span: span}), tx); err != nil {
-		_ = p.Close(false)
+	if err := fn(context.WithValue(ctx, txKey{}, openTx{db: gtx, tenant: t, span: span, hooks: p.hooks}), tx); err != nil {
+		_ = p.Rollback()
 		return err
 	}
-	return p.Close(true)
+	return p.Commit()
 }
 
 // RunSystem opens a cross-tenant transaction. Only packages under kit/ can
@@ -266,6 +272,18 @@ type Pending struct {
 	gtx  *gorm.DB
 	err  error
 	span trace.Span
+	// hooks is a pointer, and not for taste: Pending is compared by callers of the
+	// API this package publishes, and a queue holding a slice makes it not
+	// comparable, which the exported-API gate refuses as a new incompatibility.
+	hooks *commitQueue
+}
+
+// newPending is the only way to hold one. The queue that waits for the commit comes
+// with the transaction that can commit, in open, and not here: a Pending whose
+// transaction has ended owns no queue, which is what keeps an effect registered to
+// one transaction out of the next one's commit.
+func newPending(c *Conn, t tenancy.Tenant, owner context.Context) *Pending {
+	return &Pending{conn: c, tenant: t, owner: owner}
 }
 
 type pendingKey struct{}
@@ -290,7 +308,7 @@ func Lazy(ctx context.Context, c *Conn, tok tenancy.SystemToken) (context.Contex
 	if !ok {
 		return ctx, nil, ErrNoTenant
 	}
-	p := &Pending{conn: c, tenant: t, owner: ctx}
+	p := newPending(c, t, ctx)
 	return context.WithValue(ctx, pendingKey{}, p), p, nil
 }
 
@@ -326,28 +344,26 @@ func (p *Pending) Tx(ctx context.Context) (Tx[Tenant], error) {
 func (p *Pending) open() error {
 	// The span opens with the transaction and not with the Pending: a request
 	// that never queries opens neither, which is the whole reason Pending
-	// exists, and a span for a transaction that never happened would be the
-	// trace equivalent of a log line about a query nobody sent.
-	//
-	// One span per opened transaction, under whatever span the work already sits
-	// in — a request's, a job run's, an event delivery's — which is what makes
-	// "SQL under Tx" a boundary a reader can see: the span's duration is the
-	// transaction's, from BEGIN to the commit that was checked, and every
-	// statement the runner issued is inside it. Not one span per statement:
-	// kit/db's own promise is that GORM is the SQL executor and nothing else — no
-	// callbacks, no plugins — and a per-statement span is bought with a callback
-	// and a map of open statements. A transaction that took 40ms says what a
-	// reader needs to know in one span; the question "which of its four
-	// statements was the slow one" is answered by the statement log, not by a
-	// trace of this shape.
+	// exists. One span per opened transaction, under whatever span the work already
+	// sits in, is what makes "SQL under Tx" a boundary a reader can see: its
+	// duration is the transaction's, from BEGIN to the commit that was checked.
+	// Not one span per statement — kit/db's promise is that GORM is the SQL
+	// executor and nothing else, and a per-statement span is bought with a
+	// callback; "which statement was the slow one" is the statement log's answer.
 	ctx, span := telemetry.Tracer().Start(p.owner, "database transaction",
 		trace.WithAttributes(telemetry.SpanAttrs(p.owner)...))
+	// One queue per opened transaction, for as long as that transaction is open:
+	// see Close. A Pending that reopened after a rollback gets a queue that owes
+	// nothing to the transaction that ended.
+	p.hooks = &commitQueue{}
 	gtx := p.conn.db.WithContext(ctx).Begin()
 	if gtx.Error != nil {
+		p.hooks = nil
 		return p.failed(span, fmt.Errorf("db: begin: %w", gtx.Error))
 	}
 	if err := gtx.Exec("SELECT set_config('platformkit.tenant_id', ?, true)", p.tenant.ID.String()).Error; err != nil {
 		_ = gtx.Rollback().Error
+		p.hooks = nil
 		return p.failed(span, fmt.Errorf("db: set tenant: %w", err))
 	}
 	p.gtx, p.span = gtx, span
@@ -410,18 +426,65 @@ func (p *Pending) handle() (*gorm.DB, trace.Span) {
 	return p.gtx, p.span
 }
 
+// Commit ends the open transaction by committing it, when its owner has not ended
+// and the settings its open placed are still the ones in force, and runs the
+// effects registered to after the commit. It answers what Close(true) answers: an
+// owner that ended first is an error wrapping its cause and nothing is committed,
+// a transaction whose settings were rewritten is refused with ErrScopeTampered and
+// rolled back, and a Pending with nothing open is a no-op that answers nil. It is
+// idempotent, and a commit leaves the Pending unable to open again under the owner
+// that ended.
+func (p *Pending) Commit() error { return p.finalise(true) }
+
+// Rollback ends the open transaction by discarding it, dropping the effects that
+// waited for its commit. It answers what Close(false) answers: the no-op and nil of
+// a Pending with nothing open, idempotent, and — as the commit is not — a Pending
+// left able to open again under a live owner.
+func (p *Pending) Rollback() error { return p.finalise(false) }
+
 // Close ends the transaction: it commits when keep is true, the owner has not
 // ended and the settings the open placed are still the ones in force, and rolls
 // back otherwise. An owner that ended first is reported as an error wrapping its
 // cause, whatever keep asked for. It is a no-op when nothing is open, and
 // idempotent; a Close under a live owner leaves the Pending able to open again.
+//
+// Deprecated: Use Commit or Rollback, which say which of the two answers they ask
+// for instead of a bare bool at the call site.
 func (p *Pending) Close(keep bool) error {
+	if keep {
+		return p.Commit()
+	}
+	return p.Rollback()
+}
+
+// finalise performs the one ending Close, Commit and Rollback all ask for, and
+// reports what it decided.
+//
+// The effects registered to after the commit belong to the transaction that
+// registered them, so they run here and nowhere else: a rollback drops them with
+// the rows, and the transaction this Pending opens next runs only its own.
+func (p *Pending) finalise(keep bool) error {
+	committed, deferred, err := p.end(keep)
+	if err != nil || !committed {
+		return err
+	}
+	// Outside the mutex, because the queue is somebody else's code and an action
+	// that opens a transaction of its own must not have to wait for this Pending.
+	return runAfter(p.conn, deferred.drain())
+}
+
+// end commits or rolls back the open transaction and reports whether it committed,
+// which is what decides whether the effects deferred to after it run. The queue
+// those effects are in leaves the Pending either way, so nothing a later
+// transaction registers can be run by this one's ending, and nothing the rollback
+// dropped can be run by the next commit.
+func (p *Pending) end(keep bool) (bool, *commitQueue, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	gtx, span := p.gtx, p.span
-	p.gtx, p.span = nil, nil
+	gtx, span, deferred := p.gtx, p.span, p.hooks
+	p.gtx, p.span, p.hooks = nil, nil, nil
 	if gtx == nil {
-		return nil
+		return false, nil, nil
 	}
 	// open sets gtx and span together, so span is live here. It ends before the
 	// outcome is returned, whatever it is: the transaction is over the moment the
@@ -433,42 +496,37 @@ func (p *Pending) Close(keep bool) error {
 		err := fmt.Errorf("db: the transaction's owner ended before it was finalised: %w", context.Cause(p.owner))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return false, deferred, err
 	}
 	if !keep {
-		return gtx.Rollback().Error
+		return false, deferred, gtx.Rollback().Error
 	}
 	if err := sealed(gtx, p.tenant.ID.String(), ""); err != nil {
 		_ = gtx.Rollback().Error
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return err
+		return false, deferred, err
 	}
 	err := gtx.Commit().Error
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		return false, deferred, err
 	}
-	return err
+	return true, deferred, nil
 }
 
 // sealed refuses to commit a transaction that ends under different settings
 // than the ones its runner placed.
 //
-// This is a backstop, and the precise claim matters. platformkit.tenant_id and
-// platformkit.system_access are placeholder GUCs, which are USERSET: any
-// statement inside the transaction can rewrite them, and no database privilege
-// prevents it. This check catches the naive escape — code that sets a setting
-// and leaves it set — and it catches nothing else: an escape that restores the
-// value before returning re-reads clean and commits. There is no way to close
-// that with a re-read, because the state it inspects is the state the escape
-// restored.
-//
-// So the control for a deliberate escape is not here. It is scripts/check_gucs.sh,
-// which fails the build when anything outside kit/db writes either setting, in Go
-// or in SQL, and the type parameter, which makes crossing the tenant by accident
-// impossible. This costs one round trip per transaction, both settings in one
-// query, and it is worth that because the naive escape is the one that happens.
+// This is a backstop, and the precise claim matters: the two GUCs are USERSET, so
+// any statement inside the transaction can rewrite them. This catches the naive
+// escape — code that sets a setting and leaves it set — and catches nothing else,
+// because an escape that restores the value before returning re-reads clean. The
+// control for a deliberate escape is scripts/check_gucs.sh, which fails the build
+// when anything outside kit/db writes either setting, and the type parameter, which
+// makes crossing a tenant by accident impossible. It costs one round trip per
+// transaction, worth it because the naive escape is the one that happens.
 func sealed(gtx *gorm.DB, wantTenant, wantSystem string) error {
 	var tenant, system string
 	const q = `SELECT coalesce(current_setting('platformkit.tenant_id', true), ''),

@@ -8,10 +8,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
-func steppedUpdate(h entity.EntryHints) bool {
-	return h.Forms != nil && h.Forms.Update != nil && h.Forms.Update.Layout == "steps"
-}
-
 func formHintsFault(r httpx.Resource) string {
 	h := r.Present.Forms
 	if h == nil {

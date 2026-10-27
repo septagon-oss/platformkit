@@ -2,64 +2,12 @@ package app
 
 // placement.go is the standing half of naming an app: the walk that puts an
 // existing tenant under the app that proves it, asked of every boot that declares
-// one rather than of the one release that ships the migration file.
-//
-// The file (migrations/000060_tenant_app_place.up.sql) and this step are the same
-// walk — `platformkit_place_tenants`, created by 000059 — and they are two because
-// a migration file is spent the moment it drains. The upgrade that installs this
-// release while the deployment still names no app is a supported boot; it drains
-// 000060 over rows it must not touch, history marks the file applied, and the
-// operator's later `nats.app` arrives to a ledger that says the placement already
-// happened. Without this step those tenants keep the empty app they were stamped
-// with: served, on the legacy durable, outside both named apps, and RelayApp finds
-// nothing for the composition that has just named itself after them
-// (kit/events/relay.go). Choosing an app name is a deployment decision made after
-// the release is installed, so the placement has to be a deployment step.
-//
-// What it does not inherit is the refusal. migrations/000060 refuses a boot that
-// named itself and left a tenant nobody named, and that is right at the release,
-// where one statement sees every row and the operator is mid-deploy. It would be
-// the wrong answer here: a tenant created after the placement ran is a tenant whose
-// app its next deploy's declaration may simply not name yet, and a boot that died on
-// it would be the write that takes the last one away, held over a boot that came to
-// place somebody. So the walk runs, the tenants it cannot prove stay where they are,
-// and the fact is printed rather than decided.
-//
-// Two of these run at once, and that is the shape of a server holding two apps over
-// one database: each composition places on its own boot and on its own tick, over the
-// same rows, with no knowledge of the other. The walk decides from a reading, so the
-// guarantee lives in the write it makes: `platformkit_place_tenants` sets the app of a
-// row only while that row is still empty at the write itself (migrations/000059), which
-// leaves the second of two competing placements to find the row already named and write
-// nothing. A tenant's app is decided once (migrations/000043) and which relay, consumer
-// and control-plane scope can reach the tenant follows from it, so the step from empty
-// to a slug is the one write in this kernel that may not arrive twice; a declaration
-// that finds a row already answered does not move the tenant and does not report it as
-// somebody's omission either — the late declaration is the one that is wrong about the
-// row, not the row about itself.
-//
-// The step also declares the tenant's ledger key, in the schema rather than here
-// (migrations/000061's trigger on the row whose app went from nobody's to somebody's),
-// and that is what makes two boots safe for each other's *moves* rather than merely
-// consistent about one row. kit/events.MoveLedger holds that key exclusively over every
-// tenant that could still become its app: a placement that arrives first is that move's
-// ordinary contention refusal, and one that arrives after waits and lands behind it,
-// which is the order that owes a move — and this step runs before a boot opens any
-// scoped consumer, so its own next move pays its own debt.
-//
-// Its own, and no further, because the boot that places is not the only one consuming.
-// A replica that has already moved this app's ledger and opened its scoped consumers
-// is consuming for this tenant the moment this write commits, whatever its own move
-// reported a minute earlier: the move it ran could only rename the claims of the tenants
-// that were its app's at the time, and this tenant was nobody's. What stands between
-// that consumer and a second handling of work this tenant already committed is not the
-// order of two boots' moves at all, but the claim's own reading of the tenant's history
-// under the durable it was marked under before this step named it (kit/events's claim).
-// A placement therefore never has to wait for a rename it cannot see coming, and the
-// rename never has to happen first: the debt this step leaves is one the next move finds
-// and pays, and the deliveries in between refuse on their own. What it costs is a
-// placement sitting behind another app's rename: one short transaction, the only holder
-// it can ever wait behind.
+// one rather than of the one release that ships the migration file. It places whom
+// it can prove and never refuses: a tenant it cannot place stays where it is and
+// the fact is printed. Why the walk is a deployment step and not a migration file,
+// what it deliberately does not inherit from 000060, and why two boots placing
+// over one database are safe for each other are in README.md, section "Placing a
+// tenant under an app".
 
 import (
 	"context"

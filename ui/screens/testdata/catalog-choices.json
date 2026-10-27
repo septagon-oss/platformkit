@@ -1,0 +1,1939 @@
+{
+  "catalogVersion": 3,
+  "resources": [
+    {
+      "module": "note",
+      "entity": "note",
+      "path": "/api/v1/note/notes",
+      "fields": [
+        {
+          "choices": {
+            "cardinality": "many",
+            "options": [
+              {
+                "id": "round",
+                "label": "Round",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                }
+              },
+              {
+                "id": "square",
+                "label": "Square",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              },
+              {
+                "id": "none",
+                "label": "No preference"
+              }
+            ],
+            "empty": {
+              "mode": "refuse",
+              "message": "Keep one shape."
+            },
+            "searchThreshold": 2,
+            "maximum": {
+              "count": 2,
+              "behaviour": "replace-oldest",
+              "message": ""
+            },
+            "noPreference": "none"
+          },
+          "name": "shapes",
+          "type": "list",
+          "elem": "string",
+          "widget": "tiles"
+        }
+      ],
+      "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "tiles",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "tiles",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "tiles",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
+        "policyVersion": 1,
+        "language": "en",
+        "identity": {
+          "singular": "note",
+          "plural": "notes",
+          "description": "",
+          "emptyDescription": "",
+          "icon": "",
+          "order": 0
+        },
+        "titles": {
+          "listCandidates": [],
+          "recordCandidates": [],
+          "emptyTitle": "—",
+          "preview": "",
+          "status": "",
+          "cover": "",
+          "thumbnail": "",
+          "summary": []
+        },
+        "layout": {
+          "columns": [
+            "shapes"
+          ],
+          "overview": [],
+          "information": [
+            "shapes"
+          ],
+          "sections": [],
+          "create": [
+            "shapes"
+          ],
+          "update": [
+            "shapes"
+          ]
+        },
+        "fields": [
+          {
+            "choice": {
+              "cardinality": "many",
+              "empty": {
+                "mode": "refuse",
+                "message": "Keep one shape."
+              },
+              "maximum": {
+                "count": 2,
+                "behaviour": "replace-oldest",
+                "message": ""
+              },
+              "noPreference": "none",
+              "searchThreshold": 2,
+              "searchEnabled": true,
+              "groups": [
+                {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              ]
+            },
+            "figure": null,
+            "name": "shapes",
+            "label": "Shapes",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "tiles",
+            "kind": "choice",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": [
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                },
+                "group": "",
+                "noPreference": false,
+                "value": "round",
+                "label": "Round",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": "corners",
+                "noPreference": false,
+                "value": "square",
+                "label": "Square",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "group": "",
+                "noPreference": true,
+                "value": "none",
+                "label": "No preference",
+                "tone": "neutral",
+                "done": false
+              }
+            ]
+          }
+        ],
+        "list": {
+          "defaultSort": "",
+          "sorts": [],
+          "filters": []
+        },
+        "commands": [
+          {
+            "fields": [
+              {
+                "choice": {
+                  "cardinality": "many",
+                  "empty": {
+                    "mode": "refuse",
+                    "message": "Keep one shape."
+                  },
+                  "maximum": {
+                    "count": 2,
+                    "behaviour": "replace-oldest",
+                    "message": ""
+                  },
+                  "noPreference": "none",
+                  "searchThreshold": 2,
+                  "searchEnabled": true,
+                  "groups": [
+                    {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  ]
+                },
+                "figure": null,
+                "name": "shapes",
+                "label": "Shapes",
+                "help": "",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "tiles",
+                "kind": "choice",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null
+                },
+                "options": [
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    },
+                    "group": "",
+                    "noPreference": false,
+                    "value": "round",
+                    "label": "Round",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": "corners",
+                    "noPreference": false,
+                    "value": "square",
+                    "label": "Square",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "group": "",
+                    "noPreference": true,
+                    "value": "none",
+                    "label": "No preference",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ],
+            "verb": "choose",
+            "label": "Choose shapes",
+            "visible": true,
+            "system": false,
+            "primary": false,
+            "destructive": false,
+            "successMessage": ""
+          }
+        ],
+        "summary": {
+          "trendField": ""
+        }
+      },
+      "screen": "/app/note/notes",
+      "immutable": [
+        "status"
+      ],
+      "writable": true,
+      "commands": [
+        {
+          "verb": "choose",
+          "summary": "Choose shapes",
+          "fields": [
+            {
+              "choices": {
+                "cardinality": "many",
+                "options": [
+                  {
+                    "id": "round",
+                    "label": "Round",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    }
+                  },
+                  {
+                    "id": "square",
+                    "label": "Square",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  },
+                  {
+                    "id": "none",
+                    "label": "No preference"
+                  }
+                ],
+                "empty": {
+                  "mode": "refuse",
+                  "message": "Keep one shape."
+                },
+                "searchThreshold": 2,
+                "maximum": {
+                  "count": 2,
+                  "behaviour": "replace-oldest",
+                  "message": ""
+                },
+                "noPreference": "none"
+              },
+              "name": "shapes",
+              "type": "list",
+              "elem": "string",
+              "widget": "tiles"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "module": "note",
+      "entity": "note",
+      "path": "/api/v1/note/notes",
+      "fields": [
+        {
+          "choices": {
+            "cardinality": "many",
+            "options": [
+              {
+                "id": "round",
+                "label": "Round",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                }
+              },
+              {
+                "id": "square",
+                "label": "Square",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              },
+              {
+                "id": "none",
+                "label": "No preference"
+              }
+            ],
+            "empty": {
+              "mode": "refuse",
+              "message": "Keep one shape."
+            },
+            "searchThreshold": 2,
+            "maximum": {
+              "count": 2,
+              "behaviour": "replace-oldest",
+              "message": ""
+            },
+            "noPreference": "none"
+          },
+          "name": "shapes",
+          "type": "list",
+          "elem": "string",
+          "widget": "chips"
+        }
+      ],
+      "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "chips",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "chips",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "chips",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
+        "policyVersion": 1,
+        "language": "en",
+        "identity": {
+          "singular": "note",
+          "plural": "notes",
+          "description": "",
+          "emptyDescription": "",
+          "icon": "",
+          "order": 0
+        },
+        "titles": {
+          "listCandidates": [],
+          "recordCandidates": [],
+          "emptyTitle": "—",
+          "preview": "",
+          "status": "",
+          "cover": "",
+          "thumbnail": "",
+          "summary": []
+        },
+        "layout": {
+          "columns": [
+            "shapes"
+          ],
+          "overview": [],
+          "information": [
+            "shapes"
+          ],
+          "sections": [],
+          "create": [
+            "shapes"
+          ],
+          "update": [
+            "shapes"
+          ]
+        },
+        "fields": [
+          {
+            "choice": {
+              "cardinality": "many",
+              "empty": {
+                "mode": "refuse",
+                "message": "Keep one shape."
+              },
+              "maximum": {
+                "count": 2,
+                "behaviour": "replace-oldest",
+                "message": ""
+              },
+              "noPreference": "none",
+              "searchThreshold": 2,
+              "searchEnabled": true,
+              "groups": [
+                {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              ]
+            },
+            "figure": null,
+            "name": "shapes",
+            "label": "Shapes",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "chips",
+            "kind": "choice",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": [
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                },
+                "group": "",
+                "noPreference": false,
+                "value": "round",
+                "label": "Round",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": "corners",
+                "noPreference": false,
+                "value": "square",
+                "label": "Square",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "group": "",
+                "noPreference": true,
+                "value": "none",
+                "label": "No preference",
+                "tone": "neutral",
+                "done": false
+              }
+            ]
+          }
+        ],
+        "list": {
+          "defaultSort": "",
+          "sorts": [],
+          "filters": []
+        },
+        "commands": [
+          {
+            "fields": [
+              {
+                "choice": {
+                  "cardinality": "many",
+                  "empty": {
+                    "mode": "refuse",
+                    "message": "Keep one shape."
+                  },
+                  "maximum": {
+                    "count": 2,
+                    "behaviour": "replace-oldest",
+                    "message": ""
+                  },
+                  "noPreference": "none",
+                  "searchThreshold": 2,
+                  "searchEnabled": true,
+                  "groups": [
+                    {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  ]
+                },
+                "figure": null,
+                "name": "shapes",
+                "label": "Shapes",
+                "help": "",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "chips",
+                "kind": "choice",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null
+                },
+                "options": [
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    },
+                    "group": "",
+                    "noPreference": false,
+                    "value": "round",
+                    "label": "Round",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": "corners",
+                    "noPreference": false,
+                    "value": "square",
+                    "label": "Square",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "group": "",
+                    "noPreference": true,
+                    "value": "none",
+                    "label": "No preference",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ],
+            "verb": "choose",
+            "label": "Choose shapes",
+            "visible": true,
+            "system": false,
+            "primary": false,
+            "destructive": false,
+            "successMessage": ""
+          }
+        ],
+        "summary": {
+          "trendField": ""
+        }
+      },
+      "screen": "/app/note/notes",
+      "immutable": [
+        "status"
+      ],
+      "writable": true,
+      "commands": [
+        {
+          "verb": "choose",
+          "summary": "Choose shapes",
+          "fields": [
+            {
+              "choices": {
+                "cardinality": "many",
+                "options": [
+                  {
+                    "id": "round",
+                    "label": "Round",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    }
+                  },
+                  {
+                    "id": "square",
+                    "label": "Square",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  },
+                  {
+                    "id": "none",
+                    "label": "No preference"
+                  }
+                ],
+                "empty": {
+                  "mode": "refuse",
+                  "message": "Keep one shape."
+                },
+                "searchThreshold": 2,
+                "maximum": {
+                  "count": 2,
+                  "behaviour": "replace-oldest",
+                  "message": ""
+                },
+                "noPreference": "none"
+              },
+              "name": "shapes",
+              "type": "list",
+              "elem": "string",
+              "widget": "chips"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "module": "note",
+      "entity": "note",
+      "path": "/api/v1/note/notes",
+      "fields": [
+        {
+          "choices": {
+            "cardinality": "many",
+            "options": [
+              {
+                "id": "round",
+                "label": "Round",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                }
+              },
+              {
+                "id": "square",
+                "label": "Square",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              },
+              {
+                "id": "none",
+                "label": "No preference"
+              }
+            ],
+            "empty": {
+              "mode": "refuse",
+              "message": "Keep one shape."
+            },
+            "searchThreshold": 2,
+            "maximum": {
+              "count": 2,
+              "behaviour": "replace-oldest",
+              "message": ""
+            },
+            "noPreference": "none"
+          },
+          "name": "shapes",
+          "type": "list",
+          "elem": "string",
+          "widget": "swatch"
+        }
+      ],
+      "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "swatch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "swatch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "swatch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
+        "policyVersion": 1,
+        "language": "en",
+        "identity": {
+          "singular": "note",
+          "plural": "notes",
+          "description": "",
+          "emptyDescription": "",
+          "icon": "",
+          "order": 0
+        },
+        "titles": {
+          "listCandidates": [],
+          "recordCandidates": [],
+          "emptyTitle": "—",
+          "preview": "",
+          "status": "",
+          "cover": "",
+          "thumbnail": "",
+          "summary": []
+        },
+        "layout": {
+          "columns": [
+            "shapes"
+          ],
+          "overview": [],
+          "information": [
+            "shapes"
+          ],
+          "sections": [],
+          "create": [
+            "shapes"
+          ],
+          "update": [
+            "shapes"
+          ]
+        },
+        "fields": [
+          {
+            "choice": {
+              "cardinality": "many",
+              "empty": {
+                "mode": "refuse",
+                "message": "Keep one shape."
+              },
+              "maximum": {
+                "count": 2,
+                "behaviour": "replace-oldest",
+                "message": ""
+              },
+              "noPreference": "none",
+              "searchThreshold": 2,
+              "searchEnabled": true,
+              "groups": [
+                {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              ]
+            },
+            "figure": null,
+            "name": "shapes",
+            "label": "Shapes",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "swatch",
+            "kind": "choice",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": [
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                },
+                "group": "",
+                "noPreference": false,
+                "value": "round",
+                "label": "Round",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": "corners",
+                "noPreference": false,
+                "value": "square",
+                "label": "Square",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "group": "",
+                "noPreference": true,
+                "value": "none",
+                "label": "No preference",
+                "tone": "neutral",
+                "done": false
+              }
+            ]
+          }
+        ],
+        "list": {
+          "defaultSort": "",
+          "sorts": [],
+          "filters": []
+        },
+        "commands": [
+          {
+            "fields": [
+              {
+                "choice": {
+                  "cardinality": "many",
+                  "empty": {
+                    "mode": "refuse",
+                    "message": "Keep one shape."
+                  },
+                  "maximum": {
+                    "count": 2,
+                    "behaviour": "replace-oldest",
+                    "message": ""
+                  },
+                  "noPreference": "none",
+                  "searchThreshold": 2,
+                  "searchEnabled": true,
+                  "groups": [
+                    {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  ]
+                },
+                "figure": null,
+                "name": "shapes",
+                "label": "Shapes",
+                "help": "",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "swatch",
+                "kind": "choice",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null
+                },
+                "options": [
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    },
+                    "group": "",
+                    "noPreference": false,
+                    "value": "round",
+                    "label": "Round",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": "corners",
+                    "noPreference": false,
+                    "value": "square",
+                    "label": "Square",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "group": "",
+                    "noPreference": true,
+                    "value": "none",
+                    "label": "No preference",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ],
+            "verb": "choose",
+            "label": "Choose shapes",
+            "visible": true,
+            "system": false,
+            "primary": false,
+            "destructive": false,
+            "successMessage": ""
+          }
+        ],
+        "summary": {
+          "trendField": ""
+        }
+      },
+      "screen": "/app/note/notes",
+      "immutable": [
+        "status"
+      ],
+      "writable": true,
+      "commands": [
+        {
+          "verb": "choose",
+          "summary": "Choose shapes",
+          "fields": [
+            {
+              "choices": {
+                "cardinality": "many",
+                "options": [
+                  {
+                    "id": "round",
+                    "label": "Round",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    }
+                  },
+                  {
+                    "id": "square",
+                    "label": "Square",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  },
+                  {
+                    "id": "none",
+                    "label": "No preference"
+                  }
+                ],
+                "empty": {
+                  "mode": "refuse",
+                  "message": "Keep one shape."
+                },
+                "searchThreshold": 2,
+                "maximum": {
+                  "count": 2,
+                  "behaviour": "replace-oldest",
+                  "message": ""
+                },
+                "noPreference": "none"
+              },
+              "name": "shapes",
+              "type": "list",
+              "elem": "string",
+              "widget": "swatch"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "module": "note",
+      "entity": "note",
+      "path": "/api/v1/note/notes",
+      "fields": [
+        {
+          "choices": {
+            "cardinality": "many",
+            "options": [
+              {
+                "id": "round",
+                "label": "Round",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                }
+              },
+              {
+                "id": "square",
+                "label": "Square",
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              },
+              {
+                "id": "none",
+                "label": "No preference"
+              }
+            ],
+            "empty": {
+              "mode": "refuse",
+              "message": "Keep one shape."
+            },
+            "searchThreshold": 2,
+            "maximum": {
+              "count": 2,
+              "behaviour": "replace-oldest",
+              "message": ""
+            },
+            "noPreference": "none"
+          },
+          "name": "shapes",
+          "type": "list",
+          "elem": "string",
+          "widget": "figure",
+          "presentation": {
+            "figure": {
+              "digest": "2e78ad95bfc0fdb920c7f9ac05e595edfef0d9729991244b65e4078ba6e99e51",
+              "svg": "\u003csvg height=\"80\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 100 80\" width=\"100\" xmlns=\"http://www.w3.org/2000/svg\"\u003e\u003ccircle cx=\"20\" cy=\"20\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003ccircle cx=\"20\" cy=\"60\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003crect data-choice=\"square\" height=\"40\" width=\"20\" x=\"60\" y=\"20\"\u003e\u003c/rect\u003e\u003c/svg\u003e",
+              "choiceIDs": [
+                "round",
+                "square"
+              ]
+            }
+          }
+        }
+      ],
+      "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "figure",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "figure",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "figure",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
+        "policyVersion": 1,
+        "language": "en",
+        "identity": {
+          "singular": "note",
+          "plural": "notes",
+          "description": "",
+          "emptyDescription": "",
+          "icon": "",
+          "order": 0
+        },
+        "titles": {
+          "listCandidates": [],
+          "recordCandidates": [],
+          "emptyTitle": "—",
+          "preview": "",
+          "status": "",
+          "cover": "",
+          "thumbnail": "",
+          "summary": []
+        },
+        "layout": {
+          "columns": [
+            "shapes"
+          ],
+          "overview": [],
+          "information": [
+            "shapes"
+          ],
+          "sections": [],
+          "create": [
+            "shapes"
+          ],
+          "update": [
+            "shapes"
+          ]
+        },
+        "fields": [
+          {
+            "choice": {
+              "cardinality": "many",
+              "empty": {
+                "mode": "refuse",
+                "message": "Keep one shape."
+              },
+              "maximum": {
+                "count": 2,
+                "behaviour": "replace-oldest",
+                "message": ""
+              },
+              "noPreference": "none",
+              "searchThreshold": 2,
+              "searchEnabled": true,
+              "groups": [
+                {
+                  "key": "corners",
+                  "label": "Corners"
+                }
+              ]
+            },
+            "figure": {
+              "digest": "2e78ad95bfc0fdb920c7f9ac05e595edfef0d9729991244b65e4078ba6e99e51",
+              "svg": "\u003csvg height=\"80\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 100 80\" width=\"100\" xmlns=\"http://www.w3.org/2000/svg\"\u003e\u003ccircle cx=\"20\" cy=\"20\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003ccircle cx=\"20\" cy=\"60\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003crect data-choice=\"square\" height=\"40\" width=\"20\" x=\"60\" y=\"20\"\u003e\u003c/rect\u003e\u003c/svg\u003e",
+              "choiceIDs": [
+                "round",
+                "square"
+              ]
+            },
+            "name": "shapes",
+            "label": "Shapes",
+            "help": "",
+            "section": "",
+            "onList": true,
+            "onRecord": true,
+            "editable": {
+              "create": true,
+              "update": true
+            },
+            "control": "figure",
+            "kind": "choice",
+            "reading": {
+              "format": "",
+              "missing": "—",
+              "true": "",
+              "false": "",
+              "precision": null
+            },
+            "options": [
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#112233"
+                },
+                "group": "",
+                "noPreference": false,
+                "value": "round",
+                "label": "Round",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "picture": {
+                  "kind": "colour",
+                  "value": "#AABBCC"
+                },
+                "group": "corners",
+                "noPreference": false,
+                "value": "square",
+                "label": "Square",
+                "tone": "neutral",
+                "done": false
+              },
+              {
+                "group": "",
+                "noPreference": true,
+                "value": "none",
+                "label": "No preference",
+                "tone": "neutral",
+                "done": false
+              }
+            ]
+          }
+        ],
+        "list": {
+          "defaultSort": "",
+          "sorts": [],
+          "filters": []
+        },
+        "commands": [
+          {
+            "fields": [
+              {
+                "choice": {
+                  "cardinality": "many",
+                  "empty": {
+                    "mode": "refuse",
+                    "message": "Keep one shape."
+                  },
+                  "maximum": {
+                    "count": 2,
+                    "behaviour": "replace-oldest",
+                    "message": ""
+                  },
+                  "noPreference": "none",
+                  "searchThreshold": 2,
+                  "searchEnabled": true,
+                  "groups": [
+                    {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  ]
+                },
+                "figure": {
+                  "digest": "2e78ad95bfc0fdb920c7f9ac05e595edfef0d9729991244b65e4078ba6e99e51",
+                  "svg": "\u003csvg height=\"80\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 100 80\" width=\"100\" xmlns=\"http://www.w3.org/2000/svg\"\u003e\u003ccircle cx=\"20\" cy=\"20\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003ccircle cx=\"20\" cy=\"60\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003crect data-choice=\"square\" height=\"40\" width=\"20\" x=\"60\" y=\"20\"\u003e\u003c/rect\u003e\u003c/svg\u003e",
+                  "choiceIDs": [
+                    "round",
+                    "square"
+                  ]
+                },
+                "name": "shapes",
+                "label": "Shapes",
+                "help": "",
+                "section": "",
+                "onList": false,
+                "onRecord": false,
+                "editable": {
+                  "create": true,
+                  "update": false
+                },
+                "control": "figure",
+                "kind": "choice",
+                "reading": {
+                  "format": "",
+                  "missing": "—",
+                  "true": "",
+                  "false": "",
+                  "precision": null
+                },
+                "options": [
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    },
+                    "group": "",
+                    "noPreference": false,
+                    "value": "round",
+                    "label": "Round",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": "corners",
+                    "noPreference": false,
+                    "value": "square",
+                    "label": "Square",
+                    "tone": "neutral",
+                    "done": false
+                  },
+                  {
+                    "group": "",
+                    "noPreference": true,
+                    "value": "none",
+                    "label": "No preference",
+                    "tone": "neutral",
+                    "done": false
+                  }
+                ]
+              }
+            ],
+            "verb": "choose",
+            "label": "Choose shapes",
+            "visible": true,
+            "system": false,
+            "primary": false,
+            "destructive": false,
+            "successMessage": ""
+          }
+        ],
+        "summary": {
+          "trendField": ""
+        }
+      },
+      "screen": "/app/note/notes",
+      "immutable": [
+        "status"
+      ],
+      "writable": true,
+      "commands": [
+        {
+          "verb": "choose",
+          "summary": "Choose shapes",
+          "fields": [
+            {
+              "choices": {
+                "cardinality": "many",
+                "options": [
+                  {
+                    "id": "round",
+                    "label": "Round",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#112233"
+                    }
+                  },
+                  {
+                    "id": "square",
+                    "label": "Square",
+                    "picture": {
+                      "kind": "colour",
+                      "value": "#AABBCC"
+                    },
+                    "group": {
+                      "key": "corners",
+                      "label": "Corners"
+                    }
+                  },
+                  {
+                    "id": "none",
+                    "label": "No preference"
+                  }
+                ],
+                "empty": {
+                  "mode": "refuse",
+                  "message": "Keep one shape."
+                },
+                "searchThreshold": 2,
+                "maximum": {
+                  "count": 2,
+                  "behaviour": "replace-oldest",
+                  "message": ""
+                },
+                "noPreference": "none"
+              },
+              "name": "shapes",
+              "type": "list",
+              "elem": "string",
+              "widget": "figure",
+              "presentation": {
+                "figure": {
+                  "digest": "2e78ad95bfc0fdb920c7f9ac05e595edfef0d9729991244b65e4078ba6e99e51",
+                  "svg": "\u003csvg height=\"80\" preserveAspectRatio=\"xMidYMid meet\" viewBox=\"0 0 100 80\" width=\"100\" xmlns=\"http://www.w3.org/2000/svg\"\u003e\u003ccircle cx=\"20\" cy=\"20\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003ccircle cx=\"20\" cy=\"60\" data-choice=\"round\" r=\"10\"\u003e\u003c/circle\u003e\u003crect data-choice=\"square\" height=\"40\" width=\"20\" x=\"60\" y=\"20\"\u003e\u003c/rect\u003e\u003c/svg\u003e",
+                  "choiceIDs": [
+                    "round",
+                    "square"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

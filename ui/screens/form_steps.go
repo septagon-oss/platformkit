@@ -197,7 +197,7 @@ func stepResponse(r httpx.Resource, o Options, req page.Request, state rest.Form
 		steps[i] = forms.Step{Key: step.Key, Label: step.Label, Fields: step.Fields,
 			PrimaryLabel: step.PrimaryLabel, AnswerField: step.AnswerField, EmptyLabel: step.EmptyLabel}
 	}
-	view := resource.StepForm(described(r), o, state.Form, title, state.Answers, errs, detail,
+	view := resource.StepForm(described(r, o), o, state.Form, title, state.Answers, errs, detail,
 		forms.StepView{Steps: steps, Current: state.Step, Continuation: string(encoded), Navigation: navigation,
 			AnswerInvalid: form.Steps[state.Step].AnswerField != "" && !rest.FormAnswerValid(state.Answers, r.Schema.Fields, form.Steps[state.Step].AnswerField)})
 	view.Status = status

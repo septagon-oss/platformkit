@@ -5,21 +5,30 @@ import { expect, test, type Page } from '@playwright/test';
 // thing on either side that knows what zone the person is sitting in. `ui/assets/js/components.js`
 // is the second half, and no Go test can run it: `ui/resource`'s cases prove the element, its
 // instant and the server's words, and `ui`'s node case runs the script against a hand-built
-// element. What neither can prove is the claim the brief makes — that a person, in their own
+// element. What neither can prove is the claim the page makes — that a person, in their own
 // browser, in their own language, reads the moment where they are.
 //
-// This is that case, and it is the one that would have caught the defect this file was written
-// against: `tellTime` read a binding in its own temporal dead zone, threw on every call, and the
-// `try`/`catch` around it in `init()` swallowed the throw, so every page on the instance quietly
-// kept the server's UTC. Every rendered-HTML test in the repository passed. The browser was the
-// only witness.
+// The spelling of that moment is the resolved policy's, and it is numeric: an absolute instant
+// reads `YYYY-MM-DD HH:MM` in the zone the page resolves it in, at the minute a person compares.
+// Wording about age belongs to a field that asked for it (`format:relative`), and no field here
+// has asked, so one instant is spelled like another whether it is six minutes old, eight days old
+// or still to come. That is what these cases read: the shape cannot tell the reader's minute from
+// the server's, because the two are the same sixteen characters some hours apart, so every case
+// compares the *value* the browser wrote against the instant read where the reader is.
+//
+// This is the case that would have caught the defect this file was written against: `tellTime`
+// read a binding in its own temporal dead zone, threw on every call, and the `try`/`catch`
+// around it in `init()` swallowed the throw, so every page on the instance quietly kept the
+// server's UTC. Every rendered-HTML test in the repository passed. The browser was the only
+// witness.
 //
 // Two choices below are load-bearing. The clock is pinned before each navigation, because the
 // script reads `Date.now()` once, at init — an unpinned run measures a race with the server's
 // clock instead of the reader's. And the zone is Asia/Kolkata rather than a European one: it is
 // UTC+5:30 all year, so "the reader's clock is not UTC" is true on the day the suite runs, in
-// whatever month the suite runs, and the half-hour offset means a title that merely copied the
-// server's minutes cannot pass.
+// whatever month the suite runs, and the half-hour offset means a minute that merely copied the
+// server's minutes cannot pass. The expected minute is then that offset added by hand, which is
+// arithmetic rather than the same zone lookup the page under test performs.
 //
 // The record is written through the API: the form that writes it is labelled in the language of
 // the page, and one of the cases below is about that language.
@@ -30,9 +39,11 @@ const admin = {
 };
 const tasks = '/app/task/tasks';
 const readerZone = 'Asia/Kolkata';
-// display.Moment: what the server writes as the element's text, and the same instant with
-// seconds and its `Z` designator as the title. Both are the fallback for a browser that never
-// speaks, and the evidence that it did not.
+// Asia/Kolkata answers this offset for every instant in the year, with no summer time to move it.
+const readerOffset = 5.5 * 3600;
+// What the server writes when the page names no location of its own: the instant in UTC at the
+// minute a person reads, and its zone-explicit RFC3339 title. Both stand for a browser that never
+// speaks, which is the case `a browser without the formatter` below walks.
 const serverText = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 const serverTitle = /T\d{2}:\d{2}:\d{2}Z$/;
 
@@ -54,7 +65,7 @@ async function signedInRecord(page: Page, title: string): Promise<string> {
   return `${tasks}/${id}`;
 }
 
-/** Every `<time datetime>` the page drew, as the reader sees it and as the server wrote it. */
+/** Every `<time>` the page drew: what the reader is shown, and what the server wrote. */
 async function said(page: Page) {
   const times = page.locator('time[datetime]');
   const count = await times.count();
@@ -63,77 +74,107 @@ async function said(page: Page) {
     text: (el.textContent ?? '').trim(),
     datetime: el.getAttribute('datetime') ?? '',
     title: el.getAttribute('title') ?? '',
+    kind: el.dataset.timeKind ?? '',
+    relative: el.dataset.timeRelative ?? '',
+    zone: el.dataset.timeZone ?? '',
+    unit: el.dataset.timeUnit ?? '',
+    language: el.dataset.timeLanguage ?? '',
   })));
   console.log(`  times: ${JSON.stringify(rows)}`);
   return rows;
 }
 
-/** The instant written both ways that matter: the reader's wall clock, and UTC's. */
-function clocks(instant: string) {
-  const at = new Date(instant);
-  const atClock = (zone: string) => new Intl.DateTimeFormat('en-GB', {
-    timeZone: zone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  }).format(at).replace(/^0/, '');
-  const half = new Intl.DateTimeFormat('en-US', {
-    timeZone: readerZone, hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
-  }).format(at).replace(/\s*[AP]M\s*$/i, '').replace(/^0/, '');
-  return { local: atClock(readerZone), local12: half, utc: atClock('UTC') };
+/** The zone the reader's own engine answers for — the name the title carries. */
+function engineZone(page: Page): Promise<string> {
+  return page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+}
+
+/** The instant as written, without the sub-second digits no case below compares. */
+function toTheSecond(instant: string): string {
+  const whole = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.exec(instant);
+  expect(whole, `datetime is not the instant these cases read: ${instant}`).not.toBeNull();
+  return `${whole![1]}${whole![3]}`;
+}
+
+/** One instant's `YYYY-MM-DD HH:MM` spelling `offset` seconds east of UTC — arithmetic, not a zone lookup. */
+function minuteWhere(offset: number, instant: string): string {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(Date.parse(toTheSecond(instant)) + offset * 1000)).map((p) => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+/** The offset the reader's zone answers for one instant, in seconds — the premise of adding it by hand. */
+function offsetOf(instant: string, zone: string): number {
+  const named = new Intl.DateTimeFormat('en-GB', { timeZone: zone, timeZoneName: 'longOffset' })
+    .formatToParts(new Date(toTheSecond(instant))).find((p) => p.type === 'timeZoneName')?.value ?? '';
+  const difference = /^GMT([+-])(\d{1,2}):(\d{2})$/.exec(named);
+  expect(difference, `${zone} answers no whole offset for ${instant}: ${named}`).not.toBeNull();
+  const [, sign, hours, minutes] = difference!;
+  return (sign === '-' ? -1 : 1) * (Number(hours) * 3600 + Number(minutes) * 60);
+}
+
+/** What every case below reads of one `<time>`, before it reads the moment itself. */
+function itIsAnAbsoluteInstant(row: { kind: string; relative: string; zone: string; unit: string; datetime: string }) {
+  // The premise, named rather than assumed: this page's fields declared no relative reading, so
+  // nothing here may be counted, and the moment the reader is shown is the one their own zone
+  // answers — which needs a page that named no location for the value.
+  expect(row.kind, 'a task timestamp is a moment, not a calendar date').toBe('instant');
+  expect(row.relative, 'the field was declared absolute, and the policy says otherwise').toBe('false');
+  expect(row.zone, 'the page names a location of its own, so the reader\'s zone is not the one read here').toBe('');
+  expect(row.unit, 'an absolute instant wrote the unit of a relative reading').toBe('');
+  // The instant the server wrote is untouched: the page re-says the moment, it does not move it.
+  expect(row.datetime, 'the datetime is no longer the instant the server wrote').toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  expect(offsetOf(row.datetime, readerZone), `${readerZone} is not the offset these cases add by hand, so they prove nothing`).toBe(readerOffset);
 }
 
 test.use({ timezoneId: readerZone });
 
-// The two halves of the sentence: under a week, the words a person uses for how long ago; and in
-// the title, the exact moment read where they are. A title written in the reader's own zone cannot
-// be the server's UTC stamp — in a zone that is five and a half hours ahead of UTC in every month
-// of the year, the clock it shows is a different clock.
-test('a recent instant reads as the reader\'s own words, and its exact moment reads in their own zone', async ({ page }) => {
+// The moment is said in the zone the person is sitting in, to the minute the policy names, and
+// the title says which zone that minute is in. A title in the reader's own zone cannot be the
+// server's UTC stamp — in a zone five and a half hours ahead of UTC in every month of the year,
+// the two clocks read differently — and neither can the minute the page shows.
+test('a recent instant reads as the numeric minute of the reader\'s own zone', async ({ page }) => {
   const record = await signedInRecord(page, 'The workspace loses its rough edges');
   await page.clock.install({ time: new Date(Date.now() + 6 * 60_000) });
   await page.goto(record, { waitUntil: 'domcontentloaded' });
+  const zone = await engineZone(page);
   for (const row of await said(page)) {
-    expect(row.text, `the <time> still says the server's sentence ${JSON.stringify(row.text)}`).not.toMatch(serverText);
-    expect(row.title, `the title still says the server's zone ${JSON.stringify(row.title)}`).not.toMatch(serverTitle);
-    // The instant the server wrote is untouched: the page re-says the moment, it does not move it.
-    expect(row.datetime, `the datetime is no longer the instant the server wrote`).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-    const at = clocks(row.datetime);
-    expect(at.local === at.utc, `this instant reads the same in ${readerZone} as in UTC, so nothing below proves anything: ${row.datetime}`).toBe(false);
-    const shown = (row.title.match(/\d{1,2}:\d{2}:\d{2}/g) ?? []).map((c) => c.replace(/^0/, ''));
-    expect(shown.includes(at.utc), `the title still carries the server's own UTC clock: ${JSON.stringify(row.title)}`).toBe(false);
-    expect(
-      shown.some((c) => c === at.local || c === at.local12),
-      `the title shows no clock but the server's; the reader's own reads ${at.local} (or ${at.local12} in twelve-hour form): ${JSON.stringify(row.title)}`,
-    ).toBe(true);
+    itIsAnAbsoluteInstant(row);
+    const at = minuteWhere(readerOffset, row.datetime);
+    expect(row.text, `the page does not say the reader's own minute, which is ${at} and not the server's ${minuteWhere(0, row.datetime)}: ${JSON.stringify(row.text)}`).toBe(at);
+    expect(row.title, `the title names no minute and no zone it is read in: ${JSON.stringify(row.title)}`).toBe(`${at} ${zone}`);
   }
-  // And the words themselves, in the language the page is written in: six minutes is the largest
-  // unit at least one of, long style — a sentence, not a number.
-  expect((await said(page)).map((r) => r.text), 'a minute past six should read as six minutes ago').toContain('6 minutes ago');
 });
 
-// A week is the edge the brief names, and it is crossed by moving the reader's clock rather than
-// the record: the same instant is words to one side of it and a date to the other. Two cases, one
-// clock each — a session is signed in once, and a page that has been read is not the same page a
-// person arrives at with their clock set elsewhere.
-test('an instant a week old is read as a date, not counted', async ({ page }) => {
+// Age changes nothing about an absolute instant: the same page read with the reader's clock eight
+// days on says the moment the same way it said it six minutes after the write, in the same
+// numbers, with no countdown and no words about how long ago.
+test('an instant eight days old reads in the same numbers as one six minutes old', async ({ page }) => {
   const eightDays = await signedInRecord(page, 'Eight days of the same workspace');
   await page.clock.install({ time: new Date(Date.now() + 8 * 86_400_000) });
   await page.goto(eightDays, { waitUntil: 'domcontentloaded' });
   for (const row of await said(page)) {
-    expect(row.text, `eight days is beyond the week, so it is a date and not a countdown: ${row.text}`).not.toMatch(serverText);
-    expect(row.text, `a date beyond the week, and still a relative phrase: ${row.text}`).not.toMatch(/\bago\b/);
-    const year = new Intl.DateTimeFormat('en', { timeZone: readerZone, year: 'numeric' }).format(new Date(row.datetime));
+    itIsAnAbsoluteInstant(row);
+    expect(row.text, `eight days on, the moment still reads as the reader's minute: ${row.text}`).toBe(minuteWhere(readerOffset, row.datetime));
+    expect(row.text, `an absolute instant fell into wording about its age: ${row.text}`).not.toMatch(/[a-z]/i);
+    const year = new Intl.DateTimeFormat('en', { timeZone: readerZone, year: 'numeric' }).format(new Date(toTheSecond(row.datetime)));
     expect(row.text, `the date shown is not the year the reader's calendar is in: ${row.text}`).toContain(year);
   }
 });
 
-// The same page read an hour early: the instant has not happened yet, and nothing on the page
-// knows whether the field is a deadline, so it is a date rather than a countdown to it.
-test('an instant still to come is shown as a date and never counted down', async ({ page }) => {
+// The same page read an hour early: the instant has not happened yet. Nothing on the page knows
+// whether the field is a deadline, so nothing counts down to it — and it is not a different mode
+// either, only the same numbers for an instant on the far side of now.
+test('an instant still to come reads in the same numbers and is never counted down', async ({ page }) => {
   const anHourAhead = await signedInRecord(page, 'An hour that has not arrived');
   await page.clock.install({ time: new Date(Date.now() - 60 * 60_000) });
   await page.goto(anHourAhead, { waitUntil: 'domcontentloaded' });
   for (const row of await said(page)) {
-    expect(row.text, `a future instant must never be counted down: ${row.text}`).not.toMatch(/^(in|em) /);
-    expect(row.text, `a future instant fell back to the server's UTC text: ${row.text}`).not.toMatch(serverText);
+    itIsAnAbsoluteInstant(row);
+    expect(row.text, `a future instant must never be counted down: ${row.text}`).toBe(minuteWhere(readerOffset, row.datetime));
+    expect(row.text, `a future instant fell into a countdown: ${row.text}`).not.toMatch(/[a-z]/i);
   }
 });
 
@@ -158,26 +199,31 @@ test.describe('a browser without the formatter', () => {
   });
 });
 
-// The same page, the same instant, the reader's own language. No catalogue is consulted: Intl
-// speaks the language the document declares, which is the one the locale path negotiated for the
-// request, so this case is a browser header and nothing else.
+// The same page, the same instant, the reader's own language. No catalogue is consulted for the
+// numbers themselves — a minute is the same digits in either language — so what this case reads
+// is that the language reached the element, that the page is served in it, and that the digits the
+// reader is shown are their own minute in it.
 test.describe('in Portuguese', () => {
   test.use({ locale: 'pt-PT' });
 
-  test('an instant is said in the language the page declares', async ({ page }) => {
+  test('an instant is the same numeric minute in the language the page declares', async ({ page }) => {
     const record = await signedInRecord(page, 'A mesma altura, noutra língua');
     // The dashboard and generated record both use the negotiated request language.
     await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
     await page.clock.install({ time: new Date(Date.now() + 6 * 60_000) });
     // A generated screen declares the negotiated language — its document.View.Language is empty —
-    // so at a pt-PT browser it declares pt-PT. If this fails, the premise of the two assertions
+    // so at a pt-PT browser it declares pt-PT. If this fails, the premise of the assertions
     // below is the thing that broke: the page, not the formatter.
     await page.goto(record, { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(record);
     await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
+    const zone = await engineZone(page);
     for (const row of await said(page)) {
-      expect(row.text, `a pt-PT page shows the reader's own words, and these are English: ${row.text}`).toMatch(/^há \d+ minutos$/);
-      expect(row.title, `the title is not the server's, and not the reader's either: ${row.title}`).not.toMatch(serverTitle);
+      itIsAnAbsoluteInstant(row);
+      expect(row.language, 'the element carries no language for its browser to read the moment in').toBe('pt-PT');
+      const at = minuteWhere(readerOffset, row.datetime);
+      expect(row.text, `a pt-PT page shows the same numeric minute the reader's zone answers: ${row.text}`).toBe(at);
+      expect(row.title, `the title names no minute and no zone it is read in: ${JSON.stringify(row.title)}`).toBe(`${at} ${zone}`);
     }
   });
 });

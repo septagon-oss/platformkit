@@ -6,16 +6,17 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 )
 
 // ControlProps describes one field's presentation. ID is the trusted DOM identity;
 // leaving it empty uses the component's historical name-derived default. Enclosing
 // forms should use Example, which supplies a distinct identity to every control.
 type ControlProps struct {
+	ChoiceValues     []string
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
@@ -52,6 +53,22 @@ var widgetInputType = map[string]string{
 // Its capture retains "field/" plus the schema name and Core's Props contract.
 func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
+	f.Widget = present.ControlKind(f)
+	attrs := anchorAttrs(p.Field.Anchor)
+	if f.Widget == "hidden" || f.Widget == "richtext" {
+		attrs = nil
+	}
+	if p.AutoFocus {
+		if attrs == nil {
+			attrs = map[string]string{}
+		}
+		// A stepped form sends a person back to the step that refused them, and the
+		// control that refused is the one that should hold the caret.
+		attrs["autofocus"] = "autofocus"
+	}
+	if f.Choices != nil || entity.ChoiceAppearance(f.Widget) {
+		return choiceControl(p, p.Field.Anchor)
+	}
 	word := func(key, fallback string) string {
 		if p.Text == nil {
 			return fallback
@@ -59,30 +76,26 @@ func Control(p ControlProps) g.Node {
 		return p.Text(key, fallback)
 	}
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
-	props := components.ComponentProps{ID: p.ID, Attrs: map[string]string{}}
-	if p.AutoFocus {
-		props.Attrs["autofocus"] = "autofocus"
-	}
 	base := components.InputProps{
-		ComponentProps: props,
+		ComponentProps: components.ComponentProps{ID: p.ID, Attrs: attrs},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
 		HelpText: hint(cmp.Or(p.Field.Help, f.Doc), immutableNote(p.Immutable)),
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {
-	case len(f.Enum) > 0 || f.Widget == "select":
-		return selectControl(p, props, base)
+	case f.Widget == "select" || f.Widget == "" && len(f.Enum) > 0:
+		return selectControl(p, base)
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: disabledControl(props, p.Immutable),
+			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
 		}, components.Textarea).Node
 	case f.Widget == "richtext":
-		return richtextControl(p, props, base, word)
-	case f.Widget == "checkbox" || f.Type == entity.TypeBool:
+		return richtextControl(p, label, base, word)
+	case f.Widget == "checkbox" || f.Widget == "" && f.Type == entity.TypeBool:
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
-			ComponentProps: disabledControl(props, p.Immutable),
+			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 			Name:           name, Label: label, Value: "true", Checked: p.Value == "true",
 			Required: f.Required, Error: p.Error, HelpText: base.HelpText,
 		}, components.Checkbox).Node
@@ -91,21 +104,7 @@ func Control(p ControlProps) g.Node {
 	case f.Type == entity.TypeList:
 		base.HelpText = hint(base.HelpText, "Comma separated.")
 	}
-	// The input type is what the widget named, and only then what the Go type
-	// implies. A widget that names one wins over the type because that is what
-	// the tag is for: `datetime` on a string holding an instant and the same
-	// widget on its time.Time neighbour now draw the same control, where the
-	// name used to be discarded and the string became a plain text box.
-	switch named, byType := widgetInputType[f.Widget]; {
-	case byType:
-		base.Type = named
-	case f.Type == entity.TypeTime:
-		base.Type = "datetime-local"
-	case f.Type == entity.TypeInt:
-		base.Type, base.Step = "number", "1"
-	case f.Type == entity.TypeFloat:
-		base.Type, base.Step = "number", "any"
-	}
+	base.Type, base.Step = inputType(f)
 	// datetime-local carries no seconds and no zone, so a stored instant is cut
 	// to the minute the control can actually show. The value is not reformatted:
 	// what a form submits is what the field's own validation will read.
@@ -115,41 +114,31 @@ func Control(p ControlProps) g.Node {
 	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.input", Name: label}, base, components.Input).Node
 }
 
-func disabledControl(props components.ComponentProps, disabled bool) components.ComponentProps {
-	props.Disabled = disabled
-	return props
+func inputType(f entity.Field) (string, string) {
+	kind, step := widgetInputType[f.Widget], ""
+	if kind == "" {
+		switch f.Type {
+		case entity.TypeTime:
+			kind = "datetime-local"
+		case entity.TypeInt, entity.TypeFloat:
+			kind = "number"
+		default:
+			kind = "text"
+		}
+	}
+	if kind == "number" {
+		if f.Type == entity.TypeFloat {
+			step = "any"
+		} else if f.Type == entity.TypeInt {
+			step = "1"
+		}
+	}
+	return kind, step
 }
 
-func richtextControl(p ControlProps, props components.ComponentProps, base components.InputProps, word func(string, string) string) g.Node {
+func selectControl(p ControlProps, base components.InputProps) g.Node {
 	f := p.Field.Definition
-	label, name := base.Label, base.Name
-	area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-		ComponentProps: disabledControl(props, p.Immutable),
-		Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
-		Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
-		MaxLength: f.MaxLength, CharacterLimitOnly: true,
-	}, components.Textarea).Node
-	// Replace this native disclosure when the shared disclosure lands.
-	help := h.Details(
-		h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
-		h.Ul(
-			h.Li(g.Text(word("forms.richtext.paragraphs", "Paragraphs: leave a blank line; a hard break ends with \\."))),
-			h.Li(g.Text(word("forms.richtext.headings", "Headings: ## through ####."))),
-			h.Li(g.Text(word("forms.richtext.marks", "Bold **text**, italic *text*, strike ~~text~~, inline `code`."))),
-			h.Li(g.Text(word("forms.richtext.links", "Links: [label](https://example.com) or [label](/page)."))),
-			h.Li(g.Text(word("forms.richtext.lists", "Lists: - item, 1. item or - [ ] task; up to three levels."))),
-			h.Li(g.Text(word("forms.richtext.blocks", "Quote: > text; code: ```language; rule: ---."))),
-			h.Li(g.Text(word("forms.richtext.tables", "Tables: | heading | with a | --- | separator."))),
-			h.Li(g.Text(word("forms.richtext.images", "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."))),
-		),
-	)
-	// The textarea remains the submitted control when enhancement is unavailable.
-	return richtextChrome(p, area, help)
-}
-
-func selectControl(p ControlProps, props components.ComponentProps, base components.InputProps) g.Node {
-	f := p.Field.Definition
-	label, name := base.Label, base.Name
+	name, label := base.Name, base.Label
 	options := slices.Clone(p.Field.Options)
 	if options == nil {
 		options = make([]components.SelectOption, 0, len(f.Enum))
@@ -162,7 +151,7 @@ func selectControl(p ControlProps, props components.ComponentProps, base compone
 		placeholder = "Choose a " + strings.ToLower(label)
 	}
 	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
-		ComponentProps: disabledControl(props, p.Immutable),
+		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: base.Attrs},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
 		Required: f.Required, Options: options, Placeholder: placeholder,
 		HelpText: base.HelpText, FullWidth: true,

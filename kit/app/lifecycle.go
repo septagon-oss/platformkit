@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -136,24 +137,9 @@ func (a *App) takeDeclaredRelease() func() {
 	return release
 }
 
-// Declarations answers the composition's route gates — every operation declared
-// an authorization, no operation is guarded by a permission no composed module
-// defines, no operation publishes an event no module promised, the workspace
-// mounts something, no address names a prefix, and every registration of the
-// modules' Routes callbacks mounted the same surface — over a recorder, and opens
-// nothing: no pool, no migration, no listener, no broker, and no connection to
-// the store the deployment names (see the body for the store it does build, and
-// why that one opens nothing). It registers the routes three times and runs the
-// same gates over each, which is why a composition refused here is the same
-// composition Start would have refused, answered while nothing has been spent.
-//
-// Call it before Start. Start answers all of it itself for a caller that does not,
-// so the order is a caller's convenience and not a safety condition. What Start adds
-// to what this answers is the fourth registration — the one whose surface would
-// serve — and it is answered in the same place this one is, over an in-process store
-// with no connection open, because the composition that mounts differently on its
-// last registration is a composition too, and a refusal of it that first dialed the
-// deployment's own database would be a refusal that spent what it says it did not.
+// Declarations validates three identical route registrations using temporary
+// in-process caches. It opens no deployment resources and releases the event
+// claim on refusal. Start calls it if needed, then checks the serving registration.
 func (a *App) Declarations() error {
 	// The recorder needs a store because httpx requires one — a belief about which
 	// tenant a host is has to be something every replica can forget — and this
@@ -181,7 +167,7 @@ func (a *App) Declarations() error {
 	// pass records the standard and every later one is judged against it; see
 	// registrationsAgree.
 	for pass := 1; pass <= 3; pass++ {
-		dry := cache.Memory(segment)
+		dry := cache.MemoryFor(appname.Name(segment))
 		_, _, err := a.composeRoutes(dry)
 		// Each recorder store is released as soon as its recorder has answered:
 		// nothing serves the API either pass returns, and a belief carried from the
@@ -197,177 +183,22 @@ func (a *App) Declarations() error {
 	return nil
 }
 
-// Start answers the composition's route gates over three dry registrations, builds
-// the API it will serve and runs every boot gate over it, opens the application
-// connection, opens the store the deployment names and hands both to that API,
-// migrates as the owner role, and opens the transport the role names — in that
-// order, the order Run uses. The gates come before the connection because a gate is
-// an answer about the composition and a connection is the first thing a deployment
-// spends: the composition somebody has to fix is cheaper to refuse while the store
-// it was pointed at is still undialed, and that includes the composition whose
-// modules mount one surface when they are asked what they would serve and another
-// when they are actually asked. The migration comes after the gates for the same
-// reason one gate down. Nothing serves before the migration, so a
-// composition that reaches a listener has its schema. Every failure returns a nil
-// Runtime, nothing listening, and everything it opened already released. Which of
-// those failures cost a caller its own lifecycle is what RefusedBeforeEffects
-// answers: a refusal above the connection was answered with nothing spent, and one
-// below it reached the deployment. The two pieces of process state a boot touches
-// are the composition's declared event shapes, claimed by New on its last line and
-// given back by the refusal that follows or the Close of the Runtime it made (see
-// below, because where the claim sits is the whole answer about what a refused
-// composition costs), and the process's telemetry providers, installed by the last
-// statement of a Start that had nothing left to refuse, so a boot that comes back
-// with no Runtime changed no process but its own.
-//
-// The caller then owns the port: mount Handler, decide which started
-// compositions also Work, and Close when both have stopped.
-//
-// Call Start once per App. The connection it opens, and the transport this role
-// selects, belong to the Runtime it returns, and Close is the only release of
-// either — including a transport the application injected in Options.Transport,
-// which Close releases like one Start built.
-//
-// The flush is here because Close is the only teardown a caller that owns its
-// listener has. Run flushes because Run is told when the process ends; this path is
-// not Run, and a process that started and stopped inside one export interval would
-// otherwise keep none of the trace it recorded. It runs last, after the connection is
-// released, in the order Run leaves the same act in, and its failure is logged rather
-// than returned: spans nobody read are not a shutdown that failed to finish. A second Start on the same App
-// migrates again and opens a second connection over the same configuration, and
-// an injected transport is the same instance both Runtimes then share, so closing
-// either releases what the other is still using. A new lifecycle needs a new App.
+// Start gates every registration before opening the pool and cache, connecting
+// the API, migrating, and opening the role's transport. Failure releases all
+// opened resources and returns a nil Runtime; RefusedBeforeEffects identifies
+// failures before deployment resources opened. Telemetry installs only on success.
+// Call once per App. The caller owns serving Handler, running Work, and stopping
+// both before Close, which also releases injected transports and flushes telemetry.
 func (a *App) Start(ctx context.Context) (*Runtime, error) {
-	// The route gates first, because every registration they are read from needs
-	// nothing and the comparison between them can be answered no other
-	// way: a boot that opens the pool and dials the shared store before it has
-	// compared its registrations has spent what its refusal says it did not spend.
-	// A caller that already asked — pkit.Build, which says so in its own words —
-	// is not asked again; what is left to answer is the fourth registration below.
-	if a.declaredRoutes == nil {
-		// Already marked by Declarations: every answer it gives is about the
-		// composition and costs the deployment nothing.
-		if err := a.Declarations(); err != nil {
-			return nil, err
-		}
-	}
-	// The API this process will serve, built the way the three registrations above
-	// were: over an in-process store this build never writes, and with no connection
-	// open. Nothing a module's Routes callback can reach reads either of them, so the
-	// registration whose surface would serve answers the gates on the same terms as
-	// the three that set the standard, and a composition that means two things is
-	// refused with the deployment's own store still undialed. The in-process store is
-	// released below, the moment the deployment's takes over: a host resolution
-	// believed by a build that may still be refused is a belief nobody serving this
-	// installation should hold.
-	segment, err := a.cacheSegment()
+	api, handler, build, err := a.prepareRuntime(ctx)
 	if err != nil {
-		a.giveBackDeclared() // no Runtime on this side either
-		return nil, beforeEffects(err)
-	}
-	build := cache.Memory(segment)
-	api, handler, err := a.buildAPI(ctx, build)
-	if err != nil {
-		_ = build.Close() // a composition that failed a gate is never mounted
-		// The fourth registration — the surface that would serve — is answered over
-		// that in-process store, so its refusal has spent nothing but the grip New
-		// took, and the grip goes back with the store it was refused over.
-		a.giveBackDeclared()
-		return nil, beforeEffects(err)
-	}
-	// The composition's event shapes were claimed by New, above the connection, and
-	// they are what this boot either keeps or gives back. The catalog behind
-	// events.Publish is what refuses a payload that is not the one a module declared,
-	// and it is keyed by app, so two claims hold at once: a build this process refused
-	// leaves the shapes another app answers under exactly where they were, and a
-	// refusal about those shapes costs the database it named nothing. New answers the
-	// disagreement already visible when a boot starts — a name this app already chose
-	// another way — and takes the claim on its last line, so the boot that reaches the
-	// claim second is refused with its pool undialed, its schema unmigrated and its
-	// own composition free to be corrected and built again.
-	//
-	// Beside, not over: another composition can be live in this process — one
-	// application under two roles, or two applications on two databases — and what a
-	// publish is checked against is then that app's own declarations, counted by grip
-	// and given back by the Close of the Runtime that took it. A caller that starts
-	// this App again after a refusal takes the grip again here rather than serving a
-	// composition whose payloads nothing measures.
-	if err := a.claimDeclared(); err != nil {
-		_ = build.Close()
-		return nil, beforeEffects(err)
-	}
-	// The first two things a deployment spends, and they are spent only once every
-	// answer about this composition has been given — this claim among them.
-	conn, err := a.openConn(ctx)
-	if err != nil {
-		a.giveBackDeclared()
-		_ = build.Close()
 		return nil, err
 	}
-	store, err := a.cache(ctx)
+	conn, store, err := a.connectRuntime(ctx, api, build)
 	if err != nil {
-		a.giveBackDeclared()
-		_ = conn.Close()
-		_ = build.Close()
 		return nil, err
 	}
-	// The router built above now holds the deployment: the connection its request
-	// transactions open on and the store its host resolutions are believed in. It
-	// could not have been built with them without spending them first, and nothing
-	// reached it in the meantime — no listener is open and no Runtime has been handed
-	// out — so this is a composition finishing itself, not a router changing under a
-	// request. The three doors of this package that read the connection on a request
-	// — /ready, the anonymous write limit and the record of a refusal — were built
-	// against the same value being there (see heldConn).
-	if err := api.Connect(conn, store); err != nil {
-		a.giveBackDeclared()
-		_ = conn.Close()
-		_ = store.Close()
-		_ = build.Close()
-		return nil, err
-	}
-	a.held.fill(conn)
-	_ = build.Close()
-	if err := a.migrate(ctx); err != nil {
-		a.giveBackDeclared()
-		_ = conn.Close()
-		_ = store.Close()
-		return nil, err
-	}
-	rt := &Runtime{app: a, conn: conn, handler: handler, cache: store,
-		declaredRelease: a.takeDeclaredRelease()}
-	if a.opts.Role == Worker {
-		// The routes were built and gated above and are then set aside: the two
-		// probes are the whole surface Run gives a worker today.
-		rt.handler = a.probes(conn)
-	}
-	if a.opts.Role != Web {
-		if rt.transport, err = a.transport(); err != nil {
-			// Close, and not the two fields by hand: this Runtime holds the claim
-			// this boot took, and a refusal that released everything else and kept
-			// the shapes would leave them named by a composition that never started.
-			_ = rt.Close()
-			return nil, err
-		}
-		// The live door watches this transport rather than dialling one of its own.
-		// It is the transport the relay of this Runtime runs on — the one the outbox
-		// is published onto — and with the in-process transport anything else is a
-		// bus nobody publishes to (heldTransport).
-		a.observed.fill(rt.transport)
-	}
-	// The process's providers go up here, as the boot's last act and the only thing
-	// it changes in the process for good. Everything above this line can still be
-	// refused — a gate, the pool, the store, the schema, a broker — and every refusal
-	// above it returns a nil Runtime, which README says changes nothing in the process
-	// it was asked in. Installing is the one effect no Close gives back: a pool is
-	// closed, a claim is released, a replaced tracer provider is not reinstated, only
-	// overwritten by the next boot. So a composition that never started never takes
-	// over the export destination of the application that is serving.
-	a.measurement.install(ctx)
-	// The claim this boot took is the Runtime's to give back, after its connection,
-	// its transport and whatever else this call opened: a refusal between the claim
-	// and here released it on the way out, so this is the only path that keeps one.
-	return rt, nil
+	return a.finishRuntime(ctx, api, conn, store, handler)
 }
 
 // Handler is this composition's HTTP surface, role by role: for web and all the
@@ -379,22 +210,10 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 // caller's decision; the kernel names no host list for it.
 func (r *Runtime) Handler() http.Handler { return r.handler }
 
-// Work is the worker half — the outbox relay, the outbox purge, every module's
-// jobs and every module's subscriptions. It takes no address and serves nothing,
-// and returns nil when ctx is done. The transport is Start's, released by Close.
-//
-// Work refuses a role that composes no worker half, refuses a Runtime that Close
-// has already released, and refuses a second call: the Runtime owns one
-// connection, and a scheduler is not additive. Stopping the served requests and
-// the earlier Work before Close stays the caller's; the closed refusal is the
-// refusal of a mistake, not a way to stop anything.
-//
-// One composition works one database and one transport. Two of them over one
-// database is not a supported arrangement — events.Relay claims any unpublished
-// outbox row and stamps what it publishes, so one composition can move another's
-// event onto a transport nobody subscribes to, and two schedulers over one
-// database silence each other's same-named job through the advisory lock. Each
-// composition keeps its own database, as one process per client does today.
+// Work runs the relay, purge, jobs and subscriptions until ctx ends, then returns
+// nil. It serves no HTTP and refuses web-only, closed or already-started runtimes.
+// Stop requests and Work before Close. Each composition needs its own database
+// and transport so relay claims and scheduler locks cannot affect another app.
 func (r *Runtime) Work(ctx context.Context) error {
 	if r.transport == nil {
 		return errors.New("app: Work needs a transport and this Runtime has none: role web composes no worker half, and Start refuses any other role whose transport constructor answers with no transport")

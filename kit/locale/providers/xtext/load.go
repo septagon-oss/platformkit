@@ -16,44 +16,20 @@ import (
 	"golang.org/x/text/message/catalog"
 )
 
-// Load reads catalogues from files and merges them into one provider
-// (ADR 0012). A Source is one owner's copy — a kernel layer's, a module's, a
-// product's, a client's — and the argument order is the merge order: a later
-// source answers for a key an earlier one also carries, except where an
-// earlier source owns that key.
+// Load reads gotext JSON catalogues from files and merges them into one
+// provider, in argument order, so a product can re-word a module's sentence and
+// a client the product's, without either editing the other's file (ADR 0012).
 //
-// Files are gotext JSON, one per locale, named `<locale>.json` at the root of
-// the source's fs.FS, so a catalogue is a directory of files somebody can
-// diff, edit and translate without compiling anything:
+// A Source is one owner's copy — a kernel layer's, a module's, a product's, a
+// client's — kept as `<locale>.json` at the root of its own fs.FS, so a
+// catalogue is a directory somebody can diff, edit and translate without
+// compiling anything.
 //
-//	"screens.new": {"references": ["ui/screens/screens.go"],
-//	                "translation": "New %s",
-//	                "plural": {"": "New %s"}}
-//
-// `translation` is what a reader takes and `plural` is what a plural-aware
-// reader takes; a message with no plural variants spells that single form as
-// the empty string. Load reads `translation` and requires `plural` to say the
-// same thing, because a catalogue whose two spellings disagree answers
-// differently to two different readers. `references` and every other field
-// belong to the format and are left alone.
-//
-// fallback names the source language: the language the call sites are written
-// in, which is the language `Formatter.Text` answers in from the readable text
-// a caller passes when no entry stands behind a key. It is therefore the one
-// locale that needs no file — a key with no entry there is untranslated, not
-// missing, which is how gettext treats the text in the code. Every other
-// locale a source ships must answer for every key that source ships in any of
-// them, and must ask for the same arguments its siblings do — the same positions and
-// conversions, in whatever order its own sentence reads them, since `%[2]s` exists so a
-// translation can put the second argument first. Both conditions are
-// refused here, at composition, rather than as a page that quietly answers in
-// English. The first is each source's own — a layer may ship one locale and a
-// product one key, which is what the merge is for — and the second is the
-// merged catalogue's, because a re-wording that lands over a sentence is read
-// by every language an earlier source wrote.
-//
-// The provider reads no process-global catalogue and no environment variable:
-// everything it knows came through the fs.FS it was handed.
+// fallback names the language the call sites are written in, and is the one
+// locale that needs no file. Every other locale must answer every key its source
+// ships, asking the same arguments its siblings do; both are refused at
+// composition rather than as a page that quietly answers in English. README.md
+// carries the file format and the merge's rules.
 func Load(fallback string, sources ...Source) Catalog {
 	fallbackTag, err := language.Parse(fallback)
 	if err != nil || strings.TrimSpace(fallback) == "" {
@@ -226,22 +202,17 @@ func read(source Source, fallback string) map[string]map[string]string {
 	return entries
 }
 
-// checkMergedVerbs holds the composed catalogue — not one source's files — to the
-// half of the parity rule that only the merge can see: every copy of one key, in
-// whichever language and whichever source, interpolates the same arguments in the
-// same order.
+// checkMergedVerbs holds the composed catalogue — not one source's files — to
+// the half of the parity rule only the merge can see: every copy of one key, in
+// whichever language and whichever source, interpolates the same arguments.
 //
-// checkParity cannot see it because it reads one source and the merge spans them.
-// A source that ships only a translation has nothing to disagree with, and a later
-// source whose only file is the source language is exempt from presence, so each is
-// legal alone; merged, they leave the product's English sentence asking for two
-// arguments beside the module's Portuguese one asking for one, and the page a person
-// is reading prints Go's own mismatch marker in their language. The same fault travels
-// the other way — a source-language sentence that interpolates nothing merged over a
-// translation that asks for one — and is refused on the same ground. Presence is not
-// checked here and that is deliberate: a layer shipping one locale and a product
-// re-wording one key in another are what the merge exists for, and requiring every
-// source to answer for every key would refuse the brief's own override.
+// checkParity reads one source, and a source that ships only a translation has
+// nothing to disagree with, so each is legal alone; merged, they leave the
+// product's English sentence asking for two arguments beside the module's
+// Portuguese one asking for one, and the page prints Go's own mismatch marker in
+// the reader's language. The same fault travels the other way. Presence is not
+// checked here, deliberately: a layer shipping one locale and a product
+// re-wording one key are what the merge exists for.
 func checkMergedVerbs(fallback string, merged, wroteBy map[string]map[string]string) {
 	var locales []string
 	for tag := range merged {
@@ -354,36 +325,19 @@ func checkParity(name, fallback string, entries map[string]map[string]string) {
 }
 
 // verbs is the arguments a copy asks fmt for, each spelled with the position it
-// fills: `Novo %s para %s` and `New %[1]s for %[2]s` are both `"1:%s 2:%s"`, and
-// `Novo %[2]s para %[1]s` is the same pair again, because the two sentences ask for
-// the same two arguments and differ only in which one they read first.
+// fills: `Novo %s para %s` and `New %[1]s for %[2]s` are both "1:%s 2:%s", and
+// `Novo %[2]s para %[1]s` is the same pair again, because the sentences ask for
+// the same arguments and differ only in which they read first.
 //
-// Two copies of one key are rendered with the same arguments — the call site is one
-// line of Go and every language reads it — so what the checks compare is that pair
-// of (position, conversion) lists and not the text of the verbs. Position is part of
-// the answer because a copy may name its arguments instead of taking them in order:
-// `%[2]s` is Go's only way to say "put the second argument first", and re-ordering
-// is the commonest thing a translated sentence has to do to the one it translates.
-// Reading the verbs alone would call `New %[1]s for %[2]s` and `New %[2]s for %[1]s`
-// the same composition when they print the opposite pairs, and — the other way round
-// — would refuse a re-ordering that changed nothing a caller has to supply. The
-// sorted list is what makes the comparison a set of positions rather than a spelling.
+// Two copies of one key are rendered with the same arguments — the call site is
+// one line of Go — so the checks compare these lists rather than the verbs' text.
+// Position is part of the answer because `%[2]s` is Go's only way to put the
+// second argument first, which is what a translated sentence most often must do;
+// the sorted list makes the comparison a set of positions, not a spelling.
 //
-// An unnumbered verb takes the next position, which is fmt's own rule and the only
-// reading that keeps the two halves of one copy comparable: `Novo %s para %[2]s` puts
-// its plain verb at 1 and its numbered one at 2, as fmt will when it renders it. A
-// copy that numbers one argument and leaves another plain past it is fmt's error to
-// report at the page, not this guard's to guess about.
-//
-// A doubled percent is how a gettext copy spells one literal percent sign, and it
-// is one character to the reader of the sentence: the pair is stepped over rather
-// than scanned, because restarting inside it turns the space and letter that
-// follow into a verb — and `%%` is the only advice a translator can be given for
-// printing a percent sign, so a scan that charged them for taking it would refuse
-// two copies that interpolate the same argument in the same order, and point at
-// neither. A lone percent followed by a space and a letter is still a conversion
-// (`Save 20% on %d items` really does ask fmt for an octal argument), and still
-// refused: this removes escaped pairs, nothing else.
+// An unnumbered verb takes the next position, as fmt will. A doubled percent is
+// one literal percent sign and is stepped over, not scanned: restarting inside it
+// reads the letters after it as a verb.
 func verbs(copy string) string {
 	asked := strings.ReplaceAll(copy, "%%", "")
 	var slots []string

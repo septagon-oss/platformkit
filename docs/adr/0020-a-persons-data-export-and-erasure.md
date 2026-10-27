@@ -116,9 +116,9 @@ type Part struct {
 
 A module contributes it with `pkit.Contributes[personaldata.Part]()` and needs nothing back; the
 orchestrator takes `pkit.Needs[[]personaldata.Part]()`. The resolver already builds a consumer after
-every contributor (`pkit/declare.go:97-101`), which is the ordering this needs and the reason the
+every contributor (`pkit/declare.go:80-84`), which is the ordering this needs and the reason the
 orchestrator does not say `After(Everything)` — that declaration also refuses anything the
-orchestrator provides or contributes (`pkit/declare.go:108-113`), and the orchestrator provides a
+orchestrator provides or contributes (`pkit/declare.go:91-96`), and the orchestrator provides a
 service the admin screen reads.
 
 ### 2. The manifest says, column by column, what a module holds

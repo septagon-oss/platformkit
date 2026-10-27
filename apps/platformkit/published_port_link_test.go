@@ -8,7 +8,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 // The unit of this — which address reads as a port and which reads as none — is
@@ -22,7 +21,7 @@ import (
 // reached at, whether or not the request that raised it named that port, and
 // whichever port the process itself happens to answer on.
 func TestAPublicPortAnInstallationDeclaresOutlivesARequestThatNamesNoPort(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 
 	_, published, err := net.SplitHostPort(freeAddr(t))
@@ -44,10 +43,8 @@ func TestAPublicPortAnInstallationDeclaresOutlivesARequestThatNamesNoPort(t *tes
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the link out of it", c.mail)
-	}
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	// The header names acme and no port: what a proxy that terminates on 443
 	// forwards, and what a caller who would move a link onto another port writes
 	// when they leave the port out.

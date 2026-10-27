@@ -159,17 +159,17 @@ const (
 	// apart, so no teardown costs a person more than about six minutes.
 	// The CI Postgres serves four other packages' migrations while this package
 	// finishes, and a removal that gives up on one lost lock race reddens a run in
-	// which every test passed — that was 2026-10-01.
+	// which every test passed once.
 	//
 	// The window is sized by a second measurement, from the run CI refused on
-	// 2026-10-06: `context deadline exceeded after 6 removals; sessions still
+	// CI refusal: `context deadline exceeded after 6 removals; sessions still
 	// connected: none` — six timeouts on nobody. Removing a database is not only a
 	// lock race: DROP DATABASE asks the cluster for a forced immediate checkpoint
 	// and waits for it, which the server logs as `checkpoint starting: immediate
 	// force wait`. Measured on this stack between packages, one empty database came
 	// away in 0.4-0.9 s; with four packages' tests beside it, 0.46 s, 2.4 s and
 	// 5.4 s (one `total=2.341 s` in the log), and fifteen seconds on a race-detector
-	// runner. Two runs here on 2026-10-07, on a shared host at load 45-69 with this
+	// runner. Two runs here, on a shared host at load 45-69 with this
 	// program's suites beside it, refused three windows of 45 s each on no session
 	// at all: the queue a forced checkpoint joins exceeds the window; the drop does
 	// not. Each abandoned attempt asks for a checkpoint of its own, so the sixth is
@@ -202,9 +202,9 @@ const terminateSessions = `SELECT pg_terminate_backend(pid) FROM pg_stat_activit
 // database holds it: `DROP DATABASE … WITH (FORCE)` terminates those sessions on
 // its own, but once, and without waiting for them to notice, so a pool a test
 // walked away from redials and the removal loses the lock race — what CI refused
-// on 2026-10-01 with every test in the package passed. And the removal itself is
+// in CI with every test in the package passed. And the removal itself is
 // slow, because DROP DATABASE waits for a forced checkpoint — what CI refused on
-// 2026-10-06 with six timeouts and nobody connected, sized by the comment on
+// again with six timeouts and nobody connected, sized by the comment on
 // dropWindow above. So each removal terminates the sessions, waits for the server
 // to report none left, asks for the database with a lock wait of its own, and on
 // failure says which of those refused and who was seen inside. A database that is
@@ -354,14 +354,14 @@ func heldNow(admin *sql.DB, database string) string {
 }
 
 // TestTheFixtureRemovesADatabaseASessionIsStandingIn is the CI refusal of
-// 2026-10-01 pinned: the package's tests all passed and the run was still red,
+// one run pinned: the package's tests all passed and the run was still red,
 // because the teardown asked for the database once while a session still open
 // held it, and gave up. A session that is not terminated keeps its database from
 // being dropped at all, so a `DROP DATABASE` with no termination in front of it
 // fails this case, and so does a teardown that terminates once and never looks
 // again.
 //
-// It is also the case the 2026-10-06 refusal came out of: the run was red on this
+// It is also the case a later refusal came out of: the run was red on this
 // teardown again, six times over, with no session connected at all — see
 // dropWindow for what the removal actually spends its time on. The assertions here
 // are the ones that refused then; what changed is that the removal has room to

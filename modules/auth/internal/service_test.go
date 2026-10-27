@@ -72,6 +72,11 @@ var (
 // carries them is a 401 and kit/httpx does not commit a 401. That is exactly
 // why the harness reads the outbox rather than a slice — the two kinds of write
 // are indistinguishable there, which is what the suite is entitled to assume.
+//
+// A case that reads what the service mailed cannot read it inside that
+// transaction: the send waits for the commit. Such a case settles — the
+// harness then commits what the case wrote, runs the step in a transaction of
+// its own over it, and rolls that back in turn.
 func TestServiceConforms(t *testing.T) {
 	authtest.RunService(t, func(t *testing.T, run func(authtest.Fixture)) {
 		_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
@@ -82,12 +87,16 @@ func TestServiceConforms(t *testing.T) {
 		seed(t, conn, acme)
 
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
-		err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			run(authtest.Fixture{
+		// fixture is one case's handle on the transaction it is running in. The
+		// harness opens a fresh one for a settle step, and every closure below
+		// reads the database of whichever handle it was built with.
+		fixture := func(ctx context.Context, tx db.Tx[db.Tenant]) authtest.Fixture {
+			return authtest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
-				Published: func() []string { return outbox(t, tx) },
-				Sent:      notices.Sent,
-				Mailed:    box.Sent,
+				Published:  func() []string { return outbox(t, tx) },
+				Sent:       notices.Sent,
+				Mailed:     box.Sent,
+				Delivering: func(delivers bool) { box.Undeliverable = !delivers },
 				Sessions: func(user uuid.UUID) int {
 					var n int64
 					if err := tx.DB().Table("sessions").Where("user_id = ?", user).Count(&n).Error; err != nil {
@@ -119,11 +128,45 @@ func TestServiceConforms(t *testing.T) {
 					}
 					return u.ID
 				},
-			})
-			return errRollback
+			}
+		}
+
+		// The steps the case asked to run after its commit, in the order it asked.
+		var steps []func(authtest.Fixture)
+		err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			f := fixture(ctx, tx)
+			f.Settle = func(step func(authtest.Fixture)) { steps = append(steps, step) }
+			run(f)
+			// A case that asked to read what its commit mailed is a case that
+			// asked for a commit. Every other case is rolled back as it was.
+			if len(steps) == 0 {
+				return errRollback
+			}
+			return nil
 		})
-		if !errors.Is(err, errRollback) {
-			t.Fatalf("the case's transaction: %v", err)
+		if len(steps) == 0 {
+			if !errors.Is(err, errRollback) {
+				t.Fatalf("the case's transaction: %v", err)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("the case's commit: %v", err)
+		}
+		for _, step := range steps {
+			err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				f := fixture(ctx, tx)
+				var again func(authtest.Fixture)
+				f.Settle = func(step func(authtest.Fixture)) { again = step }
+				step(f)
+				if again != nil {
+					return errors.New("a settle step settled again, and a step's own work is rolled back")
+				}
+				return errRollback
+			})
+			if !errors.Is(err, errRollback) {
+				t.Fatalf("the case's settle step: %v", err)
+			}
 		}
 	})
 }
@@ -133,7 +176,7 @@ func TestServiceConforms(t *testing.T) {
 // wants no mail at all passes internal.Delivery{}, and then no token is issued
 // either — see internal.Service.offer.
 func delivery(box *authtest.Mailbox) internal.Delivery {
-	return internal.Delivery{Mailer: box, Hosts: authtest.Host("acme.example.com"), Secure: true}
+	return internal.Delivery{Mailer: box, MailDelivery: box, Hosts: authtest.Host("acme.example.com"), Secure: true}
 }
 
 // seed installs the two roles a tenant is created with, in a cross-tenant
@@ -568,7 +611,11 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Reissue: %v", err)
 		}
-		exec(t, admin, `UPDATE password_tokens SET created_at = created_at - interval '10 minutes'`)
+		// The cooldown counts the links that went out, so this is the write
+		// that moves an offer outside the five minutes: sent_at is the column
+		// modules/auth/000051 added for exactly this question.
+		exec(t, admin, `UPDATE password_tokens SET created_at = created_at - interval '10 minutes',`+
+			` sent_at = sent_at - interval '10 minutes'`)
 	}
 	sent := box.Sent()
 	if len(sent) != 3 {

@@ -34,11 +34,19 @@ with tempfile.TemporaryDirectory(prefix="platformkit-advisory-rollback-") as dir
     check(0)
     print("ok   the advisory guard accepts the current lock")
     path = fixture / "tools/designexport/openpencil/package-lock.json"
-    lock = json.loads(path.read_text())
-    lock["packages"]["node_modules/dompurify"]["version"] = "3.4.16"
-    path.write_text(json.dumps(lock))
-    refused = check(1)
-    for advisory in ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f"):
-        assert any(line.startswith("FAIL:") and advisory in line for line in refused), refused
-        print(f"ok   the advisory guard refuses DOMPurify 3.4.16 and names {advisory}")
+    # Each reported release is planted in a copy of the real lock, which is what `npm ci` would have
+    # installed, and the guard has to name the advisory that release carries.
+    for package, release, ids in (
+        ("dompurify", "3.4.16", ("GHSA-cg2g-xh64-v4q7", "GHSA-mrv2-3pqr-j5jr", "GHSA-c6gr-qvv4-5v3f")),
+        ("zod", "4.6.5", ("GHSA-mrhx-c7xc-m3w5",)),
+        ("undici", "8.12.1", ("GHSA-4qv8-2p9j-2685", "GHSA-f72v-6w45-q472", "GHSA-xjj6-f33q-929c")),
+    ):
+        shutil.copyfile(root / "tools/designexport/openpencil/package-lock.json", path)
+        lock = json.loads(path.read_text())
+        lock["packages"][f"node_modules/{package}"]["version"] = release
+        path.write_text(json.dumps(lock))
+        refused = check(1)
+        for advisory in ids:
+            assert any(line.startswith("FAIL:") and advisory in line for line in refused), refused
+            print(f"ok   the advisory guard refuses {package} {release} and names {advisory}")
 PY
