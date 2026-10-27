@@ -118,7 +118,7 @@ Four rules read the map, and every refusal names both full package paths:
 | `module-layer-missing` | a module this build reaches with no row — own modules from Go's package list, so a module that imports nothing is still counted, and a dependency's modules from production import targets. The remedy names the owning repository's file: a map pinned before its own map is corrected upstream or by a new pin |
 | `module-layer-upward` | a `production` edge whose source module ranks below the target's |
 | `module-layer-cycle-undeclared` | a reciprocal production pair with no `<->` row |
-| `module-layer-cycle-unused` | a `<->` row whose pair does not import each other in production here. The sweep reads the rows rather than the measured pairs, so a pair that holds no production edge in either direction is refused as well and the list can only shrink |
+| `module-layer-cycle-unused` | a `<->` row of this repository whose pair does not import each other in production here. The sweep reads the rows rather than the measured pairs, so a pair that holds no production edge in either direction is refused as well and the list can only shrink. It judges one build context: unlike an assignment row, which an excluded module leaves announced, a pair row here is refused when this run cannot see both directions, so a run over other platforms or build tags can read a genuine pair as unused — the map is judged in the context `./scripts/check_imports.sh` pins. A row read from a dependency's file is never judged here; it is announced as that repository's own verdict |
 
 A declared port **prevents** an upward import; it never excuses one. The gate sees
 a port as the absence of an edge — `kit/jobs.TenantLister` is provided by
@@ -134,7 +134,10 @@ Only `production` source is judged. Test contexts stay with
 reason for every foreign constructor a suite composes; a layer rule over test
 source would need an exemption for a row of this repository's own file. An unused
 assignment row is announced, not refused, exactly as an unused integration grant
-is: a build context that excludes a module is legitimate.
+is: a build context that excludes a module is legitimate. A `<->` row read from a
+dependency's file is announced too, and its notice names the repository whose own
+gate measures that pair, because this build sees the main module's packages alone
+and can say nothing about the other repository's directions.
 
 **Reused** — the `graph` `normalize` already builds, the readable-declaration shape of
 [grants.go](grants.go) and [baseline.go](baseline.go) with its parse-time refusals,

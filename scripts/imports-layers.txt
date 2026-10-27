@@ -15,7 +15,10 @@
 # cure is a port the lower module declares, or the layer the module's real
 # dependencies already show. A pair that imports each other in production needs a
 # justification row below; a row for a pair that is not reciprocal is refused, so
-# this file can only shrink like the contract baseline beside it.
+# this file can only shrink like the contract baseline beside it. One run judges one
+# build context, the one ./scripts/check_imports.sh pins, and a row read from a
+# dependency's own file is that repository's verdict, announced here and judged
+# there.
 #
 # See tools/importgate/README.md.
 github.com/septagon-oss/platformkit/modules/audit platform

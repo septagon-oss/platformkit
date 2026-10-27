@@ -58,10 +58,14 @@ func newLayerPair(one, two string) layerPair {
 
 // layerJustification is the only exception a declaration may carry: a reciprocal
 // production pair between two modules, with the reason both directions stay. It
-// never admits an upward import.
+// never admits an upward import. judge names the repository whose gate measures
+// the pair, empty when this build's own repository carries the row: Go reports
+// packages for the main module alone, so a row read out of a dependency's file is
+// a fact about that repository, which only its own run can check.
 type layerJustification struct {
 	pair   layerPair
 	reason string
+	judge  string
 }
 
 // layerDeclaration is everything the readable declarations of one build say:
@@ -164,7 +168,11 @@ func parseLayers(file, text string, g *graph, rootPath string, into *layerDeclar
 			if into.justifications[pair] != nil {
 				return fmt.Errorf("%s: duplicate pair %s <-> %s", where, pair.a, pair.b)
 			}
-			into.justifications[pair] = &layerJustification{pair, reason}
+			judge := ""
+			if rootPath != g.self {
+				judge = rootPath
+			}
+			into.justifications[pair] = &layerJustification{pair, reason, judge}
 			continue
 		}
 		owner, layer, err := parseLayerAssignment(fields, g, rootPath, file)
@@ -249,9 +257,11 @@ func (g *graph) module(name, rootPath, file string) (string, error) {
 	return owner, nil
 }
 
-// layerNotices announces every assignment once with the state this build gives
-// it, and every justification once with its complete reason, in the shape the
-// integration and contract-baseline notices use.
+// notices announces every assignment once with the state this build gives it, and
+// every justification once with its complete reason and with which build measures
+// the pair, in the shape the integration and contract-baseline notices use. A row
+// this build cannot measure is announced as that other repository's own verdict
+// rather than as a pair that failed to reciprocate here.
 func (d *layerDeclaration) notices(spent map[string]bool, justified map[layerPair]bool) string {
 	var text strings.Builder
 	for _, owner := range slices.Sorted(maps.Keys(d.assigned)) {
@@ -264,8 +274,14 @@ func (d *layerDeclaration) notices(spent map[string]bool, justified map[layerPai
 	for _, pair := range slices.SortedFunc(maps.Keys(d.justifications), func(a, b layerPair) int {
 		return cmp.Or(cmp.Compare(a.a, b.a), cmp.Compare(a.b, b.b))
 	}) {
+		row := d.justifications[pair]
 		state := "reciprocal in production in this build context"
-		if !justified[pair] {
+		switch {
+		case row.judge != "":
+			// Naming the owner keeps a reader of a consumer's output from deleting a
+			// dependency's row as stale: this build cannot see the pair at all.
+			state = "not measured in this build context; " + row.judge + " judges this row in its own build"
+		case !justified[pair]:
 			state = "not reciprocal in production in this build context"
 		}
 		fmt.Fprintf(&text, "imports: module layer pair %s <-> %s; %s; %s\n", pair.a, pair.b, state, d.justifications[pair].reason)

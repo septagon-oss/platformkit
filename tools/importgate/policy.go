@@ -37,7 +37,7 @@ var remedies = map[string]string{
 	"module-layer-missing":          "give this module its row in the scripts/imports-layers.txt named above; a dependency's row needs that repository and a new pin",
 	"module-layer-upward":           "consume a port the lower module declares, which removes the import, or assign the module the layer its real dependencies show; no row admits an upward production import",
 	"module-layer-cycle-undeclared": "move one direction behind a declared port, or add the pair's row with the reason both directions stay",
-	"module-layer-cycle-unused":     "remove this row; the pair is not reciprocal in production in this build context",
+	"module-layer-cycle-unused":     "remove this row; the pair is not reciprocal in production in this build context, and one run judges one build context",
 }
 
 func (g *graph) owner(name string) (owner, rest string, unknown bool) {
