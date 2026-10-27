@@ -57,6 +57,270 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": false,
+                "interactions": []
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "publish",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "at"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "publish"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "archive",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "command",
+                "path": [
+                  "archive"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -682,6 +946,234 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -1235,6 +1727,116 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "title"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "body"
+                ],
+                "control": "textarea",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "status"
+                ],
+                "control": "select",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "rank"
+                ],
+                "control": "number",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "pinned"
+                ],
+                "control": "checkbox",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "field",
+                "path": [
+                  "tags"
+                ],
+                "control": "text",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {

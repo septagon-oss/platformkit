@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 )
 
 // ControlProps describes one field's presentation. ID is the trusted DOM identity;
@@ -52,8 +52,13 @@ var widgetInputType = map[string]string{
 // Its capture retains "field/" plus the schema name and Core's Props contract.
 func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
+	f.Widget = present.ControlKind(f)
+	attrs := anchorAttrs(p.Field.Anchor)
+	if f.Widget == "hidden" || f.Widget == "richtext" {
+		attrs = nil
+	}
 	if f.Choices != nil || entity.ChoiceAppearance(f.Widget) {
-		return choiceControl(p)
+		return choiceControl(p, p.Field.Anchor)
 	}
 	word := func(key, fallback string) string {
 		if p.Text == nil {
@@ -63,7 +68,7 @@ func Control(p ControlProps) g.Node {
 	}
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
 	base := components.InputProps{
-		ComponentProps: components.ComponentProps{ID: p.ID},
+		ComponentProps: components.ComponentProps{ID: p.ID, Attrs: attrs},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
 		HelpText: hint(cmp.Or(p.Field.Help, f.Doc), immutableNote(p.Immutable)),
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
@@ -73,38 +78,15 @@ func Control(p ControlProps) g.Node {
 		return selectControl(p, base)
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
 		}, components.Textarea).Node
 	case f.Widget == "richtext":
-		area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
-			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
-			Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
-			MaxLength: f.MaxLength, CharacterLimitOnly: true,
-		}, components.Textarea).Node
-		// Replace this native disclosure when the shared disclosure lands.
-		help := h.Details(
-			h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
-			h.Ul(
-				h.Li(g.Text(word("forms.richtext.paragraphs", "Paragraphs: leave a blank line; a hard break ends with \\."))),
-				h.Li(g.Text(word("forms.richtext.headings", "Headings: ## through ####."))),
-				h.Li(g.Text(word("forms.richtext.marks", "Bold **text**, italic *text*, strike ~~text~~, inline `code`."))),
-				h.Li(g.Text(word("forms.richtext.links", "Links: [label](https://example.com) or [label](/page)."))),
-				h.Li(g.Text(word("forms.richtext.lists", "Lists: - item, 1. item or - [ ] task; up to three levels."))),
-				h.Li(g.Text(word("forms.richtext.blocks", "Quote: > text; code: ```language; rule: ---."))),
-				h.Li(g.Text(word("forms.richtext.tables", "Tables: | heading | with a | --- | separator."))),
-				h.Li(g.Text(word("forms.richtext.images", "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."))),
-			),
-		)
-		// The editor's chrome is drawn beside the textarea rather than instead of
-		// it: with no JavaScript the field is the plain textarea above with the
-		// guidance below it, and the submitted value is the same either way.
-		return richtextChrome(p, area, help)
+		return richtextControl(p, label, base, word)
 	case f.Widget == "checkbox" || f.Widget == "" && f.Type == entity.TypeBool:
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 			Name:           name, Label: label, Value: "true", Checked: p.Value == "true",
 			Required: f.Required, Error: p.Error, HelpText: base.HelpText,
 		}, components.Checkbox).Node
@@ -160,7 +142,7 @@ func selectControl(p ControlProps, base components.InputProps) g.Node {
 		placeholder = "Choose a " + strings.ToLower(label)
 	}
 	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
-		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: base.Attrs},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
 		Required: f.Required, Options: options, Placeholder: placeholder,
 		HelpText: base.HelpText, FullWidth: true,

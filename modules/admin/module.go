@@ -76,6 +76,8 @@ type Deps struct {
 	// shell naming another module's door, so the composition names it, and
 	// apps/platformkit's test asks the running server that it answers.
 	SignIn string
+	// SignInOperationID must name SignIn's mounted operation; empty values panic in New.
+	SignInOperationID string
 
 	// PictureSource is the address template a generated `present:image` cell
 	// fetches its bytes from, `{id}` standing for the file id the field holds —
@@ -172,6 +174,7 @@ const PermissionGalleryRead = "gallery:read"
 func New(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
+		Views:         screenViews(deps),
 		Permissions:   []module.Permission{{Key: PermissionGalleryRead, Label: "read the component gallery"}},
 		Declared:      nil,
 		Nav:           nil,
@@ -193,11 +196,12 @@ func New(deps Deps) module.Module {
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
-				Token:          s.SystemToken(),
-				SignIn:         deps.SignIn,
-				PictureSource:  deps.PictureSource,
-				ComposedSource: deps.ComposedSource,
-				Registration:   deps.Registration,
+				Token:             s.SystemToken(),
+				SignIn:            deps.SignIn,
+				SignInOperationID: deps.SignInOperationID,
+				PictureSource:     deps.PictureSource,
+				ComposedSource:    deps.ComposedSource,
+				Registration:      deps.Registration,
 			})
 		},
 	}

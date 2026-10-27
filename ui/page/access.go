@@ -25,7 +25,7 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
-
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
@@ -42,7 +42,9 @@ const (
 // that wires no AskForAccess never calls it, and Shell.Ask stays empty: the
 // refusal page then draws no ask control at all.
 func MountAccess(r *httpx.Router, s Shell) {
-	Serve(r, s, Route{ID: "app-access-request", Method: http.MethodPost, Path: askPath,
+	view := screen.MustView(screen.ViewSpec{Ref: "app/platformkit/custom/access-request-sent", Cardinality: screen.One})
+	r = r.WithViews(view)
+	Serve(r, s, Route{Exception: "redirect", Reason: "A successful access request redirects to its confirmation.", ID: "screen-app-access-request", Method: http.MethodPost, Path: askPath,
 		Summary: "Ask for the access this page refused",
 		Errors:  []int{http.StatusUnprocessableEntity, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 	}, httpx.SignedIn(), func(ctx context.Context, _ Request, in *askForm) (View, error) {
@@ -58,7 +60,7 @@ func MountAccess(r *httpx.Router, s Shell) {
 		return View{}, httpx.SeeOther(httpx.AppRoot + askSentPath)
 	})
 
-	Serve(r, s, Route{ID: "app-access-request-sent", Method: http.MethodGet, Path: askSentPath,
+	Serve(r, s, Route{View: view.Ref(), ID: "app-access-request-sent", Method: http.MethodGet, Path: askSentPath,
 		Summary: "Confirmation that an access request was sent",
 	}, httpx.SignedIn(), func(_ context.Context, req Request, _ *Empty) (View, error) {
 		loc := req.Locale

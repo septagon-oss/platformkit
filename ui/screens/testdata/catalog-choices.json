@@ -54,6 +54,154 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "tiles",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "tiles",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "tiles",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -393,6 +541,154 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "chips",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "chips",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "chips",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -732,6 +1028,154 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "swatch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "swatch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "swatch",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
@@ -1081,6 +1525,154 @@
         }
       ],
       "resolved": {
+        "views": [
+          {
+            "kind": "list",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.create",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "detail",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "action.edit",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              },
+              {
+                "name": "action.delete",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "create",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "figure",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "edit",
+            "verb": "",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "figure",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "action.submit",
+                "path": [],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              },
+              {
+                "name": "action.cancel",
+                "path": [],
+                "control": "link",
+                "editable": false,
+                "interactions": [
+                  "activated"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "command",
+            "verb": "choose",
+            "cardinality": "one",
+            "controls": [
+              {
+                "name": "field",
+                "path": [
+                  "shapes"
+                ],
+                "control": "figure",
+                "editable": true,
+                "interactions": [
+                  "committed"
+                ]
+              },
+              {
+                "name": "command",
+                "path": [
+                  "choose"
+                ],
+                "control": "button",
+                "editable": false,
+                "interactions": [
+                  "activated",
+                  "submitted"
+                ]
+              }
+            ]
+          }
+        ],
         "policyVersion": 1,
         "language": "en",
         "identity": {
