@@ -89449,6 +89449,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/a_deprecation_recorded_in_the_removal_list_names_a_function_the_package_publishes_test.sh",
+   "id": "scripts/a_deprecation_recorded_in_the_removal_list_names_a_function_the_package_publishes_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_deprecation_recorded_in_the_removal_list_names_a_function_the_package_publishes_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/a_drifted_dompurify_override_is_refused_by_the_pin_check_test.sh",
    "id": "scripts/a_drifted_dompurify_override_is_refused_by_the_pin_check_test.sh",
    "kind": "shell_pin",
@@ -94136,7 +94156,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2598,
+  "files": 2599,
   "forge_runs": [
    408,
    413,
@@ -94171,7 +94191,7 @@
   ],
   "layers": {
    "behaviour": 4101,
-   "composition": 539,
+   "composition": 540,
    "contract": 24,
    "journey": 122
   },
@@ -94189,23 +94209,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4786,
+  "rows": 4787,
   "tiers": {
    "merge": 2950,
    "nightly": 122,
-   "push": 1714
+   "push": 1715
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2353,
+   "keep": 2354,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4400,
+   "keep": 4401,
    "keep-rewrite": 170,
    "merge": 216
   }
