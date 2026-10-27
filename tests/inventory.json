@@ -23219,6 +23219,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/httpx/a_resources_bearer_key_door_serves_a_key_and_refuses_a_session_in_process_test.go",
+   "id": "kit/httpx/a_resources_bearer_key_door_serves_a_key_and_refuses_a_session_in_process_test.go#TestAResourcesBearerKeyDoorServesAKeyAndRefusesASessionInProcess",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAResourcesBearerKeyDoorServesAKeyAndRefusesASessionInProcess",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 10,
    "evidence": "only file in its package reaching /api/v1/round8/private, /private",
    "file": "kit/httpx/an_unresolved_host_invents_no_number_test.go",
@@ -87138,7 +87157,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2387,
+  "files": 2388,
   "forge_runs": [
    408,
    413,
@@ -87172,7 +87191,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3796,
+   "behaviour": 3797,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87191,9 +87210,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4422,
+  "rows": 4423,
   "tiers": {
-   "merge": 2719,
+   "merge": 2720,
    "nightly": 110,
    "push": 1593
   },
@@ -87201,13 +87220,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2142,
+   "keep": 2143,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4036,
+   "keep": 4037,
    "keep-rewrite": 170,
    "merge": 216
   }
