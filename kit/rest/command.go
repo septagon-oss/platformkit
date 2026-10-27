@@ -162,8 +162,9 @@ func declaredCommand[I any, T crud.Entity](spec Spec[T], cmd CommandSpec[I]) Com
 // route cannot: Options.Collection is the deprecated spelling of a fact this
 // declaration owns, and a true the CommandSpec does not also say is indistinguishable
 // from one contradicted at the top level, where guessing would move the command off
-// its own path. No adapter produces either refusal, which is why every command
-// already written in this repository mounts unchanged.
+// its own path. Which callers still write the deprecated spelling, and so could reach
+// either refusal, is a fact about the tree that moves: docs/compatibility/v3.0.0.md
+// counts it there.
 func (c CommandSpec[I]) routeFault() string {
 	switch {
 	case c.Auth.Declared() && c.Options.Auth.Declared() && c.Auth != c.Options.Auth:
