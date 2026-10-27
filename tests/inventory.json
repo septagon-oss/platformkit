@@ -49949,6 +49949,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/billing/the_price_lists_write_closure_refuses_a_customer_who_holds_the_permission_test.go",
+   "id": "modules/billing/the_price_lists_write_closure_refuses_a_customer_who_holds_the_permission_test.go#TestThePriceListsWriteClosureRefusesACustomerWhoHoldsThePermission",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestThePriceListsWriteClosureRefusesACustomerWhoHoldsThePermission",
+   "needs_db": true,
+   "pkg": "modules/billing",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/change/composed_test.go",
    "id": "modules/change/composed_test.go#TestTheReferenceAppMountsTheSixProposalOperations",
    "kind": "go",
@@ -86872,7 +86891,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2373,
+  "files": 2374,
   "forge_runs": [
    408,
    413,
@@ -86906,7 +86925,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3782,
+   "behaviour": 3783,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86925,9 +86944,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4408,
+  "rows": 4409,
   "tiers": {
-   "merge": 2705,
+   "merge": 2706,
    "nightly": 110,
    "push": 1593
   },
@@ -86935,13 +86954,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2128,
+   "keep": 2129,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4022,
+   "keep": 4023,
    "keep-rewrite": 170,
    "merge": 216
   }
