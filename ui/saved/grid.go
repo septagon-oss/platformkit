@@ -14,11 +14,11 @@ import (
 )
 
 // grid is the page a person returns to: what they kept, when they kept it, and the
-// one control that gives a copy back. The shell already opens the `main` landmark;
-// this is one heading, cards in reading order, and nothing in the retained
-// snapshot drawn as a control — a title kept
-// with the copy is text, never a link, because the address it named belonged to the
-// moment it was captured and not to the record standing behind it now.
+// one control that gives a copy back. The shell's toolbar carries the page's heading,
+// so this adds the copies in reading order, titled with the words they were kept under
+// — text, never a link, because the record a copy named may be gone. They run in one
+// column at every width: their number is the person's own, and a column per card would
+// leave the page's shape to whatever one person happened to keep.
 //
 // The heading names the pair the filter selected: the pair's own `ListTitle` only
 // when both halves of the pair are named, the generic words for everything else —
@@ -46,18 +46,17 @@ func grid(req page.Request, s page.Shell, o Options, at At, got Page, f filters,
 			cards = append(cards, card(req.Locale, at, row))
 		}
 		body = append(body,
-			h.H1(g.Text(title)),
-			components.Grid(components.GridProps{Columns: "1", SM: "2", LG: "3", Gap: "4"}, cards...),
+			components.Grid(components.GridProps{Columns: "1", Gap: "4"}, cards...),
 			pager(req.Locale, at, f, perPage, got))
 	}
 	return page.View{Title: title, Body: body, Status: http.StatusOK, Sensitive: true}
 }
 
-// card is one kept copy, with its removal. A source that has gone is said beside the
-// title in a different sentence from one that is merely unreachable, and both keep
-// the removal: the copy still exists, and giving it back is the one thing a person
-// may still do to it. An empty card, or one that has quietly disappeared from the
-// list, would make the retained copy nobody's business rather than its keeper's.
+// card is one kept copy, with its give-back drawn quiet the way a record draws its
+// own: a copy is one of many here, so the page's one filled action may not be whoever
+// was kept first. A source that has gone is said beside the title in a different
+// sentence from one that is merely unreachable, and both keep the removal — the copy
+// still exists, and giving it back is still the keeper's to do.
 func card(l *locale.Locale, at At, row Row) g.Node {
 	nodes := []g.Node{}
 	switch row.Availability {
@@ -80,7 +79,7 @@ func card(l *locale.Locale, at At, row Row) g.Node {
 		h.Input(h.Type("hidden"), h.Name("expectedRevision"), h.Value(strconv.FormatInt(row.Revision, 10))),
 		h.Input(h.Type("hidden"), h.Name("module"), h.Value(row.Module)),
 		h.Input(h.Type("hidden"), h.Name("kind"), h.Value(row.Kind)),
-		components.Button(components.ButtonProps{Label: label, Type: "submit", Size: "md"})))
+		components.Button(components.ButtonProps{Label: label, Type: "submit", Size: "md", Variant: "outline"})))
 	return components.Card(components.CardProps{Title: row.Title}, nodes...)
 }
 
