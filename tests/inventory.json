@@ -45631,6 +45631,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/a_signup_door_with_nobody_to_register_through_refuses_its_build_test.go",
+   "id": "modules/auth/a_signup_door_with_nobody_to_register_through_refuses_its_build_test.go#TestComposingASignupDoorWithNobodyToRegisterThroughRefusesThePlan",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestComposingASignupDoorWithNobodyToRegisterThroughRefusesThePlan",
+   "needs_db": true,
+   "pkg": "modules/auth",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/account_request_budget_test.go",
    "id": "modules/auth/account_request_budget_test.go#TestNewRefusesAnAccountRequestBudgetTheCounterCannotKeep",
    "kind": "go",
@@ -92367,7 +92386,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2544,
+  "files": 2545,
   "forge_runs": [
    408,
    413,
@@ -92401,7 +92420,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4020,
+   "behaviour": 4021,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92420,9 +92439,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4693,
+  "rows": 4694,
   "tiers": {
-   "merge": 2891,
+   "merge": 2892,
    "nightly": 121,
    "push": 1681
   },
@@ -92430,13 +92449,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2299,
+   "keep": 2300,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4307,
+   "keep": 4308,
    "keep-rewrite": 170,
    "merge": 216
   }
