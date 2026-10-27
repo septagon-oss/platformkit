@@ -70865,6 +70865,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/a_half_read_layer_map_refuses_the_run_at_its_line_test.go",
+   "id": "tools/importgate/a_half_read_layer_map_refuses_the_run_at_its_line_test.go#TestHalfReadLayerMapRefusesTheRunAtItsLine",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestHalfReadLayerMapRefusesTheRunAtItsLine",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/a_repeated_layer_row_is_refused_where_it_repeats_test.go",
    "id": "tools/importgate/a_repeated_layer_row_is_refused_where_it_repeats_test.go#TestRepeatedLayerRowIsRefusedAtTheRowThatRepeats",
    "kind": "go",
@@ -92161,7 +92180,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2533,
+  "files": 2534,
   "forge_runs": [
    408,
    413,
@@ -92195,7 +92214,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4010,
+   "behaviour": 4011,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92214,23 +92233,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4683,
+  "rows": 4684,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1692
+   "push": 1693
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2288,
+   "keep": 2289,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4297,
+   "keep": 4298,
    "keep-rewrite": 170,
    "merge": 216
   }
