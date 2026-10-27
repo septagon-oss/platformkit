@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -21,7 +22,9 @@ import (
 // shapes here first: the expression must carry text beyond the cut, closed by the far end a narrowed copy drops,
 // or the copy said to be narrowed would be the copy and one question would be asked twice. The check after those
 // two holds their ends together, because each is asked about alone above and two ends that each hold their own
-// ground can still leave text between them that no one trims.
+// ground can still leave text between them that no one trims. The check after that asks who trims: a far end
+// spelled twice agrees with the text one helper names until the expression's close moves, and from there the two
+// shapes below are one shape asked about twice, with every assertion above still green.
 func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	// The path the vocabulary guard searches for, with the quotes that delimit a Go literal either side, must
 	// name a file of this package: the guards read this guide to ask about the doors it documents.
@@ -68,6 +71,39 @@ func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	// below, so they agree while the one said to be narrowed holds a tail no door name ends with.
 	if parts := `\b` + core + doorPatternFarEnd(); parts != pattern {
 		t.Errorf("servedDoor's expression (%q) is not the mark of a copy (%q) between the word-boundary escape the guard drops and the far end a narrowed copy drops (%q), so the shapes below are narrowed by text no check names", pattern, core, parts)
+	}
+
+	// And the far end a shape is narrowed by must be the text doorPatternFarEnd names, spelled nowhere else. A
+	// second spelling of it agrees with the helper until an expression's close moves: the change reaches the helper
+	// and the assertion above, the literal left at the trim site then matches nothing at the end of the expression,
+	// the trim removes nothing, and the shape said to be narrowed below is the copy.
+	trims := "strings.TrimSuffix(" + "pattern, "
+	byHelper := "doorPatternFarEnd())"
+	byText := "`" + doorPatternFarEnd() + "`)"
+	trimSites := 0
+	sources, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("list the sources of this package: %v", err)
+	}
+	for _, name := range sources {
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for rest := string(source); ; {
+			at := strings.Index(rest, trims)
+			if at < 0 {
+				break
+			}
+			rest = rest[at+len(trims):]
+			trimSites++
+			if !strings.HasPrefix(rest, byHelper) && !strings.HasPrefix(rest, byText) {
+				t.Errorf("%s narrows the door pattern by text other than the far end %q that doorPatternFarEnd names: the day an expression's close moves the helper follows it and this trim does not, leaving the shape said to be narrowed the whole copy — name the text a narrowing trims through doorPatternFarEnd", name, doorPatternFarEnd())
+			}
+		}
+	}
+	if trimSites == 0 {
+		t.Errorf("nothing of this package trims the far end %q off the door pattern, so the two shapes below are one shape under two names", doorPatternFarEnd())
 	}
 
 	// A copy of the pattern and a copy of it narrowed at the far end are both recognised, while a compiled pattern
