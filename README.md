@@ -55,8 +55,12 @@ creates no second tenant and prints no second password.
 ```
 
 `start` runs its own PostgreSQL 16 and an initial tenant, so no separate database or message broker is
-needed, and the HTTP server listens only on your machine. Use `--data` to choose
-another data directory and `--addr` to change the listening address and port.
+needed, and by default the HTTP server listens only on your machine, on
+`127.0.0.1:8080`. Use `--data` to choose another data directory and `--addr` to
+change the listening address and port — an address that names no host, such as
+`--addr :8080`, binds every interface the machine has and answers the administrator's
+sign-in page for whatever else is on that network, which is what you want only when
+you meant it.
 
 After signing in, explore the administration screens and the
 [component gallery](http://platformkit.localhost:8080/app/admin/_gallery).

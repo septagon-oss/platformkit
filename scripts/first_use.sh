@@ -24,8 +24,11 @@
 # What is written is one JSON object per line, and only for a sample that reached a
 # persisted task: a sample that refused, was interrupted, or could not read its own
 # timings writes nothing, so a receipt cannot describe a run that did not happen.
-# The command's stderr is captured and passed through scripts/redact_credentials.sh
-# before anything is kept, because the first run of `start` prints a password.
+# Nothing this script keeps holds a credential: every capture of a run goes through
+# scripts/redact_credentials.sh, the first run's transcript only after the
+# administrator's password has been read out of the pipe into a shell variable and
+# the raw bytes unlinked. Files are written 0600 and the scratch tree is the
+# sample's own; an interrupt runs the same cleanup a normal exit runs.
 #
 # The artifact measured is the one in this checkout, installed into a home that has
 # never seen its dependencies: that is the build a stranger gets one step later,
@@ -35,6 +38,10 @@
 #
 # Usage: first_use.sh [--samples N] [--published] [--out FILE]
 set -euo pipefail
+# The samples capture the terminal output of a run that prints a password, so
+# nothing this script writes is readable by anybody else, and the scratch tree is
+# created private.
+umask 077
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/.." && pwd)"
@@ -56,6 +63,12 @@ done
 command -v go >/dev/null || { echo 'first_use.sh: no go on PATH, which is the one prerequisite' >&2; exit 2; }
 mkdir -p "$scratch"
 trap 'discard_scratch' EXIT
+# An interrupt or a termination runs the same cleanup as a normal exit: a kept
+# capture of a first run holds the administrator's password until the redactor has
+# had it, and a kill that skipped the cleanup would keep it longer than this file
+# means to.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # discard_scratch removes the run's scratch tree, opening the read-only module
 # caches the samples left in it.
@@ -127,6 +140,18 @@ run_redacted() {
 	"$@" 2>&1 | bash "$here/redact_credentials.sh" >"$destination"
 }
 
+# redact_kept rewrites a raw capture through the redactor, keeps the redacted file
+# and unlinks the raw one. It is called as soon as a sample has read what it needed
+# from the raw bytes, so a sample that fails after this point leaves a redacted
+# transcript behind and never the credential: the first run of `start` prints the
+# administrator's password and stores nothing, so the transcript is the credential.
+# The path of the kept file is printed for the message that names it.
+redact_kept() {
+	local raw="$1" kept="${1%.raw}.log"
+	bash "$here/redact_credentials.sh" <"$raw" >"$kept" && rm -f "$raw"
+	printf '%s' "$kept"
+}
+
 receipt_for_sample() {
 	local home data bin port base start attempts
 	home="$(mktemp -d "${scratch}/home.XXXXXX")"
@@ -160,8 +185,8 @@ receipt_for_sample() {
 	fi
 	start="$(now_ms)"
 	refused=0
-	HOME="$home" timeout 180 "$bin" start --addr "127.0.0.1:${occupied}" --data "${data}-occupied" >"${home}/occupied.log" 2>&1 ||
-		refused=$?
+	run_redacted "${scratch}/occupied.log" env HOME="$home" timeout 180 "$bin" start \
+		--addr "127.0.0.1:${occupied}" --data "${data}-occupied" || refused=$?
 	kill "$holder" 2>/dev/null || true
 	wait "$holder" 2>/dev/null || true
 	if [ "$refused" -eq 0 ]; then
@@ -174,8 +199,8 @@ receipt_for_sample() {
 	chmod 0500 "$readonly_parent"
 	start="$(now_ms)"
 	refused=0
-	HOME="$home" timeout 180 "$bin" start --addr "127.0.0.1:${port}" --data "${readonly_parent}/data" >"${home}/readonly.log" 2>&1 ||
-		refused=$?
+	run_redacted "${scratch}/readonly.log" env HOME="$home" timeout 180 "$bin" start \
+		--addr "127.0.0.1:${port}" --data "${readonly_parent}/data" || refused=$?
 	chmod 0700 "$readonly_parent"
 	if [ "$refused" -eq 0 ]; then
 		echo "an unwritable --data was accepted" >&2
@@ -190,16 +215,18 @@ receipt_for_sample() {
 	if ! wait_health "${base}/health" 300000; then
 		kill "$cold_pid" 2>/dev/null || true
 		wait "$cold_pid" 2>/dev/null || true
-		bash "$here/redact_credentials.sh" <"${home}/cold.raw" >"${home}/cold.log"
-		printf 'the cold start never answered; %s\n' "${home}/cold.log" >&2
+		printf 'the cold start never answered; %s\n' "$(redact_kept "${home}/cold.raw")" >&2
 		return 1
 	fi
 	cold_ms="$(elapsed "$start")"
 
 	# The first useful action, through the public doors and no other: sign in, then
-	# persist a task, then read it back.
+	# persist a task, then read it back. The password is read out of the raw capture
+	# and the raw bytes go away with it: the server still holds its own descriptor,
+	# so nothing further it prints reaches a kept file either.
 	password="$(sed -n 's/^[[:space:]]*password:[[:space:]]*//p' "${home}/cold.raw" | head -1)"
-	[ -n "$password" ] || { echo "the first run printed no password to sign in with" >&2; return 1; }
+	cold_log="$(redact_kept "${home}/cold.raw")"
+	[ -n "$password" ] || { echo "the first run printed no password to sign in with; $cold_log" >&2; return 1; }
 	start="$(now_ms)"
 	if ! curl -s -o /dev/null -c "${home}/jar" -H 'content-type: application/json' \
 		-d "{\"email\":\"admin@platformkit.localhost\",\"password\":\"${password}\"}" \
@@ -212,6 +239,9 @@ receipt_for_sample() {
 	listed="$(curl -s -b "${home}/jar" "${base}/api/v1/task/tasks")"
 	case "$listed" in *"first task"*) persisted=yes ;; *) persisted=no ;; esac
 	first_action_ms="$(elapsed "$start")"
+	# The password is in no kept file and lives in this shell only until the sample
+	# is in; the sign-in above is the one place it is used.
+	password=""
 	[ "$created" = 201 ] || { echo "creating the task answered $created" >&2; return 1; }
 	[ "$persisted" = yes ] || { echo "the created task does not read back" >&2; return 1; }
 
@@ -224,23 +254,35 @@ receipt_for_sample() {
 	warm_pid=$!
 	if ! wait_health "${base}/health" 120000; then
 		kill "$warm_pid" 2>/dev/null || true
-		echo "the rerun never answered" >&2
+		echo "the rerun never answered; $(redact_kept "${home}/warm.raw")" >&2
 		return 1
 	fi
 	warm_ms="$(elapsed "$start")"
 	rerun_task="$(curl -s -b "${home}/jar" "${base}/api/v1/task/tasks")"
 	rerun_passwords="$(grep -c '^[[:space:]]*password:' "${home}/warm.raw" || true)"
+	warm_log="$(redact_kept "${home}/warm.raw")"
 	kill "$warm_pid"
 	wait "$warm_pid" 2>/dev/null || true
-	case "$rerun_task" in *"first task"*) ;; *) echo "the rerun lost the task" >&2; return 1 ;; esac
-	[ "$rerun_passwords" = 0 ] || { echo "the rerun printed ${rerun_passwords} password line(s)" >&2; return 1; }
+	case "$rerun_task" in *"first task"*) ;; *) echo "the rerun lost the task; $warm_log" >&2; return 1 ;; esac
+	[ "$rerun_passwords" = 0 ] || { echo "the rerun printed ${rerun_passwords} password line(s); $warm_log" >&2; return 1; }
 
 	# What the run was, stated by the run: the revision in this checkout, the
 	# version the public `@main` resolves to, and the toolchain the sample's own
 	# home answered with.
 	revision="$(git -C "$root" rev-parse HEAD)"
-	pseudo="$(cd "$root" && HOME="$home" go list -m -json "$module@main" 2>/dev/null |
+	# What `@main` resolved to belongs in the receipt: a claim about a moving branch
+	# that names no version points at a commit nobody can go back to. The install
+	# target is a package and the name the proxy answers is the module that contains
+	# it, one path up — asking for the package path is refused as no module at all —
+	# and GOPRIVATE is cleared again because this host sends its own organisations to
+	# git while a stranger's answer comes from the proxy.
+	proxy_module="${module%/apps/*}"
+	pseudo="$(cd "$root" && HOME="$home" GOPRIVATE= go list -m -json "${proxy_module}@main" 2>/dev/null |
 		sed -n 's/.*"Version": "\(.*\)".*/\1/p')"
+	if [ "$published" = yes ] && [ -z "$pseudo" ]; then
+		echo "the proxy answered no version for ${proxy_module}@main, so this receipt could not name what it measured" >&2
+		return 1
+	fi
 	goversion="$(HOME="$home" go version | cut -d' ' -f3)"
 	attempts="${attempts%,}"
 	download_bytes="$(size_of "$home/.cache/platformkit/postgres/archive")"

@@ -60,6 +60,7 @@ func TestAMachineOutsideTheSupportedRowsIsRefusedBeforeAnythingIsSpent(t *testin
 					t.Errorf("the refusal does not name %q:\n%v", want, err)
 				}
 			}
+			saysWhatItDidNotDo(t, err)
 			for _, row := range supportedTargets {
 				if !strings.Contains(err.Error(), row) {
 					t.Errorf("the refusal does not list the supported row %s:\n%v", row, err)
@@ -118,6 +119,7 @@ func TestAnOccupiedAddressIsRefusedBeforeTheDatabaseIsReached(t *testing.T) {
 			t.Errorf("the refusal does not say %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 }
 
 // The listener the run did not start is still there afterwards, in the same state:
@@ -168,6 +170,7 @@ func TestAnAddressThatNeedsPrivilegeNamesTheFlagThatMovesIt(t *testing.T) {
 			t.Errorf("the refusal does not name %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 }
 
 func TestAnUnwritableDataDirectoryIsNamedWithItsPath(t *testing.T) {
@@ -191,6 +194,7 @@ func TestAnUnwritableDataDirectoryIsNamedWithItsPath(t *testing.T) {
 			t.Errorf("the refusal does not name %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 }
 
 // The cache is where the first start downloads to, so the variable that moves it
@@ -215,6 +219,7 @@ func TestAnUnwritableCacheDirectoryNamesTheVariableThatMovesIt(t *testing.T) {
 			t.Errorf("the refusal does not name %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 }
 
 // The download is the first start's one external dependency. A machine that cannot
@@ -237,6 +242,7 @@ func TestADeniedDownloadSaysTheFirstStartNeedsInternet(t *testing.T) {
 			t.Errorf("the refusal does not name %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 }
 
 // A killed run leaves the server it started: the launcher daemonises it, so it is
@@ -276,6 +282,7 @@ func TestADataDirectoryHeldByAnotherServerIsRefusedAndThatServerIsLeftAlone(t *t
 			t.Errorf("the refusal does not name %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 	if err := syscall.Kill(holder.Process.Pid, 0); err != nil {
 		t.Errorf("the refusal disturbed the server it refused to share with: %v", err)
 	}
@@ -305,6 +312,7 @@ func TestAnOlderClusterIsRefusedAndLeftIntact(t *testing.T) {
 			t.Errorf("the refusal does not name %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 	kept, err := os.ReadFile(filepath.Join(cluster, "sentinel"))
 	if err != nil || string(kept) != "the only copy" {
 		t.Errorf("the refusal did not leave the cluster alone: %q (err %v)", kept, err)
@@ -334,6 +342,7 @@ func TestAForeignPostgresDirectoryIsRefusedAndNotEmptied(t *testing.T) {
 			t.Errorf("the refusal does not name %q:\n%v", want, refused)
 		}
 	}
+	saysWhatItDidNotDo(t, refused)
 	if _, err := os.ReadFile(filepath.Join(cluster, "somebody-else")); err != nil {
 		t.Errorf("the refusal did not leave the directory alone: %v", err)
 	}
@@ -472,5 +481,54 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// didNotDo are the ways a refusal can state, truthfully, what it left undone: a run
+// refused at the bind wrote nothing, one refused at a cluster of another version
+// deleted nothing, one refused by the launcher started no tenant. Each case above
+// asks its own refusal for one of them, because a refusal that states none leaves a
+// person asking whether the directory they pointed at is still theirs.
+var didNotDo = []string{
+	"nothing was written", "nothing was deleted", "no database was downloaded",
+	"no server was stopped", "no tenant was created", "probe file this check wrote is removed",
+}
+
+func saysWhatItDidNotDo(t *testing.T, refused error) {
+	t.Helper()
+	for _, stated := range didNotDo {
+		if strings.Contains(refused.Error(), stated) {
+			return
+		}
+	}
+	t.Errorf("the refusal states none of what it did not do (%s):\n%v", strings.Join(didNotDo, ", "), refused)
+}
+
+// The bind the preflight won can still be lost: the run hands the address back
+// seconds before the application binds it. That refusal is the one a run reaches
+// after it built the installation, so it says the installation stands and that
+// rerunning reuses it — and it is the only error of Run this rewords.
+func TestTheBindLostAfterThePreflightSaysTheInstallationStands(t *testing.T) {
+	t.Parallel()
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	_, refused := net.Listen("tcp", held.Addr().String())
+	if !errors.Is(refused, syscall.EADDRINUSE) {
+		t.Fatalf("taking %s back produced %v, not a refused bind", held.Addr(), refused)
+	}
+
+	said := lostBind(fmt.Errorf("app: serve: %w", refused),
+		startup{launch: launch{data: "/home/someone/platformkit"}, addr: held.Addr().String()})
+	for _, want := range []string{held.Addr().String(), "--addr", "/home/someone/platformkit", "rerun"} {
+		if !strings.Contains(said.Error(), want) {
+			t.Errorf("the refusal does not say %q:\n%v", want, said)
+		}
+	}
+	saysWhatItDidNotDo(t, said)
+	if unrelated := errors.New("app: migrations: exit status 1"); lostBind(unrelated, startup{}) != unrelated {
+		t.Errorf("a failure that is not the bind came back reworded: %v", lostBind(unrelated, startup{}))
 	}
 }

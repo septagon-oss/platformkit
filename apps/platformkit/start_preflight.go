@@ -139,6 +139,7 @@ func (d startDeps) bindTarget(addr string) (net.Listener, error) {
 	if err != nil {
 		if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
 			return nil, fmt.Errorf("start: the address %s needs a privilege this process does not have: %w\n"+
+				"       nothing was written and no database was downloaded;\n"+
 				"       choose --addr on a port above 1024, for example --addr 127.0.0.1:8080, and rerun", addr, err)
 		}
 		return nil, fmt.Errorf("start: %s is already in use: %w\n"+
@@ -173,11 +174,13 @@ func (s *startup) settle(d startDeps, data string) error {
 func usableDirectory(dir, flag string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("start: the data directory %s cannot be created: %w\n"+
+			"       nothing was written and no database was downloaded;\n"+
 			"       rerun with %s pointing somewhere you may write", dir, err, flag)
 	}
 	probe, err := os.CreateTemp(dir, "platformkit-writable-")
 	if err != nil {
 		return fmt.Errorf("start: the data directory %s is not writable: %w\n"+
+			"       the probe file this check wrote is removed and no database was downloaded;\n"+
 			"       rerun with %s pointing somewhere you may write", dir, err, flag)
 	}
 	name := probe.Name()
@@ -198,12 +201,14 @@ func (d startDeps) cacheDirectory() (string, error) {
 	for _, dir := range []string{filepath.Join(cache, "archive"), filepath.Join(cache, "runtime")} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return "", fmt.Errorf("start: the cache directory %s cannot be created: %w\n"+
+				"       no database was downloaded and nothing was written under --data;\n"+
 				"       set %s somewhere you may write and rerun", dir, err, cacheDirVariable())
 		}
 	}
 	probe, err := os.CreateTemp(filepath.Join(cache, "archive"), "platformkit-writable-")
 	if err != nil {
 		return "", fmt.Errorf("start: the cache directory %s is not writable: %w\n"+
+			"       no database was downloaded and nothing was written under --data;\n"+
 			"       set %s somewhere you may write and rerun", cache, err, cacheDirVariable())
 	}
 	name := probe.Name()
@@ -299,6 +304,7 @@ func postmasterHolds(cluster, cache string) error {
 		return nil
 	}
 	return fmt.Errorf("a PostgreSQL server this run did not start holds %s (pid %d)\n"+
+		"       nothing was deleted, no database was downloaded and no server was stopped;\n"+
 		"       stop it with %s stop -D %s, then rerun;\n"+
 		"       or rerun with --data pointing at another directory — this command never stops a server it did not start",
 		cluster, pid, pgCtl(cache), cluster)

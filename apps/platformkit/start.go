@@ -6,10 +6,11 @@ package main
 //
 // It runs its own PostgreSQL — downloaded once into the user's cache, its data
 // under ./data — creates the application role, migrates, bootstraps the first
-// tenant and administrator when there is none, and serves on :8080. Nothing has
-// to be installed but Go, and nothing has to be written down: the configuration
-// is the development one config.example.yaml documents, with the database's
-// port filled in.
+// tenant and administrator when there is none, and serves on 127.0.0.1:8080, so
+// nothing outside the machine can reach it unless --addr says otherwise. Nothing
+// has to be installed but Go, and nothing has to be written down: the
+// configuration is the development one config.example.yaml documents, with the
+// database's port filled in.
 //
 // NATS is not needed: the combined role carries events in memory, which is
 // what kit/app does for it anyway. A deployment never runs this; a deployment
@@ -50,6 +51,14 @@ const (
 	startTenant = "platformkit"
 	startHost   = "platformkit.localhost"
 	startAdmin  = "admin@platformkit.localhost"
+
+	// defaultAddr names a host on purpose. A bare ":port" binds every interface
+	// the machine has, and this command hands out an administrator's password to
+	// whoever reads the terminal next — so the address it answers with when
+	// nobody names one is the loopback, and a run that means to serve a network
+	// says so in --addr. README.md states the same fact; the case in this
+	// directory refuses the two disagreeing.
+	defaultAddr = "127.0.0.1:8080"
 )
 
 // postgresInit is the SQL that makes the application role: NOSUPERUSER and
@@ -63,7 +72,7 @@ func startApp(args []string, d startDeps) error {
 	d = d.withDefaults()
 	fs := flag.NewFlagSet("start", flag.ContinueOnError)
 	data := fs.String("data", "data", "Directory for the database and uploaded files")
-	addr := fs.String("addr", ":8080", "Address to listen on")
+	addr := fs.String("addr", defaultAddr, "Address to listen on; the default answers this machine only")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -134,7 +143,27 @@ func startApp(args []string, d startDeps) error {
 	// nothing could take it on the way here, and the kernel's own bind is the
 	// authority from here on.
 	run.release()
-	return c.app.Run(ctx, c.once, app.All)
+	if err := c.app.Run(ctx, c.once, app.All); err != nil {
+		return lostBind(err, run)
+	}
+	return nil
+}
+
+// lostBind is the bind the preflight won losing the race after the run handed the
+// address back: the application's own bind is the authority, so its refusal is
+// what a person sees. It is the occupied-address sentence restated for a run that
+// had already built the installation by then — the database, the role and the
+// tenant exist and stand untouched — and nothing else, because every other failure
+// of Run needs the error the kernel wrote.
+func lostBind(err error, run startup) error {
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		return err
+	}
+	return fmt.Errorf("start: %s was free when this command checked it and is answered by something else now: %w\n"+
+		"       nothing was written by this refusal: the installation under %s is complete and untouched,\n"+
+		"       so stop whatever answers %s and rerun this command, which reuses it, or choose\n"+
+		"       another address with --addr, for example --addr 127.0.0.1:8081",
+		run.addr, err, run.data, run.addr)
 }
 
 // startFailure is the launcher's failure with the next step attached. The
@@ -146,18 +175,23 @@ func startFailure(err error, run startup) error {
 	switch {
 	case strings.Contains(text, "unable to connect"):
 		return fmt.Errorf("start: the first start downloads PostgreSQL %s from %s and this machine could not reach it: %w\n"+
+			"       the run stops before any migration, so no tenant was created;\n"+
 			"       rerunning this command retries it; the binaries stay under %s once one has arrived",
 			embeddedVersion, downloadRepository, err, run.cache)
 	case strings.Contains(text, "no version found matching"):
 		return fmt.Errorf("start: no PostgreSQL %s build is published for this machine: %w\n"+
+			"       the run stops before any migration, so no tenant was created;\n"+
 			"       this command asks %s for it; the machine it is running on is %s/%s",
 			embeddedVersion, err, downloadRepository, runtime.GOOS, runtime.GOARCH)
 	case strings.Contains(text, "postmaster.pid"), strings.Contains(text, "another server might be running"):
 		return fmt.Errorf("start: a server this run did not start holds %s: %w\n"+
+			"       nothing was deleted and no server was stopped;\n"+
 			"       stop it with: %s stop -D %s, then rerun — this command never stops a server it did not start",
 			run.cluster(), err, pgCtl(run.cache), run.cluster())
 	default:
-		return fmt.Errorf("start: postgres: %w\n       the launcher writes its own log under %s, which names the reason",
+		return fmt.Errorf("start: postgres: %w\n"+
+			"       the run stops before any migration, so no tenant was created;\n"+
+			"       the launcher writes its own log under %s, which names the reason",
 			err, filepath.Join(run.cache, "runtime"))
 	}
 }

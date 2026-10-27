@@ -247,9 +247,19 @@ The order is the whole of the repair: the pair `GOOS`/`GOARCH`, the bind of
 `--addr`, whether `--data` can be created and written, whether the user's cache
 can, and what `--data/postgres` already holds — a live postmaster, or a cluster of
 another PostgreSQL version. Each refusal names the value it refused, the flag or
-path that would move it, the retry, and the fact that nothing was written; none of
-them stops a process or a port this run did not start. Then the download, the role,
-the migrations and the bootstrap, and the banner the README shows.
+path that would move it, the retry, and what it did not do — which is stated
+truthfully for how far the run got: nothing written, nothing deleted, no server
+stopped, no tenant created. None of them stops a process or a port this run did
+not start. Then the download, the role, the migrations and the bootstrap, and the
+banner the README shows.
+
+`--addr` defaults to `127.0.0.1:8080` — a host, not a bare port. This command
+prints an administrator's password to the terminal, so the address it answers with
+when nobody names one is the loopback; `--addr :8080` binds every interface the
+machine has and is how a person says they mean it. The preflight holds the address
+until the application is about to bind it and then lets go; if something takes it
+in that gap the application's own bind refuses and says the same thing again, plus
+that the installation under `--data` stands untouched and rerunning reuses it.
 
 The supported rows are the four `linux/amd64`, `linux/arm64`, `darwin/amd64` and
 `darwin/arm64`, declared once in `supportedTargets` and read by nothing but the
