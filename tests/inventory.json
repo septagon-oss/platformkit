@@ -23381,6 +23381,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/bearer_key_door_answers_the_same_at_its_address_and_behind_its_closure_test.go",
+   "id": "kit/httpx/bearer_key_door_answers_the_same_at_its_address_and_behind_its_closure_test.go#TestABearerKeyDoorAnswersTheSameAtItsAddressAndBehindItsClosure",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestABearerKeyDoorAnswersTheSameAtItsAddressAndBehindItsClosure",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/bearer_key_door_test.go",
    "id": "kit/httpx/bearer_key_door_test.go#TestABearerKeyDoorAdmitsAKeyRefusesASessionAndChallengesNobody",
    "kind": "go",
@@ -87157,7 +87176,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2388,
+  "files": 2389,
   "forge_runs": [
    408,
    413,
@@ -87191,7 +87210,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3797,
+   "behaviour": 3798,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87210,9 +87229,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4423,
+  "rows": 4424,
   "tiers": {
-   "merge": 2720,
+   "merge": 2721,
    "nightly": 110,
    "push": 1593
   },
@@ -87220,13 +87239,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2143,
+   "keep": 2144,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4037,
+   "keep": 4038,
    "keep-rewrite": 170,
    "merge": 216
   }
