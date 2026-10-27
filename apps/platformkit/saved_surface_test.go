@@ -92,9 +92,9 @@ func TestAPersonSeesTheHeartAndTheirKeptCopiesAndNobodyElseDoes(t *testing.T) {
 		strings.Contains(other, "Saved to your tasks") {
 		t.Error("a person who kept nothing is shown another person's pressed control")
 	}
-	if code, _, other := askNavigate(t, cfg, watcher, acmeHost, "/app/saved"); code == http.StatusOK &&
-		strings.Contains(other, title) {
-		t.Error("another person's kept list carries this person's copy")
+	if code, _, other := askNavigate(t, cfg, watcher, acmeHost, kept); code == http.StatusOK {
+		t.Errorf("the kept list %s is answered to a person who holds neither of its two grants (%d):\n%s",
+			kept, code, keeps(other))
 	}
 
 	// Another tenant, at its own host: the same addresses, and nothing of this one.
