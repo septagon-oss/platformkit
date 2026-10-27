@@ -43714,6 +43714,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/one_address_two_people_sign_into_their_own_customer_test.go",
+   "id": "modules/auth/internal/one_address_two_people_sign_into_their_own_customer_test.go#TestOneAddressTwoActivePeopleSignInIntoTheirOwnCustomer",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestOneAddressTwoActivePeopleSignInIntoTheirOwnCustomer",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/one_address_two_tenants_accept_their_own_membership_test.go",
    "id": "modules/auth/internal/one_address_two_tenants_accept_their_own_membership_test.go#TestOneAddressTwoTenantsAcceptTheirOwnMembership",
    "kind": "go",
@@ -83803,7 +83822,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2276,
+  "files": 2277,
   "forge_runs": [
    408,
    413,
@@ -83837,7 +83856,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3626,
+   "behaviour": 3627,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83856,9 +83875,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4248,
+  "rows": 4249,
   "tiers": {
-   "merge": 2625,
+   "merge": 2626,
    "nightly": 110,
    "push": 1513
   },
@@ -83866,13 +83885,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2031,
+   "keep": 2032,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3862,
+   "keep": 3863,
    "keep-rewrite": 170,
    "merge": 216
   }
