@@ -41488,6 +41488,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/a_locked_sign_in_page_answers_the_same_sentence_about_every_kind_of_address_test.go",
+   "id": "modules/auth/internal/a_locked_sign_in_page_answers_the_same_sentence_about_every_kind_of_address_test.go#TestALockedSignInPageAnswersTheSameSentenceAboutEveryKindOfAddress",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestALockedSignInPageAnswersTheSameSentenceAboutEveryKindOfAddress",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/a_locked_sign_in_page_shuts_every_kind_of_address_it_is_given_test.go",
    "id": "modules/auth/internal/a_locked_sign_in_page_shuts_every_kind_of_address_it_is_given_test.go#TestALockedSignInPageShutsEveryKindOfAddressItIsGiven",
    "kind": "go",
@@ -83898,7 +83917,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2281,
+  "files": 2282,
   "forge_runs": [
    408,
    413,
@@ -83932,7 +83951,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3631,
+   "behaviour": 3632,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83951,9 +83970,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4253,
+  "rows": 4254,
   "tiers": {
-   "merge": 2630,
+   "merge": 2631,
    "nightly": 110,
    "push": 1513
   },
@@ -83961,13 +83980,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2036,
+   "keep": 2037,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3867,
+   "keep": 3868,
    "keep-rewrite": 170,
    "merge": 216
   }
