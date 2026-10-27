@@ -238,3 +238,41 @@ remembers one process, and nothing in the tree held a port across processes. **M
 claim itself, an empty file per port locked until the case ends and never unlinked, named by
 `portClaimPath` and witnessed by `TestAPortTakenWhileBootingIsNotTheCasesPort`. A claim is advisory,
 so the serving wait stays the proof of which application is behind an address.
+
+## First use
+
+`platformkit start` is the one command a stranger runs, so it answers every
+question a machine can answer about itself before it downloads or writes anything.
+The order is the whole of the repair: the pair `GOOS`/`GOARCH`, the bind of
+`--addr`, whether `--data` can be created and written, whether the user's cache
+can, and what `--data/postgres` already holds — a live postmaster, or a cluster of
+another PostgreSQL version. Each refusal names the value it refused, the flag or
+path that would move it, the retry, and the fact that nothing was written; none of
+them stops a process or a port this run did not start. Then the download, the role,
+the migrations and the bootstrap, and the banner the README shows.
+
+The supported rows are the four `linux/amd64`, `linux/arm64`, `darwin/amd64` and
+`darwin/arm64`, declared once in `supportedTargets` and read by nothing but the
+preflight and its refusal sentence. WSL2 is not a row: it answers as Linux, so
+nothing in this directory can branch on it. Windows is refused rather than
+tried — no release has run it, and a promise nobody has tested is not a promise.
+
+The version the banner prints is the version the footer prints, which is
+`admin.Build()`: a build made through the module proxy carries a version and no
+repository stamp, a build made from a checkout carries the stamp and no version,
+and each is the only answer the build that carries it has.
+
+**Reused** — `startApp`'s own `startConfig`, `ensureRole`, `freePort` and
+`composeReference`, `embedded-postgres` unchanged as the launcher, `admin`'s
+existing footer stamp, `kit/app`'s `serve` and its `http.Server`, and the rule
+`scripts/free_port.sh` and `check-run-owner` already state — allocate, refuse,
+never drive a listener you did not start. **Added** — the preflight and its
+refusal sentences, because the tree held no prerequisite check of any kind and the
+only support record it holds, `scripts/supported_sources.sh`, answers which
+installations a release upgrades from rather than which machines it runs on; and
+the guard that keeps the launcher from deleting a data directory it does not
+recognise, which is inside that dependency's own reuse decision and can only be
+refused by the caller that owns the path. **Made reusable** —
+`scripts/redact_credentials.sh`, which any harness that captures a first run can
+pipe through, and `scripts/first_use.sh` with the receipt form in
+[FIRST-USE.md](FIRST-USE.md): a measurement that writes nothing unless it is true.

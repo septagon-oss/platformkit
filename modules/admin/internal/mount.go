@@ -499,19 +499,35 @@ func header(r page.Request, navigation components.SidebarProps, line string) []g
 func about(r page.Request) g.Node {
 	o := resource.Options{Locale: r.Locale}
 	return g.Group([]g.Node{
-		components.Text(components.TextProps{Element: "span", Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"}),
+		components.Text(components.TextProps{Element: "span", Content: Build(), Size: chromeTextSize, Color: "muted"}),
 		components.Disclosure(components.DisclosureProps{Label: o.Text("admin.workspace.about", "About this workspace"), Flush: true},
 			components.Text(components.TextProps{Element: "span", Content: workspaceScope(r.Tenant, o), Size: chromeTextSize, Color: "muted"})),
 	})
 }
 
-// version is what the footer says. It is the revision the binary was built
-// from, which is a fact the toolchain records; a version string somebody bumps
-// by hand is a version string that is wrong.
-func version() string {
+// Build names the running reference: the brand and the stamp the toolchain put on
+// the bytes that are running. The footer renders it and the start command prints
+// it, so the two cannot disagree about which reference a person is looking at.
+func Build() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
+		return brand + " " + version(nil)
+	}
+	return brand + " " + version(info)
+}
+
+// version is what the footer says the running reference is: the revision or
+// version the toolchain recorded, never a string somebody bumps by hand. A build
+// made through the module proxy — `go run …@main`, `go install …@main` — records
+// the module version and no VCS settings; a build from a source tree records
+// vcs.revision and the version "(devel)". Both are answers, and each is the only
+// one the build that carries it has.
+func version(info *debug.BuildInfo) string {
+	if info == nil {
 		return "(unknown build)"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
 	}
 	for _, setting := range info.Settings {
 		if setting.Key == "vcs.revision" {
