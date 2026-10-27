@@ -71853,6 +71853,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/the_module_report_carries_the_layer_a_dependency_declares_test.go",
+   "id": "tools/importgate/the_module_report_carries_the_layer_a_dependency_declares_test.go#TestTheModuleReportCarriesTheLayerADependencyDeclares",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheModuleReportCarriesTheLayerADependencyDeclares",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/locbudget/main_test.go",
    "id": "tools/locbudget/main_test.go#TestBucketCountsMatchingTrackedFiles",
    "kind": "go",
@@ -92275,7 +92294,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2539,
+  "files": 2540,
   "forge_runs": [
    408,
    413,
@@ -92309,7 +92328,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4016,
+   "behaviour": 4017,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92328,23 +92347,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4689,
+  "rows": 4690,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1698
+   "push": 1699
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2294,
+   "keep": 2295,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4303,
+   "keep": 4304,
    "keep-rewrite": 170,
    "merge": 216
   }
