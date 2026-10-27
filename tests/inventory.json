@@ -3917,6 +3917,25 @@
   },
   {
    "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/kept_list_of_two_copies_one_filled_action_test.go",
+   "id": "apps/platformkit/kept_list_of_two_copies_one_filled_action_test.go#TestTheKeptListOfTwoCopiesDrawsOneFilledAction",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheKeptListOfTwoCopiesDrawsOneFilledAction",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
    "assertions_in_file": 18,
    "evidence": "only file in its package reaching /api/v1/auth/factors/recovery/rotate, /api/v1/auth/roles/admin, /api/v1/auth/sessions",
    "file": "apps/platformkit/key_that_opens_no_door_is_not_a_credential_test.go",
@@ -88583,7 +88602,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2403,
+  "files": 2404,
   "forge_runs": [
    408,
    413,
@@ -88618,7 +88637,7 @@
   ],
   "layers": {
    "behaviour": 3859,
-   "composition": 502,
+   "composition": 503,
    "contract": 24,
    "journey": 111
   },
@@ -88636,9 +88655,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4496,
+  "rows": 4497,
   "tiers": {
-   "merge": 2734,
+   "merge": 2735,
    "nightly": 111,
    "push": 1651
   },
@@ -88646,13 +88665,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2158,
+   "keep": 2159,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4110,
+   "keep": 4111,
    "keep-rewrite": 170,
    "merge": 216
   }

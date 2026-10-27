@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,18 @@ func TestTheReferenceShellAndGeneratedPagesMeetTheDesignFloor(t *testing.T) {
 	if code, _, fault := askForm(t, cfg, who, acmeHost, drawnAddress(t, record, "/saved/save"), saveForm(t, record, id)); code != http.StatusSeeOther {
 		t.Fatalf("keep a copy of the measured task: %d (%s)", code, fault)
 	}
+	// A second copy is kept because the kept list's content is whatever the person
+	// kept: with one card the page draws its own actions once, and the state every later
+	// press leaves it in is never measured. Both the list of everything and the list
+	// filtered to one pair are read off the record's own links, because the mount writes
+	// those addresses and no test should guess at them.
+	second := newTask(t, cfg, who, "Rebook the Zurich trip", "normal")
+	secondRecord := servedPage(t, cfg, who, acmeHost, "/app/task/tasks/"+second)
+	if code, _, fault := askForm(t, cfg, who, acmeHost, drawnAddress(t, secondRecord, "/saved/save"), saveForm(t, secondRecord, second)); code != http.StatusSeeOther {
+		t.Fatalf("keep a copy of the second row: %d (%s)", code, fault)
+	}
+	keptList := drawnAddress(t, record, "/saved?module=")
+	unfiltered, _, _ := strings.Cut(keptList, "?")
 	target, err := url.Parse("http://" + cfg.Server.Addr)
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +74,8 @@ func TestTheReferenceShellAndGeneratedPagesMeetTheDesignFloor(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(work) })
 	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Minute)
 	defer cancel()
-	paths := []string{"/app", "/app/task/tasks", "/app/task/tasks/" + id, "/app/task/tasks/new", "/app/task/tasks/" + id + "/edit"}
+	paths := []string{"/app", "/app/task/tasks", "/app/task/tasks/" + id, "/app/task/tasks/new", "/app/task/tasks/" + id + "/edit",
+		unfiltered, keptList}
 	if gate := os.Getenv("PLATFORMKIT_SHELL_DESIGN_GATE"); gate != "" {
 		for _, path := range paths {
 			cmd := exec.CommandContext(ctx, "python3", gate, preview.URL+path, "--widths", "390,1440")
