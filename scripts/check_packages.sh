@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/screen kit/internal/jsonbody kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
+parts=(kit/screen kit/tour kit/internal/jsonbody kit/wire kit/entity kit/entity/display kit/entity/present kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request kit/operation modules/task/domain design kit/designconfig ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature kit/inference kit/inference/providers/openai
@@ -140,7 +140,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # no SQL and renders nothing, which is why admitting it adds no capability at
         # the page, the screen or the runner. Note that an apostrophe in this block
         # ends the single-quoted awk program for the shell: write around it.
-        kernel = screen " " p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/internal/jsonbody " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/personaldata " p "kit/telemetry " richtextDeps
+        kernel = screen " " p "kit/tour " p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/internal/jsonbody " p "kit/stream " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/personaldata " p "kit/telemetry " richtextDeps
         presentation = policy " " p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
@@ -159,6 +159,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # would link the storage adapter to a package that takes no transaction.
         check("kit/fault", "")
         check("kit/screen", "")
+        # kit/tour declares the instructions a feature teaches on screens it does not
+        # render: the standard library and the screen contract it points at, so it
+        # names a control without reaching a router, a renderer or a store.
+        check("kit/tour", p "kit/screen")
         check("kit/wire", "")
         check("kit/internal/jsonbody", "")
         check("kit/flags", uuid)

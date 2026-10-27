@@ -29,6 +29,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/tour"
 )
 
 // Module is one business capability, described to the kernel.
@@ -106,6 +107,14 @@ type Module struct {
 	Nav []NavEntry
 	// Views are immutable custom-screen descriptors, checked again after Routes.
 	Views []screen.View
+
+	// Tours is how this module's features teach themselves: instructions
+	// anchored to published screens, read by whatever renders them and
+	// validated twice — here, as a declaration, and after routes are
+	// registered, against what the composition actually published. A
+	// composition that selects no tour runner validates them all the same and
+	// shows nothing.
+	Tours []tour.Tour
 
 	// There is no Health. Nothing in three repositories ever contributed a
 	// check, and /ready is the one question a probe can act on — is this

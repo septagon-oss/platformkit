@@ -363,5 +363,8 @@ func (a *App) validateRoutes(api *httpx.API) error {
 	if err := validateEvents(api, a.mods); err != nil {
 		return err
 	}
-	return a.validateScreens(api)
+	if err := a.validateScreens(api); err != nil {
+		return err
+	}
+	return a.validateTours()
 }

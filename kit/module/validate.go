@@ -64,6 +64,13 @@ func (v *validation) module(m Module) {
 	v.jobsAndData(m)
 	v.roles(m)
 	v.events(m)
+	v.tours(m)
+}
+
+func (v *validation) tours(m Module) {
+	for _, problem := range tourProblems(m) {
+		v.add("%s", problem)
+	}
 }
 
 func (v *validation) permissions(m Module) {
@@ -192,6 +199,7 @@ func (v *validation) references(mods []Module) {
 	for _, m := range mods {
 		v.moduleReferences(m, emitted)
 	}
+	v.bad = append(v.bad, tourReferenceProblems(mods)...)
 }
 
 func (v *validation) moduleReferences(m Module, emitted map[string]bool) {
@@ -230,6 +238,9 @@ func (v *validation) moduleReferences(m Module, emitted map[string]bool) {
 	// that is the other door onto the same set: the event has to exist, and the
 	// policy has to name someone who may walk through it.
 	for _, problem := range streamProblems(m, emitted, v.owner) {
+		v.add("%s", problem)
+	}
+	for _, problem := range tourEmissionProblems(m, emitted) {
 		v.add("%s", problem)
 	}
 }
