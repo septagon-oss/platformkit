@@ -45688,6 +45688,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/the_wired_trail_answers_to_the_name_the_plan_declares_test.go",
+   "id": "modules/audit/the_wired_trail_answers_to_the_name_the_plan_declares_test.go#TestTheWiredTrailAnswersToTheNameThePlanDeclares",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheWiredTrailAnswersToTheNameThePlanDeclares",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go",
    "id": "modules/auth/a_mailed_link_page_is_checked_at_composition_test.go#TestNewRefusesALinkPageThatIsNotAnAbsolutePath",
    "kind": "go",
@@ -92538,7 +92557,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2552,
+  "files": 2553,
   "forge_runs": [
    408,
    413,
@@ -92572,7 +92591,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4029,
+   "behaviour": 4030,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92591,9 +92610,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4702,
+  "rows": 4703,
   "tiers": {
-   "merge": 2899,
+   "merge": 2900,
    "nightly": 121,
    "push": 1682
   },
@@ -92601,13 +92620,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2307,
+   "keep": 2308,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4316,
+   "keep": 4317,
    "keep-rewrite": 170,
    "merge": 216
   }
