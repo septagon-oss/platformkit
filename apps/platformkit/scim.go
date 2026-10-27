@@ -42,7 +42,7 @@ var scimProvisioning = pkit.NewModule("scim", wireScim,
 )
 
 func wireScim(w *pkit.Wiring) (module.Module, error) {
-	svc, manifest := scim.New(scim.Deps{
+	svc, manifest, err := scim.NewChecked(scim.Deps{
 		Provisioning: pkit.Get[usercontracts.Provisioning](w),
 		Roles:        roleNames{auth: pkit.Get[authcontracts.RoleReader](w)},
 		// The same two tables, asked a different question: this one is about the
@@ -52,6 +52,10 @@ func wireScim(w *pkit.Wiring) (module.Module, error) {
 			auth:  pkit.Get[authcontracts.PermissionReader](w),
 		},
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put[scimcontracts.Service](w, svc)
 	pkit.Put[personaldata.Part](w, scim.PersonalData())
 	return manifest, nil

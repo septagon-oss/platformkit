@@ -71,8 +71,20 @@ type Deps struct {
 
 // NewService builds the module's commands over the contributions the composition
 // collected. The value it returns also satisfies Walker, which is the one method the
-// worker's job needs and no caller outside this module has.
+// worker's job needs and no caller outside this module has. An unnamed or
+// duplicated part is refused with a panic; NewServiceChecked answers it as an error.
 func NewService(d Deps) contracts.Service {
+	svc, err := NewServiceChecked(d)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc
+}
+
+// NewServiceChecked answers an incomplete contribution as the error NewService
+// panics with: a part with no module name belongs to nobody, and two parts under
+// one name write one bundle entry, so the second person's words would be missing.
+func NewServiceChecked(d Deps) (contracts.Service, error) {
 	now := d.Now
 	if now == nil {
 		now = db.Now
@@ -88,14 +100,14 @@ func NewService(d Deps) contracts.Service {
 	seen := map[string]bool{}
 	for _, p := range own {
 		if p.Module == "" {
-			panic("subject: a personal-data part with no module name is a part nobody can attribute")
+			return nil, errors.New("subject: a personal-data part with no module name is a part nobody can attribute")
 		}
 		if seen[p.Module] {
-			panic("subject: two personal-data parts named " + p.Module + " would write one bundle entry and one of them would be missing")
+			return nil, errors.New("subject: two personal-data parts named " + p.Module + " would write one bundle entry and one of them would be missing")
 		}
 		seen[p.Module] = true
 	}
-	return &service{parts: own, people: people, now: now, bundles: d.Bundles, notifier: d.Notes}
+	return &service{parts: own, people: people, now: now, bundles: d.Bundles, notifier: d.Notes}, nil
 }
 
 // person reads the strings the contributors must stop finding, and is the reason

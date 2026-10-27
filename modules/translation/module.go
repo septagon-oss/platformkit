@@ -54,7 +54,21 @@ type Deps struct {
 // The name is the one every module's constructor carries since the resolver
 // arrived, because `Module` is the provider value beside this function — the
 // declaration an application names in Use.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest. A nil Translator is every
+// installation whose operator named no provider: the suggest route refuses and
+// the button is not drawn, so nothing is refused here and the error is nil for
+// every Deps today. It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	svc := internal.NewService(deps.Sources, deps.Translator)
 	return svc, module.Module{
 		Name:       "translation",
@@ -77,5 +91,5 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Declared:      contracts.Events,
 		Subscriptions: nil,
 		Routes:        nil,
-	}
+	}, nil
 }

@@ -59,11 +59,15 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if policy := pkit.Get[tenancy.Policy](w); policy != nil {
 		svc.Policy = policy
 	}
-	manifest := New(Deps{
+	manifest, err := NewChecked(Deps{
 		Service: svc,
 		Tenants: pkit.Get[jobs.TenantLister](w),
 		Gate:    pkit.Get[rest.Gate](w),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put[taskcontracts.Service](w, svc)
 	pkit.Put[taskcontracts.Creator](w, svc)
 	pkit.Put[taskcontracts.Reader](w, svc)

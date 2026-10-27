@@ -57,12 +57,16 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if err != nil {
 		return module.Module{}, err
 	}
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		OnCreate:  pkit.All[tenantcontracts.Hook](w),
 		Invite:    pkit.Get[tenantcontracts.Inviter](w),
 		Languages: pkit.Get[tenantcontracts.Languages](w).Tags,
 		App:       slug,
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	pkit.Put[tenantcontracts.HostLookup](w, svc)
 	pkit.Put[tenantcontracts.OIDCReader](w, svc)

@@ -40,18 +40,29 @@ type subjectKey struct{ module, entity string }
 // find out: the boot failure names the binding, the runtime one would name a
 // customer.
 func NewService(bindings []contracts.SubjectBinding) *Service {
+	s, err := NewServiceChecked(bindings)
+	if err != nil {
+		panic(err.Error())
+	}
+	return s
+}
+
+// NewServiceChecked answers as an error what NewService panics with: a binding
+// nobody could resolve, or one module and entity bound twice, where the proposal
+// would say it moved the subject and only one of the two answers would count.
+func NewServiceChecked(bindings []contracts.SubjectBinding) (*Service, error) {
 	s := &Service{subjects: make(map[subjectKey]contracts.SubjectBinding, len(bindings))}
 	for _, b := range bindings {
 		if b.Module == "" || b.Entity == "" || b.Resolve == nil {
-			panic(fmt.Sprintf("change: the subject binding %q/%q is incomplete", b.Module, b.Entity))
+			return nil, fmt.Errorf("change: the subject binding %q/%q is incomplete", b.Module, b.Entity)
 		}
 		key := subjectKey{b.Module, b.Entity}
 		if _, taken := s.subjects[key]; taken {
-			panic(fmt.Sprintf("change: %s/%s is bound twice, and only one of them would be used", b.Module, b.Entity))
+			return nil, fmt.Errorf("change: %s/%s is bound twice, and only one of them would be used", b.Module, b.Entity)
 		}
 		s.subjects[key] = b
 	}
-	return s
+	return s, nil
 }
 
 var _ contracts.Service = (*Service)(nil)

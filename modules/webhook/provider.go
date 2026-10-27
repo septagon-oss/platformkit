@@ -46,7 +46,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 			"webhook: its signing key is %d bytes and it is %d; it is deployment configuration, written in webhook.secret_key or PLATFORMKIT_WEBHOOK_SECRET_KEY",
 			len(key), contracts.SecretKeyBytes)
 	}
-	m := New(Deps{
+	m, err := NewChecked(Deps{
 		SecretKey:           key,
 		Catalogue:           pkit.Get[contracts.Catalogue](w),
 		Alerts:              pkit.Get[contracts.Alerts](w),
@@ -54,6 +54,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		AllowLocalEndpoints: settings.AllowLocalEndpoints,
 		RetentionDays:       settings.RetentionDays,
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return m, nil
 }

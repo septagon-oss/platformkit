@@ -116,7 +116,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	if err := deps.AccountRequests.Check(); err != nil {
 		return module.Module{}, fmt.Errorf("auth: auth.account_requests: %w", err)
 	}
-	svc, manifest := New(deps)
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	pkit.Put[authcontracts.RoleEditor](w, svc)
 	pkit.Put[authcontracts.SessionAdministration](w, svc)

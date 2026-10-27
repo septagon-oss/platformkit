@@ -146,7 +146,21 @@ var permissions = []module.Permission{
 
 // Module is the manifest. The implementation is constructed here, in one line,
 // and handed to the one place that uses it.
+//
+// Deprecated: use NewChecked, which answers this refusal as an error.
 func New(deps Deps) (contracts.Service, module.Module) {
+	svc, manifest, err := NewChecked(deps)
+	if err != nil {
+		panic(err.Error())
+	}
+	return svc, manifest
+}
+
+// NewChecked builds the service and the manifest. A nil Files refuses an inline
+// image rather than storing it unaccounted, a nil Uses records no use and says
+// so at mount, and nothing else is refused, so the error is nil for every Deps
+// today. It opens nothing, runs no query and is safe to call twice.
+func NewChecked(deps Deps) (contracts.Service, module.Module, error) {
 	files := deps.Files
 	if files == nil {
 		files = richtext.RejectImages{}
@@ -195,5 +209,5 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			resource.Mount(s)
 			internal.RegisterRoutes(s, resource, svc)
 		},
-	}
+	}, nil
 }

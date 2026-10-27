@@ -54,7 +54,10 @@ var Module = pkit.NewModule("change", wire,
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	subjects := pkit.All[changecontracts.SubjectBinding](w)
-	svc := NewService(subjects)
+	svc, err := NewServiceChecked(subjects)
+	if err != nil {
+		return module.Module{}, err
+	}
 	deps := Deps{
 		Service:      svc,
 		Notify:       pkit.Get[changecontracts.Notifier](w),
@@ -72,7 +75,10 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 			Read: svc, Decide: svc,
 		}
 	}
-	manifest := New(deps)
+	manifest, err := NewChecked(deps)
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put[changecontracts.Service](w, svc)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil

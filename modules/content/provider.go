@@ -44,13 +44,17 @@ var Module = pkit.NewModule("content", wire,
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
-	svc, manifest := New(Deps{
+	svc, manifest, err := NewChecked(Deps{
 		Files:        pkit.Get[richtext.Files](w),
 		Uses:         pkit.Get[rest.FileUses](w),
 		Translations: pkit.Get[rest.Translations](w),
 		Shown:        pkit.Get[rest.FileShown](w),
 		Versions:     pkit.Get[httpx.Versions](w),
 	})
+
+	if err != nil {
+		return module.Module{}, err
+	}
 	pkit.Put(w, svc)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
