@@ -74039,6 +74039,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/forms/sketch_board_asks_no_sentence_its_catalogues_do_not_answer_test.go",
+   "id": "ui/forms/sketch_board_asks_no_sentence_its_catalogues_do_not_answer_test.go#TestTheSketchBoardAsksNoSentenceItsCataloguesDoNotAnswer",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheSketchBoardAsksNoSentenceItsCataloguesDoNotAnswer",
+   "needs_db": false,
+   "pkg": "ui/forms",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/forms/sketch_board_carries_every_handle_and_sentence_its_script_asks_for_test.go",
    "id": "ui/forms/sketch_board_carries_every_handle_and_sentence_its_script_asks_for_test.go#TestTheSketchBoardCarriesEveryHandleItsScriptBinds",
    "kind": "go",
@@ -87252,7 +87271,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2392,
+  "files": 2393,
   "forge_runs": [
    408,
    413,
@@ -87286,7 +87305,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3802,
+   "behaviour": 3803,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87305,23 +87324,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4428,
+  "rows": 4429,
   "tiers": {
    "merge": 2722,
    "nightly": 110,
-   "push": 1596
+   "push": 1597
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2147,
+   "keep": 2148,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4042,
+   "keep": 4043,
    "keep-rewrite": 170,
    "merge": 216
   }
