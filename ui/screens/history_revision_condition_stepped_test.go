@@ -10,21 +10,25 @@ package screens_test
 // revision at all — while the same record, answering as one flat form, still
 // quotes it. Both shapes are pinned here because one page owes what the other
 // already pays.
+//
+// The panel offers a restore only where the Spec mounts the command it names, so
+// both fixtures here declare History the way a product does and let kit/rest keep
+// the series and mount the door beside it. A version series bolted onto a resource
+// that mounts no restore would be a button whose post answers nothing.
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/cache"
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -33,8 +37,47 @@ import (
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
-// steppedHistoryServer mounts the note over a real table, with one version in its
-// series, and answers either as steps or as the flat form it was before.
+// writtenVersions is the store these two files record a versioned Spec through: the
+// writes it was handed, answered back newest first. What these cases pin is what the
+// record page quotes beside a restore, not how a store keeps a series — that belongs
+// to modules/history, tested against the table it owns — so a slice answers.
+type writtenVersions struct {
+	kept []httpx.VersionInput
+}
+
+func (w *writtenVersions) RecordVersion(_ context.Context, _ db.Tx[db.Tenant], in httpx.VersionInput) (uuid.UUID, error) {
+	w.kept = append(w.kept, in)
+	return uuid.New(), nil
+}
+
+func (w *writtenVersions) ListVersions(_ context.Context, _ db.Tx[db.Tenant], q httpx.VersionQuery) ([]httpx.Version, error) {
+	var out []httpx.Version
+	for _, in := range w.kept {
+		if in.Module != q.Module || in.Entity != q.Entity || in.Record != q.Record {
+			continue
+		}
+		if q.Before > 0 && in.Version >= q.Before {
+			continue
+		}
+		out = append([]httpx.Version{{ID: uuid.New(), Module: in.Module, Entity: in.Entity, Record: in.Record,
+			Locale: in.Locale, Version: in.Version, Fields: in.Fields, Changed: in.Changed, Reason: in.Reason,
+			Actor: in.Actor, At: in.At}}, out...)
+	}
+	if q.Limit > 0 && len(out) > q.Limit {
+		out = out[:q.Limit]
+	}
+	return out, nil
+}
+
+// Version answers nothing: these cases read a series and never write one back, and
+// the door that does is kit/rest's own, tested against a store that holds versions.
+func (w *writtenVersions) Version(context.Context, db.Tx[db.Tenant], httpx.VersionKey) (httpx.Version, error) {
+	return httpx.Version{}, crud.ErrNotFound
+}
+
+// steppedHistoryServer mounts the note over a real table, with its writes kept as a
+// version series behind the restore door the Spec mounts, and answers either as steps
+// or as the flat form it was before.
 func steppedHistoryServer(t *testing.T, steps bool) http.Handler {
 	t.Helper()
 	admin, conn := dbtest.Schema(t)
@@ -61,14 +104,10 @@ func steppedHistoryServer(t *testing.T, steps bool) http.Handler {
 		fixture.Present.Forms = nil
 	}
 	spec := rest.Spec[*steppedRow]{Module: "note", Entity: "note", Path: "/notes", Read: "note:read",
-		Write: "note:write", Immutable: []string{"status"}, Present: fixture.Present}
+		Write: "note:write", Immutable: []string{"status"}, Present: fixture.Present,
+		History: true, Versions: &writtenVersions{}}
 	spec.Mount(api.Surfaces("note"))
-	res := api.Resources()[0]
-	res.History = &httpx.History{RestoreVerb: "restore", Versions: func(context.Context, uuid.UUID) ([]httpx.Version, error) {
-		return []httpx.Version{{ID: uuid.New(), Version: 1, Changed: []string{"title"},
-			Fields: json.RawMessage(`{"title":"Earlier"}`), At: time.Unix(1700000000, 0)}}, nil
-	}}
-	screens.Mount(api.Surfaces("note").App, formShell(), opts, res)
+	screens.Mount(api.Surfaces("note").App, formShell(), opts, api.Resources()[0])
 	return router
 }
 

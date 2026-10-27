@@ -10,18 +10,20 @@ package screens_test
 // quotes is the one the row holds after every write, not the one the create left
 // behind, and it keeps the digits of a count a float64 cannot hold — which is the
 // reason the exact read exists at all.
+//
+// The panel offers a restore only where the Spec mounts the command it names, so the
+// fixture declares History the way a product does: kit/rest keeps the series and
+// mounts the door beside it, and the page has somewhere to post what it quotes.
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -34,8 +36,8 @@ import (
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
-// countedNoteServer mounts the stepped note with one version in its series and hands
-// back the database handle, so a case can ask the row what it counts itself as.
+// countedNoteServer mounts the versioned stepped note and hands back the database
+// handle, so a case can ask the row what it counts itself as.
 func countedNoteServer(t *testing.T) (http.Handler, *sql.DB) {
 	t.Helper()
 	admin, conn := dbtest.Schema(t)
@@ -58,14 +60,10 @@ func countedNoteServer(t *testing.T) (http.Handler, *sql.DB) {
 	fixture := steppedNote()
 	fixture.Present.Forms.Update = fixture.Present.Forms.Create
 	spec := rest.Spec[*steppedRow]{Module: "note", Entity: "note", Path: "/notes", Read: "note:read",
-		Write: "note:write", Immutable: []string{"status"}, Present: fixture.Present}
+		Write: "note:write", Immutable: []string{"status"}, Present: fixture.Present,
+		History: true, Versions: &writtenVersions{}}
 	spec.Mount(api.Surfaces("note"))
-	res := api.Resources()[0]
-	res.History = &httpx.History{RestoreVerb: "restore", Versions: func(context.Context, uuid.UUID) ([]httpx.Version, error) {
-		return []httpx.Version{{ID: uuid.New(), Version: 1, Changed: []string{"title"},
-			Fields: json.RawMessage(`{"title":"Earlier"}`), At: time.Unix(1700000000, 0)}}, nil
-	}}
-	screens.Mount(api.Surfaces("note").App, formShell(), opts, res)
+	screens.Mount(api.Surfaces("note").App, formShell(), opts, api.Resources()[0])
 	return router, admin
 }
 
