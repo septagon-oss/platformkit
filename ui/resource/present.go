@@ -16,13 +16,15 @@ import (
 
 // compose renders a supplied media kind, returning nil for a plain value.
 // primary preserves record navigation; name labels a picture used as its link.
+// at is the list's record address — empty for a resource that mounted no record
+// route, which leaves every primary cell drawing its value unlinked.
 func compose(f entity.Field, row components.TableRow, primary bool, at string, o Options, name, missing string) g.Node {
 	// A declared choice answers through its resolved policy, which owns the
 	// appearance; a plain value leaves nil for the table to draw itself.
 	if f.Choices != nil {
 		node := (Resource{Schema: entity.Schema{Fields: []entity.Field{f}}}).choiceRead(o, f, row.Cells[f.Name])
-		if primary {
-			return h.A(h.Href(at+"/"+row.ID), node)
+		if href := recordLink(at, row.ID); primary && href != "" {
+			return h.A(h.Href(href), node)
 		}
 		return node
 	}
@@ -41,7 +43,7 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 		}
 		person := components.AvatarProps{Name: text, Label: text, Size: "sm"}
 		if primary {
-			person.Href = at + "/" + row.ID
+			person.Href = recordLink(at, row.ID)
 		}
 		return components.Avatar(person)
 	case "picture", "image", "images", "avatar":
@@ -64,7 +66,7 @@ func compose(f entity.Field, row components.TableRow, primary bool, at string, o
 		}
 		href := ""
 		if primary {
-			href = at + "/" + row.ID
+			href = recordLink(at, row.ID)
 		}
 		if f.Present == "avatar" {
 			// A person's picture is the same disc `person` draws, with the prop it
@@ -99,6 +101,16 @@ func (o Options) pictureSource(id string) string {
 		return ""
 	}
 	return strings.ReplaceAll(o.PictureSource, "{id}", id)
+}
+
+// recordLink is one row's record page: the list's record address and the row's
+// id, or empty for a resource with no record route. Every primary cell below
+// draws the plain value rather than a link into the 404 of a place nothing serves.
+func recordLink(at, id string) string {
+	if at == "" {
+		return ""
+	}
+	return at + "/" + id
 }
 
 // firstID is the first id of a `present:images` cell, which is what a row draws: a

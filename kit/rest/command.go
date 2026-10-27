@@ -64,26 +64,140 @@ type CommandOptions struct {
 	Present entity.CommandHints
 }
 
+// CommandSpec is one lifecycle command as its author declares it: the route it
+// is, what the document says about it, what it publishes and who may call it.
+//
+// What sits here is what decides *which* route exists — the verb, whether the
+// path carries an id, and the guard the route is mounted under — beside what the
+// document says about that route. How the command is drawn and performed stays
+// in Options, which is why the two facts that pick a route do not stay there as
+// well: a command that states its route in two places states it twice.
+//
+// The zero Auth is the Spec's write declaration, which is right for a command
+// that moves a row an administrator owns and wrong for one somebody runs on their
+// own thing: adding an item to a basket is httpx.SignedIn(), and the alternative
+// was a second permission every tenant would have to grant to every shopper.
+type CommandSpec[I any] struct {
+	// Verb is the route's last path segment.
+	Verb string
+	// Summary is the document's one-line summary of the command.
+	Summary string
+	// Doc is the document's long description of it.
+	Doc string
+	// Emits names the events this command publishes. kit/app reads the
+	// declaration off the mounted operation and refuses a name no manifest holds.
+	Emits []string
+	// Auth is who may run this command; zero is the Spec's write declaration.
+	Auth httpx.Auth
+	// Collection mounts POST {Path}/{verb} instead of a row route and passes
+	// uuid.Nil to run, for commands that find or create their own row.
+	Collection bool
+	// Options holds the facts about how the command is drawn and performed.
+	// Its Auth and Collection are the deprecated spellings of the two above and
+	// are refused beside a CommandSpec, which has no use for a second copy.
+	Options CommandOptions
+}
+
+// Mount registers one lifecycle command declared as a CommandSpec: a POST on the
+// row the path names, or on the collection when Collection says the command finds
+// its own row, under the declared guard or the Spec's write guard, inside the
+// request's own transaction. An absent body uses declared defaults or zero I; run
+// validates domain inputs. Failures use Fault. A command whose route is stated
+// twice, or whose arguments the schema cannot describe, panics at this site
+// before anything is mounted. Spec's Mount method mounts the five CRUD routes
+// beside such a command; this one mounts the command.
+//
+// Command is this function called with positional parameters, and both forms run
+// through one body. Server-owned argument fields panic before registration; use
+// caller-owned names for revision conditions. See README.md for composition.
+func Mount[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], cmd CommandSpec[I],
+	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error),
+) {
+	registerCommand(surfaces, spec, cmd.Verb, cmd.Summary, cmd.Doc, cmd.Emits, run, declaredCommand(spec, cmd),
+		nil, false, func(out T) httpx.CommandReply { return httpx.CommandReply{Result: out} })
+}
+
+// MountResult mounts a command whose authoritative output is independent of its
+// resource row. JSON and generated adapters retain Result and UndoToken; errors
+// return no reply. Undo is available only when Options names its command. See
+// Mount for the declaration and the refusal of one stated twice.
+func MountResult[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec Spec[T], cmd CommandSpec[I],
+	run func(context.Context, db.Tx[db.Tenant], uuid.UUID, I) (Response[O], error),
+) {
+	registerCommand(surfaces, spec, cmd.Verb, cmd.Summary, cmd.Doc, cmd.Emits, run, declaredCommand(spec, cmd),
+		entity.FieldsOf(reflect.TypeFor[O]()), true, func(out Response[O]) httpx.CommandReply {
+			return httpx.CommandReply{Result: out.Result, UndoToken: out.UndoToken}
+		})
+}
+
+// declaredCommand is a CommandSpec as registerCommand reads it: the two facts that
+// pick the route are taken from the top level, where this declaration keeps them,
+// and a value that also names either one in Options is refused here, in the same
+// voice as every other wiring rule of this package and before a route exists.
+func declaredCommand[I any, T crud.Entity](spec Spec[T], cmd CommandSpec[I]) CommandOptions {
+	if bad := cmd.routeFault(); bad != "" {
+		panic("rest: command " + cmd.Verb + " on " + spec.Module + "." + spec.Entity + ": " + bad)
+	}
+	opts := cmd.Options
+	opts.Auth, opts.Collection = cmd.Auth, cmd.Collection
+	return opts
+}
+
+// routeFault names what this declaration says twice about its own route, and ""
+// when it says each fact once. A bool cannot tell "unset" from "false", so the
+// rule is that Options says nothing about the route at all: the two facts belong
+// to the CommandSpec, and the deprecated positional form lifts them here rather
+// than leaving a copy behind.
+func (c CommandSpec[I]) routeFault() string {
+	switch {
+	case c.Options.Auth.Declared():
+		return "states its guard twice: CommandSpec.Auth is who may run it, so clear Options.Auth"
+	case c.Options.Collection:
+		return "states its route twice: CommandSpec.Collection decides whether the path carries an id, so clear Options.Collection"
+	}
+	return ""
+}
+
 // Command registers a lifecycle POST on a row, or the collection when requested,
 // using the Spec's write guard unless overridden and the request transaction.
 // An absent body uses declared defaults or zero I; run validates domain inputs.
 // Failures use Fault. Server-owned argument fields panic before registration;
 // use caller-owned names for revision conditions. See README.md for composition.
+//
+// Deprecated: use Mount with a CommandSpec, which names the verb, the summary, the
+// description and the events as fields of the declaration rather than as four
+// adjacent positional parameters, and keeps the guard and the collection route at
+// the top level. Both forms share one body, so the migration is the spelling and
+// not the behaviour; see docs/compatibility/v3.0.0.md.
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
-	registerCommand(surfaces, spec, verb, summary, description, events, run, opts, nil, false, func(out T) httpx.CommandReply { return httpx.CommandReply{Result: out} })
+	Mount(surfaces, spec, declaredInPlace[I](verb, summary, description, events, opts), run)
 }
 
 // CommandResult mounts a command whose authoritative output is independent of
 // its resource row. JSON and generated adapters retain Result and UndoToken;
 // errors return no reply. Undo is available only when opts names its command.
+//
+// Deprecated: use MountResult with a CommandSpec, which declares the same command
+// as one value; see Command and docs/compatibility/v3.0.0.md.
 func CommandResult[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(context.Context, db.Tx[db.Tenant], uuid.UUID, I) (Response[O], error), opts CommandOptions,
 ) {
-	registerCommand(surfaces, spec, verb, summary, description, events, run, opts, entity.FieldsOf(reflect.TypeFor[O]()), true, func(out Response[O]) httpx.CommandReply {
-		return httpx.CommandReply{Result: out.Result, UndoToken: out.UndoToken}
-	})
+	MountResult(surfaces, spec, declaredInPlace[I](verb, summary, description, events, opts), run)
+}
+
+// declaredInPlace is the one adapter from the positional form to the declaration
+// Mount reads: the same four facts named as fields, the guard and the collection
+// route lifted to where a CommandSpec keeps them, and the copies in Options
+// cleared so the declaration cannot be read as stating either fact twice.
+func declaredInPlace[I any](verb, summary, description string, events []string, opts CommandOptions) CommandSpec[I] {
+	cmd := CommandSpec[I]{
+		Verb: verb, Summary: summary, Doc: description, Emits: events,
+		Auth: opts.Auth, Collection: opts.Collection, Options: opts,
+	}
+	cmd.Options.Auth, cmd.Options.Collection = httpx.Auth{}, false
+	return cmd
 }
 
 func registerCommand[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,

@@ -193,12 +193,17 @@ func listCell(r Resource, o Options, row map[string]any, c components.TableColum
 	// A choice reads its selection whatever the value, an empty one included; a
 	// media kind is drawn only where the author left something to draw.
 	if raw := row[c.Key]; definition.Choices != nil || (raw != nil && display.Text(raw) != "") {
-		if node := compose(definition, components.TableRow{ID: display.Text(row["id"]), Cells: row}, c.Primary, r.Screen, o, title, f.Reading.Missing); node != nil {
+		if node := compose(definition, components.TableRow{ID: display.Text(row["id"]), Cells: row}, c.Primary, r.recordAddress(), o, title, f.Reading.Missing); node != nil {
 			return node
 		}
 	}
 	if c.Primary {
-		return components.RowLink(components.LinkProps{Label: title, Href: r.Screen + "/" + display.Text(row["id"])})
+		// The row's name is the way into the record wherever a record page exists.
+		// Where none was mounted, the same words stay plain text.
+		if at := r.recordAddress(); at != "" {
+			return components.RowLink(components.LinkProps{Label: title, Href: at + "/" + display.Text(row["id"])})
+		}
+		return g.Text(title)
 	}
 	if read.node != nil {
 		return read.node

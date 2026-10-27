@@ -22,6 +22,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
+	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -31,6 +32,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/ui/page"
+	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
 // The caller every signed-in case here is made by is the package's own
@@ -227,9 +230,8 @@ func TestASpecOfferingListAndReadMountsNoWriteRoute(t *testing.T) {
 // the 404 of a place nothing is served, and not a 405 about a method an address
 // nobody claimed. The shape is a create with nothing beside it: the collection
 // address answers POST and the item address is an address no verb of this
-// resource claimed. (A list-only Spec would be the tidier fixture, and check()
-// refuses one — TestAListWithNoReadRefusesToMount — because its own list page
-// would link every row to the record route this fixture does not mount.)
+// resource claimed. TestAListWithNoRecordPageLinksNoRow asks the same question of
+// a list on its own, which mounts and draws its rows unlinked.
 func TestTheItemAddressOfAResourceThatOffersNoReadIsNotFound(t *testing.T) {
 	fileOnly := spec
 	fileOnly.Operations = []httpx.CRUD{rest.Create}
@@ -423,38 +425,89 @@ func TestADuplicateVerbRefusesToMount(t *testing.T) {
 	refusesToMount(t, bad, `Operations names "list" twice`)
 }
 
-// TestAListWithNoReadRefusesToMount is the withheld verb that cannot be drawn.
-// Every other withheld verb hides a door; this one leaves a page mounted whose
-// rows all link into a 404, because ui/resource.table makes the identity column
-// the way into the record. The 404 is the router's honest answer and the link is
-// the page's lie, and the mount site is where the two are kept apart.
-func TestAListWithNoReadRefusesToMount(t *testing.T) {
-	dead := spec
-	dead.Operations = []httpx.CRUD{rest.List}
-	refusesToMount(t, dead, "offers list without read")
-
-	// The pair, and the empty set, both mount: the refusal is about the list on
-	// its own, not about the two verbs.
-	for _, offers := range [][]httpx.CRUD{{rest.List, rest.Read}, nil} {
-		both := spec
-		both.Operations = offers
-		_, router, _ := mount(t, both)
-		if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK {
-			t.Errorf("a resource offering %v answers its list %d %s, want 200", offers, code, body)
-		}
+// TestAListWithNoRecordPageLinksNoRow is the withheld verb a table has to know
+// about: a resource that mounts no record route draws its rows as rows, because the
+// identity column asks whether a record page exists before it links to one. The
+// mount site refuses nothing here — the page is complete, it simply has no way in to
+// a record — and the pair that does mount one still links.
+func TestAListWithNoRecordPageLinksNoRow(t *testing.T) {
+	const title = "a row with no record page"
+	rowID := uuid.New()
+	for _, tc := range []struct {
+		name   string
+		offers []httpx.CRUD
+		record bool
+	}{
+		{name: "no record page", offers: []httpx.CRUD{rest.List}},
+		{name: "with its record page", offers: []httpx.CRUD{rest.List, rest.Read}, record: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listed := spec
+			listed.Operations = tc.offers
+			api, router, admin := mountAs(t, listed, member{"task:read": true})
+			if _, err := admin.ExecContext(t.Context(),
+				"INSERT INTO rest_tasks (id, tenant_id, title) VALUES ($1, $2, $3)", rowID, acme.ID, title); err != nil {
+				t.Fatal(err)
+			}
+			res := api.Resources()[0]
+			if code, body := call(t, router, http.MethodGet, res.Schema.Path, ""); code != http.StatusOK {
+				t.Fatalf("GET the collection = %d %s, want 200: list is offered", code, body)
+			}
+			screens.Mount(api.Surfaces(res.Module).App, listShell(), screens.Options{Workspace: "/app"}, res)
+			code, body := call(t, router, http.MethodGet, res.Screen, "")
+			if code != http.StatusOK || !strings.Contains(body, title) {
+				t.Fatalf("the collection page = %d, want 200 holding %q", code, title)
+			}
+			at := `href="` + res.Screen + "/" + rowID.String() + `"`
+			if linked := strings.Contains(body, at); linked != tc.record {
+				t.Errorf("the collection page links its row to %s = %v, want %v", at, linked, tc.record)
+			}
+			// The item route and the record page exist exactly where read was offered.
+			for _, asked := range []string{res.Schema.Path + "/" + rowID.String(), res.Screen + "/" + rowID.String()} {
+				if code, _ := call(t, router, http.MethodGet, asked, ""); (code == http.StatusOK) != tc.record {
+					t.Errorf("GET %s = %d, want served = %v", asked, code, tc.record)
+				}
+			}
+		})
 	}
 }
 
+// listShell is the shell every page case here mounts its screens in: a frame that
+// adds nothing, so the page's own markup is what the case reads.
+func listShell() page.Shell {
+	return page.Shell{Tag: "admin", Frame: func(_ context.Context, _ page.Request, body []g.Node) g.Node {
+		return g.Group(body)
+	}}
+}
+
+// TestAGuardSpelledTwiceRefusesToMount refuses the doubling rather than choosing
+// between the two spellings of one guard: the rule is about fields, so the identical
+// permission beside a declaration of the same grant is the same mistake — two places
+// to keep honest about one fact, and whichever a reader consults first decides.
 func TestAGuardSpelledTwiceRefusesToMount(t *testing.T) {
 	both := spec
 	both.ReadAuth = httpx.SignedIn()
 	refusesToMount(t, both, "declares ReadAuth and the permission")
+
+	alike := spec
+	alike.ReadAuth = httpx.Permission("task:read")
+	refusesToMount(t, alike, `declares ReadAuth and the permission "task:read"`)
+
+	written := spec
+	written.WriteAuth = httpx.Permission("task:write")
+	refusesToMount(t, written, `declares WriteAuth and the permission "task:write"`)
 
 	operator := spec
 	operator.Read = ""
 	operator.ReadAuth = httpx.OperatorPermission("task:read")
 	operator.OperatorRead = true
 	refusesToMount(t, operator, "declares ReadAuth with OperatorRead")
+
+	operatorWrite := spec
+	operatorWrite.Write = ""
+	operatorWrite.WriteAuth = httpx.OperatorPermission("task:write")
+	operatorWrite.OperatorWrite = true
+	refusesToMount(t, operatorWrite, "declares WriteAuth with OperatorWrite")
 }
 
 func TestAPublicSpecRefusesToMount(t *testing.T) {
@@ -464,21 +517,120 @@ func TestAPublicSpecRefusesToMount(t *testing.T) {
 	refusesToMount(t, public, "ReadAuth is public")
 }
 
-// TestAPlainPermissionInReadAuthRefusesToMountAndOneNeedingAFeatureDoesNot keeps
-// one spelling of a plain grant (the Spec's own Read and Write fields) and gives
-// the declaration the one thing the shorthand cannot say: the grant *and* the
-// plan feature it belongs to.
-func TestAPlainPermissionInReadAuthRefusesToMountAndOneNeedingAFeatureDoesNot(t *testing.T) {
-	plain := spec
-	plain.Read = ""
-	plain.ReadAuth = httpx.Permission("task:read")
-	refusesToMount(t, plain, "ReadAuth names a plain permission")
+// TestEverySpellingOfOneGuardAnswersOneAuth mounts one guard every way it can be
+// stated and asks what guard this is of the registered resource, of the canonical
+// field registration writes the answer into, and of the OpenAPI operation beside the
+// route. The grant kit/app cross-checks against the module manifest is read off those
+// same operations, so it is read here too: an operator grant declared as
+// httpx.OperatorPermission reaches that gate saying it is the operator's, which is
+// what makes the flag and the declaration one fact rather than two.
+func TestEverySpellingOfOneGuardAnswersOneAuth(t *testing.T) {
+	for _, guard := range []struct {
+		name     string
+		want     string
+		grant    tenancy.Grant
+		legacy   func(s *rest.Spec[*Task], permission string)
+		declared func(s *rest.Spec[*Task], permission string)
+	}{
+		{
+			name:   "a tenant's grant",
+			want:   "permission task:read",
+			grant:  tenancy.Grant{Permission: "task:read"},
+			legacy: func(s *rest.Spec[*Task], p string) { s.Read, s.Write = p, p },
+			declared: func(s *rest.Spec[*Task], p string) {
+				s.Read, s.Write = "", ""
+				s.ReadAuth, s.WriteAuth = httpx.Permission(p), httpx.Permission(p)
+			},
+		},
+		{
+			name:  "the operator's grant",
+			want:  "operator_permission task:read",
+			grant: tenancy.Grant{Permission: "task:read", Operator: true},
+			legacy: func(s *rest.Spec[*Task], p string) {
+				s.Read, s.Write, s.OperatorRead, s.OperatorWrite = p, p, true, true
+			},
+			declared: func(s *rest.Spec[*Task], p string) {
+				s.Read, s.Write = "", ""
+				s.ReadAuth, s.WriteAuth = httpx.OperatorPermission(p), httpx.OperatorPermission(p)
+			},
+		},
+	} {
+		for _, spelling := range []struct {
+			name    string
+			declare func(s *rest.Spec[*Task], permission string)
+		}{
+			{"the permission and its flag", guard.legacy},
+			{"the declaration", guard.declared},
+		} {
+			t.Run(guard.name+" spelled as "+spelling.name, func(t *testing.T) {
+				// Create is the one generic write a guard that names no grant could
+				// not stand behind, and it is not what this case asks about, so the
+				// Spec mounts the two reads and it.
+				only := spec
+				only.Operations = []httpx.CRUD{rest.List, rest.Read, rest.Create}
+				spelling.declare(&only, "task:read")
+				api, _, _ := mount(t, only)
+				res := api.Resources()[0]
+				for _, side := range []struct {
+					verb      string
+					answer    httpx.Auth
+					canonical httpx.Auth
+				}{
+					{"list", res.ReadAuth(), res.ReadBy},
+					{"create", res.WriteAuth(), res.WriteBy},
+				} {
+					if side.answer.String() != guard.want {
+						t.Errorf("the resource's %s guard is %s, want %s", side.verb, side.answer, guard.want)
+					}
+					if !side.canonical.Declared() {
+						t.Errorf("the registered resource holds no %s declaration, so every reader re-derives it", side.verb)
+					}
+					op := recorded(t, api, "tasks-task-"+side.verb)
+					if op == nil {
+						t.Fatalf("tasks-task-%s is not mounted", side.verb)
+					}
+					published, _ := op.Extensions[httpx.AuthExtension].(httpx.Auth)
+					if published.String() != guard.want {
+						t.Errorf("the %s operation publishes %s, want %s", side.verb, published, guard.want)
+					}
+				}
+				if !slices.Contains(api.Required(), guard.grant) {
+					t.Errorf("the mounted routes require %+v, want %+#v among them", api.Required(), guard.grant)
+				}
+			})
+		}
+	}
+}
 
+// TestAPlainPermissionSpelledOnceMountsTheWorkspace is the declared spelling of an
+// ordinary grant: the answer is the grant, the route stays in the workspace, the
+// grant is still the question. What this case replaces refused the shape for naming
+// a permission the shorthand could have named — one guard with two spellings, which
+// TestAGuardSpelledTwiceRefusesToMount is the refusal of.
+func TestAPlainPermissionSpelledOnceMountsTheWorkspace(t *testing.T) {
+	declared := spec
+	declared.Read = ""
+	declared.ReadAuth = httpx.Permission("task:read")
+	api, router, _ := mountAs(t, declared, member{"task:read": true})
+	at := api.Surfaces("tasks").App.Path(spec.Path)
+	if res := api.Resources()[0]; res.Schema.Path != at || res.ReadAuth().String() != "permission task:read" {
+		t.Errorf("the declared guard answers as %s at %s, want the permission it declares in the workspace", api.Resources()[0].ReadAuth(), at)
+	}
+	if code, body := call(t, router, http.MethodGet, at, ""); code != http.StatusOK {
+		t.Errorf("a holder of the declared permission read the list at %d %s, want 200", code, body)
+	}
+	_, refusing, _ := mountAs(t, declared, member{})
+	if code, body := call(t, refusing, http.MethodGet, at, ""); code != http.StatusForbidden {
+		t.Errorf("a member holding nothing read the list at %d %s, want %d", code, body, http.StatusForbidden)
+	}
+
+	// The declaration also says the plan feature the grant belongs to, which is the
+	// one thing the permission shorthand cannot say and the reason it exists.
 	featured := spec
 	featured.Read = ""
 	featured.ReadAuth = httpx.Permission("task:read").Needing("projects")
-	api, router, _ := mountPlain(t, featured, caller{})
-	op := recorded(t, api, "tasks-task-list")
+	planned, plannedRouter, _ := mountPlain(t, featured, caller{})
+	op := recorded(t, planned, "tasks-task-list")
 	if op == nil {
 		t.Fatal("the list route is gone")
 	}
@@ -486,28 +638,59 @@ func TestAPlainPermissionInReadAuthRefusesToMountAndOneNeedingAFeatureDoesNot(t 
 	if auth.String() != "permission task:read" || auth.Feature() != "projects" {
 		t.Errorf("the route declares %s needing %q, want the grant and the feature the Spec named", auth, auth.Feature())
 	}
-	if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK {
-		t.Errorf("a caller the grant and the plan both admit read the list at %d %s", code, body)
+	if code, body := call(t, plannedRouter, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK {
+		t.Errorf("a caller the grant and the plan both admit read the list at %d %s, want 200", code, body)
 	}
 }
 
-// TestAnOperatorPermissionDeclarationNamesBothFields holds R6's other half to its
-// sentence. An operator grant has a shorthand as well — the permission *and* its
-// operator flag, which is the spelling kit/app cross-checks against the module
-// manifest — so the declared spelling is refused like the plain one, beside the
-// flag or without it. What this case guards is the wording: a refusal that named
-// only the permission would send an author to the customer's surface carrying the
-// operator's grant, with the boundary left to a flag beside it.
-func TestAnOperatorPermissionDeclarationNamesBothFields(t *testing.T) {
-	read := spec
-	read.Read = ""
-	read.ReadAuth = httpx.OperatorPermission("task:read")
-	refusesToMount(t, read, "say it with Read and OperatorRead")
-
-	write := spec
-	write.Write = ""
-	write.WriteAuth = httpx.OperatorPermission("task:write")
-	refusesToMount(t, write, "say it with Write and OperatorWrite")
+// TestAnOperatorPermissionSpelledOnceMountsTheControlPlane is the declared spelling
+// of a grant the installation owns, held beside the flag spelling, address for
+// address and status for status: the two are one fact, and an author has to be free
+// to write either — which is only true if nothing about the route depends on which.
+func TestAnOperatorPermissionSpelledOnceMountsTheControlPlane(t *testing.T) {
+	var saw []string
+	for _, spelling := range []struct {
+		name    string
+		declare func(s *rest.Spec[*Task])
+	}{
+		{"the permission and its flags", func(s *rest.Spec[*Task]) {
+			s.Read, s.Write = "task:read", "task:write"
+			s.OperatorRead, s.OperatorWrite = true, true
+		}},
+		{"the declaration", func(s *rest.Spec[*Task]) {
+			s.Read, s.Write = "", ""
+			s.ReadAuth, s.WriteAuth = httpx.OperatorPermission("task:read"), httpx.OperatorPermission("task:write")
+		}},
+	} {
+		t.Run(spelling.name, func(t *testing.T) {
+			private := spec
+			spelling.declare(&private)
+			reader := &operatorReader{tenant: tenancy.Tenant{ID: uuid.New(), Operator: true}, allow: true}
+			api, router, _ := mountAs(t, private, reader)
+			res := api.Resources()[0]
+			if !strings.Contains(res.Schema.Path, "/ops/") {
+				t.Errorf("an operator read answers at %s, want the control plane", res.Schema.Path)
+			}
+			if code, body := call(t, router, http.MethodGet, res.Schema.Path, ""); code != http.StatusOK {
+				t.Fatalf("the operator's list = %d %s, want 200", code, body)
+			}
+			// The workspace address of an operator resource serves nothing: the
+			// surface follows the guard, not the module's preference.
+			if code, _ := call(t, router, http.MethodGet, api.Surfaces("tasks").App.Path(spec.Path), ""); code != http.StatusNotFound {
+				t.Errorf("the workspace address of an operator resource = %d, want %d", code, http.StatusNotFound)
+			}
+			if !slices.Contains(api.Required(), tenancy.Grant{Permission: "task:read", Operator: true}) {
+				t.Errorf("the mounted routes require %+v, want the operator's grant among them", api.Required())
+			}
+			saw = append(saw, strings.Join([]string{
+				res.Schema.Path, res.WritePath, res.ReadAuth().String(), res.WriteAuth().String(),
+				fmt.Sprint(api.Required()),
+			}, "\n"))
+		})
+	}
+	if len(saw) != 2 || saw[0] != saw[1] {
+		t.Errorf("the two spellings of one operator grant answered differently:\n%s\n----\n%s", saw[0], saw[1])
+	}
 }
 
 // TestASignedInWriteGuardRefusesTheGenericWrites closes the gap the brief opens:
