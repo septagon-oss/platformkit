@@ -74797,6 +74797,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/guided_progress_scope_names_the_caller_the_page_answers_test.go",
+   "id": "ui/screens/guided_progress_scope_names_the_caller_the_page_answers_test.go#TestAGuidedProgressScopeNamesTheCallerThePageAnswers",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedProgressScopeNamesTheCallerThePageAnswers",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/guided_rest_offer_names_the_seconds_its_button_adds_test.go",
    "id": "ui/screens/guided_rest_offer_names_the_seconds_its_button_adds_test.go#TestTheRestOfferNamesTheSecondsItsButtonAdds",
    "kind": "go",
@@ -84060,7 +84079,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2289,
+  "files": 2290,
   "forge_runs": [
    408,
    413,
@@ -84094,7 +84113,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3639,
+   "behaviour": 3640,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84113,9 +84132,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4261,
+  "rows": 4262,
   "tiers": {
-   "merge": 2634,
+   "merge": 2635,
    "nightly": 110,
    "push": 1517
   },
@@ -84123,13 +84142,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2044,
+   "keep": 2045,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3875,
+   "keep": 3876,
    "keep-rewrite": 170,
    "merge": 216
   }
