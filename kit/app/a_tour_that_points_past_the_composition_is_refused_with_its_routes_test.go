@@ -18,14 +18,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tour"
 )
 
-// pointing declares the tour the composition never published a screen for. The
-// step names a control and the write behind it, so the refusal says which of the
-// two facts the composition lacks.
+// pointing declares the tour the composition never published a screen for, and
+// mounts its one route on the workspace: a composition that mounts nothing there
+// is refused as not a product above the declaration gates, so its tours go unasked.
 func pointing() module.Module {
 	return module.Module{
 		Name: "feature",
 		Routes: func(s httpx.Surfaces) {
-			httpx.Register(s.Public, huma.Operation{OperationID: "feature-ping", Method: http.MethodGet, Path: "/ping"},
+			httpx.Register(s.App, huma.Operation{OperationID: "feature-ping", Method: http.MethodGet, Path: "/ping"},
 				httpx.Public(), func(context.Context, *struct{}) (*helloOut, error) { return &helloOut{}, nil })
 		},
 		Tours: []tour.Tour{{
