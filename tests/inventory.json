@@ -19110,6 +19110,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/view/a_field_whose_row_carries_a_go_value_reads_as_its_own_digits_test.go",
+   "id": "kit/entity/view/a_field_whose_row_carries_a_go_value_reads_as_its_own_digits_test.go#TestAFieldWhoseRowCarriesAGoValueReadsAsItsOwnDigits",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAFieldWhoseRowCarriesAGoValueReadsAsItsOwnDigits",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/view/a_fields_declared_help_reaches_its_control_its_field_and_its_argument_test.go",
    "id": "kit/entity/view/a_fields_declared_help_reaches_its_control_its_field_and_its_argument_test.go#TestAFieldsDeclaredHelpReachesItsControlItsFieldAndItsArgument",
    "kind": "go",
@@ -19153,6 +19172,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestAFormStartsAnAmountAtTheRowOrAtItsDeclaredDefault",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/entity/view/a_list_field_spells_each_element_in_the_kind_its_type_declares_test.go",
+   "id": "kit/entity/view/a_list_field_spells_each_element_in_the_kind_its_type_declares_test.go#TestAListFieldSpellsEachElementInTheKindItsTypeDeclares",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAListFieldSpellsEachElementInTheKindItsTypeDeclares",
    "needs_db": false,
    "pkg": "kit/entity/view",
    "round_named": false,
@@ -87261,7 +87299,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2363,
+  "files": 2365,
   "forge_runs": [
    408,
    413,
@@ -87295,7 +87333,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3802,
+   "behaviour": 3804,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87314,23 +87352,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4428,
+  "rows": 4430,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1646
+   "push": 1648
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2117,
+   "keep": 2119,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4041,
+   "keep": 4043,
    "keep-rewrite": 170,
    "merge": 217
   }
