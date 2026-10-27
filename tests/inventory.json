@@ -3720,6 +3720,25 @@
    "area": "apps",
    "evidence": "not-round-named",
    "file": "apps/platformkit/first_use_receipt_test.go",
+   "id": "apps/platformkit/first_use_receipt_test.go#TestEveryReceiptNamesARevisionTheTreeThatQuotesItHolds",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestEveryReceiptNamesARevisionTheTreeThatQuotesItHolds",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/first_use_receipt_test.go",
    "id": "apps/platformkit/first_use_receipt_test.go#TestTheFirstUseQuotedFiguresAreTheReceiptsOwn",
    "kind": "go",
    "layer": "composition",
@@ -8315,6 +8334,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/start_first_use_test.go",
+   "id": "apps/platformkit/start_first_use_test.go#TestTheBindLostAfterThePreflightSaysTheInstallationStands",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheBindLostAfterThePreflightSaysTheInstallationStands",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/start_test.go",
    "id": "apps/platformkit/start_test.go#TestStartConfigCarriesThePortsAndTheDataDirectory",
    "kind": "go",
@@ -9013,6 +9051,25 @@
    "unique_lines": null,
    "unique_reach": [],
    "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/the_address_the_run_binds_meets_the_readme_promise_test.go",
+   "id": "apps/platformkit/the_address_the_run_binds_meets_the_readme_promise_test.go#TestTheAddressTheRunBindsMeetsTheReadMePromise",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheAddressTheRunBindsMeetsTheReadMePromise",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
    "verdict": "keep"
   },
   {
@@ -94288,7 +94345,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2594,
+  "files": 2595,
   "forge_runs": [
    408,
    413,
@@ -94323,7 +94380,7 @@
   ],
   "layers": {
    "behaviour": 4092,
-   "composition": 556,
+   "composition": 559,
    "contract": 24,
    "journey": 122
   },
@@ -94341,9 +94398,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4794,
+  "rows": 4797,
   "tiers": {
-   "merge": 2958,
+   "merge": 2961,
    "nightly": 122,
    "push": 1714
   },
@@ -94351,13 +94408,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2349,
+   "keep": 2350,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4408,
+   "keep": 4411,
    "keep-rewrite": 170,
    "merge": 216
   }
