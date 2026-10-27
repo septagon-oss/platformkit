@@ -45574,6 +45574,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/the_trail_names_its_personal_data_part_for_the_module_it_is_test.go",
+   "id": "modules/audit/the_trail_names_its_personal_data_part_for_the_module_it_is_test.go#TestTheTrailNamesItsPersonalDataPartForTheModuleItIs",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTrailNamesItsPersonalDataPartForTheModuleItIs",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/the_trail_reaches_the_walk_whatever_order_the_plan_declares_its_modules_test.go",
    "id": "modules/audit/the_trail_reaches_the_walk_whatever_order_the_plan_declares_its_modules_test.go#TestTheTrailReachesTheWalkInEveryOrderThePlanDeclaresItsModulesIn",
    "kind": "go",
@@ -92500,7 +92519,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2550,
+  "files": 2551,
   "forge_runs": [
    408,
    413,
@@ -92534,7 +92553,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4027,
+   "behaviour": 4028,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92553,9 +92572,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4700,
+  "rows": 4701,
   "tiers": {
-   "merge": 2897,
+   "merge": 2898,
    "nightly": 121,
    "push": 1682
   },
@@ -92563,13 +92582,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2305,
+   "keep": 2306,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4314,
+   "keep": 4315,
    "keep-rewrite": 170,
    "merge": 216
   }
