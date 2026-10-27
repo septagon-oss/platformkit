@@ -70884,6 +70884,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/a_dependencys_declared_layer_refuses_an_upward_import_from_this_build_test.go",
+   "id": "tools/importgate/a_dependencys_declared_layer_refuses_an_upward_import_from_this_build_test.go#TestADependencyDeclaredLayerRefusesAnUpwardImportFromThisBuild",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestADependencyDeclaredLayerRefusesAnUpwardImportFromThisBuild",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/a_dependencys_layer_map_this_build_cannot_open_refuses_the_run_test.go",
    "id": "tools/importgate/a_dependencys_layer_map_this_build_cannot_open_refuses_the_run_test.go#TestDependencyLayerMapThisBuildCannotOpenRefusesTheRun",
    "kind": "go",
@@ -92294,7 +92313,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2540,
+  "files": 2541,
   "forge_runs": [
    408,
    413,
@@ -92328,7 +92347,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4017,
+   "behaviour": 4018,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92347,23 +92366,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4690,
+  "rows": 4691,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1699
+   "push": 1700
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2295,
+   "keep": 2296,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4304,
+   "keep": 4305,
    "keep-rewrite": 170,
    "merge": 216
   }
