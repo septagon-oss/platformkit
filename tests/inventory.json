@@ -34358,6 +34358,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/a_collection_command_guarded_in_the_copied_options_block_admits_only_its_holder_test.go",
+   "id": "kit/rest/a_collection_command_guarded_in_the_copied_options_block_admits_only_its_holder_test.go#TestACollectionCommandGuardedInTheCopiedOptionsBlockAdmitsOnlyItsHolder",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACollectionCommandGuardedInTheCopiedOptionsBlockAdmitsOnlyItsHolder",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/a_collection_page_links_only_the_addresses_it_serves_test.go",
    "id": "kit/rest/a_collection_page_links_only_the_addresses_it_serves_test.go#TestEveryAddressUnderItsOwnPathOnACollectionPageIsServed",
    "kind": "go",
@@ -91990,7 +92009,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2534,
+  "files": 2535,
   "forge_runs": [
    408,
    413,
@@ -92024,7 +92043,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4001,
+   "behaviour": 4002,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92043,9 +92062,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4674,
+  "rows": 4675,
   "tiers": {
-   "merge": 2882,
+   "merge": 2883,
    "nightly": 121,
    "push": 1671
   },
@@ -92053,13 +92072,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2289,
+   "keep": 2290,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4288,
+   "keep": 4289,
    "keep-rewrite": 170,
    "merge": 216
   }
