@@ -11,23 +11,18 @@ import (
 	"unicode/utf8"
 )
 
-// moduleLayers is the platform's one module order, lowest rank first. Rank is
-// position in this list, so a layer name means the same thing in every
-// repository that runs this gate: the order is compiled here, while each
-// repository's scripts/imports-layers.txt only assigns its own modules to a
-// name. A fifth name is a change to this list and a dependency repin, never a
-// local order.
+// moduleLayers is the platform's one module order, lowest rank first, so a layer
+// name means the same thing in every repository that runs this gate: rank is
+// position here, while each repository's scripts/imports-layers.txt only assigns
+// its own modules to a name. A fifth name is a change to this list and a
+// dependency repin, never a local order.
 //
-// platform: a capability that needs no account, no role and no person; it works
-// over a tenant id and values. identity: the module owns the account, the tenant
-// record, a person's identity, or the channel through which the platform reaches
-// a person. generic: a reusable domain capability composed over the two layers
-// below, holding no client name, sector rule, price or specialist fact. product:
-// the module's reason is an application-facing surface — a workspace, a public
-// site, a provisioning door, a person's own door.
-//
-// This order is not ADR 0016's acceptance levels and not the UI cascade layers
-// scripts/check_ui_layers.sh checks.
+// platform needs no account, no role and no person; identity owns the account,
+// the tenant record, a person's identity, or the channel the platform reaches a
+// person through; generic is a reusable capability composed over those two;
+// product's reason is an application-facing surface. The full placement rule, and
+// the disclaimer that this is neither ADR 0016's acceptance levels nor the UI
+// cascade layers, are in the package README.
 var moduleLayers = []string{"platform", "identity", "generic", "product"}
 
 // layerUnassigned reports the state of a module the build holds and the
