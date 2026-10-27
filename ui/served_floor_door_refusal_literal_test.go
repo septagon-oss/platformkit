@@ -18,11 +18,11 @@ import (
 // that of text it can read: a message held in a variable or a constant, returned by a call or joined at run time
 // is skipped without a word, and the names inside it stop being asked about while every check stays green — the
 // dead name travels unheard, which is the one thing this family exists to stop. So the reach of that guard is a
-// property of how these refusals are written, and this case holds the property rather than the advice: each
-// refusal of each guard is counted, one whose message no literal carries is named with the file and line that
-// holds it, and a guard that reports no refusal at all is refused, because a listing of guards none of which
-// speaks leaves the check beside this one agreeing with nothing. Inputs: the guard checks the advice case itself
-// lists, read only, and the same literal rule it applies to them.
+// property of how these refusals are written, so this case holds the property rather than the advice: each
+// refusal of each guard is counted, one whose message no literal carries, or whose literal carries no words,
+// is named with the file and line that holds it, and any guard that reports no refusal at all is refused,
+// because a listing of guards none of which speaks leaves the check beside this one agreeing with nothing.
+// Inputs: the guard checks the advice case itself lists, read only, and the same literal rule it uses there.
 func TestEveryDoorGuardRefusalIsWrittenWhereTheAdviceCheckReadsIt(t *testing.T) {
 	for _, guard := range doorGuardChecks(t) {
 		set := token.NewFileSet()
@@ -44,8 +44,8 @@ func TestEveryDoorGuardRefusalIsWrittenWhereTheAdviceCheckReadsIt(t *testing.T) 
 				return true
 			}
 			refusals++
-			if _, carried := joinedLiteral(call.Args[0]); !carried {
-				t.Errorf("%s reports a refusal at %s whose message no literal carries, so the check that asks whether the names in it still exist reads no text there and goes on passing over advice no declaration of this package answers: write the message as a literal, or as literals joined with +",
+			if text, carried := joinedLiteral(call.Args[0]); !carried || text == "" {
+				t.Errorf("%s reports a refusal at %s whose message no literal carries, or whose literal carries no words, so the check that asks whether the names in it still exist reads nothing there and goes on passing over advice no declaration of this package answers: write the sentence as a literal, or as literals joined with +",
 					guard, set.Position(call.Pos()))
 			}
 			return true
