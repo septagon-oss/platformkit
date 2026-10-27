@@ -19110,6 +19110,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/view/a_field_whose_author_declared_no_colour_wears_none_in_its_field_and_its_cell_test.go",
+   "id": "kit/entity/view/a_field_whose_author_declared_no_colour_wears_none_in_its_field_and_its_cell_test.go#TestAFieldWhoseAuthorDeclaredNoColourWearsNoneInItsFieldAndItsCell",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAFieldWhoseAuthorDeclaredNoColourWearsNoneInItsFieldAndItsCell",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/view/a_field_whose_row_carries_a_go_value_reads_as_its_own_digits_test.go",
    "id": "kit/entity/view/a_field_whose_row_carries_a_go_value_reads_as_its_own_digits_test.go#TestAFieldWhoseRowCarriesAGoValueReadsAsItsOwnDigits",
    "kind": "go",
@@ -87394,7 +87413,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2370,
+  "files": 2371,
   "forge_runs": [
    408,
    413,
@@ -87428,7 +87447,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3809,
+   "behaviour": 3810,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87447,23 +87466,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4435,
+  "rows": 4436,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1653
+   "push": 1654
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2124,
+   "keep": 2125,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4048,
+   "keep": 4049,
    "keep-rewrite": 170,
    "merge": 217
   }
