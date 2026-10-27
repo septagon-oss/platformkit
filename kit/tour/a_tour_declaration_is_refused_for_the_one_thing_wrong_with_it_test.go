@@ -150,7 +150,12 @@ func TestATourDeclarationIsRefusedForTheOneThingWrongWithIt(t *testing.T) {
 			replace(t, "save", tour.Spotlight("save", "app/feature/custom/editor#action.submit",
 				tour.Content{Title: text("feature.first.step.save", "Save it"), Body: text("feature.first.step.save.body", "Saving writes the note and takes you to it.")},
 				tour.Completes(""), tour.AnchoredOptions{}))
-		}, `tour "feature.first", step "save": operation "" is not a name an operation can be mounted under; a name is non-empty and holds no control character`},
+		}, `tour "feature.first", step "save": operation "" is not a name an operation can be mounted under; a name is non-empty, valid UTF-8 and holds no control character`},
+		{"completion names an operation that is not valid UTF-8", func(t *tour.Tour) {
+			replace(t, "save", tour.Spotlight("save", "app/feature/custom/editor#action.submit",
+				tour.Content{Title: text("feature.first.step.save", "Save it"), Body: text("feature.first.step.save.body", "Saving writes the note and takes you to it.")},
+				tour.Completes("feature-note\xff-created"), tour.AnchoredOptions{}))
+		}, `tour "feature.first", step "save": operation "feature-note\xff-created" is not a name an operation can be mounted under; a name is non-empty, valid UTF-8 and holds no control character`},
 		{"trigger sits on the public surface", func(t *tour.Tour) {
 			start := tour.OnVisit("public/feature/custom/welcome")
 			t.Automatic = &start

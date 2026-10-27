@@ -252,12 +252,12 @@ func (s Step) interactionProblems(id ID) []string {
 
 func (s Step) operationProblems(id ID) []string {
 	// screen holds a published operation id to this same segment rule, so the
-	// sentence below states all this check can see and existence stays the
-	// composition's to answer.
+	// sentence below states the whole of what this check can see and existence
+	// stays the composition's to answer.
 	if _, err := screen.Segment(string(s.advance.operation)); err == nil {
 		return nil
 	}
-	return []string{fmt.Sprintf("tour %q, step %q: operation %q is not a name an operation can be mounted under; a name is non-empty and holds no control character", id, s.id, s.advance.operation)}
+	return []string{fmt.Sprintf("tour %q, step %q: operation %q is not a name an operation can be mounted under; a name is non-empty, valid UTF-8 and holds no control character", id, s.id, s.advance.operation)}
 }
 
 func (t Tour) triggerProblems() []string {
