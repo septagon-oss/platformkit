@@ -229,7 +229,11 @@ func NewChecked(deps Deps) (module.Module, error) {
 		if svc != nil {
 			return module.Module{}, errors.New("task: configure policy on the shared service or supply Policy, not both")
 		}
-		svc = NewServiceWithPolicy(deps.Policy)
+		policyService, err := NewServiceWithPolicyChecked(deps.Policy)
+		if err != nil {
+			return module.Module{}, err
+		}
+		svc = policyService
 	}
 	if svc == nil {
 		svc = NewService()
