@@ -19205,6 +19205,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/view/a_list_means_the_same_in_a_field_a_cell_and_a_control_test.go",
+   "id": "kit/entity/view/a_list_means_the_same_in_a_field_a_cell_and_a_control_test.go#TestAListMeansTheSameInAFieldACellAndAControl",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAListMeansTheSameInAFieldACellAndAControl",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/view/aggregate_always_written_test.go",
    "id": "kit/entity/view/aggregate_always_written_test.go#TestAPageWritesAnEmptyAggregateWhereItsKindShowsNothing",
    "kind": "go",
@@ -87318,7 +87337,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2366,
+  "files": 2367,
   "forge_runs": [
    408,
    413,
@@ -87352,7 +87371,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3805,
+   "behaviour": 3806,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87371,23 +87390,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4431,
+  "rows": 4432,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1649
+   "push": 1650
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2120,
+   "keep": 2121,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4044,
+   "keep": 4045,
    "keep-rewrite": 170,
    "merge": 217
   }
