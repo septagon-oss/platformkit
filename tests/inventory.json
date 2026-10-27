@@ -75006,6 +75006,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/guided_walk_with_every_set_recorded_offers_the_finish_test.go",
+   "id": "ui/screens/guided_walk_with_every_set_recorded_offers_the_finish_test.go#TestAGuidedWalkWithEverySetRecordedOffersTheFinishAndNotItsFirstSet",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedWalkWithEverySetRecordedOffersTheFinishAndNotItsFirstSet",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/hints_test.go",
    "id": "ui/screens/hints_test.go#TestEveryHintSerialisesToTheFrozenJSON",
    "kind": "go",
@@ -84155,7 +84174,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2294,
+  "files": 2295,
   "forge_runs": [
    408,
    413,
@@ -84189,7 +84208,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3644,
+   "behaviour": 3645,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84208,9 +84227,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4266,
+  "rows": 4267,
   "tiers": {
-   "merge": 2639,
+   "merge": 2640,
    "nightly": 110,
    "push": 1517
   },
@@ -84218,13 +84237,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2049,
+   "keep": 2050,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3880,
+   "keep": 3881,
    "keep-rewrite": 170,
    "merge": 216
   }
