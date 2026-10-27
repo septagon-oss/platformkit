@@ -74664,6 +74664,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/guided_page_buys_its_sheet_at_the_address_its_bytes_name_test.go",
+   "id": "ui/screens/guided_page_buys_its_sheet_at_the_address_its_bytes_name_test.go#TestTheGuidedPageBuysItsSheetAtTheAddressItsBytesName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheGuidedPageBuysItsSheetAtTheAddressItsBytesName",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/guided_page_loads_the_countdown_whose_hooks_it_carries_test.go",
    "id": "ui/screens/guided_page_loads_the_countdown_whose_hooks_it_carries_test.go#TestTheGuidedPagesLoadTheCountdownTheyRunAndWriteNoHookItNeverReaches",
    "kind": "go",
@@ -83946,7 +83965,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2283,
+  "files": 2284,
   "forge_runs": [
    408,
    413,
@@ -83980,7 +83999,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3633,
+   "behaviour": 3634,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83999,9 +84018,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4255,
+  "rows": 4256,
   "tiers": {
-   "merge": 2628,
+   "merge": 2629,
    "nightly": 110,
    "push": 1517
   },
@@ -84009,13 +84028,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2038,
+   "keep": 2039,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3869,
+   "keep": 3870,
    "keep-rewrite": 170,
    "merge": 216
   }
