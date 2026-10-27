@@ -42497,6 +42497,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/tour/the_operation_name_refusal_states_every_rule_it_delegates_to_test.go",
+   "id": "kit/tour/the_operation_name_refusal_states_every_rule_it_delegates_to_test.go#TestTheOperationNameRefusalStatesEveryRuleItDelegatesTo",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheOperationNameRefusalStatesEveryRuleItDelegatesTo",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 6,
    "evidence": "reaches nothing its sibling trace_test.go does not reach",
    "file": "kit/trace/callers_trace_state_arrives_bounded_test.go",
@@ -93286,7 +93305,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2571,
+  "files": 2572,
   "forge_runs": [
    408,
    413,
@@ -93320,7 +93339,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4060,
+   "behaviour": 4061,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93339,23 +93358,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4741,
+  "rows": 4742,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1704
+   "push": 1705
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2326,
+   "keep": 2327,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4355,
+   "keep": 4356,
    "keep-rewrite": 170,
    "merge": 216
   }
