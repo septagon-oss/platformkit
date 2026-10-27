@@ -135,10 +135,12 @@ func TestASpecMountedBothWaysMountsTheSameCommand(t *testing.T) {
 	}
 }
 
-// TestACommandSpecNamingItsRouteTwiceRefusesToMount refuses a CommandSpec that
-// states the guard or the collection route in Options as well as at the top level.
-// Those two facts decide which route exists, so a declaration naming both is a
-// command whose route two readers could disagree about.
+// TestACommandSpecNamingItsRouteTwiceRefusesToMount refuses a CommandSpec whose
+// Options answers its guard or its collection route differently from the field
+// above it. Those two facts decide which route exists, so a declaration answering
+// them two ways is a command whose route two readers could disagree about — and it
+// is refused before a route exists. A CommandSpec whose Options agrees is a command
+// stated once, and TestACommandSpecStatingItsRouteInEitherFieldMountsIt holds that.
 func TestACommandSpecNamingItsRouteTwiceRefusesToMount(t *testing.T) {
 	for _, twice := range []struct {
 		name string
@@ -149,6 +151,7 @@ func TestACommandSpecNamingItsRouteTwiceRefusesToMount(t *testing.T) {
 			name: "the guard",
 			cmd: rest.CommandSpec[publishBody]{
 				Verb: "publish", Summary: "Publish a note", Doc: "Makes the note visible to the tenant.",
+				Auth:    httpx.OperatorPermission("task:write"),
 				Options: rest.CommandOptions{Auth: httpx.SignedIn()},
 			},
 			want: "states its guard twice",
@@ -157,8 +160,7 @@ func TestACommandSpecNamingItsRouteTwiceRefusesToMount(t *testing.T) {
 			name: "the collection route",
 			cmd: rest.CommandSpec[publishBody]{
 				Verb: "publish", Summary: "Publish a note", Doc: "Makes the note visible to the tenant.",
-				Collection: true,
-				Options:    rest.CommandOptions{Collection: true},
+				Options: rest.CommandOptions{Collection: true},
 			},
 			want: "states its route twice",
 		},
@@ -179,5 +181,87 @@ func TestACommandSpecNamingItsRouteTwiceRefusesToMount(t *testing.T) {
 					func(context.Context, db.Tx[db.Tenant], uuid.UUID, publishBody) (*Task, error) { return nil, nil })
 			})
 		})
+	}
+}
+
+// publishesItsOwnRow is the command the three spellings below mount: it takes the
+// row the path names and writes the note it was given.
+func publishesItsOwnRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in publishBody) (*Task, error) {
+	return publishNote(ctx, tx, id, in)
+}
+
+// TestACommandSpecStatingItsGuardInEitherFieldMountsIt mounts one command three
+// ways: with its guard at the top level, with the same guard stated in the Options
+// the positional form used, and with it stated in both fields. Each states the one
+// fact the guard is, so each mounts one command at one address under one guard. The
+// middle row is what a migration from rest.Command looks like — an author who moves
+// to Mount and keeps the CommandOptions they already wrote has not stated anything
+// twice — which is why the rule for a guard is agreement rather than silence about
+// the deprecated field. The collection route is not among these three because a bool
+// cannot say "nothing" differently from "the row's route", and its refusal is held
+// above.
+func TestACommandSpecStatingItsGuardInEitherFieldMountsIt(t *testing.T) {
+	const doc = "Makes the note visible to the tenant."
+	spoken := rest.CommandOptions{Auth: httpx.SignedIn()}
+	oneCommand := map[string][2]any{}
+	for _, spelled := range []struct {
+		name string
+		cmd  rest.CommandSpec[publishBody]
+	}{
+		{"at the top level", rest.CommandSpec[publishBody]{
+			Verb: "publish", Summary: "Publish a note", Doc: doc, Auth: httpx.SignedIn(),
+		}},
+		{"inside the options the positional form used", rest.CommandSpec[publishBody]{
+			Verb: "publish", Summary: "Publish a note", Doc: doc, Options: spoken,
+		}},
+		{"in both fields, answering the same", rest.CommandSpec[publishBody]{
+			Verb: "publish", Summary: "Publish a note", Doc: doc,
+			Auth: httpx.SignedIn(), Options: spoken,
+		}},
+	} {
+		t.Run(spelled.name, func(t *testing.T) {
+			rowID := uuid.New()
+			// A member holding nothing runs this command: the guard the author stated is
+			// httpx.SignedIn(), and the Spec's write permission is not what admits them.
+			api, router, admin := mountAs(t, spec, member{}, func(api *httpx.API) {
+				rest.Mount(api.Surfaces(spec.Module), spec, spelled.cmd, publishesItsOwnRow)
+			})
+			if _, err := admin.ExecContext(t.Context(),
+				"INSERT INTO rest_tasks (id, tenant_id, title) VALUES ($1, $2, $3)", rowID, acme.ID, "a draft"); err != nil {
+				t.Fatal(err)
+			}
+			op := recorded(t, api, "tasks-task-publish")
+			if op == nil {
+				t.Fatal("the command mounted no route")
+			}
+			at := "/api/v1/tasks/task/" + rowID.String() + "/publish"
+			if code, body := call(t, router, http.MethodPost, at, `{"note":"written once"}`); code != http.StatusOK ||
+				!strings.Contains(body, "written once") {
+				t.Fatalf("POST %s = %d %s, want 200 to a caller holding no permission", at, code, body)
+			}
+			commands := api.Resources()[0].Commands
+			if len(commands) != 1 {
+				t.Fatalf("the resource records %d commands, want the one", len(commands))
+			}
+			mounted := commands[0]
+			if got := mounted.Auth.String(); got != "signed_in" {
+				t.Errorf("the command is guarded by %s, want the declared signed_in", got)
+			}
+			if mounted.Collection || mounted.Endpoint != "/api/v1/tasks/task/{id}/publish" {
+				t.Errorf("the command is mounted at %s with Collection %t, want the row's route",
+					mounted.Endpoint, mounted.Collection)
+			}
+			mounted.Execute, mounted.Run = nil, nil
+			oneCommand[spelled.name] = [2]any{*op, mounted}
+		})
+	}
+	first := oneCommand["at the top level"]
+	for name, shape := range oneCommand {
+		for _, i := range []int{0, 1} {
+			if !reflect.DeepEqual(shape[i], first[i]) {
+				t.Errorf("the command spelled %s is not the command mounted at the top level:\n%#v\nagainst\n%#v",
+					name, shape[i], first[i])
+			}
+		}
 	}
 }

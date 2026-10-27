@@ -45,6 +45,9 @@ type CommandOptions struct {
 	// administrator owns and wrong for one somebody runs on their own thing:
 	// adding an item to a basket is httpx.SignedIn(), and the alternative was a
 	// second permission every tenant would have to grant to every shopper.
+	// Beside a CommandSpec this is the deprecated spelling of CommandSpec.Auth:
+	// stated here alone it still mounts, because a guard names itself, and stated
+	// two different ways across the two fields the mount refuses.
 	Auth httpx.Auth
 
 	// MapArgs declares named map arguments and their permitted keys for generated
@@ -53,7 +56,12 @@ type CommandOptions struct {
 	MapArgs *MapArgs
 
 	// Collection mounts POST {Path}/{verb} instead of a row route and passes
-	// uuid.Nil to run, for commands that find or create their own row.
+	// uuid.Nil to run, for commands that find or create their own row. Beside a
+	// CommandSpec this is the deprecated spelling of CommandSpec.Collection, and
+	// unlike the guard it cannot be stated here alone: false is how "the row's
+	// route" and "nothing said" are both spelled, so a true the CommandSpec does
+	// not also say is refused at the mount site rather than guessed at, since a
+	// guess would move the command off the path its declaration names.
 	Collection bool
 
 	// Present is this command as its author describes it: the word on the button,
@@ -68,15 +76,12 @@ type CommandOptions struct {
 // is, what the document says about it, what it publishes and who may call it.
 //
 // What sits here is what decides *which* route exists — the verb, whether the
-// path carries an id, and the guard the route is mounted under — beside what the
-// document says about that route. How the command is drawn and performed stays
-// in Options, which is why the two facts that pick a route do not stay there as
-// well: a command that states its route in two places states it twice.
-//
-// The zero Auth is the Spec's write declaration, which is right for a command
-// that moves a row an administrator owns and wrong for one somebody runs on their
-// own thing: adding an item to a basket is httpx.SignedIn(), and the alternative
-// was a second permission every tenant would have to grant to every shopper.
+// path carries an id, and the guard the route is mounted under. How the command
+// is drawn and performed stays in Options, along with the deprecated spelling of
+// the guard, which still mounts: those two facts pick the route, and Options may
+// pick it no other way than the CommandSpec does. A zero Auth is the Spec's write
+// declaration — right for a command that moves a row an administrator owns,
+// wrong for one somebody runs on their own thing, which is httpx.SignedIn().
 type CommandSpec[I any] struct {
 	// Verb is the route's last path segment.
 	Verb string
@@ -92,9 +97,10 @@ type CommandSpec[I any] struct {
 	// Collection mounts POST {Path}/{verb} instead of a row route and passes
 	// uuid.Nil to run, for commands that find or create their own row.
 	Collection bool
-	// Options holds the facts about how the command is drawn and performed.
-	// Its Auth and Collection are the deprecated spellings of the two above and
-	// are refused beside a CommandSpec, which has no use for a second copy.
+	// Options holds the facts about how the command is drawn and performed. Its
+	// Auth is a second word for the guard above and mounts beside it; its
+	// Collection is refused beside a CommandSpec, which is the only field that
+	// can say which route this command is.
 	Options CommandOptions
 }
 
@@ -102,10 +108,10 @@ type CommandSpec[I any] struct {
 // row the path names, or on the collection when Collection says the command finds
 // its own row, under the declared guard or the Spec's write guard, inside the
 // request's own transaction. An absent body uses declared defaults or zero I; run
-// validates domain inputs. Failures use Fault. A command whose route is stated
-// twice, or whose arguments the schema cannot describe, panics at this site
-// before anything is mounted. Spec's Mount method mounts the five CRUD routes
-// beside such a command; this one mounts the command.
+// validates domain inputs. Failures use Fault. A command whose guard or route two
+// fields answer differently, or whose arguments the schema cannot describe, panics
+// at this site before anything is mounted. Spec's Mount method mounts the five CRUD
+// routes beside such a command; this one mounts the command.
 //
 // Command is this function called with positional parameters, and both forms run
 // through one body. Server-owned argument fields panic before registration; use
@@ -131,29 +137,40 @@ func MountResult[I any, T crud.Entity, O any](surfaces httpx.Surfaces, spec Spec
 }
 
 // declaredCommand is a CommandSpec as registerCommand reads it: the two facts that
-// pick the route are taken from the top level, where this declaration keeps them,
-// and a value that also names either one in Options is refused here, in the same
-// voice as every other wiring rule of this package and before a route exists.
+// pick the route are read out of the declaration, and a value that names either one
+// two different ways is refused here, in the same voice as every other wiring rule
+// of this package and before a route exists.
 func declaredCommand[I any, T crud.Entity](spec Spec[T], cmd CommandSpec[I]) CommandOptions {
 	if bad := cmd.routeFault(); bad != "" {
 		panic("rest: command " + cmd.Verb + " on " + spec.Module + "." + spec.Entity + ": " + bad)
 	}
 	opts := cmd.Options
-	opts.Auth, opts.Collection = cmd.Auth, cmd.Collection
+	// The guard may be stated in either field and the refusal above leaves one
+	// answer per fact, so it is taken from whichever states it: the top level is
+	// where a CommandSpec keeps it, Options is where the positional form found it.
+	if !opts.Auth.Declared() {
+		opts.Auth = cmd.Auth
+	}
+	opts.Collection = cmd.Collection
 	return opts
 }
 
-// routeFault names what this declaration says twice about its own route, and ""
-// when it says each fact once. A bool cannot tell "unset" from "false", so the
-// rule is that Options says nothing about the route at all: the two facts belong
-// to the CommandSpec, and the deprecated positional form lifts them here rather
-// than leaving a copy behind.
+// routeFault names what this declaration answers two different ways about its own
+// route, and "" when every reader of it gets one answer. The guard is comparable,
+// so Options may state it alone: a guard names itself, and the positional form
+// found it in Options. A bool cannot tell "unset" from false, so the collection
+// route cannot: Options.Collection is the deprecated spelling of a fact this
+// declaration owns, and a true the CommandSpec does not also say is indistinguishable
+// from one contradicted at the top level, where guessing would move the command off
+// its own path. No adapter produces either refusal, which is why every command
+// already written in this repository mounts unchanged.
 func (c CommandSpec[I]) routeFault() string {
 	switch {
-	case c.Options.Auth.Declared():
-		return "states its guard twice: CommandSpec.Auth is who may run it, so clear Options.Auth"
-	case c.Options.Collection:
-		return "states its route twice: CommandSpec.Collection decides whether the path carries an id, so clear Options.Collection"
+	case c.Auth.Declared() && c.Options.Auth.Declared() && c.Auth != c.Options.Auth:
+		return "states its guard twice: CommandSpec.Auth is " + c.Auth.String() +
+			" and Options.Auth is " + c.Options.Auth.String() + "; a command's guard is stated once"
+	case c.Options.Collection && !c.Collection:
+		return "states its route twice: Options.Collection mounts the collection route where CommandSpec.Collection mounts the row's; a command's route is stated once"
 	}
 	return ""
 }

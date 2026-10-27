@@ -172,22 +172,27 @@ either lands the route on the surface the answer names and reaches `kit/app`'s
 manifest cross-check with its operator fact intact. A command is now declared the
 same way once, as `CommandSpec{Verb, Summary, Doc, Emits, Auth, Collection,
 Options}` handed to `Mount` or `MountResult`; `Command` and `CommandResult` take the
-same command as positional parameters, delegate, and are deprecated.
+same command as positional parameters, delegate, and are deprecated. Migrating one
+is the spelling: a guard stated in `Options`, where `Command` kept it, still mounts,
+and one the two fields answer differently is refused, as is a collection route
+`Options` asks for and the `CommandSpec` does not — a bool has no spelling for
+"nothing said", so that pair is the one doubling a reader cannot resolve alone.
 
 **Reused** — `httpx.Resource.ReadAuth` and `WriteAuth`, which already owned the
 derivation, and `(*httpx.API).guard`, which already computed both sides once per
 registration; `registerCommand`, which stays the one body of both command forms;
 `ui/resource.Resource.offers`, already how the New button is gated. **Added** —
-`CommandSpec`, `Mount` and `MountResult`, because nine positional parameters with
-three adjacent strings cannot be read at the call site and nothing in this
-repository, the catalogue or the old platform declared a command as a value; and the
-write-back of the derived guard into the `ReadBy`/`WriteBy` fields every reader
-already consults, so no later reader derives a guard again. **Made reusable** — a
-list with no record route is now a legal resource, and `ui/resource` asks whether a
-record page exists before it links a row to one, which is the question the page side
-and the door side already asked; and the refusals left at mount are the ones about a
-fact said twice rather than about which field said it, so the next guard that is not
-a plain permission needs no new field.
+`CommandSpec`, `Mount` and `MountResult`, because nine positional parameters, three
+of them adjacent strings, cannot be read at the call site, and nothing here or on
+the shelf declared a command as a value; and the write-back of the derived guard
+into `ReadBy`/`WriteBy`, which every reader of a registered resource consults.
+**Made reusable** — a list with no record route is now a legal resource, and
+`ui/resource` asks whether a record page exists before it links a row to one, the
+question the page side and the door side already asked. No module's own list page
+changes shape, because every module resource that offers `list` offers `read`; the
+reference application's picture fixture is the list whose rows do change. And the
+refusals left at mount are about a fact said twice, not about which field said it,
+so the next guard that is not a plain permission needs no new field.
 
 ## Composition (T-0360)
 
