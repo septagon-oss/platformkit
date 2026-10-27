@@ -19015,6 +19015,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/view/a_cell_wears_the_caption_its_column_and_its_field_wear_test.go",
+   "id": "kit/entity/view/a_cell_wears_the_caption_its_column_and_its_field_wear_test.go#TestACellWearsTheCaptionItsColumnAndItsFieldWear",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACellWearsTheCaptionItsColumnAndItsFieldWear",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/view/a_command_owned_field_arrives_read_only_on_a_create_page_that_carries_no_row_test.go",
    "id": "kit/entity/view/a_command_owned_field_arrives_read_only_on_a_create_page_that_carries_no_row_test.go#TestACommandOwnedFieldArrivesReadOnlyOnACreatePageThatCarriesNoRow",
    "kind": "go",
@@ -87451,7 +87470,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2373,
+  "files": 2374,
   "forge_runs": [
    408,
    413,
@@ -87485,7 +87504,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3812,
+   "behaviour": 3813,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87504,23 +87523,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4438,
+  "rows": 4439,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1656
+   "push": 1657
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2127,
+   "keep": 2128,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4051,
+   "keep": 4052,
    "keep-rewrite": 170,
    "merge": 217
   }
