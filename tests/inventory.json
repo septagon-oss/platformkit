@@ -36677,6 +36677,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/the_page_door_of_a_split_singleton_refuses_a_caller_without_the_operators_surface_test.go",
+   "id": "kit/rest/the_page_door_of_a_split_singleton_refuses_a_caller_without_the_operators_surface_test.go#TestThePageDoorOfASplitSingletonRefusesACallerWithoutTheOperatorsSurface",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestThePageDoorOfASplitSingletonRefusesACallerWithoutTheOperatorsSurface",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/translated_patch_document_test.go",
    "id": "kit/rest/translated_patch_document_test.go#TestTranslatedPatchDocumentationPreservesTheLocaleWriteBoundary",
    "kind": "go",
@@ -86853,7 +86872,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2372,
+  "files": 2373,
   "forge_runs": [
    408,
    413,
@@ -86887,7 +86906,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3781,
+   "behaviour": 3782,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86906,9 +86925,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4407,
+  "rows": 4408,
   "tiers": {
-   "merge": 2704,
+   "merge": 2705,
    "nightly": 110,
    "push": 1593
   },
@@ -86916,13 +86935,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2127,
+   "keep": 2128,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4021,
+   "keep": 4022,
    "keep-rewrite": 170,
    "merge": 216
   }
