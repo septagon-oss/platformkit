@@ -45658,6 +45658,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/the_sign_in_page_shuts_an_invited_address_that_has_chosen_no_password_test.go",
+   "id": "modules/auth/internal/the_sign_in_page_shuts_an_invited_address_that_has_chosen_no_password_test.go#TestTheSignInPageShutsAnInvitedAddressThatHasChosenNoPassword",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheSignInPageShutsAnInvitedAddressThatHasChosenNoPassword",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/the_usernameless_door_opens_for_the_permission_it_changes_test.go",
    "id": "modules/auth/internal/the_usernameless_door_opens_for_the_permission_it_changes_test.go#TestTheUsernamelessDoorOpensOnlyForThePermissionItChanges",
    "kind": "go",
@@ -83879,7 +83898,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2280,
+  "files": 2281,
   "forge_runs": [
    408,
    413,
@@ -83913,7 +83932,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3630,
+   "behaviour": 3631,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83932,9 +83951,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4252,
+  "rows": 4253,
   "tiers": {
-   "merge": 2629,
+   "merge": 2630,
    "nightly": 110,
    "push": 1513
   },
@@ -83942,13 +83961,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2035,
+   "keep": 2036,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3866,
+   "keep": 3867,
    "keep-rewrite": 170,
    "merge": 216
   }
