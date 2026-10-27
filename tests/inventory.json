@@ -45669,6 +45669,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/the_trail_refuses_each_unattributable_operation_for_the_same_reason_test.go",
+   "id": "modules/audit/the_trail_refuses_each_unattributable_operation_for_the_same_reason_test.go#TestTheTrailRefusesEachUnattributableOperationForTheSameReason",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTrailRefusesEachUnattributableOperationForTheSameReason",
+   "needs_db": true,
+   "pkg": "modules/audit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/the_walk_refusal_names_the_walk_that_missed_the_trail_test.go",
    "id": "modules/audit/the_walk_refusal_names_the_walk_that_missed_the_trail_test.go#TestTheWalkRefusalNamesTheWalkThatMissedTheTrail",
    "kind": "go",
@@ -92576,7 +92595,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2554,
+  "files": 2555,
   "forge_runs": [
    408,
    413,
@@ -92610,7 +92629,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4031,
+   "behaviour": 4032,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92629,9 +92648,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4704,
+  "rows": 4705,
   "tiers": {
-   "merge": 2901,
+   "merge": 2902,
    "nightly": 121,
    "push": 1682
   },
@@ -92639,13 +92658,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2309,
+   "keep": 2310,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4318,
+   "keep": 4319,
    "keep-rewrite": 170,
    "merge": 216
   }
