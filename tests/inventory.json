@@ -18977,6 +18977,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/db/the_line_about_dropped_effects_of_an_ended_owner_names_the_cause_its_caller_was_handed_test.go",
+   "id": "kit/db/the_line_about_dropped_effects_of_an_ended_owner_names_the_cause_its_caller_was_handed_test.go#TestTheLineAboutDroppedEffectsOfAnEndedOwnerNamesTheCauseItsCallerWasHanded",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheLineAboutDroppedEffectsOfAnEndedOwnerNamesTheCauseItsCallerWasHanded",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/db/the_line_an_ending_writes_about_the_effects_it_dropped_test.go",
    "id": "kit/db/the_line_an_ending_writes_about_the_effects_it_dropped_test.go#TestAnEndingThatDroppedNothingWritesNothingAboutIt",
    "kind": "go",
@@ -91363,7 +91382,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2508,
+  "files": 2509,
   "forge_runs": [
    408,
    413,
@@ -91397,7 +91416,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3980,
+   "behaviour": 3981,
    "composition": 516,
    "contract": 24,
    "journey": 121
@@ -91416,9 +91435,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4641,
+  "rows": 4642,
   "tiers": {
-   "merge": 2855,
+   "merge": 2856,
    "nightly": 121,
    "push": 1665
   },
@@ -91426,13 +91445,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2263,
+   "keep": 2264,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4255,
+   "keep": 4256,
    "keep-rewrite": 170,
    "merge": 216
   }
