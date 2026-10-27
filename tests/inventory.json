@@ -76830,6 +76830,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/screens/the_comparison_aligns_a_body_at_its_reach_and_gives_up_one_word_past_it_test.go",
+   "id": "ui/screens/the_comparison_aligns_a_body_at_its_reach_and_gives_up_one_word_past_it_test.go#TestTheComparisonAlignsABodyAtItsReachAndGivesUpOneWordPastIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheComparisonAlignsABodyAtItsReachAndGivesUpOneWordPastIt",
+   "needs_db": true,
+   "pkg": "ui/screens",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/the_comparison_gives_up_when_one_side_is_past_its_reach_test.go",
    "id": "ui/screens/the_comparison_gives_up_when_one_side_is_past_its_reach_test.go#TestTheComparisonGivesUpWhenOneSideIsPastItsReach",
    "kind": "go",
@@ -85734,7 +85753,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2344,
+  "files": 2345,
   "forge_runs": [
    408,
    413,
@@ -85768,7 +85787,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3723,
+   "behaviour": 3724,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -85787,9 +85806,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4349,
+  "rows": 4350,
   "tiers": {
-   "merge": 2652,
+   "merge": 2653,
    "nightly": 110,
    "push": 1587
   },
@@ -85797,13 +85816,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2099,
+   "keep": 2100,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3963,
+   "keep": 3964,
    "keep-rewrite": 170,
    "merge": 216
   }
