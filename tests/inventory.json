@@ -36791,6 +36791,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/the_total_supplied_to_a_singleton_answers_a_failed_load_with_the_failure_rather_than_a_number_test.go",
+   "id": "kit/rest/the_total_supplied_to_a_singleton_answers_a_failed_load_with_the_failure_rather_than_a_number_test.go#TestTheSuppliedTotalOfASingletonAnswersAFailedLoadWithTheFailureRatherThanANumber",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheSuppliedTotalOfASingletonAnswersAFailedLoadWithTheFailureRatherThanANumber",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/translated_patch_document_test.go",
    "id": "kit/rest/translated_patch_document_test.go#TestTranslatedPatchDocumentationPreservesTheLocaleWriteBoundary",
    "kind": "go",
@@ -86986,7 +87005,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2379,
+  "files": 2380,
   "forge_runs": [
    408,
    413,
@@ -87020,7 +87039,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3788,
+   "behaviour": 3789,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87039,9 +87058,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4414,
+  "rows": 4415,
   "tiers": {
-   "merge": 2711,
+   "merge": 2712,
    "nightly": 110,
    "push": 1593
   },
@@ -87049,13 +87068,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2134,
+   "keep": 2135,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4028,
+   "keep": 4029,
    "keep-rewrite": 170,
    "merge": 216
   }
