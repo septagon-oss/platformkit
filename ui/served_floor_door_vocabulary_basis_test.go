@@ -19,7 +19,9 @@ import (
 // pattern is then recognised whatever it adds or drops at either end, which is what the guard beside this one
 // claims, and refuses the day either basis moves. The two shapes that guard is asked about are held to be two
 // shapes here first: the expression must carry text beyond the cut, closed by the far end a narrowed copy drops,
-// or the copy said to be narrowed would be the copy and one question would be asked twice.
+// or the copy said to be narrowed would be the copy and one question would be asked twice. The check after those
+// two holds their ends together, because each is asked about alone above and two ends that each hold their own
+// ground can still leave text between them that no one trims.
 func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	// The path the vocabulary guard searches for, with the quotes that delimit a Go literal either side, must
 	// name a file of this package: the guards read this guide to ask about the doors it documents.
@@ -59,6 +61,13 @@ func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	}
 	if trimmed := strings.TrimSuffix(pattern, doorPatternFarEnd()); trimmed == pattern {
 		t.Errorf("the far end a narrowed door pattern is made by dropping is no part of the pattern these checks name doors with (%q), so the case below compares one shape under two names", pattern)
+	}
+
+	// And the two ends must meet: the expression is the escape the cut drops, then the mark of a copy, then the
+	// far end a narrowed copy drops, with nothing between them. Leftover text travels alike into both shapes
+	// below, so they agree while the one said to be narrowed holds a tail no door name ends with.
+	if parts := `\b` + core + doorPatternFarEnd(); parts != pattern {
+		t.Errorf("servedDoor's expression (%q) is not the mark of a copy (%q) between the word-boundary escape the guard drops and the far end a narrowed copy drops (%q), so the shapes below are narrowed by text no check names", pattern, core, parts)
 	}
 
 	// A copy of the pattern and a copy of it narrowed at the far end are both recognised, while a compiled pattern
