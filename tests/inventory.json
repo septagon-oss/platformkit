@@ -41488,6 +41488,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/a_mailed_handoff_leaves_one_sent_record_and_no_failure_event_test.go",
+   "id": "modules/auth/internal/a_mailed_handoff_leaves_one_sent_record_and_no_failure_event_test.go#TestAMailedHandoffLeavesOneSentRecordAndNoFailureEvent",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAMailedHandoffLeavesOneSentRecordAndNoFailureEvent",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/a_passkey_alone_signs_its_owner_in_test.go",
    "id": "modules/auth/internal/a_passkey_alone_signs_its_owner_in_test.go#TestAnEnrolledPasskeyAloneSignsItsOwnerIn",
    "kind": "go",
@@ -83537,7 +83556,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2262,
+  "files": 2263,
   "forge_runs": [
    408,
    413,
@@ -83571,7 +83590,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3612,
+   "behaviour": 3613,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83590,9 +83609,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4234,
+  "rows": 4235,
   "tiers": {
-   "merge": 2611,
+   "merge": 2612,
    "nightly": 110,
    "push": 1513
   },
@@ -83600,13 +83619,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2017,
+   "keep": 2018,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3848,
+   "keep": 3849,
    "keep-rewrite": 170,
    "merge": 216
   }
