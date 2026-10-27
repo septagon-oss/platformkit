@@ -27,20 +27,15 @@ func validJSONMediaType(mt string) bool { return jsonMediaType.MatchString(mt) }
 
 // A declared protocol address.
 //
-// The surface table answers "which chain does this address get" for every
-// address in the composition, and it does it from three prefixes: the public
-// face, the workspace, the control plane. A protocol that names its own address
-// — SCIM says `/scim/v2`, a vendor's connector will only be configured against
-// what it says — does not live under any of the three, and the two ways out of
-// that were both refused: renaming it lands the capability at an address its
-// clients will not configure, and inventing a fourth surface means inventing a
-// middleware chain (session, cookie, host gating, cache) nobody asked for.
-//
-// So a module declares an address instead. The declaration moves *where the
-// door is served* and nothing else: the router it is declared on keeps its
-// surface, which keeps its chain — the workspace's no-store, its CSRF rule, its
-// tenant transaction and its deny-by-default authorization — and the mount gate
-// keeps its rule that a declared address with a credential has to declare the
+// The surface table answers "which chain does this address get" from three prefixes, and a
+// protocol that names its own address — SCIM says /scim/v2, and a vendor's connector will
+// only be configured against what it says — lives under none of them. Renaming it lands the
+// capability at an address its clients will not configure, and a fourth surface means
+// inventing a middleware chain (session, cookie, host gating, cache) nobody asked for, so a
+// module declares an address instead. The declaration moves where the door is served and
+// nothing else: the router keeps its surface and so its chain — the workspace's no-store,
+// its CSRF rule, its tenant transaction, its deny-by-default authorization — and the mount
+// gate keeps its rule that a declared address with a credential has to declare the
 // credential.
 
 // protocolPath is the shape a declared address has to be in: absolute, clean,
@@ -54,34 +49,18 @@ var protocolPath = regexp.MustCompile(`^(/[a-z0-9][a-z0-9._-]*){1,}$`)
 // relFault keeps a relative path away from, asked of the absolute side.
 func roots() []string { return []string{apiRoot, AppRoot, OpsRoot, "/admin", "/public"} }
 
-// At returns this router bound to an absolute address the module declares, for
-// routes that speak a protocol naming its own address. Routes mounted on the
-// returned router answer at <at>/… : the module writes /Users and gets
-// /scim/v2/Users. The address is recorded against this module for the whole
-// composition, so the request chain and the mount gate read one answer about it.
+// At returns this router bound to an absolute address the module declares, for routes that
+// speak a protocol naming its own address. Routes mounted on the returned router answer at
+// <at>/… : the module writes /Users and gets /scim/v2/Users. The address is recorded against
+// this module for the whole composition, so the request chain and the mount gate read one
+// answer about it.
 //
-// The surface does not change, and that is the whole of why this is a door and
-// not a hole. The declaration moves where the router stands, never what it
-// carries: a workspace router keeps the session, the cookie, no-store, the
-// tenant transaction and the deny-by-default chain, a control-plane router keeps
-// its installation-host gate, a public router keeps a chain that resolves no
-// session and sets no cookie. The credential rules are the same table they were
-// before this method existed — accepted still refuses a credentialed declaration
-// on the public face and anything but an operator grant on the control plane —
-// so the routes a module may mount at a declared address are exactly the routes
-// it may mount inside the table. Only the address is the protocol's.
-//
-// It is refused at mount — recorded, so the process never listens — when the
-// address is not clean, absolute, lower-case path form; when it names a prefix
-// of the table or is named by one, which would put two owners on one half of the
-// address space; or when another module already claimed it, in which case the
-// message names both.
-//
-// Pages are not part of the declaration: a browser navigation belongs to the
-// surface's own page prefix, which is what its cache headers, its links and its
-// shell are written against. A module that declares an address and has a page to
-// show mounts it with Page, which composes the surface's page address and leaves
-// the protocol's to the documents.
+// The surface does not change, and that is the whole of why this is a door and not a hole:
+// README.md, "Three surfaces". It is refused at mount, recorded so the process never listens,
+// when the address is not clean, absolute, lower-case path form; when it names a prefix of the
+// table or is named by one, which would put two owners on one half of the address space; or
+// when another module already claimed it, in which case the message names both. Pages are not
+// part of the declaration: a browser navigation belongs to the surface's own page prefix.
 func (r *Router) At(at string) *Router {
 	// A refusal hands back the plain router, so that the route the caller went
 	// on to mount still lands somewhere ordinary and legible. The refusal is what

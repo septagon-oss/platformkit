@@ -2,21 +2,18 @@ package resource
 
 import (
 	"strconv"
-	"time"
 
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/document"
 )
 
-// Detail is one row: every field, in schema order, and the write affordances
-// for a caller who may. The document's title is the row's own name, not the
-// entity's: a browser tab, a bookmark and a history entry all read it, and
-// eleven of them saying "Task" is eleven of them saying nothing.
+// Detail renders one row's resolved title, blocks and authorized commands.
+// Prepared rich text and locale standing are optional through DetailRichText.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
 	return DetailRichText(r, o, row, writable, nil, nil)
 }
@@ -26,6 +23,10 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 // besides its own.
 func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string,
 	locales []entity.LocaleState) document.View {
+	r = r.policy(o)
+	if err := r.validatePolicy(); err != nil {
+		return document.View{Body: []g.Node{invalid(err)}}
+	}
 	at := r.Screen
 	// A singleton is reached at its own path, which is the only place its API is
 	// reached too: an id in this path would be an id nobody issued, and the row
@@ -34,11 +35,11 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	if !r.Singleton {
 		item = at + "/" + display.Text(row["id"])
 	}
-	named := r.rowName(row, readable(r.Schema.Fields))
+	named := present.Title(r.Resolved.Titles.RecordCandidates, row, display.Text(row["id"]), r.Resolved.Titles.EmptyTitle)
 	var actions []g.Node
 	if writable {
 		if r.offers("update") {
-			actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
+			actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("detail", "action.edit")}, Label: o.Text("screens.edit", "Edit"), Href: item + "/edit", Variant: r.primaryAction(false)})}
 		}
 		// A singleton is not created and not removed, whatever Create and Delete
 		// answer when they are asked. kit/rest makes those two refuse rather than
@@ -47,20 +48,20 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
 		if !r.Singleton && r.offers("delete") {
-			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
+			actions = append(actions, deleteForm(o, item, r.Schema.Entity, r.anchor("detail", "action.delete")))
 		}
 	}
 	body := []g.Node{
-		breadcrumb(o, display.Humanize(r.reading(o).Plural), at, named),
+		breadcrumb(o, r.collectionName(), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		localeStrip(locales),
-		details(r, o.Words(r.Schema), row, rendered),
+		details(r, o, row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
 	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
-	return document.View{Title: named, Body: body}
+	return document.View{Title: named, Language: r.Resolved.Language, Body: r.viewBody("detail", body)}
 }
 
 // offeredCommands is the commands to draw a form for: every one this caller may
@@ -81,9 +82,8 @@ func (r Resource) offeredCommands() []Command {
 	return out
 }
 
-// localeStrip shows each supplied language's completeness and freshness.
-// Untouched languages remain visible at zero percent; localized status words
-// distinguish missing translations from translations that need another look.
+// localeStrip names each supplied translation's completion and freshness.
+// Untouched languages remain visible; an empty set draws no strip.
 func localeStrip(locales []entity.LocaleState) g.Node {
 	if len(locales) == 0 {
 		return g.Raw("")
@@ -102,111 +102,56 @@ func localeStrip(locales []entity.LocaleState) g.Node {
 	}
 	return components.Flex(components.FlexProps{Gap: "2", Wrap: true}, badges...)
 }
-
-// details is the detail screen: every field the author kept on a record, in schema
-// order, as a description list. `hide:list` hides nothing here — it is about a table
-// being readable, not about a field being secret — and `visibility:hidden` is the one
-// declaration that is off this screen too, which readable applies.
-func details(r Resource, words Words, row map[string]any, rendered map[string]string) g.Node {
-	// One pass, in schema order: richtext becomes a prose section as it always
-	// did, and every other readable field becomes a term beside its value.
-	var prose []g.Node
-	type read struct {
-		field entity.Field
-		item  components.DetailItem
+func details(r Resource, o Options, row map[string]any, rendered map[string]string) g.Node {
+	p := r.Resolved
+	nodes := []g.Node{}
+	if name := p.Titles.Cover; name != "" && r.field(name).OnRecord {
+		f, _ := fieldFor(r.Schema.Fields, name)
+		f.Present = r.field(name).Kind
+		title := present.Title(p.Titles.RecordCandidates, row, display.Text(row["id"]), p.Titles.EmptyTitle)
+		if node := compose(f, components.TableRow{Cells: row}, false, r.Screen, o, title, r.field(name).Reading.Missing); node != nil {
+			nodes = append(nodes, node)
+		}
 	}
-	var reads []read
-	// instantsByLabel pairs a term with the instant behind it, so the value door below can hand
-	// that one item a <time>. It is keyed by the term because DetailItem is a label and a string:
-	// the term a person reads is the only identity an item has, and it is the same words the <dt>
-	// carries. Two fields labelled alike would be two <dt>s nobody could tell apart anyway.
-	instantsByLabel := map[string]components.TimeText{}
-	for _, f := range readable(r.Schema.Fields) {
-		if f.Widget == "richtext" {
-			if html, ok := rendered[f.Name]; ok {
-				prose = append(prose, h.Section(h.H2(g.Text(words.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
+	if len(p.Layout.Overview) > 0 {
+		nodes = append(nodes, detailBlock(r, o, row, rendered, p.Layout.Overview, "overview", ""))
+	}
+	for _, section := range p.Layout.Sections {
+		nodes = append(nodes, detailBlock(r, o, row, rendered, section.Fields, section.Key, section.Label))
+	}
+	if len(p.Layout.Information) > 0 {
+		nodes = append(nodes, detailBlock(r, o, row, rendered, p.Layout.Information, "record-information", ""))
+	}
+	return g.Group(nodes)
+}
+
+func detailBlock(r Resource, o Options, row map[string]any, rendered map[string]string, names []string, role, title string) g.Node {
+	items := make([]components.DetailItem, 0, len(names))
+	nodes := make([]g.Node, 0, len(names))
+	for _, name := range names {
+		f := r.field(name)
+		read := value(f, row, o)
+		node := read.node
+		definition, _ := fieldFor(r.Schema.Fields, name)
+		definition.Present = f.Kind
+		// A choice reads its selection whatever the value, an empty one included;
+		// a media kind is drawn only where the author left something to draw.
+		if raw := row[name]; definition.Choices != nil || (raw != nil && scalarText(raw) != "") {
+			if media := compose(definition, components.TableRow{Cells: row}, false, r.Screen, o, f.Label, f.Reading.Missing); media != nil {
+				node = media
+			}
+		}
+		if f.Control == "richtext" {
+			if html, ok := rendered[name]; ok {
+				node = components.Prose(components.ProseProps{HTML: html})
 			} else {
-				prose = append(prose, h.Section(h.H2(g.Text(words.FieldLabel(f))), h.P(g.Text(display.Text(row[f.Name])))))
-			}
-			continue
-		}
-		label := words.FieldLabel(f)
-		value := words.Value(f, row[f.Name])
-		if f.Type == entity.TypeTime {
-			if when, ok := display.Instant(row[f.Name]); ok {
-				instantsByLabel[label] = components.TimeText{AtUTC: when, Text: value}
+				node = components.FormSentence(components.FormSentenceProps{Text: read.text})
 			}
 		}
-		reads = append(reads, read{field: f,
-			item: components.DetailItem{Label: label, Value: value}})
+		items = append(items, components.DetailItem{Label: f.Label, Value: read.text, Tone: read.tone})
+		nodes = append(nodes, node)
 	}
-	// Every block of the record opens its terms through the one list, and that list keeps the
-	// same value door a list cell uses, so the record and the list state an instant identically
-	// whichever section the field landed in. A time whose value is no instant never reaches the
-	// map above: it keeps its text.
-	list := func(items []components.DetailItem) g.Node {
-		return components.DetailListWithSlots(components.DetailListProps{Items: items}, components.DetailListSlots{
-			Value: func(item components.DetailItem) g.Node {
-				when, ok := instantsByLabel[item.Label]
-				if !ok {
-					return nil
-				}
-				return timeElement(when)
-			},
-		})
-	}
-	if len(r.Present.Sections) == 0 {
-		all := make([]components.DetailItem, 0, len(reads))
-		for _, r := range reads {
-			all = append(all, r.item)
-		}
-		return g.Group{list(all), g.Group(prose)}
-	}
-	// Declared sections are the blocks of the record screen, in the order the
-	// author named them. A field naming none is drawn after every one of them, in
-	// schema order: an undeclared field that drifted between two blocks somebody
-	// placed would be the section list losing an argument it never entered.
-	out := make([]g.Node, 0, len(r.Present.Sections)+1)
-	taken := map[string]bool{}
-	for _, sec := range r.Present.Sections {
-		items := make([]components.DetailItem, 0, len(reads))
-		for _, r := range reads {
-			if r.field.Presentation.Section == sec.Key {
-				items = append(items, r.item)
-				taken[r.field.Name] = true
-			}
-		}
-		out = append(out, h.Section(h.H2(g.Text(words.Section(sec).Label)), list(items)))
-	}
-	rest := make([]components.DetailItem, 0, len(reads))
-	for _, r := range reads {
-		if !taken[r.field.Name] {
-			rest = append(rest, r.item)
-		}
-	}
-	if len(rest) > 0 {
-		out = append(out, list(rest))
-	}
-	return g.Group{g.Group(out), g.Group(prose)}
+	return components.DetailListWithSlots(components.DetailListProps{Title: title, SemanticRole: role, Items: items}, components.DetailListSlots{
+		KeepEmpty: true, ValueAt: func(i int, _ components.DetailItem) g.Node { return nodes[i] },
+	})
 }
-
-// timeElement is one instant as a screen states it: the element every generated
-// screen uses, with the instant a machine can read and the exact moment — in the
-// zone the server actually wrote it in — a person can. The words inside the
-// element are UTC wall time until the reader's own browser says them again in the
-// reader's own zone (see ui/assets/js/components.js); the title is what is true
-// before that happens, and it stays true afterwards because datetime never moves.
-//
-// stamp is an instant spelled out with the zone it is stated in. A wall time with
-// no zone on it is a guess the reader has to make for themselves.
-func timeElement(when components.TimeText) g.Node {
-	return components.Time(components.TimeProps{Instant: when, Title: stamp(when.AtUTC)})
-}
-
-// stamp is the exact moment with its zone designator: what a person hovering the
-// cell is told before the browser has said the same moment in their own zone. It is
-// the ISO-8601 instant — `Z`, not the word `UTC` — because a `title` is one of the
-// attributes ui/legible reads as what a person reads, and a spelled zone is a word
-// no catalogue owns; the same moment in the shape `datetime` carries is data in
-// every language.
-func stamp(at time.Time) string { return at.UTC().Format(time.RFC3339) }

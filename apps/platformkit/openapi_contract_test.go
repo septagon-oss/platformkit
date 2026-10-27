@@ -106,7 +106,12 @@ func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET /openapi.json = %d %s, want 200: the reference composition serves its document", code, body)
 	}
-	wiregate.GoldenWithAllowances(t, openapiGolden, func() []byte { return []byte(body) }, wireAuthorizationAllowances())
+	wiregate.GoldenWithRequiredness(t, openapiGolden, func() []byte { return []byte(body) }, wireAuthorizationAllowances(), append(wireRequirednessAllowances(resolvedMediaJSON), wireRequirednessAllowances(resolvedMediaInt64)...))
+	code, exact := do(t, cfg, nil, http.MethodGet, acmeHost, "/openapi.json?int64=string", "")
+	if code != http.StatusOK {
+		t.Fatalf("decimal OpenAPI = %d %s", code, exact)
+	}
+	wiregate.GoldenWithRequiredness(t, "testdata/openapi.int64.json", func() []byte { return []byte(exact) }, wireAuthorizationAllowances(), wireRequirednessAllowances(resolvedMediaInt64))
 }
 
 // TestTheCatalogOperationDescribesWhatAShellParses is the hole this delivery

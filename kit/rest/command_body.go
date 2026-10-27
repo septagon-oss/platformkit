@@ -1,7 +1,6 @@
 package rest
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,11 +13,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/internal/jsonbody"
 )
 
 // defaultCommandBody keeps defaults out of huma's mutable, float-based default
 // decoder. Validation still uses its schema; the typed preparation owns values.
 type defaultCommandBody[I any] struct{ raw json.RawMessage }
+
+func (defaultCommandBody[I]) JSONBodyType() reflect.Type { return reflect.TypeFor[I]() }
 
 func (b *defaultCommandBody[I]) UnmarshalJSON(data []byte) error {
 	b.raw = append(b.raw[:0], data...)
@@ -73,9 +75,7 @@ func mountDefaultCommand[I, T any](router *httpx.Router, op huma.Operation, auth
 	invoke := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *defaultCommandBody[I]) (T, error) {
 		var values map[string]any
 		if body != nil {
-			decoder := json.NewDecoder(bytes.NewReader(body.raw))
-			decoder.UseNumber()
-			if err := decoder.Decode(&values); err != nil {
+			if err := jsonbody.Tokens(body.raw, &values); err != nil {
 				var zero T
 				return zero, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 			}

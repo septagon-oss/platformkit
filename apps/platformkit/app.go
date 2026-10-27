@@ -3,18 +3,14 @@ package main
 // app.go is the reference application read as one sentence, and decision 0074's
 // pilot: the modules it is made of are named once, in the order the composition
 // builds them, and every edge between them is a contract one of the two declares
-// rather than a hand-off this file performs.
-//
-// `run` and `start` are the two commands that go through it, which is the
-// difference between a sentence and a comment about one: what the image runs and
-// what a laptop runs are composed here, and what they are composed from is
-// `pkit.Server.Explain`'s text, committed beside this file as
+// rather than a hand-off this file performs. `run` and `start` both go through it,
+// so what the image runs and what a laptop runs are one sentence, worded out of
+// pkit.Server.Explain's text and committed beside this file as
 // COMPOSITION.development.md and COMPOSITION.production.md.
 //
-// The sentence reads in the order the composition is built: the product's own
-// values first, because everything below reads them; then the modules, in the
-// order their needs place them; then the words, the colours and the doors, which
-// are what this product adds to them.
+// It reads in build order: the product's own values first, because everything
+// below reads them; then the modules, in the order their needs place them; then
+// the words, the colours and the doors, which are what this product adds to them.
 
 import (
 	"encoding/json"
@@ -59,29 +55,27 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
-// composition is the application answered with no effects: every module it is
-// made of, and the values main itself has to hold — the tenant service, because
-// the kernel resolves every host through it; the auth service, because the kernel
-// asks it who is calling and what they may do; the user service, because
-// bootstrap creates the first administrator; the notification service, because the
-// modules that raise notices are wired against it; and the mailer, so that a test
-// can read what would have been sent.
-//
-// Every one of those is a composition's *output* now, read off the plan the
-// sentence resolved to, which is what `pkit.Value` is for. There is no second
-// place a service is handed over: the same values the resolver put, seen from
-// outside it.
+// composition holds the resolved modules and the capabilities used by app commands.
+// Every output comes from pkit.Value; module construction has one declared path.
 type composition struct {
-	modules []module.Module
-	options app.Options
-	planned *pkit.Planned
-	tenants tenantcontracts.Service
-	users   usercontracts.Service
-	auth    authcontracts.Auth
-	notify  notificationcontracts.Service
-	mail    notificationcontracts.Mailer
-	files   filecontracts.Service
-	plans   httpx.Entitler
+	modules      []module.Module
+	options      app.Options
+	planned      *pkit.Planned
+	tenantList   tenantcontracts.Lister
+	hostLookup   tenantcontracts.HostLookup
+	oidcSettings tenantcontracts.OIDCReader
+	samlSettings tenantcontracts.SAMLReader
+	bootstrap    tenantcontracts.Bootstrapper
+	locale       tenantcontracts.LocaleSetter
+	provisioner  usercontracts.SystemProvisioner
+	addresses    usercontracts.AddressLookup
+	seedUsers    usercontracts.SeedWriter
+	permissions  authcontracts.PermissionReader
+	roleRepair   authcontracts.RoleRepairer
+	notify       notificationcontracts.Service
+	mail         notificationcontracts.Mailer
+	files        filecontracts.Service
+	plans        httpx.Entitler
 	// contents, sites, tasks and files are the four owners a seeded record is
 	// written through: this application's seed runs each resource's own write core
 	// rather than a second spelling of it, so it reads the same values its routes
@@ -202,9 +196,13 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	}
 	c := composition{
 		planned: p, modules: p.Modules(), options: p.Options(), messages: served,
-		tenants: value[tenantcontracts.Service](p), users: value[usercontracts.Service](p),
-		auth: value[authcontracts.Auth](p), notify: value[notificationcontracts.Service](p),
-		mail: value[notificationcontracts.Mailer](p), files: value[filecontracts.Service](p),
+		tenantList: value[tenantcontracts.Lister](p), hostLookup: value[tenantcontracts.HostLookup](p),
+		oidcSettings: value[tenantcontracts.OIDCReader](p), samlSettings: value[tenantcontracts.SAMLReader](p),
+		bootstrap: value[tenantcontracts.Bootstrapper](p), locale: value[tenantcontracts.LocaleSetter](p),
+		provisioner: value[usercontracts.SystemProvisioner](p), addresses: value[usercontracts.AddressLookup](p),
+		seedUsers: value[usercontracts.SeedWriter](p), permissions: value[authcontracts.PermissionReader](p),
+		roleRepair: value[authcontracts.RoleRepairer](p), notify: value[notificationcontracts.Service](p),
+		files:    value[filecontracts.Service](p),
 		plans:    value[httpx.Entitler](p),
 		tasks:    value[taskcontracts.Service](p),
 		contents: value[contentcontracts.Service](p),
@@ -212,18 +210,31 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 		access:   ask,
 		// The words a refusal is allowed to use: the label of the grant that
 		// gates role management, read off the manifest that defines it.
-		granter:      refusalGrant(p.Skin()),
-		passkeys:     auth.NewPasskeyDoor(),
-		links:        value[webcontracts.Links](p),
-		signin:       value[admincontracts.Signin](p),
-		recoveryMail: cfg.Mail.Enabled(),
+		granter:  refusalGrant(p.Skin()),
+		passkeys: auth.NewPasskeyDoor(),
+		links:    value[webcontracts.Links](p),
+		signin:   value[admincontracts.Signin](p),
+		// Whether a person can be promised a mail is the carrier's own answer, read
+		// off the plan — the one reading the API's doors act on, so the page and the
+		// door cannot disagree about the same installation. A composition with no
+		// notification module has no deliverable mail either, and an absent answer is
+		// read as false rather than through `value`, which panics.
+		recoveryMail: mailDelivers(p),
 		connection:   face,
 	}
+	// The mailer is read without the panic every other value gets, because nil is
+	// one of the three answers this deployment can give for it: an installation
+	// that names no mail server and does not ask for the in-process sink composes
+	// no transport (modules/notification's "none"), which is the state a
+	// mail-less production deployment boots on purpose. Every reader of this
+	// field already treats nil as "nothing sends here", which is what makes the
+	// module's own refusal and this line the same fact.
+	c.mail, _ = pkit.Value[notificationcontracts.Mailer](p)
 	// Whether a password door stands here at all is read off the plan the sentence
 	// resolved and not written as a constant: a composition that took auth out
 	// would otherwise keep advertising a door it stopped mounting, which is the
 	// same lie the ask above is built to avoid.
-	c.passwordDoor = c.auth != nil
+	c.passwordDoor = value[pkit.Authenticator](p) != nil
 	*shell = faultShell(c.messages, c.granter)
 	// The seed's tenant-creation hook, filled from the plan the sentence resolved
 	// to. It is another of the values this file fills after the resolution, beside
@@ -235,8 +246,8 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 	// See seeding's comment in seed.go. Until this line the hook has no owners, and
 	// it says so rather than writing a half-filled tenant's content.
 	*provision = seedProvisioner{
-		users: c.users, contents: c.contents, sites: c.sites, tasks: c.tasks,
-		files: c.files, auth: c.auth, demoPassword: cfg.Demo.Password,
+		users: c.seedUsers, contents: c.contents, sites: c.sites, tasks: c.tasks,
+		files: c.files, auth: c.permissions, demoPassword: cfg.Demo.Password,
 	}
 	// The roles hook's catalogue, filled from the same resolved plan for the same
 	// reason seeding gives: the hook is contributed while the sentence is written
@@ -253,29 +264,25 @@ func composeReferenceReading(cfg config.Config, env pkit.Environment, installed 
 
 // sentences is the one statement of this application's composition, and the six
 // values its own chrome reads: the reach an ask has here, which the access module
-// fills once the services it joins exist, the shell of the ask's two pages, which
-// is drawn from the skin the resolved composition answered with, the seed's
-// tenant-creation hook, which composeReference fills from the resolved plan for
-// the reason seeding gives, the permission catalogue the roles hook seeds from,
-// which the same line fills for the same reason, the workspace's own face, whose
-// mount is part of the sentence below while the answers it serves come out of the
-// plan, and the counting door's face, whose mount the same line takes while its
-// count arrives from the resources the plan resolved.
-// that boots the reference application goes through it: `run` and `start`, which
-// hand the whole thing to pkit, and appOptions, which is what a test in this
-// repository boots the same composition with when it wants the handler rather
-// than a process. There is one of it because a second statement of a
+// fills once the services it joins exist; the shell of the ask's two pages, drawn
+// from the skin the resolved composition answered with; the seed's tenant-creation
+// hook, the permission catalogue the roles hook seeds from, the workspace's face
+// and the counting door's face — the last four filled by composeReference from the
+// resolved plan, for the reason seeding gives. Every caller in this binary that
+// boots the reference application goes through it: `run` and `start` hand the whole
+// thing to pkit, and appOptions is what a test boots it with when it wants the
+// handler rather than a process. There is one of it because a second statement of a
 // composition is a second composition, and the two drift.
 //
 // `served` is the copy that one sentence is worded from: for every caller in this
-// binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
-// different value to name, and sentences is what everybody else calls.
+// binary, the catalogue `catalogues` loads.
 func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *lateCatalogue, *connectionFace, *summaryFace) {
 	ask, shell, provision, grants, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &lateCatalogue{}, &connectionFace{}
 	counts := &summaryFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg, grants),
+			auth.Grants,
 			user.Module,
 			tenant.Module,
 			notification.Module,
@@ -375,6 +382,14 @@ func value[T any](p *pkit.Planned) T {
 		panic("platformkit: the composition resolves with no " + fmt.Sprintf("%T", v) + " to read")
 	}
 	return v
+}
+
+// mailDelivers is whether this installation's sender attempts a message, which is
+// the answer the connection screen shows and the auth doors act on. A composition
+// that provides no answer mails nothing, so absence reads as unavailable.
+func mailDelivers(p *pkit.Planned) bool {
+	delivery, ok := pkit.Value[notificationcontracts.MailDelivery](p)
+	return ok && delivery != nil && delivery.Available()
 }
 
 // refusalGrant is who a refusal says may hand out what it refused, as a role and

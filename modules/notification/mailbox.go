@@ -30,6 +30,13 @@ type Mailbox struct {
 func NewMailbox() *Mailbox { return &Mailbox{} }
 
 var _ contracts.Mailer = (*Mailbox)(nil)
+var _ contracts.MailDelivery = (*Mailbox)(nil)
+
+// Available says this carrier never delivers: it records and logs, and the
+// message stops here. That is the answer a deployment with no mail host gives,
+// and it is the reason the mailbox is not a promise to a person — the doors that
+// would have to promise them an email refuse instead of accepting.
+func (*Mailbox) Available() bool { return false }
 
 // Send records the message. It never fails: a mailbox that could refuse would
 // be exercising the outbox's retry ladder rather than whatever is under test.

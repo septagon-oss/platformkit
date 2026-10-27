@@ -46,7 +46,7 @@ func TestTheBootstrapSeedsWhatThisFileComposes(t *testing.T) {
 	var acme tenancy.Tenant
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		acme, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		acme, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func TestTheBootstrapSeedsWhatThisFileComposes(t *testing.T) {
 	err = db.Run(httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn), conn,
 		func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			var e error
-			got, e = c.auth.Roles(ctx, tx)
+			got, e = c.testAuth().Roles(ctx, tx)
 			return e
 		})
 	if err != nil {

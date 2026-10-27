@@ -40,9 +40,9 @@ func TestASeriesAnotherWorkerHoldsIsNeverOwedAZero(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	drainedT, heldT, shortT := uuid.New(), uuid.New(), uuid.New()
 	const (
-		drainedName = "review.round7_drained"
-		heldName    = "review.round7_held"
-		shortName   = "review.round7_short"
+		drainedName = "series.drained"
+		heldName    = "series.held"
+		shortName   = "series.short"
 	)
 
 	// 106 unpublished rows, written in the order the relay will read them
@@ -72,7 +72,7 @@ func TestASeriesAnotherWorkerHoldsIsNeverOwedAZero(t *testing.T) {
 	// another case relayed answers for the read this case is about. The helper carries
 	// this file's own name: the files beside it belong to other rounds and to the
 	// delivery, and this case must not stop building because one of them changed.
-	restore := swapLedgerForReviewRound7(map[lagKey]struct{}{})
+	restore := swapLedgerForTheCorrection(map[lagKey]struct{}{})
 	t.Cleanup(restore)
 
 	// Pass one: a full batch — the drained series' row and 99 rows of the series the
@@ -82,7 +82,7 @@ func TestASeriesAnotherWorkerHoldsIsNeverOwedAZero(t *testing.T) {
 		t.Fatalf("first relay pass: moved %d rows, err %v, want a full batch of %d: without a ledger "+
 			"grown by a real pass there is no earlier reading for the correction to be owed", n, err, batch)
 	}
-	if size := ledgerSizeForReviewRound7(); size != 2 {
+	if size := ledgerSizeForTheCorrection(); size != 2 {
 		t.Fatalf("the ledger holds %d series after the first pass, want 2 (the drained series and the "+
 			"series the second worker is about to hold): the case cannot decide anything until both are in it", size)
 	}
@@ -129,14 +129,14 @@ func TestASeriesAnotherWorkerHoldsIsNeverOwedAZero(t *testing.T) {
 	}
 
 	heldKey := lagKey{tenant: heldT, event: heldName}
-	if !inLedgerForReviewRound7(heldKey) {
+	if !inLedgerForTheCorrection(heldKey) {
 		t.Errorf("the correction zeroed %s/%s and dropped it from the ledger while another worker's "+
 			"transaction held a row of it: the queue's unpublished rows are there to be read, and a "+
 			"zero written over one that is locked says this tenant's series has drained while the row "+
 			"waits inside a transaction — the direction this number may never lie",
 			heldKey.tenant, heldKey.event)
 	}
-	if inLedgerForReviewRound7(lagKey{tenant: drainedT, event: drainedName}) {
+	if inLedgerForTheCorrection(lagKey{tenant: drainedT, event: drainedName}) {
 		t.Errorf("the drained series %s is still in the ledger: no row of it is left in the queue, so this "+
 			"pass owed it its zero, and a correction that zeroes nothing keeps reporting a wait that "+
 			"the queue no longer holds — the case cannot be satisfied by never writing the zero",
@@ -163,30 +163,30 @@ func TestASeriesAnotherWorkerHoldsIsNeverOwedAZero(t *testing.T) {
 		t.Errorf("%d rows are still unpublished after two drains: nothing here can be judged until the "+
 			"queue is empty", pending)
 	}
-	if left := ledgerSizeForReviewRound7(); left != 0 {
-		ids := seriesInLedgerForReviewRound7()
+	if left := ledgerSizeForTheCorrection(); left != 0 {
+		ids := seriesInLedgerForTheCorrection()
 		t.Errorf("%d series (%v) are left in the ledger after the queue drained and its end was reached: "+
 			"a drained series is owed one zero and then asked about no more", left, ids)
 	}
 }
 
-// ledgerSizeForReviewRound7 reads the set the correction is asked about.
-func ledgerSizeForReviewRound7() int {
+// ledgerSizeForTheCorrection reads the set the correction is asked about.
+func ledgerSizeForTheCorrection() int {
 	reportedSeries.mu.Lock()
 	defer reportedSeries.mu.Unlock()
 	return len(reportedSeries.seen)
 }
 
-// inLedgerForReviewRound7 answers whether this process still owes one series its zero.
-func inLedgerForReviewRound7(k lagKey) bool {
+// inLedgerForTheCorrection answers whether this process still owes one series its zero.
+func inLedgerForTheCorrection(k lagKey) bool {
 	reportedSeries.mu.Lock()
 	defer reportedSeries.mu.Unlock()
 	_, in := reportedSeries.seen[k]
 	return in
 }
 
-// seriesInLedgerForReviewRound7 names what is left, for the failure message.
-func seriesInLedgerForReviewRound7() []string {
+// seriesInLedgerForTheCorrection names what is left, for the failure message.
+func seriesInLedgerForTheCorrection() []string {
 	reportedSeries.mu.Lock()
 	defer reportedSeries.mu.Unlock()
 	out := make([]string, 0, len(reportedSeries.seen))
@@ -196,8 +196,8 @@ func seriesInLedgerForReviewRound7() []string {
 	return out
 }
 
-// swapLedgerForReviewRound7 replaces the process's ledger and restores what it held.
-func swapLedgerForReviewRound7(next map[lagKey]struct{}) func() {
+// swapLedgerForTheCorrection replaces the process's ledger and restores what it held.
+func swapLedgerForTheCorrection(next map[lagKey]struct{}) func() {
 	reportedSeries.mu.Lock()
 	defer reportedSeries.mu.Unlock()
 	was := reportedSeries.seen

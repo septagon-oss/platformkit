@@ -230,12 +230,19 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// A field's help paragraph now holds one sentence per author: the four components
 	// that draw one gained an optional list of notes about the control the form chose.
-	// A leaf-by-leaf diff of this export against the tree before that change adds three
-	// schema leaves to each of the sixteen copies of those four schemas — 99,996 leaves
-	// become 100,044, none removed — and /sha256 is the only leaf whose value moves.
-	// No example's HTML, CSS, token, theme, notice, icon or font policy moves, because
-	// no example sets the new property.
-	if legacy.SHA256 != "039fce863a69a300b7bc399aca8827f30f3a9956d1084dc19e8d311b8c042d6f" {
+	// That list reaches every form schema the export carries, and no gallery example
+	// sets it, so the property moves the schemas and the digest and nothing else.
+	// OptionChips grew the properties a finite choice needs — one name carried many
+	// times, an explicit described-by, a clear affordance and the stable option key
+	// on the input — so every one of its fourteen Gallery examples now renders a
+	// `for` on each label and a wider input, and each example's source schema gains
+	// the four optional properties clearLabel, describedBy, multiple and values.
+	// Exported this tree against the tree before the change and walked both
+	// documents leaf by leaf: 70 leaves move, 56 of them those added properties,
+	// 14 the examples' html, none removed; /css gains 174 lines of choice rules and
+	// loses none, and /sha256 follows them. No token, theme, notice, icon, class or
+	// other component moves.
+	if legacy.SHA256 != "42c7b0161e2efce814ba15c045bfa41f4e2603b446d163a55592aa0635157569" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

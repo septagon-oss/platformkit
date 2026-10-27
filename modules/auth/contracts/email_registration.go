@@ -39,6 +39,22 @@ const (
 	VerificationLifetime       = 24 * time.Hour
 	VerificationResendInterval = time.Minute
 	EventVerificationRequested = "auth.verification_requested"
+
+	// VerifyEmailPath is the address a sign-up mail carries and the page that
+	// answers it: the confirmation screen, on the tenant's own public face.
+	//
+	// It is a contract and not an internal fact because two packages have to
+	// agree on it: the delivery that writes the link and the page that mounts
+	// under the address it mounted itself at, whose guard reads this name and
+	// panics at boot if the two ever part ways. internal.VerifyEmailPath is the
+	// same constant, so an edit cannot move the mail and the page apart.
+	//
+	// It is on the public face, and not under the workspace prefix like
+	// ResetPath is, because of who opens it: a person who has just chosen a
+	// password has no session, and the workspace turns a caller with no session
+	// towards the sign-in form. A confirmation link that answers with a request
+	// to sign in is a door that closes on the person it was mailed to.
+	VerifyEmailPath = "/auth/verify-email"
 )
 
 // VerificationRequested queues a lookup without putting an account identity or

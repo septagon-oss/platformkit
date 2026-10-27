@@ -1,21 +1,14 @@
 // asyncapi.go renders the composition's event catalogue as an AsyncAPI 3.0.0
-// document.
+// document. It is only ever a rendering: module.Module.Declared (kit/module) is
+// what says which events exist and what they carry, and this walks that list, so
+// nothing here can add an event and no hand-maintained document can drift from
+// the code that publishes. apps/platformkit checks the bytes in as a golden file
+// (its own testdata/asyncapi.json), so the check fails when the catalogue moved
+// and the committed document did not.
 //
-// It is a rendering, and only ever a rendering: the module manifest is what
-// says which events exist and what they carry (module.Module.Declared, kit/module),
-// and this walks that list. Nothing here can add an event, and nothing outside
-// the Go program has to trust a hand-maintained document that may have drifted
-// from the code that publishes. apps/platformkit checks the bytes in as a
-// golden file (its own testdata/asyncapi.json), so make check fails when the
-// catalogue moved and the committed document did not — the same arrangement
-// the screen catalog keeps.
-//
-// The version in info is "1.0.0" and not the build's, because that field
-// documents the version of the interface, not of the binary that rendered it:
-// this catalogue changes when an event's name or payload schema changes, which
-// is a new event name rather than a new document version — a subscriber binds a
-// durable to a name, and renaming is the breaking change. The image's own
-// revision reaches a footer through the source stamp, which is where a build
+// info.version is the interface version, "1.0.0", and not the build's: this
+// catalogue changes when an event's name or payload schema changes, and the
+// image's own revision reaches a footer through the source stamp, where a build
 // identity belongs.
 package app
 

@@ -1,34 +1,17 @@
 // Package pkit composes an application in sentences: an app is a name and the
-// modules it uses, and the modules wire themselves by the contracts they
-// declare (decision 0074).
+// modules it uses, and the modules wire themselves by the contracts they declare
+// (docs/adr/0022-pkit-orchestrates-composition.md).
 //
 // Every method records; Build answers, with every problem at once, each naming
-// the method that caused it. The wiring is resolved at boot, not by the
-// compiler: generics check each declaration's type, and the resolver checks the
-// graph — a missing or ambiguous provider, a cycle, a phase violation — before
-// anything has an effect. The composition is still a list somebody wrote down:
-// nothing is found that Use does not name.
+// the method that caused it. The wiring resolves at Build, not by the compiler:
+// generics check each declaration's type and the resolver checks the graph — a
+// missing or ambiguous provider, a cycle, a phase violation — before anything has
+// an effect. The composition is still a list somebody wrote down: nothing is found
+// that Use does not name, and reflect answers a contract type's identity and
+// printed name only, never to discover, construct or call anything.
 //
-// Build is where the sentences are answered. Its validate phase runs in a fixed
-// order — the recorded settings, the resolver, every module's dry build and the
-// manifest gates over what that build produced, the ports the kernel cannot
-// answer for itself, the roles the app named — and every problem comes back at
-// once, each naming the method that caused it, before a connection is opened, a
-// migration runs or a port is listened on. Run is Build and whichever half the
-// role names. A Server adds the process around an app: its configuration, the
-// environment the composition is read in, the role it runs, and Host(app,
-// Tenant(name, host), …), which says where an application is reached without
-// deciding which host is which tenant — that answer stays the tenant module's
-// rows, read per request. Explain writes what the composition answers, so a
-// committed composition file and a running application cannot disagree.
-//
-// Boot time, honestly named: the wiring resolves when Build runs. Not when the
-// sentences are written, and not once per request. A composition that does not
-// resolve is refused rather than half-built, so a running application has no
-// wiring left to discover and nothing here goes looking for any.
-//
-// A contract is keyed by its Go type. reflect is used for that type's identity
-// and its printed name only, never to discover, construct or call anything.
+// The engine rules — the fixed order of the validate phase, what a refusal costs,
+// the identity claim and the description's absences — are in pkit/README.md.
 package pkit
 
 import (

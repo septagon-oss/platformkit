@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"github.com/septagon-oss/platformkit/modules/web/contracts"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -93,9 +94,9 @@ func Mount(surfaces httpx.Surfaces, s Site) {
 		BackLabel: "Back to the site",
 		Messages:  s.Messages,
 	}
-	page.Serve(home, shell, page.Route{ID: "web-home", Method: http.MethodGet, Path: "/",
+	page.Serve(home, shell, page.Route{View: contracts.HomeView, ID: "web-home", Method: http.MethodGet, Path: "/",
 		Summary: "The site's home page", Errors: []int{http.StatusNotFound, http.StatusServiceUnavailable}}, httpx.Public(), s.home)
-	page.Serve(home, shell, page.Route{ID: "web-page", Method: http.MethodGet, Path: "/{slug}",
+	page.Serve(home, shell, page.Route{View: contracts.PageView, ID: "web-page", Method: http.MethodGet, Path: "/{slug}",
 		Summary: "One published page", Errors: []int{http.StatusNotFound, http.StatusServiceUnavailable}}, httpx.Public(), s.page)
 }
 

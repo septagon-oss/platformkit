@@ -33,7 +33,7 @@ func TestASuspensionCannotReportCompleteSuccessWhenInvalidationFails(t *testing.
 	}
 	first := compose(cfg)
 	start(t, cfg, first.modules, app.Options{
-		Tenants: first.tenants, Authorize: first.auth, Entitle: first.plans, Authenticate: first.auth.Authenticate,
+		Tenants: first.testTenants(), Authorize: first.testAuth(), Entitle: first.plans, Authenticate: first.testAuth().Authenticate,
 		Role: app.All, Transport: memory.New(), Log: quiet(),
 		Caches: app.Caches{Valkey: func(ctx context.Context, c config.Cache) (cache.Cache, error) {
 			store, err := build(ctx, c)
@@ -44,7 +44,7 @@ func TestASuspensionCannotReportCompleteSuccessWhenInvalidationFails(t *testing.
 	other.Server.Addr = freeAddr(t)
 	second := compose(other)
 	start(t, other, second.modules, app.Options{
-		Tenants: second.tenants, Authorize: second.auth, Entitle: second.plans, Authenticate: second.auth.Authenticate,
+		Tenants: second.testTenants(), Authorize: second.testAuth(), Entitle: second.plans, Authenticate: second.testAuth().Authenticate,
 		Role: app.Web, Transport: memory.New(), Log: quiet(), Caches: app.Caches{Valkey: build},
 	})
 

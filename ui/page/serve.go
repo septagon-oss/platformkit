@@ -14,6 +14,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui/document"
 )
@@ -59,6 +60,13 @@ type Granter struct{ Permission, Label string }
 // Route is what one page is: its operation id, method, path, summary, and the
 // statuses it may answer with beyond the kernel's defaults.
 type Route struct {
+	// View binds this route to a declared screen; Response defaults to input.
+	View     screen.ViewRef
+	Response string
+	// Exception classifies redirect, protocol, export or preview responses.
+	Exception, Reason string
+	// Targets checks composed form addresses against their operation identities.
+	Targets []screen.Target
 	// MintsCredential prevents storing this page's credential-bearing response.
 	MintsCredential           bool
 	ID, Method, Path, Summary string
@@ -108,7 +116,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 	if s.Messages != nil {
 		_ = SelectLocale(s.Messages) // validate the provider at composition
 	}
-	op := pageOperation(s, rt)
+	op := screenOperation(r, s, rt)
 	httpx.HTML(r, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
 		r := readPageRequest(ctx, s)
 		v, err := handler(ctx, r, in)
@@ -118,20 +126,36 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 				applyPrivacy(out, v.Sensitive)
 				return out, nil
 			}
-			status, detail := refusal(err)
-			if status >= http.StatusInternalServerError {
+			why := refusal(err)
+			if why.Status >= http.StatusInternalServerError {
 				// The page says what could not be loaded and offers the address again; the
 				// reason stays here, with the caller who can fix it.
 				slog.ErrorContext(ctx, "page: the read behind this page failed",
-					"path", r.Path, "status", status, "error", err)
+					"path", r.Path, "status", why.Status, "error", err)
+			}
+			asked, _ := httpx.RequestFrom(ctx)
+			if httpx.WantsValue(asked) {
+				// The client named a JSON media type and refused markup, so the refusal of a
+				// page route is the same problem document every other refusal of this address
+				// would have been, written by the kernel's one encoder — the rule
+				// kit/httpx/fault.go states for a guard's refusal, asked of the same file
+				// rather than copied. A client that named nothing has no opinion to honour and
+				// gets the page this route exists to give.
+				return nil, err
 			}
 			// Handler refusals use the same localized fault view as guard failures.
-			// Preserve sensitivity from the refused view.
-			refused := fault(verdict{status: status, detail: detail, loc: r.Locale,
-				back: s.Back, backLabel: s.BackLabel, path: r.Path, sub: rt.Subject})
+			// Preserve sensitivity from the refused view. The reference is the request's own
+			// id, which is why a handler's refusal is quotable at all: the id middleware ran
+			// before this handler was reached, and the problem body the same refusal takes to
+			// a program carries it as its instance (kit/httpx's stampRequestID).
+			refused := fault(verdict{status: why.Status, detail: shown(why), key: why.Key,
+				reference: httpx.RequestID(ctx), loc: r.Locale, sub: rt.Subject,
+				back: s.Back, backLabel: s.BackLabel, path: r.Path,
+				ask: asked, signIn: s.Chrome.SignIn})
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
+		attachScreenView(rt, err, &v)
 		if r.Locale != nil {
 			if v.Language == "" {
 				v.Language = r.Locale.Language
@@ -307,11 +331,16 @@ func regionAddress(ctx context.Context, r Request) string {
 	return r.Path
 }
 
-// refusal is an error's status and detail: a problem's own, or a 500.
-func refusal(err error) (int, string) {
+// refusal is a handler's error read as the verdict it is: its own problem, or the 500
+// standing in for anything else. The verdict is handed over whole rather than flattened to
+// a status and a sentence, because the two fields a person's page needs are precisely the
+// two the problem document does not carry (problem.Problem's Key and Diagnostic), and both
+// doors read them through shown and fault below. So the two shapes of one refusal cannot
+// disagree about what a browser may be shown.
+func refusal(err error) *problem.Problem {
 	var p *problem.Problem
 	if errors.As(err, &p) {
-		return p.Status, p.Detail
+		return p
 	}
-	return http.StatusInternalServerError, ""
+	return problem.New(http.StatusInternalServerError, "")
 }

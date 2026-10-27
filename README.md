@@ -56,7 +56,11 @@ describe the behavior, while its implementation stays behind that boundary.
 External services connect through the contracts their consumers require. For
 example, the included billing provider records charges but does not transfer
 money; connect a payment processor when your product needs to collect payments.
-Email delivery likewise requires an SMTP configuration.
+Email delivery likewise requires an SMTP configuration, and refuses registration
+by email without one. From a checkout, `make up` starts a Mailpit sink beside
+Postgres and NATS and `make run` points the application at it through
+`PLATFORMKIT_MAIL_HOST`, `_PORT` and `_FROM`, so a development instance can sign
+people up and read its own inbox (`PLATFORMKIT_MAILPIT_PORT`).
 
 [Architecture](ARCHITECTURE.md) explains composition, tenant isolation,
 authorization and migrations in more detail.
@@ -111,6 +115,15 @@ return app.Run(ctx, deployment, app.All)
     written by `pkit.App.Describe` on the same drift discipline: a composition
     changed in either encoding and not described fails a check.
 
+Try the public APIs through the executable examples in [db](kit/db/example_test.go),
+[events](kit/events/example_test.go), [httpx](kit/httpx/example_test.go),
+[rest](kit/rest/example_test.go), [crud](kit/crud/example_test.go),
+[cache](kit/cache/example_test.go), [jobs](kit/jobs/example_test.go) and
+[tenancy](kit/tenancy/example_test.go), using the [test setup](CONTRIBUTING.md#verify-at-the-relevant-boundary).
+**Reused** — these examples compose the existing kernel APIs, RLS fixtures and memory adapters.
+**Added** — checked usage examples, a callback lifetime for database fixtures and an execution assertion fill the documentation gap without changing runtime APIs.
+**Made reusable** — `dbtest.WithSchema` supports examples without a test handle, and `exampletest.Execute` verifies that Go runs each documented example.
+
 ## Build a screen
 
 Start with the [entity and presentation map](ARCHITECTURE.md#entity-and-presentation-contracts)
@@ -142,6 +155,11 @@ For a configured application, `/docs` and `/openapi.json` are available when
 `server.docs` is enabled; they are public endpoints, so enable them deliberately.
 `GET /api/v1/app/resources` describes the resources available to an authorized
 shell. `GET /health` and `GET /ready` report process and dependency readiness.
+
+A refusal arrives in one of two shapes, chosen by what the client asked for: a
+program gets an RFC 9457 problem document, a browser a sentence, a request
+reference to quote, and the way on the verdict leaves open. Same verdict, same
+status; a refusal never becomes a page that says it succeeded.
 
 ## Contributing and project information
 

@@ -18,7 +18,9 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/kit/locale"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
@@ -30,6 +32,10 @@ import (
 // words explicitly; they do not change the definition's names or enum values.
 // Empty labels use the field name, and absent options use the declared enum text.
 type Field struct {
+	Resolved                      *present.ResolvedField
+	PictureSource, ComposedSource string
+	// Anchor names this composed control; empty keeps standalone forms unanchored.
+	Anchor     screen.AnchorRef
 	Definition entity.Field
 	Label      string
 	// Help is the line under the control: what resource.Words.FieldHelp answers for
@@ -88,12 +94,13 @@ type Editor struct {
 // A missing value uses the declared default only on create; an explicit empty
 // value remains empty. ReadOnly fields are omitted, as are immutable create fields.
 type Model struct {
-	Fields    []Field
-	Values    map[string]string
-	Errors    map[string]string
-	Immutable []string
-	Detail    string
-	Create    bool
+	ChoiceValues map[string][]string
+	Fields       []Field
+	Values       map[string]string
+	Errors       map[string]string
+	Immutable    []string
+	Detail       string
+	Create       bool
 }
 
 // Options supplies presentation and command addresses. Namespace is a DOM scope,
@@ -101,6 +108,8 @@ type Model struct {
 // rendered instance. It must start with an ASCII letter and contain only letters,
 // digits, underscores or hyphens. The resulting form ID is Namespace + "-form".
 type Options struct {
+	// View names this composed form, independently of its DOM namespace.
+	View                                   screen.ViewRef
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
@@ -185,6 +194,9 @@ func Example(id string, model Model, options Options) (examples.Example, error) 
 	}
 	seen := make(map[string]bool, len(model.Fields))
 	for _, field := range model.Fields {
+		if err := validateChoiceField(field); err != nil {
+			return examples.Example{}, err
+		}
 		name := field.Definition.Name
 		// The name is in the error because it is the thing to fix: one field with no
 		// name has no label to write, and two of one name draw two controls the
@@ -260,17 +272,19 @@ func example(id string, model Model, options Options) examples.Example {
 		body = append(body, Control(ControlProps{Field: field,
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
-			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
-			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Format: options.Format, Text: options.Text}))
+			ID:           options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
+			ChoiceValues: choiceModelValues(model, f), Value: value, Error: model.Errors[f.Name], Immutable: immutable, Format: options.Format, Text: options.Text}))
 	}
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.CancelLabel, word("forms.form.cancel", "Cancel")),
+				components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: actionAttrs(options.View, "cancel")},
+					Label:   cmp.Or(options.CancelLabel, word("forms.form.cancel", "Cancel")),
 					Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.SubmitLabel, word("forms.form.submit", "Save")),
-					Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: actionAttrs(options.View, "submit")},
+					Label: cmp.Or(options.SubmitLabel, word("forms.form.submit", "Save")),
+					Type:  "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 		}, components.FormActions).Node)
 	// A file control submits a body a urlencoded form cannot carry, and the
 	// encoding belongs to the form rather than to whoever composed it: one
@@ -286,6 +300,12 @@ func example(id string, model Model, options Options) examples.Example {
 	}
 	if rendersFile(model) {
 		props.Attrs = map[string]string{"enctype": "multipart/form-data"}
+	}
+	if options.View != "" {
+		if props.Attrs == nil {
+			props.Attrs = map[string]string{}
+		}
+		props.Attrs["data-screen-view"] = string(options.View)
 	}
 	return examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: options.Title}, props,

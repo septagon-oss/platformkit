@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/present"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
@@ -15,6 +16,7 @@ import (
 // leaving it empty uses the component's historical name-derived default. Enclosing
 // forms should use Example, which supplies a distinct identity to every control.
 type ControlProps struct {
+	ChoiceValues     []string
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
@@ -64,67 +66,42 @@ var widgetInputType = map[string]string{
 // Its capture retains "field/" plus the schema name and Core's Props contract.
 func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
+	f.Widget = present.ControlKind(f)
+	attrs := anchorAttrs(p.Field.Anchor)
+	if f.Widget == "hidden" || f.Widget == "richtext" {
+		attrs = nil
+	}
+	if f.Choices != nil || entity.ChoiceAppearance(f.Widget) {
+		return choiceControl(p, p.Field.Anchor)
+	}
 	word := p.phrases()
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
 	base := components.InputProps{
-		ComponentProps: components.ComponentProps{ID: p.ID},
+		ComponentProps: components.ComponentProps{ID: p.ID, Attrs: attrs},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
 		HelpText: cmp.Or(p.Field.Help, f.Doc), HelpNotes: controlNotes(p, word),
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {
-	case len(f.Enum) > 0 || f.Widget == "select":
-		options := slices.Clone(p.Field.Options)
-		if options == nil {
-			options = make([]components.SelectOption, 0, len(f.Enum))
-			for _, value := range f.Enum {
-				options = append(options, components.SelectOption{Label: value, Value: value})
-			}
-		}
-		placeholder := ""
-		if f.Default == "" {
-			// The label arrives as its author wrote it and the message owns the
-			// sentence around it: casing a translated label is a rule one language has
-			// and the next language cannot read back out of the result.
-			placeholder = word("forms.field.choose", "Choose a %[1]s", label)
-		}
-		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
-			Name:           name, Label: label, Value: p.Value, Error: p.Error,
-			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText, HelpNotes: base.HelpNotes, FullWidth: true,
-		}, components.Select).Node
+	case f.Widget == "select" || f.Widget == "" && len(f.Enum) > 0:
+		return selectControl(p, base, word)
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
 			HelperNotes: base.HelpNotes,
 		}, components.Textarea).Node
 	case f.Widget == "richtext":
-		return richtextField(p, base, word)
-	case f.Widget == "checkbox" || f.Type == entity.TypeBool:
+		return richtextControl(p, label, base, word)
+	case f.Widget == "checkbox" || f.Widget == "" && f.Type == entity.TypeBool:
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
-			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 			Name:           name, Label: label, Value: "true", Checked: p.Value == "true",
 			Required: f.Required, Error: p.Error, HelpText: base.HelpText, HelpNotes: base.HelpNotes,
 		}, components.Checkbox).Node
 	}
-	// The input type is what the widget named, and only then what the Go type
-	// implies. A widget that names one wins over the type because that is what
-	// the tag is for: `datetime` on a string holding an instant and the same
-	// widget on its time.Time neighbour now draw the same control, where the
-	// name used to be discarded and the string became a plain text box.
-	switch named, byType := widgetInputType[f.Widget]; {
-	case byType:
-		base.Type = named
-	case f.Type == entity.TypeTime:
-		base.Type = "datetime-local"
-	case f.Type == entity.TypeInt:
-		base.Type, base.Step = "number", "1"
-	case f.Type == entity.TypeFloat:
-		base.Type, base.Step = "number", "any"
-	}
+	base.Type, base.Step = inputType(f)
 	// datetime-local carries no seconds and no zone, so a stored instant is cut
 	// to the minute the control can actually show. The value is not reformatted:
 	// what a form submits is what the field's own validation will read.
@@ -153,4 +130,52 @@ func controlNotes(p ControlProps, word phraser) []string {
 			"Changed by a command of its own, not by this form."))
 	}
 	return notes
+}
+
+func inputType(f entity.Field) (string, string) {
+	kind, step := widgetInputType[f.Widget], ""
+	if kind == "" {
+		switch f.Type {
+		case entity.TypeTime:
+			kind = "datetime-local"
+		case entity.TypeInt, entity.TypeFloat:
+			kind = "number"
+		default:
+			kind = "text"
+		}
+	}
+	if kind == "number" {
+		if f.Type == entity.TypeFloat {
+			step = "any"
+		} else if f.Type == entity.TypeInt {
+			step = "1"
+		}
+	}
+	return kind, step
+}
+
+// selectControl draws the one select this field's widget asks for. The label
+// arrives as its author wrote it and the message owns the sentence around it:
+// casing a translated label is a rule one language has and the next language
+// cannot read back out of the result.
+func selectControl(p ControlProps, base components.InputProps, word phraser) g.Node {
+	f := p.Field.Definition
+	name, label := base.Name, base.Label
+	options := slices.Clone(p.Field.Options)
+	if options == nil {
+		options = make([]components.SelectOption, 0, len(f.Enum))
+		for _, value := range f.Enum {
+			options = append(options, components.SelectOption{Label: value, Value: value})
+		}
+	}
+	placeholder := ""
+	if f.Default == "" {
+		placeholder = word("forms.field.choose", "Choose a %[1]s", label)
+	}
+	return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.select", Name: label}, components.SelectProps{
+		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: base.Attrs},
+		Name:           name, Label: label, Value: p.Value, Error: p.Error,
+		Required: f.Required, Options: options, Placeholder: placeholder,
+		HelpText: base.HelpText, HelpNotes: base.HelpNotes, FullWidth: true,
+	}, components.Select).Node
 }

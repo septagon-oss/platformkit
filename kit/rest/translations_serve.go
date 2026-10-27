@@ -1,38 +1,13 @@
-// The one translated read that is not a generated route.
+// The one translated read that is not a generated route: a module that *renders* a
+// record — the public site's page, a mail preview, an export — has the `?lang=` read
+// doors' need and no Spec to mount. The rules are not forked for it: which draft is
+// withheld, which locale counts as an answer and which text falls back to the source
+// are decided once here, in the same port call the generated doors make and from the
+// same `Public` flag the port withholds on.
 //
-// A module that *renders* a record — the public site's page, a mail preview, an
-// export — has the same need the `?lang=` read doors have, and no Spec to mount
-// to get it. The rules must not be forked for it: which draft is withheld, which
-// locale counts as an answer and which text falls back to the source are decided
-// here, once, in the same port call the generated doors make, from the same
-// `Public` flag the port withholds on.
-//
-// What is decided here besides the call:
-//
-//   - The source language is the tenant's default, because that is what the
-//     record's own write door insists on — a translation of the tenant's own
-//     language is refused as a mistake, so the row can only ever be in the
-//     default. No caller passes a source language and none can disagree.
-//   - One field is answered in the asked language when that field is reviewed
-//     against a source that still matches. A field whose only text is an
-//     unreviewed draft is not an answer, and neither is one whose source has
-//     moved since: the second is text that says something its author no longer
-//     says, and it is the one a search engine would index under a language flag
-//     and keep for a year. Both are served to the workspace, which sees the
-//     label, and neither to a reader, which sees that field in the source and
-//     nothing else. The rule is per field and never per locale: a reader who
-//     asked for Portuguese of a page whose title is translated and whose
-//     paragraph is not is given the Portuguese title, and throwing it away
-//     because the paragraph is missing answers a reader with less than the
-//     installation has.
-//   - A locale counts as one this record *may be read in* — its hreflang
-//     alternate — only when every translatable field is reviewed in it. That is
-//     the strict question, and it is a different question from what to print.
-//   - The other locales are asked about whatever the reader named, including
-//     when the reader named nothing: the page at the bare address is read by a
-//     crawler that decides what to index from the alternates in its head, and a
-//     translation made after the page was written is discoverable only if the
-//     source page lists it.
+// README.md, "Translating a record" owns the rest: the source language, why
+// completeness is per field and never per locale, which locale counts as an hreflang
+// alternate, and why the bare address asks about every locale.
 package rest
 
 import (
@@ -266,25 +241,15 @@ func ServeTranslated(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSo
 }
 
 // LocaleStates answers how much of one record exists in each language this tenant
-// speaks besides its own: how many of its translatable fields are reviewed against
-// a source that still matches, out of how many the record has.
+// speaks besides its own: how many of its translatable fields are reviewed against a
+// source that still matches, out of how many the record has.
 //
-// The tenant's own language is absent, and that is the answer rather than an
-// omission: a record is authored in it, so it is complete in it by definition, and
-// a badge that reports 100% of a language nothing can be behind in tells a
-// translator nothing they could act on. A language with nothing reviewed in it is
-// answered with zero and not with silence, because an untranslated language is the
-// case the badge exists to point at.
-//
-// Behind and Drafted come from the same answer as Reviewed — the withheld machine
-// draft and the row whose source moved are both reads this function already made —
-// so the state word a record wears and the text a reader is served cannot disagree
-// about which rows exist. What is not in any of the three counts is a field with no
-// row, which is the state called missing.
-//
-// It is the read the generated record screen makes for itself: the same rows, the
-// same withholding and the same staleness rule the public read answers with, so a
-// screen cannot report a translation a public reader would never be given.
+// The tenant's own language is absent because a record is authored in it and so is
+// complete in it by definition; a language with nothing reviewed in it is answered
+// with zero and not with silence, since that is the case the badge exists to point at.
+// Behind, Drafted and Reviewed come from the same reads as the served text, so the
+// state a record wears and the text a reader is served cannot disagree about which
+// rows exist. What none of the three counts is a field with no row: missing.
 func LocaleStates(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSource,
 	port Translations, id uuid.UUID) ([]entity.LocaleState, error) {
 	rec, err := readRecordText(ctx, tx, src, port, id)

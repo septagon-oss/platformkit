@@ -51,6 +51,15 @@ type bounds struct {
 	hasFrom, hasTo   bool
 }
 
+// declaredOps is what a declared sub-count may compare with. It is narrower than
+// crud.Ops on purpose: the rest of the grammar narrows a page a server builds, and a
+// declaration is a module's own sentence about a card, which is the promise worth
+// holding at mount. The list is named here rather than read from crud.Ops so the
+// refusal says what this gate admits and not what the statement grammar can spell.
+var declaredOps = []string{
+	string(crud.OpEq), string(crud.OpLt), string(crud.OpLte), string(crud.OpGt), string(crud.OpGte),
+}
+
 // declaredBoundsFault checks one declared sub-count: the words, the predicates,
 // and each predicate against the field it names. Every refusal here is about a
 // declaration that could only ever be answered wrongly — the honest answer to
@@ -76,7 +85,7 @@ func declaredBoundsFault(name string, h *entity.EntryHighlight, fields []crud.Fi
 			return nil, fmt.Sprintf("highlight filter names %q, which is a list; a list holds many values and one of them is not what the count is about", pred.Field)
 		}
 		if !crud.ValidOp(pred.Op) {
-			return nil, fmt.Sprintf("highlight filter op %q is no operator; crud.Ops admits %s", pred.Op, strings.Join(crud.Ops, ", "))
+			return nil, fmt.Sprintf("highlight filter op %q is no operator; a declared count asks with %s", pred.Op, strings.Join(declaredOps, ", "))
 		}
 		switch crud.Op(pred.Op) {
 		case crud.OpEq:
@@ -85,7 +94,7 @@ func declaredBoundsFault(name string, h *entity.EntryHighlight, fields []crud.Fi
 				return nil, fmt.Sprintf("highlight filter %s %q %q compares a %s, and only a count, an amount or a moment is asked about with an order", pred.Field, pred.Op, pred.Value, f.Type)
 			}
 		default:
-			return nil, fmt.Sprintf("highlight filter %s %q %q names an operator nothing asks with", pred.Field, pred.Op, pred.Value)
+			return nil, fmt.Sprintf("highlight filter %s %q %q is an operator a declared count does not ask with; it admits %s", pred.Field, pred.Op, pred.Value, strings.Join(declaredOps, ", "))
 		}
 		if _, err := crud.Declared(f, pred.Value, time.Time{}); err != nil {
 			return nil, fmt.Sprintf("highlight filter %s %q %q is refused: %s", pred.Field, pred.Op, pred.Value, err)

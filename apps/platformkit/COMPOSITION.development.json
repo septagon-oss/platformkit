@@ -7,8 +7,6 @@
     {
       "name": "product",
       "provides": [
-        "usercontracts.Administration",
-        "usercontracts.Granting",
         "filecontracts.Storage",
         "secrets.Secrets",
         "secrets.Keys",
@@ -23,6 +21,7 @@
         "admincontracts.Locale",
         "admincontracts.PrimaryAction",
         "tenantcontracts.Languages",
+        "authcontracts.ConfirmationChrome",
         "webhookcontracts.Catalogue"
       ],
       "contributes": [
@@ -44,6 +43,15 @@
       ]
     },
     {
+      "name": "authgrants",
+      "provides": [
+        "authcontracts.GrantAuthorizer",
+        "authcontracts.PermissionReader",
+        "usercontracts.Granting",
+        "usercontracts.Administration"
+      ]
+    },
+    {
       "name": "workspace",
       "provides": [
         "*notification.Page"
@@ -58,37 +66,6 @@
             "tenant"
           ]
         }
-      ]
-    },
-    {
-      "name": "user",
-      "provides": [
-        "usercontracts.Service",
-        "authcontracts.Users",
-        "authcontracts.Provisioner",
-        "notificationcontracts.RecipientLookup",
-        "tenantcontracts.Inviter"
-      ],
-      "needs": [
-        {
-          "contract": "usercontracts.Administration",
-          "from": "product"
-        },
-        {
-          "contract": "usercontracts.Granting",
-          "from": "product"
-        }
-      ],
-      "contributes": [
-        {
-          "contract": "personaldata.Part",
-          "to": [
-            "subject"
-          ]
-        }
-      ],
-      "after": [
-        "product"
       ]
     },
     {
@@ -131,9 +108,56 @@
       ]
     },
     {
+      "name": "user",
+      "provides": [
+        "usercontracts.Service",
+        "usercontracts.Lookup",
+        "usercontracts.SystemProvisioner",
+        "usercontracts.RegistrationUsers",
+        "usercontracts.EmailRegistrar",
+        "usercontracts.PendingRegistrar",
+        "usercontracts.RetainedLookup",
+        "usercontracts.Provisioning",
+        "usercontracts.RoleHolders",
+        "usercontracts.AddressLookup",
+        "usercontracts.SeedWriter",
+        "authcontracts.Users",
+        "authcontracts.Provisioner",
+        "notificationcontracts.RecipientLookup",
+        "tenantcontracts.Inviter"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Administration",
+          "from": "authgrants"
+        },
+        {
+          "contract": "usercontracts.Granting",
+          "from": "authgrants"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
+      "after": [
+        "authgrants"
+      ]
+    },
+    {
       "name": "tenant",
       "provides": [
         "tenantcontracts.Service",
+        "tenantcontracts.HostLookup",
+        "tenantcontracts.OIDCReader",
+        "tenantcontracts.SAMLReader",
+        "tenantcontracts.Lister",
+        "tenantcontracts.Bootstrapper",
+        "tenantcontracts.LocaleSetter",
         "httpx.TenantLoader",
         "jobs.TenantLister",
         "notificationcontracts.HostLookup",
@@ -178,7 +202,7 @@
       ],
       "needs": [
         {
-          "contract": "usercontracts.Service",
+          "contract": "usercontracts.EmailRegistrar",
           "from": "user"
         }
       ],
@@ -192,6 +216,7 @@
         "notificationcontracts.Service",
         "authcontracts.Notifier",
         "notificationcontracts.Mailer",
+        "notificationcontracts.MailDelivery",
         "notificationcontracts.MailLedger"
       ],
       "needs": [
@@ -237,7 +262,8 @@
         "config.Server"
       ],
       "implementation": {
-        "name": "mailbox"
+        "name": "mailbox",
+        "simulated": true
       }
     },
     {
@@ -364,6 +390,10 @@
       "name": "auth",
       "provides": [
         "authcontracts.Auth",
+        "authcontracts.RoleEditor",
+        "authcontracts.SessionAdministration",
+        "authcontracts.RoleReader",
+        "authcontracts.RoleRepairer",
         "httpx.Authorizer",
         "pkit.Authenticator"
       ],
@@ -385,6 +415,10 @@
           "from": "notification"
         },
         {
+          "contract": "notificationcontracts.MailDelivery",
+          "from": "notification"
+        },
+        {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
         },
@@ -401,8 +435,12 @@
           "from": "tenant"
         },
         {
-          "contract": "usercontracts.Granting",
-          "from": "product"
+          "contract": "authcontracts.GrantAuthorizer",
+          "from": "authgrants"
+        },
+        {
+          "contract": "authcontracts.PermissionReader",
+          "from": "authgrants"
         }
       ],
       "uses": [
@@ -413,6 +451,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "authcontracts.ConfirmationChrome",
+          "from": "product"
         },
         {
           "contract": "auth.LinkPages",
@@ -429,6 +471,7 @@
       ],
       "after": [
         "product",
+        "authgrants",
         "user",
         "tenant",
         "notification",
@@ -446,12 +489,20 @@
       ],
       "needs": [
         {
-          "contract": "usercontracts.Service",
+          "contract": "usercontracts.Provisioning",
           "from": "user"
         },
         {
-          "contract": "authcontracts.Auth",
+          "contract": "usercontracts.Lookup",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.RoleReader",
           "from": "auth"
+        },
+        {
+          "contract": "authcontracts.PermissionReader",
+          "from": "authgrants"
         }
       ],
       "contributes": [
@@ -463,6 +514,7 @@
         }
       ],
       "after": [
+        "authgrants",
         "user",
         "auth"
       ]
@@ -474,7 +526,7 @@
       ],
       "needs": [
         {
-          "contract": "authcontracts.Auth",
+          "contract": "httpx.Authorizer",
           "from": "auth"
         }
       ],
@@ -491,7 +543,7 @@
       ],
       "needs": [
         {
-          "contract": "usercontracts.Service",
+          "contract": "usercontracts.RoleHolders",
           "from": "user"
         },
         {
@@ -508,10 +560,14 @@
         },
         {
           "contract": "usercontracts.Granting",
-          "from": "product"
+          "from": "authgrants"
         },
         {
-          "contract": "authcontracts.Auth",
+          "contract": "usercontracts.Administration",
+          "from": "authgrants"
+        },
+        {
+          "contract": "httpx.Authorizer",
           "from": "auth"
         }
       ],
@@ -524,7 +580,7 @@
         }
       ],
       "after": [
-        "product",
+        "authgrants",
         "user",
         "notification",
         "auth",
@@ -728,7 +784,7 @@
       ],
       "needs": [
         {
-          "contract": "usercontracts.Service",
+          "contract": "usercontracts.RetainedLookup",
           "from": "user"
         },
         {
@@ -783,17 +839,25 @@
       "name": "admin",
       "needs": [
         {
-          "contract": "authcontracts.Auth",
+          "contract": "authcontracts.RoleEditor",
           "from": "auth"
         },
         {
-          "contract": "tenantcontracts.Service",
+          "contract": "authcontracts.SessionAdministration",
+          "from": "auth"
+        },
+        {
+          "contract": "httpx.Authorizer",
+          "from": "auth"
+        },
+        {
+          "contract": "tenantcontracts.Lister",
           "from": "tenant"
         }
       ],
       "uses": [
         {
-          "contract": "usercontracts.Service",
+          "contract": "usercontracts.Lookup",
           "from": "user"
         },
         {

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
-	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -70,7 +70,7 @@ func (p pages) mountSessions(app *httpx.Router) {
 	guard := httpx.SignedIn()
 	where := namespace(app, "auth")
 
-	page.Serve(where, p.shell, page.Route{ID: "admin-sessions", Method: http.MethodGet, Path: p.at.sessions.rel,
+	page.Serve(where, p.shell, page.Route{View: admincontracts.Screen("sessions"), ID: "admin-sessions", Method: http.MethodGet, Path: p.at.sessions.rel,
 		Summary: "The sessions this person has", Errors: sessionsReadFaults}, guard,
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return p.sessionsView(ctx, r)
@@ -80,7 +80,7 @@ func (p pages) mountSessions(app *httpx.Router) {
 	// uses the same verb for: kit/httpx's CSRF rule refuses an unsafe request
 	// carrying a session cookie unless it is same-site, and a <form> cannot send
 	// DELETE. The JSON route stays as it is for a client that can.
-	page.Serve(where, p.shell, page.Route{ID: "admin-session-revoke", Method: http.MethodPost, Path: p.at.sessionRevoke.rel,
+	page.Serve(where, p.shell, page.Route{Exception: "redirect", Reason: "Successful session revocation returns to the session list.", ID: "admin-session-revoke", Method: http.MethodPost, Path: p.at.sessionRevoke.rel,
 		Summary: "End one of this person's sessions", Errors: sessionsWriteFaults}, guard,
 		func(ctx context.Context, r page.Request, in *sessionForm) (page.View, error) {
 			tx, live := httpx.TxFrom(ctx)
@@ -97,7 +97,7 @@ func (p pages) mountSessions(app *httpx.Router) {
 			return page.View{}, httpx.SeeOther(p.at.sessions.at)
 		})
 
-	page.Serve(where, p.shell, page.Route{ID: "admin-sessions-revoke-rest", Method: http.MethodPost, Path: p.at.sessionsRest.rel,
+	page.Serve(where, p.shell, page.Route{Exception: "redirect", Reason: "Successful session revocation returns to the session list.", ID: "admin-sessions-revoke-rest", Method: http.MethodPost, Path: p.at.sessionsRest.rel,
 		Summary: "End every session but this one", Errors: sessionsWriteFaults}, guard,
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			tx, live := httpx.TxFrom(ctx)
@@ -198,7 +198,8 @@ func sessionsPage(where, revokeOne, revokeRest, passkeyBegin, passkeyFinish stri
 			components.Form(components.FormProps{Action: revokeRest, Label: o.Text("admin.workspace.end_rest", "End every session but this one")},
 				components.FormActions(components.FormActionsProps{},
 					components.Button(components.ButtonProps{
-						Label: o.Text("admin.workspace.end_others", "End the other %d", rest), Type: "submit", Tone: "danger"}))))
+						ComponentProps: components.ComponentProps{Attrs: screenAnchor("sessions", "action.revoke-rest")},
+						Label:          o.Text("admin.workspace.end_others", "End the other %d", rest), Type: "submit", Tone: "danger"}))))
 	}
 	body = append(body, passkeyEnrolment(passkeyBegin, passkeyFinish, o)...)
 	return page.View{Title: o.Text("admin.workspace.sessions", "Sessions"), Body: body}
@@ -338,7 +339,7 @@ func deviceNamed(s *authcontracts.SessionListing, o resource.Options) string {
 func formValue(raw []byte, key string) (string, error) {
 	form, err := url.ParseQuery(string(raw))
 	if err != nil {
-		return "", problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+		return "", page.FormUnreadable()
 	}
 	return form.Get(key), nil
 }

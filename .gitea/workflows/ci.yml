@@ -437,19 +437,24 @@ jobs:
       # it, the way .gitea/workflows/public-consumption.yml carries its reports.
       # A consumer's own CI refuses a pin that cannot name one
       # (scripts/PIN-REHEARSAL.md).
-      - name: Migration rehearsal (make check-rehearse)
+      - name: Migration rehearsal, the supported matrix (make check-rehearse-supported)
         # The merge tier (0088). The rehearsal copies the previous release's
         # database and applies this tree's pending migrations to it — the one gate
         # here that needs a populated database rather than an empty one, and the
         # push tier's promise is that it opens none. `make check-rehearse` is still
         # a `check:` prerequisite, so nothing is lost by a pull request that does
         # not reach it: the push to main that merges it runs `make check`, and
-        # `make check-merge` names the pair.
+        # `make check-merge` names the pair. The step runs the release form —
+        # `make check-rehearse-supported`, one case per installation the support
+        # record names — because a merge to main is what a version is published
+        # from, and one case is not the promise. The single-source case still runs
+        # inside `make check`, so the merge job pays for the matrix once and the
+        # pull request pays for nothing it did not pay before.
         if: github.event_name != 'pull_request'
         env:
           REHEARSE_RECEIPT: ${{ runner.temp }}/rehearsal.json
         run: |
-          make check-rehearse
+          make check-rehearse-supported
           cat "$REHEARSE_RECEIPT"
 
       - name: Exported surface against the supported tag (make check-apidiff)
@@ -471,8 +476,15 @@ jobs:
 
       - name: make check
         if: github.event_name != 'pull_request'
+        # `make check` runs check-screen-render, which is scripts/e2e.sh on one spec, and
+        # scripts/e2e.sh refuses to boot without the catcher `Start the mail catcher` put on
+        # this job's network. Main's run 83884 (job 86011) ended there: "e2e: no Mailpit API
+        # at http://localhost:8025". The same three names as `make e2e` below.
         env:
           COMPLEXITY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
         run: make check
 
       # The push tier (decision 0088): the contracts, and the behaviour of the

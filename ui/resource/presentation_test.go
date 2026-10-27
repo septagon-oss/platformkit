@@ -45,6 +45,8 @@ func TestVisibilityKeepsAFieldOffTheScreensTheAuthorNamed(t *testing.T) {
 	listed := render(t, resource.List(hintedResource(entity.EntryHints{}, fields), opts,
 		[]map[string]any{row}, 1, 1, "", false).Body)
 	detail := render(t, resource.Detail(hintedResource(entity.EntryHints{}, fields), opts, row, false).Body)
+	// Sort choices may name fields outside the table; visibility governs the cells.
+	listed = listed[strings.Index(listed, "<table") : strings.Index(listed, "</table>")+8]
 
 	for _, want := range []struct {
 		page, needle string
@@ -117,14 +119,14 @@ func TestDeclaredSectionsAreTheBlocksOfTheRecordScreen(t *testing.T) {
 	if timing > other {
 		t.Error("the sections are drawn in an order nobody declared")
 	}
-	// `title` named no section, so it comes after both — and it is still on the page.
-	title := strings.LastIndex(sectioned, "Title")
-	if strings.Index(sectioned, "Timing") > other {
-		t.Error("the sections are drawn in the wrong order")
+	// The title appears in the heading; the unsectioned facts stay in record information.
+	if strings.Contains(sectioned, "<dt>Title</dt>") {
+		t.Error("title duplicated as a record fact")
 	}
-	if title < other {
-		t.Errorf("an unsectioned field was drawn inside a declared block (title at %d, second block at %d)", title, other)
+	if information := strings.Index(sectioned, `data-semantic-role="record-information"`); information < other {
+		t.Error("record information must follow the declared sections")
 	}
+
 }
 
 // TestAFieldTheRecordDoesNotDrawDoesNotNameIt. `hidden` keeps a field off the

@@ -11,6 +11,7 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -184,6 +185,11 @@ type Message struct {
 // deployment both use; a second production sender would be a second thing to
 // keep working for no capability the first does not have.
 //
+// A composition holds a Mailer in every case, so "there is a mailer" answers
+// nothing about whether a message will reach anybody: the deployment that named
+// no host holds the mailbox, which keeps the message and dials nowhere. The
+// caller that must not promise a person an email asks MailDelivery.
+//
 // It is exported rather than internal to this module because it has a second
 // consumer, and the exception is worth naming. Everything this application
 // mails goes out of the worker below, which reads a notification row back and
@@ -196,6 +202,68 @@ type Message struct {
 // notifications.link, which is what it used to be.
 type Mailer interface {
 	Send(ctx context.Context, m Message) error
+}
+
+// MailDelivery is the second reading of the sender a composition was given: not
+// how a message leaves, but whether it leaves at all. It exists because every
+// composition holds a Mailer — the SMTP carrier where the deployment named a
+// host, the recording mailbox where it did not — so a caller that acted as
+// though "there is a mailer" meant "a mail will go out" accepted sign-ups it
+// could never mail.
+//
+// It is a separate interface rather than a second method on Mailer because a
+// method added to an exported interface is a break to anything outside this
+// repository that implements Mailer, which the frozen public line refuses; a
+// name absent from the frozen record is reported only as added. The carrier
+// answers it rather than a flag sitting beside the carrier, because the carrier
+// is the only thing that knows: SMTP dials, the mailbox files.
+type MailDelivery interface {
+	// Available reports whether this composition's sender attempts the messages it
+	// is handed. False is the deployment saying "no mail host is configured": a
+	// caller that would have to promise a person an email refuses, writes nothing
+	// and publishes nothing.
+	Available() bool
+}
+
+// MailDeliveryFunc is a MailDelivery answered by a function, the way
+// site.PaletteFunc is a palette answered by one — the shape a test or a
+// composition uses to say which installation it is standing in.
+type MailDeliveryFunc func() bool
+
+// Available answers the interface.
+func (f MailDeliveryFunc) Available() bool { return f() }
+
+// ErrNoTransport is what the sender a mail-less deployment composes answers, and
+// the one send error that is never worth a retry: no attempt reaches a server this
+// installation does not have.
+var ErrNoTransport = errors.New("notification: this installation has no mail transport")
+
+// noTransport is ErrNoTransport behind the Mailer shape.
+type noTransport struct{}
+
+func (noTransport) Send(context.Context, Message) error { return ErrNoTransport }
+
+// Available answers MailDelivery for this sender the way the SMTP carrier answers
+// it for itself: this one says it attempts nothing, so a door that would promise
+// a person an email is refused by the carrier rather than by a flag somebody has
+// to remember to check beside it.
+func (noTransport) Available() bool { return false }
+
+// NoTransport is the sender a deployment composes when it has neither a mail
+// server nor an in-process mailbox. It is a value rather than nothing because the
+// composition answers a module's Provided port with what that module put, and
+// apps/platformkit's composition test refuses a port that answers with nothing: an
+// installation that means "send nothing" says so by wiring this, not by leaving a
+// nil somebody else has to remember to check.
+var NoTransport Mailer = noTransport{}
+
+// IsNoTransport reports whether the sender in hand is that sender. A command that
+// would promise a mailed link asks it before it writes anything, because the
+// refusal is the command's own to make and a caller must not be told a link is on
+// its way when nothing will send it.
+func IsNoTransport(m Mailer) bool {
+	_, ok := m.(noTransport)
+	return ok
 }
 
 // Service is what a caller does with notifications. Every command takes the

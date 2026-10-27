@@ -35,7 +35,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 // r7DeniedScreen is a screen the tenant's ordinary member role holds nothing about, and
@@ -71,7 +70,7 @@ func r7navigate(t *testing.T, cfg config.Config, client *http.Client, host, path
 // TestAPersonRefusedAScreenIsAnsweredInTheTenantsLanguage — the 403 a signed-in person is
 // shown, at a tenant that declared Portuguese alone, asked in English.
 func TestAPersonRefusedAScreenIsAnsweredInTheTenantsLanguage(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
@@ -86,10 +85,9 @@ func TestAPersonRefusedAScreenIsAnsweredInTheTenantsLanguage(t *testing.T) {
 	// The refused person: signup through the public door, confirmed with the mailbox link this
 	// composition kept, signed in. They hold the tenant's member role, which the seed grants
 	// nothing (modules/auth/internal/seed.go), and so are refused every generated screen.
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the confirmation link out of it", c.mail)
-	}
+
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	email := "r7.member@acme.test"
 	signup, err := json.Marshal(map[string]any{
 		"email": email, "displayName": "R7 Member",

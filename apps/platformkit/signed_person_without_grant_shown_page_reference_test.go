@@ -33,7 +33,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
-	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
 // memberPassword is a member's own chosen secret: written by the signup form, hashed by the
@@ -44,7 +43,7 @@ const memberPassword = "a-member-chooses-this-password"
 const navigated = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
 
 func TestASignedInPersonWithoutTheGrantIsShownAPageAtTheReferenceApplication(t *testing.T) {
-	path, cfg := configure(t)
+	path, cfg, relay := configureMailing(t)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)
@@ -52,10 +51,8 @@ func TestASignedInPersonWithoutTheGrantIsShownAPageAtTheReferenceApplication(t *
 	options.Log = quiet()
 	start(t, cfg, c.modules, options)
 
-	box, ok := c.mail.(*notification.Mailbox)
-	if !ok {
-		t.Fatalf("the reference application mails through %T; this case reads the confirmation link out of the mailbox it keeps", c.mail)
-	}
+	// The relay is this installation's mail server: what it kept is the link.
+	box := relay
 	email := "member.undocumented@acme.test"
 	signup, err := json.Marshal(map[string]any{
 		"email": email, "displayName": "Round Four Member",

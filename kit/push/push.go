@@ -1,27 +1,17 @@
 // Package push is the transport below a notification module's provider: it
 // carries one rendered message to one device whose token somebody already
-// resolved. It owns no device store, no preference, no ledger and no copy —
-// who is told what and whether they wanted it are the notification module's
-// questions, and they are answered before a Message is built.
+// resolved. It owns no device store, no preference, no ledger and no copy — who
+// is told what, and whether they wanted it, are answered before a Message exists.
 //
-// The package is a kernel kit rather than a method on a module's provider
-// interface for the same reason mail has its own provider package: an SDK
-// stays out of a module's contracts/. Everything here speaks the standard
-// library, the port's own vocabulary and one span; an adapter may speak its
-// platform's protocol, and only the adapter's package imports what that needs.
+// It is a kernel kit rather than a method on a module's provider interface for
+// the reason mail has its own provider package: an SDK stays out of a module's
+// contracts/, and only an adapter's package imports a platform's protocol.
 //
-// # What an error costs a device
-//
-// The five sentinels below split into three answers, and the split is the whole
-// design: a token the provider no longer knows (ErrGone) means the caller's row
-// is a lie and belongs deleted, a token this adapter cannot carry
-// (ErrMalformed) or a message the provider refused (ErrRejected) mean the row
-// stays and the person's client re-registers or the copy changes, and anything
-// outside the vocabulary means nothing at all about the device — the connection
-// dropped, the service is rate-limiting, somebody is restarting — so the caller
-// retries and the row is untouched. Mapping a transient failure to ErrGone
-// deletes the devices of everybody in a bad hour, which is why the mapping is
-// asserted case by case in kit/push/pushtest rather than left to reading.
+// The five sentinels split into three answers, and the split is the design: a token
+// the provider no longer knows (ErrGone) means the caller's row is a lie and belongs
+// deleted; a token this adapter cannot carry, or a refused message, means the row
+// stays; anything outside the vocabulary says nothing about the device, so the
+// caller retries. Mapping a transient failure to ErrGone deletes a whole bad hour.
 package push
 
 import (
