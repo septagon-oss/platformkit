@@ -3553,6 +3553,25 @@
   },
   {
    "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/give_back_that_belongs_to_nobody_else_takes_nothing_test.go",
+   "id": "apps/platformkit/give_back_that_belongs_to_nobody_else_takes_nothing_test.go#TestAGiveBackThatBelongsToNobodyElseTakesNothingAway",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestAGiveBackThatBelongsToNobodyElseTakesNothingAway",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
    "assertions_in_file": 9,
    "evidence": "reaches nothing its sibling app_test.go does not reach",
    "file": "apps/platformkit/golden_regeneration_test.go",
@@ -88602,7 +88621,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2404,
+  "files": 2405,
   "forge_runs": [
    408,
    413,
@@ -88637,7 +88656,7 @@
   ],
   "layers": {
    "behaviour": 3859,
-   "composition": 503,
+   "composition": 504,
    "contract": 24,
    "journey": 111
   },
@@ -88655,9 +88674,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4497,
+  "rows": 4498,
   "tiers": {
-   "merge": 2735,
+   "merge": 2736,
    "nightly": 111,
    "push": 1651
   },
@@ -88665,13 +88684,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2159,
+   "keep": 2160,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4111,
+   "keep": 4112,
    "keep-rewrite": 170,
    "merge": 216
   }
