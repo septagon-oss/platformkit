@@ -114,14 +114,17 @@ type Spec[T crud.Entity] struct {
 	// kit/app refuses startup. See docs/adr/0008.
 	OperatorWrite bool
 	// Operations selects the CRUD routes; empty enables all five. Unoffered verbs
-	// have no route or generated action. A list requires Read; without List there
-	// is no generated workspace page. This is a resource declaration, independent
-	// of each caller's permission to use the offered routes.
+	// have no route or generated action, and a list that offers no read draws its
+	// rows unlinked, because no record page exists to link them to. Without List
+	// there is no generated workspace page. This is a resource declaration,
+	// independent of each caller's permission to use the offered routes.
 	Operations []httpx.CRUD
-	// ReadAuth and WriteAuth replace the corresponding permission shorthand;
-	// zero uses Read/Write and the operator flags. Conflicting or Public guards
-	// are refused. SignedIn reads rely on tenant RLS; generic row writes require
-	// a grant. Use Command for writes needing an object-policy decision.
+	// ReadAuth and WriteAuth state the guard as an httpx.Auth, which is the one
+	// spelling a registered resource keeps: Read/Write and the operator flags are
+	// inputs to the same derivation and are refused beside a declared guard, not
+	// overridden by one. Public guards are refused. SignedIn reads rely on tenant
+	// RLS; generic row writes require a grant. Use Command for writes needing an
+	// object-policy decision.
 	ReadAuth httpx.Auth
 	// WriteAuth is the write side of the same two declarations.
 	WriteAuth httpx.Auth
