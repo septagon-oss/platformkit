@@ -43714,6 +43714,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/one_address_two_tenants_accept_their_own_membership_test.go",
+   "id": "modules/auth/internal/one_address_two_tenants_accept_their_own_membership_test.go#TestOneAddressTwoTenantsAcceptTheirOwnMembership",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestOneAddressTwoTenantsAcceptTheirOwnMembership",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/one_address_two_tenants_read_their_own_set_password_trails_test.go",
    "id": "modules/auth/internal/one_address_two_tenants_read_their_own_set_password_trails_test.go#TestOneAddressTwoTenantsReadTheirOwnSetPasswordTrails",
    "kind": "go",
@@ -83784,7 +83803,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2275,
+  "files": 2276,
   "forge_runs": [
    408,
    413,
@@ -83818,7 +83837,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3625,
+   "behaviour": 3626,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83837,9 +83856,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4247,
+  "rows": 4248,
   "tiers": {
-   "merge": 2624,
+   "merge": 2625,
    "nightly": 110,
    "push": 1513
   },
@@ -83847,13 +83866,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2030,
+   "keep": 2031,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3861,
+   "keep": 3862,
    "keep-rewrite": 170,
    "merge": 216
   }
