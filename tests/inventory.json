@@ -32614,6 +32614,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/guided_read_declared_beside_a_storage_row_refuses_to_mount_test.go",
+   "id": "kit/rest/guided_read_declared_beside_a_storage_row_refuses_to_mount_test.go#TestAGuidedReadDeclaredBesideAStorageRowRefusesToMount",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedReadDeclaredBesideAStorageRowRefusesToMount",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/guided_session_read_and_presentation_mount_together_test.go",
    "id": "kit/rest/guided_session_read_and_presentation_mount_together_test.go#TestAGuidedSessionReadAndItsPresentationRefuseToMountApart",
    "kind": "go",
@@ -83528,7 +83547,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2263,
+  "files": 2264,
   "forge_runs": [
    408,
    413,
@@ -83562,7 +83581,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3611,
+   "behaviour": 3612,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83581,9 +83600,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4233,
+  "rows": 4234,
   "tiers": {
-   "merge": 2610,
+   "merge": 2611,
    "nightly": 110,
    "push": 1513
   },
@@ -83591,13 +83610,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2018,
+   "keep": 2019,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3847,
+   "keep": 3848,
    "keep-rewrite": 170,
    "merge": 216
   }
