@@ -24,7 +24,9 @@ import (
 // two holds their ends together, because each is asked about alone above and two ends that each hold their own
 // ground can still leave text between them that no one trims. The check after that asks who trims: a far end
 // spelled twice agrees with the text one helper names until the expression's close moves, and from there the two
-// shapes below are one shape asked about twice, with every assertion above still green.
+// shapes below are one shape asked about twice, with every assertion above still green. The check after that asks how far the guard reaches: it walks
+// the checks of this directory while the walk beside it reads every source of it, so a source outside the checks
+// could read the guide and the doors by a route of its own and be compared by no check at all.
 func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	// The path the vocabulary guard searches for, with the quotes that delimit a Go literal either side, must
 	// name a file of this package: the guards read this guide to ask about the doors it documents.
@@ -104,6 +106,31 @@ func TestTheDoorVocabularyGuardSearchesForWhatItNames(t *testing.T) {
 	}
 	if trimSites == 0 {
 		t.Errorf("nothing of this package trims the far end %q off the door pattern, so the two shapes below are one shape under two names", doorPatternFarEnd())
+	}
+
+	// And the reach of the guard must be the vocabulary it confines. The walk above reads every source of this
+	// directory; the guard it holds reads only the checks of it, so a source outside the checks that opens the guide
+	// or repeats the door pattern is compared by no check while the pair beside these goes on agreeing with itself.
+	for _, name := range sources {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read the source %s of this package: %v", name, err)
+		}
+		opened, repeated := 0, 0
+		for _, line := range strings.Split(string(source), "\n") {
+			if strings.Contains(line, readmePathQuoted()) {
+				opened++
+			}
+			if declaresDoorPattern(line, core) {
+				repeated++
+			}
+		}
+		if opened > 0 || repeated > 0 {
+			t.Errorf("%s reads the served design floor from outside the checks the door guard walks (%d line(s) naming the guide, %d repeating the door pattern): the guard walks the checks only, so the section and the doors this source reads are compared by no check — read the section through servedDesignFloorProse and a door through servedDoor", name, opened, repeated)
+		}
 	}
 
 	// A copy of the pattern and a copy of it narrowed at the far end are both recognised, while a compiled pattern
