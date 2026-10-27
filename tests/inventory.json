@@ -19053,6 +19053,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/view/a_command_owned_field_arrives_read_only_when_the_row_omits_it_test.go",
+   "id": "kit/entity/view/a_command_owned_field_arrives_read_only_when_the_row_omits_it_test.go#TestACommandOwnedFieldArrivesReadOnlyWhenTheRowOmitsIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACommandOwnedFieldArrivesReadOnlyWhenTheRowOmitsIt",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/view/a_field_a_command_owns_arrives_read_only_on_a_create_page_test.go",
    "id": "kit/entity/view/a_field_a_command_owns_arrives_read_only_on_a_create_page_test.go#TestAFieldACommandOwnsArrivesReadOnlyOnACreatePage",
    "kind": "go",
@@ -87223,7 +87242,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2361,
+  "files": 2362,
   "forge_runs": [
    408,
    413,
@@ -87257,7 +87276,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3800,
+   "behaviour": 3801,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87276,23 +87295,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4426,
+  "rows": 4427,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1644
+   "push": 1645
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2115,
+   "keep": 2116,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4039,
+   "keep": 4040,
    "keep-rewrite": 170,
    "merge": 217
   }
