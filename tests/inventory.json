@@ -27080,6 +27080,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/the_in_process_doors_of_an_operators_resource_guard_every_verb_they_declare_test.go",
+   "id": "kit/httpx/the_in_process_doors_of_an_operators_resource_guard_every_verb_they_declare_test.go#TestTheInProcessDoorsOfAnOperatorsResourceGuardEveryVerbTheyDeclare",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheInProcessDoorsOfAnOperatorsResourceGuardEveryVerbTheyDeclare",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/the_in_process_write_door_of_an_operators_resource_names_the_operator_boundary_test.go",
    "id": "kit/httpx/the_in_process_write_door_of_an_operators_resource_names_the_operator_boundary_test.go#TestTheInProcessWriteDoorOfAnOperatorsResourceNamesTheOperatorBoundary",
    "kind": "go",
@@ -86910,7 +86929,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2375,
+  "files": 2376,
   "forge_runs": [
    408,
    413,
@@ -86944,7 +86963,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3784,
+   "behaviour": 3785,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86963,9 +86982,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4410,
+  "rows": 4411,
   "tiers": {
-   "merge": 2707,
+   "merge": 2708,
    "nightly": 110,
    "push": 1593
   },
@@ -86973,13 +86992,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2130,
+   "keep": 2131,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4024,
+   "keep": 4025,
    "keep-rewrite": 170,
    "merge": 216
   }
