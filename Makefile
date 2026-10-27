@@ -240,6 +240,7 @@ check-complexity: ## Require exact complexity ceilings and reviewed budget trans
 generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
+	bash scripts/module_graph.sh
 
 # The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
 # holds generated sections. The diff is against the index, so a regenerated file the author has

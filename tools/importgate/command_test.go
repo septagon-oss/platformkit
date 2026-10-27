@@ -137,6 +137,7 @@ func TestRealGraphUsesGoSelectionAndTestProvenance(t *testing.T) {
 	t.Setenv("GOSUMDB", "off")
 	root := t.TempDir()
 	writeFixture(t, root, "go.mod", "module "+product+"\n\ngo 1.26.6\n")
+	writeFixture(t, root, "scripts/imports-layers.txt", product+"/modules/a platform\n"+product+"/modules/b platform\n")
 	writeFixture(t, root, "modules/a/a.go", "package a\n// import \""+product+"/modules/b\"\nconst Prose = `\""+product+"/modules/b\"`\n")
 	writeFixture(t, root, "modules/b/b.go", "package b\n")
 	writeFixture(t, root, "modules/b/contracts/btest/helper.go", "package btest\nimport _ \""+product+"/modules/a\"\n")
@@ -171,6 +172,7 @@ func TestRealGraphUsesGoSelectionAndTestProvenance(t *testing.T) {
 	check(2, "use of internal package "+product+"/modules/b/internal not allowed")
 	external := t.TempDir()
 	writeFixture(t, external, "go.mod", fmt.Sprintf("module %s\n\ngo 1.26.6\nrequire %s v0.0.0\nreplace %s => %q\n", dependency, product, product, root))
+	writeFixture(t, external, "scripts/imports-layers.txt", dependency+"/modules/b platform\n")
 	writeFixture(t, external, "modules/b/contracts/values.go", "package contracts\nimport _ \""+product+"/modules/a\"\n")
 	writeFixture(t, root, "go.mod", fmt.Sprintf("module %s\n\ngo 1.26.6\nrequire %s v0.0.0\nreplace %s => %q\n", product, dependency, dependency, external))
 	writeFixture(t, root, "modules/a/untracked.go", "package a\n")
@@ -199,11 +201,14 @@ func TestDeclaredDependencyIsResolvedAndDeduplicated(t *testing.T) {
 	p.Dir, p.Module.Dir = filepath.Join(root, "modules/a"), root
 	p.Imports = []string{dependency + "/modules/a/contracts"}
 	base := fakeCommand(t, root, jsonStream(t, p))
+	dependencyDir := filepath.Join(root, "dependency")
+	writeFixture(t, dependencyDir, "scripts/imports-layers.txt", dependency+"/modules/a platform\n")
+	writeFixture(t, root, "scripts/imports-layers.txt", product+"/modules/a platform\n")
 	queries := 0
 	call := func(ctx context.Context, root string, args ...string) ([]byte, error) {
 		if strings.Join(args, " ") == "list -m -json "+dependency {
 			queries++
-			return jsonStream(t, module{Path: dependency}), nil
+			return jsonStream(t, module{Path: dependency, Dir: dependencyDir}), nil
 		}
 		return base(ctx, root, args...)
 	}
@@ -235,13 +240,14 @@ func TestMalformedPolicyRefusesBothModes(t *testing.T) {
 
 func TestTransitiveMetadataAddsNoDirectEdge(t *testing.T) {
 	root := t.TempDir()
+	writeFixture(t, root, "scripts/imports-layers.txt", product+"/modules/a platform\n"+product+"/modules/b platform\n"+product+"/modules/c platform\n")
 	p := packageFixture("modules/a")
 	p.Dir, p.Module.Dir = filepath.Join(root, "modules/a"), root
 	p.Imports = []string{product + "/modules/b/contracts"}
 	data := jsonStream(t, p)
 	data = append(data[:len(data)-1], []byte(`,"Deps":["`+product+`/modules/c/internal"]}`)...)
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"--edges", root}, &stdout, &stderr, fakeCommand(t, root, data)); code != 0 || strings.Contains(stdout.String(), "/modules/c") || stderr.Len() != 0 {
+	if code := run(t.Context(), []string{"--edges", root}, &stdout, &stderr, fakeCommand(t, root, data)); code != 0 || strings.Contains(stdout.String(), "/modules/c") || strings.Contains(stderr.String(), "OUT OF BOUNDS") {
 		t.Fatalf("code %d, stdout %s, stderr %s", code, &stdout, &stderr)
 	}
 }

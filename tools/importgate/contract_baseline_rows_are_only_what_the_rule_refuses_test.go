@@ -60,7 +60,7 @@ func TestCommittedContractBaselineRowsCarryOnlyEdgesTheStrictRuleRefuses(t *test
 		return cmp.Or(cmp.Compare(a.dir, b.dir), cmp.Compare(a.target, b.target))
 	}
 	refused := map[baselineKey]string{}
-	for _, r := range decide(g, grants, map[baselineKey]*baselineRow{}).refused {
+	for _, r := range decideFixture(g, grants, map[baselineKey]*baselineRow{}).refused {
 		if r.rule == "contract-adapter" || r.rule == "contract-external" {
 			refused[baselineKey{strings.TrimPrefix(r.from, g.self+"/"), r.to}] = r.rule
 		}

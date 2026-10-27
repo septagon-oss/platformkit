@@ -11,61 +11,95 @@ type edge struct {
 	from, to, ownerPath, context, suite string
 }
 
+// moduleRoot is one repository Go resolved for this build: its module path and
+// the directory that holds its source, which is where its own declarations live.
+// The longest declared root owns a package path.
+type moduleRoot struct{ path, dir string }
+
 type graph struct {
 	self     string
-	roots    []string
+	dir      string
+	roots    []moduleRoot
 	standard map[string]bool
-	edges    []edge
+	// owned holds every module of the main module with a package in this build
+	// context, sorted and deduplicated. A module with no cross-module edge is in
+	// it, which is what lets a completeness rule be answered without edges.
+	owned []string
+	edges []edge
 }
 
-func normalize(main module, packages []goPackage) ([]edge, error) {
+// root reports the declared repository that owns a package path.
+func (g *graph) root(name string) string {
+	root := ""
+	for _, candidate := range g.roots {
+		if (name == candidate.path || strings.HasPrefix(name, candidate.path+"/")) && len(candidate.path) > len(root) {
+			root = candidate.path
+		}
+	}
+	return root
+}
+
+func normalize(g *graph, packages []goPackage) error {
 	indexed := map[string]goPackage{}
 	for _, p := range packages {
 		if p.Error != nil || len(p.DepsErrors) > 0 || p.Incomplete {
-			return nil, fmt.Errorf("go list %s: incomplete package; error: %+v; dependency errors: %+v", p.ImportPath, p.Error, p.DepsErrors)
+			return fmt.Errorf("go list %s: incomplete package; error: %+v; dependency errors: %+v", p.ImportPath, p.Error, p.DepsErrors)
 		}
 		if p.ImportPath == "" || p.Name == "" || p.Dir == "" || (!p.Standard && (p.Module == nil || p.Module.Path == "")) {
-			return nil, fmt.Errorf("go list %q: missing package identity", p.ImportPath)
+			return fmt.Errorf("go list %q: missing package identity", p.ImportPath)
 		}
 		indexed[p.ImportPath] = p
 	}
 	var edges []edge
+	var owned []string
+	add := func(name string) {
+		if !slices.Contains(owned, name) {
+			owned = append(owned, name)
+		}
+	}
 	for _, p := range packages {
 		if generatedMain(p, indexed) {
 			continue
 		}
-		if p.Module == nil || p.Module.Path != main.Path {
+		if p.Module == nil || p.Module.Path != g.self {
 			continue
 		}
 		if !p.Module.Main {
-			return nil, fmt.Errorf("go list %s: inconsistent main module identity", p.ImportPath)
+			return fmt.Errorf("go list %s: inconsistent main module identity", p.ImportPath)
 		}
 		if p.ForTest != "" {
 			if err := validateVariant(p, indexed); err != nil {
-				return nil, err
+				return err
 			}
 			continue
 		}
-		if !cleanImport(p.ImportPath) || !(p.ImportPath == main.Path || strings.HasPrefix(p.ImportPath, main.Path+"/")) {
-			return nil, fmt.Errorf("go list %q: invalid source identity", p.ImportPath)
+		// Only ordinary source names a module: a rebuilt test variant carries a
+		// bracketed identity, and the package it was rebuilt for already stands.
+		if module, _, _ := g.owner(p.ImportPath); module != "" {
+			add(module)
 		}
-		relative, err := filepath.Rel(main.Dir, p.Dir)
-		expected := strings.TrimPrefix(strings.TrimPrefix(p.ImportPath, main.Path), "/")
+		if !cleanImport(p.ImportPath) || !(p.ImportPath == g.self || strings.HasPrefix(p.ImportPath, g.self+"/")) {
+			return fmt.Errorf("go list %q: invalid source identity", p.ImportPath)
+		}
+		relative, err := filepath.Rel(g.dir, p.Dir)
+		expected := strings.TrimPrefix(strings.TrimPrefix(p.ImportPath, g.self), "/")
 		if expected == "" {
 			expected = "."
 		}
 		if err != nil || filepath.ToSlash(relative) != expected {
-			return nil, fmt.Errorf("go list %s: package directory does not match module", p.ImportPath)
+			return fmt.Errorf("go list %s: package directory does not match module", p.ImportPath)
 		}
 		for _, kind := range []string{"production", "internal-test", "external-test"} {
 			part, err := sourceEdges(p, kind, filepath.ToSlash(relative), indexed)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			edges = append(edges, part...)
 		}
 	}
-	return edges, nil
+	slices.Sort(owned)
+	g.owned, g.edges = owned, edges
+	return nil
 }
 
 func generatedMain(p goPackage, records map[string]goPackage) bool {

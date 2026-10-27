@@ -15,7 +15,7 @@ func TestContractBaselineAdmitsOnlyTheEdgeItNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := fixtureGraph(edge{source, target, source, "production", ""})
-	decision := decide(g, nil, rows)
+	decision := decideFixture(g, nil, rows)
 	if len(decision.refused) != 0 {
 		t.Fatalf("refusals = %+v", decision.refused)
 	}
@@ -25,7 +25,7 @@ func TestContractBaselineAdmitsOnlyTheEdgeItNames(t *testing.T) {
 	}
 	for _, other := range []string{"net/http/httptest", "github.com/lib/pq", foundation + "/kit/httpx"} {
 		g.edges = []edge{{source, target, source, "production", ""}, {source, other, source, "production", ""}}
-		if refused := decide(g, nil, rows).refused; len(refused) != 1 || refused[0].to != other || refused[0].rule != "contract-external" && refused[0].rule != "contract-adapter" {
+		if refused := decideFixture(g, nil, rows).refused; len(refused) != 1 || refused[0].to != other || refused[0].rule != "contract-external" && refused[0].rule != "contract-adapter" {
 			t.Errorf("%s: %+v", other, refused)
 		}
 	}
@@ -33,7 +33,7 @@ func TestContractBaselineAdmitsOnlyTheEdgeItNames(t *testing.T) {
 	// source is never the frozen surface the row describes.
 	for _, suite := range []string{"modules/a/contracts@internal", "modules/a/contracts@external"} {
 		g.edges = []edge{{source, target, source, "internal-test", suite}}
-		if refused := decide(g, nil, rows).refused; len(refused) != 1 || refused[0].rule != "contract-baseline-unused" {
+		if refused := decideFixture(g, nil, rows).refused; len(refused) != 1 || refused[0].rule != "contract-baseline-unused" {
 			t.Errorf("%s: %+v", suite, refused)
 		}
 	}
@@ -49,7 +49,7 @@ func TestContractBaselineAdmitsOnlyTheEdgeItNames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if refused := decide(g, nil, rows).refused; len(refused) != 1 || refused[0].rule != reach.rule {
+		if refused := decideFixture(g, nil, rows).refused; len(refused) != 1 || refused[0].rule != reach.rule {
 			t.Errorf("%s: %+v", reach.target, refused)
 		}
 	}
@@ -66,7 +66,7 @@ func TestContractBaselineShrinksWhenItsEdgeMoves(t *testing.T) {
 		edge{source, "net/http/httptest", source, "production", ""},
 		edge{source, "testing", source, "production", ""},
 	)
-	decision := decide(g, nil, rows)
+	decision := decideFixture(g, nil, rows)
 	if len(decision.refused) != 2 || decision.refused[0].rule != "contract-baseline-unused" || decision.refused[1].rule != "contract-adapter" {
 		t.Fatalf("refusals = %+v", decision.refused)
 	}
@@ -111,6 +111,7 @@ func TestContractBaselineRowsAreExact(t *testing.T) {
 
 func TestContractBaselineIsReadFromTheCheckedRepository(t *testing.T) {
 	root := t.TempDir()
+	writeFixture(t, root, "scripts/imports-layers.txt", product+"/modules/a platform\n")
 	p := packageFixture("modules/a/contracts")
 	p.Dir, p.Module.Dir = filepath.Join(root, "modules/a/contracts"), root
 	p.Imports = []string{"html/template"}
