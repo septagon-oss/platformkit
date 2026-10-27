@@ -10,10 +10,16 @@ import (
 )
 
 // ResolvedForms contains only opted-in forms; absent members keep flat rendering.
+//
+// Every resolved component closes its members, so a strict reader names the component
+// an object answers from the members it holds. "create" and "update" are already the
+// whole object of a field's editability and the names of a layout's two field lists,
+// so an object holding them would answer three components at once and no reader could
+// correct the reading; these members carry the Form suffix that says which one they are.
 type ResolvedForms struct {
-	Create *ResolvedForm `json:"create,omitempty"`
-	Update *ResolvedForm `json:"update,omitempty"`
-	Input  *ResolvedForm `json:"input,omitempty"`
+	Create *ResolvedForm `json:"createForm,omitempty"`
+	Update *ResolvedForm `json:"updateForm,omitempty"`
+	Input  *ResolvedForm `json:"inputForm,omitempty"`
 }
 
 // ResolvedForm is ordered editable membership and copy, without answers or state.
