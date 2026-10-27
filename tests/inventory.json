@@ -36316,6 +36316,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/singleton_that_moves_a_door_to_the_operator_addresses_it_where_it_answers_test.go",
+   "id": "kit/rest/singleton_that_moves_a_door_to_the_operator_addresses_it_where_it_answers_test.go#TestASingletonThatMovesADoorToTheOperatorAddressesItWhereItAnswers",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestASingletonThatMovesADoorToTheOperatorAddressesItWhereItAnswers",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/sketch_ceiling_test.go",
    "id": "kit/rest/sketch_ceiling_test.go#TestADrawingAtTheDeclaredCeilingSurvivesEveryDoor",
    "kind": "go",
@@ -86758,7 +86777,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2367,
+  "files": 2368,
   "forge_runs": [
    408,
    413,
@@ -86792,7 +86811,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3776,
+   "behaviour": 3777,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -86811,9 +86830,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4402,
+  "rows": 4403,
   "tiers": {
-   "merge": 2699,
+   "merge": 2700,
    "nightly": 110,
    "push": 1593
   },
@@ -86821,13 +86840,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2122,
+   "keep": 2123,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4016,
+   "keep": 4017,
    "keep-rewrite": 170,
    "merge": 216
   }
