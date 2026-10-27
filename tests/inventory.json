@@ -19091,6 +19091,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/view/money_digits_survive_the_page_document_in_both_signs_test.go",
+   "id": "kit/entity/view/money_digits_survive_the_page_document_in_both_signs_test.go#TestThePageDocumentKeepsMoneyDigitsInBothSigns",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestThePageDocumentKeepsMoneyDigitsInBothSigns",
+   "needs_db": false,
+   "pkg": "kit/entity/view",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/view/money_scale_reaches_a_cell_and_a_control_test.go",
    "id": "kit/entity/view/money_scale_reaches_a_cell_and_a_control_test.go#TestTheDeclaredMoneyScaleReachesACellAndAControl",
    "kind": "go",
@@ -86976,7 +86995,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2348,
+  "files": 2349,
   "forge_runs": [
    408,
    413,
@@ -87010,7 +87029,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3787,
+   "behaviour": 3788,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87029,23 +87048,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4413,
+  "rows": 4414,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1631
+   "push": 1632
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2102,
+   "keep": 2103,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4026,
+   "keep": 4027,
    "keep-rewrite": 170,
    "merge": 217
   }
