@@ -14609,6 +14609,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/db/a_rollback_the_database_refused_warns_about_every_effect_it_dropped_test.go",
+   "id": "kit/db/a_rollback_the_database_refused_warns_about_every_effect_it_dropped_test.go#TestARollbackTheDatabaseRefusedWarnsAboutEveryEffectItDropped",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARollbackTheDatabaseRefusedWarnsAboutEveryEffectItDropped",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/db/a_rolled_back_transaction_is_never_committed_by_a_later_keep_test.go",
    "id": "kit/db/a_rolled_back_transaction_is_never_committed_by_a_later_keep_test.go#TestARolledBackTransactionIsNotCommittedByALaterKeep",
    "kind": "go",
@@ -91306,7 +91325,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2506,
+  "files": 2507,
   "forge_runs": [
    408,
    413,
@@ -91340,7 +91359,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3977,
+   "behaviour": 3978,
    "composition": 516,
    "contract": 24,
    "journey": 121
@@ -91359,9 +91378,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4638,
+  "rows": 4639,
   "tiers": {
-   "merge": 2852,
+   "merge": 2853,
    "nightly": 121,
    "push": 1665
   },
@@ -91369,13 +91388,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2261,
+   "keep": 2262,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4252,
+   "keep": 4253,
    "keep-rewrite": 170,
    "merge": 216
   }
