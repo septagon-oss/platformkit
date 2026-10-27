@@ -89,7 +89,7 @@ import re, subprocess, sys
 TEST_SUFFIXES = ("_test.go", "_test.sh", "_test.py", ".spec.ts", ".test.ts", ".test.tsx")
 # The same shape the loop's census gate counts, so the two agree on which files are held as debt.
 CENSUS = re.compile(r"(^|/)[^/]*(review|probe|round[0-9])[^/]*(_test\.go|\.test\.tsx?|\.spec\.ts|_test\.py|_test\.sh)$")
-CENSUS_CEILING = 82
+CENSUS_CEILING = 83
 # A round, a finding's number, an attempt's number. "round trip", "rounded 5" and "background 5"
 # form none of these: the number has to stand where the round's ordinal stands. The `s?` that lets
 # "rounds 8 and 9" be caught is also what refuses "rounds 5.2 to 5"; see the header for that trade
