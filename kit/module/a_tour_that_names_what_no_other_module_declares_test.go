@@ -81,6 +81,8 @@ func TestATourIsRefusedForWhatOnlyTheWholeCompositionAnswers(t *testing.T) {
 			`tour "feature.first": its automatic trigger names event "note created", which is not "<name>.<event>"`},
 		{"trigger event is emitted by nobody", []module.Module{feature(withTrigger(tour.After("feature.note.archived")))},
 			`tour "feature.first": its automatic trigger names "feature.note.archived", which no composed module emits`},
+		{"retirement event is not an event name", []module.Module{feature(withTrigger(tour.OnVisit("app/feature/custom/editor", "note removed")))},
+			`tour "feature.first": its retirement names event "note removed", which is not "<name>.<event>"`},
 		{"retirement event is emitted by nobody", []module.Module{feature(withTrigger(tour.OnVisit("app/feature/custom/editor", "feature.note.removed")))},
 			`tour "feature.first": its retirement names "feature.note.removed", which no composed module emits`},
 		{"one edition is declared by two modules", []module.Module{feature(), other()},
@@ -91,6 +93,8 @@ func TestATourIsRefusedForWhatOnlyTheWholeCompositionAnswers(t *testing.T) {
 			`tour "feature.first" edition 1: prerequisite "feature.signed_in" edition 2 is not a tour of this composition`},
 		{"prerequisite is the tour itself", []module.Module{featureWithPrerequisite(tour.Ref{ID: "feature.first", Edition: 1})},
 			`tour "feature.first" edition 1: a tour cannot require a person to finish it first`},
+		{"prerequisite is named twice", []module.Module{featureWithPrerequisite(tour.Ref{ID: "feature.signed_in", Edition: 1}, tour.Ref{ID: "feature.signed_in", Edition: 1})},
+			`tour "feature.first" edition 1: prerequisite "feature.signed_in" edition 1 is named twice; one tour is finished once or it is not a prerequisite`},
 		{"prerequisites form a cycle", []module.Module{cycled()},
 			`tour "feature.b" edition 2: prerequisite cycle "feature.b@2" -> "feature.a@1" -> "feature.b@2"`},
 	} {
@@ -102,11 +106,11 @@ func TestATourIsRefusedForWhatOnlyTheWholeCompositionAnswers(t *testing.T) {
 	}
 }
 
-func featureWithPrerequisite(prerequisite tour.Ref) module.Module {
+func featureWithPrerequisite(prerequisites ...tour.Ref) module.Module {
 	m := feature()
 	for i, t := range m.Tours {
 		if t.Ref.ID == "feature.first" {
-			m.Tours[i].Prerequisites = []tour.Ref{prerequisite}
+			m.Tours[i].Prerequisites = prerequisites
 		}
 	}
 	return m

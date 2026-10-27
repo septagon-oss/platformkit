@@ -73,11 +73,12 @@ func (s Step) advanceCompositionProblems(id ID, anchor screen.Anchor, c Composit
 	return nil
 }
 
-// completionProblems holds a step that waits for a completion to the write it
-// can actually observe: an operation this composition mounted, answering with a
-// method that can settle, behind the control this step points at. Which person's
-// operation an outcome belongs to is not a fact a screen contract carries, and
-// no rule here claims it.
+// completionProblems holds a step that waits for a completion to the write it can
+// actually observe: an operation this composition mounted, answering with a method
+// that can settle, and the one the control this step points at makes. An anchor's
+// binding names that operation, so a step cannot wait on a write its own control
+// never posts. Which person an outcome belongs to is not a fact a screen contract
+// carries, and no rule here claims it.
 func (s Step) completionProblems(id ID, anchor screen.Anchor, c Composition) []string {
 	op, ok := c.Operation(string(s.advance.operation))
 	if !ok {
@@ -87,9 +88,14 @@ func (s Step) completionProblems(id ID, anchor screen.Anchor, c Composition) []s
 		return []string{fmt.Sprintf("tour %q, step %q: operation %q answers %s and can never be observed succeeding; an outcome is admitted only for a write",
 			id, s.id, s.advance.operation, op.Method)}
 	}
-	if kind := anchor.Binding().Kind; startsNoWrite(kind) {
+	binding := anchor.Binding()
+	if startsNoWrite(binding.Kind) {
 		return []string{fmt.Sprintf("tour %q, step %q: %s is a %s and starts no write; a step that waits for a completion has to point at the control that makes it",
-			id, s.id, s.anchor, controlWord(kind))}
+			id, s.id, s.anchor, controlWord(binding.Kind))}
+	}
+	if binding.Target != string(s.advance.operation) {
+		return []string{fmt.Sprintf("tour %q, step %q: %s starts %q; a step waits for the outcome of the write its own control makes, not for %q",
+			id, s.id, s.anchor, binding.Target, s.advance.operation)}
 	}
 	return nil
 }

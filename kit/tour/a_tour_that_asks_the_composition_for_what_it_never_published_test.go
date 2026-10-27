@@ -19,6 +19,7 @@ const (
 	doneView   = "app/feature/custom/done"
 	rowView    = "app/task/resource/task/list"
 	writeOp    = "feature-note-create"
+	anotherOp  = "feature-note-publish"
 	readOp     = "feature-editor"
 )
 
@@ -74,8 +75,9 @@ func composition() tour.Composition {
 		rowView:    screen.MustView(screen.ViewSpec{Ref: rowView, Cardinality: screen.Many}),
 	}
 	return publishedScreens{views: views, ops: map[string]screen.Operation{
-		writeOp: {ID: writeOp, Surface: "app", Method: "POST", Path: "/note", Guard: "feature:write"},
-		readOp:  {ID: readOp, Surface: "app", Method: "GET", Path: "/editor", Guard: "feature:read"},
+		writeOp:   {ID: writeOp, Surface: "app", Method: "POST", Path: "/note", Guard: "feature:write"},
+		anotherOp: {ID: anotherOp, Surface: "app", Method: "POST", Path: "/note/publish", Guard: "feature:write"},
+		readOp:    {ID: readOp, Surface: "app", Method: "GET", Path: "/editor", Guard: "feature:read"},
 	}}
 }
 
@@ -125,6 +127,9 @@ func TestATourAsksForWhatTheCompositionNeverPublished(t *testing.T) {
 		{"completion waits behind a link", func(t *tour.Tour) {
 			t.Steps = []tour.Step{anchoredStep("open", editorView+"#action.new", tour.Completes(writeOp))}
 		}, `tour "feature.first", step "open": ` + editorView + `#action.new is a link and starts no write; a step that waits for a completion has to point at the control that makes it`},
+		{"completion waits on a write the control does not start", func(t *tour.Tour) {
+			replace(t, "save", anchoredStep("save", editorView+"#action.submit", tour.Completes(anotherOp)))
+		}, `tour "feature.first", step "save": ` + editorView + `#action.submit starts "feature-note-create"; a step waits for the outcome of the write its own control makes, not for "feature-note-publish"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			declared := fixtureTour()

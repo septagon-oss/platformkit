@@ -9,9 +9,9 @@
 // A tour borrows its names — a view, a control, an operation, an event — from
 // the owners that published them and re-derives none of them. Automatic, Step
 // and Advance are opaque values built only by their constructors, so a document
-// decoded into a declaration yields zero values, which both rule sets refuse by
-// name. The rules live here and the doors do not: kit/module reads a declaration
-// as a manifest and kit/app reads it against what the composition published.
+// decoded into a declaration yields zero values, which the manifest pass refuses
+// by name. The rules live here and the doors do not: kit/module reads a
+// declaration as a manifest, kit/app against what the composition published.
 package tour
 
 import "github.com/septagon-oss/platformkit/kit/screen"
@@ -230,8 +230,9 @@ func Next() Advance { return Advance{kind: AdvanceNext} }
 func On(i screen.Interaction) Advance { return Advance{kind: AdvanceOn, interaction: i} }
 
 // Completes ends the step when the server observes the authoritative successful
-// outcome of operation — the write the guided control started. A failed save, a
-// write awaiting approval and a queued submission are not that outcome.
+// outcome of operation — the write the guided control started, which the gate
+// holds it to. A failed save, a write awaiting approval and a queued submission
+// are not that outcome.
 func Completes(operation OperationRef) Advance {
 	return Advance{kind: AdvanceCompletes, operation: operation}
 }

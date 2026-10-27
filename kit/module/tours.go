@@ -128,6 +128,7 @@ func duplicateTourProblems(mods []Module) []string {
 
 func prerequisiteProblems(t tour.Tour, declared map[tour.Ref]string) []string {
 	var bad []string
+	named := map[tour.Ref]bool{}
 	for _, p := range t.Prerequisites {
 		switch {
 		case p.Edition == 0:
@@ -136,7 +137,10 @@ func prerequisiteProblems(t tour.Tour, declared map[tour.Ref]string) []string {
 			bad = append(bad, fmt.Sprintf("tour %q edition %d: a tour cannot require a person to finish it first", t.Ref.ID, t.Ref.Edition))
 		case declared[p] == "":
 			bad = append(bad, fmt.Sprintf("tour %q edition %d: prerequisite %q edition %d is not a tour of this composition", t.Ref.ID, t.Ref.Edition, p.ID, p.Edition))
+		case named[p]:
+			bad = append(bad, fmt.Sprintf("tour %q edition %d: prerequisite %q edition %d is named twice; one tour is finished once or it is not a prerequisite", t.Ref.ID, t.Ref.Edition, p.ID, p.Edition))
 		}
+		named[p] = true
 	}
 	return bad
 }

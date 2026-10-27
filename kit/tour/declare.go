@@ -8,10 +8,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/screen"
 )
 
-// The three grammars a declaration is held to. Each is the one grammar this
-// kernel already uses for that kind of name: a tour id is a namespaced name like
-// an event's, a step id is an identifier like a module's, and a copy key is the
-// dotted key the copy tables in this tree are read by.
+// The three grammars a declaration is held to. A tour id is a namespaced name like
+// an event's and a step id an identifier like a module's, both the kernel's own
+// spellings. A copy key is decided narrower than the keys the copy tables in this
+// tree hold, some of which carry a digit, a hyphen or a colon: the lower-case
+// dotted form below is what a tour author is held to, so a tour never inherits a
+// catalogue's irregular spelling by pointing at one of its keys.
 var (
 	tourID   = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
 	stepName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -21,6 +23,12 @@ var (
 // maxKeyBytes bounds a copy key: a key longer than this is a sentence written
 // where a name belongs, and every catalogue this kernel reads keys out of.
 const maxKeyBytes = 128
+
+// publicSurfaceRefusal is why nothing played on the public surface lasts: a run is
+// kept per signed-in person and that surface admits none, so no step or trigger
+// there is ever reached. Which person-facing surfaces a product guides a person
+// over stays the product's, and this asks nothing of the choice between them.
+const publicSurfaceRefusal = "sits on the public surface, which admits no signed-in person, so no run can be kept"
 
 // DeclarationProblems says what is wrong with this tour as a declaration: its own
 // grammar, its own references and its own copy, against the name of the module
@@ -162,7 +170,34 @@ func (s Step) declarationProblems(id ID, index int, named map[StepID]bool) []str
 	}
 	named[s.id] = true
 	bad := s.placeProblems(id)
+	if len(bad) == 0 {
+		bad = append(bad, s.surfaceProblems(id)...)
+	}
 	return append(bad, s.advanceProblems(id)...)
+}
+
+// surfaceProblems refuses a step sitting where no person can be: the view it was
+// parsed off has already answered for its shape, so only the surface is left to
+// ask, and the public one carries no run to play a step on.
+func (s Step) surfaceProblems(id ID) []string {
+	view := s.placedView()
+	if !onPublicView(view) {
+		return nil
+	}
+	return []string{fmt.Sprintf("tour %q, step %q: view %s %s", id, s.id, view, publicSurfaceRefusal)}
+}
+
+// placedView is the view a step sits on — its own for a modal, the host of the
+// control for an anchored step — and is only asked once the place parsed.
+func (s Step) placedView() screen.ViewRef {
+	if s.kind == StepModal {
+		return s.view
+	}
+	return anchorView(s.anchor)
+}
+
+func onPublicView(view screen.ViewRef) bool {
+	return strings.HasPrefix(string(view), "public/")
 }
 
 func (s Step) placeProblems(id ID) []string {
@@ -216,10 +251,13 @@ func (s Step) interactionProblems(id ID) []string {
 }
 
 func (s Step) operationProblems(id ID) []string {
+	// screen holds a published operation id to this same segment rule, so the
+	// sentence below states all this check can see and existence stays the
+	// composition's to answer.
 	if _, err := screen.Segment(string(s.advance.operation)); err == nil {
 		return nil
 	}
-	return []string{fmt.Sprintf("tour %q, step %q: operation %q is not a name a published operation carries", id, s.id, s.advance.operation)}
+	return []string{fmt.Sprintf("tour %q, step %q: operation %q is not a name an operation can be mounted under; a name is non-empty and holds no control character", id, s.id, s.advance.operation)}
 }
 
 func (t Tour) triggerProblems() []string {
@@ -230,6 +268,9 @@ func (t Tour) triggerProblems() []string {
 	case AutomaticOnVisit:
 		if _, err := screen.ParseView(string(t.Automatic.view)); err != nil {
 			return []string{fmt.Sprintf("tour %q: its automatic trigger: %v", t.Ref.ID, err)}
+		}
+		if onPublicView(t.Automatic.view) {
+			return []string{fmt.Sprintf("tour %q: its automatic trigger's view %s %s", t.Ref.ID, t.Automatic.view, publicSurfaceRefusal)}
 		}
 	case AutomaticAfter:
 		if t.Automatic.start == "" {

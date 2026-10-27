@@ -67,6 +67,8 @@ func TestATourDeclarationIsRefusedForTheOneThingWrongWithIt(t *testing.T) {
 			`tour "other.first": its id names "other", which does not declare it; a tour belongs to the module whose name opens its id`},
 		{"edition zero", func(t *tour.Tour) { t.Ref.Edition = 0 },
 			`tour "feature.first": edition 0; a tour's first edition is 1, and an edition is bumped only for instruction a person may be given twice`},
+		{"title is a fallback alone", func(t *tour.Tour) { t.Title = tour.Message{Fallback: "Add your first note"} },
+			`tour "feature.first": its title has no message key; a copy is a key and the English behind it`},
 		{"title is a key alone", func(t *tour.Tour) { t.Title = tour.Message{Key: "feature.first"} },
 			`tour "feature.first": its title has no fallback copy; the fallback is what a person reads when no translation answers the key`},
 		{"title is its own key", func(t *tour.Tour) {
@@ -94,6 +96,16 @@ func TestATourDeclarationIsRefusedForTheOneThingWrongWithIt(t *testing.T) {
 				tour.Content{Title: text("feature.first.step.save", "Save it"), Body: text("feature.first.step.save.body", "Saving writes the note and takes you to it.")},
 				tour.Completes("feature-note-create"), tour.AnchoredOptions{}))
 		}, `tour "feature.first": a step has no id; a run says where it is by that name`},
+		{"modal sits on the public surface", func(t *tour.Tour) {
+			replace(t, "done", tour.Modal("done", "public/feature/custom/welcome", tour.Content{
+				Title: text("feature.first.step.done", "That is the shape of it"),
+				Body:  text("feature.first.step.done.body", "Come back to the help button whenever you want it again.")}))
+		}, `tour "feature.first", step "done": view public/feature/custom/welcome sits on the public surface, which admits no signed-in person, so no run can be kept`},
+		{"anchor sits on the public surface", func(t *tour.Tour) {
+			replace(t, "save", tour.Spotlight("save", "public/feature/custom/editor#action.submit",
+				tour.Content{Title: text("feature.first.step.save", "Save it"), Body: text("feature.first.step.save.body", "Saving writes the note and takes you to it.")},
+				tour.Completes("feature-note-create"), tour.AnchoredOptions{}))
+		}, `tour "feature.first", step "save": view public/feature/custom/editor sits on the public surface, which admits no signed-in person, so no run can be kept`},
 		{"step id with a space", func(t *tour.Tour) {
 			replace(t, "title", tour.Tip("save now", "app/feature/custom/editor#field.title",
 				tour.Content{Title: text("feature.first.step.title", "Name it"), Body: text("feature.first.step.title.body", "The title is what you will search for later.")},
@@ -138,7 +150,15 @@ func TestATourDeclarationIsRefusedForTheOneThingWrongWithIt(t *testing.T) {
 			replace(t, "save", tour.Spotlight("save", "app/feature/custom/editor#action.submit",
 				tour.Content{Title: text("feature.first.step.save", "Save it"), Body: text("feature.first.step.save.body", "Saving writes the note and takes you to it.")},
 				tour.Completes(""), tour.AnchoredOptions{}))
-		}, `tour "feature.first", step "save": operation "" is not a name a published operation carries`},
+		}, `tour "feature.first", step "save": operation "" is not a name an operation can be mounted under; a name is non-empty and holds no control character`},
+		{"trigger sits on the public surface", func(t *tour.Tour) {
+			start := tour.OnVisit("public/feature/custom/welcome")
+			t.Automatic = &start
+		}, `tour "feature.first": its automatic trigger's view public/feature/custom/welcome sits on the public surface, which admits no signed-in person, so no run can be kept`},
+		{"trigger's view is outside the view grammar", func(t *tour.Tour) {
+			start := tour.OnVisit("app/feature/editor")
+			t.Automatic = &start
+		}, `tour "feature.first": its automatic trigger: screen: invalid view "app/feature/editor"`},
 		{"zero automatic trigger", func(t *tour.Tour) { t.Automatic = new(tour.Automatic) },
 			`tour "feature.first": its automatic trigger is the zero value; build one with OnVisit or After`},
 		{"trigger names no event", func(t *tour.Tour) {
