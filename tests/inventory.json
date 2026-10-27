@@ -5286,6 +5286,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/record_with_keep_control_one_primary_test.go",
+   "id": "apps/platformkit/record_with_keep_control_one_primary_test.go#TestTheKeepControlSharesTheRecordScreenWithOnePrimaryAction",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheKeepControlSharesTheRecordScreenWithOnePrimaryAction",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/reference_app_sentence_test.go",
    "id": "apps/platformkit/reference_app_sentence_test.go#TestTheReferenceAppIsComposedInSentences",
    "kind": "go",
@@ -88526,7 +88545,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2400,
+  "files": 2401,
   "forge_runs": [
    408,
    413,
@@ -88561,7 +88580,7 @@
   ],
   "layers": {
    "behaviour": 3859,
-   "composition": 499,
+   "composition": 500,
    "contract": 24,
    "journey": 111
   },
@@ -88579,9 +88598,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4493,
+  "rows": 4494,
   "tiers": {
-   "merge": 2731,
+   "merge": 2732,
    "nightly": 111,
    "push": 1651
   },
@@ -88589,13 +88608,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2155,
+   "keep": 2156,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4107,
+   "keep": 4108,
    "keep-rewrite": 170,
    "merge": 216
   }

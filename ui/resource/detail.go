@@ -98,14 +98,14 @@ func savingControl(r Resource, o Options, row map[string]any) []g.Node {
 		h.Input(h.Type("hidden"), h.Name("kind"), h.Value(d.Kind)),
 		h.Input(h.Type("hidden"), h.Name("key"), h.Value(key)),
 		h.Input(h.Type("hidden"), h.Name("expectedSourceVersion"), h.Value(version)),
-		// The name never changes with the state: `aria-pressed` carries it, which is
-		// the one way this control says "kept" to a screen reader without saying a
-		// different sentence every time it is reached.
+		// The label never changes with the state: `aria-pressed` carries it. The
+		// outline appearance is the record's rule, not a preference: its one filled
+		// action is Edit, and one thing is left to do per view.
 		components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"aria-pressed": strconv.FormatBool(s.Pressed),
 			}},
-			Label: d.Words.Save, Type: "submit", Size: "md",
+			Label: d.Words.Save, Type: "submit", Size: "md", Variant: "outline",
 		}))}
 	if s.Pressed {
 		out = append(out, h.P(h.ID("saving-standing"), h.Aria("live", "polite"), g.Text(d.Words.Saved)))
