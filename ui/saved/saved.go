@@ -189,31 +189,13 @@ func Mount(r *httpx.Router, s page.Shell, q Keeping, o Options) At {
 			form.Get("expectedSourceVersion")); err != nil {
 			return page.View{}, err
 		}
-		// Back to the record, so the person reads their own state re-read rather
-		// than the state they asked for. Where is safe to return to is the rule
-		// stated on returnTo.
-		return page.View{}, httpx.SeeOther(returnTo(form.Get("back"), gridAt(at, form.Get("module"), form.Get("kind"), 0)))
+		// To the kept list of this pair: it is the page that shows what the person
+		// now holds, at an address this mount wrote. The body names no place to
+		// return to — a submitted body is a caller's words, not an address to send
+		// a caller off with, and no control this surface draws writes such a field.
+		return page.View{}, httpx.SeeOther(gridAt(at, form.Get("module"), form.Get("kind"), 0))
 	})
 	return at
-}
-
-// returnTo is the address a submitted control sends its caller back to: the record
-// the control was drawn on, when the form named one that is a path of this
-// installation's own. A submitted body is a caller's words, so an absolute address
-// or a scheme-relative one is dropped for the fallback rather than handed to a
-// browser as a redirect — the save works for a caller who is being nobody, and the
-// form that arrives here always names its own record.
-func returnTo(back, fallback string) string {
-	if !strings.HasPrefix(back, "/") || strings.HasPrefix(back, "//") ||
-		strings.HasPrefix(back, `\\`) || strings.ContainsAny(back, "?#") {
-		return fallback
-	}
-	for _, r := range back {
-		if r < 0x21 || r == 0x7f {
-			return fallback
-		}
-	}
-	return back
 }
 
 // filters is the grid's whole request: which pair to show, and how far into it.
@@ -230,8 +212,8 @@ type removal struct {
 	RawBody []byte `contentType:"application/x-www-form-urlencoded"`
 }
 
-// keeping is one submitted save: the pair, the key the record published, the source
-// version the record published beside it, and the record to go back to. Nothing
+// keeping is one submitted save: the pair, the key the record published and the
+// source version the record published beside it. Nothing
 // else is submittable, because nothing else is this caller's to write — a title, a
 // snapshot or a person in a body is refused as an unknown field rather than stored.
 type keeping struct {
