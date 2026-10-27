@@ -89691,6 +89691,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/a_test_file_no_commit_holds_is_counted_before_it_lands_test.sh",
+   "id": "scripts/a_test_file_no_commit_holds_is_counted_before_it_lands_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_test_file_no_commit_holds_is_counted_before_it_lands_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/applied_bytes_refusal_test.sh",
    "id": "scripts/applied_bytes_refusal_test.sh",
    "kind": "shell_pin",
@@ -94118,7 +94138,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2606,
+  "files": 2607,
   "forge_runs": [
    408,
    413,
@@ -94153,7 +94173,7 @@
   ],
   "layers": {
    "behaviour": 4099,
-   "composition": 539,
+   "composition": 540,
    "contract": 24,
    "journey": 123
   },
@@ -94171,23 +94191,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4785,
+  "rows": 4786,
   "tiers": {
    "merge": 2966,
    "nightly": 123,
-   "push": 1696
+   "push": 1697
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2361,
+   "keep": 2362,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4399,
+   "keep": 4400,
    "keep-rewrite": 170,
    "merge": 216
   }

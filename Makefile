@@ -789,6 +789,13 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# notices a new sibling missing that identity. One grep over `scripts/*_test.sh`, no repository built, no
 	# network, no database, milliseconds.
 	bash scripts/ratchet_fixtures_name_their_committer_test.sh
+	# scripts/a_test_file_no_commit_holds_is_counted_before_it_lands_test.sh asks the ratchet whether what it
+	# counts is the tree on disk or the tree the index holds. Every case above commits the lines it measures,
+	# so none can see the order a priced case actually arrives in: the file sits on disk while the raise that
+	# pays for it stands alone in a commit of its own. Three throwaway repositories — four lines no commit
+	# holds, the same four lines priced before the file lands, then landed — one loc-budget.json each, no
+	# network, no database, about a second.
+	bash scripts/a_test_file_no_commit_holds_is_counted_before_it_lands_test.sh
 	bash scripts/check_applied_migrations_test.sh
 	bash scripts/applied_migration_merge_base_test.sh
 	bash scripts/ci_checkout_history_test.sh
