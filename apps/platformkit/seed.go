@@ -69,32 +69,28 @@ func seedService(c composition, demoPassword string) (*seed.Service, error) {
 		Writers: []seed.Writer{
 			&contentSeeder{svc: c.contents},
 			&siteSeeder{sites: c.sites},
-			&userSeeder{users: c.users, demoPassword: demoPassword},
+			&userSeeder{users: c.seedUsers, demoPassword: demoPassword},
 			&taskSeeder{svc: c.tasks},
 			&fileSeeder{svc: c.files},
 		},
-		Authorize: seedGrants{auth: c.auth},
+		Authorize: seedGrants{auth: c.permissions},
 	})
 }
 
 // seeding contributes the tenant-creation hook that fills a new tenant with this
-// application's starter content. It declares one thing — that it contributes a
-// tenantcontracts.Hook — and needs nothing, which is not an omission but the fact
-// the resolver names when it is declared otherwise.
+// application's starter content. It declares one thing and needs nothing, which is
+// not an omission but the fact the resolver names when it is declared otherwise.
 //
-// The owners a seeded record is written through cannot be Needs of this module.
-// task.Module needs jobs.TenantLister, which tenant.Module provides, and auth puts
-// the authorizer behind tenant as well, so a module that both needs either of them
-// and contributes a hook the tenant module takes is the cycle the build refuses:
-// `seed → task → tenant → seed`, and `seed → auth → tenant → seed`. That is a fact
-// about the graph, not about this file: the hook has to exist before the tenant
-// module is built, and the services it writes through are built after it.
+// The owners a seeded record is written through cannot be Needs of this module: task
+// needs jobs.TenantLister, which tenant provides, and auth puts its authorizer behind
+// tenant too, so needing either while contributing a hook tenant takes is the cycle
+// the build refuses — seed → task → tenant → seed. The hook must exist before the
+// tenant module is built, and the services it writes through are built after it.
 //
-// So the provisioner is the one late-bound value in this composition, and it is
-// filled in app.go's composeReference, beside the two values that file already
-// fills the same way (`ask` and the shell) and from the same resolved plan. Its
-// own OnTenantCreate refuses to write anything until then, so a composition that
-// forgot the line fails by name rather than by a nil interface.
+// So the provisioner is the composition's one late-bound value, filled in app.go's
+// composeReference from the resolved plan, beside the two values that file already
+// fills the same way. OnTenantCreate refuses to write anything until then, so a
+// composition that forgot the line fails by name rather than by a nil interface.
 func seeding(provision *seedProvisioner) *pkit.Module {
 	return pkit.NewModule("seed", func(w *pkit.Wiring) (module.Module, error) {
 		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(provision.OnTenantCreate))
@@ -103,29 +99,25 @@ func seeding(provision *seedProvisioner) *pkit.Module {
 }
 
 // seedProvisioner is this application's second tenant-creation hook: the new
-// tenant's own starter content, written before anybody could ask for it.
+// tenant's own starter content, written before anybody could ask for it, because an
+// app opens on something rather than on an empty site waiting for a command.
 //
-// The reason it exists is the sentence in the brief — an app opens on something,
-// not on an empty site waiting for a command. The reason it is short is that the
-// authority is not its to invent: it calls seed.Service.ApplyProvisioned, which
-// refuses unless the tenant holds no seeded record, and it refuses here unless
-// the tenant holds no person. Together those two conditions say "this tenant
-// came into being in this transaction", which is the only claim a run with
-// nobody to ask the auth module about is entitled to make. What it can write is
-// then exactly the records its own files declare and nobody has written yet,
-// through the same owners, the same grants of the same module, and the same
-// events a person's click produces.
+// The authority is not its to invent: it calls seed.Service.ApplyProvisioned, which
+// refuses unless the tenant holds no seeded record, and it refuses here unless the
+// tenant holds no person. Together those say "this tenant came into being in this
+// transaction", the only claim a run with nobody to ask the auth module about is
+// entitled to make. What it can write is then exactly what its own files declare and
+// nobody has written yet, through the same owners and the same events a click makes.
 //
-// The fields are the owners this application writes through, filled once by
-// composeReference from the plan it resolved; see seeding for why no module can
-// declare them as its needs.
+// The fields are the owners it writes through, filled once by composeReference; see
+// seeding for why no module can declare them as its needs.
 type seedProvisioner struct {
-	users        usercontracts.Service
+	users        usercontracts.SeedWriter
 	contents     contentcontracts.Service
 	sites        sitecontracts.Service
 	tasks        taskcontracts.Service
 	files        filecontracts.Service
-	auth         authcontracts.Auth
+	auth         authcontracts.PermissionReader
 	demoPassword string
 }
 
@@ -190,7 +182,9 @@ func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System
 // could seed anything. What provisioning a brand-new tenant needs instead — a
 // permit minted by the create transaction itself — is named in
 // kit/seed/README.md's Limits and is not composed here.
-type seedGrants struct{ auth authcontracts.Auth }
+type seedGrants struct {
+	auth authcontracts.PermissionReader
+}
 
 func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resource, _ seed.Action) error {
 	// The one run with nobody to ask is the tenant's own creation, and the
@@ -250,7 +244,7 @@ func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resou
 // session whose user is not active, on the side of the run that names who the
 // writes belong to rather than the side that proves who is standing at the
 // terminal (see seedOperator).
-func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Tenant], email string) (context.Context, error) {
+func seedActor(ctx context.Context, users usercontracts.AddressLookup, tx db.Tx[db.Tenant], email string) (context.Context, error) {
 	person, err := users.ByEmail(ctx, tx, email)
 	if err != nil {
 		return ctx, fmt.Errorf("seed: this run writes as %s, who is not a person of this tenant: %w", email, err)
@@ -533,7 +527,7 @@ func (w *siteSeeder) write(ctx context.Context, tx db.Tx[db.Tenant], slug string
 // then on. Passwords are never in a seed file — the loader refuses a field named
 // for one — and never in a plan line, which prints keys and addresses only.
 type userSeeder struct {
-	users usercontracts.Service
+	users usercontracts.SeedWriter
 	// demoPassword is config's Demo.Password: the one password a demonstration's
 	// people sign in with. It is the deployment's answer to a record that asks for
 	// a credential, and an empty one asks the run to mint one per person and hand
@@ -739,7 +733,7 @@ func (taskSeeder) Resource() seed.Resource {
 
 func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string]uuid.UUID, now time.Time) (seed.Target, error) {
 	// The deadline first, because it is the one declared value YAML reads into a
-	// type of its own: `dueAt: 2026-10-10` arrives as a date, and the grammar's own
+	// type of its own: an unquoted year-month-day `dueAt:` arrives as a date, and the
 	// answer is the honest refusal. A fixed day on disk is a deadline no rerun can
 	// honour — this format resolves a deadline against the run that writes the row —
 	// so it is refused in the words that say what to write instead, and not read as
@@ -748,7 +742,7 @@ func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string
 		return seed.Target{}, errors.New("dueAt: the seed resolves a deadline against the run that writes the row, so it is +3d, +2y or friday 09:00, and an absolute date names a day no rerun can honour")
 	}
 	// The deadline first, because it is the one declared value YAML reads into a
-	// type of its own: an unquoted `dueAt: 2026-10-10` arrives as a date, and the
+	// type of its own: an unquoted year-month-day `dueAt:` arrives as a date, and
 	// honest refusal is the grammar's own sentence. This format resolves a deadline
 	// against the run that writes the row, so a fixed day on disk is one no rerun
 	// can honour, and it is refused in the words that say what to write instead —
@@ -981,26 +975,19 @@ func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUI
 			filecontracts.VisibilityPublic, filecontracts.VisibilityPrivate)
 	}
 	// Two values are create-only rather than state, and the file module is the reason
-	// for the second. The bytes are the first: an upload writes them once and no
-	// rerun patches them (see Update), so they instruct the record's creation the way
-	// a relative date does. The media type is the second, because the owner does not
-	// keep the one this record declared: a raster is measured, turned and re-encoded
-	// on its way into storage, "the row's size, digest and media type are read from"
-	// that pass rather than from what the request declared, and the frame's alpha
-	// decides the container (decision 0069 §4, filecontracts.ImagePass). So the
-	// digest on a stored row is the digest of the frame a reader is served — a
-	// different object from the bytes beside this record — and its media type is the
-	// container those pixels chose, not the extension's answer.
+	// for the second. The bytes are the first: an upload writes them once and no rerun
+	// patches them (see Update), so they instruct the record's creation the way a
+	// relative date does. The media type is the second because the owner does not keep
+	// what the record declared: a raster is measured, turned and re-encoded on its way
+	// into storage, and the frame's alpha decides the container (decision 0069 §4). So
+	// a stored row's digest is the digest of the frame a reader is served, and its media
+	// type the container those pixels chose.
 	//
-	// A record that reconciled either of them would refuse every image on the run
-	// after the one that wrote it: a refusal of the write that is not there to take,
-	// over a row whose bytes no seed run could put there in any case. What the record
-	// manages, and so what it compares, is the two facts the owner keeps as they were
-	// declared: the name a list shows and the visibility that decides which reader an
-	// Open answers.
-	//
-	// Both create-only values stay named, because a declared field is accounted for or
-	// refused: see unappliedField in kit/seed/decide.go.
+	// A record that reconciled either would refuse every image on the run after the one
+	// that wrote it, over a row whose bytes no seed run could put there in any case. What
+	// it compares is the two facts the owner keeps as declared: the name a list shows and
+	// the visibility an Open answers. Both create-only values stay named, because a
+	// declared field is accounted for or refused.
 	return seed.Target{
 		Fields:     map[string]any{"name": name, "visibility": visibility},
 		CreateOnly: map[string]any{"asset": body, "contentType": contentType},
@@ -1126,38 +1113,17 @@ func seedRolesSorted(roles []string) []string {
 // seedTexts reads the fields a writer takes from a record as the text its owners
 // hold, and refuses the first value that is not text.
 //
-// What the file left out and what it wrote as something else are different facts,
-// and the answer keeps them apart: a name appears in the map only when the record
-// wrote one, so `kind: page` answers "page", `kind:` and no `kind` at all answer
-// "nobody answered", and `kind: ""` answers the empty text that was written. Only
-// the middle case is an absent field, and an absent field is the only thing a
-// writer's default answers. A default is what this application says when nobody
-// did; saying it on top of the number 7 commits an answer nobody gave, reports
-// CREATE for it and maps the key — and the next run compares the row it defaulted
-// against the same default, calls it unchanged, and never surfaces the record
-// again. So the value refuses, at the record's own line, named as what it is. It is
-// the rule kit/seed holds one level up: decide.go refuses a declared field no
-// writer applies, because a declaration the run reads and then throws away is a
-// declaration nobody honoured (house rule 7). Reading a value and replacing it is
-// the same write.
+// What the file left out and what it wrote as something else are different facts: a
+// name appears in the map only when the record wrote one, so `kind:` and no `kind` at
+// all answer "nobody answered" while `kind: ""` answers the empty text that was
+// written. Only the middle case is an absent field, and that is the only thing a
+// writer's default answers — defaulting on top of the number 7 commits an answer
+// nobody gave, and the next run compares its own default and calls it unchanged. So
+// the value refuses, at the record's own line, as kit/seed does one level up.
 //
-// Text is carried, not judged, and trimmed, because the owners trim: content stores
-// a title without the spaces around it, so a target that kept them would differ
-// from the stored row on every run forever, and the canonical value is the one the
-// owner keeps. `priority: whenever` is text, so it reaches task's own validation and
-// comes back as task's own sentence at this record's line; a check invented here
-// would own the same answer twice, in two words, from two places. Empty text goes on
-// like any other, and its owner answers it as it answers anybody who typed nothing
-// into its form: task defaults an empty priority to `normal`; content and file hold
-// no default for a kind or a visibility, and refuse it.
-//
-// A writer's own Target and Snapshot maps are read back as `.(string)`, not through
-// this function, because whatever is in them this file put there. A value of another
-// type there is a broken run rather than a person's file, and a read that turned it
-// into "" would write an empty title out of our own bug instead of showing it. One
-// record field is read the same way it is written: signIn is asked for or not asked
-// for, Target writes the ask only when the file made it, so its reader asks the map
-// the same question.
+// Text is carried, not judged, and trimmed, because the owners trim: a target that
+// kept the spaces would differ from the stored row on every run. `priority: whenever`
+// reaches task's own validation and comes back as task's own sentence.
 func seedTexts(r seed.Record, names ...string) (map[string]string, error) {
 	text := make(map[string]string, len(names))
 	for _, name := range names {

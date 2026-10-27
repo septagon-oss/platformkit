@@ -11,6 +11,7 @@ package httpx
 import (
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -34,6 +35,7 @@ import (
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
+	screenViews []screen.View
 	// integers is every operation registered with its own integer view of the
 	// document, so the gate can render each negotiated form. See int64_api.go.
 	integers []*integerAPI

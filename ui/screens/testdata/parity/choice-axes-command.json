@@ -2,9 +2,9 @@
   "name": "choice-axes-command",
   "provenance": {
     "author": "Codex; independent literal contract expectations",
-    "date": "2026-10-24",
+    "date": "2026-10-26",
     "inputHash": "sha256:30322d1fdd3d47c53f47dcafd6eb22fe2a31bcd171c9cf37784d8b9ee03b824a",
-    "expectedHash": "sha256:9969f2af4ec3a99eb21fc6fa643bf51ffe9e9860c3956f2c19024df304da30ab"
+    "expectedHash": "sha256:fe06c160e7e44dbc31dcd60aae6cc7f5cb31c7a7b62b14dd8ce9261545e66432"
   },
   "input": {
     "language": "en",
@@ -132,21 +132,18 @@
             {
               "value": "round",
               "label": "Round",
-              "picture": null,
               "group": "",
               "noPreference": false
             },
             {
               "value": "square",
               "label": "Square",
-              "picture": null,
               "group": "corners",
               "noPreference": false
             },
             {
               "value": "none",
               "label": "No preference",
-              "picture": null,
               "group": "",
               "noPreference": true
             }
@@ -187,21 +184,18 @@
                 {
                   "value": "round",
                   "label": "Round",
-                  "picture": null,
                   "group": "",
                   "noPreference": false
                 },
                 {
                   "value": "square",
                   "label": "Square",
-                  "picture": null,
                   "group": "corners",
                   "noPreference": false
                 },
                 {
                   "value": "none",
                   "label": "No preference",
-                  "picture": null,
                   "group": "",
                   "noPreference": true
                 }

@@ -74,7 +74,7 @@ func TestAnErasedPersonsBundleIsNotHandedOutAfterTheErasure(t *testing.T) {
 	var tenant tenancy.Tenant
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var e error
-		tenant, e = c.tenants.ByHost(ctx, tx, acmeHost)
+		tenant, e = c.testTenants().ByHost(ctx, tx, acmeHost)
 		return e
 	}); err != nil {
 		t.Fatalf("which tenant is acme: %v", err)

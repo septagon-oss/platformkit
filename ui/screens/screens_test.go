@@ -73,7 +73,7 @@ func TestTheAdapterRendersWhatTheRegisteredResourceDescribes(t *testing.T) {
 	r := resource()
 	rows := []map[string]any{{"id": "1", "title": "Buy milk", "status": "open", "rank": 2.0, "pinned": true}}
 	adapted := screens.List(r, opts, rows, 1, 1, "", true)
-	pure := core.List(core.Resource{Schema: r.Schema, Immutable: r.Immutable, Screen: r.Screen}, opts, rows, 1, 1, "", true)
+	pure := core.List(core.Resource{ScreenOwner: r.Module, Schema: r.Schema, Immutable: r.Immutable, Screen: r.Screen}, opts, rows, 1, 1, "", true)
 	if adapted.Title != pure.Title || render(t, adapted.Body) != render(t, pure.Body) {
 		t.Fatal("the adapter and the renderer disagree about the list")
 	}

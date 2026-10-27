@@ -39,7 +39,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	var actions []g.Node
 	if writable {
 		if r.offers("update") {
-			actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit", Variant: r.primaryAction(false)})}
+			actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("detail", "action.edit")}, Label: o.Text("screens.edit", "Edit"), Href: item + "/edit", Variant: r.primaryAction(false)})}
 		}
 		// A singleton is not created and not removed, whatever Create and Delete
 		// answer when they are asked. kit/rest makes those two refuse rather than
@@ -48,7 +48,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
 		if !r.Singleton && r.offers("delete") {
-			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
+			actions = append(actions, deleteForm(o, item, r.Schema.Entity, r.anchor("detail", "action.delete")))
 		}
 	}
 	body := []g.Node{
@@ -61,7 +61,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	// row, and a command is what they may do to it once they have read it.
 	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.offeredCommands(), item, false, locales, row)...)
 	body = append(body, historyDisclosure(o, r.History))
-	return document.View{Title: named, Language: r.Resolved.Language, Body: body}
+	return document.View{Title: named, Language: r.Resolved.Language, Body: r.viewBody("detail", body)}
 }
 
 // offeredCommands is the commands to draw a form for: every one this caller may

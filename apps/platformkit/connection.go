@@ -1,24 +1,18 @@
 package main
 
 // connection.go is the workspace's face, answered as data to somebody who has not
-// signed in yet.
-//
-// Everything the document answers already exists and is already read before
+// signed in yet. Everything the document answers already exists and is read before
 // sign-in — by the browser, as HTML, by modules/web. What did not exist is a
-// machine-readable answer at the same host: a name, a mark, an accent, and the
-// doors this installation actually mounted. The join belongs here and in no module
-// for one reason: its four owners are four different modules, and a module that
-// reached across to three others would invert the tier rule every one of them is
-// built under — modules/site knows nothing of auth, modules/tenant knows nothing of
-// the file module. The composition is the one place that has met all four, and it
-// reads only their contracts/.
+// machine-readable answer at the same host: a name, a mark, an accent, and the doors
+// this installation actually mounted.
 //
-// The address, /api/v1/app/connection, is the kernel's in the same way
-// /api/v1/app/resources is: no module composes the module-less /api/v1/app prefix,
-// so this mount can only be the composition's, and it goes through the one seam
-// that reaches that prefix — app.Options.WorkspaceCatalog, which takes an arbitrary
-// mount function (see workspaceFace in fault.go for why the field's name is now
-// narrower than what runs through it).
+// The join belongs here and in no module: its four owners are four modules, and one
+// that reached across to three others would invert the tier rule — modules/site
+// knows nothing of auth, modules/tenant nothing of the file module. The composition
+// is the one place that has met all four, and it reads only their contracts/. The
+// address is the kernel's in the way /api/v1/app/resources is: no module composes
+// that prefix, so this mount can only be the composition's, taken through
+// app.Options.WorkspaceCatalog, which accepts an arbitrary mount function.
 
 import (
 	"context"
@@ -132,11 +126,11 @@ func (c composition) describe(ctx context.Context) (*screens.Connection, error) 
 	// which is also what a provider whose secret cannot be resolved reads as: the
 	// column names where a secret lives, never the secret, so this document can
 	// not leak one even by describing a half-configured provider.
-	oidc, _, err := c.tenants.OIDCOf(ctx, tx)
+	oidc, _, err := c.oidcSettings.OIDCOf(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
-	saml, _, err := c.tenants.SAMLSettingsOf(ctx, tx)
+	saml, _, err := c.samlSettings.SAMLSettingsOf(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -190,20 +184,19 @@ func (c composition) describe(ctx context.Context) (*screens.Connection, error) 
 // modules/web/internal/mount.go applies to the header a browser reads: the site's
 // own title, then the tenant's name, then the installation's. That is what makes
 // the reference tenant answer with a name on the day it is created, before anybody
-// has configured a site, which is the difference between a first screen and a
-// blank one.
+// has configured a site — the difference between a first screen and a blank one.
+
 // markReachable asks the file module the one question this document cannot answer
 // from its own knowledge: would the door an anonymous caller stands outside serve
-// these bytes? It asks it the way that door serves — `Open` with anonymous set —
+// these bytes? It asks it the way that door serves — Open with anonymous set —
 // rather than reading the visibility column here, because "public" is the file
 // module's decision and a second place that decides it is a second place to get
 // wrong. The bytes are closed unread: this is the row's answer, not the body's.
 //
 // Any refusal ends the same way, with no mark named: a private file and a gone one
-// are the answer that door already gives a caller who is not signed in, and a store
-// that will not answer is no reason to withhold a workspace's name, colour and
-// sign-in doors — which is all a shell needs to draw the screen this document is
-// for. A name with no mark is a first screen; a 500 is not.
+// are what that door already gives a caller who is not signed in, and a store that
+// will not answer is no reason to withhold a name, a colour and the sign-in doors.
+// A name with no mark is a first screen; a 500 is not.
 func (c composition) markReachable(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) bool {
 	if c.files == nil {
 		// No file service means no public file door mounted either, so there is no

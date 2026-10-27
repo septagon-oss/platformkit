@@ -26,11 +26,11 @@ func TestSeededPagesStayInTheirTenant(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		first, err := c.tenants.ByHost(ctx, system, acmeHost)
+		first, err := c.testTenants().ByHost(ctx, system, acmeHost)
 		if err != nil {
 			return err
 		}
-		second, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
+		second, err := c.testTenants().Create(ctx, system, tenantcontracts.NewTenant{
 			Slug: "second", Name: "Second", Host: "second.localhost",
 		})
 		if err != nil {

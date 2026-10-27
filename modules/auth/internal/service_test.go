@@ -93,9 +93,10 @@ func TestServiceConforms(t *testing.T) {
 		fixture := func(ctx context.Context, tx db.Tx[db.Tenant]) authtest.Fixture {
 			return authtest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
-				Published: func() []string { return outbox(t, tx) },
-				Sent:      notices.Sent,
-				Mailed:    box.Sent,
+				Published:  func() []string { return outbox(t, tx) },
+				Sent:       notices.Sent,
+				Mailed:     box.Sent,
+				Delivering: func(delivers bool) { box.Undeliverable = !delivers },
 				Sessions: func(user uuid.UUID) int {
 					var n int64
 					if err := tx.DB().Table("sessions").Where("user_id = ?", user).Count(&n).Error; err != nil {
@@ -175,7 +176,7 @@ func TestServiceConforms(t *testing.T) {
 // wants no mail at all passes internal.Delivery{}, and then no token is issued
 // either — see internal.Service.offer.
 func delivery(box *authtest.Mailbox) internal.Delivery {
-	return internal.Delivery{Mailer: box, Hosts: authtest.Host("acme.example.com"), Secure: true}
+	return internal.Delivery{Mailer: box, MailDelivery: box, Hosts: authtest.Host("acme.example.com"), Secure: true}
 }
 
 // seed installs the two roles a tenant is created with, in a cross-tenant

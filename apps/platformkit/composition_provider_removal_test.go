@@ -18,10 +18,11 @@ func TestRemovingAnyProviderFromTheReferenceCompositionIsRefused(t *testing.T) {
 		t.Fatalf("the whole reference composition must plan before a provider is removed: %v", err)
 	}
 	for provider, contract := range map[string]string{
-		"user":         "usercontracts.Service",
-		"tenant":       "tenantcontracts.Service",
+		"user":         "usercontracts.Provisioning",
+		"tenant":       "tenantcontracts.Lister",
 		"notification": "notificationcontracts.Service",
-		"auth":         "authcontracts.Auth",
+		"auth":         "authcontracts.RoleEditor",
+		"authgrants":   "usercontracts.Granting",
 		"content":      "contentcontracts.Service",
 		"site":         "sitecontracts.Service",
 	} {

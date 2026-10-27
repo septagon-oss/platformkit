@@ -72,7 +72,8 @@ func (s *Service) noLink(ctx context.Context, tx db.Tx[db.Tenant], kind, recipie
 		return s.recordMail(ctx, tx, kind, recipient,
 			notificationcontracts.MailFailed, err.Error())
 	}
-	return s.recordMail(ctx, tx, kind, recipient, notificationcontracts.MailSent, "")
+	outcome, reason := s.deliveredOutcome()
+	return s.recordMail(ctx, tx, kind, recipient, outcome, reason)
 }
 
 // noVerificationLink is that message, named for the link that was not sent so the

@@ -1,5 +1,19 @@
 # Tenant module
 
+## Composition
+
+`tenant.Module` publishes `HostLookup`, `OIDCReader`, `SAMLReader`, `Lister`,
+`Bootstrapper` and `LocaleSetter` alongside its existing kernel and compatibility
+outputs. Each is a projection of the one constructed service. Route handlers receive
+separate directory, creation, lifecycle, host, locale, OIDC and SAML capabilities.
+
+**Reused** — system transactions, tenant RLS, primary-host ordering and existing
+lifecycle commands keep their current authorization, locking and event behavior.
+**Added** — provider-owned [capabilities](contracts/capabilities.go), `BootstrapWith`
+and `ActiveTenants` give consumers the operations they use without the CRUD aggregate.
+**Made reusable** — host and identity-provider adapters, bootstrap and active-tenant
+walks construct from narrow ports; deprecated `Service`, `Bootstrap` and `Active` delegate compatibly.
+
 `modules/tenant` is the control plane: which customers exist and which host
 belongs to which one. The kernel resolves every request's host through its
 service before the request is about anything, and `kit/jobs` walks the tenants

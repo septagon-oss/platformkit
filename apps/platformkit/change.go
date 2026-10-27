@@ -93,24 +93,17 @@ var _ sitecontracts.WriteGate = settingsGate{}
 
 // flagUnreadable is the door's answer when the switch could not be read at all.
 //
-// kit/flags' rule for a failed evaluation is to hand the caller the fallback it
-// passed — false here, meaning "change control is off, write away" — so a provider
-// that is unreachable, unauthorised or misconfigured would read as a switch that is
-// off, and the settings would change hands with no second account in sight. That
-// answer is a silent allow (decision 0010) and, worse, one reachable by anybody who
-// can make the provider fail.
+// kit/flags answers a failed evaluation with the fallback the caller passed — false
+// here, "change control is off, write away" — so an unreachable provider would read
+// as a switch that is off and settings would change hands with no second account in
+// sight: a silent allow (decision 0010), reachable by anyone who can fail the
+// provider. Refusing takes nothing from anybody: the proposal door reads no flag, so
+// the write can still be put forward and decided by someone else while the provider
+// is down. The caller gets the status that says try again, and not the provider's
+// error, because kit/problem keeps a 5xx's cause server-side.
 //
-// Refusing takes nothing from anybody: the proposal door reads no flag, so the
-// write can still be put forward and decided by somebody else while the provider is
-// down. What the caller gets is the status that says try again and the address that
-// works now; what it does not get is the provider's own error, because kit/problem
-// keeps a 5xx's cause on the server's side of that line.
-//
-// It builds a fresh Problem per call rather than being one Problem at package scope,
-// because kit/httpx's response transformer writes the request id into the Problem a
-// handler returns (stampRequestID, kit/httpx/request_id.go:94): one shared value
-// would be two requests writing one field at once, and the second body would carry
-// the first request's id.
+// A fresh Problem is built per call because the response transformer writes the
+// request id into the Problem a handler returns.
 func flagUnreadable() error {
 	return problem.New(http.StatusServiceUnavailable,
 		"CHANGE_CONTROL_UNAVAILABLE: "+siteSettingsFlag+" did not answer, so this write is refused; "+
