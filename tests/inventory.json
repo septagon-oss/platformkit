@@ -41450,6 +41450,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/a_counted_sign_in_refusal_states_the_attempts_its_counter_has_left_test.go",
+   "id": "modules/auth/internal/a_counted_sign_in_refusal_states_the_attempts_its_counter_has_left_test.go#TestACountedSignInRefusalStatesTheAttemptsItsCounterHasLeft",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACountedSignInRefusalStatesTheAttemptsItsCounterHasLeft",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/a_counterless_passkey_signs_in_test.go",
    "id": "modules/auth/internal/a_counterless_passkey_signs_in_test.go#TestAPasskeyWithoutACounterSignsInRepeatedly",
    "kind": "go",
@@ -83936,7 +83955,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2283,
+  "files": 2284,
   "forge_runs": [
    408,
    413,
@@ -83970,7 +83989,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3633,
+   "behaviour": 3634,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -83989,9 +84008,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4255,
+  "rows": 4256,
   "tiers": {
-   "merge": 2632,
+   "merge": 2633,
    "nightly": 110,
    "push": 1513
   },
@@ -83999,13 +84018,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2038,
+   "keep": 2039,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3869,
+   "keep": 3870,
    "keep-rewrite": 170,
    "merge": 216
   }
