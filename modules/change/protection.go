@@ -67,9 +67,9 @@ type Gate struct {
 	Protection contracts.Protection
 }
 
-// NewGate checks the wiring where it is written.
-//
-// Deprecated: use NewGateChecked, which answers this refusal as an error.
+// NewGate checks the wiring where it is written. It is the form a hand-written
+// composition writes; NewGateChecked answers the same refusal as an error, which
+// is what a build function returns.
 func NewGate(g Gate) Gate {
 	checked, err := NewGateChecked(g)
 	if err != nil {

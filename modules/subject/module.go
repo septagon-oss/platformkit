@@ -111,8 +111,8 @@ var roles = []module.RoleDecl{
 func New() module.Module { return NewWith(Deps{}) }
 
 // NewWith is the manifest over the contributions and the ports the composition collected.
-//
-// Deprecated: use NewWithChecked, which answers this refusal as an error.
+// It is the form a hand-written composition writes; NewWithChecked answers the same
+// refusals as an error, which is what a build function returns.
 func NewWith(deps Deps) module.Module {
 	m, err := NewWithChecked(deps)
 	if err != nil {
