@@ -42365,6 +42365,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/tour/a_tour_is_gated_against_the_screen_contract_as_published_test.go",
+   "id": "kit/tour/a_tour_is_gated_against_the_screen_contract_as_published_test.go#TestATourIsGatedAgainstTheScreenContractAsPublished",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestATourIsGatedAgainstTheScreenContractAsPublished",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/tour/a_tour_that_asks_the_composition_for_what_it_never_published_test.go",
    "id": "kit/tour/a_tour_that_asks_the_composition_for_what_it_never_published_test.go#TestAValidTourAsksNothingItsCompositionNeverPublished",
    "kind": "go",
@@ -93229,7 +93248,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2568,
+  "files": 2569,
   "forge_runs": [
    408,
    413,
@@ -93263,7 +93282,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4057,
+   "behaviour": 4058,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93282,23 +93301,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4738,
+  "rows": 4739,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1701
+   "push": 1702
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2323,
+   "keep": 2324,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4352,
+   "keep": 4353,
    "keep-rewrite": 170,
    "merge": 216
   }
