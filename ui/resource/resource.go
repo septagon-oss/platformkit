@@ -181,3 +181,15 @@ func (r Resource) offers(verb string) bool {
 	}
 	return false
 }
+
+// recordAddress is the address a row's identity column links to, and it is empty
+// for a resource that mounted no record route: a list of rows nobody may open is
+// drawn as rows, not as links into the 404 of a place nothing is served. The page
+// side and the door side already asked Offers read; the table's own link is the
+// last place that asks it.
+func (r Resource) recordAddress() string {
+	if !r.offers("read") {
+		return ""
+	}
+	return r.Screen
+}

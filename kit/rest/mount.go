@@ -127,19 +127,18 @@ func (s Spec[T]) offersWrite() bool {
 	return s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate) || s.offers(httpx.CRUDDelete)
 }
 
+// readAuth is this Spec's read guard, asked of httpx rather than derived here:
+// the three fields that can state it go into the value whose method already owns
+// the rule, so one answer decides this route's surface, the registered resource
+// beside it and the document above both.
 func (s Spec[T]) readAuth() httpx.Auth {
-	if s.ReadAuth.Declared() {
-		return s.ReadAuth
-	}
-	return (httpx.Resource{Read: s.Read, OperatorRead: s.OperatorRead}).ReadAuth()
+	return (httpx.Resource{Read: s.Read, OperatorRead: s.OperatorRead, ReadBy: s.ReadAuth}).ReadAuth()
 }
 
 // writeAuth is the declaration the three write routes and every Command carry.
+// See readAuth for why it is asked and not derived.
 func (s Spec[T]) writeAuth() httpx.Auth {
-	if s.WriteAuth.Declared() {
-		return s.WriteAuth
-	}
-	return (httpx.Resource{Write: s.Write, OperatorWrite: s.OperatorWrite}).WriteAuth()
+	return (httpx.Resource{Write: s.Write, OperatorWrite: s.OperatorWrite, WriteBy: s.WriteAuth}).WriteAuth()
 }
 
 func (s Spec[T]) mountList(read *httpx.Router, schema crud.Schema) {
