@@ -1152,6 +1152,14 @@
    "coverage": "",
    "round_named": 0
   },
+  "ui/saved": {
+   "ci_fails": 0,
+   "ci_max_s": null,
+   "ci_med_s": null,
+   "ci_runs": 0,
+   "coverage": "",
+   "round_named": 0
+  },
   "ui/screens": {
    "ci_fails": 0,
    "ci_max_s": null,
@@ -79139,6 +79147,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/saved/kept_list_pager_steps_by_the_sized_page_test.go",
+   "id": "ui/saved/kept_list_pager_steps_by_the_sized_page_test.go#TestTheKeptListPagerStepsByThePageTheCompositionSized",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheKeptListPagerStepsByThePageTheCompositionSized",
+   "needs_db": false,
+   "pkg": "ui/saved",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/adapter_fields_test.go",
    "id": "ui/screens/adapter_fields_test.go#TestTheAdapterCarriesEveryFieldTheRenderersRead",
    "kind": "go",
@@ -88792,7 +88819,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2413,
+  "files": 2414,
   "forge_runs": [
    408,
    413,
@@ -88826,7 +88853,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3861,
+   "behaviour": 3862,
    "composition": 511,
    "contract": 24,
    "journey": 111
@@ -88845,23 +88872,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4507,
+  "rows": 4508,
   "tiers": {
    "merge": 2745,
    "nightly": 111,
-   "push": 1651
+   "push": 1652
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2168,
+   "keep": 2169,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4121,
+   "keep": 4122,
    "keep-rewrite": 170,
    "merge": 216
   }
