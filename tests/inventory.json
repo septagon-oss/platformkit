@@ -79204,6 +79204,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/saved/kept_list_without_a_pair_offers_only_the_offset_it_reads_test.go",
+   "id": "ui/saved/kept_list_without_a_pair_offers_only_the_offset_it_reads_test.go#TestTheKeptListWithoutAPairOffersOnlyTheOffsetItReads",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheKeptListWithoutAPairOffersOnlyTheOffsetItReads",
+   "needs_db": false,
+   "pkg": "ui/saved",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/screens/adapter_fields_test.go",
    "id": "ui/screens/adapter_fields_test.go#TestTheAdapterCarriesEveryFieldTheRenderersRead",
    "kind": "go",
@@ -88857,7 +88876,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2416,
+  "files": 2417,
   "forge_runs": [
    408,
    413,
@@ -88891,7 +88910,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3864,
+   "behaviour": 3865,
    "composition": 511,
    "contract": 24,
    "journey": 111
@@ -88910,23 +88929,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4510,
+  "rows": 4511,
   "tiers": {
    "merge": 2745,
    "nightly": 111,
-   "push": 1654
+   "push": 1655
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2171,
+   "keep": 2172,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4124,
+   "keep": 4125,
    "keep-rewrite": 170,
    "merge": 216
   }
