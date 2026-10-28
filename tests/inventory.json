@@ -72157,6 +72157,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/the_module_report_lists_every_row_in_the_order_of_the_paths_it_names_test.go",
+   "id": "tools/importgate/the_module_report_lists_every_row_in_the_order_of_the_paths_it_names_test.go#TestTheModuleReportListsEveryRowInTheOrderOfThePathsItNames",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheModuleReportListsEveryRowInTheOrderOfThePathsItNames",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/the_printed_refusal_carries_the_advice_that_names_the_way_out_test.go",
    "id": "tools/importgate/the_printed_refusal_carries_the_advice_that_names_the_way_out_test.go#TestEveryPrintedRefusalCarriesTheAdviceThatNamesTheWayOut",
    "kind": "go",
@@ -92712,7 +92731,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2562,
+  "files": 2563,
   "forge_runs": [
    408,
    413,
@@ -92746,7 +92765,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4039,
+   "behaviour": 4040,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92765,23 +92784,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4712,
+  "rows": 4713,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1721
+   "push": 1722
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2317,
+   "keep": 2318,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4326,
+   "keep": 4327,
    "keep-rewrite": 170,
    "merge": 216
   }
