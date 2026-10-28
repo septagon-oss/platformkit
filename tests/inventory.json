@@ -71796,6 +71796,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/only_an_application_reaches_into_what_it_refused_test.go",
+   "id": "tools/importgate/only_an_application_reaches_into_what_it_refused_test.go#TestOnlyAnApplicationReachesIntoWhatItRefused",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestOnlyAnApplicationReachesIntoWhatItRefused",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/policy_test.go",
    "id": "tools/importgate/policy_test.go#TestDirectImportRules",
    "kind": "go",
@@ -92560,7 +92579,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2554,
+  "files": 2555,
   "forge_runs": [
    408,
    413,
@@ -92594,7 +92613,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4031,
+   "behaviour": 4032,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92613,23 +92632,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4704,
+  "rows": 4705,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1713
+   "push": 1714
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2309,
+   "keep": 2310,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4318,
+   "keep": 4319,
    "keep-rewrite": 170,
    "merge": 216
   }
