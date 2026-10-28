@@ -44843,6 +44843,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/contracts/audittest/the_double_refuses_a_replayed_event_whose_cause_cannot_be_attributed_test.go",
+   "id": "modules/audit/contracts/audittest/the_double_refuses_a_replayed_event_whose_cause_cannot_be_attributed_test.go#TestTheDoubleRefusesAReplayedEventWhoseCauseCannotBeAttributed",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheDoubleRefusesAReplayedEventWhoseCauseCannotBeAttributed",
+   "needs_db": false,
+   "pkg": "modules/audit/contracts/audittest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/contracts/audittest/the_fake_answers_for_the_events_one_operation_caused_test.go",
    "id": "modules/audit/contracts/audittest/the_fake_answers_for_the_events_one_operation_caused_test.go#TestTheFakeAnswersForTheEventsOneOperationCaused",
    "kind": "go",
@@ -92747,7 +92766,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2563,
+  "files": 2564,
   "forge_runs": [
    408,
    413,
@@ -92781,7 +92800,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4040,
+   "behaviour": 4041,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92800,23 +92819,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4713,
+  "rows": 4714,
   "tiers": {
    "merge": 2908,
    "nightly": 121,
-   "push": 1684
+   "push": 1685
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2318,
+   "keep": 2319,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4327,
+   "keep": 4328,
    "keep-rewrite": 170,
    "merge": 216
   }
