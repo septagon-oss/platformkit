@@ -115,16 +115,12 @@ type catalogue struct {
 // It replaces what *this* app declared and nothing any other app declared: two
 // boots in one process add to one another rather than erase one another.
 //
-// It takes no grip, and it ends the grips this process held on that app's names:
-// what it installs is the whole of one app's declaration, so the claims a replaced
-// composition took have nothing left to give back. A boot that has to be able to
-// hand its own declarations back claims instead — DeclareFor — which is what kit/app's
-// Start does, above the connection.
+// It takes no grip, and it ends the grips this process held on that app's names: a
+// replaced composition's claims have nothing left to give back. A boot that has to hand
+// its own declarations back claims instead — DeclareFor, which is what kit/app does.
 //
 // Deprecated: use events.NewCatalog, which builds the same install as a value the
-// composition carries to the write door and gives its own names back on Close. A
-// composition that installs rather than carries is measured by whatever the last
-// install left standing under its slug.
+// composition carries to the write door and gives its own names back on Close.
 func DeclareApp(app appname.Name, list []Declared) {
 	slug := app.String()
 	catalogInstall.Lock()

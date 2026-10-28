@@ -1,21 +1,17 @@
-// publisher.go is one composition's own copy of the promise its modules made about
-// what they emit.
+// publisher.go is one composition's own copy of the promise its modules made about what
+// they emit.
 //
-// catalog.go keeps the process-wide record — every app this process has composed, and
-// the names each answers under — because the doors that read it predate this file and a
-// publish that reached no composition still has to be measured against something. What a
-// record keyed by slug cannot give a caller is the answer to "which composition am I
-// publishing for": one process may hold two of them (kit/appname, decision 0074 §6), so
-// the record resolves that by reading tenants.app — a deployment fact the composition
-// already knows. A Catalog is that fact as a value: built by the composition, carried to
-// the one door every event passes through, and consulted there before the INSERT, which
-// keeps the refusal inside the caller's transaction exactly where catalog.go put it.
+// catalog.go keeps the process-wide record — every app composed here, and the names each
+// answers under — because the doors that read it predate this file. What a record keyed by
+// slug cannot give a caller is the answer to "which composition am I publishing for": one
+// process may hold two of them, so the record resolves that by reading tenants.app, a fact
+// the composition already knows. A Catalog is that fact as a value, carried to the one door
+// every event passes through and consulted before the INSERT, which keeps the refusal inside
+// the caller's transaction exactly where catalog.go put it.
 //
-// The value is a contract check and nothing else. It grants no capability: no actor,
-// tenant or feature flag widens what a publish has to satisfy (decision 0028's shared
-// instance), row-level security and the authorizer stay the only authority over whose
-// rows the write touches, and a composition that carried another composition's Catalog
-// would gain only the right to publish a name its own manifest already names.
+// The value is a contract check and nothing else: it grants no capability, and a composition
+// carrying another composition's Catalog gains only the right to publish a name its own
+// manifest already names.
 package events
 
 import (
@@ -61,24 +57,18 @@ var (
 	_ measured  = (*Catalog)(nil)
 )
 
-// NewCatalog builds the event contract of one composition and claims its names, so that
-// every publish this composition carries is measured against what this composition's
-// modules declared rather than against whatever the process last installed under its
-// slug.
+// NewCatalog builds the event contract of one composition and claims its names, so every
+// publish this composition carries is measured against what its own modules declared
+// rather than against whatever the process last installed under its slug. The unnamed
+// deployment passes appname.Name(""), which is published unchecked exactly as today; a
+// name in code that is not a valid slug is refused with appname's own sentence.
 //
-// app is the composition's own name; the unnamed deployment passes appname.Name(""),
-// which is the deployment that names no app and is published unchecked exactly as it is
-// today. An app named in code that is not a valid slug is refused with appname's own
-// sentence.
-//
-// It refuses, installing nothing and claiming nothing, when the list spells one name
-// under payloads that are not one document (OneShapePerName, the sentence the manifest
-// gate in kit/module reads) or when it disagrees with what that app already answers
-// under (clashes, the sentence two live compositions of one app are refused with). On
-// either refusal the *Catalog is nil: a composition that was refused holds no grip.
-//
-// An empty list is legal and means no check rather than every refusal — the manifest of a
-// test composition that declares nothing, which is what DeclareAll has always installed.
+// It refuses, installing nothing and claiming nothing, when the list spells one name under
+// payloads that are not one document (OneShapePerName) or when it disagrees with what that
+// app already answers under (clashes) — the two sentences two live compositions of one app
+// are refused with today. On either refusal the *Catalog is nil. An empty list is legal
+// and means no check rather than every refusal, which is what a manifest of a test
+// composition has always installed.
 func NewCatalog(app appname.Name, decls []Declared) (*Catalog, error) {
 	if app.Named() {
 		if _, err := appname.Parse(string(app)); err != nil {

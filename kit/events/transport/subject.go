@@ -29,11 +29,10 @@ const SubjectPrefix = appname.Prefix
 //	platformkit.<app>.<tenant>.<module>.<event>
 //
 // With no app named it is the address of the deployment that names no app — the same
-// string as the tenant-segmented address this kernel formed before decision 0074, because
-// an unnamed deployment has no token to insert. The app token sits before the tenant for
-// the two wildcards a consumer needs (SubjectPrefix and the pair of wildcards a NATS
-// filter can express), and the module and event halves are the event's own name, which is
-// why this takes a name and not a second grammar.
+// string as the tenant-segmented address this kernel formed before app tokens, because an
+// unnamed deployment has none to insert. The app token sits before the tenant for the two
+// wildcards a consumer needs, and the module and event halves are the event's own name,
+// which is why this takes a name and not a second grammar.
 func SubjectFor(app appname.Name, tenantID uuid.UUID, name string) string {
 	return appname.Subject(app, tenantID, name)
 }
