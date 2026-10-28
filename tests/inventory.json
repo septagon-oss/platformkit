@@ -72138,6 +72138,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/the_run_prints_the_refused_pair_without_the_application_clause_test.go",
+   "id": "tools/importgate/the_run_prints_the_refused_pair_without_the_application_clause_test.go#TestTheRunPrintsTheRefusedPairWithoutTheApplicationClause",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheRunPrintsTheRefusedPairWithoutTheApplicationClause",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/the_run_refuses_a_production_import_that_climbs_into_a_dependency_test.go",
    "id": "tools/importgate/the_run_refuses_a_production_import_that_climbs_into_a_dependency_test.go#TestTheRunRefusesAProductionImportThatClimbsIntoADependency",
    "kind": "go",
@@ -92598,7 +92617,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2556,
+  "files": 2557,
   "forge_runs": [
    408,
    413,
@@ -92632,7 +92651,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4033,
+   "behaviour": 4034,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92651,23 +92670,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4706,
+  "rows": 4707,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1715
+   "push": 1716
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2311,
+   "keep": 2312,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4320,
+   "keep": 4321,
    "keep-rewrite": 170,
    "merge": 216
   }
