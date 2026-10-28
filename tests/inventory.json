@@ -42611,6 +42611,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/tour/the_raw_name_rule_holds_whichever_of_the_two_names_the_control_carries_test.go",
+   "id": "kit/tour/the_raw_name_rule_holds_whichever_of_the_two_names_the_control_carries_test.go#TestTheRawNameRuleHoldsWhicheverOfTheTwoNamesTheControlCarries",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheRawNameRuleHoldsWhicheverOfTheTwoNamesTheControlCarries",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 6,
    "evidence": "reaches nothing its sibling trace_test.go does not reach",
    "file": "kit/trace/callers_trace_state_arrives_bounded_test.go",
@@ -93400,7 +93419,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2577,
+  "files": 2578,
   "forge_runs": [
    408,
    413,
@@ -93434,7 +93453,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4066,
+   "behaviour": 4067,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93453,23 +93472,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4747,
+  "rows": 4748,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1710
+   "push": 1711
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2332,
+   "keep": 2333,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4361,
+   "keep": 4362,
    "keep-rewrite": 170,
    "merge": 216
   }
