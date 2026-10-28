@@ -33726,6 +33726,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/module/the_fill_never_renames_a_subscription_the_manifest_already_named_test.go",
+   "id": "kit/module/the_fill_never_renames_a_subscription_the_manifest_already_named_test.go#TestTheFillNeverRenamesASubscriptionTheManifestAlreadyNamed",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheFillNeverRenamesASubscriptionTheManifestAlreadyNamed",
+   "needs_db": false,
+   "pkg": "kit/module",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/personaldata/blank_test.go",
    "id": "kit/personaldata/blank_test.go#TestABlankedColumnIsAskedAboutTheWayAScrubbedOneIs",
    "kind": "go",
@@ -94631,7 +94650,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2609,
+  "files": 2610,
   "forge_runs": [
    408,
    413,
@@ -94665,7 +94684,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4123,
+   "behaviour": 4124,
    "composition": 543,
    "contract": 24,
    "journey": 122
@@ -94684,23 +94703,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4812,
+  "rows": 4813,
   "tiers": {
    "merge": 2967,
    "nightly": 122,
-   "push": 1723
+   "push": 1724
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2364,
+   "keep": 2365,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4426,
+   "keep": 4427,
    "keep-rewrite": 170,
    "merge": 216
   }
