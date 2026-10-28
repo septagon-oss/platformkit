@@ -32766,6 +32766,44 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/guided_served_round_trip_posts_the_fields_the_page_carries_test.go",
+   "id": "kit/rest/guided_served_round_trip_posts_the_fields_the_page_carries_test.go#TestTheServedStepPageRecordsTheSetItsOwnFormCarries",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheServedStepPageRecordsTheSetItsOwnFormCarries",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/rest/guided_served_round_trip_posts_the_fields_the_page_carries_test.go",
+   "id": "kit/rest/guided_served_round_trip_posts_the_fields_the_page_carries_test.go#TestTheServedFinishPageEndsTheWalkOnTheRevisionItCarries",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheServedFinishPageEndsTheWalkOnTheRevisionItCarries",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/guided_session_read_and_presentation_mount_together_test.go",
    "id": "kit/rest/guided_session_read_and_presentation_mount_together_test.go#TestAGuidedSessionReadAndItsPresentationRefuseToMountApart",
    "kind": "go",
@@ -73486,6 +73524,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/guided_command_form_carries_the_pair_the_page_stands_on_test.go",
+   "id": "ui/resource/guided_command_form_carries_the_pair_the_page_stands_on_test.go#TestEachGuidedCommandFormCarriesThePairThePageStandsOn",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEachGuidedCommandFormCarriesThePairThePageStandsOn",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/guided_command_form_carries_the_revision_the_read_observed_test.go",
    "id": "ui/resource/guided_command_form_carries_the_revision_the_read_observed_test.go#TestEachGuidedCommandFormCarriesTheRevisionTheReadObserved",
    "kind": "go",
@@ -84231,7 +84288,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2298,
+  "files": 2300,
   "forge_runs": [
    408,
    413,
@@ -84265,7 +84322,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3648,
+   "behaviour": 3651,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84284,23 +84341,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4270,
+  "rows": 4273,
   "tiers": {
-   "merge": 2640,
+   "merge": 2642,
    "nightly": 110,
-   "push": 1520
+   "push": 1521
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2053,
+   "keep": 2055,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3884,
+   "keep": 3887,
    "keep-rewrite": 170,
    "merge": 216
   }
