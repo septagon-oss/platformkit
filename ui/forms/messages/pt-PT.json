@@ -557,6 +557,42 @@
     ],
     "translation": "Não foi possível guardar"
   },
+  "forms.step.progress": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Passo %d de %d"
+  },
+  "forms.step.back": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Voltar"
+  },
+  "forms.step.cancel": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Cancelar"
+  },
+  "forms.step.correct": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Verifique as suas respostas"
+  },
+  "forms.step.details": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "Detalhes"
+  },
+  "forms.step.restart": {
+    "references": [
+      "ui/screens/form_steps.go"
+    ],
+    "translation": "Recomeçar"
+  },
   "forms.choice.order": {
     "references": [
       "ui/forms/choice.go"

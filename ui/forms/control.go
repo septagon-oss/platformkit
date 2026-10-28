@@ -20,6 +20,7 @@ type ControlProps struct {
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
+	AutoFocus        bool
 	// Format answers this control's chrome in the request's language. It is the
 	// kernel's own formatter, so the provider keeps ownership of interpolation,
 	// plural rules and regional number format. Nil — the default — answers every
@@ -70,6 +71,14 @@ func Control(p ControlProps) g.Node {
 	attrs := anchorAttrs(p.Field.Anchor)
 	if f.Widget == "hidden" || f.Widget == "richtext" {
 		attrs = nil
+	}
+	if p.AutoFocus {
+		if attrs == nil {
+			attrs = map[string]string{}
+		}
+		// A stepped form sends a person back to the step that refused them, and the
+		// control that refused is the one that should hold the caret.
+		attrs["autofocus"] = "autofocus"
 	}
 	if f.Choices != nil || entity.ChoiceAppearance(f.Widget) {
 		return choiceControl(p, p.Field.Anchor)

@@ -10,7 +10,9 @@ import (
 func richtextControl(p ControlProps, label string, base components.InputProps, word phraser) g.Node {
 	f := p.Field.Definition
 	name := f.Name
-	var attrs map[string]string
+	// The textarea is the field a stepped form focuses when the step refused, so
+	// the attributes the caller gathered reach it as they reach any other control.
+	attrs := base.Attrs
 	area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
 		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 		Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
