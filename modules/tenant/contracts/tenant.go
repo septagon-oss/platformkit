@@ -43,7 +43,7 @@ const (
 
 // Namespace is the workspace namespace this module's screens live in: a module
 // that mounts a page beside the tenant screens mounts into this
-// (httpx.Router.In), rather than writing "tenant" down.
+// (httpx.Router.ForModule), rather than writing "tenant" down.
 var Namespace = tenancy.NewNamespace("tenant")
 
 // Tenant is one customer of the platform.

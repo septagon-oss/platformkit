@@ -127,10 +127,11 @@ The shape we rejected besides the three above:
 deprecated, until the next major. What the deprecation costs here is nothing: no
 package under `kit/`, `pkit/` or `apps/` calls it after this change, and the
 module-facing doors (`Surfaces.SystemToken`, `Router.SystemToken`) answer for the
-module that received them. A router borrowed into another module's namespace
-(`httpx.Namespace`, `Router.In`) is refused a token and says so naming both
-modules: a page mounted beside somebody else's screens is still this module's
-page, and it borrows nobody's credential.
+module that received them. A router borrowed into another module's namespace —
+the namespace a caller holds as the owner's `tenancy.Namespace`, asked of
+`Router.Known` and `Router.ForModule` by its `Module()` — is refused a token and
+says so naming both modules: a page mounted beside somebody else's screens is
+still this module's page, and it borrows nobody's credential.
 
 ## The capability is not the authorization
 

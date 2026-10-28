@@ -138,7 +138,7 @@ type SystemToken = syscap.SystemToken
 // The value has to be nameable by an owning module's contracts package, which is
 // why it lives here and not in kit/httpx: httpx links huma and chi into
 // everything that imports it, and a module's contracts stay free of both. The
-// kernel reads it on a router mount: httpx.Router.In.
+// kernel reads it by name on a router mount: httpx.Router.ForModule.
 type Namespace struct{ module string }
 
 // NewNamespace names one module's own namespace. The owning module's contracts

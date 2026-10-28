@@ -289,19 +289,20 @@ server can answer, row by row, whether the address each row points at answers.
 
 ### Mounting beside another module, and crossing tenants
 
-`Router.In` answers this surface's router bound to another module's namespace —
-the workspace screens of the tenant resource belong at `/app/tenant/tenants`
-whoever generated them. The namespace arrives as a typed value the owning module
-exports from its own `contracts` package (`tenantcontracts.Namespace`,
-`authcontracts.Namespace`), so a mount that names an owner holds a reference to
-it: renaming that module breaks the caller's build instead of inventing a
-namespace that answers 404. A namespace this composition never registered answers
-`false` rather than panicking, because a shell that mounts a page beside an
-absent module's screens has to answer for that page itself and keeping its own
-router is the answer. `Router.ForModule` and `Router.Known` are the same two
-doors by name and are deprecated; the generated register still uses them, because
-the module whose resource it renders is read off the catalog rather than named in
-source.
+A page one module mounts beside another module's screens asks for that
+namespace by name: `Router.ForModule` returns this surface's router bound to it,
+and `Router.Known` says whether this composition registered that module at all —
+an absent namespace has no root to mount into, and a shell that has to answer for
+the page itself keeps its own router rather than panicking. The name arrives as
+the owner's `tenancy.Namespace` (`tenantcontracts.Namespace`,
+`authcontracts.Namespace`), which each owning module exports from its own
+`contracts` package, so a mount names an owner rather than a string somebody
+remembered: renaming that module breaks the caller's build instead of inventing a
+namespace that answers 404. The value is `kit/tenancy`'s and not this package's
+because an owning module's `contracts/` stay free of the HTTP kernel, which links
+huma and chi into whatever imports it. The generated register asks by the plain
+name, because the module whose resource it renders is read off the catalog rather
+than named in source.
 
 A module that has work no tenant transaction can do says so in its manifest
 (`module.Module.SystemAccess`, and ADR 0006), and `Surfaces.SystemToken` then
