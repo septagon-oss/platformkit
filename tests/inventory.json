@@ -27213,6 +27213,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/the_audit_lists_the_claimants_tree_at_the_address_its_page_names_and_to_whoever_reaches_it_test.go",
+   "id": "kit/httpx/the_audit_lists_the_claimants_tree_at_the_address_its_page_names_and_to_whoever_reaches_it_test.go#TestTheAuditListsTheClaimantsTreeAtTheAddressItsPageNamesAndToWhoeverReachesIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheAuditListsTheClaimantsTreeAtTheAddressItsPageNamesAndToWhoeverReachesIt",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/the_count_a_registration_supplies_for_a_resource_that_only_lists_answers_its_read_declaration_test.go",
    "id": "kit/httpx/the_count_a_registration_supplies_for_a_resource_that_only_lists_answers_its_read_declaration_test.go#TestTheCountASuppliedFallbackAnswersTheReadDeclarationOfTheListItReads",
    "kind": "go",
@@ -87442,7 +87461,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2402,
+  "files": 2403,
   "forge_runs": [
    408,
    413,
@@ -87476,7 +87495,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3812,
+   "behaviour": 3813,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87495,9 +87514,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4438,
+  "rows": 4439,
   "tiers": {
-   "merge": 2724,
+   "merge": 2725,
    "nightly": 110,
    "push": 1604
   },
@@ -87505,13 +87524,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2157,
+   "keep": 2158,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4052,
+   "keep": 4053,
    "keep-rewrite": 170,
    "merge": 216
   }
