@@ -42479,6 +42479,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/tour/a_tour_waits_on_only_what_the_composition_can_mount_under_that_name_test.go",
+   "id": "kit/tour/a_tour_waits_on_only_what_the_composition_can_mount_under_that_name_test.go#TestATourWaitsOnOnlyWhatTheCompositionCanMountUnderThatName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestATourWaitsOnOnlyWhatTheCompositionCanMountUnderThatName",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/tour/an_operation_name_is_refused_exactly_when_the_screen_rule_refuses_it_test.go",
    "id": "kit/tour/an_operation_name_is_refused_exactly_when_the_screen_rule_refuses_it_test.go#TestAnOperationNameIsRefusedExactlyWhenTheScreenRuleRefusesIt",
    "kind": "go",
@@ -93343,7 +93362,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2574,
+  "files": 2575,
   "forge_runs": [
    408,
    413,
@@ -93377,7 +93396,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4063,
+   "behaviour": 4064,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93396,23 +93415,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4744,
+  "rows": 4745,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1707
+   "push": 1708
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2329,
+   "keep": 2330,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4358,
+   "keep": 4359,
    "keep-rewrite": 170,
    "merge": 216
   }
