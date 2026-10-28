@@ -3,15 +3,15 @@
 //
 // catalog.go keeps the process-wide record — every app composed here, and the names each
 // answers under — because the doors that read it predate this file. What a record keyed by
-// slug cannot give a caller is the answer to "which composition am I publishing for": one
-// process may hold two of them, so the record resolves that by reading tenants.app, a fact
-// the composition already knows. A Catalog is that fact as a value, carried to the one door
-// every event passes through and consulted before the INSERT, which keeps the refusal inside
-// the caller's transaction exactly where catalog.go put it.
+// slug cannot answer is "which composition am I publishing for": one process may hold two
+// of them, so the record resolves that from tenants.app, a fact the composition already
+// knows. A Catalog is that fact as a value, carried to the one door every event passes
+// through and consulted before the INSERT, so the refusal stays inside the caller's
+// transaction exactly where catalog.go put it.
 //
-// The value is a contract check and nothing else: it grants no capability, and a composition
-// carrying another composition's Catalog gains only the right to publish a name its own
-// manifest already names.
+// The value is a contract check and nothing else: it grants no capability and nothing asks
+// who carried it. Carrying therefore chooses which contract answers — a composition held to
+// another composition's manifest rather than to its own, and only composition code carries.
 package events
 
 import (

@@ -1,14 +1,11 @@
 package events_test
 
-// The manifest that measures a publish is either the process's or the composition's.
-// The process's is the install kit/events/DeclareApp leaves standing, keyed by slug and
-// consulted by reading which app the tenant table says holds the tenant the row belongs
-// to. The composition's is a Catalog, and the point of the difference is that the second
-// answer is a fact the caller already had: two compositions live in one process, and a
-// publish carried by one of them is measured by that one whatever the tenant table says
-// about it. Delivery is untouched — an event still cannot be handled by an app that does
-// not hold the tenant — so what can change here is which contract refuses, never who may
-// write.
+// The manifest that measures a publish is either the process's install or the
+// composition's own Catalog, and the second is a fact the caller already had: two
+// compositions live in one process, and a publish one of them carries is measured by that
+// one whatever the tenant table says about the tenant the row belongs to. Delivery and
+// granting are untouched (kit/events/README.md, "Which catalogue measures a publish"), so
+// what moves here is which contract refuses.
 
 import (
 	"context"

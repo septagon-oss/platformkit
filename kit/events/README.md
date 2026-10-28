@@ -34,18 +34,19 @@ connection — on the context of every served request and of every job, subscrip
 delivery and relay tick the worker half runs, so a module's `events.Publish` is measured
 against its own composition without knowing that anything was carried. `App.Publisher`
 and `Runtime.Publisher` hand the same value to a composition that wants it in a module's
-own `Deps`. With nothing carried, the write answers from the installed catalogue exactly
-as it always did, the `tenants.app` read included: the carrier changes which contract
-answers where the two disagreed, and it can never leave a publish unchecked that was
-checked before. Delivery is a different question and keeps its own answer — an event
-still cannot be handled by an app whose tenant row the table does not show — and granting
-is untouched: the catalogue is a contract, not a capability.
+own `Deps`. With nothing carried the write answers from the installed catalogue exactly as
+it always did, the `tenants.app` read included. Carrying chooses *which* contract answers —
+a composition is held to the manifest it carries rather than to its own — and only
+composition code carries one, so no actor, role or tenant reaches that choice. Delivery is a
+different question and keeps its own answer: an event still cannot be handled by an app whose
+tenant row the table does not show, and the catalogue is a contract, not a capability.
 
 **Reused** — `ClaimApp`'s claim (now `DeclareFor`) with its grip counts, `standing`,
 `retype`, `clashes`, `declaredSchemas` and `OneShapePerName`, so the constructor adds no
 second lifetime ledger and no new refusal sentence; `httpx.WithConn`'s carrier shape; and
-`dbtest.RunInOwnDatabase`, `providers/memory` and `kit/app`'s two-app composition fixture
-for the cases. **Added** — `Catalog`, `Publisher`, `NewCatalog` and the context carrier,
+`dbtest.RunInOwnDatabase` beside `providers/memory` for this package's harness, with
+`kit/app`'s own `compose(t)` configuration for its boot cases. **Added** — `Catalog`,
+`Publisher`, `NewCatalog` and the context carrier,
 because nothing on the shelf or in the kernel was both built by a composition and
 consultable by the one write every event passes through. **Made reusable** — the carrier
 and the `X` → `XFor` + `Deprecated:` shape for `RelayFor`, `SubjectFor`, `FilterFor`,
