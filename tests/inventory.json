@@ -42308,6 +42308,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/tour/a_tour_can_wait_on_every_write_the_composition_mounts_behind_its_control_test.go",
+   "id": "kit/tour/a_tour_can_wait_on_every_write_the_composition_mounts_behind_its_control_test.go#TestATourCanWaitOnEveryWriteTheCompositionMountsBehindItsControl",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestATourCanWaitOnEveryWriteTheCompositionMountsBehindItsControl",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/tour/a_tour_declaration_is_refused_for_the_one_thing_wrong_with_it_test.go",
    "id": "kit/tour/a_tour_declaration_is_refused_for_the_one_thing_wrong_with_it_test.go#TestAValidTourDeclaresItselfWithoutProblem",
    "kind": "go",
@@ -93362,7 +93381,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2575,
+  "files": 2576,
   "forge_runs": [
    408,
    413,
@@ -93396,7 +93415,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4064,
+   "behaviour": 4065,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93415,23 +93434,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4745,
+  "rows": 4746,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1708
+   "push": 1709
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2330,
+   "keep": 2331,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4359,
+   "keep": 4360,
    "keep-rewrite": 170,
    "merge": 216
   }
