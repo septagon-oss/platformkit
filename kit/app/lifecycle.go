@@ -103,11 +103,14 @@ func RefusedBeforeEffects(err error) bool {
 func beforeEffects(err error) error { return refusedBeforeEffects{err} }
 
 // claimDeclared takes this composition's grip on its own app's event shapes, and
-// changes nothing when the grip is already held: New takes it, and a caller that
-// starts an App whose last Start was refused takes it again rather than serving a
-// composition whose payloads nothing measures.
+// changes nothing while the grip is in hand: New takes it and Start moves it to the
+// Runtime, so a caller that starts an App whose last Start was refused, or whose last
+// Runtime was Closed, takes it again rather than serving publishes the process-wide record
+// no longer measures. The guard reads the grip and not the contract value beside it because
+// the two are separate facts: the value says what was composed and outlives any one boot,
+// the grip says this process is answering under it.
 func (a *App) claimDeclared() error {
-	if a.catalog != nil {
+	if a.declaredRelease != nil {
 		return nil
 	}
 	catalog, err := events.NewCatalog(a.opts.App, a.declared)

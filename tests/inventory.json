@@ -10632,6 +10632,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/app/a_composition_started_again_holds_its_event_names_again_test.go",
+   "id": "kit/app/a_composition_started_again_holds_its_event_names_again_test.go#TestACompositionStartedAgainHoldsItsEventNamesAgain",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestACompositionStartedAgainHoldsItsEventNamesAgain",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/app/a_live_connection_watches_the_transport_its_composition_publishes_on_test.go",
    "id": "kit/app/a_live_connection_watches_the_transport_its_composition_publishes_on_test.go#TestTheLiveDoorDeliversTheOutboxEventItsOwnRelayPublished",
    "kind": "go",
@@ -94544,7 +94563,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2606,
+  "files": 2607,
   "forge_runs": [
    408,
    413,
@@ -94578,7 +94597,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4121,
+   "behaviour": 4122,
    "composition": 540,
    "contract": 24,
    "journey": 122
@@ -94597,9 +94616,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4807,
+  "rows": 4808,
   "tiers": {
-   "merge": 2959,
+   "merge": 2960,
    "nightly": 122,
    "push": 1726
   },
@@ -94607,13 +94626,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2361,
+   "keep": 2362,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4421,
+   "keep": 4422,
    "keep-rewrite": 170,
    "merge": 216
   }
