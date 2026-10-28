@@ -1086,6 +1086,11 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# A generated file or section edited by hand, or a marker the writer cannot pair, is refused by
 	# check-generated; this case proves it in a copy of the tree, never in this checkout.
 	bash scripts/a_hand_edited_generated_file_fails_the_regeneration_check_test.sh
+	# Whether the module document is a measurement of this tree or a coin toss: the aggregate report its
+	# writer reads is collected out of maps, so one run that happens to agree proves nothing. This asks one
+	# tree twice, in a copy so nothing tracked is rewritten, and refuses a row whose source kinds come out
+	# unsorted, repeated or empty.
+	bash scripts/the_generated_module_document_answers_one_tree_the_same_way_twice_test.sh
 	# Whether either goal still asks at all. `check` and `check-push` name `check-generated`,
 	# which runs both writers and then diffs with --exit-code, and both CI workflows run `make
 	# check`; the case above calls the goal itself, so it cannot notice a goal that lost the
