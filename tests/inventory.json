@@ -35962,6 +35962,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/a_typed_query_answers_its_address_and_its_closure_to_the_same_callers_test.go",
+   "id": "kit/rest/a_typed_query_answers_its_address_and_its_closure_to_the_same_callers_test.go#TestATypedQueryAnswersItsAddressAndItsClosureToTheSameCallers",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestATypedQueryAnswersItsAddressAndItsClosureToTheSameCallers",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/a_versioned_resource_keeps_every_write_test.go",
    "id": "kit/rest/a_versioned_resource_keeps_every_write_test.go#TestEveryCommittedWriteOfAVersionedResourceKeepsExactlyOneVersion",
    "kind": "go",
@@ -95301,7 +95320,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2644,
+  "files": 2645,
   "forge_runs": [
    408,
    413,
@@ -95335,7 +95354,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4155,
+   "behaviour": 4156,
    "composition": 545,
    "contract": 24,
    "journey": 123
@@ -95354,9 +95373,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4847,
+  "rows": 4848,
   "tiers": {
-   "merge": 3003,
+   "merge": 3004,
    "nightly": 123,
    "push": 1721
   },
@@ -95364,13 +95383,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2399,
+   "keep": 2400,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4461,
+   "keep": 4462,
    "keep-rewrite": 170,
    "merge": 216
   }
