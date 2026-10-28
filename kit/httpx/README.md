@@ -287,6 +287,32 @@ are mounted by modules this package may not import: a row about an optional door
 nobody composed is a redirect into a 404, and only the reference application's running
 server can answer, row by row, whether the address each row points at answers.
 
+### Mounting beside another module, and crossing tenants
+
+`Router.In` answers this surface's router bound to another module's namespace —
+the workspace screens of the tenant resource belong at `/app/tenant/tenants`
+whoever generated them. The namespace arrives as a typed value the owning module
+exports from its own `contracts` package (`tenantcontracts.Namespace`,
+`authcontracts.Namespace`), so a mount that names an owner holds a reference to
+it: renaming that module breaks the caller's build instead of inventing a
+namespace that answers 404. A namespace this composition never registered answers
+`false` rather than panicking, because a shell that mounts a page beside an
+absent module's screens has to answer for that page itself and keeping its own
+router is the answer. `Router.ForModule` and `Router.Known` are the same two
+doors by name and are deprecated; the generated register still uses them, because
+the module whose resource it renders is read off the catalog rather than named in
+source.
+
+A module that has work no tenant transaction can do says so in its manifest
+(`module.Module.SystemAccess`, and ADR 0006), and `Surfaces.SystemToken` then
+hands it the credential minted for that module, carrying that module's own
+reason: the audit trail of every `db.RunSystem` says who opened it and for what.
+A token taken without the declaration is refused at composition naming the module
+and the field to add, and the returned credential is `nil` as well — the
+capability is not handed out on the strength of a call nobody declared. A router
+borrowed into another module's namespace is refused too, naming both modules:
+the credential belongs to the module being wired, so take it on your own router.
+
 ## A write that is sent twice
 
 Two clients can send one write twice — a phone that gave up and retried, a curl

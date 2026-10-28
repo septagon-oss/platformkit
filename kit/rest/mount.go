@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 // operator grants; generated screens stay in the workspace. Invalid Specs panic
 // before mounting. Request failures use Fault.
 func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
+	s.Module = mountedUnder(s.Module, surfaces.App, "Spec", s.Entity)
 	s.check()
 	schema := s.Schema()
 	read, write := s.readRouter(surfaces), s.writeRouter(surfaces)
@@ -47,6 +49,35 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		s.mountTranslationDoors(surfaces)
 	}
 	s.annotateFields(read, write, schema)
+}
+
+// mountedUnder is the kernel's fill of the one identity field a resource may
+// leave empty: the module a resource lives in is the module whose router it
+// mounts on, so a manifest with nothing to add can leave Module out and the
+// operation ids, the document tag and the event names all carry the name the
+// composition registered. A Spec that names a different module is refused here,
+// in rest's own shape for a wiring mistake — a panic at the mount site, naming
+// both — because filing routes and events under a module whose manifest declares
+// neither is a fault no later gate could explain.
+func mountedUnder(declared string, app *httpx.Router, kind, entity string) string {
+	// A router that names no module is the composition's own, or the zero
+	// httpx.Surfaces a test mounts on to ask check() alone. Neither fills
+	// anything, so neither contradicts: the declared name stands and check()
+	// stays the one that answers.
+	router := ""
+	if app != nil {
+		router = app.Module()
+	}
+	if router == "" {
+		return declared
+	}
+	if declared == "" {
+		return router
+	}
+	if declared != router {
+		panic(fmt.Sprintf("rest: %s for %q is mounted on module %q's router and names module %q; a resource lives in the module whose manifest declares it", kind, entity, router, declared))
+	}
+	return declared
 }
 
 // faults are the statuses every operation here can answer with: the three a

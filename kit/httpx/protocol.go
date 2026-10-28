@@ -66,7 +66,7 @@ func (r *Router) At(at string) *Router {
 	// on to mount still lands somewhere ordinary and legible. The refusal is what
 	// stops the process, not the address: a half-declared one would compose
 	// nothing sensible and say less about it.
-	claimed := &Router{surface: r.surface, module: r.module, api: r.api}
+	claimed := &Router{surface: r.surface, module: r.module, api: r.api, owner: r.owner}
 	if !protocolPath.MatchString(at) {
 		r.api.noteRefusal(fmt.Sprintf(
 			"httpx: module %q declared the address %q; a declared address is an absolute, clean, lower-case path of the form /name/version — no trailing slash, no pattern, no prefix",

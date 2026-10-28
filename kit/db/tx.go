@@ -210,8 +210,12 @@ func Run(ctx context.Context, c *Conn, fn func(ctx context.Context, tx Tx[Tenant
 	return p.Commit()
 }
 
-// RunSystem opens a cross-tenant transaction. Only packages under kit/ can
-// obtain a token, and every open is logged with the reason it was minted for.
+// RunSystem opens a cross-tenant transaction. Only a package under kit/ can
+// mint a token: a module holds one only because its manifest declared
+// module.Module.SystemAccess and the kernel handed it out while the module was
+// being wired (docs/adr/0006). Every open is logged with the module that holds
+// the token — empty for a kernel runner such as host resolution or a probe —
+// and the reason it was minted for.
 // Nested calls join an enclosing system transaction; an open tenant transaction
 // is a scope mismatch, because crossing tenants half way through tenant work is
 // never what the caller meant.
@@ -228,9 +232,10 @@ func RunSystem(ctx context.Context, c *Conn, tok tenancy.SystemToken, fn func(ct
 	// Debug, not Info: a cross-tenant transaction is rare by design, but the
 	// readiness probe and every host resolution open one, and a log line per
 	// probe is a log nobody reads.
-	slog.DebugContext(ctx, "db: cross-tenant transaction", "reason", tok.Reason())
+	slog.DebugContext(ctx, "db: cross-tenant transaction", "module", tok.Module(), "reason", tok.Reason())
 	ctx, span := telemetry.Tracer().Start(ctx, "cross-tenant transaction",
 		trace.WithAttributes(append(telemetry.SpanAttrs(ctx),
+			attribute.String("pkit.system.module", tok.Module()),
 			attribute.String("pkit.system.reason", tok.Reason()))...))
 	defer func() { span.End() }()
 	err := c.db.WithContext(ctx).Transaction(func(gtx *gorm.DB) error {

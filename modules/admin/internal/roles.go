@@ -97,13 +97,13 @@ func (p pages) mountRoles(app *httpx.Router) {
 	// through the API; the screen is what makes that possible without curl.
 	guard := httpx.Permission(authcontracts.PermissionRoleManage)
 
-	page.Serve(namespace(app, "auth"), p.shell, page.Route{View: admincontracts.Screen("roles"), ID: "admin-roles", Method: http.MethodGet, Path: p.at.roles.rel,
+	page.Serve(namespace(app, authcontracts.Namespace), p.shell, page.Route{View: admincontracts.Screen("roles"), ID: "admin-roles", Method: http.MethodGet, Path: p.at.roles.rel,
 		Summary: "What each role grants in this tenant", Errors: rolesReadFaults}, guard,
 		func(ctx context.Context, r page.Request, in *rolesInput) (page.View, error) {
 			return p.rolesView(ctx, r, in.Page, "")
 		})
 
-	page.Serve(namespace(app, "auth"), p.shell, page.Route{View: admincontracts.Screen("roles"), ID: "admin-role-set", Method: http.MethodPost, Path: p.at.roles.rel,
+	page.Serve(namespace(app, authcontracts.Namespace), p.shell, page.Route{View: admincontracts.Screen("roles"), ID: "admin-role-set", Method: http.MethodPost, Path: p.at.roles.rel,
 		Summary: "Set what a role grants", Errors: rolesWriteFaults}, guard,
 		func(ctx context.Context, r page.Request, in *roleForm) (page.View, error) {
 			tx, live := httpx.TxFrom(ctx)

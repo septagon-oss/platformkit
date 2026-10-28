@@ -73,6 +73,65 @@ transaction that created it.
 installation with no tenants has no tenant transaction to do its first write in,
 so the kernel opens a system one and hands it to `platformkit bootstrap`.
 
+## The token names the module that holds it
+
+The grep was a list of callers and not a description of the work. Four modules
+take a token in this repository, and every cross-tenant transaction they open
+was logged with one shared sentence — "a module's control-plane routes" — which
+cannot be read afterwards: it does not distinguish the file sweep from the tenant
+directory. So the need is now declared, in the manifest beside the call:
+
+    SystemAccess: module.SystemAccess{Reason: "sweep stored bytes no row references, across every tenant"}
+    Routes:       func(s httpx.Surfaces) { sweep.Use(s.Ops.SystemToken()) }
+
+Four things follow.
+
+1. **The set of modules that cross tenants is one field and one sentence each.**
+   `grep -rn 'SystemAccess:' modules/` names them and says why; the audit trail
+   of every `db.RunSystem` now carries `module` beside `reason`, with an empty
+   `module` saying the kernel opened it — host resolution, the relay, a probe.
+2. **A token taken without a declaration is refused at composition**, naming the
+   module and the field to add, and the minted credential is `nil` as well, so
+   the capability is not handed out on the strength of a call nobody declared.
+   `httpx.API.ValidateDeclarations` answers it, which `kit/app` and `pkit` ask
+   before any port opens.
+3. **A declaration nothing took is refused too.** The half `httpx` cannot see —
+   it knows what it minted, not what a module meant to do — is answered by
+   `kit/app` after every `Routes` has run. A module that stops crossing tenants
+   and leaves the line behind is a manifest that no longer describes the code,
+   and the job written beside it is running on nothing.
+4. **One credential per module, answered the same on every registration pass**,
+   because kit/app registers a composition's routes four times and compares them.
+
+The reason is bounded to one line and one sentence by `module.Validate`, because
+it lands in a `slog` field and a span attribute and nowhere else: a bound nothing
+enforces lets the audit line become a paragraph. It is operator text in the
+source language and deliberately not translatable — a security fact a tenant
+could rewrite in a catalogue is not a security fact.
+
+The shape we rejected besides the three above:
+
+- **A `pkit.Needs[...]` read, or a `pkit.SystemAccess(reason)` declaration.**
+  Nothing can answer it where it would be answered: `pkit` calls `kit/app.New`
+  and `httpx.New` inside it, so during a module's build there is no API to mint
+  from, and `Wiring.refuse` would refuse a module that did everything right.
+  A pkit-only declaration would also be invisible to a composition built through
+  `kit/app.New` directly, which is public and used by every app test. The
+  manifest travels with the module, and one place holds the one fact.
+- **A mint on demand, from a reason the call site passes.** Then the sentence in
+  the audit trail is written by whoever wrote the handler, and the manifest is
+  decoration. The kernel's mint takes no reason as an argument at all: it reads
+  the declared one, so the sentence exists in exactly one place.
+
+`(*API).SystemToken()` — the one shared token, with no module on it — stays,
+deprecated, until the next major. What the deprecation costs here is nothing: no
+package under `kit/`, `pkit/` or `apps/` calls it after this change, and the
+module-facing doors (`Surfaces.SystemToken`, `Router.SystemToken`) answer for the
+module that received them. A router borrowed into another module's namespace
+(`httpx.Namespace`, `Router.In`) is refused a token and says so naming both
+modules: a page mounted beside somebody else's screens is still this module's
+page, and it borrows nobody's credential.
+
 ## The capability is not the authorization
 
 The token says a module may open a cross-tenant transaction. It says nothing
@@ -132,7 +191,10 @@ one.
 ## Evidence
 
 ```sh
-grep -rn 'SystemToken()' modules/ apps/   # every cross-tenant module, in one list
+grep -rn 'SystemAccess:' modules/                # every cross-tenant module, and its reason
+grep -rn 'SystemToken()' modules/ apps/          # where each one takes its credential
+go test ./kit/app/ -run 'TestAModuleThatTookACrossTenantCredentialItNeverDeclaredIsRefused'
+go test ./apps/platformkit -run 'TestTheModulesThatCrossTenantsNameFourDifferentReasons'
 go test ./modules/tenant/... -run 'TestATenantTransactionSeesOnlyItsOwnRow'
 go test ./modules/auth/... -run 'TestASessionFromAnotherTenantIsNotASessionHere'
 ```

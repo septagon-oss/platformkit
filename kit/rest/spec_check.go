@@ -164,6 +164,11 @@ func (s Spec[T]) identityFault() string {
 		strings.HasPrefix(s.Path, "/api/v1") || strings.HasPrefix(s.Path, "/app") ||
 		strings.HasPrefix(s.Path, "/ops") || strings.HasPrefix(s.Path, "/public"):
 		bad = fmt.Sprintf("Path %q must be relative to the module — %q", s.Path, "/"+strings.TrimPrefix(strings.TrimPrefix(s.Path, "/api/v1/"+s.Module), "/"))
+	case s.Module == "":
+		// Checked before the event name below, which needs the module to exist:
+		// the fault is the missing name itself, and Mount fills it from the router
+		// a Spec mounts on, so an empty one here is a Spec nobody mounted.
+		bad = fmt.Sprintf("Module %q names no module; Mount fills it from the router the Spec mounts on, and a Spec checked before that names the module its events belong to", s.Module)
 	case !events.ValidName(s.Event(Created)):
 		bad = fmt.Sprintf("Module %q and Entity %q do not make an event name", s.Module, s.Entity)
 	case !s.ReadAuth.Declared() && !httpx.ValidPermission(s.Read):
