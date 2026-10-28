@@ -10569,6 +10569,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/app/a_boot_refused_at_the_transport_takes_its_names_again_test.go",
+   "id": "kit/app/a_boot_refused_at_the_transport_takes_its_names_again_test.go#TestABootRefusedAtTheTransportTakesItsEventNamesAgain",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestABootRefusedAtTheTransportTakesItsEventNamesAgain",
+   "needs_db": true,
+   "pkg": "kit/app",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 10,
    "evidence": "only file in its package reaching kit/telemetry.Tracer",
    "file": "kit/app/a_collector_that_never_answered_test.go",
@@ -94563,7 +94582,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2607,
+  "files": 2608,
   "forge_runs": [
    408,
    413,
@@ -94597,7 +94616,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4122,
+   "behaviour": 4123,
    "composition": 540,
    "contract": 24,
    "journey": 122
@@ -94616,9 +94635,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4808,
+  "rows": 4809,
   "tiers": {
-   "merge": 2960,
+   "merge": 2961,
    "nightly": 122,
    "push": 1726
   },
@@ -94626,13 +94645,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2362,
+   "keep": 2363,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4422,
+   "keep": 4423,
    "keep-rewrite": 170,
    "merge": 216
   }
