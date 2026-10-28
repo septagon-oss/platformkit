@@ -3,7 +3,24 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/septagon-oss/platformkit/kit/module"
 )
+
+// systemAccessOf reads the cross-tenant declarations off the manifests this
+// composition carries. A harness that builds kit/httpx by hand — instead of
+// through kit/app, which fills the same value from the same manifests — has to
+// state them, and reading them here keeps the sentences from drifting away from
+// the modules that wrote them.
+func systemAccessOf(modules []module.Module) map[string]string {
+	out := map[string]string{}
+	for _, m := range modules {
+		if m.SystemAccess.Declared() {
+			out[m.Name] = m.SystemAccess.Reason
+		}
+	}
+	return out
+}
 
 // TestTheModulesThatCrossTenantsNameFourDifferentReasons is the reason the
 // declarations exist rather than the one shared token: a cross-tenant
