@@ -107,7 +107,7 @@ func (a *App) finishRuntime(ctx context.Context, api *httpx.API, conn *db.Conn, 
 	// fact is the one the composition owns, and a module's publish stays the package
 	// call it has always been. A handler that hands the request context to a
 	// goroutine hands the composition to it too.
-	rt.handler = withPublisher(rt.catalog, rt.handler)
+	rt.handler = withPublisher(rt.Publisher(), rt.handler)
 	if a.opts.Role != Web {
 		if rt.transport, err = a.transport(); err != nil {
 			// Close releases the declaration claim as well as opened resources.
