@@ -152,7 +152,8 @@ else:
     print(f"ok   this file would be refused {len(self_prose)} times by its own rule, and is exempt by name")
 if len(held) > CENSUS_CEILING:
     bad.append(f"the exclusion by file name covers {len(held)} files, over the {CENSUS_CEILING} the census gate holds")
-print(f"ok   {len(held)} files are held by their own names, at or under the census gate's {CENSUS_CEILING}")
+else:
+    print(f"ok   {len(held)} files are held by their own names, at or under the census gate's {CENSUS_CEILING}")
 
 # The planted trio: the wrapped phrase and the mid-file citation must be caught, and the clean file —
 # which uses the domain term "round trip" — must not. These are the matcher's own assertions, run on
