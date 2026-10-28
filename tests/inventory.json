@@ -32671,6 +32671,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/guided_finish_the_walk_outran_is_refused_test.go",
+   "id": "kit/rest/guided_finish_the_walk_outran_is_refused_test.go#TestAGuidedFinishTheWalkOutranIsRefusedAndAnswersNoAddress",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGuidedFinishTheWalkOutranIsRefusedAndAnswersNoAddress",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/guided_read_answering_another_session_test.go",
    "id": "kit/rest/guided_read_answering_another_session_test.go#TestAGuidedReadAnsweringAnotherSessionRefusesToServeIt",
    "kind": "go",
@@ -84345,7 +84364,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2303,
+  "files": 2304,
   "forge_runs": [
    408,
    413,
@@ -84379,7 +84398,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3654,
+   "behaviour": 3655,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84398,9 +84417,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4276,
+  "rows": 4277,
   "tiers": {
-   "merge": 2645,
+   "merge": 2646,
    "nightly": 110,
    "push": 1521
   },
@@ -84408,13 +84427,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2058,
+   "keep": 2059,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3890,
+   "keep": 3891,
    "keep-rewrite": 170,
    "merge": 216
   }
