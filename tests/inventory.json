@@ -94176,6 +94176,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/reviews/deprecated_doors_in_the_shared_kernel_are_recorded_beside_the_functions_that_replace_them_test.py",
+   "id": "scripts/reviews/deprecated_doors_in_the_shared_kernel_are_recorded_beside_the_functions_that_replace_them_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "deprecated_doors_in_the_shared_kernel_are_recorded_beside_the_functions_that_replace_them_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/reviews/event_claim_a_refused_boot_keeps_both_of_its_assertions_test.py",
    "id": "scripts/reviews/event_claim_a_refused_boot_keeps_both_of_its_assertions_test.py",
    "kind": "shell_pin",
@@ -96603,7 +96623,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2692,
+  "files": 2693,
   "forge_runs": [
    408,
    413,
@@ -96638,7 +96658,7 @@
   ],
   "layers": {
    "behaviour": 4222,
-   "composition": 547,
+   "composition": 548,
    "contract": 24,
    "journey": 122
   },
@@ -96656,23 +96676,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4915,
+  "rows": 4916,
   "tiers": {
    "merge": 2986,
    "nightly": 122,
-   "push": 1807
+   "push": 1808
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2447,
+   "keep": 2448,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4529,
+   "keep": 4530,
    "keep-rewrite": 170,
    "merge": 216
   }
