@@ -7,7 +7,7 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
-func richtextControl(p ControlProps, label string, base components.InputProps, word func(string, string) string) g.Node {
+func richtextControl(p ControlProps, label string, base components.InputProps, word phraser) g.Node {
 	f := p.Field.Definition
 	name := f.Name
 	var attrs map[string]string
@@ -15,7 +15,7 @@ func richtextControl(p ControlProps, label string, base components.InputProps, w
 		ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable, Attrs: attrs},
 		Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 		Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
-		MaxLength: f.MaxLength, CharacterLimitOnly: true,
+		HelperNotes: base.HelpNotes, MaxLength: f.MaxLength, CharacterLimitOnly: true,
 	}, components.Textarea).Node
 	// Replace this native disclosure when the shared disclosure lands.
 	help := h.Details(
