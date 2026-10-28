@@ -79147,6 +79147,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/saved/kept_list_never_offers_an_address_it_cannot_answer_test.go",
+   "id": "ui/saved/kept_list_never_offers_an_address_it_cannot_answer_test.go#TestTheKeptListNeverOffersAnAddressItCannotAnswer",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheKeptListNeverOffersAnAddressItCannotAnswer",
+   "needs_db": false,
+   "pkg": "ui/saved",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/saved/kept_list_pager_steps_by_the_sized_page_test.go",
    "id": "ui/saved/kept_list_pager_steps_by_the_sized_page_test.go#TestTheKeptListPagerStepsByThePageTheCompositionSized",
    "kind": "go",
@@ -88838,7 +88857,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2415,
+  "files": 2416,
   "forge_runs": [
    408,
    413,
@@ -88872,7 +88891,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3863,
+   "behaviour": 3864,
    "composition": 511,
    "contract": 24,
    "journey": 111
@@ -88891,23 +88910,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4509,
+  "rows": 4510,
   "tiers": {
    "merge": 2745,
    "nightly": 111,
-   "push": 1653
+   "push": 1654
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2170,
+   "keep": 2171,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4123,
+   "keep": 4124,
    "keep-rewrite": 170,
    "merge": 216
   }
