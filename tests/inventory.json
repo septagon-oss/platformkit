@@ -27173,6 +27173,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/httpx/the_anonymous_door_list_a_boot_prints_names_a_modules_workspace_tree_test.go",
+   "id": "kit/httpx/the_anonymous_door_list_a_boot_prints_names_a_modules_workspace_tree_test.go#TestTheAnonymousDoorListABootPrintsNamesAModulesWorkspaceTree",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheAnonymousDoorListABootPrintsNamesAModulesWorkspaceTree",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 7,
    "evidence": "only file in its package reaching /api/v1/nomodule/anything, /api/v1/probe, /api/v1/probe/nowhere",
    "file": "kit/httpx/the_answer_the_client_got_bars_its_seconds_test.go",
@@ -87480,7 +87499,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2404,
+  "files": 2405,
   "forge_runs": [
    408,
    413,
@@ -87514,7 +87533,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3814,
+   "behaviour": 3815,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87533,9 +87552,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4440,
+  "rows": 4441,
   "tiers": {
-   "merge": 2726,
+   "merge": 2727,
    "nightly": 110,
    "push": 1604
   },
@@ -87543,13 +87562,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2159,
+   "keep": 2160,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4054,
+   "keep": 4055,
    "keep-rewrite": 170,
    "merge": 216
   }
