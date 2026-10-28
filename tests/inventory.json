@@ -71036,6 +71036,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/an_applications_test_file_that_reaches_into_a_dependency_carries_the_application_clause_test.go",
+   "id": "tools/importgate/an_applications_test_file_that_reaches_into_a_dependency_carries_the_application_clause_test.go#TestAnApplicationsTestFileThatReachesIntoADependencyCarriesTheApplicationClause",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnApplicationsTestFileThatReachesIntoADependencyCarriesTheApplicationClause",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/baseline_test.go",
    "id": "tools/importgate/baseline_test.go#TestContractBaselineAdmitsOnlyTheEdgeItNames",
    "kind": "go",
@@ -92636,7 +92655,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2558,
+  "files": 2559,
   "forge_runs": [
    408,
    413,
@@ -92670,7 +92689,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4035,
+   "behaviour": 4036,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92689,23 +92708,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4708,
+  "rows": 4709,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1717
+   "push": 1718
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2313,
+   "keep": 2314,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4322,
+   "keep": 4323,
    "keep-rewrite": 170,
    "merge": 216
   }
