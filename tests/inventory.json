@@ -3358,6 +3358,44 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/each_module_that_crosses_tenants_holds_its_own_credential_test.go",
+   "id": "apps/platformkit/each_module_that_crosses_tenants_holds_its_own_credential_test.go#TestEveryModuleThatCrossesTenantsHoldsACredentialOfItsOwn",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestEveryModuleThatCrossesTenantsHoldsACredentialOfItsOwn",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
+   "file": "apps/platformkit/each_module_that_crosses_tenants_holds_its_own_credential_test.go",
+   "id": "apps/platformkit/each_module_that_crosses_tenants_holds_its_own_credential_test.go#TestAModuleOfThisCompositionThatDeclaredNothingIsRefusedItsCredential",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestAModuleOfThisCompositionThatDeclaredNothingIsRefusedItsCredential",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/email_delivery_unavailable_test.go",
    "id": "apps/platformkit/email_delivery_unavailable_test.go#TestEmailRegistrationRefusesWithoutDeliverableMail",
    "kind": "go",
@@ -33085,6 +33123,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestASubscriptionAttributedToAnotherModuleIsStillRefused",
+   "needs_db": false,
+   "pkg": "kit/module",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/module/a_manifest_that_leaves_the_kernels_answers_blank_is_filled_test.go",
+   "id": "kit/module/a_manifest_that_leaves_the_kernels_answers_blank_is_filled_test.go#TestAManifestThatMixesABlankSubscriptionWithAnotherModulesKeepsTheForeignOne",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAManifestThatMixesABlankSubscriptionWithAnotherModulesKeepsTheForeignOne",
    "needs_db": false,
    "pkg": "kit/module",
    "round_named": false,
@@ -94574,7 +94631,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2608,
+  "files": 2609,
   "forge_runs": [
    408,
    413,
@@ -94608,8 +94665,8 @@
    578
   ],
   "layers": {
-   "behaviour": 4122,
-   "composition": 541,
+   "behaviour": 4123,
+   "composition": 543,
    "contract": 24,
    "journey": 122
   },
@@ -94627,23 +94684,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4809,
+  "rows": 4812,
   "tiers": {
-   "merge": 2965,
+   "merge": 2967,
    "nightly": 122,
-   "push": 1722
+   "push": 1723
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2363,
+   "keep": 2364,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4423,
+   "keep": 4426,
    "keep-rewrite": 170,
    "merge": 216
   }
