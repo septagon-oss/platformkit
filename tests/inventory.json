@@ -72005,6 +72005,25 @@
   {
    "area": "tools",
    "evidence": "not-round-named",
+   "file": "tools/importgate/the_answer_lists_its_refusals_by_the_reaching_package_first_test.go",
+   "id": "tools/importgate/the_answer_lists_its_refusals_by_the_reaching_package_first_test.go#TestTheAnswerListsItsRefusalsByTheReachingPackageFirst",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheAnswerListsItsRefusalsByTheReachingPackageFirst",
+   "needs_db": false,
+   "pkg": "tools/importgate",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "tools",
+   "evidence": "not-round-named",
    "file": "tools/importgate/the_checked_repositorys_own_layer_map_that_cannot_be_opened_refuses_the_run_test.go",
    "id": "tools/importgate/the_checked_repositorys_own_layer_map_that_cannot_be_opened_refuses_the_run_test.go#TestCheckedRepositorysOwnLayerMapThatCannotBeOpenedRefusesTheRun",
    "kind": "go",
@@ -92693,7 +92712,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2561,
+  "files": 2562,
   "forge_runs": [
    408,
    413,
@@ -92727,7 +92746,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4038,
+   "behaviour": 4039,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92746,23 +92765,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4711,
+  "rows": 4712,
   "tiers": {
    "merge": 2870,
    "nightly": 121,
-   "push": 1720
+   "push": 1721
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2316,
+   "keep": 2317,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4325,
+   "keep": 4326,
    "keep-rewrite": 170,
    "merge": 216
   }
