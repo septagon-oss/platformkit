@@ -35791,6 +35791,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/rest/a_generated_query_that_marks_its_read_an_operator_read_mounts_nowhere_test.go",
+   "id": "kit/rest/a_generated_query_that_marks_its_read_an_operator_read_mounts_nowhere_test.go#TestAGeneratedQueryThatMarksItsReadAnOperatorReadMountsNowhere",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAGeneratedQueryThatMarksItsReadAnOperatorReadMountsNowhere",
+   "needs_db": true,
+   "pkg": "kit/rest",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/rest/a_refused_mount_registers_no_resource_and_opens_no_route_test.go",
    "id": "kit/rest/a_refused_mount_registers_no_resource_and_opens_no_route_test.go#TestARefusedMountRegistersNoResourceAndOpensNoRoute",
    "kind": "go",
@@ -95339,7 +95358,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2646,
+  "files": 2647,
   "forge_runs": [
    408,
    413,
@@ -95373,7 +95392,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4157,
+   "behaviour": 4158,
    "composition": 545,
    "contract": 24,
    "journey": 123
@@ -95392,9 +95411,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4849,
+  "rows": 4850,
   "tiers": {
-   "merge": 3005,
+   "merge": 3006,
    "nightly": 123,
    "push": 1721
   },
@@ -95402,13 +95421,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2401,
+   "keep": 2402,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4463,
+   "keep": 4464,
    "keep-rewrite": 170,
    "merge": 216
   }
