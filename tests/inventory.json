@@ -45511,6 +45511,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/internal/the_trail_leaves_the_transaction_of_a_caller_that_carried_on_usable_test.go",
+   "id": "modules/audit/internal/the_trail_leaves_the_transaction_of_a_caller_that_carried_on_usable_test.go#TestTheTrailLeavesTheTransactionOfACallerThatCarriedOnUsable",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTrailLeavesTheTransactionOfACallerThatCarriedOnUsable",
+   "needs_db": true,
+   "pkg": "modules/audit/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/internal/the_trail_refuses_an_unattributable_operation_of_an_event_it_already_stores_test.go",
    "id": "modules/audit/internal/the_trail_refuses_an_unattributable_operation_of_an_event_it_already_stores_test.go#TestTheTrailRefusesAnUnattributableOperationOfAnEventItAlreadyStores",
    "kind": "go",
@@ -92804,7 +92823,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2566,
+  "files": 2567,
   "forge_runs": [
    408,
    413,
@@ -92838,7 +92857,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4043,
+   "behaviour": 4044,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92857,9 +92876,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4716,
+  "rows": 4717,
   "tiers": {
-   "merge": 2910,
+   "merge": 2911,
    "nightly": 121,
    "push": 1685
   },
@@ -92867,13 +92886,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2321,
+   "keep": 2322,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4330,
+   "keep": 4331,
    "keep-rewrite": 170,
    "merge": 216
   }
