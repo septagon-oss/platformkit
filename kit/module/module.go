@@ -460,19 +460,9 @@ func Expand(mods []Module) []Module {
 // attributedTo names every subscription that names none, and only those: a name
 // the manifest already wrote survives, including another module's, because that
 // disagreement is what Validate refuses and the durable consumer name is stamped
-// from it. It copies only when it has to, because Expand promises it does not
-// write its input.
+// from it. The answer is always a slice of its own, so the expanded plan holds no
+// window onto the manifest it was built from.
 func attributedTo(subs []events.Subscription, owner string) []events.Subscription {
-	unnamed := false
-	for _, s := range subs {
-		if s.Module == "" {
-			unnamed = true
-			break
-		}
-	}
-	if !unnamed {
-		return subs
-	}
 	out := make([]events.Subscription, len(subs))
 	for i, s := range subs {
 		if s.Module == "" {
@@ -487,18 +477,9 @@ func attributedTo(subs []events.Subscription, owner string) []events.Subscriptio
 // module task is the task module's own screen, "task/tasks". An entry that
 // already names a module keeps it, including across modules — a shell linking to
 // another module's screens says so — and an empty Screen is left for Validate
-// to refuse, which is what makes filling it and requiring it one rule.
+// to refuse, which is what makes filling it and requiring it one rule. Like
+// attributedTo it answers with a slice of its own.
 func screensOf(entries []NavEntry, owner string) []NavEntry {
-	short := false
-	for _, n := range entries {
-		if n.Screen != "" && !strings.Contains(n.Screen, "/") {
-			short = true
-			break
-		}
-	}
-	if !short {
-		return entries
-	}
 	out := make([]NavEntry, len(entries))
 	for i, n := range entries {
 		if n.Screen != "" && !strings.Contains(n.Screen, "/") {
