@@ -45492,6 +45492,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/internal/the_trail_refuses_an_unattributable_operation_of_an_event_it_already_stores_test.go",
+   "id": "modules/audit/internal/the_trail_refuses_an_unattributable_operation_of_an_event_it_already_stores_test.go#TestTheTrailRefusesAnUnattributableOperationOfAnEventItAlreadyStores",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTrailRefusesAnUnattributableOperationOfAnEventItAlreadyStores",
+   "needs_db": true,
+   "pkg": "modules/audit/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/internal/trace_id_test.go",
    "id": "modules/audit/internal/trace_id_test.go#TestTheTrailRowNamesTheTraceThatWroteIt",
    "kind": "go",
@@ -92766,7 +92785,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2564,
+  "files": 2565,
   "forge_runs": [
    408,
    413,
@@ -92800,7 +92819,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4041,
+   "behaviour": 4042,
    "composition": 528,
    "contract": 24,
    "journey": 121
@@ -92819,9 +92838,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4714,
+  "rows": 4715,
   "tiers": {
-   "merge": 2908,
+   "merge": 2909,
    "nightly": 121,
    "push": 1685
   },
@@ -92829,13 +92848,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2319,
+   "keep": 2320,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4328,
+   "keep": 4329,
    "keep-rewrite": 170,
    "merge": 216
   }
