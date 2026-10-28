@@ -18882,6 +18882,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/entity/present/the_order_an_author_declares_survives_the_resolution_test.go",
+   "id": "kit/entity/present/the_order_an_author_declares_survives_the_resolution_test.go#TestTheOrderAnAuthorDeclaresSurvivesTheResolution",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheOrderAnAuthorDeclaresSurvivesTheResolution",
+   "needs_db": false,
+   "pkg": "kit/entity/present",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/entity/present/the_words_an_author_hints_win_over_what_resolution_derives_test.go",
    "id": "kit/entity/present/the_words_an_author_hints_win_over_what_resolution_derives_test.go#TestTheWordsAnAuthorHintsWinOverWhatResolutionDerives",
    "kind": "go",
@@ -87717,7 +87736,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2387,
+  "files": 2388,
   "forge_runs": [
    408,
    413,
@@ -87751,7 +87770,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3826,
+   "behaviour": 3827,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87770,23 +87789,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4452,
+  "rows": 4453,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1670
+   "push": 1671
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2141,
+   "keep": 2142,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4065,
+   "keep": 4066,
    "keep-rewrite": 170,
    "merge": 217
   }
