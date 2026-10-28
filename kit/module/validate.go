@@ -165,7 +165,7 @@ func (v *validation) events(m Module) {
 		// Only the kernel manifest may emit its explicitly named cross-cutting
 		// events; other emitters must use their own module namespace.
 		if !strings.HasPrefix(e.Name, m.Name+".") &&
-			!(m.Name == KernelName && slices.Contains(KernelEvents, e.Name)) {
+			!(m.Name == KernelName && slices.Contains(KernelEventNames(), e.Name)) {
 			v.add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
 		}
 	}
@@ -181,7 +181,7 @@ func (v *validation) references(mods []Module) {
 	// because both point at something another module owns: a link is about what
 	// the reader may see, and a subscription is about what somebody else emits.
 	emitted := map[string]bool{}
-	for _, e := range KernelEvents {
+	for _, e := range KernelEventNames() {
 		emitted[e] = true
 	}
 	for _, m := range mods {

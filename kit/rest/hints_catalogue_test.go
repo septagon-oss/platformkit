@@ -179,5 +179,5 @@ func TestASingletonRefusesAnInvalidHintNamingIt(t *testing.T) {
 			Save:    func(_ context.Context, _ db.Tx[db.Tenant], in *TenantSetting) (*TenantSetting, error) { return in, nil },
 			Present: entity.EntryHints{Icon: "gearwheel"},
 		}.Mount(httpx.Surfaces{})
-	}, `icon "gearwheel"`, "entity.Icons")
+	}, `icon "gearwheel"`, "entity.IconNames")
 }

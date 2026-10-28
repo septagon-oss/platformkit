@@ -118,8 +118,13 @@ type catalogue struct {
 // It takes no grip, and it ends the grips this process held on that app's names:
 // what it installs is the whole of one app's declaration, so the claims a replaced
 // composition took have nothing left to give back. A boot that has to be able to
-// hand its own declarations back claims instead — ClaimApp — which is what kit/app's
+// hand its own declarations back claims instead — DeclareFor — which is what kit/app's
 // Start does, above the connection.
+//
+// Deprecated: use events.NewCatalog, which builds the same install as a value the
+// composition carries to the write door and gives its own names back on Close. A
+// composition that installs rather than carries is measured by whatever the last
+// install left standing under its slug.
 func DeclareApp(app appname.Name, list []Declared) {
 	slug := app.String()
 	catalogInstall.Lock()
@@ -171,16 +176,26 @@ func DeclareApp(app appname.Name, list []Declared) {
 // what a test that publishes a declared name installs. A composition with a slug
 // of its own calls DeclareApp with it: an app that declared through this call
 // would check its own tenants against the contract of an app that is not it.
+//
+// Deprecated: use events.NewCatalog(appname.Name(""), decls), which installs the same
+// manifest and hands back the value that publishes under it and the Close that gives its
+// names back.
 func DeclareAll(list []Declared) { DeclareApp("", list) }
 
-// ClaimApp installs one app's declared events beside the ones that app already holds and
-// returns the release of what it added. It refuses, installing nothing, when the list
-// spells an event that app already answers under a different payload shape: one app holds
-// one shape per name, and a second composition that means something else by a name the
-// first chose is the disagreement its author settles. Two different apps may spell one name
-// two ways, each measured against its own entry. The release is safe to call twice and from
-// two goroutines, and a boot that installed nothing returns one a caller may call anyway.
-func ClaimApp(app appname.Name, list []Declared) (func(), error) {
+// DeclareFor is one composition's claim on its own app's event names, returned as the
+// release of what it added.
+//
+// It installs one app's declared events beside the ones that app already holds and
+// refuses, installing nothing, when the list spells an event that app already answers
+// under a different payload shape: one app holds one shape per name, and a second
+// composition that means something else by a name the first chose is the disagreement its
+// author settles. Two different apps may spell one name two ways, each measured against
+// its own entry. The release is safe to call twice and from two goroutines, and a boot
+// that installed nothing returns one a caller may call anyway.
+//
+// A composition that wants its event contract as a value it publishes through wants
+// NewCatalog, which is this claim held rather than this claim handed back as a closure.
+func DeclareFor(app appname.Name, list []Declared) (func(), error) {
 	slug := app.String()
 	want, err := declaredSchemas(list)
 	if err != nil {
@@ -264,9 +279,19 @@ func ClaimApp(app appname.Name, list []Declared) (func(), error) {
 	}, nil
 }
 
-// DeclareMore is ClaimApp for the deployment that names no app, the slug a
+// ClaimApp is DeclareFor, named for the grip it takes rather than for the app it takes
+// it for.
+//
+// Deprecated: use DeclareFor, or events.NewCatalog for the same claim carried as the
+// value that measures the composition's own publishes.
+func ClaimApp(app appname.Name, list []Declared) (func(), error) { return DeclareFor(app, list) }
+
+// DeclareMore is DeclareFor for the deployment that names no app, the slug a
 // composition without an app of its own answers under.
-func DeclareMore(list []Declared) (func(), error) { return ClaimApp("", list) }
+//
+// Deprecated: use DeclareFor(appname.Name(""), list), or events.NewCatalog for the same
+// claim carried as a value.
+func DeclareMore(list []Declared) (func(), error) { return DeclareFor("", list) }
 
 // CheckAppDeclared answers the refusal ClaimApp would give, over the declarations
 // standing, and changes nothing. kit/app's New asks, so a composition that spells
@@ -484,11 +509,7 @@ func checkPayload(app, name string, body []byte) error {
 		return nil
 	}
 	if err := s.Validate(body); err != nil {
-		owner := "the module"
-		if app != "" {
-			owner = "app " + strconv.Quote(app)
-		}
-		return fmt.Errorf("events: %s: the payload is not what %s declared: %w", name, owner, err)
+		return notAsDeclared(app, name, err)
 	}
 	return nil
 }
@@ -521,9 +542,27 @@ func checkDeclared(app, name string) error {
 			}
 		}
 	}
+	return undeclared(app, name)
+}
+
+// undeclared is the refusal of a name no module of one app declared, and the only
+// phrasing of it here: the installed catalogue and a composition's own Catalog say one
+// sentence, so a publisher that moves from the first to the second is refused for the
+// same defect in the same words.
+func undeclared(app, name string) error {
 	owner := "any module"
 	if app != "" {
 		owner = "app " + strconv.Quote(app)
 	}
 	return fmt.Errorf("events: %s is declared by no module of %s: no subscriber can receive it", name, owner)
+}
+
+// notAsDeclared is the refusal of a payload that is not the shape one app declared, with
+// the same single-phrasing promise as undeclared.
+func notAsDeclared(app, name string, err error) error {
+	owner := "the module"
+	if app != "" {
+		owner = "app " + strconv.Quote(app)
+	}
+	return fmt.Errorf("events: %s: the payload is not what %s declared: %w", name, owner, err)
 }

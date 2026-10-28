@@ -10,6 +10,8 @@ package entity
 // and a test inside ui/ binds each name to a drawing: the same arrangement as
 // Widgets and ui/forms, for the same reason.
 
+import "slices"
+
 // Icons is every name an entry's `icon` may carry. They are semantic — what the
 // resource is about — not ui/icon's glyph names: `person` is a resource kind,
 // `user` is a drawing. The set is frozen because a name outside it has to refuse
@@ -18,6 +20,10 @@ package entity
 // ui/icon binds it in a test there, not an import: an alias or a body exists for
 // every name here, and the names the vendored set has no drawing for yet are
 // held in a list in that test that can only shrink.
+//
+// Deprecated: read IconNames(), which hands out a copy. This slice is the storage
+// every gate in kit/rest compares an author's hint against, and one append that grew
+// it in place would widen what the whole tree mounts.
 var Icons = []string{
 	"task", "person", "people", "document", "settings", "plan", "calendar",
 	"folder", "chart", "message", "money", "box", "tag", "building",
@@ -27,17 +33,23 @@ var Icons = []string{
 // Tones is every name an enum value's tone may carry. `brand` is deliberately
 // absent: ui/components draws it for a component affordance, and a status is not
 // an affordance. ui/components/badge binds it — every name here is a badge tone.
+//
+// Deprecated: read ToneNames().
 var Tones = []string{"neutral", "info", "success", "warning", "danger"}
 
 // Formats is every name a field's `format` may carry: how a value is read, not
 // what is typed into it. That other axis is Widgets, and `tel` there and `phone`
 // here are one fact spelled twice because a control name and a reading name are
 // different names — `relative` and `money` have no control to be spelled with.
+//
+// Deprecated: read FormatNames().
 var Formats = []string{"email", "phone", "url", "date", "datetime", "relative", "number", "money"}
 
 // Visibilities is every name a field's `visibility` may carry. The empty string
 // is not in it, because the empty string is what "shown" means when nobody said
 // anything, and a key printed for a hint nobody wrote is not this contract.
+//
+// Deprecated: read VisibilityNames().
 var Visibilities = []string{"shown", "detail", "hidden"}
 
 // Anchors is every clock-relative instant a declared predicate value may name.
@@ -49,6 +61,23 @@ var Visibilities = []string{"shown", "detail", "hidden"}
 // The set is frozen for the reason Icons is: a value outside it has to refuse to
 // mount, and a fourth word is asked for by a product that needs one.
 var Anchors = []string{"now", "today", "tomorrow"}
+
+// IconNames, ToneNames, FormatNames and VisibilityNames are the four reading
+// vocabularies above as copies: the names a hint may carry, for the gate that refuses
+// another one and for the test in ui/ that binds each name to a drawing. Each call
+// returns a fresh slice, so a caller that sorts or appends to the answer leaves the
+// kernel's own list where it found it — the same promise events.Names gives a declared
+// event list.
+func IconNames() []string { return slices.Clone(Icons) }
+
+// ToneNames is Tones as a copy. See IconNames.
+func ToneNames() []string { return slices.Clone(Tones) }
+
+// FormatNames is Formats as a copy. See IconNames.
+func FormatNames() []string { return slices.Clone(Formats) }
+
+// VisibilityNames is Visibilities as a copy. See IconNames.
+func VisibilityNames() []string { return slices.Clone(Visibilities) }
 
 // ValidAnchor reports whether a declared value names one of those instants. The
 // empty string is invalid: an anchor is named by an author who meant one, and a

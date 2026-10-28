@@ -304,7 +304,7 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 		mount func()
 		want  []string
 	}{
-		{"icon", mountSpec[*hintedOK](entity.EntryHints{Icon: "widget"}, "/xx"), []string{`icon "widget"`, "entity.Icons"}},
+		{"icon", mountSpec[*hintedOK](entity.EntryHints{Icon: "widget"}, "/xx"), []string{`icon "widget"`, "entity.IconNames"}},
 		{"order", mountSpec[*hintedOK](entity.EntryHints{Order: -1}, "/xx"), []string{"order -1", "no opinion"}},
 		{"group key", mountSpec[*hintedOK](entity.EntryHints{Group: &entity.ResourceGroup{Key: "Record information", Label: "R"}}, "/xx"), []string{`group key "Record information"`, "lower-case identifier"}},
 		{"group label", mountSpec[*hintedOK](entity.EntryHints{Group: &entity.ResourceGroup{Key: "practice"}}, "/xx"), []string{`group "practice" declares no label`}},
@@ -317,9 +317,9 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 		{"summaryFields empty", mountSpec[*hintedOK](entity.EntryHints{SummaryFields: []string{}}, "/xx"), []string{"summaryFields declares no field"}},
 		{"sections empty", mountSpec[*hintedOK](entity.EntryHints{Sections: []entity.EntitySection{}}, "/xx"), []string{"sections declares no block"}},
 		{"sortable off entity", mountSpec[*hintedOK](entity.EntryHints{Sortable: []string{"rankk"}}, "/xx"), []string{`sortable "rankk"`, "not a field"}},
-		{"format", mountSpec[*badFormat](plain, "/xx"), []string{`formatted "at-the-time"`, "entity.Formats"}},
-		{"tone", mountSpec[*badTone](plain, "/xx"), []string{`tone "brand"`, "entity.Tones"}},
-		{"empty tone", mountSpec[*emptyTone](plain, "/xx"), []string{`tone ""`, "entity.Tones"}},
+		{"format", mountSpec[*badFormat](plain, "/xx"), []string{`formatted "at-the-time"`, "entity.FormatNames"}},
+		{"tone", mountSpec[*badTone](plain, "/xx"), []string{`tone "brand"`, "entity.ToneNames"}},
+		{"empty tone", mountSpec[*emptyTone](plain, "/xx"), []string{`tone ""`, "entity.ToneNames"}},
 		{"tone off enum", mountSpec[*toneOffEnum](plain, "/xx"), []string{`for "urgent"`, "enum does not hold"}},
 		{"labels without enum", mountSpec[*labelsNoEnum](plain, "/xx"), []string{"declares enum label values and has no enum"}},
 		{"money on a string", mountSpec[*moneyOnString](plain, "/xx"), []string{`"amount" is formatted money and is string`}},

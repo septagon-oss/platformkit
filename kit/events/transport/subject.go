@@ -24,6 +24,37 @@ import (
 // produced it, and every consumer's filter is derived from here.
 const SubjectPrefix = appname.Prefix
 
+// SubjectFor is the address one event of one app is published at:
+//
+//	platformkit.<app>.<tenant>.<module>.<event>
+//
+// With no app named it is the address of the deployment that names no app — the same
+// string as the tenant-segmented address this kernel formed before decision 0074, because
+// an unnamed deployment has no token to insert. The app token sits before the tenant for
+// the two wildcards a consumer needs (SubjectPrefix and the pair of wildcards a NATS
+// filter can express), and the module and event halves are the event's own name, which is
+// why this takes a name and not a second grammar.
+func SubjectFor(app appname.Name, tenantID uuid.UUID, name string) string {
+	return appname.Subject(app, tenantID, name)
+}
+
+// FilterFor is the wildcard a subscription to one event name of one app uses: that event,
+// in every tenant of that app, and no other app's. With no app named it is the wider
+// wildcard of the deployment that names none, whose reach is bounded by
+// AddressMismatch rather than by the filter.
+func FilterFor(app appname.Name, name string) string {
+	return appname.Filter(app, name)
+}
+
+// FiltersFor is every address a subscription to one event name of one app has to answer,
+// newest first: this build's, the previous build's, the build before that one's. A
+// rolling window needs the list because a NATS `*` matches exactly one token and no
+// wildcard means "this token, or none"; the window is the length of the rollout and no
+// longer, as appname.Filters states.
+func FiltersFor(app appname.Name, name string) []string {
+	return appname.Filters(app, name)
+}
+
 // Subject is the address of one event:
 //
 //	platformkit.<tenant>.<module>.<event>
@@ -33,8 +64,10 @@ const SubjectPrefix = appname.Prefix
 // delivery behind it, and a bridge can route a customer's events by address
 // rather than by opening the payload. The module and event halves are the
 // event's Name, which is why Subject takes a name and not a second grammar.
+// Deprecated: use SubjectFor(appname.Name(""), tenantID, name), which is the same
+// address and states which app publishes at it.
 func Subject(tenantID uuid.UUID, name string) string {
-	return appname.PreviousSubject(tenantID, name)
+	return SubjectFor("", tenantID, name)
 }
 
 // AppSubject is the address of one event of one app:
@@ -47,8 +80,10 @@ func Subject(tenantID uuid.UUID, name string) string {
 // "this tenant, any app" — which is right, because a subscription always belongs
 // to one app. A process with no slug set publishes Subject instead, the address
 // this kernel formed before decision 0074, which Filters keeps reading.
+// Deprecated: use SubjectFor, which answers for a named app and an unnamed deployment in
+// one function.
 func AppSubject(app appname.Name, tenantID uuid.UUID, name string) string {
-	return appname.Subject(app, tenantID, name)
+	return SubjectFor(app, tenantID, name)
 }
 
 // Filter is the wildcard a subscription to one event name uses: every tenant's
@@ -61,14 +96,16 @@ func AppSubject(app appname.Name, tenantID uuid.UUID, name string) string {
 // tenant's own backlog filters Subject(tenant, name), an exact subject rather
 // than this wildcard, and the address space has held the tenant since this
 // function landed.
+// Deprecated: use FilterFor(appname.Name(""), name).
 func Filter(name string) string {
-	return appname.PreviousFilter(name)
+	return FilterFor("", name)
 }
 
 // AppFilter is one app's wildcard for one event name: that event, in every tenant
 // of that app, and no other app's. With no slug set it is Filter.
+// Deprecated: use FilterFor.
 func AppFilter(app appname.Name, name string) string {
-	return appname.Filter(app, name)
+	return FilterFor(app, name)
 }
 
 // Filters is every address a subscription to one event name has to answer, in the order a
@@ -82,8 +119,9 @@ func AppFilter(app appname.Name, name string) string {
 // window needs two filters, not a cleverer one.
 //
 // The window is the length of the rollout and no longer.
+// Deprecated: use FiltersFor(appname.Name(""), name).
 func Filters(name string) []string {
-	return appname.Filters(appname.Name(""), name)
+	return FiltersFor("", name)
 }
 
 // AppFilters is Filters for a process that names its app: its own scoped address
@@ -91,8 +129,9 @@ func Filters(name string) []string {
 // published and no app reads another's scoped traffic — the scoped address carries
 // the app token and the older filters carry one more or one fewer token than it,
 // so no previous-shape filter matches a scoped subject.
+// Deprecated: use FiltersFor.
 func AppFilters(app appname.Name, name string) []string {
-	return appname.Filters(app, name)
+	return FiltersFor(app, name)
 }
 
 // legacyAddress is the address the build before the tenant segment published

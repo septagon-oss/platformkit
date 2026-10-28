@@ -45,7 +45,7 @@ func kernelJobs(transport events.Transport, app appname.Name, clocks ...func() t
 		{Name: "outbox-relay", Every: relayEvery, Parallel: true, Run: func(ctx context.Context, conn *db.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, relayTimeout)
 			defer cancel()
-			return events.RelayApp(ctx, conn, transport, app)
+			return events.RelayFor(ctx, conn, transport, app)
 		}},
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
@@ -183,6 +183,12 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 	// a module that took a connection while its Routes callback ran took nothing,
 	// and the failure only surfaced as a mail that never arrived.
 	ctx = httpx.WithConn(ctx, conn)
+	// The same argument carries the composition's event contract: the relay, every
+	// subscription delivery and every job tick derive from this context, so each of
+	// them is measured against the manifest of the composition that runs them rather
+	// than against the process's last install. A worker half whose Runtime released
+	// its catalog publishes under the installed record, as it did before.
+	ctx = events.WithPublisher(ctx, a.publisher())
 	// The ledgers move before any subscription is made, and moveLedger is what
 	// makes that ordering a fact rather than an intention: a refusal parks the
 	// worker here until the rename commits, and no consumer exists while it waits.

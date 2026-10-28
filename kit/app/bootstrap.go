@@ -49,11 +49,20 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 		return err
 	}
 	// The bootstrap publishes — tenant.created, through events.PublishFor — and it
-	// does so before app.New installs the composition's catalog. An outbox row that
-	// no subscriber can receive is the failure kit/events/checkDeclared exists to
-	// refuse, so the bootstrap has to say what it can emit before it emits it, from
-	// the same manifests app.New will read a moment later.
-	events.DeclareAll(declaredEvents(withKernel(mods)))
+	// does so before any composition was built. An outbox row that no subscriber can
+	// receive is the failure kit/events/checkDeclared exists to refuse, so the
+	// bootstrap says what it can emit before it emits it, from the same manifests
+	// app.New will read a moment later. It names no app, because a first tenant belongs
+	// to whichever composition bootstraps the installation, and carries the value on
+	// its own context: the migration, the drain and fn's own transaction all publish
+	// under this manifest, and the claim ends with the bootstrap rather than standing
+	// in the process for the next bootstrapper to trip over.
+	catalog, err := events.NewCatalog("", declaredEvents(withKernel(mods)))
+	if err != nil {
+		return err
+	}
+	defer catalog.Close()
+	ctx = events.WithPublisher(ctx, catalog)
 	conn, err := db.OpenWithPool(ctx, cfg.Database.URL, pool)
 	if err != nil {
 		return err
