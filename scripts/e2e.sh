@@ -47,17 +47,18 @@ fi
 # /health is not the application's signature. The question is answered here, at the
 # same end as the node check, because a run that cannot prove what it serves is
 # refused before it builds a binary, creates a database or bootstraps a tenant. The
-# two ways it refuses are kept apart, because they are two different broken machines:
-# a socket table that names no process, and a toolchain that starts no listener to
-# ask about.
+# two refusals are kept apart, because they are two different broken machines — a
+# socket table that names no process, and no listener for a socket table to name — and
+# each says what the run went on not doing, so the line a person reads is the whole
+# of the refusal rather than half of it.
 attribution=0
 port_attribution_works || attribution=$?
 if [ "$attribution" -ne 0 ]; then
 	if [ "$attribution" = 2 ]; then
-		echo "e2e: no listener could be started here — node ran and never reported a port of its own, so there was nothing for gate 10 to ask about. Nothing was built, no database was created and no browser was dispatched." >&2
+		echo "e2e: no listener could be started here, so gate 10 has no port of its own to prove it serves, and it will not hand a browser an address it cannot prove. The 'free port:' line this run printed names the machine that refused to start it. Nothing was built, no database was created and no browser was dispatched." >&2
 		exit 1
 	fi
-	echo "e2e: this machine cannot say which process is listening on a port — a listener this run started itself went unattributed, so neither ss -p nor lsof is answering. Gate 10 will not hand a browser an address it cannot prove it serves." >&2
+	echo "e2e: this machine cannot say which process is listening on a port — a listener this run started itself went unattributed, so neither ss -p nor lsof is answering. Gate 10 will not hand a browser an address it cannot prove it serves. Nothing was built, no database was created and no browser was dispatched." >&2
 	exit 1
 fi
 

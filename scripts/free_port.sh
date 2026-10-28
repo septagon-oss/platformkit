@@ -77,9 +77,15 @@ port_listeners() { # [port] — every pid the operating system attributes to a l
 #
 # Two refusals come out of this, and they are two machines' faults. Exit 1 is the
 # socket table's: a listener is up and nothing would say who holds it. Exit 2 is the
-# toolchain's: no listener could be started, so the question was never asked. They
-# are kept apart because a person told their `ss` will not answer goes to look at
-# iproute2 and /proc, and finds nothing wrong with either.
+# fault of whatever should have put that listener up: none could be started, so the
+# question was never asked. They are kept apart because a person told their `ss` will
+# not answer goes to look at iproute2 and /proc, and finds nothing wrong with either.
+#
+# Exit 2 has two producers — a toolchain that reported no port, and a TMPDIR with
+# nowhere private to write the port it was given — and one exit serves both because a
+# run that cannot announce a port has no listener to ask about either way. The line
+# each prints is what tells them apart, so it names its own machine and the step that
+# follows: one sends the person to node, the other to TMPDIR.
 #
 # The grace around the attribution is short and bounded, because a socket in LISTEN
 # state sits in the kernel's table already: /proc either maps it to its owner or
@@ -90,10 +96,13 @@ port_listeners() { # [port] — every pid the operating system attributes to a l
 # process had allocated needed a second question in two of those five runs on the same
 # machine. Eight asks is what a slow table may spend, not a budget to cut: at one or
 # two this refuses a run whose socket table was merely slow rather than mute.
-port_attribution_works() { # exit 0 when this machine attributes a listening socket to the process holding it, 1 when a listener is up and the socket table names no holder for it, 2 when no listener could be started to ask about
+port_attribution_works() { # exit 0 when this machine attributes a listening socket to the process holding it, 1 when a listener is up and the socket table names no holder for it, 2 when no listener could be started to ask about, either because node reported no port or because TMPDIR holds nowhere private to write the one it reported
 	local announce="" probe="" pid="" tries=0 attributed="no"
+	# Asked before node is started, because a listener whose port nobody can read is a
+	# listener this run cannot prove it owns, and a refusal that reached this far would
+	# have paid for a toolchain start to arrive at the same place.
 	if ! announce="$(mktemp)"; then
-		echo "free port: no private place for the probe listener to write its port" >&2
+		echo "free port: no private place under ${TMPDIR:-/tmp} to write the port the probe listener was given; set TMPDIR to a directory this run can create files in" >&2
 		return 2
 	fi
 	node -e 'const fs = require("node:fs");
