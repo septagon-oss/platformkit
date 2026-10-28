@@ -41887,6 +41887,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/a_shut_second_half_door_asks_a_wait_that_falls_with_its_own_countdown_test.go",
+   "id": "modules/auth/internal/a_shut_second_half_door_asks_a_wait_that_falls_with_its_own_countdown_test.go#TestAShutSecondHalfDoorAsksAWaitThatFallsWithItsOwnCountdown",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAShutSecondHalfDoorAsksAWaitThatFallsWithItsOwnCountdown",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/a_shut_sign_in_door_asks_exactly_the_seconds_it_states_are_left_test.go",
    "id": "modules/auth/internal/a_shut_sign_in_door_asks_exactly_the_seconds_it_states_are_left_test.go#TestAShutSignInDoorAsksExactlyTheSecondsItStatesAreLeft",
    "kind": "go",
@@ -84050,7 +84069,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2289,
+  "files": 2290,
   "forge_runs": [
    408,
    413,
@@ -84084,7 +84103,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3639,
+   "behaviour": 3640,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84103,9 +84122,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4261,
+  "rows": 4262,
   "tiers": {
-   "merge": 2638,
+   "merge": 2639,
    "nightly": 110,
    "push": 1513
   },
@@ -84113,13 +84132,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2044,
+   "keep": 2045,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3875,
+   "keep": 3876,
    "keep-rewrite": 170,
    "merge": 216
   }
