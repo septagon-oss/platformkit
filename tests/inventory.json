@@ -93062,6 +93062,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/the_restore_a_page_offers_posts_to_the_route_that_refuses_the_same_caller_test.sh",
+   "id": "scripts/the_restore_a_page_offers_posts_to_the_route_that_refuses_the_same_caller_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "the_restore_a_page_offers_posts_to_the_route_that_refuses_the_same_caller_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/the_served_page_door_pin_is_a_check_recipe_line_and_refuses_by_its_own_verdict_test.sh",
    "id": "scripts/the_served_page_door_pin_is_a_check_recipe_line_and_refuses_by_its_own_verdict_test.sh",
    "kind": "shell_pin",
@@ -95089,7 +95109,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2641,
+  "files": 2642,
   "forge_runs": [
    408,
    413,
@@ -95124,7 +95144,7 @@
   ],
   "layers": {
    "behaviour": 4148,
-   "composition": 542,
+   "composition": 543,
    "contract": 24,
    "journey": 122
   },
@@ -95142,23 +95162,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4836,
+  "rows": 4837,
   "tiers": {
    "merge": 2975,
    "nightly": 122,
-   "push": 1739
+   "push": 1740
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2396,
+   "keep": 2397,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4450,
+   "keep": 4451,
    "keep-rewrite": 170,
    "merge": 216
   }
