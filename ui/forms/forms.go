@@ -12,6 +12,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/style"
@@ -25,8 +26,10 @@ import (
 type Field struct {
 	Resolved                      *present.ResolvedField
 	PictureSource, ComposedSource string
-	Definition                    entity.Field
-	Label                         string
+	// Anchor names this composed control; empty keeps standalone forms unanchored.
+	Anchor     screen.AnchorRef
+	Definition entity.Field
+	Label      string
 	// Help is the line under the control: what resource.Words.FieldHelp answers for
 	// the field — the author's declared `help:` when they wrote one, in the
 	// request's language, the field's Doc when they did not. Empty falls back to
@@ -97,6 +100,8 @@ type Model struct {
 // rendered instance. It must start with an ASCII letter and contain only letters,
 // digits, underscores or hyphens. The resulting form ID is Namespace + "-form".
 type Options struct {
+	// View names this composed form, independently of its DOM namespace.
+	View                                   screen.ViewRef
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
@@ -245,9 +250,9 @@ func example(id string, model Model, options Options) examples.Example {
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "cancel", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.CancelLabel, "Cancel"), Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: actionAttrs(options.View, "cancel")}, Label: cmp.Or(options.CancelLabel, "Cancel"), Variant: "secondary", Href: options.CancelURL}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 			examples.ExampleWithSlots(examples.ExampleInfo{ID: "save", ComponentID: "pk-ui.component.button"},
-				components.ButtonProps{Label: cmp.Or(options.SubmitLabel, "Save"), Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: actionAttrs(options.View, "submit")}, Label: cmp.Or(options.SubmitLabel, "Save"), Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 		}, components.FormActions).Node)
 	// A file control submits a body a urlencoded form cannot carry, and the
 	// encoding belongs to the form rather than to whoever composed it: one
@@ -263,6 +268,12 @@ func example(id string, model Model, options Options) examples.Example {
 	}
 	if rendersFile(model) {
 		props.Attrs = map[string]string{"enctype": "multipart/form-data"}
+	}
+	if options.View != "" {
+		if props.Attrs == nil {
+			props.Attrs = map[string]string{}
+		}
+		props.Attrs["data-screen-view"] = string(options.View)
 	}
 	return examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: id, ComponentID: "pk-ui.component.form", Group: "Screens", Name: options.Title}, props,

@@ -224,7 +224,7 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 	commands := make([]present.CommandInput, 0, len(r.Commands))
 	for _, c := range r.Commands {
-		commands = append(commands, present.CommandInput{Fields: c.Fields, Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present})
+		commands = append(commands, present.CommandInput{Verb: c.Verb, Summary: c.Summary, Undo: c.Undo, HasResult: c.HasResult, Hints: c.Present, Fields: c.Fields, Bindings: c.Bindings, Collection: c.Collection, Repeated: r.History != nil && r.History.RestoreVerb == c.Verb})
 	}
 	resolved := present.Resolve(present.Input{
 		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,

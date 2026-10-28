@@ -124,17 +124,9 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 func richtextAttributes(p ControlProps, word func(string, string) string) []g.Node {
 	f := p.Field.Definition
 	editor := p.Field.Editor
-	// Every value the glue is allowed to know came from this transaction: the
-	// record's address, the revision this form quotes, the draft key, the upload
-	// route, where an uploaded file's bytes are read back from and the deployment's
-	// ceiling. An absent attribute means the browser does without the feature — never
-	// that it guesses one.
-	attrs := []g.Node{g.Attr("data-richtext", "1"), g.Attr("data-richtext-field", f.Name)}
-	// The editing surface is a control the server never drew: Tiptap builds the
-	// contenteditable inside it, and a textbox with no name is a control nobody
-	// can fill by screen reader. The words are the catalogue's for an editing
-	// surface; the field's own label stays on the textarea, which is the control
-	// that posts.
+	// Editor capabilities come from this request; absent attributes disable them.
+	attrs := append([]g.Node{g.Attr("data-richtext", "1"), g.Attr("data-richtext-field", f.Name)}, anchorNodes(p.Field.Anchor)...)
+	// Name the enhanced editing surface as well as the backing textarea.
 	attrs = append(attrs, g.Attr("data-richtext-name", word("forms.richtext.surface", "Content")))
 	for _, line := range richtextSentences {
 		attrs = append(attrs, g.Attr(line.Attr, word(line.Key, line.Fallback)))

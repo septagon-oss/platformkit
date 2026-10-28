@@ -231,7 +231,7 @@ func (g *graph) purity(target string) string {
 	}
 	for _, allowed := range []string{
 		"kit/crud", "kit/db", "kit/entity", "kit/events", "kit/events/transport", "kit/fault", "kit/limit",
-		"kit/module", "kit/push", "kit/request", "kit/rest", "kit/richtext", "kit/tenancy",
+		"kit/module", "kit/push", "kit/request", "kit/rest", "kit/richtext", "kit/screen", "kit/tenancy",
 	} {
 		if target == foundation+"/"+allowed {
 			return ""

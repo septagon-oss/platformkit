@@ -123,6 +123,18 @@ jobs:
       # the tier that opens no stack, and the push that merges it runs the whole
       # suite. `make check` is still the sum of the tiers, and its suite line is
       # byte-pinned in the Makefile, so the two files differ in one condition.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install the browser
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: make check
         if: github.event_name != 'pull_request'
         run: make check
@@ -147,18 +159,6 @@ jobs:
       # only one that needs a browser: a failure in gate 1 should not wait for a
       # download. The browser is chromium alone, because this is a gate and not
       # a compatibility matrix.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: e2e/package-lock.json
-
-      - name: Install the browser
-        working-directory: e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-
       # Gate 10, and the step whose deadline the serial job used to reach. See the
       # same split in .gitea/workflows/ci.yml, which is the workflow this repository
       # actually runs: it names the two measurements this mirror is shaped by.

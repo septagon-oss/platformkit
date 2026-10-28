@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/septagon-oss/platformkit/kit/screen"
 )
 
 // Register mounts an operation on this router, together with the authorization
@@ -41,7 +42,8 @@ func prepare(r *Router, op *huma.Operation, auth Auth, page bool) {
 		op.Extensions = map[string]any{}
 	}
 	op.Extensions[SurfaceExtension] = string(r.surface)
-	r.api.noteMount(mounted{surface: r.surface, module: r.module, method: op.Method, path: op.Path, auth: auth, page: page})
+	contract, _ := op.Extensions[screenExtension].(screen.ResponseSet)
+	r.api.noteMount(mounted{operationID: op.OperationID, screenOwner: r.screenOwner, screens: contract, surface: r.surface, module: r.module, method: op.Method, path: op.Path, auth: auth, page: page})
 }
 
 // MountedRoute is one route as the composition describes it: what a projection,
@@ -107,17 +109,20 @@ func (a *API) MountedBySurface() map[Surface]int {
 // the four things the compose gate needs to check against each other, kept
 // beside the route rather than reconstructed from the OpenAPI document.
 type mounted struct {
-	surface Surface
-	module  string
-	method  string
-	path    string
-	auth    Auth
-	page    bool
+	operationID, screenOwner string
+	screens                  screen.ResponseSet
+	surface                  Surface
+	module                   string
+	method                   string
+	path                     string
+	auth                     Auth
+	page                     bool
+	static                   bool
 }
 
 func (m mounted) route() MountedRoute {
 	return MountedRoute{
-		Method: m.method, Path: m.path, Surface: m.surface, Module: m.module,
+		OperationID: m.operationID, Method: m.method, Path: m.path, Surface: m.surface, Module: m.module,
 		Auth: m.auth.String(), Page: m.page,
 	}
 }

@@ -188,6 +188,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		internal.WithProviders(deps.Providers))
 	return svc, module.Module{
 		Name:       "notification",
+		Views:      contracts.Views(deps.Page != nil),
 		Migrations: Migrations.Files,
 		// What a person was told is their own record; the delivery ledger reaches
 		// them only through the notification it delivered. The two preference tables

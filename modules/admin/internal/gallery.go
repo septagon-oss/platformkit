@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"encoding/json"
+	"github.com/septagon-oss/platformkit/kit/screen"
+	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	"net/http"
 	"slices"
 
@@ -86,7 +88,7 @@ func galleryExample(book export.Storybook, in *galleryInput) (examples.Example, 
 func (p pages) mountGallery(app *httpx.Router) {
 	p.mountStorybook(app)
 	auth := httpx.Permission("gallery:read")
-	page.Serve(app, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: p.at.gallery.rel, Summary: "The tenant's component gallery"},
+	page.Serve(app, p.shell, page.Route{View: admincontracts.Screen("gallery"), ID: "admin-gallery", Method: http.MethodGet, Path: p.at.gallery.rel, Summary: "The tenant's component gallery"},
 		auth, func(ctx context.Context, _ page.Request, in *galleryInput) (page.View, error) {
 			book, err := p.storybook(ctx)
 			if err != nil {
@@ -105,6 +107,7 @@ func (p pages) mountGallery(app *httpx.Router) {
 	for _, route := range []string{"preview", "export"} {
 		op := huma.Operation{OperationID: "admin-gallery-" + route, Method: http.MethodGet, Path: p.at.gallery.rel + "/" + route, Tags: []string{"admin"}}
 		httpx.SignIn(&op, p.at.login.at)
+		app.DescribePage(&op, screen.ResponseSet{Exception: route, Reason: "The gallery serves an isolated example or a machine-readable export."})
 		httpx.HTML(app, op, auth, func(ctx context.Context, in *galleryInput) (*httpx.Page, error) {
 			book, err := p.storybook(ctx)
 			if err != nil {

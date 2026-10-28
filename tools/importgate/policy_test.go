@@ -89,7 +89,7 @@ func TestDirectImportRules(t *testing.T) {
 func TestContractPurity(t *testing.T) {
 	g := fixtureGraph()
 	allowed := []string{"context", "net/http", "database/sql/driver", product + "/modules/a/contracts/value", dependency + "/modules/a/contracts"}
-	for _, pkg := range []string{"crud", "db", "entity", "events", "events/transport", "fault", "limit", "module", "push", "request", "rest", "richtext", "tenancy"} {
+	for _, pkg := range []string{"crud", "db", "entity", "events", "events/transport", "fault", "limit", "module", "push", "request", "rest", "richtext", "screen", "tenancy"} {
 		allowed = append(allowed, foundation+"/kit/"+pkg)
 	}
 	allowed = append(allowed, "github.com/google/uuid", "golang.org/x/text/currency", "golang.org/x/text/unicode/norm", "golang.org/x/image/webp", "golang.org/x/crypto/argon2")

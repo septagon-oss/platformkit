@@ -223,7 +223,8 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 			contracts.VerifyEmailPath, at))
 	}
 	page.Serve(public, shell, page.Route{
-		ID: "auth-verify-email-page", Method: http.MethodGet, Path: verifyEmailRel,
+		View: contracts.Screen("verify-email"),
+		ID:   "auth-verify-email-page", Method: http.MethodGet, Path: verifyEmailRel,
 		Summary: "The page the emailed verification link opens",
 		Errors:  []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 	}, httpx.Public(), func(ctx context.Context, r page.Request, in *verifyEmailQuery) (page.View, error) {
@@ -261,7 +262,8 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 				components.Form(components.FormProps{Action: public.PagePath(verifyEmailRel), Label: form},
 					h.Input(h.Type("hidden"), h.Name("token"), h.Value(in.Token)),
 					components.FormActions(components.FormActionsProps{},
-						components.Button(components.ButtonProps{Label: button, Type: "submit", Variant: "primary"})),
+						components.Button(components.ButtonProps{Label: button, Type: "submit", Variant: "primary",
+							ComponentProps: components.ComponentProps{Attrs: confirmAnchor()}})),
 				),
 				components.Link(components.LinkProps{Label: signIn, Href: p.SignIn}),
 			},
@@ -269,7 +271,9 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 	})
 
 	page.Serve(public, shell, page.Route{
-		ID: "auth-verify-email-confirm", Method: http.MethodPost, Path: verifyEmailRel,
+		Exception: "redirect",
+		Reason:    "A confirmed address continues at the sign-in page the composition named.",
+		ID:        contracts.VerifyEmailOperation, Method: http.MethodPost, Path: verifyEmailRel,
 		Summary: "Confirm the email address, from the page the link opened",
 		Errors:  []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusUnprocessableEntity},
 	}, httpx.Public(), func(ctx context.Context, _ page.Request, in *verifyForm) (page.View, error) {
@@ -302,4 +306,10 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 // from an email has one thing to do and no workspace to navigate yet.
 func bare(_ context.Context, _ page.Request, body []g.Node) g.Node {
 	return page.Bare(body)
+}
+
+// confirmAnchor marks the submit control with the anchor the published view of
+// this page declares for it, so the screen says where confirming is done.
+func confirmAnchor() map[string]string {
+	return map[string]string{"data-screen-anchor": string(contracts.Screen("verify-email")) + "#action.confirm"}
 }

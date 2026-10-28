@@ -55,6 +55,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 		// address only when it mounts the list route beside it.
 		return
 	}
+	router = router.WithViews(declaredViews(res)...)
 	id := "screen-" + res.Module + "-" + res.Entity + "-"
 	read, write := res.ReadAuth(), res.WriteAuth()
 	if res.Singleton {
@@ -90,7 +91,7 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 					", which is already a screen route of every entity; name a command after what it does")
 			}
 		}
-		if c.Run == nil {
+		if c.Run == nil || c.Present.System || c.Collection && !res.Offers(httpx.CRUDList) || !c.Collection && !res.Offers(httpx.CRUDRead) {
 			continue
 		}
 		// An argumentless command accepts an empty POST body.
@@ -99,13 +100,13 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 				return commandResponse(res, c, ctx, uuid.Nil, body, localized(o, req), at, at)
 			}
 			if len(c.Fields) == 0 {
-				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+				page.Serve(router, s, page.Route{View: screenRef(res, "command", c.Verb), Response: commandResponseKind(c), ID: id + c.Verb, Method: http.MethodPost,
 					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 					func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 						return collection(ctx, req, nil)
 					})
 			} else {
-				page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+				page.Serve(router, s, page.Route{View: screenRef(res, "command", c.Verb), Response: commandResponseKind(c), ID: id + c.Verb, Method: http.MethodPost,
 					Path: strings.TrimSuffix(rel, "/") + "/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 					func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
 						return collection(ctx, req, in.RawBody)
@@ -117,14 +118,14 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 			return commandResponse(res, c, ctx, rowID, body, localized(o, req), at, at+"/"+rowID.String())
 		}
 		if len(c.Fields) == 0 {
-			page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+			page.Serve(router, s, page.Route{View: screenRef(res, "command", c.Verb), Response: commandResponseKind(c), ID: id + c.Verb, Method: http.MethodPost,
 				Path: rel + "/{id}/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 				func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
 					return item(ctx, req, in.ID, nil)
 				})
 			continue
 		}
-		page.Serve(router, s, page.Route{ID: id + c.Verb, Method: http.MethodPost,
+		page.Serve(router, s, page.Route{View: screenRef(res, "command", c.Verb), Response: commandResponseKind(c), ID: id + c.Verb, Method: http.MethodPost,
 			Path: rel + "/{id}/" + c.Verb, Summary: c.Summary, MintsCredential: c.MintsCredential}, c.Auth,
 			func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
 				return item(ctx, req, in.ID, in.RawBody)
@@ -154,7 +155,7 @@ func perform(c httpx.Command, ctx context.Context, id uuid.UUID, body []byte) er
 // mountSingleton registers the id-less read/update routes the resource offers.
 // It never creates collection, new or delete routes.
 func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string, read, write httpx.Auth) {
-	page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " record"}, read,
+	page.Serve(router, s, page.Route{View: screenRef(res, "detail", ""), ID: id + "read", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " record"}, read,
 		func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 			row, err := res.Get(ctx, uuid.Nil)
 			if err != nil {
@@ -167,7 +168,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 		return
 	}
 
-	page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/edit", Summary: "The edit-" + res.Entity + " form"}, write,
+	page.Serve(router, s, page.Route{View: screenRef(res, "edit", ""), ID: id + "edit", Method: http.MethodGet, Path: rel + "/edit", Summary: "The edit-" + res.Entity + " form"}, write,
 		func(ctx context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 			row, err := res.Get(ctx, uuid.Nil)
 			if err != nil {
@@ -177,7 +178,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", entryName(res, o)), row, nil, "", false), nil
 		})
 
-	page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel, Summary: "Update the " + res.Entity}, write,
+	page.Serve(router, s, page.Route{View: screenRef(res, "edit", ""), ID: id + "update", Method: http.MethodPost, Path: rel, Summary: "Update the " + res.Entity}, write,
 		func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
 			sent, err := rest.UpdateValues(in.RawBody, res.Schema.Fields, nil)
 			if err == nil {

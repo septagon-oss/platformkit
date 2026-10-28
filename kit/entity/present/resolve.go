@@ -23,7 +23,7 @@ type Input struct {
 	Singleton bool
 	// CommandsOnly resolves no fields, layout or list, only the commands.
 	CommandsOnly bool
-	// Operations are the routes the resource offers (create, update, …); nil is all five.
+	// Operations are the routes the resource offers; nil is all five, empty is none.
 	Operations []string
 	// Commands are the commands the caller may call, in order.
 	Commands []CommandInput
@@ -36,12 +36,15 @@ type Input struct {
 
 // CommandInput is one command the caller may call.
 type CommandInput struct {
-	Fields    []entity.Field
-	Verb      string
-	Summary   string
-	Undo      string
-	HasResult bool
-	Hints     entity.CommandHints
+	Fields     []entity.Field
+	Bindings   map[string]string
+	Collection bool
+	Repeated   bool
+	Verb       string
+	Summary    string
+	Undo       string
+	HasResult  bool
+	Hints      entity.CommandHints
 }
 
 // Resolve decides the presentation of one entry. It never fails: a hint that
@@ -60,13 +63,16 @@ func Resolve(in Input) Resolved {
 	if in.CommandsOnly {
 		r.Titles = ResolvedTitles{EmptyTitle: in.word("present.emptyTitle", "—"), ListCandidates: []string{}, RecordCandidates: []string{}, Summary: []string{}}
 		r.Layout = emptyLayout()
+		r.Fields = []ResolvedField{}
 		r.List = ResolvedList{Sorts: []ResolvedSortOption{}, Filters: []ResolvedFilter{}}
+		r.Views = views(in, r.Layout, r.Fields)
 		return r
 	}
 	r.Titles = titles(in)
 	r.Layout = layout(in, r.Titles)
 	r.Fields = fields(in)
 	r.List = list(in)
+	r.Views = views(in, r.Layout, r.Fields)
 	return r
 }
 

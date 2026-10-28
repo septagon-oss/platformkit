@@ -38,7 +38,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	// offers a create: the two questions are different, and the second is
 	// answered by the mounted routes rather than by anybody's permissions.
 	if writable && r.offers("create") {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new", Variant: r.primaryAction(true)})}
+		actions = []g.Node{components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: r.anchor("list", "action.create")}, Label: o.Text("screens.new", "New %s", reading.Singular), Href: at + "/new", Variant: r.primaryAction(true)})}
 	}
 	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
@@ -55,7 +55,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		// Generated CRUD does not gain selected-row writes from a UI control.
 		Footer: CommandForms(r, o, at, true, nil),
 	})}
-	return document.View{Title: title, Language: r.Resolved.Language, Body: body}
+	return document.View{Title: title, Language: r.Resolved.Language, Body: r.viewBody("list", body)}
 }
 func listURL(at, sort string, filters map[string]string) string {
 	query := url.Values{}
@@ -193,12 +193,17 @@ func listCell(r Resource, o Options, row map[string]any, c components.TableColum
 	// A choice reads its selection whatever the value, an empty one included; a
 	// media kind is drawn only where the author left something to draw.
 	if raw := row[c.Key]; definition.Choices != nil || (raw != nil && display.Text(raw) != "") {
-		if node := compose(definition, components.TableRow{ID: display.Text(row["id"]), Cells: row}, c.Primary, r.Screen, o, title, f.Reading.Missing); node != nil {
+		if node := compose(definition, components.TableRow{ID: display.Text(row["id"]), Cells: row}, c.Primary, r.recordAddress(), o, title, f.Reading.Missing); node != nil {
 			return node
 		}
 	}
 	if c.Primary {
-		return components.RowLink(components.LinkProps{Label: title, Href: r.Screen + "/" + display.Text(row["id"])})
+		// The row's name is the way into the record wherever a record page exists.
+		// Where none was mounted, the same words stay plain text.
+		if at := r.recordAddress(); at != "" {
+			return components.RowLink(components.LinkProps{Label: title, Href: at + "/" + display.Text(row["id"])})
+		}
+		return g.Text(title)
 	}
 	if read.node != nil {
 		return read.node

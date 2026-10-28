@@ -30,7 +30,7 @@ func (r *Router) Static(rel string, fsys fs.FS) {
 		// line prints it beside the workspace doors that admit an anonymous
 		// caller, because that is the honest sentence about a stylesheet: whoever
 		// reaches the address is served it, with the surface's own headers.
-		auth: Public(), page: true,
+		auth: Public(), page: true, static: true,
 	})
 	r.api.root.Handle(at+"/*", http.StripPrefix(at, r.api.tree(fsys)))
 }

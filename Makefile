@@ -171,6 +171,10 @@ seed: config.yaml ## Seed one tenant from this tree's seed files; SEED_TENANT=<s
 	@test -n '$(SEED_TENANT)' -a -n '$(SEED_AS)' || { echo 'usage: make seed SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]' >&2; exit 2; }
 	cd apps/platformkit && go run . seed --config ../../config.yaml --tenant '$(SEED_TENANT)' --as '$(SEED_AS)' $(if $(DEMO),--demo,) $(if $(DRY),--dry-run,)
 
+.PHONY: check-screen-render
+check-screen-render: ## Validate screen anchor geometry and permission projection
+	./scripts/e2e.sh screen-anchors.spec.ts
+
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
 
@@ -237,8 +241,16 @@ check-complexity: ## Require exact complexity ceilings and reviewed budget trans
 # Every writer whose output is GENERATED, in a fixed order; each runs offline and reads no clock.
 # A golden (OpenAPI, AsyncAPI, catalogue and token fixtures) keeps its own -update path and is
 # never written here (CONTRIBUTING.md, "Generated and golden files").
+# The baseline the published screen artifact is held to, so a view or anchor the
+# line already published cannot be retargeted by the next `make generate`. A
+# repository that carries no origin/main — a copy of this tree committed into a
+# throwaway repository, which is where `make check`'s own generated-file cases run —
+# is read against this commit's artifact: that file is what a product already
+# reaches, and a write that retargets a name held in it is refused there too.
+SCREENS_BASE ?= $(shell git rev-parse --verify --quiet origin/main >/dev/null && echo origin/main || echo HEAD)
 generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
+	go run ./apps/platformkit screens -config apps/platformkit/testdata/composition.yaml -base $(SCREENS_BASE)
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
 	bash scripts/module_graph.sh
 
@@ -610,7 +622,7 @@ check-step-library: ## Refuse a published journey step that vanished, or one tha
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build check-generated vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-support-record check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build check-generated check-screen-render vet fmt-check check-loc check-complexity check-packages check-gucs check-comments check-ui check-richtext-bundle check-versions check-applied-migrations check-run-owner check-pillars check-step-library check-i18n check-rehearse check-support-record check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -1116,6 +1128,50 @@ check: build check-generated vet fmt-check check-loc check-complexity check-pack
 	# pretending otherwise. Both files start nothing — no node, no browser, no database, no listener.
 	bash scripts/journey_check_recipe_test.sh
 	bash scripts/journey_check_recipe_wiring_test.sh
+	# scripts/both_roads_keep_an_unset_operation_set_apart_from_an_empty_one_test.sh asks the one
+	# question two packages answer from the same pair of facts: a resource that declared no operation
+	# set mounts all five verbs, because nothing was said, and one whose list named nothing mounts
+	# none. kit/entity/present turns that pair into views and ui/resource into controls, and no Go case
+	# reaches both roads, so this pin runs each and refuses the length reading on both — on a copy, by
+	# Go's build overlay, never this checkout. Four `go test` invocations of two small packages, 2 s.
+	bash scripts/both_roads_keep_an_unset_operation_set_apart_from_an_empty_one_test.sh
+	# scripts/a_module_that_declares_a_view_another_module_owns_is_refused_by_the_manifest_test.sh
+	# asks the manifest the same question from the other side: module.Validate accepts a module's own
+	# custom-screen descriptor, refuses one whose owner is another module, refuses one named twice.
+	# screen.Publish refuses a foreign mount too, but at the routing door, with the manifest's own
+	# diagnostics gone and the sentence naming an operation rather than the module that wrote the
+	# declaration — and the composition gate that catches a missing route-level screen answer stays
+	# green with the manifest's check deleted, so nothing else in the tree asks it. The pin proves it
+	# answers to that call site by deleting the three lines from a copy of validate.go over Go's build
+	# overlay and refusing when the copy passes the case. Two `go test` runs of one small package, 1 s,
+	# no stack and no browser.
+	bash scripts/a_module_that_declares_a_view_another_module_owns_is_refused_by_the_manifest_test.sh
+	# scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh asks the
+	# two questions the pin above cannot ask about itself: that this recipe still runs it, and that the
+	# mutated copy of validate.go is refused by the injected case's own assertion rather than by a
+	# build that stopped compiling — a mutation branch that reads any non-zero `go test` as that
+	# refusal prints its second ok over a copy that no longer builds. It reads the dry-run recipe of
+	# this goal and extracts the Go case from the pin it judges, so the two cannot drift apart. One
+	# dry run and two `go test` runs of one small package, 2 s, no stack and no browser.
+	bash scripts/the_view_manifest_pin_is_a_check_recipe_line_and_refuses_by_assertion_test.sh
+	# scripts/a_served_page_names_no_write_door_behind_a_route_it_does_not_mount_test.sh asks the
+	# question those two leave: ui/screens decides which write routes a mounted resource answers,
+	# ui/resource draws the doors, and the two read different files — so a served page that named a
+	# New button, an Edit link or a Delete form behind a route nobody mounted would publish an anchor
+	# to a view the composition published nowhere. The pin injects one Go case into ui/screens over
+	# Go's build overlay, asks it of this tree, and refuses a copy of the renderer that answers from
+	# what the resource declares instead of what the adapter mounts. Two `go test` runs of one small
+	# package, 2 s, and the one test schema the package's own server helper opens; no browser.
+	bash scripts/a_served_page_names_no_write_door_behind_a_route_it_does_not_mount_test.sh
+	# scripts/the_served_page_door_pin_is_a_check_recipe_line_and_refuses_by_its_own_verdict_test.sh
+	# asks the two questions the pin above cannot ask about itself: that this recipe still runs it,
+	# and that both of its runs report a verdict for the case they inject. The pin reads the exit
+	# status of each `go test` as its answer, so an overlay that stopped applying, or a mutated
+	# renderer that simply stopped compiling, would print its second `ok` anyway; this guard
+	# requires the injected case's own PASS and FAIL lines. It reads the dry-run recipe of this goal
+	# and extracts that case from the pin it judges, so the two cannot drift apart. One dry run and
+	# two `go test` runs of one small package, 2 s measured here, beside its subject; no browser.
+	bash scripts/the_served_page_door_pin_is_a_check_recipe_line_and_refuses_by_its_own_verdict_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as

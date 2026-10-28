@@ -361,7 +361,7 @@ What follows from that:
 |---|---|
 | An operation ended before the transaction opened | that `Tx` is refused; the next live caller opens it |
 | The owner ended before it opened, or while it waited for a connection | refused with the owner's cause, not remembered by `Err`, so `Err` still means the database refused |
-| The owner ended while it was open | rolled back; `Close` returns the owner's cause |
+| The owner ended while it was open | rolled back; `Close` returns the owner's cause, and it is a confirmed rollback for `AfterRollback` too — see below |
 | The owner ended after `Close` committed | reported as committed; `Close` is idempotent |
 | `Close` under a live owner | the `Pending` may open again: the streamed upload route commits its guard transaction and its handler opens a second one |
 
@@ -371,6 +371,48 @@ stays open for the next caller. Owner cancellation does not interrupt a running 
 context does not derive from the owner; every in-tree caller's does. A cancel that lands during the
 `COMMIT` round trip is reported as not committed, though PostgreSQL may have committed. `RunSystem`
 keeps one context for its whole transaction: its caller is owner and only operation.
+
+## An effect that waits for the rollback
+
+`AfterRollback(ctx, action)` (`after_rollback.go`) registers the effect whose reason to exist is
+that the work was discarded — bytes no committed row will ever name — on the transaction
+discarding them. Decision 0022, for this delivery. **Reused:** `afterQueue`, the queue
+`AfterCommit` already drains, one per opened transaction; `current`, the lookup reaching a `Run`
+frame, a joined nested `Run` and an opened `Pending` alike; `Detached` with `WithConn`/`ConnFrom`
+for the context handed an action; `ErrNoTransactionToDefer` for its refusal. **Added:** a second
+queue on `Pending` and `openTx`, and `ending` — `end` naming the outcome it confirmed instead of
+leaving `finalise` to infer one. `AfterCommit` runs on a commit and nothing else, and an effect run
+on an unknown outcome would delete behind committed rows. **Made reusable:** inside the
+package, one place that decides which outcome happened, which `finalise` reads instead of
+inferring one; for a caller, a rollback-side hand-off no one has to wrap a `ConnPool` to get.
+
+| Ending | The commit queue | The rollback queue | The caller is answered |
+|---|---|---|---|
+| `COMMIT` clean | runs | dropped | nil |
+| `COMMIT` itself refused | dropped | dropped: the outcome is unknown | the driver's error |
+| the settings re-read refuses, `ROLLBACK` clean | dropped | runs | `ErrScopeTampered` |
+| `ROLLBACK` clean | dropped | runs | nil |
+| `ROLLBACK` refused | dropped | dropped | the driver's error |
+| the owner had already ended | dropped | runs | the owner's cause |
+| nothing open | nothing to run | nothing to run | nil, which is why ending twice runs the work once |
+
+The owner-ended row is the one to read twice: `database/sql` binds a transaction's life to the context
+it began with, so an owner that ended had its `ROLLBACK` issued already and its rows can never become
+visible — measured over 40 such endings, our own `ROLLBACK` answered clean none. A caller that committed
+out of band through a borrowed handle would make that answer mean *committed*, and no in-tree code does.
+
+Limits. The queue is memory, not a row: a process that dies after the `ROLLBACK` loses it, so an
+effect that must not be lost needs a row and a sweep. Actions run before `Run` or the request
+returns, so their latency is the caller's, on a context detached from the transaction, no longer
+cancelled by the owner and bounded by five seconds. What an action needs from the database it reads
+before registering: a nested `SAVEPOINT`/`ROLLBACK TO` can un-name a row in between. A system
+transaction, a `Pending` nobody opened, a transaction already ended and a nil action are refused —
+and so is a registration on the frame a `Run` handler kept past its transaction's ending, because a
+queue that ending took runs nothing whatever still points at it. Work an ending dropped is the
+outcome's own decision, but it is memory and its transaction is over, so its count and the ending
+that dropped it are written to the log before they go: at debug for the drop a confirmed ending
+always makes, as a warning for the ending whose outcome the database left in doubt — the one
+whose work is gone behind an answer that may never say so.
 
 ## An effect that waits for the commit
 

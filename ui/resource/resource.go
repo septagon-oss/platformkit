@@ -5,6 +5,7 @@ package resource
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -24,8 +25,10 @@ type Resource struct {
 	Resolved *present.Resolved
 	// CommandsOnly suppresses entity surfaces when resolving a legacy command projection.
 	CommandsOnly bool
-	Schema       entity.Schema
-	Immutable    []string
+	// ScreenOwner enables composed screen references; empty keeps standalone rendering.
+	ScreenOwner string
+	Schema      entity.Schema
+	Immutable   []string
 	// API is the registered JSON read address, or empty for offline rendering.
 	// It scopes rich-text drafts without inferring a route from the screen address.
 	API string
@@ -123,16 +126,16 @@ func (o Options) Text(key, fallback string, args ...any) string {
 }
 
 // deleteForm is the destructive action: a real form, so it works without
-// JavaScript, carrying the attribute confirm.js opens the dialog on.
-func deleteForm(o Options, item, entity string) g.Node {
+// JavaScript, carrying the attribute confirm.js opens the dialog on. anchor names
+// the record's published view, empty for a standalone render.
+func deleteForm(o Options, item, entity string, anchor map[string]string) g.Node {
 	remove := o.Text("screens.delete", "Delete")
+	attrs := map[string]string{"data-confirm": o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity), "data-confirm-label": remove}
+	maps.Copy(attrs, anchor)
 	return components.Form(components.FormProps{Action: item + "/delete", Label: o.Text("screens.delete_this", "Delete this %s", entity)},
 		components.Button(components.ButtonProps{
-			ComponentProps: components.ComponentProps{Attrs: map[string]string{
-				"data-confirm":       o.Text("screens.delete_confirm", "This deletes the %s. It cannot be undone.", entity),
-				"data-confirm-label": remove,
-			}},
-			Label: remove, Type: "submit", Tone: "danger", Size: "md",
+			ComponentProps: components.ComponentProps{Attrs: attrs},
+			Label:          remove, Type: "submit", Tone: "danger", Size: "md",
 		}))
 }
 
@@ -163,8 +166,9 @@ func startSentence(word string) string {
 	return strings.ToUpper(string(first)) + word[size:]
 }
 
-// offers reports whether this resource mounted the route for a verb. An empty
-// Operations means all five; the same question, stated once on httpx.Resource,
+// offers reports whether this resource mounted the route for a verb. A nil
+// Operations means all five and an empty one that none is mounted, the pair
+// present reads; the question itself is stated once on httpx.Resource, which
 // decides the route table, and this is its answer at the door.
 func (r Resource) offers(verb string) bool {
 	if r.Operations == nil {
@@ -176,4 +180,16 @@ func (r Resource) offers(verb string) bool {
 		}
 	}
 	return false
+}
+
+// recordAddress is the address a row's identity column links to, and it is empty
+// for a resource that mounted no record route: a list of rows nobody may open is
+// drawn as rows, not as links into the 404 of a place nothing is served. The page
+// side and the door side already asked Offers read; the table's own link is the
+// last place that asks it.
+func (r Resource) recordAddress() string {
+	if !r.offers("read") {
+		return ""
+	}
+	return r.Screen
 }

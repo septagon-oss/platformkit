@@ -31,6 +31,7 @@ import (
 // names this — the same reason it names SignIn rather than writing the auth
 // module's address down here.
 type Registration struct {
+	OperationID string
 	// Kind is which of the two forms the page renders.
 	Kind RegistrationKind
 	// Address is the composed door the form posts to.
@@ -69,7 +70,8 @@ const chromeTextSize = "sm"
 
 // Shell is what the manifest hands the implementation.
 type Shell struct {
-	Nav []module.NavEntry
+	SignInOperationID string
+	Nav               []module.NavEntry
 	// Primary is the action the home leads with, filtered like a nav entry. The
 	// zero value draws none.
 	Primary   module.NavEntry

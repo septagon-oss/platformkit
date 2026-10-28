@@ -38,7 +38,9 @@ func (r Resource) policy(o Options) Resource {
 		schema.Fields = words.Fields(schema.Fields)
 		commands := make([]present.CommandInput, 0, len(r.Commands))
 		for _, c := range r.Commands {
-			commands = append(commands, present.CommandInput{Verb: c.Verb, Summary: c.Label, Hints: words.Command(c.Verb, c.Present)})
+			// The command's own shape travels with its words: which arguments it takes,
+			// which the screen fills in, and whether one form or many name them.
+			commands = append(commands, c.input(words.Command(c.Verb, c.Present)))
 		}
 		language := "en"
 		if o.Locale != nil {
@@ -74,6 +76,29 @@ func (r Resource) policy(o Options) Resource {
 	})
 	r.Commands = commands
 	return r
+}
+
+// recordForm is the create or edit form of the record itself, its fields drawn but kept
+// still. Which verbs are mounted decides which screens exist and which writes their
+// controls may start, since a draft address is a route's address; the fields belong to
+// the record, so a form beside no write route shows that record with nothing typable on
+// it. Only a render holding no route table comes here: a mounted form screen 404s first.
+func (r Resource) recordForm(kind, verb string) present.ResolvedView {
+	in := present.Input{Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
+		CommandsOnly: r.CommandsOnly, Operations: append(slices.Clone(r.Operations), verb)}
+	for _, v := range present.Resolve(in).Views {
+		if v.Kind != kind {
+			continue
+		}
+		for i, c := range v.Controls {
+			if c.Name == "field" {
+				c.Editable, c.Interactions = false, nil
+				v.Controls[i] = c
+			}
+		}
+		return v
+	}
+	return present.ResolvedView{}
 }
 
 func (r Resource) field(name string) present.ResolvedField {
