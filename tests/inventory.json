@@ -42308,6 +42308,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/tour/a_step_waits_on_the_write_its_control_names_and_not_on_one_that_encodes_to_it_test.go",
+   "id": "kit/tour/a_step_waits_on_the_write_its_control_names_and_not_on_one_that_encodes_to_it_test.go#TestAStepWaitsOnTheWriteItsControlNamesAndNotOnOneThatEncodesToIt",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAStepWaitsOnTheWriteItsControlNamesAndNotOnOneThatEncodesToIt",
+   "needs_db": false,
+   "pkg": "kit/tour",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/tour/a_tour_can_wait_on_every_write_the_composition_mounts_behind_its_control_test.go",
    "id": "kit/tour/a_tour_can_wait_on_every_write_the_composition_mounts_behind_its_control_test.go#TestATourCanWaitOnEveryWriteTheCompositionMountsBehindItsControl",
    "kind": "go",
@@ -93381,7 +93400,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2576,
+  "files": 2577,
   "forge_runs": [
    408,
    413,
@@ -93415,7 +93434,7 @@
    578
   ],
   "layers": {
-   "behaviour": 4065,
+   "behaviour": 4066,
    "composition": 535,
    "contract": 24,
    "journey": 122
@@ -93434,23 +93453,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4746,
+  "rows": 4747,
   "tiers": {
    "merge": 2915,
    "nightly": 122,
-   "push": 1709
+   "push": 1710
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2331,
+   "keep": 2332,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4360,
+   "keep": 4361,
    "keep-rewrite": 170,
    "merge": 216
   }
