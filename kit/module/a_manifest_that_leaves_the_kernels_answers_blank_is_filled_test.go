@@ -53,6 +53,33 @@ func TestASubscriptionAttributedToAnotherModuleIsStillRefused(t *testing.T) {
 	}
 }
 
+// TestAManifestThatMixesABlankSubscriptionWithAnotherModulesKeepsTheForeignOne
+// holds the guard the fill exists not to trade away: the entry that names none
+// takes the manifest's own module and the entry that names another keeps what it
+// wrote, because that name decides the durable consumer name and the disagreement
+// is what Validate refuses. A manifest is a list, so both arrive in one manifest.
+func TestAManifestThatMixesABlankSubscriptionWithAnotherModulesKeepsTheForeignOne(t *testing.T) {
+	m := Module{Name: "task", Events: []string{"task.task.created"},
+		Subscriptions: []events.Subscription{
+			{Module: "billing", Name: "task.task.created", Handler: handler},
+			{Name: "task.task.created", Handler: handler},
+		}}
+	filled := Expand([]Module{m})[0]
+	if got := filled.Subscriptions[0].Module; got != "billing" {
+		t.Errorf("the expansion renamed the foreign subscription to %q, want the name it wrote", got)
+	}
+	if got := filled.Subscriptions[1].Module; got != "task" {
+		t.Errorf("the expansion attributed the blank subscription to %q, want the manifest's own name", got)
+	}
+	err := Validate(Expand([]Module{m}))
+	if err == nil || !strings.Contains(err.Error(), `is attributed to module "billing"`) {
+		t.Fatalf("a manifest that mixes a blank entry with a foreign one was not refused naming it: %v", err)
+	}
+	if m.Subscriptions[0].Module != "billing" || m.Subscriptions[1].Module != "" {
+		t.Error("Expand wrote the manifest it was given")
+	}
+}
+
 // TestANavEntryNamingOnlyItsEntityNamesItsOwnScreen is the other fill: "tasks"
 // inside module task is the task module's screen. An entry that already names a
 // module keeps what it wrote — including another module's name, which is a link

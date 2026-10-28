@@ -457,8 +457,11 @@ func Expand(mods []Module) []Module {
 	return out
 }
 
-// attributedTo names every subscription that names none. It copies only when it
-// has to, because Expand promises it does not write its input.
+// attributedTo names every subscription that names none, and only those: a name
+// the manifest already wrote survives, including another module's, because that
+// disagreement is what Validate refuses and the durable consumer name is stamped
+// from it. It copies only when it has to, because Expand promises it does not
+// write its input.
 func attributedTo(subs []events.Subscription, owner string) []events.Subscription {
 	unnamed := false
 	for _, s := range subs {
@@ -472,7 +475,9 @@ func attributedTo(subs []events.Subscription, owner string) []events.Subscriptio
 	}
 	out := make([]events.Subscription, len(subs))
 	for i, s := range subs {
-		s.Module = owner
+		if s.Module == "" {
+			s.Module = owner
+		}
 		out[i] = s
 	}
 	return out
