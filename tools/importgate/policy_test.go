@@ -13,10 +13,39 @@ const product = "example.test/product"
 const dependency = "example.test/foundation"
 
 func fixtureGraph(edges ...edge) *graph {
-	return &graph{product, []string{product, dependency, foundation}, map[string]bool{
+	return &graph{product, "/fixture", []moduleRoot{
+		{product, "/fixture"}, {dependency, "/fixture/foundation"}, {foundation, "/fixture/platformkit"},
+	}, map[string]bool{
 		"context": true, "net/http": true, "database/sql/driver": true, "testing": true,
 		"html/template": true, "net/http/httptest": true, "database/sql": true,
-	}, edges}
+	}, nil, edges}
+}
+
+// fixtureLayers declares every module the fixture graph names in the platform's
+// lowest layer, so a case about another rule meets no layer rule by accident.
+func fixtureLayers(g *graph) *layerDeclaration {
+	declared := newLayerDeclaration()
+	add := func(owner string) {
+		if owner != "" && declared.assigned[owner] == nil {
+			declared.assigned[owner] = &layerAssignment{owner, moduleLayers[0]}
+		}
+	}
+	for _, owner := range g.owned {
+		add(owner)
+	}
+	for _, e := range g.edges {
+		from, _, _ := g.owner(e.ownerPath)
+		to, _, _ := g.owner(e.to)
+		add(from)
+		add(to)
+	}
+	return declared
+}
+
+// decideFixture asks the boundary rules of a fixture graph whose modules are all
+// in one layer, which is the state every pre-existing case was written against.
+func decideFixture(g *graph, grants map[string]*grant, baseline map[baselineKey]*baselineRow) decision {
+	return decide(g, grants, baseline, fixtureLayers(g))
 }
 
 func TestDirectImportRules(t *testing.T) {
@@ -46,7 +75,7 @@ func TestDirectImportRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := product + "/" + tc.source
 			e := edge{source, tc.target, source, tc.context, tc.source + "@external"}
-			got := decide(fixtureGraph(e), nil, nil).refused
+			got := decideFixture(fixtureGraph(e), nil, nil).refused
 			if tc.rule == "" && len(got) != 0 || tc.rule != "" && (len(got) != 1 || got[0].rule != tc.rule) {
 				t.Fatalf("refusals = %+v, want %q", got, tc.rule)
 			}
@@ -82,7 +111,7 @@ func TestContractPurity(t *testing.T) {
 	source := product + "/modules/a/contracts"
 	for _, context := range []string{"production", "internal-test", "external-test"} {
 		g.edges = []edge{{source, "html/template", source, context, "modules/a/contracts@internal"}}
-		if got := decide(g, nil, nil).refused; (len(got) != 0) != (context == "production") {
+		if got := decideFixture(g, nil, nil).refused; (len(got) != 0) != (context == "production") {
 			t.Errorf("%s: %+v", context, got)
 		}
 	}
@@ -97,10 +126,10 @@ func TestIntegrationGrantsAreExact(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := maps.Clone(grants["modules/a/internal@external"].targets)
-	if got := decide(g, grants, nil).refused; len(got) != 0 {
+	if got := decideFixture(g, grants, nil).refused; len(got) != 0 {
 		t.Fatal(got)
 	}
-	notice := notices(grants, decide(g, grants, nil).used)
+	notice := notices(grants, decideFixture(g, grants, nil).used)
 	if strings.Count(notice, "imports: integration") != 1 || !strings.Contains(notice, "used ["+target+"]") || !strings.Contains(notice, "unused in this build context ["+product+"/modules/c]") || !strings.Contains(notice, "Composes two real migrations.") {
 		t.Fatal(notice)
 	}
@@ -115,7 +144,7 @@ func TestIntegrationGrantsAreExact(t *testing.T) {
 		{"external-test", "modules/a/internal@external", product + "/modules/d", "undeclared-integration"},
 	} {
 		g.edges = []edge{{source, change.target, source, change.context, change.suite}}
-		if got := decide(g, grants, nil).refused; len(got) != 1 || got[0].rule != change.want {
+		if got := decideFixture(g, grants, nil).refused; len(got) != 1 || got[0].rule != change.want {
 			t.Errorf("%+v: %+v", change, got)
 		}
 	}
@@ -176,7 +205,7 @@ func TestEdgeReportDeduplicatesAndSortsContexts(t *testing.T) {
 
 func TestLongestDeclaredRootOwnsItsPackages(t *testing.T) {
 	g := fixtureGraph()
-	g.roots = append(g.roots, product+"/nested")
+	g.roots = append(g.roots, moduleRoot{product + "/nested", "/fixture/nested"})
 	if owner, _, unknown := g.owner(product + "/nested/modules/a/contracts"); owner != product+"/nested/modules/a" || unknown {
 		t.Fatalf("owner = %q, unknown = %t", owner, unknown)
 	}

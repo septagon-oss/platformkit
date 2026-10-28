@@ -111,9 +111,9 @@ func load(ctx context.Context, root string, dependencies []string, call command)
 	if err != nil || main.Dir != actual {
 		return nil, fmt.Errorf("%s: main module directory is %q, expected repository root", root, main.Dir)
 	}
-	roots := []string{main.Path}
+	roots := []moduleRoot{{main.Path, main.Dir}}
 	for _, dependency := range dependencies {
-		if slices.Contains(roots, dependency) {
+		if slices.ContainsFunc(roots, func(root moduleRoot) bool { return root.path == dependency }) {
 			continue
 		}
 		data, err := call(ctx, root, "list", "-m", "-json", dependency)
@@ -124,12 +124,12 @@ func load(ctx context.Context, root string, dependencies []string, call command)
 		if err != nil || len(mods) != 1 || mods[0].Path != dependency || mods[0].Error != nil {
 			return nil, fmt.Errorf("%s: unresolved dependency %q: %v; metadata: %s", root, dependency, err, data)
 		}
-		roots = append(roots, dependency)
+		roots = append(roots, moduleRoot{dependency, mods[0].Dir})
 	}
 	return loadPackages(ctx, root, main, roots, call)
 }
 
-func loadPackages(ctx context.Context, root string, main module, roots []string, call command) (*graph, error) {
+func loadPackages(ctx context.Context, root string, main module, roots []moduleRoot, call command) (*graph, error) {
 	data, err := call(ctx, root, "list", "-f", "{{.ImportPath}}", "std")
 	if err != nil {
 		return nil, err
@@ -152,9 +152,9 @@ func loadPackages(ctx context.Context, root string, main module, roots []string,
 	if err != nil {
 		return nil, fmt.Errorf("%s: decode go list: %w", root, err)
 	}
-	edges, err := normalize(main, packages)
-	if err != nil {
+	g := &graph{self: main.Path, dir: main.Dir, roots: roots, standard: standard}
+	if err := normalize(g, packages); err != nil {
 		return nil, fmt.Errorf("%s: %w", root, err)
 	}
-	return &graph{main.Path, roots, standard, edges}, nil
+	return g, nil
 }
