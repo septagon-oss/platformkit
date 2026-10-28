@@ -22265,6 +22265,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/httpx/a_shut_anonymous_write_door_never_asks_to_be_retried_at_this_instant_test.go",
+   "id": "kit/httpx/a_shut_anonymous_write_door_never_asks_to_be_retried_at_this_instant_test.go#TestAShutAnonymousWriteDoorNeverAsksToBeRetriedAtThisInstant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAShutAnonymousWriteDoorNeverAsksToBeRetriedAtThisInstant",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/httpx/a_spent_ask_door_never_asks_to_be_retried_at_this_instant_test.go",
    "id": "kit/httpx/a_spent_ask_door_never_asks_to_be_retried_at_this_instant_test.go#TestASpentAskDoorNeverAsksToBeRetriedAtThisInstant",
    "kind": "go",
@@ -84126,7 +84145,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2293,
+  "files": 2294,
   "forge_runs": [
    408,
    413,
@@ -84160,7 +84179,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3643,
+   "behaviour": 3644,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84179,9 +84198,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4265,
+  "rows": 4266,
   "tiers": {
-   "merge": 2642,
+   "merge": 2643,
    "nightly": 110,
    "push": 1513
   },
@@ -84189,13 +84208,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2048,
+   "keep": 2049,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3879,
+   "keep": 3880,
    "keep-rewrite": 170,
    "merge": 216
   }
