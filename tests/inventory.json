@@ -41811,6 +41811,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/a_refused_sign_in_does_not_extend_the_lockouts_own_window_test.go",
+   "id": "modules/auth/internal/a_refused_sign_in_does_not_extend_the_lockouts_own_window_test.go#TestARefusedSignInDoesNotExtendTheLockoutsOwnWindow",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedSignInDoesNotExtendTheLockoutsOwnWindow",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/a_resent_handoff_the_transport_refuses_leaves_no_link_live_test.go",
    "id": "modules/auth/internal/a_resent_handoff_the_transport_refuses_leaves_no_link_live_test.go#TestAResentHandoffTheTransportRefusesLeavesNoLinkLive",
    "kind": "go",
@@ -84012,7 +84031,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2287,
+  "files": 2288,
   "forge_runs": [
    408,
    413,
@@ -84046,7 +84065,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3637,
+   "behaviour": 3638,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84065,9 +84084,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4259,
+  "rows": 4260,
   "tiers": {
-   "merge": 2636,
+   "merge": 2637,
    "nightly": 110,
    "push": 1513
   },
@@ -84075,13 +84094,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2042,
+   "keep": 2043,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3873,
+   "keep": 3874,
    "keep-rewrite": 170,
    "merge": 216
   }
