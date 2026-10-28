@@ -38,6 +38,13 @@ import (
 // styles its selected state, so a product sheet may not spend those names, and the
 // gate still reads the attributed source to check the name is really rendered.
 var renderedHooks = map[string]string{
+	"data-form-steps":          "ui/forms/steps.go",
+	"data-step-heading":        "ui/forms/steps.go",
+	"data-step-errors":         "ui/forms/steps.go",
+	"data-answer-field":        "ui/forms/steps.go",
+	"data-answer-template":     "ui/forms/steps.go",
+	"data-answer-empty":        "ui/forms/steps.go",
+	"data-answer-labels":       "ui/forms/steps.go",
 	"data-screen-view":         "ui/resource/screens.go",
 	"data-choice":              "modules/picture/contracts/compile.go",
 	"data-selected":            "modules/picture/contracts/figure.go",

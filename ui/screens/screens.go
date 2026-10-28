@@ -48,6 +48,12 @@ type (
 // address; a singleton uses its own read/write paths. Commands retain their
 // own guards and a verb collision panics. See docs/adr/0008.
 func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
+	// A read-only query answers a form and nothing else: no list, no record, no
+	// write route to withhold.
+	if res.InputRun != nil {
+		mountReadInput(router, s, o, res)
+		return
+	}
 	// at names the served page; rel is its module-relative router address.
 	at, rel := res.Screen, res.Path
 	if at == "" && !res.Singleton {
@@ -58,6 +64,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	router = router.WithViews(declaredViews(res)...)
 	id := "screen-" + res.Module + "-" + res.Entity + "-"
 	read, write := res.ReadAuth(), res.WriteAuth()
+	mountFormSteps(router, s, o, res)
 	if res.Singleton {
 		mountSingleton(router, s, o, res, at, rel, id, read, write)
 		return
@@ -164,7 +171,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
 		})
 
-	if !writeAvailable(res, httpx.CRUDUpdate) {
+	if !writeAvailable(res, httpx.CRUDUpdate) || stepped(res, "update") {
 		return
 	}
 

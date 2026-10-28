@@ -13,6 +13,8 @@ import (
 // holds it for one request. Resolve reads it and writes none of it, so a shared
 // registration may be resolved concurrently in several languages.
 type Input struct {
+	// InputOnly enables the input form without advertising storage operations.
+	InputOnly bool
 	// Schema and Hints are the registration's, with declared words already
 	// translated by the caller.
 	Schema entity.Schema
@@ -84,6 +86,12 @@ func (in Input) word(key, fallback string) string {
 }
 
 func (in Input) offers(op string) bool {
+	if in.InputOnly {
+		return op == "input"
+	}
+	if op == "input" {
+		return false
+	}
 	if in.Singleton && op != "update" && op != "read" {
 		return false
 	}

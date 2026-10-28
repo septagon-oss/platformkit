@@ -51,6 +51,7 @@ type Pictures struct {
 // this resource's operation set: an entry that names no write and still says
 // `writable` promises a door no route answers.
 type Entry struct {
+	Input *InputEntry `json:"input,omitempty"`
 	entity.Schema
 	// Presentation carries optional declared hints beside Resolved for older readers.
 	// Absent hints retain their documented defaults; it grants no capabilities.
@@ -216,6 +217,9 @@ func DescribeEntry(r httpx.Resource, writable bool, text Text, language string) 
 			Presentation: commandDeviations(c.Present),
 		})
 	}
+	if r.InputRun != nil {
+		e.Input = &InputEntry{Fields: r.Schema.Fields, Output: r.InputOutput, OutputList: r.InputList, Path: r.Schema.Path}
+	}
 	e.Resolved = resolve(r, text, language)
 	return e
 }
@@ -228,7 +232,7 @@ func resolve(r httpx.Resource, text Text, language string) *present.Resolved {
 	}
 	resolved := present.Resolve(present.Input{
 		Schema: r.Schema, Hints: r.Present, Immutable: r.Immutable, Singleton: r.Singleton,
-		CommandsOnly: r.CommandsOnly, Operations: r.OperationWords(), Commands: commands,
+		CommandsOnly: r.CommandsOnly, InputOnly: r.InputRun != nil, Operations: r.OperationWords(), Commands: commands,
 		Language: language, Text: resource.PolicyText(resource.Text(text)),
 	})
 	return &resolved

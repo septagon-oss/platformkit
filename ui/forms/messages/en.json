@@ -557,6 +557,42 @@
     ],
     "translation": "That could not be saved"
   },
+  "forms.step.progress": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Step %d of %d"
+  },
+  "forms.step.back": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Back"
+  },
+  "forms.step.cancel": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Cancel"
+  },
+  "forms.step.correct": {
+    "references": [
+      "ui/forms/steps.go"
+    ],
+    "translation": "Check your answers"
+  },
+  "forms.step.details": {
+    "references": [
+      "ui/screens/catalog.go"
+    ],
+    "translation": "Details"
+  },
+  "forms.step.restart": {
+    "references": [
+      "ui/screens/form_steps.go"
+    ],
+    "translation": "Start again"
+  },
   "forms.choice.order": {
     "references": [
       "ui/forms/choice.go"

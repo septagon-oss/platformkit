@@ -76,6 +76,7 @@ type ResolvedSection struct {
 
 // ResolvedLayout is membership of each surface, by field name, in reading order.
 type ResolvedLayout struct {
+	Forms       *ResolvedForms    `json:"forms,omitempty"`
 	Columns     []string          `json:"columns"`
 	Overview    []string          `json:"overview"`
 	Information []string          `json:"information"`
