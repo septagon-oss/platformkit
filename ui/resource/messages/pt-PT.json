@@ -91,13 +91,18 @@
   },
   "screens.history.restored": {
     "references": ["ui/resource/history.go"],
-    "translation": "Restaurado de",
-    "plural": { "": "Restaurado de" }
+    "translation": "Restaurada desde a versão %[1]d",
+    "plural": { "": "Restaurada desde a versão %[1]d" }
   },
   "screens.history.unchanged": {
     "references": ["ui/resource/history.go"],
     "translation": "Nenhum campo alterado.",
     "plural": { "": "Nenhum campo alterado." }
+  },
+  "screens.command_in_locale": {
+    "references": ["ui/resource/commands.go"],
+    "translation": "%[1]s (%[2]s)",
+    "plural": { "": "%[1]s (%[2]s)" }
   },
   "screens.command_saved": {
     "references": ["ui/screens/command_output.go"],
