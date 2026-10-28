@@ -96,6 +96,7 @@ func (a *application) form(namespace string) examples.Example {
 	form, err := forms.Example("external/"+namespace, forms.Model{Fields: fields,
 		Values: v.values, Errors: v.errors, Detail: v.detail}, forms.Options{
 		Namespace: namespace, Action: "/save/" + namespace, CancelURL: "/", Title: "Editor " + namespace,
+		Format:      selected,
 		SubmitLabel: selected.Text("save", "Save"), CancelLabel: selected.Text("cancel", "Cancel"),
 	})
 	if err != nil {

@@ -225,9 +225,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// stylesheet, and both land on this branch's shell, whose sidebar names the
 	// workspace and whose generated forms carry their own measure. A merge claims no
 	// leaf-by-leaf count: the document before it exists only outside the merge. The
-	// digest below is this tree's own measurement, printed by the refusal: beside
-	// main's leaves, the stepped form's answer sheet gains one optional property and
-	// the stylesheet one rule.
+	// digest below is this merged tree's own measurement, printed by the refusal and
+	// copied from it. Beside main's leaves, the stepped form's answer sheet gains one
+	// optional property and the stylesheet one rule.
+	//
+	// A field's help paragraph now holds one sentence per author: the four components
+	// that draw one gained an optional list of notes about the control the form chose.
+	// That list reaches every form schema the export carries, and no gallery example
+	// sets it, so the property moves the schemas and the digest and nothing else.
 	// OptionChips grew the properties a finite choice needs — one name carried many
 	// times, an explicit described-by, a clear affordance and the stable option key
 	// on the input — so every one of its fourteen Gallery examples now renders a
@@ -238,7 +243,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// 14 the examples' html, none removed; /css gains 174 lines of choice rules and
 	// loses none, and /sha256 follows them. No token, theme, notice, icon, class or
 	// other component moves.
-	if legacy.SHA256 != "caa8bddd7c4b618db19fa40165336e1c32d35cd482bdcbafee80c43651720368" {
+	if legacy.SHA256 != "ecc74b888cf6bd429283b5b6004da6dc7235f4116ff495bfeaeb75679ca9c240" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

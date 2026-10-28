@@ -11,6 +11,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/entity/present"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/screen"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/forms"
@@ -111,6 +112,11 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			button = warning.ConfirmLabel
 		}
 	}
+	// What each argument's control says about itself is the screen's own copy, not
+	// the module's: the note under a list argument, the name a picker's absence
+	// gets, the placeholder of a select. The request that answered the button's
+	// words answers these too, through the same seam the edit form composes.
+	chrome := chromeFormatter(o.Locale)
 	controls := make([]g.Node, 0, len(c.Fields)+2)
 	if c.Description != "" {
 		controls = append(controls, components.FormSentence(components.FormSentenceProps{Text: c.Description}))
@@ -125,8 +131,10 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	if locale.Locale != "" {
 		// The form is for this language, so the language is carried and not asked
 		// for, and the sentence beside the button says which one the person is
-		// about to write.
-		label = label + " — " + locale.Locale
+		// about to write. What that sentence looks like — which side the language
+		// sits on, and what holds them apart — belongs to the copy of the language
+		// the person reads, because it is the name a screen reader announces.
+		label = o.Text("screens.command_in_locale", "%[1]s — %[2]s", label, locale.Locale)
 	}
 	arguments := words.forCommand(c.Verb)
 	// Hex keeps action, locale and field boundaries distinct, including punctuation
@@ -140,13 +148,13 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			hidden := f
 			hidden.Widget, hidden.Present, hidden.Choices, hidden.Presentation.Figure = "hidden", "", nil, nil
 			controls = append(controls, forms.Control(forms.ControlProps{
-				Field: formField(arguments, hidden, o), ID: id, Value: display.Text(row[source]),
+				Field: formField(arguments, hidden, o), ID: id, Value: display.Text(row[source]), Format: chrome,
 			}))
 			continue
 		}
 		if len(f.Keys) > 0 {
 			for _, k := range f.Keys {
-				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale, c.fieldAnchor(f.Name, k.Name)))
+				controls = append(controls, mapKeyControl(id+"-key-"+hex.EncodeToString([]byte(k.Name)), f, k, locale, chrome, c.fieldAnchor(f.Name, k.Name)))
 			}
 			continue
 		}
@@ -155,7 +163,7 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 			f.Widget, value = "hidden", locale.Locale
 		}
 		controls = append(controls, forms.Control(forms.ControlProps{
-			Field: c.formField(arguments, f, o), ID: id, Value: value, ChoiceValues: choiceDefault(f),
+			Field: c.formField(arguments, f, o), ID: id, Value: value, Format: chrome, ChoiceValues: choiceDefault(f),
 		}))
 	}
 	variant, tone := "outline", ""
@@ -172,10 +180,11 @@ func commandFormFor(o Options, words Words, c Command, item string, locale entit
 	return components.Form(components.FormProps{ComponentProps: components.ComponentProps{Attrs: c.viewAttrs()}, Action: c.Action(item), Label: label}, controls...)
 }
 
-// mapKeyControl renders one named map argument. Revision keys quote the
-// supplied locale's observed revision; other keys begin empty to avoid rewriting
-// values the person did not submit. An anchor names the key in the published view.
-func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.LocaleState, anchor screen.AnchorRef) g.Node {
+// mapKeyControl renders one named map argument. Revision keys quote the supplied
+// locale's observed revision; other keys begin empty to avoid rewriting values the
+// person did not submit. An anchor names the key in the published view, and chrome
+// is the request's formatter for what the control says about itself.
+func mapKeyControl(id string, f entity.Field, k entity.MapKey, state entity.LocaleState, chrome locale.Formatter, anchor screen.AnchorRef) g.Node {
 	key := entity.Field{
 		Name:   f.Name + "[" + k.Name + "]",
 		Type:   f.Elem,
@@ -184,10 +193,10 @@ func mapKeyControl(id string, f entity.Field, k entity.MapKey, locale entity.Loc
 	}
 	value := ""
 	if k.From == entity.KeyFromRevision {
-		value = strconv.FormatInt(locale.Revisions[k.Name], 10)
+		value = strconv.FormatInt(state.Revisions[k.Name], 10)
 	}
 	return forms.Control(forms.ControlProps{
 		Field: forms.Field{Definition: key, Label: k.Label, Anchor: anchor},
-		ID:    id, Value: value,
+		ID:    id, Value: value, Format: chrome,
 	})
 }
