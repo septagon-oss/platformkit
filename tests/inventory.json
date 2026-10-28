@@ -22245,6 +22245,25 @@
   },
   {
    "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/httpx/a_refused_counter_never_asks_to_be_retried_before_its_window_closes_test.go",
+   "id": "kit/httpx/a_refused_counter_never_asks_to_be_retried_before_its_window_closes_test.go#TestARefusedCounterNeverAsksToBeRetriedBeforeItsWindowCloses",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedCounterNeverAsksToBeRetriedBeforeItsWindowCloses",
+   "needs_db": true,
+   "pkg": "kit/httpx",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
    "assertions_in_file": 10,
    "evidence": "only file in its package reaching /api/v1/round8/private, /private",
    "file": "kit/httpx/an_unresolved_host_invents_no_number_test.go",
@@ -84088,7 +84107,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2291,
+  "files": 2292,
   "forge_runs": [
    408,
    413,
@@ -84122,7 +84141,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3641,
+   "behaviour": 3642,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84141,9 +84160,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4263,
+  "rows": 4264,
   "tiers": {
-   "merge": 2640,
+   "merge": 2641,
    "nightly": 110,
    "push": 1513
   },
@@ -84151,13 +84170,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2046,
+   "keep": 2047,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3877,
+   "keep": 3878,
    "keep-rewrite": 170,
    "merge": 216
   }
