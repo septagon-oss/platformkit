@@ -95,9 +95,12 @@ Four things follow.
    the capability is not handed out on the strength of a call nobody declared.
    `httpx.API.ValidateDeclarations` answers it, which `kit/app` and `pkit` ask
    before any port opens.
-3. **A declaration nothing took is refused too.** The half `httpx` cannot see —
-   it knows what it minted, not what a module meant to do — is answered by
-   `kit/app` after every `Routes` has run. A module that stops crossing tenants
+3. **A declaration nothing took is refused too.** The mint marks each credential
+   it hands out, and `(*API).untakenDeclarations` reads that mark against the
+   declarations — a module that declared the need and never asked is a manifest
+   nobody ran through `Routes`. `httpx.API.ValidateDeclarations` answers it, so
+   the question is asked after every module's `Routes` has run, which is when
+   `kit/app` and `pkit` ask it. A module that stops crossing tenants
    and leaves the line behind is a manifest that no longer describes the code,
    and the job written beside it is running on nothing.
 4. **One credential per module, answered the same on every registration pass**,

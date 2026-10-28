@@ -247,8 +247,10 @@ func (a *API) methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 // module with that module's own reason. This value belongs to the composition and
 // to no module, so the audit trail of a transaction opened with it says "a
 // module's control-plane routes" and cannot say which module — the fact the
-// declaration exists to state. It is the kernel's own last door: host resolution,
-// the relay and the probes mint here and are not modules. The shared token stays
+// declaration exists to state. Nothing in this repository takes it: the kernel's
+// own runners mint their own in their own package (kit/health's probes,
+// kit/events' relay, kit/jobs, kit/app's own transactions), and host resolution
+// uses API.token. It stays as the door a composition outside this repository had,
 // until the next major.
 func (a *API) SystemToken() tenancy.SystemToken { return a.system }
 

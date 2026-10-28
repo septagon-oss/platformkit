@@ -21,7 +21,7 @@ type Router struct {
 	module      string
 	api         *API
 	// owner is the module whose Routes received this router. It survives a
-	// rebind to another module's namespace (In, ForModule), because a page
+	// rebind to another module's namespace (ForModule), because a page
 	// mounted beside somebody else's screens is still this module's page — and it
 	// is what a cross-tenant credential is minted for, so a borrowed namespace
 	// borrows nobody's scope. See Router.SystemToken.
@@ -124,7 +124,7 @@ func (r *Router) Home() (*Router, bool) {
 // A module that declared nothing gets nil, and the composition is refused before
 // anything serves: the capability is not handed out on the strength of a call
 // nobody declared (docs/adr/0006). A router bound to another module's namespace
-// (In, ForModule) is refused too, naming both modules — the credential belongs to
+// (ForModule) is refused too, naming both modules — the credential belongs to
 // the module being wired, so take it on your own router and carry the value.
 //
 // A route that holds one still runs in its own tenant's transaction, so it opens
