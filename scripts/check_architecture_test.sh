@@ -10,6 +10,20 @@ mkdir -p "$repo/modules/a/internal" "$repo/apps/example" "$repo/kit/db/dbtest"
 git -C "$repo" init --quiet
 printf 'module example.test/product\n' > "$repo/go.mod"
 
+refuses_with() {
+	local description="$1" status_want="$2" expected="$3" output status
+	shift 3
+	if output=$("$@" 2>&1); then status=0; else status=$?; fi
+	if [ "$status" != "$status_want" ]; then
+		printf 'FAIL: %s returned %s, want %s:\n%s\n' "$description" "$status" "$status_want" "$output" >&2
+		exit 1
+	fi
+	if [[ "$output" != *"$expected"* ]]; then
+		printf 'FAIL: %s returned an unrelated error:\n%s\n' "$description" "$output" >&2
+		exit 1
+	fi
+}
+
 rejects() {
 	local description="$1" expected="$2" output
 	shift 2
@@ -57,6 +71,13 @@ printf 'package store\n' > "$repo/modules/a/internal/store/store.go"
 printf 'package b\n' > "$repo/modules/b/b.go"
 printf 'package contracts\n' > "$repo/modules/b/contracts/value.go"
 imports=(env GOTOOLCHAIN=local GOWORK=off GOFLAGS= GOPROXY=off GOSUMDB=off bash "$scripts/check_imports.sh" "$repo" example.test/foundation example.test/catalog)
+layer_rows() {
+    printf 'example.test/%s/modules/a platform\nexample.test/%s/modules/b platform\n' "$1" "$1" > "$2/scripts/imports-layers.txt"
+}
+mkdir -p "$repo/scripts" "$temporary/foundation/scripts" "$temporary/catalog/scripts"
+layer_rows product "$repo"
+layer_rows foundation "$temporary/foundation"
+layer_rows catalog "$temporary/catalog"
 cat > "$repo/modules/a/internal/good.go" <<'GO'
 package internal
 import (
@@ -91,6 +112,43 @@ rejects 'undeclared integration constructor' 'undeclared-integration' "${imports
 mkdir -p "$repo/scripts"
 printf 'modules/a/internal@internal example.test/catalog/modules/b Composes the catalog constructor in the integration fixture.\n' > "$repo/scripts/imports-integration.txt"
 "${imports[@]}" >/dev/null
+
+# Module layers. The order lives in the gate; these fixture files only assign
+# modules, so an assignment can never disagree with the order it is measured by.
+printf 'package internal\nimport _ "example.test/foundation/modules/a/contracts"\n' > "$repo/modules/a/internal/layer.go"
+printf 'example.test/foundation/modules/a product\nexample.test/foundation/modules/b platform\n' > "$temporary/foundation/scripts/imports-layers.txt"
+refuses_with 'consumer climbs a dependency module' 1 'OUT OF BOUNDS [module-layer-upward] example.test/product/modules/a/internal -> example.test/foundation/modules/a/contracts (production)' "${imports[@]}"
+printf 'example.test/product/modules/a identity\nexample.test/product/modules/b platform\n' > "$repo/scripts/imports-layers.txt"
+printf 'example.test/foundation/modules/a platform\nexample.test/foundation/modules/b platform\n' > "$temporary/foundation/scripts/imports-layers.txt"
+"${imports[@]}" >/dev/null
+rm "$repo/modules/a/internal/layer.go"
+# A dependency whose own map was removed: every module of it the build reaches is
+# unassigned, and the only cure lives in that repository or in a new pin.
+rm "$temporary/foundation/scripts/imports-layers.txt"
+refuses_with 'dependency holds no layer map' 1 'OUT OF BOUNDS [module-layer-missing] example.test/foundation/modules/a -> example.test/foundation/scripts/imports-layers.txt' "${imports[@]}"
+layer_rows foundation "$temporary/foundation"
+# A consumer module nobody placed.
+grep -v 'modules/b' "$repo/scripts/imports-layers.txt" > "$temporary/partial.txt" && cp "$temporary/partial.txt" "$repo/scripts/imports-layers.txt"
+refuses_with 'consumer module holds no row' 1 'OUT OF BOUNDS [module-layer-missing] example.test/product/modules/b -> example.test/product/scripts/imports-layers.txt' "${imports[@]}"
+layer_rows product "$repo"
+# A file may assign only the modules of the repository that owns it, and a map a
+# reader cannot parse is an unreadable declaration, never a verdict.
+layer_rows catalog "$temporary/catalog"
+printf 'example.test/product/modules/a platform\n' >> "$temporary/catalog/scripts/imports-layers.txt"
+refuses_with 'dependency assigns a consumer module' 2 'assigns a module of example.test/product' "${imports[@]}"
+layer_rows catalog "$temporary/catalog"
+printf 'example.test/catalog/modules/a sideways\n' > "$temporary/catalog/scripts/imports-layers.txt"
+refuses_with 'dependency invents a layer name' 2 'is not one the gate knows' "${imports[@]}"
+layer_rows catalog "$temporary/catalog"
+# A pair is justifiable only in the repository holding both of its modules: Go
+# reports packages for the main module alone, so no build measures a pair spanning two
+# repositories and no file may claim one.
+printf 'example.test/catalog/modules/a <-> example.test/product/modules/a Both repositories claim this pair.\n' >> "$temporary/catalog/scripts/imports-layers.txt"
+refuses_with 'dependency justifies a pair spanning two repositories' 2 'the repository that holds both of its modules' "${imports[@]}"
+layer_rows catalog "$temporary/catalog"
+printf '%s\n' 'example.test/product/modules/a <-> example.test/foundation/modules/a The kernel and the product import each other.' >> "$repo/scripts/imports-layers.txt"
+refuses_with 'consumer justifies a pair with a dependency module' 2 'the repository that holds both of its modules' "${imports[@]}"
+layer_rows product "$repo"
 
 # Only the actual foundation module grants the direct kit/db exemption. A
 # consumer cannot gain it by creating a same-named directory or a subpackage.
