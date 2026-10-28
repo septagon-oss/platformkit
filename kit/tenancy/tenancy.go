@@ -138,7 +138,8 @@ type SystemToken = syscap.SystemToken
 // The value has to be nameable by an owning module's contracts package, which is
 // why it lives here and not in kit/httpx: httpx links huma and chi into
 // everything that imports it, and a module's contracts stay free of both. The
-// kernel reads it by name on a router mount: httpx.Router.ForModule.
+// kernel's own doors take the name rather than the value: a caller spends the
+// reference as ns.Module() on httpx.Router.Known and httpx.Router.ForModule.
 type Namespace struct{ module string }
 
 // NewNamespace names one module's own namespace. The owning module's contracts
@@ -152,12 +153,10 @@ func NewNamespace(module string) Namespace {
 	return Namespace{module: module}
 }
 
-// Module is the namespace's name, as the composition registered it.
+// Module is the namespace's name, as the composition registered it. It is how
+// the reference is spent: the doors that rebind a router or ask whether a module
+// was composed answer to that name.
 func (n Namespace) Module() string { return n.module }
-
-// String is the same name, so a namespace reads as itself in a refusal or a test
-// failure instead of as the address of a struct.
-func (n Namespace) String() string { return n.module }
 
 // namespaceName is a module name's grammar — the same grammar kit/module
 // refuses a manifest's Name against, restated here because kit/module imports
