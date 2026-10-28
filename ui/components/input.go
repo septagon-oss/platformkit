@@ -79,8 +79,9 @@ func inputFieldWithSlots(
 			g.Text(p.Error),
 		))
 	}
-	if p.HelpText != "" {
-		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
+	if hasHelp(p.HelpText, p.HelpNotes) {
+		field = append(field, helpParagraph(p.HelpText, p.HelpNotes,
+			h.ID(id+"-help"), h.Class(clHelp.Compile())))
 	}
 	return h.Div(field...)
 }
@@ -198,7 +199,7 @@ func inputDescriptionAttrs(p InputProps, id string, invalid bool, input []g.Node
 	if p.Error != "" {
 		describedBy = append(describedBy, id+"-error")
 	}
-	if p.HelpText != "" {
+	if hasHelp(p.HelpText, p.HelpNotes) {
 		describedBy = append(describedBy, id+"-help")
 	}
 	if len(describedBy) > 0 {

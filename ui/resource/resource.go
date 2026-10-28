@@ -125,6 +125,17 @@ func (o Options) Text(key, fallback string, args ...any) string {
 	return o.Locale.Text(key, fallback, args...)
 }
 
+// chromeFormatter is a render's locale as a form's seam for its chrome. A nil
+// *locale.Locale sitting in a locale.Formatter interface is not nil to the code
+// that asks it, so a render that composed no locale composes no formatter and
+// answers its chrome with source text instead of dying on the way there.
+func chromeFormatter(selected *locale.Locale) locale.Formatter {
+	if selected == nil {
+		return nil
+	}
+	return selected
+}
+
 // deleteForm is the destructive action: a real form, so it works without
 // JavaScript, carrying the attribute confirm.js opens the dialog on. anchor names
 // the record's published view, empty for a standalone render.

@@ -63,8 +63,9 @@ func Select(p SelectProps) g.Node {
 			g.Text(p.Error),
 		))
 	}
-	if p.HelpText != "" {
-		field = append(field, h.P(h.ID(id+"-help"), h.Class(clHelp.Compile()), g.Text(p.HelpText)))
+	if hasHelp(p.HelpText, p.HelpNotes) {
+		field = append(field, helpParagraph(p.HelpText, p.HelpNotes,
+			h.ID(id+"-help"), h.Class(clHelp.Compile())))
 	}
 	return h.Div(field...)
 }
@@ -186,7 +187,7 @@ func selectControlAttrs(p SelectProps, id string, cl style.ClassList) []g.Node {
 		sel = append(sel, g.Attr("aria-invalid", "true"))
 		describedBy = append(describedBy, id+"-error")
 	}
-	if p.HelpText != "" {
+	if hasHelp(p.HelpText, p.HelpNotes) {
 		describedBy = append(describedBy, id+"-help")
 	}
 	if len(describedBy) > 0 {

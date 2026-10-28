@@ -112,7 +112,7 @@ func historyDisclosure(o Options, p *HistoryPanel) g.Node {
 			// is the difference between "Body: Earlier text" as a mystery and as the
 			// fourth entry in a record's story.
 			lines = append(lines, components.FormSentence(components.FormSentenceProps{
-				Text: o.Text("screens.history.restored", "Restored from") + " v" + strconv.FormatInt(v.RestoredFrom, 10),
+				Text: o.Text("screens.history.restored", "Restored from v%[1]d", v.RestoredFrom),
 			}))
 		}
 		for _, change := range v.Changes {
