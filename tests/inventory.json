@@ -45829,6 +45829,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/auth/internal/the_two_shut_doors_ask_one_wait_as_their_shared_countdown_falls_test.go",
+   "id": "modules/auth/internal/the_two_shut_doors_ask_one_wait_as_their_shared_countdown_falls_test.go#TestTheTwoShutDoorsAskOneWaitAsTheirSharedCountdownFalls",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheTwoShutDoorsAskOneWaitAsTheirSharedCountdownFalls",
+   "needs_db": true,
+   "pkg": "modules/auth/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/auth/internal/the_two_sign_in_doors_name_one_lockout_and_its_shut_answer_names_its_own_wait_test.go",
    "id": "modules/auth/internal/the_two_sign_in_doors_name_one_lockout_and_its_shut_answer_names_its_own_wait_test.go#TestTheTwoSignInDoorsNameOneLockoutAndItsShutAnswerNamesItsOwnWait",
    "kind": "go",
@@ -84069,7 +84088,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2290,
+  "files": 2291,
   "forge_runs": [
    408,
    413,
@@ -84103,7 +84122,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3640,
+   "behaviour": 3641,
    "composition": 490,
    "contract": 22,
    "journey": 110
@@ -84122,9 +84141,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4262,
+  "rows": 4263,
   "tiers": {
-   "merge": 2639,
+   "merge": 2640,
    "nightly": 110,
    "push": 1513
   },
@@ -84132,13 +84151,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2045,
+   "keep": 2046,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3876,
+   "keep": 3877,
    "keep-rewrite": 170,
    "merge": 216
   }
