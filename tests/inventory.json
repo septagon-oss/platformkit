@@ -92405,6 +92405,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/reviews/the_refusal_a_gate_prints_points_at_a_line_the_run_printed_test.py",
+   "id": "scripts/reviews/the_refusal_a_gate_prints_points_at_a_line_the_run_printed_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "the_refusal_a_gate_prints_points_at_a_line_the_run_printed_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/reviews/the_way_a_gate_refuses_names_which_machine_is_broken_and_touches_nothing_test.py",
    "id": "scripts/reviews/the_way_a_gate_refuses_names_which_machine_is_broken_and_touches_nothing_test.py",
    "kind": "shell_pin",
@@ -94672,7 +94692,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2607,
+  "files": 2608,
   "forge_runs": [
    408,
    413,
@@ -94707,7 +94727,7 @@
   ],
   "layers": {
    "behaviour": 4105,
-   "composition": 563,
+   "composition": 564,
    "contract": 24,
    "journey": 122
   },
@@ -94725,23 +94745,23 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4814,
+  "rows": 4815,
   "tiers": {
    "merge": 2974,
    "nightly": 122,
-   "push": 1718
+   "push": 1719
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2362,
+   "keep": 2363,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4428,
+   "keep": 4429,
    "keep-rewrite": 170,
    "merge": 216
   }
