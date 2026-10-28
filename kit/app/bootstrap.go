@@ -54,9 +54,10 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 	// bootstrap says what it can emit before it emits it, from the same manifests
 	// app.New will read a moment later. It names no app, because a first tenant belongs
 	// to whichever composition bootstraps the installation, and carries the value on
-	// its own context: the migration, the drain and fn's own transaction all publish
-	// under this manifest, and the claim ends with the bootstrap rather than standing
-	// in the process for the next bootstrapper to trip over.
+	// its own context: fn's transaction publishes under this manifest — the migration,
+	// the drain and the module migrate above it write schema and no event — and the
+	// claim ends with the bootstrap rather than standing in the process for the next
+	// bootstrapper to trip over.
 	catalog, err := events.NewCatalog("", declaredEvents(withKernel(mods)))
 	if err != nil {
 		return err
