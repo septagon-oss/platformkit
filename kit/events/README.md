@@ -19,6 +19,40 @@ so the SQL outbox package imports none of its own providers and the package gate
 holds it there. Existing outbox consumers can migrate those imports independently. The retry
 ladder, handler-attempt cap and seven-day retention have one internal owner.
 
+## Which catalogue measures a publish
+
+A publication is checked before the INSERT against a manifest: the name has to be one
+somebody declared, and the payload has to be the shape declared for it. Whose manifest it
+is has two answers. The process's is what an install left standing under an app slug, and
+`Publish` reaches it by reading `tenants.app` for the row's tenant — the placement the
+relay and a delivery read too. The composition's is a value:
+`events.NewCatalog(appname.Name, decls)` builds the app's own `Catalog`, and that value
+publishes (`Catalog.Publish`, `Catalog.PublishFor`) and disposes (`Catalog.Close`).
+
+`kit/app` builds one per composition and carries it — the way it carries the composition's
+connection — on the context of every served request and of every job, subscription
+delivery and relay tick the worker half runs, so a module's `events.Publish` is measured
+against its own composition without knowing that anything was carried. `App.Publisher`
+and `Runtime.Publisher` hand the same value to a composition that wants it in a module's
+own `Deps`. With nothing carried, the write answers from the installed catalogue exactly
+as it always did, the `tenants.app` read included: the carrier changes which contract
+answers where the two disagreed, and it can never leave a publish unchecked that was
+checked before. Delivery is a different question and keeps its own answer — an event
+still cannot be handled by an app whose tenant row the table does not show — and granting
+is untouched: the catalogue is a contract, not a capability.
+
+**Reused** — `ClaimApp`'s claim (now `DeclareFor`) with its grip counts, `standing`,
+`retype`, `clashes`, `declaredSchemas` and `OneShapePerName`, so the constructor adds no
+second lifetime ledger and no new refusal sentence; `httpx.WithConn`'s carrier shape; and
+`dbtest.RunInOwnDatabase`, `providers/memory` and `kit/app`'s two-app composition fixture
+for the cases. **Added** — `Catalog`, `Publisher`, `NewCatalog` and the context carrier,
+because nothing on the shelf or in the kernel was both built by a composition and
+consultable by the one write every event passes through. **Made reusable** — the carrier
+and the `X` → `XFor` + `Deprecated:` shape for `RelayFor`, `SubjectFor`, `FilterFor`,
+`FiltersFor` and `DeclareFor`, plus `KernelEventNames`, `IconNames`, `ToneNames`,
+`FormatNames` and `VisibilityNames`: a composition, a module or a tool that needed the
+process's answer now has one door to ask.
+
 ## The envelope, the subject and what a rollout has to expect
 
 The body on the broker is **CloudEvents 1.0 in structured content mode**:
