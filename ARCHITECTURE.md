@@ -598,7 +598,7 @@ sources (`kit/locale/providers/xtext/load.go:33`), `Catalog` and `Source`
 describe what goes in (`:107`, `:114`), and `FromCatalog` hands back a
 `locale.Messages` (`kit/locale/providers/xtext/catalog.go:16`).
 
-**Builds on.** `golang.org/x/text` v0.42.0 (BSD-3-Clause) for language matching
+**Builds on.** `golang.org/x/text` v0.43.0 (BSD-3-Clause) for language matching
 and message catalogues (`kit/locale/providers/xtext/catalog.go:7-9`) — BCP 47
 matching and CLDR plural rules. Nothing here is a service.
 

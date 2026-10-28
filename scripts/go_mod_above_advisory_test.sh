@@ -28,6 +28,16 @@
 # reached through the passkey assertion's certificate check, so the toolchain line rose to go1.27.3 and
 # the third entry below was added beside it.
 #
+# The feed moved a third time under the check job for head d1ccd186, over a go.mod whose dependency
+# lines origin/main's tip shares verbatim:
+#
+#   golang.org/x/net@v0.60.0   GO-2026-6860                               fixed in v0.62.0
+#
+# reached through `legible.Scan`'s call at `ui/legible/legible.go:76` to `html.Parse`, the parser that
+# reads every page the rendering packages serve. The x/net line rises to v0.62.0, the release the scan
+# prints as the fix, and the fourth entry below is added beside it; x/net's own go.mod asks crypto
+# v0.58.0, sync v0.24.0, sys v0.49.0, text v0.43.0 and tools v0.51.0, and those five pins rise with it.
+#
 # What a tree can answer about a feed it does not hold is which side of a published range its own
 # pinned versions land on, which is all of it asked here and none of it asked of the network. The list
 # below is transcribed from the run's own log, with the identifier and the fixed release the tool
@@ -83,6 +93,12 @@ ADVISORIES = (
         "source": "toolchain",
         "fixed": (1, 27, 3),
         "ids": ("GO-2026-6809",),
+    },
+    {
+        "package": "golang.org/x/net",
+        "source": "module",
+        "fixed": (0, 62, 0),
+        "ids": ("GO-2026-6860",),
     },
 )
 
@@ -177,6 +193,8 @@ def mutated(edit):
 MUTATIONS = (
     ("x/net back inside the range",
      lambda t: re.sub(r"golang\.org/x/net v[\d.]+", "golang.org/x/net v0.59.0", t)),
+    ("x/net back inside the text-coalescing range alone",
+     lambda t: re.sub(r"golang\.org/x/net v[\d.]+", "golang.org/x/net v0.61.0", t)),
     ("the toolchain back inside the range",
      lambda t: re.sub(r"(?m)^toolchain go[\d.]+$", "toolchain go1.27.1", t)),
     ("the toolchain back inside the crypto/x509 range alone",

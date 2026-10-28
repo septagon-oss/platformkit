@@ -994,8 +994,8 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# That guard's own inputs, asked of a tree it did not write. Every mutation the shell makes starts
 	# from the committed go.mod, so three branches of it live unless a synthetic tree reaches them: the
 	# directory argument that names such a tree, the rule that a commented-out dependency is not a pin
-	# (`\t// golang.org/x/net v0.60.0` answers `is absent, so nothing here resolves above the range`),
-	# and a release *superseding* every fix — the committed pins sit exactly at v0.60.0 and at go1.27.3,
+	# (`\t// golang.org/x/net v0.62.0` answers `is absent, so nothing here resolves above the range`),
+	# and a release *superseding* every fix — the committed pins sit exactly at v0.62.0 and at go1.27.3,
 	# the newest toolchain floor, so "above all of them" is never asked. This case writes six go.mod files
 	# into a temporary directory and asks the guard about each through its subprocess, and asserts exit
 	# codes rather than sentences, so a floor comparison that passes for the wrong reason — an absent pin
