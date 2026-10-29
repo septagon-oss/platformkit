@@ -34,14 +34,14 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		mountApprovals(surfaces, spec, svc.Approvals)
 		registerUserAccessCommands(surfaces, spec, svc.Lifecycle)
 		mountHandles(surfaces, spec, svc.Handles)
-		mountDeactivation(surfaces, spec, svc.Deactivation)
+		mountDeactivation(surfaces, spec, svc.Deactivation, svc.Lifecycle)
 	} else {
 		mountInvitations(surfaces, spec, svc.Invitations)
 		mountApprovals(surfaces, spec, svc.Approvals)
 		mountPasswords(surfaces, spec, svc.Passwords)
 		mountRoles(surfaces, spec, svc.Roles)
 		mountHandles(surfaces, spec, svc.Handles)
-		mountDeactivation(surfaces, spec, svc.Deactivation)
+		mountDeactivation(surfaces, spec, svc.Deactivation, nil)
 	}
 }
 
@@ -125,13 +125,24 @@ func mountHandles(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], svc 
 		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionUserManage), Present: entity.CommandHints{Label: "Set username"}})
 }
 
-func mountDeactivation(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], svc contracts.Deactivator) {
+func mountDeactivation(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], svc contracts.Deactivator, lifecycle *Service) {
+	events := []string{contracts.EventDeactivated}
+	if lifecycle != nil {
+		events = append(events, contracts.EventInvitationRevoked)
+	}
 	rest.Command(surfaces, spec, "deactivate",
 		"Deactivate a user",
 		"Stops the person signing in. Their sessions stop working with them, because a session is only honoured for an active user, so there is no list of sessions to walk. Deactivating them again changes nothing.",
-		[]string{contracts.EventDeactivated},
+		events,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.User, error) {
-			return svc.Deactivate(ctx, tx, id)
+			if lifecycle == nil {
+				return svc.Deactivate(ctx, tx, id)
+			}
+			revision, err := deactivationRevision(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return lifecycle.deactivateFromHTTP(ctx, tx, id, revision)
 		}, rest.CommandOptions{Present: entity.CommandHints{
 			Label:       "Deactivate",
 			Destructive: true,

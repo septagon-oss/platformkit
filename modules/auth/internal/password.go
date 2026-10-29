@@ -611,9 +611,14 @@ func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, passwor
 	// difference on the index would narrow. What the hash buys is the other
 	// thing — a copy of this table is not a set of live links.
 	var userID uuid.UUID
-	err := tx.DB().Raw(
-		"DELETE FROM password_tokens WHERE token_hash = ? AND expires_at > now() RETURNING user_id",
-		contracts.Hash(token)).Row().Scan(&userID)
+	var err error
+	if s.invitationUsers != nil {
+		userID, err = s.consumePassword(ctx, tx, token, password)
+	} else {
+		err = tx.DB().Raw(
+			"DELETE FROM password_tokens WHERE token_hash = ? AND expires_at > now() RETURNING user_id",
+			contracts.Hash(token)).Row().Scan(&userID)
+	}
 	switch {
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
 		// An unknown token, a spent one and an expired one are one answer, for
@@ -622,8 +627,10 @@ func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, passwor
 	case err != nil:
 		return nil, fmt.Errorf("auth: consume a password token: %w", err)
 	}
-	if err := s.users.SetPassword(ctx, tx, userID, password); err != nil {
-		return nil, err
+	if s.invitationUsers == nil {
+		if err := s.users.SetPassword(ctx, tx, userID, password); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
 		return nil, err
