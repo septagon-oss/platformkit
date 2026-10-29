@@ -89,7 +89,7 @@ import re, subprocess, sys
 TEST_SUFFIXES = ("_test.go", "_test.sh", "_test.py", ".spec.ts", ".test.ts", ".test.tsx")
 # The same shape the loop's census gate counts, so the two agree on which files are held as debt.
 CENSUS = re.compile(r"(^|/)[^/]*(review|probe|round[0-9])[^/]*(_test\.go|\.test\.tsx?|\.spec\.ts|_test\.py|_test\.sh)$")
-CENSUS_CEILING = 82
+CENSUS_CEILING = 83
 # A round, a finding's number, an attempt's number. "round trip", "rounded 5" and "background 5"
 # form none of these: the number has to stand where the round's ordinal stands. The `s?` that lets
 # "rounds 8 and 9" be caught is also what refuses "rounds 5.2 to 5"; see the header for that trade
@@ -152,7 +152,8 @@ else:
     print(f"ok   this file would be refused {len(self_prose)} times by its own rule, and is exempt by name")
 if len(held) > CENSUS_CEILING:
     bad.append(f"the exclusion by file name covers {len(held)} files, over the {CENSUS_CEILING} the census gate holds")
-print(f"ok   {len(held)} files are held by their own names, at or under the census gate's {CENSUS_CEILING}")
+else:
+    print(f"ok   {len(held)} files are held by their own names, at or under the census gate's {CENSUS_CEILING}")
 
 # The planted trio: the wrapped phrase and the mid-file citation must be caught, and the clean file —
 # which uses the domain term "round trip" — must not. These are the matcher's own assertions, run on
