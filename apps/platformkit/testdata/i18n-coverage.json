@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-27T12:43:37Z",
+  "measured_utc": "2026-10-29T22:25:00Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -98,6 +98,10 @@
       "wrapped": 0,
       "readable": 30
     },
+    "GET /app/keeping/saved": {
+      "wrapped": 5,
+      "readable": 6
+    },
     "GET /app/notification/notifications": {
       "wrapped": 0,
       "readable": 5
@@ -119,8 +123,8 @@
       "readable": 95
     },
     "GET /app/task/tasks/{id}": {
-      "wrapped": 47,
-      "readable": 100
+      "wrapped": 50,
+      "readable": 103
     },
     "GET /app/task/tasks/{id}/edit": {
       "wrapped": 43,
