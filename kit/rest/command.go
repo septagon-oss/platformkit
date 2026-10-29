@@ -344,6 +344,12 @@ type collectionInput[I any] struct {
 	Body *I
 }
 
+type sessionCommandInput[I any] struct {
+	ID      uuid.UUID `path:"id" format:"uuid" doc:"The row's id"`
+	Body    *I
+	RawBody []byte
+}
+
 func commandRoute[T crud.Entity](
 	surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string,
 	events []string, opts CommandOptions,
@@ -466,10 +472,18 @@ func mountCommand[I any, T crud.Entity, O any](
 	// type is what tells huma whether there is a path parameter to bind. That
 	// is the irreducible half of the difference; everything above it and the
 	// answer below are shared.
-	answer := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *I) (O, error) {
+	answer := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *I, rawBody []byte) (O, error) {
 		var in I
 		if body != nil {
 			in = *body
+		}
+		if spec.Session != nil {
+			var err error
+			in, err = sessionJSON[I](rawBody)
+			if err != nil {
+				var zero O
+				return zero, err
+			}
 		}
 		if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
 			var zero O
@@ -481,17 +495,26 @@ func mountCommand[I any, T crud.Entity, O any](
 	if result {
 		responseOptions.CacheControl = "private, no-store"
 	}
+	if spec.Session != nil {
+		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *sessionCommandInput[I]) (O, error) {
+			return answer(ctx, tx, in.ID, in.Body, in.RawBody)
+		}, responseOptions)
+		return
+	}
 	if hasChoices(fields) || len(bindings) > 0 || slices.ContainsFunc(fields, func(f crud.Field) bool { return f.Default != "" }) {
-		mountDefaultCommand(router, op, auth, opts.Collection, prepare, answer, responseOptions)
+		defaultAnswer := func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, body *I) (O, error) {
+			return answer(ctx, tx, id, body, nil)
+		}
+		mountDefaultCommand(router, op, auth, opts.Collection, prepare, defaultAnswer, responseOptions)
 		return
 	}
 	if opts.Collection {
 		Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *collectionInput[I]) (O, error) {
-			return answer(ctx, tx, uuid.Nil, in.Body)
+			return answer(ctx, tx, uuid.Nil, in.Body, nil)
 		}, responseOptions)
 		return
 	}
 	Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (O, error) {
-		return answer(ctx, tx, in.ID, in.Body)
+		return answer(ctx, tx, in.ID, in.Body, nil)
 	}, responseOptions)
 }

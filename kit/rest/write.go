@@ -270,10 +270,6 @@ func (s Spec[T]) removeRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // Authorization is not one of them: a route asks httpx, a seed run asks its
 // Authorizer, and neither answer belongs in this file.
 func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
-	if s.Session != nil {
-		var none T
-		return none, crud.ErrInvalid
-	}
 	if s.input != nil {
 		var none T
 		return none, problem.New(405, "Input-only resources have no writes")

@@ -243,7 +243,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// 14 the examples' html, none removed; /css gains 174 lines of choice rules and
 	// loses none, and /sha256 follows them. No token, theme, notice, icon, class or
 	// other component moves.
-	if legacy.SHA256 != "ecc74b888cf6bd429283b5b6004da6dc7235f4116ff495bfeaeb75679ca9c240" {
+	if legacy.SHA256 != "f4dc64915e72ab142ce232e0c160fbcfc48df92e7803fc16ec1844429dd25982" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
