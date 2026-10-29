@@ -2,12 +2,13 @@ package internal
 
 import (
 	"context"
+	"time"
+
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/page"
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
-	"time"
 )
 
 // captionForm preserves the stored caption and expected revision in one accessible form.

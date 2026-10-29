@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -81,19 +80,23 @@ func filterForm(r page.Request, where string, in *libraryInput, query string) g.
 	nodes := []g.Node{
 		h.Form(h.Method("get"), h.Action(where), g.Attr("aria-label", said(r, "file.library.title", "Media library")),
 			components.Input(components.InputProps{
-				Name: "q", Type: "search", Value: in.Q,
+				ComponentProps: components.ComponentProps{Attrs: libraryAnchor("field.q")},
+				Name:           "q", Type: "search", Value: in.Q,
 				Label: said(r, "file.library.filter.name", "Search by name"),
 			}),
 			components.Select(components.SelectProps{
-				Name: "type", Label: said(r, "file.library.filter.type", "Type"),
+				ComponentProps: components.ComponentProps{Attrs: libraryAnchor("field.type")},
+				Name:           "type", Label: said(r, "file.library.filter.type", "Type"),
 				Value: orDefault(in.Type, "all"), Options: options,
 			}),
 			components.Select(components.SelectProps{
-				Name: "sort", Label: said(r, "file.library.filter.sort", "Order by"),
+				ComponentProps: components.ComponentProps{Attrs: libraryAnchor("field.sort")},
+				Name:           "sort", Label: said(r, "file.library.filter.sort", "Order by"),
 				Value: orDefault(in.Sort, contracts.SortDefaultKey), Options: orders,
 			}),
 			components.Checkbox(components.CheckboxProps{
-				Name: "unused", Value: "1", Checked: in.Unused != "",
+				ComponentProps: components.ComponentProps{Attrs: libraryAnchor("field.unused")},
+				Name:           "unused", Value: "1", Checked: in.Unused != "",
 				Label: said(r, "file.library.filter.unused", "Only what nothing shows"),
 				HelpText: said(r, "file.library.filter.unusedHelp",
 					"What the use ledger stamped — the files the release sweep will remove once the grace has run"),
@@ -102,7 +105,8 @@ func filterForm(r page.Request, where string, in *libraryInput, query string) g.
 			// filled action above the fold, and the library's is adding a file. Filtering
 			// is a read this page is already showing, not the thing to do.
 			components.Button(components.ButtonProps{
-				Type: "submit", Variant: "secondary", Label: said(r, "file.library.filter.apply", "Apply"),
+				ComponentProps: components.ComponentProps{Attrs: libraryAnchor("action.filter")},
+				Type:           "submit", Variant: "secondary", Label: said(r, "file.library.filter.apply", "Apply"),
 			}),
 		),
 	}
@@ -110,7 +114,8 @@ func filterForm(r page.Request, where string, in *libraryInput, query string) g.
 		// A second control, outside the form, because clearing is a link to the bare
 		// page and not a submission of the fields above.
 		nodes = append(nodes, components.Button(components.ButtonProps{
-			Label: said(r, "file.library.clear", "Clear filters"), Href: where, Variant: "ghost",
+			ComponentProps: components.ComponentProps{Attrs: libraryAnchor("action.clear")},
+			Label:          said(r, "file.library.clear", "Clear filters"), Href: where, Variant: "ghost",
 		}))
 	}
 	return g.Group(nodes)
@@ -135,13 +140,15 @@ func uploadForm(r page.Request, where string, may bool) g.Node {
 	return h.Form(h.Method("post"), h.Action(where+"/upload?image=true"), h.EncType("multipart/form-data"),
 		g.Attr("aria-label", said(r, "file.library.upload.label", "Add a file to the library")),
 		components.Input(components.InputProps{
-			Name: "file", Type: "file", Accept: "image/*",
+			ComponentProps: components.ComponentProps{Attrs: libraryAnchor("field.file")},
+			Name:           "file", Type: "file", Accept: "image/*",
 			Label: said(r, "file.library.upload.pick", "Choose an image to add"),
 			HelpText: said(r, "file.library.upload.help",
 				"The bytes are counted against the storage above as they arrive, and an upload past what this deployment accepts is refused with nothing kept."),
 		}),
 		components.Button(components.ButtonProps{
-			Type: "submit", Label: said(r, "file.library.upload.send", "Upload"), Variant: "primary",
+			ComponentProps: components.ComponentProps{Attrs: libraryAnchor("action.upload")},
+			Type:           "submit", Label: said(r, "file.library.upload.send", "Upload"), Variant: "primary",
 		}),
 	)
 }
@@ -200,77 +207,6 @@ func pickerForm(r page.Request, where, bytes, field, back string, rows []*contra
 	return h.Form(append([]g.Node{h.Method("get"), h.Action(back),
 		g.Attr("aria-label", said(r, "file.library.pick.form", "Choose one of this tenant's images"))},
 		tiles...)...)
-}
-
-// captionForm is the one write a picture's words have: a real form, in reading order,
-// carrying the UpdatedAt the panel was drawn from so the command underneath can refuse
-// a caption typed over an edit the writer never saw.
-//
-// The bound is the entity's own — contracts.MaxAlt, the column's own length — and the
-// checkbox is the alternative to the textarea rather than a second claim on top of it:
-// contracts.AltClaim refuses both at once and neither, in one sentence this page passes
-// through rather than re-wording.
-//
-// Which of the two the person is making is decided by the checkbox, so `required` belongs
-// to the checkbox's state and to nothing else: a textarea marked required because the row
-// was not decorative when it was drawn would refuse the caption that tick says should be
-// written, and the form would never reach the command that answers it. The snippet below
-// keeps the two in step from load; without a script the rule is still kept, one submit
-// later, by AltClaim's refusal on the page that carried the form.
-func captionForm(ctx context.Context, r page.Request, where string, f *contracts.File) g.Node {
-	return h.Form(h.Method("post"), h.Action(where+"/"+f.ID.String()+"/alt"),
-		g.Attr("aria-label", said(r, "file.library.caption.label", "What this image says about itself")),
-		g.Attr("data-file-caption", ""),
-		components.Textarea(components.TextareaProps{
-			Name: "alt", Value: f.Alt, Rows: 3, MaxLength: contracts.MaxAlt,
-			Label: said(r, "file.library.caption.label", "What this image says about itself"),
-			HelperText: said(r, "file.library.altRequired",
-				"An image either says what is in it or says that it is decorative."),
-			Required: !f.Decorative,
-		}),
-		components.Checkbox(components.CheckboxProps{
-			Name: "decorative", Checked: f.Decorative,
-			Label: said(r, "file.library.decorative", "Decorative image"),
-			HelpText: said(r, "file.library.decorativeHelp",
-				"Checked, the image says nothing about itself and no text is asked for."),
-		}),
-		h.Input(h.Type("hidden"), h.Name("updated"), h.Value(f.UpdatedAt.UTC().Format(time.RFC3339Nano))),
-		components.Button(components.ButtonProps{
-			Type: "submit", Variant: "primary",
-			Label: said(r, "file.library.caption.save", "Save caption"),
-		}),
-		page.InlineScript(ctx, captionToggle),
-	)
-}
-
-// captionToggle is the form's one piece of client-side behaviour: the decorative claim
-// and the required caption are the same decision, and the checkbox is what says it. It
-// asks for the two controls by their component names inside this form alone, and it is
-// carried with the response's content-security-policy nonce, which ui/page renders and
-// nothing else in a module can reach.
-const captionToggle = `(()=>{const f=document.currentScript.closest("form");if(!f)return;const d=f.querySelector("[name=decorative]"),a=f.querySelector("[name=alt]");if(!d||!a)return;const sync=()=>{a.required=!d.checked;a.setAttribute("aria-required",String(!d.checked));if(d.checked)a.value=""};d.addEventListener("change",sync);sync()})()`
-
-// removalForm is the delete — a form rather than the JSON verb for the reason the
-// module's own posts give. It is disabled while the ledger shows the file, with the
-// reason in the control's own help text, and the command refuses the same thing
-// whatever the button looks like: how the button looks is a convenience, and the check
-// that decides is inside the transaction.
-func removalForm(r page.Request, where string, f *contracts.File, uses []contracts.UseRow) g.Node {
-	shown := len(uses) > 0
-	help := said(r, "file.library.deleteHelp", "The bytes go once the transaction that removed the row has committed.")
-	if shown {
-		help = said(r, "file.library.inUse",
-			"Something still shows this file, so it cannot be removed; that record has to stop showing it first.")
-	}
-	return h.Form(h.Method("post"), h.Action(where+"/"+f.ID.String()+"/delete"),
-		g.Attr("aria-label", said(r, "file.library.delete", "Remove this file")),
-		components.FormSentence(components.FormSentenceProps{Text: help}),
-		components.Button(components.ButtonProps{
-			ComponentProps: components.ComponentProps{Disabled: shown},
-			Type:           "submit", Label: said(r, "file.library.delete", "Remove this file"),
-			Tone: "danger", Variant: "outline",
-		}),
-	)
 }
 
 // formInstant is the timestamp the caption form carried back — the row's own

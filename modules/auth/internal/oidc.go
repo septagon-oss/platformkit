@@ -214,7 +214,7 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.SessionOpener, us
 }
 
 // registerAuthorizationRequest mounts the leg out: the redirect to this tenant's issuer with a state the callback will check.
-func (p *Provider) registerAuthorizationRequest(app *httpx.Router, svc contracts.Service) {
+func (p *Provider) registerAuthorizationRequest(app *httpx.Router, svc contracts.SessionOpener) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-start",
 		Method:      http.MethodGet,
@@ -260,7 +260,7 @@ func (p *Provider) registerAuthorizationRequest(app *httpx.Router, svc contracts
 }
 
 // registerCallback mounts the leg back: the code exchange, the identity it vouches for, and the session that follows.
-func (p *Provider) registerCallback(app *httpx.Router, svc contracts.Service, users contracts.Users, provisioner contracts.Provisioner) {
+func (p *Provider) registerCallback(app *httpx.Router, svc contracts.SessionOpener, users contracts.Users, provisioner contracts.Provisioner) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-oidc-callback",
 		Method:      http.MethodGet,
