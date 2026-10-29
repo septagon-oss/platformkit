@@ -40,7 +40,7 @@ var Module = pkit.NewModule("web", wire,
 func wire(w *pkit.Wiring) (module.Module, error) {
 	links := pkit.Get[webcontracts.Links](w)
 	skin := w.Skin()
-	return New(Deps{
+	return NewChecked(Deps{
 		Site:    pkit.Get[sitecontracts.Service](w),
 		Content: pkit.Get[contentcontracts.Service](w),
 		Files:   pkit.Get[richtext.Files](w),
@@ -61,5 +61,5 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// in, no `hreflang`, no claims.
 		Translations: pkit.Get[rest.Translations](w),
 		ContentRows:  pkit.Get[rest.TranslationSource](w),
-	}), nil
+	})
 }
