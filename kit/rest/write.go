@@ -270,7 +270,12 @@ func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 		var none T
 		return none, problem.New(405, "Input-only resources have no writes")
 	}
-	return s.createRow(ctx, tx, e)
+	row, err := s.createRow(ctx, tx, e)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return row, nil
 }
 
 // UpdateRow patches the columns `values` names, of this Spec's own schema, and
@@ -286,7 +291,12 @@ func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		var none T
 		return none, problem.New(405, "Input-only resources have no writes")
 	}
-	return s.updateRow(ctx, tx, id, s.choiceFields(), values, "")
+	row, err := s.updateRow(ctx, tx, id, s.choiceFields(), values, "")
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return row, nil
 }
 
 func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {

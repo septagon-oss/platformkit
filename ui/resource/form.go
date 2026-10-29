@@ -133,6 +133,8 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		}
 		if f.Definition.Widget == "richtext" {
 			f.Editor = richtextEditor(r, row, create, control.Path[0], detail != "")
+		} else if f.Definition.Type == entity.TypeSketch {
+			f.Editor.Submitted = detail != "" || len(errs) > 0
 		}
 		fields = append(fields, f)
 	}

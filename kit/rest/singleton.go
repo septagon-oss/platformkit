@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -85,6 +86,7 @@ func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 	if s.OperatorWrite {
 		write = surfaces.Ops
 	}
+	read.AnnotateSchema(reflect.TypeFor[T](), func(schema *huma.Schema) { annotateSketchFields(schema, crud.Fields[T]()) })
 	res := s.resource()
 	res.Screen = surfaces.App.PagePath(s.Path)
 	res.Schema.Path = read.Prefix() + s.Path
@@ -116,7 +118,7 @@ func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 			"The whole of it: a PUT replaces what is there. Saving what is already stored publishes nothing.", events),
 			auth.WriteAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *bodyInput[T]) (T, error) {
 				crud.Reset(in.Body) // the four fields the server owns, whatever a body said
-				return s.Save(ctx, tx, in.Body)
+				return s.save(ctx, tx, in.Body)
 			}, OperationOptions{})
 	}
 
