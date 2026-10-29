@@ -658,5 +658,95 @@
       "ui/forms/choice.go"
     ],
     "translation": "No matching choices"
+  },
+  "forms.sketch.empty": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "No drawing."
+  },
+  "forms.sketch.unavailable": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Drawing unavailable."
+  },
+  "forms.sketch.help": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Draw with a pointer, or use arrow keys to move, Shift for fine steps, Space or Enter to start and finish, and Escape to cancel."
+  },
+  "forms.sketch.required": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Add a drawing before continuing."
+  },
+  "forms.sketch.fallback": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Drawing needs JavaScript. Your saved drawing will be kept."
+  },
+  "forms.sketch.undo": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Undo"
+  },
+  "forms.sketch.clear": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Clear"
+  },
+  "forms.sketch.started": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Stroke started."
+  },
+  "forms.sketch.finished": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Stroke added."
+  },
+  "forms.sketch.canceled": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Stroke canceled."
+  },
+  "forms.sketch.undone": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Last change undone."
+  },
+  "forms.sketch.cleared": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Drawing cleared."
+  },
+  "forms.sketch.stroke-limit": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "A drawing can contain at most 400 strokes. Undo or clear some strokes and try again."
+  },
+  "forms.sketch.point-limit": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "A drawing can contain at most 20,000 points. Undo or clear some strokes and try again."
+  },
+  "forms.sketch.time-limit": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Use elapsed milliseconds between 0 and 9007199254740991."
   }
 }

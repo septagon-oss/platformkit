@@ -28,6 +28,13 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
+func immutableNote(immutable bool) string {
+	if immutable {
+		return "Changed by a command of its own, not by this form."
+	}
+	return ""
+}
+
 // Field presents an existing entity definition. Label and Options supply display
 // words explicitly; they do not change the definition's names or enum values.
 // Empty labels use the field name, and absent options use the declared enum text.

@@ -230,6 +230,9 @@ func (s Spec[T]) blankRow() map[string]json.RawMessage {
 // that is why a Validator has to be idempotent, which every entity behind a Gate
 // is (they trim, default and range-check; none of them counts anything).
 func entityValidate(ctx context.Context, e any) error {
+	if err := validateSketchInput(e); err != nil {
+		return err
+	}
 	v, ok := e.(crud.Validator)
 	if !ok {
 		return nil
