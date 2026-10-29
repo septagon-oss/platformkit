@@ -90,6 +90,7 @@ func shellBaseClassLists() []style.ClassList {
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowLink, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
+		clStepSegments, clStepSegment, clStepSegmentComplete, clStepSegmentActive,
 		clTableStacked, clTableStack, clTableStackItem, clTableStackValue, clTableStackSort, clTableStackSortRow,
 		// Generated lists compose DataList, including its empty and loading states.
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,

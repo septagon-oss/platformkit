@@ -10,7 +10,7 @@ import (
 )
 
 func mountCollectionNew(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string, write httpx.Auth) {
-	if writeAvailable(res, httpx.CRUDCreate) {
+	if writeAvailable(res, httpx.CRUDCreate) && !stepped(res, "create") {
 		page.Serve(router, s, page.Route{View: screenRef(res, "create", ""), ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
 			func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 				o := localized(o, req)
@@ -20,7 +20,7 @@ func mountCollectionNew(router *httpx.Router, s page.Shell, o Options, res httpx
 }
 
 func mountCollectionCreate(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string, write httpx.Auth) {
-	if writeAvailable(res, httpx.CRUDCreate) {
+	if writeAvailable(res, httpx.CRUDCreate) && !stepped(res, "create") {
 		page.Serve(router, s, page.Route{View: screenRef(res, "create", ""), ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
 			func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
 				// Immutable is refused here rather than dropped: this form does not
@@ -39,7 +39,7 @@ func mountCollectionCreate(router *httpx.Router, s page.Shell, o Options, res ht
 }
 
 func mountCollectionEdit(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string, write httpx.Auth) {
-	if writeAvailable(res, httpx.CRUDUpdate) {
+	if writeAvailable(res, httpx.CRUDUpdate) && !stepped(res, "update") {
 		page.Serve(router, s, page.Route{View: screenRef(res, "edit", ""), ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form",
 			Subject: subject(res, o, at, true)}, write,
 			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
@@ -54,7 +54,7 @@ func mountCollectionEdit(router *httpx.Router, s page.Shell, o Options, res http
 }
 
 func mountCollectionUpdate(router *httpx.Router, s page.Shell, o Options, res httpx.Resource, at, rel, id string, write httpx.Auth) {
-	if writeAvailable(res, httpx.CRUDUpdate) {
+	if writeAvailable(res, httpx.CRUDUpdate) && !stepped(res, "update") {
 		page.Serve(router, s, page.Route{View: screenRef(res, "edit", ""), ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
 			func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
 				item := at + "/" + in.ID.String()

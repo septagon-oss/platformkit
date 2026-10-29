@@ -101,6 +101,8 @@ type Step struct {
 }
 
 type StepperProps struct {
+	// Segmented uses one progress segment per step and primary-first actions.
+	Segmented bool `json:"segmented,omitzero"`
 	ComponentProps
 	Label          string       `json:"label"`
 	State          ContentState `json:"state,omitzero"`
@@ -170,6 +172,16 @@ func StepperWithSlots(p StepperProps, slots StepperSlots) g.Node {
 			completed++
 		}
 		attrs := []g.Node{g.Attr("data-step-key", step.Key), g.Attr("data-step-state", step.State)}
+		if p.Segmented {
+			cl := clStepSegment
+			if step.State == "complete" {
+				cl = clStepSegmentComplete
+			}
+			if step.Key == p.CurrentKey {
+				cl = clStepSegmentActive
+			}
+			attrs = append(attrs, h.Class(cl.Compile()))
+		}
 		if step.Key == p.CurrentKey {
 			attrs = append(attrs, g.Attr("aria-current", "step"))
 		}
@@ -179,6 +191,9 @@ func StepperWithSlots(p StepperProps, slots StepperSlots) g.Node {
 		}
 		items = append(items, h.Li(append(attrs, title, g.If(step.Description != "", Text(TextProps{Content: step.Description, Size: "sm"})))...))
 	}
+	if p.Segmented {
+		return segmentedStepper(p, slots, items)
+	}
 	body := []g.Node{stateBody(p.State, slots.StateSlots),
 		h.Progress(g.Attr("value", itoa(completed)), h.Max(itoa(len(p.Steps))), g.Attr("aria-label", p.ProgressText)),
 		Text(TextProps{Content: p.ProgressText, Size: "sm"}),
@@ -187,4 +202,12 @@ func StepperWithSlots(p StepperProps, slots StepperSlots) g.Node {
 		Flex(FlexProps{Wrap: true, Gap: "3"}, g.Group(slots.Back), g.Group(slots.Continue), g.Group(slots.SaveExit), g.Group(slots.Cancel)),
 		h.P(h.Role("status"), g.Attr("aria-live", "polite"), g.Attr("aria-busy", boolText(p.Busy)), g.Text(p.SaveStatusText))}
 	return sharedSection(p.ComponentProps, "stepper", p.Label, body...)
+}
+
+func segmentedStepper(p StepperProps, slots StepperSlots, items []g.Node) g.Node {
+	return sharedSection(p.ComponentProps, "stepper", p.Label,
+		h.P(g.Text(p.ProgressText)),
+		h.Nav(g.Attr("aria-label", p.Label), h.Ol(h.Class(clStepSegments.Compile()), g.Group(items))),
+		g.Group(slots.ErrorSummary), h.FieldSet(g.Group(slots.Body)),
+		Flex(FlexProps{Wrap: true, Gap: "3"}, g.Group(slots.Continue), g.Group(slots.Back), g.Group(slots.Cancel)))
 }

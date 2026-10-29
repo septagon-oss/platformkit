@@ -316,7 +316,16 @@ suites composing foreign constructors declare their targets and reason in
 `scripts/imports-integration.txt`. A contract dependency the published surface
 already carries is recorded per edge, with the frozen exported name that keeps it,
 in `scripts/imports-contract-baseline.txt`; a row whose import has gone is refused,
-so that list only shrinks. The [import gate](tools/importgate/README.md)
+so that list only shrinks. Every module is also placed in one of four layers —
+`platform`, `identity`, `generic`, `product` — whose order belongs to the gate
+itself, while each repository assigns only its own modules in its own
+`scripts/imports-layers.txt`. A production import may not climb that order, and a
+declared port prevents such an import rather than excusing it, so the rule carries
+no exemption; a pair that imports each other in production states its reason in a
+justification row, and a row for a pair that stopped being reciprocal is refused.
+[docs/MODULE-GRAPH.md](docs/MODULE-GRAPH.md) is the generated aggregate module
+graph, composition edges printed apart from Go imports. The
+[import gate](tools/importgate/README.md)
 documents provenance, refusals, build context and the per-pair edge report.
 Shared code belongs in `kit/` only when it is runtime infrastructure rather
 than a business rule.
@@ -598,7 +607,7 @@ sources (`kit/locale/providers/xtext/load.go:33`), `Catalog` and `Source`
 describe what goes in (`:107`, `:114`), and `FromCatalog` hands back a
 `locale.Messages` (`kit/locale/providers/xtext/catalog.go:16`).
 
-**Builds on.** `golang.org/x/text` v0.42.0 (BSD-3-Clause) for language matching
+**Builds on.** `golang.org/x/text` v0.43.0 (BSD-3-Clause) for language matching
 and message catalogues (`kit/locale/providers/xtext/catalog.go:7-9`) — BCP 47
 matching and CLDR plural rules. Nothing here is a service.
 

@@ -252,6 +252,7 @@ generate: ## Rewrite every generated file and section from its inputs, offline
 	go run ./apps/platformkit composition -config apps/platformkit/testdata/composition.yaml -dir apps/platformkit
 	go run ./apps/platformkit screens -config apps/platformkit/testdata/composition.yaml -base $(SCREENS_BASE)
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_figures.py
+	bash scripts/module_graph.sh
 
 # The generated files are the ones .gitattributes marks linguist-generated, and tests/INVENTORY.md
 # holds generated sections. The diff is against the index, so a regenerated file the author has
@@ -987,12 +988,12 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# That guard's own inputs, asked of a tree it did not write. Every mutation the shell makes starts
 	# from the committed go.mod, so three branches of it live unless a synthetic tree reaches them: the
 	# directory argument that names such a tree, the rule that a commented-out dependency is not a pin
-	# (`\t// golang.org/x/net v0.60.0` answers `is absent, so nothing here resolves above the range`),
-	# and a release *superseding* every fix — the committed pins sit exactly at v0.60.0 and at go1.27.3,
-	# the newest toolchain floor, so "above all of them" is never asked. This case writes six go.mod files
-	# into a temporary directory and asks the guard about each through its subprocess, and asserts exit
-	# codes rather than sentences, so a floor comparison that passes for the wrong reason — an absent pin
-	# read as a satisfied range — cannot answer 0. It reaches no network and builds nothing.
+	# (`\t// golang.org/x/net v0.62.0` answers `is absent, so nothing here resolves above the range`),
+	# and a release *superseding* every fix — the committed pins sit exactly at v0.62.0 and at go1.27.3,
+	# the newest floor of each kind, so "above all of them" is never asked. This case writes seven go.mod
+	# files into a temporary directory and asks the guard about each through its subprocess, and asserts
+	# exit codes rather than sentences, so a floor comparison that passes for the wrong reason — an absent
+	# pin read as a satisfied range — cannot answer 0. It reaches no network and builds nothing.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_advisory_inputs_test.py
 	# The x509 floor alone: go.mod at go1.27.2, go1.27.3 and go1.27.4 with x/net already fixed, so the
 	# first is refused by GO-2026-6809's line and no other, and the two later releases pass.
@@ -1085,6 +1086,11 @@ check: build check-generated check-screen-render vet fmt-check check-loc check-c
 	# A generated file or section edited by hand, or a marker the writer cannot pair, is refused by
 	# check-generated; this case proves it in a copy of the tree, never in this checkout.
 	bash scripts/a_hand_edited_generated_file_fails_the_regeneration_check_test.sh
+	# Whether the module document is a measurement of this tree or a coin toss: the aggregate report its
+	# writer reads is collected out of maps, so one run that happens to agree proves nothing. This asks one
+	# tree twice, in a copy so nothing tracked is rewritten, and refuses a row whose source kinds come out
+	# unsorted, repeated or empty.
+	bash scripts/the_generated_module_document_answers_one_tree_the_same_way_twice_test.sh
 	# Whether either goal still asks at all. `check` and `check-push` name `check-generated`,
 	# which runs both writers and then diffs with --exit-code, and both CI workflows run `make
 	# check`; the case above calls the goal itself, so it cannot notice a goal that lost the
