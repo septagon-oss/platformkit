@@ -44,6 +44,8 @@ func control(f entity.Field) string {
 		return f.Widget
 	}
 	switch {
+	case f.Type == entity.TypeSketch:
+		return "sketch"
 	case f.Choices != nil:
 		return "chips"
 	case len(f.Enum) > 0:
@@ -67,7 +69,7 @@ func control(f entity.Field) string {
 var kinds = map[entity.FieldType]string{
 	entity.TypeString: "text", entity.TypeText: "longtext", entity.TypeInt: "number",
 	entity.TypeFloat: "number", entity.TypeBool: "boolean", entity.TypeTime: "instant",
-	entity.TypeUUID: "text", entity.TypeList: "list", entity.TypeMap: "map", entity.TypePicture: "picture",
+	entity.TypeSketch: "sketch", entity.TypeUUID: "text", entity.TypeList: "list", entity.TypeMap: "map", entity.TypePicture: "picture",
 }
 
 // kind is how a read draws the field: the declared presentation, else the word

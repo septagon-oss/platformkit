@@ -190,7 +190,7 @@ func immutableRefusal(name string) error {
 func names(fields []crud.Field) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
-		if f.Type != crud.TypeList && f.Type != entity.TypePicture {
+		if f.Type != crud.TypeList && f.Type != entity.TypePicture && f.Type != entity.TypeSketch {
 			out = append(out, f.Name)
 		}
 	}

@@ -658,5 +658,95 @@
       "ui/forms/choice.go"
     ],
     "translation": "Nenhuma escolha correspondente"
+  },
+  "forms.sketch.empty": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Sem desenho."
+  },
+  "forms.sketch.unavailable": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Desenho indisponível."
+  },
+  "forms.sketch.help": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Desenhe com o ponteiro ou use as setas para mover, Shift para passos finos, Espaço ou Enter para começar e terminar e Escape para cancelar."
+  },
+  "forms.sketch.required": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Adicione um desenho antes de continuar."
+  },
+  "forms.sketch.fallback": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Desenhar requer JavaScript. O seu desenho guardado será mantido."
+  },
+  "forms.sketch.undo": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Desfazer"
+  },
+  "forms.sketch.clear": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Limpar"
+  },
+  "forms.sketch.started": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Traço iniciado."
+  },
+  "forms.sketch.finished": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Traço adicionado."
+  },
+  "forms.sketch.canceled": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Traço cancelado."
+  },
+  "forms.sketch.undone": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Última alteração desfeita."
+  },
+  "forms.sketch.cleared": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Desenho limpo."
+  },
+  "forms.sketch.stroke-limit": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Um desenho pode conter no máximo 400 traços. Desfaça ou limpe alguns traços e tente novamente."
+  },
+  "forms.sketch.point-limit": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Um desenho pode conter no máximo 20 000 pontos. Desfaça ou limpe alguns traços e tente novamente."
+  },
+  "forms.sketch.time-limit": {
+    "references": [
+      "ui/forms/sketch.go"
+    ],
+    "translation": "Use milissegundos decorridos entre 0 e 9007199254740991."
   }
 }

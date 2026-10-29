@@ -222,7 +222,7 @@ type Field struct {
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "richtext", "time", "url", "week", "tiles", "chips", "figure", "swatch",
+	"textarea", "richtext", "sketch", "time", "url", "week", "tiles", "chips", "figure", "swatch",
 }
 
 // Presentations lists the ui:present names rendered by ui/resource.
@@ -388,11 +388,17 @@ func fieldType(sf reflect.StructField) (kind, elem FieldType, ok bool) {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
+	if t == reflect.TypeFor[Sketch]() {
+		return TypeSketch, "", true
+	}
 	// A slice is a list of whatever it holds, and []byte is not one of those: a
 	// blob is a single value, and rendering it as a list of small numbers is
 	// worse than leaving it out. uuid.UUID is an array and not a slice, so it
 	// never reaches here.
 	if t.Kind() == reflect.Slice && t.Elem().Kind() != reflect.Uint8 {
+		if t.Elem() == reflect.TypeFor[Sketch]() {
+			return "", "", false
+		}
 		elem, ok = scalar(t.Elem(), sf.Tag)
 		return TypeList, elem, ok
 	}
@@ -409,6 +415,8 @@ func scalar(t reflect.Type, tag reflect.StructTag) (FieldType, bool) {
 		t = t.Elem()
 	}
 	switch t {
+	case reflect.TypeFor[Sketch]():
+		return TypeSketch, true
 	case reflect.TypeFor[Picture]():
 		return TypePicture, true
 	case uuidType:
