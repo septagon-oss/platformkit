@@ -14,6 +14,7 @@ package rest
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
 
@@ -216,7 +217,18 @@ const (
 // Event is the full name of one of this Spec's events, "<module>.<entity>.<verb>".
 // A module lists these in its manifest's Declared, and kit/app refuses to start
 // when a Spec would publish one that nothing declared.
-func (s Spec[T]) Event(verb string) string { return s.Module + "." + s.Entity + "." + verb }
+//
+// It refuses a Spec that names no Module, because the manifest that calls it is
+// built before any router exists: the kernel fills an empty Module at Mount (see
+// Spec.Mount), and an event name formed from what the kernel will later fill is a
+// promise no manifest could make — the name would read ".task.created", and the
+// app gate would refuse a route that published the real one.
+func (s Spec[T]) Event(verb string) string {
+	if s.Module == "" {
+		panic(fmt.Sprintf("rest: the Spec for %q builds the name of its %q event and names no Module; leave Module empty only where a router mounts the Spec, which fills it — Event, Events and Declared need the module the events belong to", s.Entity, verb))
+	}
+	return s.Module + "." + s.Entity + "." + verb
+}
 
 // Events are the three names this Spec publishes, so a manifest can name them
 // without spelling them.

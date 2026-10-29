@@ -22,13 +22,19 @@ type SystemToken interface {
 	// transaction opens.
 	Reason() string
 
+	// Module is whose work opened the transaction: the module the composition
+	// minted this token for. Empty says the kernel opened it — host resolution,
+	// the relay, a probe — which is a different fact and reads as one.
+	Module() string
+
 	// isSystemToken is unexported, so this interface is closed to this package.
 	isSystemToken()
 }
 
-type token struct{ reason string }
+type token struct{ module, reason string }
 
 func (t token) Reason() string { return t.reason }
+func (t token) Module() string { return t.module }
 func (token) isSystemToken()   {}
 
 // NewSystemToken mints a token. An empty reason is a programming mistake at the
@@ -39,4 +45,18 @@ func NewSystemToken(reason string) SystemToken {
 		panic("syscap.NewSystemToken: a cross-tenant capability must say why it exists")
 	}
 	return token{reason: reason}
+}
+
+// NewSystemTokenFor mints the token of one module, so the audit trail of every
+// cross-tenant transaction says both who opened it and what for. An empty
+// module or reason is a capability nobody can explain, so it panics at the
+// minting site like NewSystemToken does; a module never reaches this function
+// by itself — kit/httpx mints on behalf of a manifest that declared the need
+// (module.Module.SystemAccess), which is what keeps the list of holders short
+// and visible. See docs/adr/0006.
+func NewSystemTokenFor(module, reason string) SystemToken {
+	if module == "" || reason == "" {
+		panic("syscap.NewSystemTokenFor: a cross-tenant capability must name the module it belongs to and why it exists")
+	}
+	return token{module: module, reason: reason}
 }

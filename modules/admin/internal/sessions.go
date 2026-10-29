@@ -68,7 +68,7 @@ func (p pages) mountSessions(app *httpx.Router) {
 		return
 	}
 	guard := httpx.SignedIn()
-	where := namespace(app, "auth")
+	where := namespace(app, authcontracts.Namespace)
 
 	page.Serve(where, p.shell, page.Route{View: admincontracts.Screen("sessions"), ID: "admin-sessions", Method: http.MethodGet, Path: p.at.sessions.rel,
 		Summary: "The sessions this person has", Errors: sessionsReadFaults}, guard,
