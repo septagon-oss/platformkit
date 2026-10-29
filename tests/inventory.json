@@ -76892,6 +76892,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/a_word_nobody_declared_is_neither_translated_nor_invented_test.go",
+   "id": "ui/resource/a_word_nobody_declared_is_neither_translated_nor_invented_test.go#TestAWordNobodyDeclaredIsNeitherTranslatedNorInvented",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAWordNobodyDeclaredIsNeitherTranslatedNorInvented",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/blank_display_link_test.go",
    "id": "ui/resource/blank_display_link_test.go#TestABlankDisplayFieldKeepsTheListLinkNamed",
    "kind": "go",
@@ -87793,7 +87812,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2391,
+  "files": 2392,
   "forge_runs": [
    408,
    413,
@@ -87827,7 +87846,7 @@
    578
   ],
   "layers": {
-   "behaviour": 3830,
+   "behaviour": 3831,
    "composition": 492,
    "contract": 24,
    "journey": 110
@@ -87846,23 +87865,23 @@
   },
   "round_named_ceiling": 80,
   "round_named_files": 80,
-  "rows": 4456,
+  "rows": 4457,
   "tiers": {
    "merge": 2672,
    "nightly": 110,
-   "push": 1674
+   "push": 1675
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2145,
+   "keep": 2146,
    "keep-rewrite": 91,
    "merge": 155
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 4069,
+   "keep": 4070,
    "keep-rewrite": 170,
    "merge": 217
   }
