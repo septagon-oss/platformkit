@@ -22,7 +22,7 @@ type ResolvedSession struct {
 	ContractVersion int               `json:"contractVersion"`
 	Complete        SessionCapability `json:"complete"`
 	Finish          SessionCapability `json:"finish"`
-	Labels          map[string]string `json:"labels"`
+	Labels          map[string]string `json:"labels" nullable:"true"`
 	Motion          string            `json:"motion"`
 }
 
