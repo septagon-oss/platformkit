@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,7 +68,13 @@ func (c caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy
 	}
 	return resolved, nil
 }
-func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
+func (caller) Allowed(ctx context.Context, _ tenancy.Tenant, grant tenancy.Grant) (bool, error) {
+	principal, hasPrincipal := tenancy.PrincipalFrom(ctx)
+	if hasPrincipal && principal.Permissions != nil {
+		return slices.Contains(principal.Permissions, grant.Permission), nil
+	}
+	return true, nil
+}
 
 // mounted is the module as main mounts it, over a real Postgres and a real
 // directory, with a limit small enough to go past in a test.
