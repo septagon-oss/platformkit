@@ -206,6 +206,34 @@ beside the interface it already satisfied, which is how the next "does this inst
 really do the thing?" is asked without widening a frozen port; and `contracts.MailDeliveryFunc`,
 so a composition or a fixture can say which installation it is in one token.
 
+
+**Reused, by the mail intent** — the delivery ledger and its one writer
+(`internal.record`, and with it 000056's "a channel is sent once" partial unique
+index), `contracts.Message` as the frozen rendered mail, `contracts.PrepareMail`'s
+validate-before-write shape in the new `contracts.PrepareIntent`,
+`kit/jobs.PerTenant` over `jobs.TenantLister`, `platformkit_tenant_match` with
+`ENABLE`+`FORCE`, and the claim/commit/send/record job `modules/webhook` already
+runs — the same four steps, the same reason for splitting them.
+
+**Added, by the mail intent** — `contracts.MailIntents`, `notification_mail_intents`
+(migration `000076`) and `internal.Deliver`. Nothing existing could carry this:
+`notification_deliveries` is keyed by `notification_id` and begins at `requested`,
+`direct_mail_deliveries` is written once at the decision and has no pending half,
+and neither can hold a row that begins before the send is decided — which is the
+only kind of row that survives a crash between a relay and a commit. `Mailer.Send`
+is untouched: it still sends immediately for whoever composes it, and it is not
+deprecated, because an intent is a different capability and not a newer way to do
+the same thing.
+
+**Made reusable, by the mail intent** — the owed-mail row and its worker are the
+pattern for any effect this module must perform after the transaction that decided
+it: `contracts.MailIntents.Queue(ctx, tx, OutgoingMail)` takes the caller's own
+transaction, so a caller that cannot afford to lose a send writes one beside its
+own state and adopts the same states, ladder, lease and unknown rule rather than
+inventing a queue. `contracts.ErrNotAccepted` and `contracts.ErrUncertainSend` are
+the two answers any carrier can give that no status code carries, and
+`internal/mail_retention.go` is the forget-terminal-rows-never-owed-ones sweep.
+
 ## Authorization
 
 ### Permissions

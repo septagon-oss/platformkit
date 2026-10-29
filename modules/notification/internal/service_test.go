@@ -147,14 +147,22 @@ func TestTheWorkerReadsTheRowBackAndSendsTheMail(t *testing.T) {
 
 		// The mail is owed, not sent: the parts the worker will hand the relay are
 		// these, frozen in this transaction.
-		var sent []contracts.Message
-		if err := tx.DB().Table("notification_mail_intents").Select("recipient as to, subject, body, html").Find(&sent).Error; err != nil {
+		// owedRow is the stored message: contracts.Message holds a *Sender, which the
+		// table keeps no copy of and gorm would read as a relation.
+		type owedRow struct {
+			Recipient string
+			Subject   string
+			Body      string
+		}
+		var sent []owedRow
+		if err := tx.DB().Table("notification_mail_intents").Select("recipient, subject, body").Find(&sent).Error; err != nil {
 			t.Fatalf("read the owed mail: %v", err)
 		}
 		if len(sent) != 1 {
 			t.Fatalf("the owed list holds %d mails, want one", len(sent))
 		}
-		switch msg := sent[0]; {
+		msg := contracts.Message{To: sent[0].Recipient, Subject: sent[0].Subject, Body: sent[0].Body}
+		switch {
 		case msg.To != notificationtest.AdaEmail:
 			t.Errorf("sent to %q", msg.To)
 		case msg.Subject != "A task was assigned to you":

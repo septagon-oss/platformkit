@@ -18,10 +18,18 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
 )
 
-// failing is a relay that refuses every message.
+// failing is a relay whose answer says nothing about what it did with the message.
 type failing struct{}
 
 func (failing) Send(context.Context, contracts.Message) error { return errors.New("relay refused") }
+
+// refused is a relay that answered and did not take the message: a 5xx, which is a
+// fact about the relay and therefore retryable on the ladder.
+type refused struct{}
+
+func (refused) Send(context.Context, contracts.Message) error {
+	return contracts.Permanent("550 relay refused the message")
+}
 
 func ledger(t *testing.T, tx db.Tx[db.Tenant], id uuid.UUID) []string {
 	t.Helper()
@@ -98,8 +106,11 @@ func TestEveryRequestedChannelEndsInTheLedger(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if requested != 5 || terminal != 5 {
-			t.Errorf("coverage is %d of %d requested channels, want 5 of 5", terminal, requested)
+		// Four of five: Ada's mail is owed and un-sent, which is what the fifth row
+		// means. An owed mail leaves the channel honestly unaccounted-for rather than
+		// optimistically closed, and the drain below is what closes it.
+		if requested != 5 || terminal != 4 {
+			t.Errorf("coverage is %d of %d requested channels, want 4 of 5", terminal, requested)
 		}
 		return errRollback
 	})
@@ -131,7 +142,7 @@ func TestEveryRequestedChannelEndsInTheLedger(t *testing.T) {
 // uncovered until it finishes.
 func TestARefusedSendLeavesNoTerminalRowUntilTheRelayAnswers(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
-	svc := internal.NewService(directory{}, internal.WithMailer(failing{}))
+	svc := internal.NewService(directory{}, internal.WithMailer(refused{}))
 	var id uuid.UUID
 
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

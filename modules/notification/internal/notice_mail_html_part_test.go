@@ -42,12 +42,12 @@ func TestANoticeMailCarriesItsLinkAsAnAnchorInItsHTMLPart(t *testing.T) {
 		// The message is read back off the owed row rather than out of a mailbox:
 		// what this case checks is what the mail was frozen as, and the worker hands
 		// a relay exactly these parts.
-		var frozen contracts.Message
+		var owed owedMessage
 		if err := tx.DB().Table("notification_mail_intents").Select("subject, body, html").
-			Order("seq DESC").First(&frozen).Error; err != nil {
+			Order("seq DESC").First(&owed).Error; err != nil {
 			t.Fatalf("read the owed mail: %v", err)
 		}
-		return frozen
+		return contracts.Message{Subject: owed.Subject, Body: owed.Body, HTML: owed.HTML}
 	}
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -82,4 +82,12 @@ func TestANoticeMailCarriesItsLinkAsAnAnchorInItsHTMLPart(t *testing.T) {
 	if !errors.Is(err, errRollback) {
 		t.Fatalf("the transaction: %v", err)
 	}
+}
+
+// owedMessage is the stored message as a row: contracts.Message holds a *Sender,
+// which is a value the table deliberately does not keep.
+type owedMessage struct {
+	Subject string
+	Body    string
+	HTML    string
 }
