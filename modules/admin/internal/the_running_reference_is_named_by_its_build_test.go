@@ -23,8 +23,8 @@ func TestTheFooterNamesTheStampTheRunningArtifactCarries(t *testing.T) {
 			want: "v1.1.2-proof.20261027.e5fe4025",
 		},
 		{
-			name: "a build made from a checkout",
-			info: &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}, Settings: []debug.BuildSetting{
+			name: "a checkout build uses its revision when a module version is also present",
+			info: &debug.BuildInfo{Main: debug.Module{Version: "v1.1.2-proof.20261029.263f8765e464"}, Settings: []debug.BuildSetting{
 				{Key: "vcs.revision", Value: "0123456789abcdef0123456789abcdef01234567"},
 			}},
 			want: "01234567",

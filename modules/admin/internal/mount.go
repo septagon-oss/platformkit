@@ -542,23 +542,20 @@ func Build() string {
 	return brand + " " + version(info)
 }
 
-// version is what the footer says the running reference is: the revision or
-// version the toolchain recorded, never a string somebody bumps by hand. A build
-// made through the module proxy — `go run …@main`, `go install …@main` — records
-// the module version and no VCS settings; a build from a source tree records
-// vcs.revision and the version "(devel)". Both are answers, and each is the only
-// one the build that carries it has.
+// version prefers the revision for a checkout build and the module version for a
+// build without VCS metadata. The toolchain records both for a tagged checkout,
+// while a module proxy build records only its module version.
 func version(info *debug.BuildInfo) string {
 	if info == nil {
 		return "(unknown build)"
-	}
-	if v := info.Main.Version; v != "" && v != "(devel)" {
-		return v
 	}
 	for _, setting := range info.Settings {
 		if setting.Key == "vcs.revision" {
 			return short(setting.Value)
 		}
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
 	}
 	return "(development)"
 }
