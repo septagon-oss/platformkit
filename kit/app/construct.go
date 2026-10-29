@@ -61,14 +61,18 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if report != nil {
 		reports = append(reports, report)
 	}
-	// Claim shapes last, under the catalog lock, so a refused constructor keeps no claim.
-	declaredRelease, err := events.ClaimApp(opts.App, declared)
+	// Claim shapes last, under the catalog lock, so a refused constructor keeps no
+	// claim. The claim is a value rather than a release closure because the
+	// composition is the only thing that knows which of its own publishes belongs to
+	// which contract: it hands the value to the doors it owns (start.go, workers.go)
+	// and the process-wide record keeps answering for every door it does not.
+	catalog, err := events.NewCatalog(opts.App, declared)
 	if err != nil {
 		return nil, beforeEffects(err)
 	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log, declared: declared,
-		declaredRelease: declaredRelease,
-		held:            &heldConn{}, observed: &heldTransport{}, measurement: measurement, reports: reports}, nil
+		catalog: catalog, declaredRelease: catalog.Close,
+		held: &heldConn{}, observed: &heldTransport{}, measurement: measurement, reports: reports}, nil
 }
 
 func defaultOptions(opts *Options) error {

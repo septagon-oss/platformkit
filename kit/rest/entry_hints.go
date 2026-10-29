@@ -45,7 +45,7 @@ func entryHintsFault(name string, p entity.EntryHints, fields []crud.Field) stri
 
 func entryLayoutFault(p entity.EntryHints) string {
 	if !entity.ValidIcon(p.Icon) {
-		return fmt.Sprintf("icon %q is not an icon; entity.Icons admits %s", p.Icon, strings.Join(entity.Icons, ", "))
+		return fmt.Sprintf("icon %q is not an icon; entity.IconNames admits %s", p.Icon, strings.Join(entity.IconNames(), ", "))
 	}
 	if p.Order < 0 {
 		return fmt.Sprintf("order %d is not a position; 0 means \"no opinion\"", p.Order)

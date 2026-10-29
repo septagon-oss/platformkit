@@ -408,7 +408,19 @@ func validMoves(mods []Module) []string {
 // for every attributable refused authorization (see kit/httpx Options.Denied). They
 // count as emitted for Validate and are expanded for a SubscribeAll module, so
 // modules/audit keeps them like any other event.
+//
+// Deprecated: read KernelEventNames(), which hands out a copy a caller cannot write
+// into. This slice is the same storage every composition in the process reads, and one
+// append that grew it past its length would change what the kernel emits for all of them.
 var KernelEvents = []string{"security.denied", "security.access_requested", events.EventOperationOutcome}
+
+// KernelEventNames is KernelEvents as a copy: the names the kernel emits itself, which
+// no module may declare and which a SubscribeAll module subscribes to beside the
+// composition's own. It is a fresh slice per call, so a caller that sorts, truncates or
+// appends to the answer leaves the kernel's own list where it found it.
+func KernelEventNames() []string {
+	return slices.Clone(KernelEvents)
+}
 
 // KernelName is the manifest name kit/app gives the kernel's own share of the
 // composition. It is named because it is read by a rule: KernelEvents are the
@@ -423,7 +435,7 @@ const KernelName = "platformkit"
 func Expand(mods []Module) []Module {
 	seen := map[string]bool{}
 	var all []string
-	for _, e := range KernelEvents {
+	for _, e := range KernelEventNames() {
 		if !seen[e] {
 			seen[e], all = true, append(all, e)
 		}
