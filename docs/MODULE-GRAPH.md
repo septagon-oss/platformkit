@@ -100,3 +100,4 @@ Edges whose source is a module's own root package — the composition side, wher
 | `user` | `tenant` | `identity` -> `identity` | lateral | production | composition | yes |
 | `web` | `content` | `product` -> `platform` | down | external-test, production | composition |  |
 | `web` | `site` | `product` -> `platform` | down | external-test, production | composition |  |
+
