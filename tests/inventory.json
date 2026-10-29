@@ -8224,6 +8224,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/the_refused_resends_wait_and_the_reading_promise_one_instant_test.go",
+   "id": "apps/platformkit/the_refused_resends_wait_and_the_reading_promise_one_instant_test.go#TestTheRefusedResendsWaitAndTheReadingPromiseOneInstant",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheRefusedResendsWaitAndTheReadingPromiseOneInstant",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/trail_wait_answers_the_act_that_caused_it_test.go",
    "id": "apps/platformkit/trail_wait_answers_the_act_that_caused_it_test.go#TestAWaitOnTheTrailAnswersTheActThatCausedIt",
    "kind": "go",
@@ -84183,7 +84202,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 2296,
+  "files": 2297,
   "forge_runs": [
    408,
    413,
@@ -84218,7 +84237,7 @@
   ],
   "layers": {
    "behaviour": 3645,
-   "composition": 491,
+   "composition": 492,
    "contract": 22,
    "journey": 110
   },
@@ -84236,9 +84255,9 @@
   },
   "round_named_ceiling": 79,
   "round_named_files": 79,
-  "rows": 4268,
+  "rows": 4269,
   "tiers": {
-   "merge": 2645,
+   "merge": 2646,
    "nightly": 110,
    "push": 1513
   },
@@ -84246,13 +84265,13 @@
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 2051,
+   "keep": 2052,
    "keep-rewrite": 91,
    "merge": 154
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 3882,
+   "keep": 3883,
    "keep-rewrite": 170,
    "merge": 216
   }

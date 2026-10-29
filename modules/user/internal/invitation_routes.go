@@ -64,8 +64,12 @@ func registerInvitationMutation(s httpx.Surfaces, svc *Service, verb string, sta
 			}
 			got, err := run(ctx, tx, in.ID, in.Body.ExpectedRevision)
 			if cooldown, ok := errors.AsType[*contracts.InvitationCooldown](err); ok {
+				retryAt := cooldown.RetryAt.UTC()
+				if retryAt.Nanosecond() != 0 {
+					retryAt = retryAt.Truncate(time.Second).Add(time.Second)
+				}
 				return nil, huma.ErrorWithHeaders(problem.New(http.StatusTooManyRequests, "request a replacement after "+cooldown.RetryAt.Format(time.RFC3339)),
-					http.Header{"Retry-After": []string{cooldown.RetryAt.Format(http.TimeFormat)}})
+					http.Header{"Retry-After": []string{retryAt.Format(http.TimeFormat)}})
 			}
 			if err != nil {
 				return nil, InvitationFault(err)
